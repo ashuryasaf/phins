@@ -1,0 +1,31 @@
+{
+  "id": "00000000-0000-0000-0000-000000000001",
+  "name": "PHINS Insurance Management",
+  "publisher": "PHINS Insurance Company",
+  "version": "1.0.0.0",
+  "brief": "Comprehensive insurance contract and policy management system",
+  "description": "Complete insurance management platform including sales, underwriting, accounting, claims, legal, and reinsurance divisions with client portal access",
+  "privacyStatement": "https://www.phins.com/privacy",
+  "EULA": "https://www.phins.com/eula",
+  "help": "https://www.phins.com/help",
+  "url": "https://www.phins.com",
+  "logo": "",
+  "dependencies": [
+    {
+      "id": "63ca2fa4-4f03-4f2b-9302-a6d530171474",
+      "name": "System Application",
+      "publisher": "Microsoft",
+      "version": "24.0.0.0"
+    },
+    {
+      "id": "437dbf0e-84ff-417a-965d-0706e326dc53",
+      "name": "Base Application",
+      "publisher": "Microsoft",
+      "version": "24.0.0.0"
+    }
+  ],
+  "screenshots": [],
+  "platformVersion": "24.0.0.0",
+  "showMyCode": true,
+  "isPublished": false
+}
