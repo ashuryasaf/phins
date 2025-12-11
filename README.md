@@ -7,6 +7,7 @@ PHINS (Professional Insurance Management System) is a **globally-ready, producti
 ## 🚀 Global Platform Highlights
 
 ### 🌐 20-Language Support
+
 - **English, Spanish, French, German, Italian, Portuguese, Russian, Dutch**
 - **Mandarin Chinese, Japanese, Korean, Turkish, Arabic, Hindi**
 - **Polish, Swedish, Greek, Hebrew, Indonesian, Vietnamese**
@@ -14,6 +15,7 @@ PHINS (Professional Insurance Management System) is a **globally-ready, producti
 - No external dependencies - lightweight and maintainable
 
 ### 📊 Enterprise Scalability
+
 - Optimized for **1M+ concurrent users**
 - High-performance caching with 99%+ hit rates
 - Intelligent pagination for large result sets
@@ -22,6 +24,7 @@ PHINS (Professional Insurance Management System) is a **globally-ready, producti
 - Zero external database dependencies (demo-ready in pure Python)
 
 ### ⚡ Performance Optimized
+
 - **50ms average response time** under load
 - Efficient memory management with LRU eviction
 - Batch processing for large datasets
@@ -29,6 +32,7 @@ PHINS (Professional Insurance Management System) is a **globally-ready, producti
 - Configuration profiles for 1K → 100K → 1M+ users
 
 ### 🔒 Enterprise Features
+
 - Audit logging (all transactions tracked)
 - Data encryption ready
 - Role-based access control framework
@@ -39,17 +43,20 @@ PHINS (Professional Insurance Management System) is a **globally-ready, producti
 ## Key Features
 
 ### 🏢 Company Management
+
 - Insurance company master data with license tracking
 - Multi-office and international support
 - Compliance and regulation management
 
 ### 👥 Customer Management
+
 - Individual and corporate customer profiles
 - Multi-language customer portal
 - Self-service policy and claims access
 - Global customer communication
 
 ### 📋 Policy Management (Sales Division)
+
 - Support for: Auto, Home, Health, Life, Commercial, Liability
 - Automated underwriting integration
 - Renewal and reminder workflows
@@ -57,6 +64,7 @@ PHINS (Professional Insurance Management System) is a **globally-ready, producti
 - Real-time policy status tracking
 
 ### 🔍 Underwriting Division
+
 - Risk assessment using permanent health/mortality tables
 - Automated premium adjustments
 - Medical exam coordination
@@ -64,6 +72,7 @@ PHINS (Professional Insurance Management System) is a **globally-ready, producti
 - Document requirement tracking
 
 ### 💰 Billing & Accounting Division
+
 - Multi-currency billing (auto-formatted by user locale)
 - Flexible payment schedules
 - Automated late fees
@@ -71,6 +80,7 @@ PHINS (Professional Insurance Management System) is a **globally-ready, producti
 - Financial reporting and analytics
 
 ### 📞 Claims Management Division
+
 - 24/7 claim submission
 - Real-time claim tracking
 - Automated claim workflows
@@ -78,6 +88,7 @@ PHINS (Professional Insurance Management System) is a **globally-ready, producti
 - SLA management
 
 ### 🧮 Actuarial & Risk Management
+
 - Permanent health/mortality tables (20 base tables included)
 - Actuarial premium calculation
 - Risk assessment scoring (0-100 scale)
@@ -85,6 +96,7 @@ PHINS (Professional Insurance Management System) is a **globally-ready, producti
 - Portfolio risk metrics
 
 ### 📊 Reinsurance Division
+
 - Treaty reinsurance management (Proportional, Excess of Loss, Stop Loss)
 - Automatic hedging calculations
 - Commission tracking
@@ -92,6 +104,7 @@ PHINS (Professional Insurance Management System) is a **globally-ready, producti
 - Partner portfolio analysis
 
 ### 📁 Document Management
+
 - File upload/download across all divisions
 - Document verification workflow
 - Storage analytics and archival
@@ -99,6 +112,7 @@ PHINS (Professional Insurance Management System) is a **globally-ready, producti
 - Automatic file categorization
 
 ### 📱 Customer Portal
+
 - Multi-language interface
 - Policy self-service
 - Claim status tracking
@@ -111,19 +125,23 @@ PHINS (Professional Insurance Management System) is a **globally-ready, producti
 ## 🏗️ Architecture
 
 ### Modular Design
+
 - **7 Operational Divisions**: Sales, Underwriting, Claims, Accounting, Actuarial, Reinsurance, Legal
 - **9 Core Master Tables**: Company, Customer, InsurancePolicy, Claim, Bill, Underwriting, Reinsurance, HealthTable, RiskAssessment
 - **5 Codeunits**: PolicyManagement, ClaimsManagement, BillingManagement, UnderwritingEngine, ActuaryManagement
 - **System Orchestrator**: PHINSInsuranceSystem with 50+ methods
 
 ### No External Dependencies
+
 - Pure Python implementation
 - Lightweight modules: i18n (translations), config (settings), scalability (performance)
 - Can run in any environment: Kubernetes, Lambda, Cloud Run, on-premise
 - Database-agnostic (works with SQL, NoSQL, or in-memory)
 
 ### Performance Stack
-```
+
+```text
+
 SimpleCache (99%+ hit rate)
     ↓
 QueryOptimizer (pagination, batching)
@@ -133,7 +151,8 @@ RateLimiter (protection against abuse)
 ConnectionPool (efficient resource usage)
     ↓
 PerformanceMonitor (metrics & alerts)
-```
+
+```text
 
 ---
 
@@ -149,7 +168,9 @@ PerformanceMonitor (metrics & alerts)
 | **INTERNATIONALIZATION.md** | Complete i18n guide with examples | 600+ | ✅ Docs |
 
 ### phins_system.py (Core Insurance Logic)
+
 ```python
+
 # 13 Enumerations for business status tracking
 PolicyStatus, ClaimStatus, BillStatus, UnderwritingStatus, 
 RiskCategory, HedgingStrategy, ActuarialRole, ...
@@ -164,10 +185,13 @@ UnderwritingEngine, ActuaryManagement
 
 # System Orchestrator
 PHINSInsuranceSystem (50+ methods for all operations)
-```
+
+```text
 
 ### i18n.py (Multi-Language Support)
+
 ```python
+
 # 20-Language Translation System
 Language enum (EN, ZH, HI, ES, FR, AR, PT, RU, JA, DE, IT, KO, TR, VI, NL, PL, SV, EL, HE, ID)
 
@@ -184,10 +208,13 @@ LocaleFormatter
 
 # Global Functions
 set_global_language(), translate(), t()
-```
+
+```text
 
 ### config.py (Configuration & Feature Flags)
+
 ```python
+
 # Environment Management
 Environment (DEVELOPMENT, STAGING, PRODUCTION)
 
@@ -205,10 +232,13 @@ PerformanceOptimizations.get_optimization_profile(1000000)
 
 # Data Validation
 DataValidation (email, phone, field length validation)
-```
+
+```text
 
 ### scalability.py (Performance & Monitoring)
+
 ```python
+
 # 5 Performance Components
 
 SimpleCache
@@ -235,14 +265,17 @@ ConnectionPool
 - Lightweight connection management
 - Configurable pool size (default: 20)
 - Usage statistics
-```
+
+```text
 
 ---
 
 ## 🚀 Quick Start
 
 ### Installation (Python 3.8+)
+
 ```bash
+
 # Clone repository
 git clone https://github.com/ashuryasaf/phins.git
 cd phins
@@ -251,10 +284,13 @@ cd phins
 python demo_global.py          # Run global platform demo
 python demo.py                 # Run core system demo
 python file_management_demo.py # Run document management demo
-```
+
+```text
 
 ### Basic Usage
+
 ```python
+
 from phins_system import PHINSInsuranceSystem, Company, Customer, InsurancePolicy
 from i18n import set_global_language, Language, LocaleFormatter
 from decimal import Decimal
@@ -305,10 +341,13 @@ policy = system.create_policy(
 # Format currency for Spanish user
 formatted_premium = LocaleFormatter.format_currency(premium, Language.ES)
 print(f"Premium: {formatted_premium}")  # Output: € 50.000,00
-```
+
+```text
 
 ### Multi-Language Interface
+
 ```python
+
 from i18n import get_translator, Language
 
 translator = get_translator()
@@ -327,10 +366,13 @@ from i18n import LocaleFormatter
 date = datetime.now()
 LocaleFormatter.format_date(date, Language.DE)  # "09.12.2025"
 LocaleFormatter.format_date(date, Language.FR)  # "09/12/2025"
-```
+
+```text
 
 ### Performance Optimization
+
 ```python
+
 from scalability import get_cache, get_query_optimizer, get_rate_limiter
 
 # Caching
@@ -349,7 +391,8 @@ if limiter.is_allowed("user@example.com"):
     process_request()
 else:
     return_error_429()
-```
+
+```text
 
 ---
 
@@ -371,29 +414,41 @@ Tested with simulated 1,000,000 concurrent users:
 ## 🌍 Deployment Options
 
 ### Kubernetes (Recommended for 1M+ users)
+
 ```bash
+
 docker build -t phins:latest .
 kubectl apply -f phins-deployment.yaml
-```
+
+```text
 
 ### AWS Lambda
+
 ```python
+
 # Can deploy scalability.py as Lambda layer
 # i18n.py as shared library
 # No external dependencies = small package size
-```
+
+```text
 
 ### Cloud Run / App Engine
+
 ```bash
+
 gcloud run deploy phins --source . --platform managed
-```
+
+```text
 
 ### On-Premise / Private Cloud
+
 ```bash
+
 # Pure Python - runs anywhere
 # Zero database requirements for demo
 # Simple maintenance
-```
+
+```text
 
 ---
 
@@ -409,7 +464,9 @@ gcloud run deploy phins --source . --platform managed
 ## 🧪 Testing & Demos
 
 Run demonstrations:
+
 ```bash
+
 # Global platform (20 languages, performance, 11 showcases)
 python demo_global.py
 
@@ -418,13 +475,15 @@ python demo.py
 
 # Document management (file upload/download/verify)
 python file_management_demo.py
-```
+
+```text
 
 ---
 
 ## 📋 Project Structure
 
-```
+```text
+
 phins/
 ├── phins_system.py              # Core system (1400+ lines)
 ├── i18n.py                      # 20-language support (600+ lines)
@@ -443,7 +502,9 @@ phins/
     ├── Tables/                  # 7 Master tables
     ├── Pages/                   # 8 Division pages
     └── Codeunits/               # 5 Business logic modules
-```
+
+```text
+
 │   ├── CompanyMaster.al        # Insurance company master data
 │   ├── CustomerMaster.al       # Customer profiles and account management
 │   ├── InsurancePolicyMaster.al # Policy master records
@@ -465,11 +526,13 @@ phins/
     ├── ClaimsManagement.al     # Claims processing logic
     ├── BillingManagement.al    # Billing and payment logic
     └── UnderwritingEngine.al   # Underwriting assessment logic
-```
+
+```text
 
 ## Getting Started
 
 ### Prerequisites
+
 - Visual Studio Code with AL Language extension
 - Business Central 24.0 or later
 - AL Compiler
@@ -477,26 +540,32 @@ phins/
 ### Installation
 
 1. **Download Symbols**
-   ```
+
+   ```text
    AL: Download symbols (Cmd Palette)
    ```
+
    Select your Business Central version (24.0 or later)
 
-2. **Build the Project**
-   ```
+1. **Build the Project**
+
+   ```text
    Ctrl+Shift+B
    ```
 
-3. **Configure Debugging** (if needed)
+1. **Configure Debugging** (if needed)
+
    Edit `.vscode/launch.json` with your Business Central instance details
 
-4. **Deploy**
+1. **Deploy**
+
    - Run: F5 (deploys to configured Business Central instance)
    - Or publish the .app file manually
 
 ## Main Workflows
 
 ### Policy Creation Workflow
+
 1. Create new customer in Customer Master
 2. Create insurance policy with customer reference
 3. Initiate underwriting assessment
@@ -505,6 +574,7 @@ phins/
 6. Activate policy after first payment
 
 ### Claims Processing Workflow
+
 1. Customer files claim for active policy
 2. Claims adjuster reviews claim documentation
 3. Assess claim amount and approve/reject
@@ -512,6 +582,7 @@ phins/
 5. Track claim status in customer portal
 
 ### Billing & Payment Workflow
+
 1. Generate bill for policy based on payment frequency
 2. Send payment reminders for outstanding bills
 3. Record customer payments
@@ -519,6 +590,7 @@ phins/
 5. Generate billing statements for customer portal
 
 ### Reinsurance Management Workflow
+
 1. Identify policies requiring reinsurance protection
 2. Create reinsurance arrangement with partner
 3. Track ceded amounts and commissions
@@ -527,36 +599,42 @@ phins/
 ## Business Divisions
 
 ### Sales Division
+
 - Policy sales and management
 - Customer acquisition
 - Policy renewal processing
 - Commission tracking
 
 ### Underwriting Division
+
 - Risk assessment
 - Medical underwriting
 - Policy approval authority
 - Premium adjustments
 
 ### Claims Division
+
 - Claim intake and validation
 - Claims investigation
 - Payment authorization
 - Fraud detection support
 
 ### Accounting Division
+
 - Premium receivables
 - Payment processing
 - Claims payables
 - Financial reporting
 
 ### Legal Division
+
 - Policy document compliance
 - Claims documentation
 - Regulatory compliance
 - Contract management
 
 ### Reinsurance Division
+
 - Partner management
 - Excess of loss arrangements
 - Facultative reinsurance
@@ -565,6 +643,7 @@ phins/
 ## Customer Portal Features
 
 The customer portal provides:
+
 - View active policies and coverage details
 - Access billing statements and payment history
 - Make online payments
@@ -576,6 +655,7 @@ The customer portal provides:
 ## API Integrations
 
 The system is designed to support integrations with:
+
 - Payment gateways for online billing
 - Email service for notifications
 - Document management systems
@@ -609,8 +689,8 @@ MIT License - See LICENSE file for details
 ## Contact
 
 PHINS Insurance Company
-Email: support@phins.com
-Website: https://www.phins.com
+Email: <support@phins.com>
+Website: <https://www.phins.com>
 
 ---
 

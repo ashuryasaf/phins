@@ -7,6 +7,8 @@ document.addEventListener('DOMContentLoaded', function () {
     const username = form.username.value;
     const password = form.password.value;
     msg.textContent = 'Signing in...';
+    msg.className = 'muted';
+    
     fetch('/api/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -15,16 +17,29 @@ document.addEventListener('DOMContentLoaded', function () {
       .then(r => r.json())
       .then(data => {
         if (data.token) {
-          msg.textContent = 'Login successful!';
-          // Store token and redirect (demo)
+          msg.textContent = 'Login successful! Redirecting...';
+          msg.style.color = '#28a745';
+          
+          // Store token and username
           localStorage.setItem('phins_token', data.token);
-          window.location.href = '/index.html';
+          sessionStorage.setItem('username', username);
+          
+          // Redirect based on user type
+          setTimeout(() => {
+            if (username === 'admin') {
+              window.location.href = '/admin.html';
+            } else {
+              window.location.href = '/dashboard.html';
+            }
+          }, 500);
         } else {
           msg.textContent = 'Login failed: ' + (data.error || 'Invalid credentials');
+          msg.style.color = '#dc3545';
         }
       })
       .catch(err => {
-        msg.textContent = 'Login error.';
+        msg.textContent = 'Login error. Please try again.';
+        msg.style.color = '#dc3545';
       });
   });
 });

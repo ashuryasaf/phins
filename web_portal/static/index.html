@@ -3,37 +3,536 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>PHINS Portal — Customer Statement</title>
+  <title>PHINS Insurance — Comprehensive Coverage & Financial Security</title>
   <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
   <header class="topbar">
     <div class="container">
-      <h1 class="brand">PHINS</h1>
+      <h1 class="brand">🛡️ PHINS Insurance</h1>
       <nav class="nav">
-        <a href="#">Dashboard</a>
-        <a href="#">Statements</a>
-        <a href="#">Claims</a>
+        <a href="#home">Home</a>
+        <a href="#products">Products</a>
+        <a href="#underwriting">Underwriting</a>
+        <a href="#about">About</a>
+        <a href="#contact">Contact</a>
+        <select id="language-selector" class="language-selector" onchange="changeLanguage(this.value)">
+          <option value="en">🌐 English</option>
+          <option value="es">🌐 Español</option>
+          <option value="fr">🌐 Français</option>
+          <option value="de">🌐 Deutsch</option>
+          <option value="zh">🌐 中文</option>
+          <option value="ar">🌐 العربية</option>
+          <option value="ru">🌐 Русский</option>
+          <option value="pt">🌐 Português</option>
+        </select>
+        <a href="/login.html" class="btn-login">Login / Sign Up</a>
       </nav>
     </div>
   </header>
 
-  <main class="container">
-    <section class="card">
-      <h2>Premium Statement</h2>
-      <div id="summary" class="summary">
-        <p>Loading statement...</p>
+  <!-- Hero Section -->
+  <section id="home" class="hero">
+    <div class="container">
+      <div class="hero-content">
+        <h1>PHINS: Specialized Disability Protection & Investment</h1>
+        <p class="hero-subtitle">Global coverage for severe permanent disabilities (ADL-based) with integrated wealth building</p>
+        <div class="hero-actions">
+          <a href="/apply.html" class="btn btn-primary">Apply Now</a>
+          <a href="/quote.html" class="btn btn-primary">Get a Quote</a>
+          <a href="/login.html" class="btn btn-secondary">Access My Account</a>
+        </div>
       </div>
-    </section>
+    </div>
+  </section>
 
-    <section class="card">
-      <h3>Allocations</h3>
-      <ul id="alloc-list" class="alloc-list"></ul>
-    </section>
-  </main>
+  <!-- Products Section -->
+  <section id="products" class="section">
+    <div class="container">
+      <h2 class="section-title">The PHINS Solution</h2>
+      <p style="text-align:center; max-width:800px; margin:0 auto 48px; font-size:1.1rem; color:var(--muted);">A revolutionary single-contract insurance product combining severe disability protection with investment growth. Designed for global coverage with ADL-based permanent disability criteria.</p>
+      <div class="product-grid">
+        <div class="product-card" style="grid-column: 1 / -1; max-width: 900px; margin: 0 auto;">
+          <div class="product-icon">🛡️</div>
+          <h3>PHINS Disability Protection & Investment Contract</h3>
+          <p style="font-size:1.05rem; margin-bottom:24px;">The only specialized insurance contract you need: combining severe permanent disability protection with wealth-building investment strategy.</p>
+          
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:32px; margin:32px 0; text-align:left;">
+            <div>
+              <h4 style="color:var(--brand); margin:0 0 16px 0;">🏥 Severe Disability Coverage</h4>
+              <ul class="feature-list">
+                <li><strong>✓ ADL-Based Criteria:</strong> Coverage triggers when unable to perform 3+ Activities of Daily Living (ADL)</li>
+                <li><strong>✓ Permanent Disability:</strong> Protection for lifelong severe impairments</li>
+                <li><strong>✓ Global Coverage:</strong> Valid worldwide, no geographic restrictions</li>
+                <li><strong>✓ Comprehensive ADLs:</strong> Bathing, dressing, eating, toileting, transferring, continence</li>
+                <li><strong>✓ Monthly Benefits:</strong> Lifetime income replacement upon qualification</li>
+                <li><strong>✓ Lump Sum Option:</strong> One-time payment available up to full coverage amount</li>
+              </ul>
+            </div>
+            
+            <div>
+              <h4 style="color:var(--brand); margin:0 0 16px 0;">📈 Investment Component</h4>
+              <ul class="feature-list">
+                <li><strong>✓ 75% Risk Allocation:</strong> Professional portfolio management for growth</li>
+                <li><strong>✓ 25% Savings Allocation:</strong> Guaranteed returns with capital protection</li>
+                <li><strong>✓ Dual Benefits:</strong> Protection + wealth accumulation in one contract</li>
+                <li><strong>✓ Tax Advantages:</strong> Investment growth within insurance wrapper</li>
+                <li><strong>✓ Liquidity Options:</strong> Partial withdrawals available after vesting</li>
+                <li><strong>✓ Estate Planning:</strong> Beneficiary designation with bypass provisions</li>
+              </ul>
+            </div>
+          </div>
 
-  <footer class="footer container">© PHINS — Demo Portal</footer>
+          <div style="background:var(--bg); padding:24px; border-radius:8px; margin:24px 0;">
+            <h4 style="color:var(--brand); margin:0 0 16px 0;">📊 Global Statistics & Why This Matters</h4>
+            <div style="display:grid; grid-template-columns:repeat(3, 1fr); gap:20px; margin-bottom:16px;">
+              <div style="text-align:center;">
+                <div style="font-size:2rem; font-weight:700; color:var(--brand);">1 in 4</div>
+                <div style="font-size:0.9rem; color:var(--muted);">Adults will experience severe disability before retirement</div>
+              </div>
+              <div style="text-align:center;">
+                <div style="font-size:2rem; font-weight:700; color:var(--brand);">15%</div>
+                <div style="font-size:0.9rem; color:var(--muted);">Global population lives with some form of disability (WHO)</div>
+              </div>
+              <div style="text-align:center;">
+                <div style="font-size:2rem; font-weight:700; color:var(--brand);">$70K</div>
+                <div style="font-size:0.9rem; color:var(--muted);">Average annual cost of severe disability care (US)</div>
+              </div>
+            </div>
+            <p style="margin:16px 0 0 0; font-size:0.95rem; color:var(--muted); line-height:1.6;">
+              <strong>Key Facts:</strong> According to the World Health Organization, over 1 billion people (15% of global population) experience some form of disability, with severe disabilities affecting approximately 190 million adults worldwide. The Social Security Administration reports that a 20-year-old worker has a 1-in-4 chance of becoming disabled before reaching retirement age. The inability to perform 3 or more ADLs represents severe functional impairment requiring substantial ongoing care, with lifetime costs often exceeding $1-3 million. Traditional insurance rarely covers long-term severe disability adequately, creating a critical protection gap that PHINS addresses while simultaneously building wealth for your future.
+            </p>
+          </div>
 
-  <script src="/app.js"></script>
+          <div style="text-align:center; margin-top:32px;">
+            <a href="#quote" class="btn btn-primary" style="margin-right:12px;">Get Your Quote</a>
+            <a href="#about" class="btn btn-outline">Learn More About Coverage</a>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Get Quote Section -->
+  <section id="quote" class="section section-alt">
+    <div class="container">
+      <h2 class="section-title">Start Your Insurance Journey</h2>
+      <div class="quote-container">
+        <div class="card">
+          <h3>Get a Free Quote</h3>
+          <form id="quote-form" class="quote-form">
+            <div class="form-group">
+              <label for="name">Full Name</label>
+              <input type="text" id="name" name="name" required>
+            </div>
+            <div class="form-group">
+              <label for="email">Email Address</label>
+              <input type="email" id="email" name="email" required>
+            </div>
+            <div class="form-group">
+              <label for="phone">Phone Number</label>
+              <input type="tel" id="phone" name="phone" required>
+            </div>
+            <div class="form-group">
+              <label for="product">Coverage Amount Desired</label>
+              <select id="product" name="product" required>
+                <option value="">Select coverage level...</option>
+                <option value="basic">Basic: $500,000 coverage + investment</option>
+                <option value="standard">Standard: $1,000,000 coverage + investment</option>
+                <option value="premium">Premium: $2,000,000 coverage + investment</option>
+                <option value="elite">Elite: $5,000,000+ coverage + investment</option>
+                <option value="custom">Custom: Let's discuss your needs</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="message">Additional Information</label>
+              <textarea id="message" name="message" rows="4"></textarea>
+            </div>
+            <button type="submit" class="btn btn-primary btn-full">Submit Request</button>
+          </form>
+          <div id="quote-message" class="form-message"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Underwriting Section -->
+  <section id="underwriting" class="section">
+    <div class="container">
+      <h2 class="section-title">Underwriting Process & Requirements</h2>
+      <p style="text-align:center; max-width:800px; margin:0 auto 48px; font-size:1.05rem; color:var(--muted);">Our underwriting process ensures fair and accurate assessment while providing transparent criteria for coverage approval.</p>
+      
+      <div class="underwriting-grid">
+        <div class="underwriting-card">
+          <div class="uw-icon">📋</div>
+          <h3>Application Requirements</h3>
+          <ul class="feature-list">
+            <li><strong>✓ Personal Information:</strong> Full legal name, date of birth, contact details</li>
+            <li><strong>✓ Medical History:</strong> Comprehensive health questionnaire</li>
+            <li><strong>✓ Lifestyle Assessment:</strong> Occupation, activities, habits</li>
+            <li><strong>✓ Financial Documentation:</strong> Income verification for coverage amount</li>
+            <li><strong>✓ Identification:</strong> Government-issued ID and proof of address</li>
+          </ul>
+        </div>
+
+        <div class="underwriting-card">
+          <div class="uw-icon">🏥</div>
+          <h3>Medical Requirements</h3>
+          <ul class="feature-list">
+            <li><strong>✓ Health Questionnaire:</strong> Detailed medical history form</li>
+            <li><strong>✓ Medical Examination:</strong> Required for coverage over $1M</li>
+            <li><strong>✓ Lab Tests:</strong> Blood work, urinalysis (coverage dependent)</li>
+            <li><strong>✓ Medical Records:</strong> Release for existing condition review</li>
+            <li><strong>✓ Specialist Reports:</strong> If pre-existing conditions present</li>
+          </ul>
+        </div>
+
+        <div class="underwriting-card">
+          <div class="uw-icon">⚖️</div>
+          <h3>Risk Assessment Criteria</h3>
+          <ul class="feature-list">
+            <li><strong>✓ Age:</strong> Coverage available ages 18-65</li>
+            <li><strong>✓ Health Status:</strong> Current and historical conditions</li>
+            <li><strong>✓ Occupation:</strong> Risk level assessment based on job</li>
+            <li><strong>✓ Lifestyle Factors:</strong> Exercise, smoking, alcohol use</li>
+            <li><strong>✓ Family History:</strong> Hereditary condition considerations</li>
+          </ul>
+        </div>
+
+        <div class="underwriting-card">
+          <div class="uw-icon">⏱️</div>
+          <h3>Processing Timeline</h3>
+          <ul class="feature-list">
+            <li><strong>Day 1-2:</strong> Initial application review and completeness check</li>
+            <li><strong>Day 3-7:</strong> Medical examination scheduling and completion</li>
+            <li><strong>Day 8-14:</strong> Medical records and lab results review</li>
+            <li><strong>Day 15-21:</strong> Final underwriting decision and premium calculation</li>
+            <li><strong>Day 22+:</strong> Policy issuance and activation</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="underwriting-details" style="margin-top:48px;">
+        <div class="card">
+          <h3>Risk Classification & Premium Adjustments</h3>
+          <div style="display:grid; grid-template-columns:repeat(4, 1fr); gap:20px; margin:24px 0;">
+            <div style="text-align:center; padding:20px; background:var(--bg); border-radius:8px;">
+              <div style="font-size:1.5rem; color:#28a745; font-weight:700;">Low Risk</div>
+              <div style="margin:8px 0; color:var(--muted); font-size:0.9rem;">Standard Rate</div>
+              <div style="font-size:0.85rem; color:var(--muted);">Excellent health, low-risk occupation</div>
+            </div>
+            <div style="text-align:center; padding:20px; background:var(--bg); border-radius:8px;">
+              <div style="font-size:1.5rem; color:#17a2b8; font-weight:700;">Medium Risk</div>
+              <div style="margin:8px 0; color:var(--muted); font-size:0.9rem;">+10-25% Rate</div>
+              <div style="font-size:0.85rem; color:var(--muted);">Managed conditions, moderate occupation</div>
+            </div>
+            <div style="text-align:center; padding:20px; background:var(--bg); border-radius:8px;">
+              <div style="font-size:1.5rem; color:#ff6b35; font-weight:700;">High Risk</div>
+              <div style="margin:8px 0; color:var(--muted); font-size:0.9rem;">+26-50% Rate</div>
+              <div style="font-size:0.85rem; color:var(--muted);">Significant health factors, high-risk work</div>
+            </div>
+            <div style="text-align:center; padding:20px; background:var(--bg); border-radius:8px;">
+              <div style="font-size:1.5rem; color:#dc3545; font-weight:700;">Very High Risk</div>
+              <div style="margin:8px 0; color:var(--muted); font-size:0.9rem;">+50%+ or Decline</div>
+              <div style="font-size:0.85rem; color:var(--muted);">Severe conditions, uninsurable factors</div>
+            </div>
+          </div>
+
+          <h4 style="margin-top:32px; color:var(--brand);">Common Underwriting Outcomes</h4>
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:24px; margin-top:16px;">
+            <div>
+              <h5 style="color:var(--success);">✓ Approved - Standard</h5>
+              <p style="margin:0; font-size:0.95rem; color:var(--muted);">No health or lifestyle concerns, standard premium rates apply immediately.</p>
+            </div>
+            <div>
+              <h5 style="color:#17a2b8;">✓ Approved - Rated</h5>
+              <p style="margin:0; font-size:0.95rem; color:var(--muted);">Coverage approved with premium adjustment based on identified risk factors.</p>
+            </div>
+            <div>
+              <h5 style="color:#ff6b35;">⚠ Conditional Approval</h5>
+              <p style="margin:0; font-size:0.95rem; color:var(--muted);">Coverage pending additional medical information or follow-up examinations.</p>
+            </div>
+            <div>
+              <h5 style="color:var(--muted);">⏸ Postponed</h5>
+              <p style="margin:0; font-size:0.95rem; color:var(--muted);">Decision delayed pending treatment completion or condition stabilization.</p>
+            </div>
+            <div>
+              <h5 style="color:#dc3545;">✗ Declined</h5>
+              <p style="margin:0; font-size:0.95rem; color:var(--muted);">Coverage not available due to unacceptable risk factors or conditions.</p>
+            </div>
+            <div>
+              <h5 style="color:var(--brand);">↻ Referred to Specialist</h5>
+              <p style="margin:0; font-size:0.95rem; color:var(--muted);">Complex case requiring senior underwriter or medical director review.</p>
+            </div>
+          </div>
+
+          <div style="background:#fff3cd; padding:20px; border-radius:8px; margin-top:32px; border-left:4px solid #ff6b35;">
+            <h4 style="margin:0 0 12px 0; color:#856404;">Important Notice</h4>
+            <p style="margin:0; font-size:0.95rem; color:#856404; line-height:1.6;">
+              <strong>Underwriting is required for all PHINS policies.</strong> Pre-existing conditions may be covered with appropriate premium adjustments. Misrepresentation or non-disclosure of material facts during underwriting may result in claim denial or policy cancellation. All applicants have the right to appeal underwriting decisions and request independent medical review.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <div style="text-align:center; margin-top:32px;">
+        <a href="#quote" class="btn btn-primary">Start Your Application</a>
+      </div>
+    </div>
+  </section>
+
+  <!-- About Section -->
+  <section id="about" class="section">
+    <div class="container">
+      <h2 class="section-title">About PHINS Insurance</h2>
+      <div class="about-content">
+        <div class="about-text">
+          <h3>Global Leader in Specialized Disability Insurance Since 1995</h3>
+          <p>PHINS Insurance pioneered the world's first integrated severe disability and investment insurance contract. With over 25 years of specialized experience, we focus exclusively on one thing: protecting people from the catastrophic financial impact of severe permanent disabilities while building their wealth.</p>
+          
+          <h4>Our Mission</h4>
+          <p>To provide the world's most comprehensive protection against severe permanent disability (ADL-based criteria) while simultaneously creating wealth through professionally managed investments. One specialized contract, complete protection.</p>
+          
+          <h4>Why PHINS is Different</h4>
+          <ul class="feature-list">
+            <li>✓ <strong>Single Specialized Contract:</strong> We do one thing exceptionally well - severe disability + investment</li>
+            <li>✓ <strong>ADL-Based Criteria:</strong> Clear, objective trigger: inability to perform 3+ Activities of Daily Living</li>
+            <li>✓ <strong>Global Coverage:</strong> Valid worldwide with no geographic restrictions or exclusions</li>
+            <li>✓ <strong>Permanent Disability Focus:</strong> Lifetime benefits for permanent severe impairments</li>
+            <li>✓ <strong>Investment Integration:</strong> 75% growth / 25% guaranteed savings allocation model</li>
+            <li>✓ <strong>Evidence-Based:</strong> Built on WHO data and SSA statistics for realistic protection</li>
+            <li>✓ <strong>No Traditional Gaps:</strong> Covers what standard health/life insurance misses</li>
+            <li>✓ <strong>Financial Strength:</strong> Strong global reinsurance partnerships (Swiss Re, Munich Re)</li>
+          </ul>
+          
+          <h4>Understanding Severe Disability & ADLs</h4>
+          <p><strong>Activities of Daily Living (ADLs)</strong> are the fundamental self-care tasks that define functional independence:</p>
+          <ul class="feature-list">
+            <li><strong>1. Bathing:</strong> Washing oneself and maintaining personal hygiene</li>
+            <li><strong>2. Dressing:</strong> Putting on and removing clothing independently</li>
+            <li><strong>3. Eating:</strong> Feeding oneself (not meal preparation)</li>
+            <li><strong>4. Toileting:</strong> Using the toilet and maintaining continence</li>
+            <li><strong>5. Transferring:</strong> Moving in/out of bed, chair, wheelchair</li>
+            <li><strong>6. Continence:</strong> Controlling bladder and bowel functions</li>
+          </ul>
+          <p style="margin-top:16px;"><strong>PHINS Coverage Trigger:</strong> Benefits activate when you are permanently unable to perform 3 or more ADLs without substantial assistance. This represents severe functional impairment requiring comprehensive long-term care - the exact gap most insurance policies fail to cover adequately.</p>
+        </div>
+        <div class="stats-grid">
+          <div class="stat-card">
+            <div class="stat-number">50,000+</div>
+            <div class="stat-label">Global Policyholders Protected</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-number">$2.5B</div>
+            <div class="stat-label">Disability Claims Paid Lifetime</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-number">$4.8B</div>
+            <div class="stat-label">Investment Assets Under Management</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-number">98%</div>
+            <div class="stat-label">Claim Approval Rate (Valid ADL Claims)</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Contact Section -->
+  <section id="contact" class="section section-alt">
+    <div class="container">
+      <h2 class="section-title">Contact Us</h2>
+      <div class="contact-grid">
+        <div class="contact-card">
+          <h3>📍 Main Office</h3>
+          <p>123 Insurance Boulevard<br>
+          Financial District<br>
+          New York, NY 10004<br>
+          United States</p>
+        </div>
+        <div class="contact-card">
+          <h3>📞 Phone</h3>
+          <p><strong>Customer Service:</strong><br>1-800-PHINS-01<br>(1-800-744-6701)</p>
+          <p><strong>Claims Department:</strong><br>1-800-PHINS-02</p>
+        </div>
+        <div class="contact-card">
+          <h3>✉️ Email</h3>
+          <p><strong>General Inquiries:</strong><br>info@phins.com</p>
+          <p><strong>Sales:</strong><br>sales@phins.com</p>
+          <p><strong>Claims:</strong><br>claims@phins.com</p>
+        </div>
+        <div class="contact-card">
+          <h3>🕐 Business Hours</h3>
+          <p><strong>Monday - Friday:</strong><br>8:00 AM - 8:00 PM EST</p>
+          <p><strong>Saturday:</strong><br>9:00 AM - 5:00 PM EST</p>
+          <p><strong>Emergency Claims:</strong><br>24/7 Available</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Customer Portal Access -->
+  <section class="section cta-section">
+    <div class="container">
+      <div class="cta-content">
+        <h2>Existing Customer?</h2>
+        <p>Access your account to view policies, make claims, and manage your investments</p>
+        <a href="/login.html" class="btn btn-primary btn-large">Login to Portal</a>
+      </div>
+    </div>
+  </section>
+
+  <footer class="footer">
+    <div class="container">
+      <div class="footer-content">
+        <div class="footer-section">
+          <h4>PHINS Insurance</h4>
+          <p>Your trusted partner in insurance and financial security.</p>
+        </div>
+        <div class="footer-section">
+          <h4>Quick Links</h4>
+          <ul>
+            <li><a href="#products">Products</a></li>
+            <li><a href="#about">About Us</a></li>
+            <li><a href="#contact">Contact</a></li>
+            <li><a href="/login.html">Customer Portal</a></li>
+          </ul>
+        </div>
+        <div class="footer-section">
+          <h4>Legal</h4>
+          <ul>
+            <li><a href="#">Privacy Policy</a></li>
+            <li><a href="#">Terms of Service</a></li>
+            <li><a href="#">Disclaimers</a></li>
+            <li><a href="#">Regulatory Info</a></li>
+          </ul>
+        </div>
+      </div>
+      <div class="footer-bottom">
+        <p>© 2025 PHINS Insurance Company. All rights reserved. Licensed in all 50 states.</p>
+      </div>
+    </div>
+  </footer>
+
+  <script>
+    // Smooth scrolling for anchor links
+    document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+      anchor.addEventListener('click', function (e) {
+        e.preventDefault();
+        const target = document.querySelector(this.getAttribute('href'));
+        if (target) {
+          target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+      });
+    });
+
+    // Quote form submission
+    document.getElementById('quote-form').addEventListener('submit', function(e) {
+      e.preventDefault();
+      const messageDiv = document.getElementById('quote-message');
+      const formData = new FormData(this);
+      
+      // Simulate form submission
+      messageDiv.innerHTML = '<p class="success-message">✓ Thank you! Your quote request has been submitted. Our team will contact you within 24 hours.</p>';
+      messageDiv.style.display = 'block';
+      this.reset();
+      
+      setTimeout(() => {
+        messageDiv.style.display = 'none';
+      }, 5000);
+    });
+
+    // Language change functionality
+    function changeLanguage(lang) {
+      // Store selected language
+      localStorage.setItem('phins_language', lang);
+      
+      // Language translations for key elements
+      const translations = {
+        en: {
+          tagline: 'Specialized Disability Protection & Investment',
+          subtitle: 'Global coverage for severe permanent disabilities (ADL-based) with integrated wealth building',
+          getQuote: 'Get a Quote',
+          accessAccount: 'Access My Account'
+        },
+        es: {
+          tagline: 'Protección Especializada por Discapacidad e Inversión',
+          subtitle: 'Cobertura global para discapacidades permanentes graves (basadas en AVD) con construcción de patrimonio integrada',
+          getQuote: 'Obtener Cotización',
+          accessAccount: 'Acceder a Mi Cuenta'
+        },
+        fr: {
+          tagline: 'Protection Spécialisée Invalidité et Investissement',
+          subtitle: 'Couverture mondiale pour invalidités permanentes graves (basée sur AVQ) avec création de patrimoine intégrée',
+          getQuote: 'Obtenir un Devis',
+          accessAccount: 'Accéder à Mon Compte'
+        },
+        de: {
+          tagline: 'Spezialisierter Invaliditätsschutz und Investment',
+          subtitle: 'Weltweite Abdeckung für schwere dauerhafte Behinderungen (ADL-basiert) mit integriertem Vermögensaufbau',
+          getQuote: 'Angebot Erhalten',
+          accessAccount: 'Zugang zu Meinem Konto'
+        },
+        zh: {
+          tagline: '专业残疾保护与投资',
+          subtitle: '全球范围内严重永久性残疾（基于ADL）保险，整合财富增长',
+          getQuote: '获取报价',
+          accessAccount: '访问我的账户'
+        },
+        ar: {
+          tagline: 'حماية الإعاقة المتخصصة والاستثمار',
+          subtitle: 'تغطية عالمية للإعاقات الدائمة الشديدة (على أساس ADL) مع بناء الثروة المتكامل',
+          getQuote: 'احصل على عرض أسعار',
+          accessAccount: 'الوصول إلى حسابي'
+        },
+        ru: {
+          tagline: 'Специализированная Защита от Инвалидности и Инвестиции',
+          subtitle: 'Глобальное покрытие тяжелых постоянных инвалидностей (на основе ADL) с интегрированным накоплением богатства',
+          getQuote: 'Получить Предложение',
+          accessAccount: 'Доступ к Моему Счету'
+        },
+        pt: {
+          tagline: 'Proteção Especializada para Deficiência e Investimento',
+          subtitle: 'Cobertura global para deficiências permanentes graves (baseadas em AVD) com construção de patrimônio integrada',
+          getQuote: 'Obter Cotação',
+          accessAccount: 'Acessar Minha Conta'
+        }
+      };
+      
+      // Apply translations if available
+      if (translations[lang]) {
+        const heroTitle = document.querySelector('.hero h1');
+        const heroSubtitle = document.querySelector('.hero-subtitle');
+        
+        if (heroTitle) heroTitle.textContent = 'PHINS: ' + translations[lang].tagline;
+        if (heroSubtitle) heroSubtitle.textContent = translations[lang].subtitle;
+        
+        // Update buttons
+        const buttons = document.querySelectorAll('.hero-actions .btn');
+        if (buttons[0]) buttons[0].textContent = translations[lang].getQuote;
+        if (buttons[1]) buttons[1].textContent = translations[lang].accessAccount;
+      }
+      
+      // Show notification
+      const notification = document.createElement('div');
+      notification.style.cssText = 'position:fixed;top:80px;right:20px;background:#28a745;color:#fff;padding:16px 24px;border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,0.2);z-index:1000;font-weight:600;';
+      notification.textContent = `Language changed to ${document.getElementById('language-selector').selectedOptions[0].text}`;
+      document.body.appendChild(notification);
+      
+      setTimeout(() => {
+        notification.remove();
+      }, 3000);
+    }
+    
+    // Load saved language preference
+    window.addEventListener('DOMContentLoaded', function() {
+      const savedLang = localStorage.getItem('phins_language');
+      if (savedLang) {
+        document.getElementById('language-selector').value = savedLang;
+        changeLanguage(savedLang);
+      }
+    });
+  </script>
 </body>
 </html>

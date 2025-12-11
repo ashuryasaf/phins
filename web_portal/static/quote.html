@@ -1,0 +1,806 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Get a Quote - PHINS Insurance Underwriting</title>
+  <link rel="stylesheet" href="/styles.css">
+  <style>
+    .quote-container {
+      max-width: 900px;
+      margin: 40px auto;
+      padding: 20px;
+      background: white;
+      border-radius: 8px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+    .progress-bar {
+      width: 100%;
+      height: 8px;
+      background: #e0e0e0;
+      border-radius: 4px;
+      margin-bottom: 30px;
+      overflow: hidden;
+    }
+    .progress-fill {
+      height: 100%;
+      background: linear-gradient(90deg, #2196F3, #4CAF50);
+      transition: width 0.3s ease;
+    }
+    .section {
+      margin-bottom: 40px;
+      padding: 25px;
+      border: 1px solid #e0e0e0;
+      border-radius: 6px;
+      background: #fafafa;
+    }
+    .section h2 {
+      margin-top: 0;
+      color: #1976D2;
+      font-size: 1.5rem;
+      border-bottom: 2px solid #1976D2;
+      padding-bottom: 10px;
+      margin-bottom: 20px;
+    }
+    .form-group {
+      margin-bottom: 20px;
+    }
+    .form-group label {
+      display: block;
+      font-weight: 600;
+      margin-bottom: 8px;
+      color: #333;
+    }
+    .form-group label .required {
+      color: #f44336;
+      margin-left: 4px;
+    }
+    .form-group input, .form-group select, .form-group textarea {
+      width: 100%;
+      padding: 12px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      font-size: 16px;
+      box-sizing: border-box;
+    }
+    .form-group input:focus, .form-group select:focus, .form-group textarea:focus {
+      outline: none;
+      border-color: #2196F3;
+      box-shadow: 0 0 0 3px rgba(33, 150, 243, 0.1);
+    }
+    .form-group input.invalid, .form-group select.invalid, .form-group textarea.invalid {
+      border-color: #f44336;
+    }
+    .form-group .error {
+      color: #f44336;
+      font-size: 14px;
+      margin-top: 5px;
+      display: none;
+    }
+    .form-group .success {
+      color: #4CAF50;
+      font-size: 14px;
+      margin-top: 5px;
+      display: none;
+    }
+    .form-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+    }
+    .radio-group, .checkbox-group {
+      display: flex;
+      gap: 20px;
+      flex-wrap: wrap;
+    }
+    .radio-group label, .checkbox-group label {
+      display: flex;
+      align-items: center;
+      font-weight: normal;
+    }
+    .radio-group input, .checkbox-group input {
+      width: auto;
+      margin-right: 8px;
+    }
+    .slider-container {
+      padding: 10px 0;
+    }
+    .slider {
+      width: 100%;
+      height: 8px;
+      border-radius: 4px;
+      background: #ddd;
+      outline: none;
+      -webkit-appearance: none;
+    }
+    .slider::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      background: #2196F3;
+      cursor: pointer;
+    }
+    .slider::-moz-range-thumb {
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      background: #2196F3;
+      cursor: pointer;
+      border: none;
+    }
+    .slider-value {
+      display: flex;
+      justify-content: space-between;
+      margin-top: 8px;
+      font-size: 14px;
+      color: #666;
+    }
+    .slider-labels {
+      display: flex;
+      justify-content: space-between;
+      margin-top: 5px;
+      font-size: 12px;
+      color: #999;
+    }
+    .multimedia-section {
+      margin-top: 20px;
+      padding: 20px;
+      background: white;
+      border-radius: 6px;
+    }
+    .capture-buttons {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-bottom: 20px;
+    }
+    .btn-capture {
+      padding: 10px 20px;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 14px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      transition: all 0.2s;
+    }
+    .btn-photo {
+      background: #4CAF50;
+      color: white;
+    }
+    .btn-photo:hover {
+      background: #45a049;
+    }
+    .btn-video {
+      background: #FF9800;
+      color: white;
+    }
+    .btn-video:hover {
+      background: #e68900;
+    }
+    .btn-audio {
+      background: #9C27B0;
+      color: white;
+    }
+    .btn-audio:hover {
+      background: #8E24AA;
+    }
+    .btn-upload {
+      background: #2196F3;
+      color: white;
+    }
+    .btn-upload:hover {
+      background: #1976D2;
+    }
+    .preview-container {
+      margin-top: 15px;
+      display: none;
+    }
+    .preview-container.active {
+      display: block;
+    }
+    .preview-container img, .preview-container video {
+      max-width: 100%;
+      border-radius: 4px;
+      margin-bottom: 10px;
+    }
+    .file-list {
+      list-style: none;
+      padding: 0;
+    }
+    .file-list li {
+      padding: 10px;
+      background: #f5f5f5;
+      margin-bottom: 8px;
+      border-radius: 4px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .file-list .remove-btn {
+      background: #f44336;
+      color: white;
+      border: none;
+      padding: 5px 10px;
+      border-radius: 3px;
+      cursor: pointer;
+      font-size: 12px;
+    }
+    .btn-primary, .btn-secondary {
+      padding: 14px 30px;
+      border: none;
+      border-radius: 4px;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .btn-primary {
+      background: #4CAF50;
+      color: white;
+    }
+    .btn-primary:hover {
+      background: #45a049;
+    }
+    .btn-primary:disabled {
+      background: #ccc;
+      cursor: not-allowed;
+    }
+    .btn-secondary {
+      background: #757575;
+      color: white;
+      margin-right: 10px;
+    }
+    .btn-secondary:hover {
+      background: #616161;
+    }
+    .actions {
+      display: flex;
+      justify-content: space-between;
+      margin-top: 40px;
+      padding-top: 20px;
+      border-top: 2px solid #e0e0e0;
+    }
+    .validation-status {
+      padding: 15px;
+      border-radius: 4px;
+      margin-bottom: 20px;
+      display: none;
+    }
+    .validation-status.error {
+      background: #ffebee;
+      color: #c62828;
+      border: 1px solid #ef5350;
+      display: block;
+    }
+    .validation-status.success {
+      background: #e8f5e9;
+      color: #2e7d32;
+      border: 1px solid #66bb6a;
+      display: block;
+    }
+    .modal {
+      display: none;
+      position: fixed;
+      z-index: 1000;
+      left: 0;
+      top: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0,0,0,0.5);
+      justify-content: center;
+      align-items: center;
+    }
+    .modal.active {
+      display: flex;
+    }
+    .modal-content {
+      background: white;
+      padding: 30px;
+      border-radius: 8px;
+      max-width: 600px;
+      width: 90%;
+      max-height: 80vh;
+      overflow-y: auto;
+    }
+    .modal-content h3 {
+      margin-top: 0;
+      color: #1976D2;
+    }
+    .close-modal {
+      float: right;
+      font-size: 28px;
+      font-weight: bold;
+      cursor: pointer;
+      color: #999;
+    }
+    .close-modal:hover {
+      color: #333;
+    }
+    @media (max-width: 768px) {
+      .form-row {
+        grid-template-columns: 1fr;
+      }
+      .capture-buttons {
+        flex-direction: column;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="container">
+      <h1 class="brand">🛡️ PHINS Insurance</h1>
+      <nav class="nav">
+        <a href="/index.html">Home</a>
+        <a href="/login.html">Login</a>
+      </nav>
+    </div>
+  </header>
+
+  <div class="quote-container">
+    <h1>Get Your Insurance Quote</h1>
+    <p>Complete this comprehensive questionnaire to receive a personalized insurance quote. All fields marked with <span style="color: #f44336;">*</span> are required.</p>
+    
+    <div class="progress-bar">
+      <div class="progress-fill" id="progressFill" style="width: 0%"></div>
+    </div>
+
+    <div class="validation-status" id="validationStatus"></div>
+
+    <form id="quoteForm">
+      
+      <!-- Section 1: Personal Information -->
+      <div class="section">
+        <h2>1. Personal Information</h2>
+        
+        <div class="form-row">
+          <div class="form-group">
+            <label>First Name <span class="required">*</span></label>
+            <input type="text" id="firstName" name="firstName" required minlength="2" maxlength="100" pattern="[a-zA-Z\s\-']{2,100}">
+            <div class="error" id="firstName-error"></div>
+            <div class="success" id="firstName-success"></div>
+          </div>
+          
+          <div class="form-group">
+            <label>Last Name <span class="required">*</span></label>
+            <input type="text" id="lastName" name="lastName" required minlength="2" maxlength="100" pattern="[a-zA-Z\s\-']{2,100}">
+            <div class="error" id="lastName-error"></div>
+            <div class="success" id="lastName-success"></div>
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label>Date of Birth <span class="required">*</span></label>
+            <input type="date" id="dob" name="dob" required>
+            <div class="error" id="dob-error"></div>
+            <div class="success" id="dob-success"></div>
+          </div>
+          
+          <div class="form-group">
+            <label>Gender <span class="required">*</span></label>
+            <select id="gender" name="gender" required>
+              <option value="">Select Gender</option>
+              <option value="Male">Male</option>
+              <option value="Female">Female</option>
+              <option value="Other">Other</option>
+              <option value="PreferNotToSay">Prefer Not to Say</option>
+            </select>
+            <div class="error" id="gender-error"></div>
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label>Email Address <span class="required">*</span></label>
+            <input type="email" id="email" name="email" required>
+            <div class="error" id="email-error"></div>
+            <div class="success" id="email-success"></div>
+          </div>
+          
+          <div class="form-group">
+            <label>Phone Number <span class="required">*</span></label>
+            <input type="tel" id="phone" name="phone" required pattern="^\+?[\d\s\-\(\)\.]{7,30}$" placeholder="+1 (555) 123-4567">
+            <div class="error" id="phone-error"></div>
+            <div class="success" id="phone-success"></div>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label>Address <span class="required">*</span></label>
+          <input type="text" id="address" name="address" required>
+          <div class="error" id="address-error"></div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label>City <span class="required">*</span></label>
+            <input type="text" id="city" name="city" required>
+            <div class="error" id="city-error"></div>
+          </div>
+          
+          <div class="form-group">
+            <label>Postal Code <span class="required">*</span></label>
+            <input type="text" id="postalCode" name="postalCode" required pattern="[A-Za-z0-9\s\-]{3,10}">
+            <div class="error" id="postalCode-error"></div>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label>National ID / Passport Number <span class="required">*</span></label>
+          <input type="text" id="nationalId" name="nationalId" required>
+          <div class="error" id="nationalId-error"></div>
+          <div class="success" id="nationalId-success"></div>
+        </div>
+      </div>
+
+      <!-- Section 2: Health Assessment -->
+      <div class="section">
+        <h2>2. Health Assessment</h2>
+        
+        <div class="form-group">
+          <label>Overall Health Condition (1 = Excellent, 10 = Critical) <span class="required">*</span></label>
+          <div class="slider-container">
+            <input type="range" id="healthCondition" name="healthCondition" class="slider" min="1" max="10" value="3" required>
+            <div class="slider-value">
+              <span>Current Rating: <strong id="healthConditionValue">3</strong></span>
+            </div>
+            <div class="slider-labels">
+              <span>1 (Excellent)</span>
+              <span>5 (Fair)</span>
+              <span>10 (Critical)</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label>Height (cm) <span class="required">*</span></label>
+          <input type="number" id="height" name="height" required min="50" max="250" step="0.1">
+          <div class="error" id="height-error"></div>
+        </div>
+
+        <div class="form-group">
+          <label>Weight (kg) <span class="required">*</span></label>
+          <input type="number" id="weight" name="weight" required min="20" max="300" step="0.1">
+          <div class="error" id="weight-error"></div>
+        </div>
+
+        <div class="form-group">
+          <label>Blood Pressure (format: 120/80)</label>
+          <input type="text" id="bloodPressure" name="bloodPressure" pattern="\d{2,3}/\d{2,3}" placeholder="120/80">
+          <div class="error" id="bloodPressure-error"></div>
+        </div>
+
+        <div class="form-group">
+          <label>Do you smoke? <span class="required">*</span></label>
+          <div class="radio-group">
+            <label><input type="radio" name="smoking" value="NonSmoker" required> Non-Smoker</label>
+            <label><input type="radio" name="smoking" value="Smoker"> Smoker</label>
+            <label><input type="radio" name="smoking" value="FormerSmoker"> Former Smoker</label>
+            <label><input type="radio" name="smoking" value="Occasional"> Occasional</label>
+          </div>
+          <div class="error" id="smoking-error"></div>
+        </div>
+
+        <div class="form-group">
+          <label>Do you have any pre-existing medical conditions? <span class="required">*</span></label>
+          <div class="radio-group">
+            <label><input type="radio" name="preExisting" value="no" required> No</label>
+            <label><input type="radio" name="preExisting" value="yes"> Yes</label>
+          </div>
+          <div class="error" id="preExisting-error"></div>
+        </div>
+
+        <div class="form-group" id="conditionsDetailsGroup" style="display: none;">
+          <label>Please describe your medical conditions <span class="required">*</span></label>
+          <textarea id="conditionsDetails" name="conditionsDetails" rows="4" placeholder="Please provide details about your medical conditions..."></textarea>
+          <div class="error" id="conditionsDetails-error"></div>
+        </div>
+
+        <div class="form-group">
+          <label>Are you currently taking any medications?</label>
+          <div class="radio-group">
+            <label><input type="radio" name="medications" value="no"> No</label>
+            <label><input type="radio" name="medications" value="yes"> Yes</label>
+          </div>
+        </div>
+
+        <div class="form-group" id="medicationsDetailsGroup" style="display: none;">
+          <label>Please list your medications</label>
+          <textarea id="medicationsDetails" name="medicationsDetails" rows="3" placeholder="List medications and dosages..."></textarea>
+        </div>
+
+        <div class="form-group">
+          <label>Have you had any surgeries in the past 5 years?</label>
+          <div class="radio-group">
+            <label><input type="radio" name="surgeries" value="no"> No</label>
+            <label><input type="radio" name="surgeries" value="yes"> Yes</label>
+          </div>
+        </div>
+
+        <div class="form-group" id="surgeriesDetailsGroup" style="display: none;">
+          <label>Please describe your surgeries</label>
+          <textarea id="surgeriesDetails" name="surgeriesDetails" rows="3" placeholder="Describe surgeries and dates..."></textarea>
+        </div>
+      </div>
+
+      <!-- Section 3: Lifestyle & Risk Factors -->
+      <div class="section">
+        <h2>3. Lifestyle & Risk Factors</h2>
+        
+        <div class="form-group">
+          <label>Marital Status <span class="required">*</span></label>
+          <select id="maritalStatus" name="maritalStatus" required>
+            <option value="">Select Status</option>
+            <option value="Single">Single</option>
+            <option value="Married">Married</option>
+            <option value="Divorced">Divorced</option>
+            <option value="Widowed">Widowed</option>
+            <option value="DomesticPartnership">Domestic Partnership</option>
+          </select>
+          <div class="error" id="maritalStatus-error"></div>
+        </div>
+
+        <div class="form-group">
+          <label>Occupation <span class="required">*</span></label>
+          <input type="text" id="occupation" name="occupation" required>
+          <div class="error" id="occupation-error"></div>
+        </div>
+
+        <div class="form-group">
+          <label>Annual Income Range <span class="required">*</span></label>
+          <select id="incomeRange" name="incomeRange" required>
+            <option value="">Select Range</option>
+            <option value="0-25000">$0 - $25,000</option>
+            <option value="25000-50000">$25,000 - $50,000</option>
+            <option value="50000-100000">$50,000 - $100,000</option>
+            <option value="100000-200000">$100,000 - $200,000</option>
+            <option value="200000+">$200,000+</option>
+          </select>
+          <div class="error" id="incomeRange-error"></div>
+        </div>
+
+        <div class="form-group">
+          <label>Do you participate in high-risk activities? <span class="required">*</span></label>
+          <div class="checkbox-group">
+            <label><input type="checkbox" name="riskActivities" value="skydiving"> Skydiving</label>
+            <label><input type="checkbox" name="riskActivities" value="scuba"> Scuba Diving</label>
+            <label><input type="checkbox" name="riskActivities" value="motorsports"> Motorsports</label>
+            <label><input type="checkbox" name="riskActivities" value="mountaineering"> Mountaineering</label>
+            <label><input type="checkbox" name="riskActivities" value="none"> None</label>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label>How often do you exercise per week? <span class="required">*</span></label>
+          <select id="exercise" name="exercise" required>
+            <option value="">Select Frequency</option>
+            <option value="none">None</option>
+            <option value="1-2">1-2 times</option>
+            <option value="3-4">3-4 times</option>
+            <option value="5+">5+ times</option>
+            <option value="daily">Daily</option>
+          </select>
+          <div class="error" id="exercise-error"></div>
+        </div>
+      </div>
+
+      <!-- Section 4: Coverage Details -->
+      <div class="section">
+        <h2>4. Coverage Details</h2>
+        
+        <div class="form-group">
+          <label>Desired Coverage Amount (USD) <span class="required">*</span></label>
+          <select id="coverageAmount" name="coverageAmount" required>
+            <option value="">Select Coverage</option>
+            <option value="50000">$50,000</option>
+            <option value="100000">$100,000</option>
+            <option value="250000">$250,000</option>
+            <option value="500000">$500,000</option>
+            <option value="1000000">$1,000,000</option>
+            <option value="custom">Custom Amount</option>
+          </select>
+          <div class="error" id="coverageAmount-error"></div>
+        </div>
+
+        <div class="form-group" id="customCoverageGroup" style="display: none;">
+          <label>Custom Coverage Amount (USD) <span class="required">*</span></label>
+          <input type="number" id="customCoverage" name="customCoverage" min="10000" step="1000">
+          <div class="error" id="customCoverage-error"></div>
+        </div>
+
+        <div class="form-group">
+          <label>Policy Term <span class="required">*</span></label>
+          <select id="policyTerm" name="policyTerm" required>
+            <option value="">Select Term</option>
+            <option value="10">10 Years</option>
+            <option value="15">15 Years</option>
+            <option value="20">20 Years</option>
+            <option value="25">25 Years</option>
+            <option value="30">30 Years</option>
+            <option value="lifetime">Lifetime</option>
+          </select>
+          <div class="error" id="policyTerm-error"></div>
+        </div>
+
+        <div class="form-group">
+          <label>Beneficiaries</label>
+          <div id="beneficiariesContainer">
+            <div class="beneficiary-entry">
+              <input type="text" name="beneficiary[]" placeholder="Full Name">
+              <input type="text" name="beneficiaryRelation[]" placeholder="Relationship">
+              <input type="number" name="beneficiaryPercentage[]" placeholder="Percentage %" min="0" max="100">
+            </div>
+          </div>
+          <button type="button" class="btn-secondary" onclick="addBeneficiary()">+ Add Beneficiary</button>
+        </div>
+      </div>
+
+      <!-- Section 5: Document Upload & Multimedia -->
+      <div class="section">
+        <h2>5. Documentation & Verification</h2>
+        
+        <div class="form-group">
+          <label>Upload ID Document (Passport, National ID, Driver's License) <span class="required">*</span></label>
+          <input type="file" id="idDocument" name="idDocument" accept="image/*,application/pdf" required>
+          <div class="error" id="idDocument-error"></div>
+          <div class="success" id="idDocument-success"></div>
+        </div>
+
+        <div class="form-group">
+          <label>Upload Recent Medical Records (Optional)</label>
+          <input type="file" id="medicalRecords" name="medicalRecords" accept="image/*,application/pdf" multiple>
+        </div>
+
+        <div class="multimedia-section">
+          <h3>Additional Verification (Optional but Recommended)</h3>
+          <p>Providing photo, video, or voice verification can speed up the underwriting process.</p>
+          
+          <div class="capture-buttons">
+            <button type="button" class="btn-capture btn-photo" onclick="capturePhoto()">
+              📷 Take Photo
+            </button>
+            <button type="button" class="btn-capture btn-video" onclick="captureVideo()">
+              🎥 Record Video (30s)
+            </button>
+            <button type="button" class="btn-capture btn-audio" onclick="captureAudio()">
+              🎤 Record Voice (60s)
+            </button>
+            <button type="button" class="btn-capture btn-upload" onclick="document.getElementById('mediaUpload').click()">
+              📁 Upload Media
+            </button>
+          </div>
+
+          <input type="file" id="mediaUpload" accept="image/*,video/*,audio/*" style="display: none;" onchange="handleMediaUpload(this)">
+
+          <div class="preview-container" id="photoPreview">
+            <h4>Photo Preview:</h4>
+            <img id="photoImage" src="" alt="Photo preview">
+            <button type="button" class="btn-secondary" onclick="clearCapture('photo')">Remove Photo</button>
+          </div>
+
+          <div class="preview-container" id="videoPreview">
+            <h4>Video Preview:</h4>
+            <video id="videoElement" controls></video>
+            <button type="button" class="btn-secondary" onclick="clearCapture('video')">Remove Video</button>
+          </div>
+
+          <div class="preview-container" id="audioPreview">
+            <h4>Audio Preview:</h4>
+            <audio id="audioElement" controls></audio>
+            <button type="button" class="btn-secondary" onclick="clearCapture('audio')">Remove Audio</button>
+          </div>
+
+          <ul class="file-list" id="mediaFileList"></ul>
+        </div>
+      </div>
+
+      <!-- Section 6: Declarations -->
+      <div class="section">
+        <h2>6. Declarations & Consent</h2>
+        
+        <div class="form-group">
+          <label>
+            <input type="checkbox" id="truthDeclaration" name="truthDeclaration" required style="width: auto; margin-right: 8px;">
+            I declare that all information provided is true and accurate to the best of my knowledge. <span class="required">*</span>
+          </label>
+          <div class="error" id="truthDeclaration-error"></div>
+        </div>
+
+        <div class="form-group">
+          <label>
+            <input type="checkbox" id="privacyConsent" name="privacyConsent" required style="width: auto; margin-right: 8px;">
+            I consent to PHINS processing my personal and health data for underwriting purposes. <span class="required">*</span>
+          </label>
+          <div class="error" id="privacyConsent-error"></div>
+        </div>
+
+        <div class="form-group">
+          <label>
+            <input type="checkbox" id="termsAccept" name="termsAccept" required style="width: auto; margin-right: 8px;">
+            I have read and agree to the <a href="#" onclick="showTerms(); return false;">Terms & Conditions</a>. <span class="required">*</span>
+          </label>
+          <div class="error" id="termsAccept-error"></div>
+        </div>
+
+        <div class="form-group">
+          <label>Electronic Signature <span class="required">*</span></label>
+          <input type="text" id="signature" name="signature" required placeholder="Type your full name as signature">
+          <div class="error" id="signature-error"></div>
+        </div>
+      </div>
+
+      <div class="actions">
+        <button type="button" class="btn-secondary" onclick="saveDraft()">Save as Draft</button>
+        <button type="submit" class="btn-primary" id="submitBtn">Submit Quote Request</button>
+      </div>
+    </form>
+  </div>
+
+  <!-- Terms Modal -->
+  <div class="modal" id="termsModal">
+    <div class="modal-content">
+      <span class="close-modal" onclick="closeModal('termsModal')">&times;</span>
+      <h3>Terms & Conditions</h3>
+      <p><strong>PHINS Insurance Underwriting Terms</strong></p>
+      <ul>
+        <li>All information must be accurate and complete.</li>
+        <li>Misrepresentation may result in policy denial or cancellation.</li>
+        <li>Medical examinations may be required for certain coverage amounts.</li>
+        <li>Premium quotes are estimates and subject to underwriting approval.</li>
+        <li>PHINS reserves the right to request additional documentation.</li>
+        <li>Processing time: 5-10 business days for standard applications.</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- Camera Modal -->
+  <div class="modal" id="cameraModal">
+    <div class="modal-content">
+      <span class="close-modal" onclick="closeCamera()">&times;</span>
+      <h3>Take Photo</h3>
+      <video id="cameraStream" autoplay style="width: 100%; border-radius: 4px;"></video>
+      <div style="margin-top: 15px; text-align: center;">
+        <button type="button" class="btn-primary" onclick="takeSnapshot()">📸 Capture</button>
+        <button type="button" class="btn-secondary" onclick="closeCamera()">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Video Recording Modal -->
+  <div class="modal" id="videoModal">
+    <div class="modal-content">
+      <span class="close-modal" onclick="closeVideoRecorder()">&times;</span>
+      <h3>Record Video (Max 30 seconds)</h3>
+      <video id="videoStream" autoplay style="width: 100%; border-radius: 4px;"></video>
+      <div style="margin-top: 15px; text-align: center;">
+        <button type="button" class="btn-primary" id="startVideoBtn" onclick="startVideoRecording()">🔴 Start Recording</button>
+        <button type="button" class="btn-primary" id="stopVideoBtn" onclick="stopVideoRecording()" style="display: none;">⏹️ Stop</button>
+        <button type="button" class="btn-secondary" onclick="closeVideoRecorder()">Cancel</button>
+      </div>
+      <div id="videoTimer" style="text-align: center; margin-top: 10px; font-weight: bold; display: none;">Recording: <span id="videoTimerValue">0</span>s</div>
+    </div>
+  </div>
+
+  <!-- Audio Recording Modal -->
+  <div class="modal" id="audioModal">
+    <div class="modal-content">
+      <span class="close-modal" onclick="closeAudioRecorder()">&times;</span>
+      <h3>Record Voice Message (Max 60 seconds)</h3>
+      <div style="text-align: center; padding: 40px;">
+        <div style="font-size: 48px; margin-bottom: 20px;">🎤</div>
+        <button type="button" class="btn-primary" id="startAudioBtn" onclick="startAudioRecording()">🔴 Start Recording</button>
+        <button type="button" class="btn-primary" id="stopAudioBtn" onclick="stopAudioRecording()" style="display: none;">⏹️ Stop</button>
+        <button type="button" class="btn-secondary" onclick="closeAudioRecorder()">Cancel</button>
+        <div id="audioTimer" style="margin-top: 20px; font-weight: bold; display: none;">Recording: <span id="audioTimerValue">0</span>s</div>
+      </div>
+    </div>
+  </div>
+
+  <script src="/quote.js"></script>
+</body>
+</html>

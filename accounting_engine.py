@@ -13,11 +13,12 @@ Features:
 - Zero external dependencies
 """
 
+from __future__ import annotations
+
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import List, Dict, Optional, Tuple
-from datetime import datetime, date, timedelta
-import json
+from typing import List, Dict, Optional, Tuple, Any, cast
+from datetime import datetime, date
 from decimal import Decimal, ROUND_HALF_UP
 
 
@@ -154,36 +155,39 @@ class PremiumAllocation:
     posted_by: str = ""
     notes: str = ""
     created_date: datetime = field(default_factory=datetime.now)
-    disclaimers_acknowledged: List[DisclaimerType] = field(default_factory=list)
+    disclaimers_acknowledged: List[DisclaimerType] = field(default_factory=lambda: cast(List[DisclaimerType], []))
     
     def __post_init__(self):
         """Calculate risk and savings amounts, validate percentages, set interest rate"""
-        if self.risk_percentage < 0 or self.risk_percentage > 100:
+        # Validate percentages using Decimal constants
+        if self.risk_percentage < Decimal('0') or self.risk_percentage > Decimal('100'):
             raise ValueError(f"Risk percentage must be between 0 and 100, got {self.risk_percentage}")
-        
-        if self.savings_percentage < 0 or self.savings_percentage > 100:
+
+        if self.savings_percentage < Decimal('0') or self.savings_percentage > Decimal('100'):
             raise ValueError(f"Savings percentage must be between 0 and 100, got {self.savings_percentage}")
-        
-        # Auto-calculate if savings_percentage is not set correctly
-        if abs((self.risk_percentage + self.savings_percentage) - 100) > 0.01:
-            self.savings_percentage = Decimal(100) - self.risk_percentage
+
+        # Auto-calculate if savings_percentage is not set correctly (tolerance 0.01)
+        if (self.risk_percentage + self.savings_percentage - Decimal('100')).copy_abs() > Decimal('0.01'):
+            self.savings_percentage = Decimal('100') - self.risk_percentage
         
         # Calculate premium amounts
         total = Decimal(str(self.total_premium))
-        self.risk_premium = total * (Decimal(str(self.risk_percentage)) / Decimal(100))
-        self.savings_premium = total * (Decimal(str(self.savings_percentage)) / Decimal(100))
+        # Calculate and round monetary values to 2 decimal places
+        self.risk_premium = (total * (Decimal(str(self.risk_percentage)) / Decimal('100'))).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+        self.savings_premium = (total * (Decimal(str(self.savings_percentage)) / Decimal('100'))).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
         
         # Calculate investment ratio (risk:savings)
-        if self.savings_premium > 0:
-            self.investment_ratio = self.risk_premium / self.savings_premium
+        if self.savings_premium > Decimal('0'):
+            # keep reasonable precision for ratio
+            self.investment_ratio = (self.risk_premium / self.savings_premium).quantize(Decimal('0.0001'))
         else:
-            self.investment_ratio = self.risk_premium if self.risk_premium > 0 else Decimal(0)
+            self.investment_ratio = self.risk_premium if self.risk_premium > Decimal('0') else Decimal(0)
         
         # Set annual interest rate based on investment route choice
         self.annual_interest_rate = INVESTMENT_RATES.get(self.investment_route, INVESTMENT_RATES[InvestmentRoute.BASIC_SAVINGS])
-        
-        # Calculate projected annual return on savings amount
-        self.projected_annual_return = self.savings_premium * (self.annual_interest_rate / Decimal(100))
+
+        # Calculate projected annual return on savings amount (rounded to cents)
+        self.projected_annual_return = (self.savings_premium * (self.annual_interest_rate / Decimal('100'))).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
     
     def post_allocation(self, posted_by: str) -> None:
         """Mark allocation as posted"""
@@ -193,7 +197,7 @@ class PremiumAllocation:
         self.posted_date = date.today()
         self.posted_by = posted_by
     
-    def to_dict(self) -> Dict:
+    def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary"""
         return {
             'allocation_id': self.allocation_id,
@@ -201,15 +205,15 @@ class PremiumAllocation:
             'policy_id': self.policy_id,
             'customer_id': self.customer_id,
             'allocation_date': self.allocation_date.isoformat(),
-            'total_premium': float(self.total_premium),
-            'risk_percentage': float(self.risk_percentage),
-            'savings_percentage': float(self.savings_percentage),
-            'risk_premium': float(self.risk_premium),
-            'savings_premium': float(self.savings_premium),
-            'investment_ratio': float(self.investment_ratio),
+            'total_premium': float(Decimal(str(self.total_premium)).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)),
+            'risk_percentage': float(Decimal(str(self.risk_percentage)).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)),
+            'savings_percentage': float(Decimal(str(self.savings_percentage)).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)),
+            'risk_premium': float(self.risk_premium.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)),
+            'savings_premium': float(self.savings_premium.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)),
+            'investment_ratio': float(Decimal(str(self.investment_ratio)).quantize(Decimal('0.0001'))),
             'investment_route': self.investment_route.value,
-            'annual_interest_rate': float(self.annual_interest_rate),
-            'projected_annual_return': float(self.projected_annual_return),
+            'annual_interest_rate': float(Decimal(str(self.annual_interest_rate)).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)),
+            'projected_annual_return': float(Decimal(str(self.projected_annual_return)).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)),
             'currency_code': self.currency_code,
             'status': self.status.value,
             'posted_date': self.posted_date.isoformat() if self.posted_date else None,
@@ -239,7 +243,7 @@ class AccountingEntry:
     posted_by: str = ""
     created_date: datetime = field(default_factory=datetime.now)
     
-    def to_dict(self) -> Dict:
+    def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary"""
         return {
             'entry_no': self.entry_no,
@@ -249,9 +253,9 @@ class AccountingEntry:
             'entry_date': self.entry_date.isoformat(),
             'entry_type': self.entry_type.value,
             'account_type': self.account_type.value,
-            'debit_amount': float(self.debit_amount),
-            'credit_amount': float(self.credit_amount),
-            'balance': float(self.balance),
+            'debit_amount': float(Decimal(str(self.debit_amount)).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)),
+            'credit_amount': float(Decimal(str(self.credit_amount)).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)),
+            'balance': float(Decimal(str(self.balance)).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)),
             'description': self.description,
             'reference_no': self.reference_no,
             'currency_code': self.currency_code,
@@ -268,7 +272,7 @@ class CustomerPremiumStatement:
     statement_date: date
     period_start: date
     period_end: date
-    allocations: List[PremiumAllocation] = field(default_factory=list)
+    allocations: List[PremiumAllocation] = field(default_factory=lambda: cast(List[PremiumAllocation], []))
     total_premiums: Decimal = Decimal(0)
     total_risk_coverage: Decimal = Decimal(0)
     total_customer_savings: Decimal = Decimal(0)
@@ -281,22 +285,22 @@ class CustomerPremiumStatement:
         """Calculate summary statistics"""
         if not self.allocations:
             return
-        
-        total_premium = sum(a.total_premium for a in self.allocations)
-        total_risk = sum(a.risk_premium for a in self.allocations)
-        total_savings = sum(a.savings_premium for a in self.allocations)
-        
+        # Ensure Decimal arithmetic (start with Decimal('0'))
+        total_premium = sum((a.total_premium for a in self.allocations), Decimal('0'))
+        total_risk = sum((a.risk_premium for a in self.allocations), Decimal('0'))
+        total_savings = sum((a.savings_premium for a in self.allocations), Decimal('0'))
+
         self.total_premiums = total_premium
         self.total_risk_coverage = total_risk
         self.total_customer_savings = total_savings
-        
-        if total_premium > 0:
-            self.average_risk_percentage = (total_risk / total_premium) * Decimal(100)
-            self.average_savings_percentage = (total_savings / total_premium) * Decimal(100)
+
+        if total_premium > Decimal('0'):
+            self.average_risk_percentage = (total_risk / total_premium) * Decimal('100')
+            self.average_savings_percentage = (total_savings / total_premium) * Decimal('100')
     
     def to_string(self) -> str:
         """Generate formatted statement string"""
-        statement = []
+        statement: List[str] = []
         statement.append("=" * 60)
         statement.append("CUSTOMER PREMIUM STATEMENT")
         statement.append("=" * 60)
@@ -328,7 +332,7 @@ class CustomerPremiumStatement:
         
         return "\n".join(statement)
     
-    def to_dict(self) -> Dict:
+    def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary"""
         return {
             'customer_id': self.customer_id,
@@ -351,7 +355,7 @@ class AccountingBook:
     book_id: str
     period_start: date
     period_end: date
-    entries: List[AccountingEntry] = field(default_factory=list)
+    entries: List[AccountingEntry] = field(default_factory=lambda: cast(List[AccountingEntry], []))
     risk_fund_balance: Decimal = Decimal(0)
     savings_fund_balance: Decimal = Decimal(0)
     reinsurance_balance: Decimal = Decimal(0)
@@ -378,7 +382,7 @@ class AccountingBook:
     
     def to_string(self) -> str:
         """Generate formatted accounting book"""
-        book = []
+        book: List[str] = []
         book.append("=" * 100)
         book.append("ACCOUNTING BOOK - GENERAL LEDGER")
         book.append("=" * 100)
@@ -416,19 +420,19 @@ class AccountingBook:
         
         return "\n".join(book)
     
-    def to_dict(self) -> Dict:
+    def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary"""
         return {
             'book_id': self.book_id,
             'period_start': self.period_start.isoformat(),
             'period_end': self.period_end.isoformat(),
             'entries': [e.to_dict() for e in self.entries],
-            'risk_fund_balance': float(self.risk_fund_balance),
-            'savings_fund_balance': float(self.savings_fund_balance),
-            'reinsurance_balance': float(self.reinsurance_balance),
-            'operating_balance': float(self.operating_balance),
-            'total_debits': float(self.total_debits),
-            'total_credits': float(self.total_credits),
+            'risk_fund_balance': float(Decimal(str(self.risk_fund_balance)).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)),
+            'savings_fund_balance': float(Decimal(str(self.savings_fund_balance)).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)),
+            'reinsurance_balance': float(Decimal(str(self.reinsurance_balance)).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)),
+            'operating_balance': float(Decimal(str(self.operating_balance)).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)),
+            'total_debits': float(Decimal(str(self.total_debits)).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)),
+            'total_credits': float(Decimal(str(self.total_credits)).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)),
             'generated_date': self.generated_date.isoformat()
         }
 
@@ -613,16 +617,16 @@ By selecting an investment route, you confirm you understand the risks and benef
         statement.calculate_summary()
         return statement
     
-    def get_accumulative_premium_report(self, policy_id: str) -> Dict:
+    def get_accumulative_premium_report(self, policy_id: str) -> Dict[str, Any]:
         """Get accumulative premium report for policy"""
         allocations = [
             a for a in self.allocations.values()
             if a.policy_id == policy_id and a.status == AllocationStatus.POSTED
         ]
         
-        total_premium = sum(a.total_premium for a in allocations)
-        total_risk = sum(a.risk_premium for a in allocations)
-        total_savings = sum(a.savings_premium for a in allocations)
+        total_premium = sum((a.total_premium for a in allocations), Decimal('0'))
+        total_risk = sum((a.risk_premium for a in allocations), Decimal('0'))
+        total_savings = sum((a.savings_premium for a in allocations), Decimal('0'))
         
         return {
             'policy_id': policy_id,
@@ -635,7 +639,7 @@ By selecting an investment route, you confirm you understand the risks and benef
             'report_date': date.today().isoformat()
         }
     
-    def get_risk_investment_ratio(self, customer_id: str) -> Dict:
+    def get_risk_investment_ratio(self, customer_id: str) -> Dict[str, Any]:
         """Get risk/investment ratio for customer"""
         allocations = [
             a for a in self.allocations.values()
@@ -651,8 +655,8 @@ By selecting an investment route, you confirm you understand the risks and benef
                 'message': 'No allocations found'
             }
         
-        total_risk = sum(a.risk_premium for a in allocations)
-        total_savings = sum(a.savings_premium for a in allocations)
+        total_risk = sum((a.risk_premium for a in allocations), Decimal('0'))
+        total_savings = sum((a.savings_premium for a in allocations), Decimal('0'))
         
         ratio = float(total_risk / total_savings) if total_savings > 0 else float(total_risk)
         
@@ -685,7 +689,7 @@ By selecting an investment route, you confirm you understand the risks and benef
         
         return book
     
-    def get_customer_summary(self, customer_id: str) -> Dict:
+    def get_customer_summary(self, customer_id: str) -> Dict[str, Any]:
         """Get summary of all customer premiums and allocations"""
         allocations = [
             a for a in self.allocations.values()
@@ -695,9 +699,9 @@ By selecting an investment route, you confirm you understand the risks and benef
         if not allocations:
             return {'customer_id': customer_id, 'allocations': [], 'summary': {}}
         
-        total_premium = sum(a.total_premium for a in allocations)
-        total_risk = sum(a.risk_premium for a in allocations)
-        total_savings = sum(a.savings_premium for a in allocations)
+        total_premium = sum((a.total_premium for a in allocations), Decimal('0'))
+        total_risk = sum((a.risk_premium for a in allocations), Decimal('0'))
+        total_savings = sum((a.savings_premium for a in allocations), Decimal('0'))
         
         return {
             'customer_id': customer_id,
@@ -716,13 +720,18 @@ By selecting an investment route, you confirm you understand the risks and benef
                             debit_amount: Decimal = Decimal(0), credit_amount: Decimal = Decimal(0),
                             description: str = "", reference_no: str = "") -> AccountingEntry:
         """Create and track ledger entry"""
-        # Calculate running balance
+        # Calculate running balance using Decimal arithmetic
         balance = self._get_account_balance(account_type)
-        if debit_amount > 0:
-            balance += debit_amount
-        elif credit_amount > 0:
-            balance -= credit_amount
-        
+        debit = Decimal(str(debit_amount))
+        credit = Decimal(str(credit_amount))
+        if debit > Decimal('0'):
+            balance += debit
+        elif credit > Decimal('0'):
+            balance -= credit
+
+        # Round balance to cents for ledger
+        balance = balance.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+
         self.entry_counter += 1
         entry = AccountingEntry(
             entry_no=self.entry_counter,
@@ -732,8 +741,8 @@ By selecting an investment route, you confirm you understand the risks and benef
             entry_date=entry_date,
             entry_type=entry_type,
             account_type=account_type,
-            debit_amount=Decimal(str(debit_amount)),
-            credit_amount=Decimal(str(credit_amount)),
+            debit_amount=debit,
+            credit_amount=credit,
             balance=balance,
             description=description,
             reference_no=reference_no,
@@ -751,11 +760,11 @@ By selecting an investment route, you confirm you understand the risks and benef
                 balance = entry.balance
         return balance
     
-    def get_summary(self) -> Dict:
+    def get_summary(self) -> Dict[str, Any]:
         """Get engine summary"""
         total_allocations = len(self.allocations)
         posted_allocations = sum(1 for a in self.allocations.values() if a.status == AllocationStatus.POSTED)
-        total_premium = sum(a.total_premium for a in self.allocations.values() if a.status == AllocationStatus.POSTED)
+        total_premium = sum((a.total_premium for a in self.allocations.values() if a.status == AllocationStatus.POSTED), Decimal('0'))
         
         return {
             'engine_id': self.engine_id,
@@ -786,7 +795,7 @@ By selecting an investment route, you confirm you understand the risks and benef
         if allocation_id not in self.allocations:
             return []
         allocation = self.allocations[allocation_id]
-        pending = []
+        pending: List[Disclaimer] = []
         for disc_type, disc in self.disclaimers.items():
             if disc_type not in allocation.disclaimers_acknowledged:
                 pending.append(disc)
@@ -815,7 +824,7 @@ By selecting an investment route, you confirm you understand the risks and benef
         disc = self.get_disclaimer(disclaimer_type)
         if not disc:
             return "Disclaimer not found."
-        output = []
+        output: List[str] = []
         output.append("=" * 80)
         output.append(f"DISCLAIMER: {disc.title}")
         output.append(f"Version: {disc.version} | Effective: {disc.effective_date}")

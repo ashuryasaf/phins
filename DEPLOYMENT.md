@@ -14,6 +14,7 @@ This guide covers multiple deployment options for the PHINS web portal.
 Railway provides free hosting with automatic deployments from GitHub.
 
 **Steps:**
+
 1. Go to [railway.app](https://railway.app)
 2. Sign in with GitHub
 3. Click "New Project" → "Deploy from GitHub repo"
@@ -22,6 +23,7 @@ Railway provides free hosting with automatic deployments from GitHub.
 6. Your site will be live at `https://[project-name].railway.app`
 
 **Configuration:**
+
 - Uses `railway.json` for deployment settings
 - Automatically runs `python3 web_portal/server.py`
 - Port is automatically detected
@@ -31,6 +33,7 @@ Railway provides free hosting with automatic deployments from GitHub.
 Render offers free web services with easy GitHub integration.
 
 **Steps:**
+
 1. Go to [render.com](https://render.com)
 2. Sign in with GitHub
 3. Click "New +" → "Web Service"
@@ -43,14 +46,17 @@ Render offers free web services with easy GitHub integration.
 6. Click "Create Web Service"
 
 **Configuration:**
+
 - Uses `render.yaml` for infrastructure-as-code
 - Free tier includes SSL and custom domains
+
 
 ### 3. Docker (Self-Hosted)
 
 Deploy using Docker on any platform (AWS, Azure, DigitalOcean, etc.)
 
 **Build and Run Locally:**
+
 ```bash
 # Build the image
 docker build -t phins-portal .
@@ -62,6 +68,7 @@ docker run -p 8000:8000 phins-portal
 ```
 
 **Deploy to Cloud:**
+
 ```bash
 # Tag for your registry
 docker tag phins-portal your-registry/phins-portal:latest
@@ -72,17 +79,21 @@ docker push your-registry/phins-portal:latest
 # Deploy on your platform (example: AWS ECS, Azure Container Instances, etc.)
 ```
 
+
 ### 4. Vercel (Serverless)
 
 Vercel offers serverless Python deployments with global CDN.
 
 **Steps:**
+
 1. Install Vercel CLI: `npm i -g vercel`
 2. Run: `vercel` in the project root
 3. Follow prompts to link your project
 4. Deploy: `vercel --prod`
 
+
 **Configuration:**
+
 - Uses `vercel.json` for routing and build settings
 - Deploys as serverless functions
 - Automatically gets SSL and custom domain support
@@ -92,13 +103,15 @@ Vercel offers serverless Python deployments with global CDN.
 For full control, deploy to any VPS (DigitalOcean, Linode, AWS EC2, etc.)
 
 **Steps:**
+
 1. SSH into your server
 2. Install Python 3.11+: `sudo apt update && sudo apt install python3 python3-pip`
 3. Clone repository: `git clone https://github.com/ashuryasaf/phins.git`
 4. Install dependencies: `cd phins && pip3 install -r requirements.txt`
-5. Run with systemd for auto-restart:
+5. Run with systemd for auto-restart
 
 **Create systemd service** (`/etc/systemd/system/phins.service`):
+
 ```ini
 [Unit]
 Description=PHINS Web Portal
@@ -117,18 +130,21 @@ WantedBy=multi-user.target
 ```
 
 Enable and start:
+
 ```bash
 sudo systemctl enable phins
 sudo systemctl start phins
 ```
 
-6. Set up nginx reverse proxy for port 80/443
+Set up nginx reverse proxy for port 80/443
+
 
 ## Environment Configuration
 
 The web portal runs on port 8000 by default. To change:
 
 Edit `web_portal/server.py`:
+
 ```python
 PORT = int(os.environ.get('PORT', 8000))
 ```
@@ -147,13 +163,16 @@ Most platforms (Railway, Render, Vercel) support custom domains:
 ## Monitoring
 
 After deployment:
+
 - Check logs in platform dashboard
 - Monitor uptime and performance
 - Set up alerts for downtime
 
+
 ## Static Files
 
 The portal serves static files from `web_portal/static/`:
+
 - `index.html` - Main page
 - `styles.css` - Styling
 - `script.js` - JavaScript functionality
@@ -162,6 +181,7 @@ The portal serves static files from `web_portal/static/`:
 ## Security Notes
 
 For production deployments:
+
 1. Change default credentials in `server.py`
 2. Add proper authentication (JWT, OAuth)
 3. Use environment variables for secrets
@@ -179,6 +199,7 @@ For production deployments:
 ## Support
 
 For deployment issues:
+
 - Check platform documentation
 - Review application logs
 - Ensure all dependencies in `requirements.txt`
@@ -187,6 +208,7 @@ For deployment issues:
 ## Quick Deploy Commands
 
 **Railway:**
+
 ```bash
 # Install Railway CLI
 npm i -g @railway/cli
@@ -198,12 +220,14 @@ railway up
 ```
 
 **Render:**
+
 ```bash
 # Render auto-deploys from GitHub
 # Just connect repo in dashboard
 ```
 
 **Docker:**
+
 ```bash
 docker build -t phins-portal .
 docker run -p 8000:8000 phins-portal

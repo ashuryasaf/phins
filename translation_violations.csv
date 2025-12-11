@@ -1,0 +1,112 @@
+file,line,type,content,status
+accounting_engine.py,826,hardcoded_string,Disclaimer not found.,TO_FIX
+service_agent.py,70,hardcoded_string,We received your inquiry.,TO_FIX
+.venv/lib/python3.12/site-packages/mypy/dmypy_server.py,229,hardcoded_string,No command found in request,TO_FIX
+.venv/lib/python3.12/site-packages/mypy/dmypy_server.py,233,hardcoded_string,Command is not a string,TO_FIX
+.venv/lib/python3.12/site-packages/mypy/inspections.py,550,hardcoded_string,Source file is not a Python file,TO_FIX
+.venv/lib/python3.12/site-packages/werkzeug/debug/repr.py,61,hardcoded_string,Type help(object) for help about object.,TO_FIX
+.venv/lib/python3.12/site-packages/pip/_internal/exceptions.py,276,hardcoded_string,User base directory is not specified,TO_FIX
+.venv/lib/python3.12/site-packages/reportlab/graphics/charts/axes.py,904,hardcoded_string,Abstract class instance called,TO_FIX
+.venv/lib/python3.12/site-packages/moto/stepfunctions/models.py,440,hardcoded_string,AnError,TO_FIX
+.venv/lib/python3.12/site-packages/moto/rds/utils.py,341,hardcoded_string,Maintenance window must be less than 24 hours.,TO_FIX
+.venv/lib/python3.12/site-packages/moto/kafka/models.py,147,hardcoded_string,Cluster state details.,TO_FIX
+.venv/lib/python3.12/site-packages/moto/kafka/models.py,281,hardcoded_string,Cluster state details.,TO_FIX
+.venv/lib/python3.12/site-packages/moto/apigateway/models.py,1715,hardcoded_string,Empty Schema,TO_FIX
+.venv/lib/python3.12/site-packages/moto/logs/models.py,751,hardcoded_string,Task is active,TO_FIX
+.venv/lib/python3.12/site-packages/moto/logs/models.py,1408,hardcoded_string,Cancelled by user,TO_FIX
+.venv/lib/python3.12/site-packages/moto/ses/utils.py,20,hardcoded_string,Missing domain,TO_FIX
+.venv/lib/python3.12/site-packages/moto/synthetics/responses.py,103,hardcoded_string,What would you like to do?,TO_FIX
+web_portal/static/admin.html,6,hardcoded_html,PHINS Admin Portal,TO_FIX
+web_portal/static/admin.html,36,hardcoded_html,Admin Dashboard 🎯,TO_FIX
+web_portal/static/admin.html,73,hardcoded_html,📊 Sales Division — Policy Management,TO_FIX
+web_portal/static/admin.html,79,hardcoded_html,Search policies...,TO_FIX
+web_portal/static/admin.html,163,hardcoded_html,🔍 Underwriting Division — Risk Assessment,TO_FIX
+web_portal/static/admin.html,228,hardcoded_html,📝 Claims Division — ADL-Based Disability Claims,TO_FIX
+web_portal/static/admin.html,260,hardcoded_html,Approve,TO_FIX
+web_portal/static/admin.html,286,hardcoded_html,💰 Accounting Division — Billing & Payments,TO_FIX
+web_portal/static/admin.html,291,hardcoded_html,Revenue Overview,TO_FIX
+web_portal/static/admin.html,312,hardcoded_html,Recent Transactions,TO_FIX
+web_portal/static/admin.html,349,hardcoded_html,🤝 Reinsurance Division — Partner Management,TO_FIX
+web_portal/static/admin.html,389,hardcoded_html,⚖️ Legal Division — Compliance & Disputes,TO_FIX
+web_portal/static/admin.html,394,hardcoded_html,Legal Overview,TO_FIX
+web_portal/static/admin.html,418,hardcoded_html,© 2025 PHINS Insurance Company — Admin Portal,TO_FIX
+web_portal/static/login.html,6,hardcoded_html,PHINS Portal — Login,TO_FIX
+web_portal/static/login.html,121,hardcoded_html,Enter your username,TO_FIX
+web_portal/static/login.html,125,hardcoded_html,Enter your password,TO_FIX
+web_portal/static/login.html,127,hardcoded_html,Sign In,TO_FIX
+web_portal/static/dashboard.html,6,hardcoded_html,PHINS Portal — My Dashboard,TO_FIX
+web_portal/static/dashboard.html,65,hardcoded_html,My PHINS Policies,TO_FIX
+web_portal/static/dashboard.html,109,hardcoded_html,Premium Statement,TO_FIX
+web_portal/static/dashboard.html,133,hardcoded_html,My Claims,TO_FIX
+web_portal/static/dashboard.html,153,hardcoded_html,Details,TO_FIX
+web_portal/static/dashboard.html,161,hardcoded_html,Details,TO_FIX
+web_portal/static/dashboard.html,173,hardcoded_html,Billing & Payments,TO_FIX
+web_portal/static/dashboard.html,176,hardcoded_html,Current Balance,TO_FIX
+web_portal/static/dashboard.html,182,hardcoded_html,Payment History,TO_FIX
+web_portal/static/dashboard.html,204,hardcoded_html,Investment Portfolio,TO_FIX
+web_portal/static/dashboard.html,229,hardcoded_html,© 2025 PHINS Insurance Company. All rights reserved.,TO_FIX
+web_portal/static/quote.html,6,hardcoded_html,Get a Quote - PHINS Insurance Underwriting,TO_FIX
+web_portal/static/quote.html,345,hardcoded_html,Get Your Insurance Quote,TO_FIX
+web_portal/static/quote.html,358,hardcoded_html,1. Personal Information,TO_FIX
+web_portal/static/quote.html,407,hardcoded_html,+1 (555) 123-4567,TO_FIX
+web_portal/static/quote.html,443,hardcoded_html,2. Health Assessment,TO_FIX
+web_portal/static/quote.html,474,hardcoded_html,120/80,TO_FIX
+web_portal/static/quote.html,500,hardcoded_html,Please provide details about your medical conditions...,TO_FIX
+web_portal/static/quote.html,514,hardcoded_html,List medications and dosages...,TO_FIX
+web_portal/static/quote.html,527,hardcoded_html,Describe surgeries and dates...,TO_FIX
+web_portal/static/quote.html,533,hardcoded_html,3. Lifestyle & Risk Factors,TO_FIX
+web_portal/static/quote.html,594,hardcoded_html,4. Coverage Details,TO_FIX
+web_portal/static/quote.html,634,hardcoded_html,Full Name,TO_FIX
+web_portal/static/quote.html,635,hardcoded_html,Relationship,TO_FIX
+web_portal/static/quote.html,636,hardcoded_html,Percentage %,TO_FIX
+web_portal/static/quote.html,639,hardcoded_html,+ Add Beneficiary,TO_FIX
+web_portal/static/quote.html,645,hardcoded_html,5. Documentation & Verification,TO_FIX
+web_portal/static/quote.html,660,hardcoded_html,Additional Verification (Optional but Recommended),TO_FIX
+web_portal/static/quote.html,661,hardcoded_html,"Providing photo, video, or voice verification can speed up the underwriting process.",TO_FIX
+web_portal/static/quote.html,681,hardcoded_html,Photo Preview:,TO_FIX
+web_portal/static/quote.html,683,hardcoded_html,Remove Photo,TO_FIX
+web_portal/static/quote.html,687,hardcoded_html,Video Preview:,TO_FIX
+web_portal/static/quote.html,689,hardcoded_html,Remove Video,TO_FIX
+web_portal/static/quote.html,693,hardcoded_html,Audio Preview:,TO_FIX
+web_portal/static/quote.html,695,hardcoded_html,Remove Audio,TO_FIX
+web_portal/static/quote.html,704,hardcoded_html,6. Declarations & Consent,TO_FIX
+web_portal/static/quote.html,732,hardcoded_html,Type your full name as signature,TO_FIX
+web_portal/static/quote.html,739,hardcoded_html,Submit Quote Request,TO_FIX
+web_portal/static/quote.html,748,hardcoded_html,Terms & Conditions,TO_FIX
+web_portal/static/quote.html,765,hardcoded_html,Take Photo,TO_FIX
+web_portal/static/quote.html,769,hardcoded_html,Cancel,TO_FIX
+web_portal/static/quote.html,778,hardcoded_html,Record Video (Max 30 seconds),TO_FIX
+web_portal/static/quote.html,781,hardcoded_html,🔴 Start Recording,TO_FIX
+web_portal/static/quote.html,782,hardcoded_html,⏹️ Stop,TO_FIX
+web_portal/static/quote.html,783,hardcoded_html,Cancel,TO_FIX
+web_portal/static/quote.html,793,hardcoded_html,Record Voice Message (Max 60 seconds),TO_FIX
+web_portal/static/quote.html,796,hardcoded_html,🔴 Start Recording,TO_FIX
+web_portal/static/quote.html,797,hardcoded_html,⏹️ Stop,TO_FIX
+web_portal/static/quote.html,798,hardcoded_html,Cancel,TO_FIX
+web_portal/static/index.html,6,hardcoded_html,PHINS Insurance — Comprehensive Coverage & Financial Security,TO_FIX
+web_portal/static/index.html,38,hardcoded_html,PHINS: Specialized Disability Protection & Investment,TO_FIX
+web_portal/static/index.html,56,hardcoded_html,PHINS Disability Protection & Investment Contract,TO_FIX
+web_portal/static/index.html,121,hardcoded_html,Get a Free Quote,TO_FIX
+web_portal/static/index.html,150,hardcoded_html,Submit Request,TO_FIX
+web_portal/static/index.html,167,hardcoded_html,Application Requirements,TO_FIX
+web_portal/static/index.html,179,hardcoded_html,Medical Requirements,TO_FIX
+web_portal/static/index.html,191,hardcoded_html,Risk Assessment Criteria,TO_FIX
+web_portal/static/index.html,203,hardcoded_html,Processing Timeline,TO_FIX
+web_portal/static/index.html,216,hardcoded_html,Risk Classification & Premium Adjustments,TO_FIX
+web_portal/static/index.html,289,hardcoded_html,Global Leader in Specialized Disability Insurance Since 1995,TO_FIX
+web_portal/static/index.html,290,hardcoded_html,"PHINS Insurance pioneered the world's first integrated severe disability and investment insurance contract. With over 25 years of specialized experience, we focus exclusively on one thing: protecting people from the catastrophic financial impact of severe permanent disabilities while building their wealth.",TO_FIX
+web_portal/static/index.html,292,hardcoded_html,Our Mission,TO_FIX
+web_portal/static/index.html,293,hardcoded_html,"To provide the world's most comprehensive protection against severe permanent disability (ADL-based criteria) while simultaneously creating wealth through professionally managed investments. One specialized contract, complete protection.",TO_FIX
+web_portal/static/index.html,295,hardcoded_html,Why PHINS is Different,TO_FIX
+web_portal/static/index.html,307,hardcoded_html,Understanding Severe Disability & ADLs,TO_FIX
+web_portal/static/index.html,347,hardcoded_html,📍 Main Office,TO_FIX
+web_portal/static/index.html,354,hardcoded_html,📞 Phone,TO_FIX
+web_portal/static/index.html,359,hardcoded_html,✉️ Email,TO_FIX
+web_portal/static/index.html,365,hardcoded_html,🕐 Business Hours,TO_FIX
+web_portal/static/index.html,378,hardcoded_html,Existing Customer?,TO_FIX
+web_portal/static/index.html,379,hardcoded_html,"Access your account to view policies, make claims, and manage your investments",TO_FIX
+web_portal/static/index.html,389,hardcoded_html,PHINS Insurance,TO_FIX
+web_portal/static/index.html,390,hardcoded_html,Your trusted partner in insurance and financial security.,TO_FIX
+web_portal/static/index.html,393,hardcoded_html,Quick Links,TO_FIX
+web_portal/static/index.html,402,hardcoded_html,Legal,TO_FIX
+web_portal/static/index.html,412,hardcoded_html,© 2025 PHINS Insurance Company. All rights reserved. Licensed in all 50 states.,TO_FIX

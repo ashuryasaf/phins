@@ -1,0 +1,452 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Apply for PHINS Coverage - Insurance Application</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="apply-styles.css">
+</head>
+<body>
+    <header class="topbar">
+        <div class="container">
+            <h1 class="brand">🛡️ PHINS Insurance</h1>
+            <nav class="nav">
+                <a href="/">Home</a>
+                <a href="/#products">Products</a>
+                <a href="/login.html">Login</a>
+            </nav>
+        </div>
+    </header>
+
+    <main class="application-container">
+        <!-- Progress Indicator -->
+        <div class="progress-bar">
+            <div class="progress-step active" data-step="1">
+                <div class="step-number">1</div>
+                <div class="step-label">Personal Info</div>
+            </div>
+            <div class="progress-step" data-step="2">
+                <div class="step-number">2</div>
+                <div class="step-label">Coverage</div>
+            </div>
+            <div class="progress-step" data-step="3">
+                <div class="step-number">3</div>
+                <div class="step-label">Health</div>
+            </div>
+            <div class="progress-step" data-step="4">
+                <div class="step-number">4</div>
+                <div class="step-label">Review</div>
+            </div>
+        </div>
+
+        <div class="application-content">
+            <h1>Apply for PHINS Coverage</h1>
+            <p class="subtitle">Complete your application in 4 easy steps. Your information is secure and confidential.</p>
+
+            <form id="customer-application-form">
+                <!-- Step 1: Personal Information -->
+                <div class="form-step active" data-step="1">
+                    <div class="step-header">
+                        <h2>📋 Step 1: Personal Information</h2>
+                        <p>Tell us about yourself so we can create your personalized coverage plan.</p>
+                    </div>
+
+                    <div class="form-section">
+                        <h3>Contact Details</h3>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="first-name">First Name *</label>
+                                <input type="text" id="first-name" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="last-name">Last Name *</label>
+                                <input type="text" id="last-name" required>
+                            </div>
+                        </div>
+
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="email">Email Address *</label>
+                                <input type="email" id="email" required>
+                                <small>We'll send your policy documents and updates here</small>
+                            </div>
+                            <div class="form-group">
+                                <label for="phone">Phone Number *</label>
+                                <input type="tel" id="phone" required placeholder="+1-555-0123">
+                                <small>For important policy notifications</small>
+                            </div>
+                        </div>
+
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="dob">Date of Birth *</label>
+                                <input type="date" id="dob" required>
+                                <small>Your age helps us calculate your premium</small>
+                            </div>
+                            <div class="form-group">
+                                <label for="gender">Gender *</label>
+                                <select id="gender" required>
+                                    <option value="">Select...</option>
+                                    <option value="male">Male</option>
+                                    <option value="female">Female</option>
+                                    <option value="other">Other</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="address">Residential Address *</label>
+                            <input type="text" id="address" required placeholder="Street address">
+                        </div>
+
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="city">City *</label>
+                                <input type="text" id="city" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="state">State/Province *</label>
+                                <input type="text" id="state" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="zip">ZIP/Postal Code *</label>
+                                <input type="text" id="zip" required>
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="occupation">Occupation *</label>
+                            <input type="text" id="occupation" required placeholder="e.g., Software Engineer">
+                            <small>This helps us assess risk for your coverage</small>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Step 2: Coverage Selection -->
+                <div class="form-step" data-step="2">
+                    <div class="step-header">
+                        <h2>🛡️ Step 2: Choose Your Coverage</h2>
+                        <p>Select the protection level that best fits your needs and budget.</p>
+                    </div>
+
+                    <div class="form-section">
+                        <h3>Policy Type</h3>
+                        <div class="policy-cards">
+                            <div class="policy-option" data-type="life">
+                                <div class="policy-icon">💼</div>
+                                <h4>Life Insurance</h4>
+                                <p>Financial protection for your loved ones in case of death</p>
+                                <ul>
+                                    <li>Death benefit payout</li>
+                                    <li>Investment component</li>
+                                    <li>Estate planning</li>
+                                </ul>
+                                <button type="button" class="select-policy" data-type="life">Select</button>
+                            </div>
+
+                            <div class="policy-option" data-type="health">
+                                <div class="policy-icon">🏥</div>
+                                <h4>Health Insurance</h4>
+                                <p>Comprehensive medical coverage and health protection</p>
+                                <ul>
+                                    <li>Medical expenses</li>
+                                    <li>Hospitalization</li>
+                                    <li>Preventive care</li>
+                                </ul>
+                                <button type="button" class="select-policy" data-type="health">Select</button>
+                            </div>
+
+                            <div class="policy-option" data-type="disability">
+                                <div class="policy-icon recommended">♿</div>
+                                <div class="recommended-badge">Recommended</div>
+                                <h4>PHINS Disability + Investment</h4>
+                                <p>Severe disability protection with wealth building</p>
+                                <ul>
+                                    <li>ADL-based coverage</li>
+                                    <li>75% investment growth</li>
+                                    <li>25% guaranteed savings</li>
+                                    <li>Lifetime benefits</li>
+                                </ul>
+                                <button type="button" class="select-policy" data-type="disability">Select</button>
+                            </div>
+                        </div>
+
+                        <input type="hidden" id="policy-type" required>
+
+                        <div id="coverage-details" class="coverage-details" style="display: none;">
+                            <h3>Coverage Amount</h3>
+                            <div class="coverage-slider-container">
+                                <input type="range" id="coverage-slider" min="50000" max="5000000" step="50000" value="250000">
+                                <div class="coverage-display">
+                                    <span class="coverage-amount" id="coverage-amount-display">$250,000</span>
+                                    <small>Slide to adjust your coverage amount</small>
+                                </div>
+                            </div>
+
+                            <div class="coverage-options">
+                                <div class="quick-select">
+                                    <button type="button" class="quick-amount" data-amount="100000">$100K</button>
+                                    <button type="button" class="quick-amount" data-amount="250000">$250K</button>
+                                    <button type="button" class="quick-amount active" data-amount="500000">$500K</button>
+                                    <button type="button" class="quick-amount" data-amount="1000000">$1M</button>
+                                    <button type="button" class="quick-amount" data-amount="2000000">$2M</button>
+                                </div>
+                            </div>
+
+                            <div class="premium-estimate" id="premium-estimate">
+                                <h4>Estimated Premium</h4>
+                                <div class="premium-breakdown">
+                                    <div class="premium-item">
+                                        <span>Monthly</span>
+                                        <strong id="monthly-premium">$125.00</strong>
+                                    </div>
+                                    <div class="premium-item">
+                                        <span>Quarterly</span>
+                                        <strong id="quarterly-premium">$375.00</strong>
+                                    </div>
+                                    <div class="premium-item highlighted">
+                                        <span>Annual</span>
+                                        <strong id="annual-premium">$1,500.00</strong>
+                                    </div>
+                                </div>
+                                <small>*Final premium determined after underwriting review</small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Step 3: Health Assessment -->
+                <div class="form-step" data-step="3">
+                    <div class="step-header">
+                        <h2>🏥 Step 3: Health & Lifestyle Assessment</h2>
+                        <p>Your honest answers help us provide accurate coverage. All information is confidential.</p>
+                    </div>
+
+                    <div class="form-section">
+                        <div class="info-box">
+                            <strong>Why we ask these questions:</strong> Your health and lifestyle information helps us calculate fair premiums and ensure you get the right coverage. All responses are kept strictly confidential.
+                        </div>
+
+                        <div class="question-group">
+                            <label class="question-label">Do you currently use tobacco products (cigarettes, cigars, vaping)?</label>
+                            <div class="radio-group">
+                                <label class="radio-option">
+                                    <input type="radio" name="tobacco" value="no" checked>
+                                    <span>No, I don't use tobacco</span>
+                                </label>
+                                <label class="radio-option">
+                                    <input type="radio" name="tobacco" value="yes">
+                                    <span>Yes, I use tobacco</span>
+                                </label>
+                                <label class="radio-option">
+                                    <input type="radio" name="tobacco" value="former">
+                                    <span>Former user (quit over 1 year ago)</span>
+                                </label>
+                            </div>
+                        </div>
+
+                        <div class="question-group">
+                            <label class="question-label">Do you have any pre-existing medical conditions?</label>
+                            <div class="radio-group">
+                                <label class="radio-option">
+                                    <input type="radio" name="medical-conditions" value="no" checked>
+                                    <span>No medical conditions</span>
+                                </label>
+                                <label class="radio-option">
+                                    <input type="radio" name="medical-conditions" value="yes">
+                                    <span>Yes, I have medical conditions</span>
+                                </label>
+                            </div>
+                            <div id="medical-details" style="display: none; margin-top: 15px;">
+                                <label for="conditions-list">Please describe your conditions:</label>
+                                <textarea id="conditions-list" rows="3" placeholder="e.g., diabetes, high blood pressure, asthma"></textarea>
+                            </div>
+                        </div>
+
+                        <div class="question-group">
+                            <label class="question-label">Have you had any major surgeries in the past 5 years?</label>
+                            <div class="radio-group">
+                                <label class="radio-option">
+                                    <input type="radio" name="surgery" value="no" checked>
+                                    <span>No surgeries</span>
+                                </label>
+                                <label class="radio-option">
+                                    <input type="radio" name="surgery" value="yes">
+                                    <span>Yes, I've had surgery</span>
+                                </label>
+                            </div>
+                            <div id="surgery-details" style="display: none; margin-top: 15px;">
+                                <label for="surgery-list">Please describe the surgery:</label>
+                                <textarea id="surgery-list" rows="2"></textarea>
+                            </div>
+                        </div>
+
+                        <div class="question-group">
+                            <label class="question-label">Do you engage in hazardous activities or extreme sports?</label>
+                            <small style="display: block; margin-bottom: 10px;">e.g., skydiving, rock climbing, scuba diving, motor racing</small>
+                            <div class="radio-group">
+                                <label class="radio-option">
+                                    <input type="radio" name="hazardous" value="no" checked>
+                                    <span>No hazardous activities</span>
+                                </label>
+                                <label class="radio-option">
+                                    <input type="radio" name="hazardous" value="occasional">
+                                    <span>Occasionally (1-2 times per year)</span>
+                                </label>
+                                <label class="radio-option">
+                                    <input type="radio" name="hazardous" value="regular">
+                                    <span>Regularly (monthly or more)</span>
+                                </label>
+                            </div>
+                        </div>
+
+                        <div class="question-group">
+                            <label class="question-label">Family medical history - Has any immediate family member had:</label>
+                            <div class="checkbox-group">
+                                <label class="checkbox-option">
+                                    <input type="checkbox" name="family-history" value="heart">
+                                    <span>Heart disease</span>
+                                </label>
+                                <label class="checkbox-option">
+                                    <input type="checkbox" name="family-history" value="cancer">
+                                    <span>Cancer</span>
+                                </label>
+                                <label class="checkbox-option">
+                                    <input type="checkbox" name="family-history" value="diabetes">
+                                    <span>Diabetes</span>
+                                </label>
+                                <label class="checkbox-option">
+                                    <input type="checkbox" name="family-history" value="stroke">
+                                    <span>Stroke</span>
+                                </label>
+                                <label class="checkbox-option">
+                                    <input type="checkbox" name="family-history" value="none">
+                                    <span>None of the above</span>
+                                </label>
+                            </div>
+                        </div>
+
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="height">Height (in cm) *</label>
+                                <input type="number" id="height" min="100" max="250" placeholder="170">
+                            </div>
+                            <div class="form-group">
+                                <label for="weight">Weight (in kg) *</label>
+                                <input type="number" id="weight" min="30" max="300" placeholder="70">
+                            </div>
+                            <div class="form-group">
+                                <label>BMI</label>
+                                <div id="bmi-display" class="bmi-display">
+                                    <span id="bmi-value">-</span>
+                                    <small id="bmi-category"></small>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="medications">Current Medications (if any)</label>
+                            <textarea id="medications" rows="3" placeholder="List any medications you're currently taking, or write 'None'"></textarea>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Step 4: Review & Submit -->
+                <div class="form-step" data-step="4">
+                    <div class="step-header">
+                        <h2>✅ Step 4: Review Your Application</h2>
+                        <p>Please review all information carefully before submitting.</p>
+                    </div>
+
+                    <div class="review-section">
+                        <div class="review-card">
+                            <h3>Personal Information</h3>
+                            <div class="review-grid" id="review-personal"></div>
+                            <button type="button" class="edit-btn" onclick="goToStep(1)">Edit</button>
+                        </div>
+
+                        <div class="review-card">
+                            <h3>Coverage Details</h3>
+                            <div class="review-grid" id="review-coverage"></div>
+                            <button type="button" class="edit-btn" onclick="goToStep(2)">Edit</button>
+                        </div>
+
+                        <div class="review-card">
+                            <h3>Health Assessment</h3>
+                            <div class="review-grid" id="review-health"></div>
+                            <button type="button" class="edit-btn" onclick="goToStep(3)">Edit</button>
+                        </div>
+
+                        <div class="final-premium-box">
+                            <h3>Your Estimated Premium</h3>
+                            <div class="final-premium">
+                                <div class="premium-large">
+                                    <span class="amount" id="final-premium-amount">$1,500</span>
+                                    <span class="period">per year</span>
+                                </div>
+                                <div class="premium-options-display">
+                                    <span>Monthly: <strong id="final-monthly">$125</strong></span>
+                                    <span>Quarterly: <strong id="final-quarterly">$375</strong></span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="terms-section">
+                            <label class="checkbox-option large">
+                                <input type="checkbox" id="terms-agree" required>
+                                <span>I have read and agree to the <a href="#" target="_blank">Terms & Conditions</a> and <a href="#" target="_blank">Privacy Policy</a></span>
+                            </label>
+                            <label class="checkbox-option large">
+                                <input type="checkbox" id="accuracy-agree" required>
+                                <span>I certify that all information provided is accurate and complete to the best of my knowledge</span>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Navigation Buttons -->
+                <div class="form-navigation">
+                    <button type="button" id="prev-btn" class="btn btn-secondary" style="display: none;">← Previous</button>
+                    <button type="button" id="next-btn" class="btn btn-primary">Next →</button>
+                    <button type="submit" id="submit-btn" class="btn btn-success" style="display: none;">Submit Application</button>
+                </div>
+            </form>
+
+            <!-- Success Message -->
+            <div id="success-message" class="success-modal" style="display: none;">
+                <div class="success-content">
+                    <div class="success-icon">✅</div>
+                    <h2>Application Submitted Successfully!</h2>
+                    <div class="application-details">
+                        <p><strong>Application ID:</strong> <span id="app-id"></span></p>
+                        <p><strong>Policy ID:</strong> <span id="policy-id"></span></p>
+                        <p><strong>Estimated Premium:</strong> <span id="success-premium"></span></p>
+                    </div>
+                    <div class="next-steps">
+                        <h3>What Happens Next?</h3>
+                        <ol>
+                            <li>✉️ Check your email for confirmation</li>
+                            <li>📋 Our underwriting team will review your application (2-3 business days)</li>
+                            <li>📞 We may contact you for additional information</li>
+                            <li>🎉 Receive your policy approval and payment instructions</li>
+                        </ol>
+                    </div>
+                    <div class="success-actions">
+                        <a href="/login.html" class="btn btn-primary">Login to Track Status</a>
+                        <a href="/" class="btn btn-secondary">Return to Home</a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <footer class="footer">
+        <div class="container">
+            <p>&copy; 2025 PHINS Insurance. All rights reserved. | <a href="#">Privacy Policy</a> | <a href="#">Terms of Service</a></p>
+        </div>
+    </footer>
+
+    <script src="apply.js"></script>
+</body>
+</html>

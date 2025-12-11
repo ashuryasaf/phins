@@ -5,21 +5,140 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>PHINS Portal — Login</title>
   <link rel="stylesheet" href="/styles.css">
+  <style>
+    body {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      background: linear-gradient(135deg, #005b96 0%, #003d66 100%);
+    }
+    .login-container {
+      width: 100%;
+      max-width: 450px;
+      padding: 16px;
+    }
+    .login-card {
+      background: #fff;
+      border-radius: 16px;
+      padding: 48px;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+    }
+    .login-header {
+      text-align: center;
+      margin-bottom: 32px;
+    }
+    .login-logo {
+      font-size: 3rem;
+      margin-bottom: 16px;
+    }
+    .login-title {
+      color: var(--brand);
+      margin: 0 0 8px 0;
+      font-size: 1.8rem;
+    }
+    .login-subtitle {
+      color: var(--muted);
+      margin: 0;
+      font-size: 0.95rem;
+    }
+    .form-group {
+      margin-bottom: 20px;
+    }
+    .form-group label {
+      display: block;
+      margin-bottom: 8px;
+      font-weight: 600;
+      color: var(--brand);
+    }
+    .form-group input {
+      width: 100%;
+      padding: 14px;
+      border: 2px solid var(--border);
+      border-radius: 8px;
+      font-size: 1rem;
+      transition: border-color 0.3s;
+    }
+    .form-group input:focus {
+      outline: none;
+      border-color: var(--brand);
+    }
+    .btn-submit {
+      width: 100%;
+      padding: 14px;
+      background: var(--brand);
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      font-size: 1.1rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.3s;
+    }
+    .btn-submit:hover {
+      background: var(--brand-dark);
+    }
+    .demo-creds {
+      margin-top: 24px;
+      padding: 16px;
+      background: var(--bg);
+      border-radius: 8px;
+      font-size: 0.85rem;
+    }
+    .demo-creds strong {
+      color: var(--brand);
+    }
+    .back-link {
+      display: block;
+      text-align: center;
+      margin-top: 24px;
+      color: var(--brand);
+      text-decoration: none;
+      font-weight: 600;
+    }
+    .back-link:hover {
+      opacity: 0.8;
+    }
+    #login-msg {
+      margin-top: 16px;
+      text-align: center;
+      font-weight: 600;
+    }
+  </style>
 </head>
 <body>
-  <main class="container">
-    <section class="card">
-      <h2>Login</h2>
+  <div class="login-container">
+    <div class="login-card">
+      <div class="login-header">
+        <div class="login-logo">🛡️</div>
+        <h1 class="login-title">PHINS Portal</h1>
+        <p class="login-subtitle">Sign in to access your account</p>
+      </div>
+      
       <form id="login-form">
-        <label for="username">Username</label>
-        <input type="text" id="username" name="username" required autofocus />
-        <label for="password">Password</label>
-        <input type="password" id="password" name="password" required />
-        <button type="submit">Sign In</button>
+        <div class="form-group">
+          <label for="username">Username</label>
+          <input type="text" id="username" name="username" required autofocus placeholder="Enter your username" />
+        </div>
+        <div class="form-group">
+          <label for="password">Password</label>
+          <input type="password" id="password" name="password" required placeholder="Enter your password" />
+        </div>
+        <button type="submit" class="btn-submit">Sign In</button>
       </form>
-      <div id="login-msg" class="muted"></div>
-    </section>
-  </main>
+      
+      <div id="login-msg"></div>
+
+      <div class="demo-creds">
+        <strong>Demo Credentials:</strong><br>
+        <strong>Customer:</strong> username: <code>user</code> / password: <code>user123</code><br>
+        <strong>Admin:</strong> username: <code>admin</code> / password: <code>admin123</code>
+      </div>
+
+      <a href="/" class="back-link">← Back to Home</a>
+    </div>
+  </div>
+  
   <script src="/login.js"></script>
 </body>
 </html>

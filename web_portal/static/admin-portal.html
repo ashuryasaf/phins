@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PHINS Admin Portal - Complete Management System</title>
+    <link rel="stylesheet" href="admin-styles.css">
+</head>
+<body>
+    <div class="admin-container">
+        <!-- Login Screen -->
+        <div id="login-screen" class="screen active">
+            <div class="login-box">
+                <h1>🔒 PHINS Admin Portal</h1>
+                <form id="login-form">
+                    <div class="form-group">
+                        <label for="username">Username</label>
+                        <input type="text" id="username" name="username" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="password">Password</label>
+                        <input type="password" id="password" name="password" required>
+                    </div>
+                    <button type="submit" class="btn btn-primary">Login</button>
+                    <div id="login-error" class="error-message"></div>
+                </form>
+                <div class="demo-accounts">
+                    <p><strong>Demo Accounts:</strong></p>
+                    <ul>
+                        <li>admin / admin123 - Full Access</li>
+                        <li>underwriter / under123 - Underwriting</li>
+                        <li>claims_adjuster / claims123 - Claims</li>
+                        <li>accountant / acct123 - Accounting</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <!-- Main Dashboard -->
+        <div id="dashboard-screen" class="screen">
+            <nav class="top-nav">
+                <div class="nav-brand">PHINS Admin Portal</div>
+                <div class="nav-user">
+                    <span id="user-name">Admin User</span>
+                    <button id="logout-btn" class="btn btn-secondary">Logout</button>
+                </div>
+            </nav>
+
+            <div class="main-layout">
+                <aside class="sidebar">
+                    <ul class="nav-menu">
+                        <li><a href="#" data-screen="dashboard" class="nav-link active">📊 Dashboard</a></li>
+                        <li><a href="#" data-screen="policies" class="nav-link">📋 Policies</a></li>
+                        <li><a href="#" data-screen="create-policy" class="nav-link">➕ Create Policy</a></li>
+                        <li><a href="#" data-screen="underwriting" class="nav-link">✍️ Underwriting</a></li>
+                        <li><a href="#" data-screen="claims" class="nav-link">💰 Claims</a></li>
+                        <li><a href="#" data-screen="bi-actuary" class="nav-link">📈 BI - Actuary</a></li>
+                        <li><a href="#" data-screen="bi-underwriting" class="nav-link">📊 BI - Underwriting</a></li>
+                        <li><a href="#" data-screen="bi-accounting" class="nav-link">💹 BI - Accounting</a></li>
+                    </ul>
+                </aside>
+
+                <main class="content">
+                    <!-- Dashboard View -->
+                    <div id="dashboard-view" class="view active">
+                        <h2>Dashboard Overview</h2>
+                        <div class="stats-grid">
+                            <div class="stat-card">
+                                <h3>Total Policies</h3>
+                                <p id="stat-policies" class="stat-number">0</p>
+                            </div>
+                            <div class="stat-card">
+                                <h3>Pending Applications</h3>
+                                <p id="stat-pending" class="stat-number">0</p>
+                            </div>
+                            <div class="stat-card">
+                                <h3>Active Claims</h3>
+                                <p id="stat-claims" class="stat-number">0</p>
+                            </div>
+                            <div class="stat-card">
+                                <h3>Total Premium Revenue</h3>
+                                <p id="stat-revenue" class="stat-number">$0</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Policies View -->
+                    <div id="policies-view" class="view">
+                        <h2>All Policies</h2>
+                        <div id="policies-list" class="data-table">
+                            <p>Loading policies...</p>
+                        </div>
+                    </div>
+
+                    <!-- Create Policy View -->
+                    <div id="create-policy-view" class="view">
+                        <h2>Create New Policy</h2>
+                        <form id="create-policy-form" class="policy-form">
+                            <div class="form-section">
+                                <h3>Customer Information</h3>
+                                <div class="form-row">
+                                    <div class="form-group">
+                                        <label for="customer-name">Full Name *</label>
+                                        <input type="text" id="customer-name" required>
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="customer-email">Email *</label>
+                                        <input type="email" id="customer-email" required>
+                                    </div>
+                                </div>
+                                <div class="form-row">
+                                    <div class="form-group">
+                                        <label for="customer-phone">Phone</label>
+                                        <input type="tel" id="customer-phone">
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="customer-dob">Date of Birth *</label>
+                                        <input type="date" id="customer-dob" required>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="form-section">
+                                <h3>Policy Details</h3>
+                                <div class="form-row">
+                                    <div class="form-group">
+                                        <label for="policy-type">Policy Type *</label>
+                                        <select id="policy-type" required>
+                                            <option value="life">Life Insurance</option>
+                                            <option value="health">Health Insurance</option>
+                                            <option value="auto">Auto Insurance</option>
+                                            <option value="property">Property Insurance</option>
+                                            <option value="business">Business Insurance</option>
+                                        </select>
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="coverage-amount">Coverage Amount ($) *</label>
+                                        <input type="number" id="coverage-amount" min="10000" step="1000" value="100000" required>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="form-section">
+                                <h3>Underwriting Questionnaire</h3>
+                                
+                                <div class="form-group">
+                                    <label>Do you smoke or use tobacco products?</label>
+                                    <div class="radio-group">
+                                        <label><input type="radio" name="q-smoke" value="yes"> Yes</label>
+                                        <label><input type="radio" name="q-smoke" value="no" checked> No</label>
+                                    </div>
+                                </div>
+
+                                <div class="form-group">
+                                    <label>Do you have any pre-existing medical conditions?</label>
+                                    <div class="radio-group">
+                                        <label><input type="radio" name="q-medical" value="yes"> Yes</label>
+                                        <label><input type="radio" name="q-medical" value="no" checked> No</label>
+                                    </div>
+                                </div>
+
+                                <div class="form-group">
+                                    <label>Have you had any major surgeries in the past 5 years?</label>
+                                    <div class="radio-group">
+                                        <label><input type="radio" name="q-surgery" value="yes"> Yes</label>
+                                        <label><input type="radio" name="q-surgery" value="no" checked> No</label>
+                                    </div>
+                                </div>
+
+                                <div class="form-group">
+                                    <label>Do you engage in hazardous activities (extreme sports, dangerous occupations)?</label>
+                                    <div class="radio-group">
+                                        <label><input type="radio" name="q-hazard" value="yes"> Yes</label>
+                                        <label><input type="radio" name="q-hazard" value="no" checked> No</label>
+                                    </div>
+                                </div>
+
+                                <div class="form-group">
+                                    <label>Family history of major illnesses (heart disease, cancer, diabetes)?</label>
+                                    <div class="radio-group">
+                                        <label><input type="radio" name="q-family" value="yes"> Yes</label>
+                                        <label><input type="radio" name="q-family" value="no" checked> No</label>
+                                    </div>
+                                </div>
+
+                                <div class="form-group">
+                                    <label>Current medications (if any)</label>
+                                    <textarea id="q-medications" rows="2"></textarea>
+                                </div>
+
+                                <div class="form-group">
+                                    <label>Height (cm) and Weight (kg)</label>
+                                    <div class="form-row">
+                                        <input type="number" id="q-height" placeholder="Height (cm)" min="100" max="250">
+                                        <input type="number" id="q-weight" placeholder="Weight (kg)" min="30" max="300">
+                                    </div>
+                                </div>
+
+                                <div class="form-group">
+                                    <label>Calculated Risk Score</label>
+                                    <select id="risk-score">
+                                        <option value="low">Low Risk</option>
+                                        <option value="medium" selected>Medium Risk</option>
+                                        <option value="high">High Risk</option>
+                                        <option value="very_high">Very High Risk</option>
+                                    </select>
+                                </div>
+
+                                <div class="form-group">
+                                    <label>
+                                        <input type="checkbox" id="medical-exam-required">
+                                        Medical examination required
+                                    </label>
+                                </div>
+                            </div>
+
+                            <div class="form-actions">
+                                <button type="submit" class="btn btn-primary">Create Policy & Submit for Underwriting</button>
+                                <button type="reset" class="btn btn-secondary">Clear Form</button>
+                            </div>
+
+                            <div id="policy-result" class="result-message"></div>
+                        </form>
+                    </div>
+
+                    <!-- Underwriting View -->
+                    <div id="underwriting-view" class="view">
+                        <h2>Underwriting Applications</h2>
+                        <div class="filter-bar">
+                            <select id="uw-filter">
+                                <option value="all">All Applications</option>
+                                <option value="pending" selected>Pending</option>
+                                <option value="approved">Approved</option>
+                                <option value="rejected">Rejected</option>
+                            </select>
+                        </div>
+                        <div id="underwriting-list" class="data-table">
+                            <p>Loading applications...</p>
+                        </div>
+                    </div>
+
+                    <!-- Claims View -->
+                    <div id="claims-view" class="view">
+                        <h2>Claims Management</h2>
+                        <div class="action-bar">
+                            <button id="create-claim-btn" class="btn btn-primary">+ File New Claim</button>
+                            <select id="claims-filter">
+                                <option value="all">All Claims</option>
+                                <option value="pending" selected>Pending</option>
+                                <option value="under_review">Under Review</option>
+                                <option value="approved">Approved</option>
+                                <option value="paid">Paid</option>
+                                <option value="rejected">Rejected</option>
+                            </select>
+                        </div>
+                        <div id="claims-list" class="data-table">
+                            <p>Loading claims...</p>
+                        </div>
+                    </div>
+
+                    <!-- BI Actuary View -->
+                    <div id="bi-actuary-view" class="view">
+                        <h2>Business Intelligence - Actuary Level</h2>
+                        <div class="bi-dashboard">
+                            <div class="bi-card">
+                                <h3>Total Exposure</h3>
+                                <p id="bi-actuary-exposure" class="bi-value">$0</p>
+                            </div>
+                            <div class="bi-card">
+                                <h3>Average Premium</h3>
+                                <p id="bi-actuary-avg-premium" class="bi-value">$0</p>
+                            </div>
+                            <div class="bi-card">
+                                <h3>Claims Ratio</h3>
+                                <p id="bi-actuary-claims-ratio" class="bi-value">0%</p>
+                            </div>
+                            <div class="bi-card">
+                                <h3>Loss Ratio</h3>
+                                <p id="bi-actuary-loss-ratio" class="bi-value">0%</p>
+                            </div>
+                        </div>
+                        <div class="bi-charts">
+                            <div class="chart-container">
+                                <h3>Risk Distribution</h3>
+                                <div id="risk-distribution-chart" class="chart"></div>
+                            </div>
+                            <div class="chart-container">
+                                <h3>Policy Types</h3>
+                                <div id="policy-types-chart" class="chart"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- BI Underwriting View -->
+                    <div id="bi-underwriting-view" class="view">
+                        <h2>Business Intelligence - Underwriting Level</h2>
+                        <div class="bi-dashboard">
+                            <div class="bi-card">
+                                <h3>Pending Applications</h3>
+                                <p id="bi-uw-pending" class="bi-value">0</p>
+                            </div>
+                            <div class="bi-card">
+                                <h3>Approved This Month</h3>
+                                <p id="bi-uw-approved" class="bi-value">0</p>
+                            </div>
+                            <div class="bi-card">
+                                <h3>Rejection Rate</h3>
+                                <p id="bi-uw-rejection" class="bi-value">0%</p>
+                            </div>
+                            <div class="bi-card">
+                                <h3>Avg Processing Time</h3>
+                                <p id="bi-uw-processing" class="bi-value">0 days</p>
+                            </div>
+                        </div>
+                        <div class="bi-charts">
+                            <div class="chart-container">
+                                <h3>Risk Assessment Distribution</h3>
+                                <div id="risk-assessment-chart" class="chart"></div>
+                            </div>
+                            <div class="chart-container">
+                                <h3>Medical Exams Required</h3>
+                                <p id="bi-uw-medical" class="bi-value">0</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- BI Accounting View -->
+                    <div id="bi-accounting-view" class="view">
+                        <h2>Business Intelligence - Accounting Level</h2>
+                        <div class="bi-dashboard">
+                            <div class="bi-card">
+                                <h3>Total Revenue</h3>
+                                <p id="bi-acct-revenue" class="bi-value">$0</p>
+                            </div>
+                            <div class="bi-card">
+                                <h3>Claims Paid</h3>
+                                <p id="bi-acct-claims" class="bi-value">$0</p>
+                            </div>
+                            <div class="bi-card">
+                                <h3>Net Income</h3>
+                                <p id="bi-acct-net" class="bi-value">$0</p>
+                            </div>
+                            <div class="bi-card">
+                                <h3>Profit Margin</h3>
+                                <p id="bi-acct-margin" class="bi-value">0%</p>
+                            </div>
+                        </div>
+                        <div class="bi-dashboard">
+                            <div class="bi-card">
+                                <h3>Outstanding Premiums</h3>
+                                <p id="bi-acct-outstanding" class="bi-value">$0</p>
+                            </div>
+                            <div class="bi-card">
+                                <h3>Pending Claims Liability</h3>
+                                <p id="bi-acct-liability" class="bi-value">$0</p>
+                            </div>
+                        </div>
+                        <div class="bi-charts">
+                            <div class="chart-container full-width">
+                                <h3>Monthly Revenue vs Claims (Last 12 Months)</h3>
+                                <div id="monthly-breakdown-chart" class="chart"></div>
+                            </div>
+                        </div>
+                    </div>
+                </main>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal for Creating Claims -->
+    <div id="claim-modal" class="modal">
+        <div class="modal-content">
+            <span class="close">&times;</span>
+            <h2>File New Claim</h2>
+            <form id="create-claim-form">
+                <div class="form-group">
+                    <label for="claim-policy">Policy ID *</label>
+                    <input type="text" id="claim-policy" required placeholder="POL-XXXXXXXX-XXXX">
+                </div>
+                <div class="form-group">
+                    <label for="claim-type">Claim Type *</label>
+                    <select id="claim-type" required>
+                        <option value="medical">Medical</option>
+                        <option value="accident">Accident</option>
+                        <option value="death">Death Benefit</option>
+                        <option value="disability">Disability</option>
+                        <option value="property">Property Damage</option>
+                        <option value="liability">Liability</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="claim-amount">Claimed Amount ($) *</label>
+                    <input type="number" id="claim-amount" min="1" step="0.01" required>
+                </div>
+                <div class="form-group">
+                    <label for="claim-description">Description *</label>
+                    <textarea id="claim-description" rows="4" required></textarea>
+                </div>
+                <div class="form-actions">
+                    <button type="submit" class="btn btn-primary">Submit Claim</button>
+                    <button type="button" class="btn btn-secondary" onclick="closeClaimModal()">Cancel</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script src="admin-app.js"></script>
+</body>
+</html>
