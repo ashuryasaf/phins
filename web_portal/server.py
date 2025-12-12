@@ -18,6 +18,17 @@ import sys
 from datetime import datetime, timedelta
 import random
 import uuid
+import hashlib
+import secrets
+
+# Import billing engine
+try:
+    sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+    from billing_engine import billing_engine, SecurityValidator
+    BILLING_ENABLED = True
+except ImportError:
+    BILLING_ENABLED = False
+    print("Warning: Billing engine not available. Payment features disabled.")
 
 PORT = 8000
 ROOT = os.path.join(os.path.dirname(__file__), "static")
@@ -27,11 +38,24 @@ POLICIES = {}
 CLAIMS = {}
 CUSTOMERS = {}
 UNDERWRITING_APPLICATIONS = {}
+SESSIONS = {}  # token -> {username, expires, customer_id}
+
+# Hash passwords for security (in production, use proper password hashing)
+def hash_password(password: str) -> dict:
+    salt = secrets.token_hex(16)
+    hashed = hashlib.pbkdf2_hmac('sha256', password.encode(), salt.encode(), 100000)
+    return {'hash': hashed.hex(), 'salt': salt}
+
+def verify_password(password: str, stored_hash: str, salt: str) -> bool:
+    hashed = hashlib.pbkdf2_hmac('sha256', password.encode(), salt.encode(), 100000)
+    return secrets.compare_digest(hashed.hex(), stored_hash)
+
+# Store hashed passwords
 USERS = {
-    'admin': {'password': 'admin123', 'role': 'admin', 'name': 'Admin User'},
-    'underwriter': {'password': 'under123', 'role': 'underwriter', 'name': 'John Underwriter'},
-    'claims_adjuster': {'password': 'claims123', 'role': 'claims', 'name': 'Jane Claims'},
-    'accountant': {'password': 'acct123', 'role': 'accountant', 'name': 'Bob Accountant'}
+    'admin': {**hash_password('admin123'), 'role': 'admin', 'name': 'Admin User'},
+    'underwriter': {**hash_password('under123'), 'role': 'underwriter', 'name': 'John Underwriter'},
+    'claims_adjuster': {**hash_password('claims123'), 'role': 'claims', 'name': 'Jane Claims'},
+    'accountant': {**hash_password('acct123'), 'role': 'accountant', 'name': 'Bob Accountant'}
 }
 
 
@@ -476,7 +500,7 @@ class PortalHandler(BaseHTTPRequestHandler):
         length = int(self.headers.get('Content-Length', 0))
         body = self.rfile.read(length).decode('utf-8') if length else ''
         
-        # Demo login endpoint
+        # Demo login endpoint with secure password verification
         if path == '/api/login':
             try:
                 creds = json.loads(body)
@@ -484,14 +508,25 @@ class PortalHandler(BaseHTTPRequestHandler):
                 password = creds.get('password', '')
                 
                 user = USERS.get(username)
-                if user and user['password'] == password:
-                    token = f"demo-token-{username}-{uuid.uuid4().hex[:8]}"
+                if user and verify_password(password, user['hash'], user['salt']):
+                    # Generate secure session token
+                    token = f"phins_{secrets.token_urlsafe(32)}"
+                    expires = datetime.now() + timedelta(hours=24)
+                    
+                    # Store session
+                    SESSIONS[token] = {
+                        'username': username,
+                        'expires': expires.isoformat(),
+                        'customer_id': user.get('customer_id')
+                    }
+                    
                     self._set_json_headers()
                     self.wfile.write(json.dumps({
                         'token': token,
                         'role': user['role'],
                         'name': user['name'],
-                        'customer_id': user.get('customer_id')
+                        'customer_id': user.get('customer_id'),
+                        'expires': expires.isoformat()
                     }).encode('utf-8'))
                 else:
                     self._set_json_headers(401)
@@ -521,8 +556,12 @@ class PortalHandler(BaseHTTPRequestHandler):
                     # Provision portal login for the customer
                     cust_email = CUSTOMERS[customer_id].get('email') or f"{customer_id.lower()}@example.com"
                     temp_password = f"pw-{uuid.uuid4().hex[:10]}"
+                    
+                    # Hash the password for security
+                    pwd_hash = hash_password(temp_password)
                     USERS[cust_email] = {
-                        'password': temp_password,
+                        'hash': pwd_hash['hash'],
+                        'salt': pwd_hash['salt'],
                         'role': 'customer',
                         'name': CUSTOMERS[customer_id].get('name') or customer_id,
                         'customer_id': customer_id
@@ -563,13 +602,16 @@ class PortalHandler(BaseHTTPRequestHandler):
                 POLICIES[policy_id] = policy
                 
                 self._set_json_headers(201)
+                
+                # Return temp_password (stored in closure before hashing)
+                login_username = CUSTOMERS[customer_id].get('email') or f"{customer_id.lower()}@example.com"
                 self.wfile.write(json.dumps({
                     'policy': policy,
                     'underwriting': UNDERWRITING_APPLICATIONS[uw_id],
                     'customer': CUSTOMERS[customer_id],
                     'provisioned_login': {
-                        'username': (CUSTOMERS[customer_id].get('email') or f"{customer_id.lower()}@example.com"),
-                        'password': USERS[(CUSTOMERS[customer_id].get('email') or f"{customer_id.lower()}@example.com")]['password']
+                        'username': login_username,
+                        'password': temp_password  # Return plain password for first login
                     }
                 }).encode('utf-8'))
             except Exception as e:
@@ -743,6 +785,153 @@ class PortalHandler(BaseHTTPRequestHandler):
                 self._set_json_headers(400)
                 self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
             return
+        
+        # ========== BILLING API ENDPOINTS ==========
+        if BILLING_ENABLED:
+            # Add payment method
+            if path == '/api/billing/payment-method':
+                try:
+                    data = json.loads(body)
+                    customer_id = data.get('customer_id')
+                    if not customer_id:
+                        self._set_json_headers(400)
+                        self.wfile.write(json.dumps({'error': 'customer_id required'}).encode('utf-8'))
+                        return
+                    
+                    result = billing_engine.add_payment_method(customer_id, data)
+                    self._set_json_headers(200 if result['success'] else 400)
+                    self.wfile.write(json.dumps(result).encode('utf-8'))
+                except Exception as e:
+                    self._set_json_headers(500)
+                    self.wfile.write(json.dumps({'success': False, 'error': str(e)}).encode('utf-8'))
+                return
+            
+            # Process payment/charge
+            if path == '/api/billing/charge':
+                try:
+                    data = json.loads(body)
+                    customer_id = data.get('customer_id')
+                    amount = float(data.get('amount', 0))
+                    policy_id = data.get('policy_id')
+                    payment_token = data.get('payment_token')
+                    
+                    if not customer_id or not policy_id:
+                        self._set_json_headers(400)
+                        self.wfile.write(json.dumps({'error': 'customer_id and policy_id required'}).encode('utf-8'))
+                        return
+                    
+                    result = billing_engine.process_payment(
+                        customer_id=customer_id,
+                        amount=amount,
+                        policy_id=policy_id,
+                        payment_token=payment_token,
+                        metadata=data.get('metadata', {})
+                    )
+                    
+                    self._set_json_headers(200 if result['success'] else 400)
+                    self.wfile.write(json.dumps(result).encode('utf-8'))
+                except Exception as e:
+                    self._set_json_headers(500)
+                    self.wfile.write(json.dumps({'success': False, 'error': str(e)}).encode('utf-8'))
+                return
+            
+            # Get billing history
+            if path == '/api/billing/history':
+                try:
+                    data = json.loads(body) if body else {}
+                    customer_id = data.get('customer_id')
+                    
+                    if not customer_id:
+                        self._set_json_headers(400)
+                        self.wfile.write(json.dumps({'error': 'customer_id required'}).encode('utf-8'))
+                        return
+                    
+                    transactions = billing_engine.get_customer_transactions(customer_id)
+                    self._set_json_headers()
+                    self.wfile.write(json.dumps({'transactions': transactions}).encode('utf-8'))
+                except Exception as e:
+                    self._set_json_headers(500)
+                    self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+                return
+            
+            # Get billing statement
+            if path == '/api/billing/statement':
+                try:
+                    data = json.loads(body) if body else {}
+                    customer_id = data.get('customer_id')
+                    
+                    if not customer_id:
+                        self._set_json_headers(400)
+                        self.wfile.write(json.dumps({'error': 'customer_id required'}).encode('utf-8'))
+                        return
+                    
+                    statement = billing_engine.get_billing_statement(
+                        customer_id,
+                        data.get('start_date'),
+                        data.get('end_date')
+                    )
+                    self._set_json_headers()
+                    self.wfile.write(json.dumps(statement).encode('utf-8'))
+                except Exception as e:
+                    self._set_json_headers(500)
+                    self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+                return
+            
+            # Process refund
+            if path == '/api/billing/refund':
+                try:
+                    data = json.loads(body)
+                    transaction_id = data.get('transaction_id')
+                    amount = data.get('amount')
+                    reason = data.get('reason')
+                    
+                    if not transaction_id:
+                        self._set_json_headers(400)
+                        self.wfile.write(json.dumps({'error': 'transaction_id required'}).encode('utf-8'))
+                        return
+                    
+                    result = billing_engine.refund_payment(transaction_id, amount, reason)
+                    self._set_json_headers(200 if result['success'] else 400)
+                    self.wfile.write(json.dumps(result).encode('utf-8'))
+                except Exception as e:
+                    self._set_json_headers(500)
+                    self.wfile.write(json.dumps({'success': False, 'error': str(e)}).encode('utf-8'))
+                return
+            
+            # Get fraud alerts (admin only)
+            if path == '/api/billing/fraud-alerts':
+                try:
+                    data = json.loads(body) if body else {}
+                    alerts = billing_engine.get_fraud_alerts(
+                        severity=data.get('severity'),
+                        status=data.get('status')
+                    )
+                    self._set_json_headers()
+                    self.wfile.write(json.dumps({'alerts': alerts}).encode('utf-8'))
+                except Exception as e:
+                    self._set_json_headers(500)
+                    self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+                return
+            
+            # Get payment methods
+            if path == '/api/billing/payment-methods':
+                try:
+                    data = json.loads(body) if body else {}
+                    customer_id = data.get('customer_id')
+                    
+                    if not customer_id:
+                        self._set_json_headers(400)
+                        self.wfile.write(json.dumps({'error': 'customer_id required'}).encode('utf-8'))
+                        return
+                    
+                    methods = billing_engine.get_payment_methods(customer_id)
+                    self._set_json_headers()
+                    self.wfile.write(json.dumps({'payment_methods': methods}).encode('utf-8'))
+                except Exception as e:
+                    self._set_json_headers(500)
+                    self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+                return
+        # ========== END BILLING API ==========
         
         # Default: not found
         self.send_error(404, 'Not Found')
