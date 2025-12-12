@@ -21,6 +21,7 @@
    - Click "View Deployment" or check Settings → Domains
 
 6. **Test it:**
+
    ```
    https://[your-project].up.railway.app/admin-portal.html
    ```
@@ -52,14 +53,14 @@ Or use the automated script:
 ./deploy_railway.sh
 ```
 
-## Adding Custom Domain (www.phins.ai)
+## Adding Custom Domain (`www.phins.ai`)
 
 ### Step 1: In Railway Dashboard
 
 1. Go to your project
 2. Click **Settings** → **Domains**
 3. Click **Custom Domain**
-4. Enter: `www.phins.ai`
+4. Enter: ```www.phins.ai```
 5. Railway will provide a CNAME target (like `[project].up.railway.app`)
 
 ### Step 2: Configure DNS
@@ -73,6 +74,7 @@ At your domain registrar (GoDaddy, Namecheap, Cloudflare, etc.):
 - **TTL:** Auto or 3600
 
 **Example for Cloudflare:**
+
 ```
 Type: CNAME
 Name: www
@@ -89,8 +91,9 @@ Proxy: Off (DNS only)
 ### Step 4: SSL Certificate
 
 Railway automatically provisions SSL via Let's Encrypt:
+
 - Takes 5-15 minutes after DNS propagates
-- Your site will be accessible at `https://www.phins.ai`
+- Your site will be accessible at `https://``www.phins.ai```
 
 ## Verify Deployment
 
@@ -125,9 +128,10 @@ If you need custom configuration:
 
 1. Railway Dashboard → Variables
 2. Add:
+
    ```
    PORT=8000
-   DOMAIN=www.phins.ai
+   DOMAIN=``www.phins.ai``
    ENVIRONMENT=production
    ```
 
@@ -140,6 +144,7 @@ If you need custom configuration:
 - Click "View Logs" tab
 
 **CLI:**
+
 ```bash
 railway logs
 railway logs --follow  # Live logs
@@ -148,6 +153,7 @@ railway logs --follow  # Live logs
 ### Metrics
 
 Railway provides:
+
 - CPU usage
 - Memory usage
 - Network traffic
@@ -160,6 +166,7 @@ Check in: Dashboard → Metrics tab
 ### "Build Failed"
 
 **Check logs:**
+
 ```bash
 railway logs
 ```
@@ -176,6 +183,7 @@ Server didn't start properly.
 **Fix:**
 1. Check logs: `railway logs`
 2. Verify `railway.json` start command:
+
    ```json
    "startCommand": "python3 web_portal/server.py"
    ```
@@ -185,19 +193,23 @@ Server didn't start properly.
 **Solutions:**
 
 1. **Check URL:** Make sure you're accessing:
+
    ```
    https://[project].up.railway.app/admin-portal.html
    ```
+
    (Note the `/admin-portal.html` at the end)
 
 2. **Clear cache:** Use incognito mode
 
 3. **Check server logs:**
+
    ```bash
    railway logs
    ```
 
 4. **Test locally first:**
+
    ```bash
    python3 web_portal/server.py
    ```
@@ -212,9 +224,10 @@ Server didn't start properly.
 - [ ] Domain shows as "Active" in Railway dashboard
 
 **Verify DNS:**
+
 ```bash
-nslookup www.phins.ai
-dig www.phins.ai
+nslookup ``www.phins.ai``
+dig ``www.phins.ai``
 ```
 
 Should return Railway's domain.
@@ -246,6 +259,7 @@ Railway automatically installs these dependencies.
 ### Free Tier
 
 Railway provides:
+
 - **$5 free credits/month**
 - Enough for development/testing
 - ~500 hours of runtime
@@ -302,7 +316,7 @@ railway link
 2. **Bookmark your URLs:**
    - Production: `https://[project].up.railway.app`
    - Admin Portal: `https://[project].up.railway.app/admin-portal.html`
-   - Custom Domain: `https://www.phins.ai` (when DNS propagates)
+   - Custom Domain: `https://``www.phins.ai``` (when DNS propagates)
 
 3. **Monitor regularly:**
    - Check logs for errors

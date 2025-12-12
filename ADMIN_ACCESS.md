@@ -13,6 +13,7 @@ The server is running at: `http://localhost:8000`
 **Steps:**
 
 1. Make sure the server is running:
+
    ```bash
    python3 web_portal/server.py
    ```
@@ -21,7 +22,8 @@ The server is running at: `http://localhost:8000`
    - Click "Open in Browser" or "Make Public"
 
 3. The URL will be something like:
-   ```
+
+   ```text
    https://[workspace-name]-8000.app.github.dev/admin-portal.html
    ```
 
@@ -38,9 +40,11 @@ The server is running at: `http://localhost:8000`
 
 1. Clone the repository
 2. Start the server:
+
    ```bash
    python3 web_portal/server.py
    ```
+
 3. Open browser: http://localhost:8000/admin-portal.html
 4. Login with demo credentials above
 
@@ -50,10 +54,13 @@ The server is running at: `http://localhost:8000`
 
 **Solution:**
 1. Check if server is running:
+
    ```bash
    ps aux | grep server.py
    ```
+
 2. If not running, start it:
+
    ```bash
    python3 web_portal/server.py
    ```
@@ -61,12 +68,16 @@ The server is running at: `http://localhost:8000`
 ### "Login not working"
 
 **Diagnosis:**
+
+**Diagnosis:**
 - Run the authentication test:
+
   ```bash
   python3 test_admin_auth.py
   ```
 
 If tests pass but browser login fails:
+
 - Clear browser cache and cookies
 - Try incognito/private browsing mode
 - Check browser console (F12) for JavaScript errors
@@ -74,6 +85,7 @@ If tests pass but browser login fails:
 ### "Port 8000 already in use"
 
 **Solution:**
+
 ```bash
 # Kill existing server
 pkill -f "python3 web_portal/server.py"
@@ -88,9 +100,12 @@ python3 web_portal/server.py
 ### GitHub Codespaces Port Not Forwarded
 
 **Solution:**
-1. Go to VS Code "PORTS" tab (bottom panel)
+
+Steps to forward port:
+
+1. Go to VS Code PORTS tab (bottom panel)
 2. Find port 8000
-3. Right-click → "Port Visibility" → "Public"
+3. Right-click → Port Visibility → Public
 4. Click the globe icon to open in browser
 
 ## 📱 Available Portal Pages
@@ -114,7 +129,8 @@ python3 test_admin_auth.py
 ```
 
 Expected output:
-```
+
+```bash
 ✅ SUCCESS for all accounts
 ✅ admin-portal.html is accessible
 ✅ Page content looks correct
@@ -123,21 +139,25 @@ Expected output:
 ## 🚀 Quick Start Commands
 
 **Start server:**
+
 ```bash
 python3 web_portal/server.py
 ```
 
 **Start server in background:**
+
 ```bash
 python3 web_portal/server.py > /tmp/phins.log 2>&1 &
 ```
 
 **View server logs:**
+
 ```bash
 tail -f /tmp/phins.log
 ```
 
 **Stop server:**
+
 ```bash
 pkill -f "python3 web_portal/server.py"
 ```
@@ -159,13 +179,14 @@ pkill -f "python3 web_portal/server.py"
 ## 📚 Next Steps
 
 After logging in, you can:
+
 - View dashboard statistics
 - Manage policies (create, view, update)
 - Process underwriting applications
 - Handle claims
 - View BI dashboards (Actuary, Underwriting, Accounting)
 
-For deployment to www.phins.ai, see:
+For deployment to ``www.phins.ai``, see:
+
 - [DEPLOYMENT.md](DEPLOYMENT.md)
 - [DOMAIN_SETUP.md](DOMAIN_SETUP.md)
-

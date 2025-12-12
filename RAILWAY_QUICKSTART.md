@@ -90,7 +90,7 @@ curl https://[your-railway-url]/api/login \
 ✅ `requirements.txt` - Python dependencies  
 ✅ Server auto-detects PORT from Railway
 ✅ All demo accounts configured
-✅ Domain configuration (www.phins.ai)
+✅ Domain configuration (`www.phins.ai`)
 
 ## Troubleshooting
 
