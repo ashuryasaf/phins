@@ -27,6 +27,8 @@ class PHINSConfig:
     APP_NAME = "PHINS Insurance Management"
     APP_VERSION = "2.0.0"
     PUBLISHER_ID = "PHI"
+    DOMAIN = "www.phins.ai"
+    BASE_URL = "https://www.phins.ai"
     
     # ========== Internationalization ==========
     DEFAULT_LANGUAGE = Language.EN
@@ -110,7 +112,7 @@ class PHINSConfig:
     SMTP_HOST = "localhost"
     SMTP_PORT = 587
     SMTP_USE_TLS = True
-    EMAIL_FROM_ADDRESS = "noreply@phins.insurance"
+    EMAIL_FROM_ADDRESS = "noreply@phins.ai"
     
     # ========== SMS Configuration ==========
     ENABLE_SMS_NOTIFICATIONS = False

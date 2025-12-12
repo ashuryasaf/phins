@@ -28,6 +28,18 @@ Railway provides free hosting with automatic deployments from GitHub.
 - Automatically runs `python3 web_portal/server.py`
 - Port is automatically detected
 
+**Custom Domain Setup:**
+
+To use your custom domain `www.phins.ai`:
+
+1. In Railway dashboard, go to Settings → Domains
+2. Click "Custom Domain"
+3. Enter `www.phins.ai`
+4. Add the provided CNAME record to your DNS:
+   - **Name:** `www`
+   - **Value:** (provided by Railway)
+5. Wait for DNS propagation (up to 48 hours)
+
 ### 2. Render
 
 Render offers free web services with easy GitHub integration.
@@ -48,6 +60,21 @@ Render offers free web services with easy GitHub integration.
 **Configuration:**
 
 - Uses `render.yaml` for infrastructure-as-code
+
+**Custom Domain Setup:**
+
+To use `www.phins.ai` with Render:
+
+1. In Render dashboard, go to Settings → Custom Domain
+2. Click "Add Custom Domain"
+3. Enter `www.phins.ai`
+4. Add the provided CNAME record to your DNS provider:
+   - **Name:** `www`
+   - **Value:** (provided by Render)
+5. Render will automatically provision SSL certificate
+
+Additional features:
+
 - Free tier includes SSL and custom domains
 
 

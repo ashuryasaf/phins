@@ -1,5 +1,7 @@
 # PHINS Insurance Management System - Global Edition
 
+**🌐 Live at: [www.phins.ai](https://www.phins.ai)**
+
 ## 🌍 Now Available in 20 Languages with Enterprise-Grade Scalability
 
 PHINS (Professional Insurance Management System) is a **globally-ready, production-grade** insurance management platform supporting millions of concurrent users across 20 major world languages. Built for direct insurance companies that need simplicity, reliability, and scalability.
