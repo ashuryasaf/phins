@@ -12,8 +12,25 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 function checkAuth() {
-    const token = localStorage.getItem('phins_admin_token');
-    const userData = localStorage.getItem('phins_admin_user');
+    // Check admin-portal specific token
+    let token = localStorage.getItem('phins_admin_token');
+    let userData = localStorage.getItem('phins_admin_user');
+    
+    // If not found, check for main system token
+    if (!token) {
+        token = localStorage.getItem('phins_token');
+        const username = sessionStorage.getItem('username');
+        
+        if (token && username) {
+            // User is authenticated in main system, auto-login to admin portal
+            authToken = token;
+            currentUser = {name: username, role: 'admin'};
+            localStorage.setItem('phins_admin_token', authToken);
+            localStorage.setItem('phins_admin_user', JSON.stringify(currentUser));
+            showDashboard();
+            return;
+        }
+    }
     
     if (token && userData) {
         authToken = token;

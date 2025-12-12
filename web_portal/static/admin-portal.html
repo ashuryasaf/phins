@@ -12,6 +12,7 @@
         <div id="login-screen" class="screen active">
             <div class="login-box">
                 <h1>🔒 PHINS Admin Portal</h1>
+                <p style="color: #666; margin-bottom: 20px;">Already logged in as admin? <a href="#" onclick="window.location.reload(); return false;" style="color: #4CAF50;">Click here to auto-login</a></p>
                 <form id="login-form">
                     <div class="form-group">
                         <label for="username">Username</label>
@@ -33,13 +34,21 @@
                         <li>accountant / acct123 - Accounting</li>
                     </ul>
                 </div>
+                <div style="margin-top: 20px; text-align: center;">
+                    <a href="/admin.html" style="color: #4CAF50; text-decoration: none;">← Back to Main Dashboard</a>
+                </div>
             </div>
         </div>
 
         <!-- Main Dashboard -->
         <div id="dashboard-screen" class="screen">
             <nav class="top-nav">
-                <div class="nav-brand">PHINS Admin Portal</div>
+                <div class="nav-brand">
+                    <a href="/admin.html" style="color: white; text-decoration: none; display: flex; align-items: center; gap: 8px;">
+                        <span style="font-size: 1.2em;">⬅️</span>
+                        <span>PHINS Admin Portal</span>
+                    </a>
+                </div>
                 <div class="nav-user">
                     <span id="user-name">Admin User</span>
                     <button id="logout-btn" class="btn btn-secondary">Logout</button>
@@ -57,6 +66,9 @@
                         <li><a href="#" data-screen="bi-actuary" class="nav-link">📈 BI - Actuary</a></li>
                         <li><a href="#" data-screen="bi-underwriting" class="nav-link">📊 BI - Underwriting</a></li>
                         <li><a href="#" data-screen="bi-accounting" class="nav-link">💹 BI - Accounting</a></li>
+                        <li><hr style="border-color: #555; margin: 10px 0;"></li>
+                        <li><a href="/admin.html" class="nav-link" style="color: #4CAF50;">🏠 Main Dashboard</a></li>
+                        <li><a href="/billing.html" class="nav-link">💳 Billing</a></li>
                     </ul>
                 </aside>
 

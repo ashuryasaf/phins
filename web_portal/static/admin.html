@@ -15,7 +15,8 @@
         <a href="/admin.html#policies">Policies</a>
         <a href="/admin.html#claims">Claims</a>
         <a href="/admin.html#underwriting">Underwriting</a>
-        <a href="/admin.html#billing">Billing</a>
+        <a href="/billing.html">💳 Billing</a>
+        <a href="/admin-portal.html">⚙️ Advanced Tools</a>
         <select id="language-selector" class="language-selector" onchange="changeLanguage(this.value)">
           <option value="en">🌐 English</option>
           <option value="es">🌐 Español</option>
@@ -460,9 +461,21 @@
     
     // Enhanced New Policy Button Handler
     function openNewPolicyForm() {
-      // Store admin authentication state
+      // Ensure current authentication is stored
+      const currentToken = localStorage.getItem('phins_token');
+      const currentUser = sessionStorage.getItem('username');
+      
+      if (!currentToken || !currentUser) {
+        alert('Authentication error. Please log in again.');
+        window.location.href = '/login.html';
+        return;
+      }
+      
+      // Store admin authentication state for admin-portal
       localStorage.setItem('phins_redirect_source', 'admin-dashboard');
       localStorage.setItem('phins_admin_verified', 'true');
+      localStorage.setItem('phins_admin_token', currentToken);
+      localStorage.setItem('phins_admin_user', JSON.stringify({name: currentUser, role: 'admin'}));
       
       // Check if user wants to stay in same tab or open new
       const useNewTab = confirm('Open policy creation in:\n\nOK = New Tab\nCancel = Same Window');
