@@ -25,9 +25,9 @@ import secrets
 try:
     sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
     from billing_engine import billing_engine, SecurityValidator
-    BILLING_ENABLED = True
+    billing_enabled = True
 except ImportError:
-    BILLING_ENABLED = False
+    billing_enabled = False
     print("Warning: Billing engine not available. Payment features disabled.")
 
 PORT = 8000
@@ -51,9 +51,14 @@ MAX_LOGIN_ATTEMPTS = 5
 LOCKOUT_DURATION = 900  # 15 minutes in seconds
 MAX_MALICIOUS_ATTEMPTS = 10  # Permanent block after this many attempts
 MAX_REQUEST_SIZE = 10 * 1024 * 1024  # 10MB max request size
+SESSION_TIMEOUT = 3600  # 1 hour session timeout
+CONNECTION_TIMEOUT = 30  # 30 seconds connection timeout
+MAX_SESSIONS_PER_IP = 10  # Max concurrent sessions per IP
+CLEANUP_INTERVAL = 300  # Cleanup stale data every 5 minutes
+LAST_CLEANUP = datetime.now()
 
 # Hash passwords for security (in production, use proper password hashing)
-def hash_password(password: str) -> dict:
+def hash_password(password: str) -> dict[str, str]:
     salt = secrets.token_hex(16)
     hashed = hashlib.pbkdf2_hmac('sha256', password.encode(), salt.encode(), 100000)
     return {'hash': hashed.hex(), 'salt': salt}
@@ -62,7 +67,7 @@ def verify_password(password: str, stored_hash: str, salt: str) -> bool:
     hashed = hashlib.pbkdf2_hmac('sha256', password.encode(), salt.encode(), 100000)
     return secrets.compare_digest(hashed.hex(), stored_hash)
 
-def validate_session(token: str) -> dict:
+def validate_session(token: str) -> dict[str, str] | None:
     """Validate session token and return user info or None"""
     if not token or not token.startswith('phins_'):
         return None
@@ -122,7 +127,7 @@ def record_failed_login(client_ip: str):
     if FAILED_LOGINS[client_ip]['count'] >= MAX_LOGIN_ATTEMPTS:
         FAILED_LOGINS[client_ip]['lockout_until'] = datetime.now().timestamp() + LOCKOUT_DURATION
 
-def require_role(session: dict, allowed_roles: list) -> bool:
+def require_role(session: dict[str, str], allowed_roles: list[str]) -> bool:
     """Check if user has required role"""
     if not session:
         return False
@@ -137,7 +142,7 @@ def require_role(session: dict, allowed_roles: list) -> bool:
     
     return user.get('role') in allowed_roles
 
-def log_malicious_attempt(client_ip: str, reason: str, details: dict = None):
+def log_malicious_attempt(client_ip: str, reason: str, details: dict[str, str] | None = None):
     """Log a malicious attempt for monitoring and analysis"""
     attempt = {
         'timestamp': datetime.now().isoformat(),
@@ -171,7 +176,7 @@ def block_ip(client_ip: str, reason: str, permanent: bool = False):
     }
     print(f"🚫 BLOCKED IP: {client_ip} - {reason} {'(PERMANENT)' if permanent else ''}")
 
-def is_ip_blocked(client_ip: str) -> tuple:
+def is_ip_blocked(client_ip: str) -> tuple[bool, str]:
     """Check if IP is blocked, returns (is_blocked, reason)"""
     if client_ip in BLOCKED_IPS:
         block_data = BLOCKED_IPS[client_ip]
@@ -212,10 +217,90 @@ def detect_path_traversal(value: str) -> bool:
 
 def detect_command_injection(value: str) -> bool:
     """Detect command injection attempts"""
-    patterns = ['&&', '||', ';', '|', '`', '$(',  'system(', 'exec(', 'shell_exec', 'passthru']
+    patterns = ['&&', '||', ';', '|', '`', '$(', 'system(', 'exec(', 'shell_exec', 'passthru', 
+                'wget', 'curl', 'nc ', 'netcat', '/bin/', '/dev/', 'chmod', 'chown']
     return any(pattern in value for pattern in patterns)
 
-def validate_input_security(value: str, client_ip: str, field_name: str = 'input') -> tuple:
+def detect_malicious_payload(value: str) -> bool:
+    """Detect various malicious payloads and exploits"""
+    malicious_patterns = [
+        # Code execution
+        'eval(', 'exec(', '__import__', 'compile(', 'globals()',
+        # File operations
+        'open(', 'file(', 'read(', 'write(',
+        # System access
+        'os.system', 'subprocess', 'popen', 'pty.spawn',
+        # Reverse shells
+        'socket', 'connect(', 'bind(', 'listen(',
+        # Crypto mining
+        'crypto', 'mining', 'monero', 'bitcoin',
+        # Data exfiltration 
+        'base64', 'pickle', 'marshal', 'shelve',
+        # LDAP injection
+        '(|', '(&', '(!(', '*)(', ')(&',
+        # XML injection
+        '<!ENTITY', '<!DOCTYPE', 'SYSTEM \"',
+        # SSRF
+        'file://', 'gopher://', 'dict://', 'ftp://', 'tftp://',
+        # Template injection
+        '{{', '{%', '<%', '#{', '@{'
+    ]
+    value_lower = value.lower()
+    return any(pattern.lower() in value_lower for pattern in malicious_patterns)
+
+def cleanup_stale_data():
+    """Clean up expired sessions, old rate limits, and stale security data"""
+    global LAST_CLEANUP
+    now = datetime.now()
+    
+    # Only cleanup every CLEANUP_INTERVAL seconds
+    if (now - LAST_CLEANUP).total_seconds() < CLEANUP_INTERVAL:
+        return
+    
+    LAST_CLEANUP = now
+    timestamp = now.timestamp()
+    
+    # Clean expired sessions
+    expired_sessions = [token for token, sess in SESSIONS.items() 
+                       if datetime.fromisoformat(sess['expires']) < now]
+    for token in expired_sessions:
+        del SESSIONS[token]
+    
+    # Clean expired rate limits
+    expired_limits = [ip for ip, data in RATE_LIMIT.items() 
+                     if timestamp > data['reset_time'] + 300]  # 5 min grace
+    for ip in expired_limits:
+        del RATE_LIMIT[ip]
+    
+    # Clean expired login lockouts
+    expired_lockouts = [ip for ip, data in FAILED_LOGINS.items() 
+                       if timestamp > data.get('lockout_until', 0) + 300]
+    for ip in expired_lockouts:
+        del FAILED_LOGINS[ip]
+    
+    # Clean old temporary IP blocks (keep permanent ones)
+    expired_blocks = [ip for ip, data in BLOCKED_IPS.items() 
+                     if not data.get('permanent') and 
+                     (now - datetime.fromisoformat(data['blocked_at'])).total_seconds() > 86400]
+    for ip in expired_blocks:
+        del BLOCKED_IPS[ip]
+    
+    # Trim malicious attempts log to last 1000
+    if len(MALICIOUS_ATTEMPTS) > 1000:
+        MALICIOUS_ATTEMPTS[:] = MALICIOUS_ATTEMPTS[-1000:]
+    
+    if expired_sessions or expired_limits or expired_lockouts or expired_blocks:
+        print(f"🧹 Cleanup: Removed {len(expired_sessions)} sessions, {len(expired_limits)} rate limits, "
+              f"{len(expired_lockouts)} lockouts, {len(expired_blocks)} blocks")
+
+def check_session_limit(client_ip: str) -> bool:
+    """Check if IP has too many concurrent sessions"""
+    active_sessions = sum(1 for sess in SESSIONS.values() 
+                         if sess.get('ip') == client_ip and 
+                         datetime.fromisoformat(sess['expires']) > datetime.now())
+    return active_sessions < MAX_SESSIONS_PER_IP
+
+def validate_input_security(value: str, client_ip: str, field_name: str = 'input') -> tuple[bool, str | None]:
     """Comprehensive input validation, returns (is_valid, error_message)"""
     if not value:
         return (True, None)
@@ -229,6 +314,7 @@ def validate_input_security(value: str, client_ip: str, field_name: str = 'input
             'value_length': len(value_str),
             'sample': value_str[:100]
         })
+        block_ip(client_ip, 'SQL Injection detected', permanent=False)
         return (False, 'Invalid input detected')
     
     # Check for XSS
@@ -238,6 +324,7 @@ def validate_input_security(value: str, client_ip: str, field_name: str = 'input
             'value_length': len(value_str),
             'sample': value_str[:100]
         })
+        block_ip(client_ip, 'XSS attack detected', permanent=False)
         return (False, 'Invalid input detected')
     
     # Check for path traversal
@@ -246,6 +333,7 @@ def validate_input_security(value: str, client_ip: str, field_name: str = 'input
             'field': field_name,
             'value': value_str[:100]
         })
+        block_ip(client_ip, 'Path traversal detected', permanent=False)
         return (False, 'Invalid input detected')
     
     # Check for command injection
@@ -254,6 +342,17 @@ def validate_input_security(value: str, client_ip: str, field_name: str = 'input
             'field': field_name,
             'value': value_str[:100]
         })
+        block_ip(client_ip, 'Command injection detected', permanent=False)
+        return (False, 'Invalid input detected')
+    
+    # Check for malicious payloads
+    if detect_malicious_payload(value_str):
+        log_malicious_attempt(client_ip, 'Malicious Payload Detected', {
+            'field': field_name,
+            'value_length': len(value_str),
+            'sample': value_str[:100]
+        })
+        block_ip(client_ip, 'Malicious code detected', permanent=True)
         return (False, 'Invalid input detected')
     
     return (True, None)
@@ -453,6 +552,9 @@ class PortalHandler(BaseHTTPRequestHandler):
         self.end_headers()
 
     def do_GET(self):
+        # Periodic cleanup of stale data
+        cleanup_stale_data()
+        
         # Security checks
         client_ip = self.client_address[0]
         
@@ -832,6 +934,9 @@ class PortalHandler(BaseHTTPRequestHandler):
             self.send_error(404, 'Not Found: %s' % self.path)
 
     def do_POST(self):
+        # Periodic cleanup of stale data
+        cleanup_stale_data()
+        
         # Security checks
         client_ip = self.client_address[0]
         
@@ -1507,7 +1612,7 @@ class PortalHandler(BaseHTTPRequestHandler):
             return
         
         # ========== BILLING API ENDPOINTS ==========
-        if BILLING_ENABLED:
+        if billing_enabled:
             # Add payment method
             if path == '/api/billing/payment-method':
                 try:
@@ -1881,8 +1986,11 @@ class PortalHandler(BaseHTTPRequestHandler):
 def run_server(port=PORT):
     server_address = ('0.0.0.0', port)
     httpd = HTTPServer(server_address, PortalHandler)
+    httpd.timeout = CONNECTION_TIMEOUT  # Set connection timeout
     print(f'Serving web portal at http://0.0.0.0:{port} (static from {ROOT})')
     print(f'Access via: http://localhost:{port}')
+    print(f'🔒 Security: Rate limiting, malicious code blocking, auto-cleanup enabled')
+    print(f'⏱️  Connection timeout: {CONNECTION_TIMEOUT}s | Session timeout: {SESSION_TIMEOUT}s')
     httpd.serve_forever()
 
 
