@@ -1,0 +1,133 @@
+{
+  "generated_at": "2025-12-12T17:13:03.994937",
+  "summary": {
+    "total_pending": 5,
+    "pending_today": 5,
+    "risk_distribution": {
+      "low": 2,
+      "medium": 2,
+      "high": 1,
+      "very_high": 0
+    },
+    "medical_exam_required": 1,
+    "total_coverage": 2850000,
+    "total_premium": 7650
+  },
+  "applications": [
+    {
+      "application_id": "UW-20251212-9344",
+      "customer_id": "CUST-48442",
+      "customer_name": "John Doe",
+      "customer_email": "john.doe@example.com",
+      "customer_phone": "+1-555-123-4567",
+      "customer_dob": "1985-05-15",
+      "policy_id": "POL-20251212-2208",
+      "policy_type": "life",
+      "coverage_amount": 250000,
+      "annual_premium": 1200,
+      "monthly_premium": 100.0,
+      "status": "pending",
+      "risk_assessment": "low",
+      "medical_exam_required": false,
+      "submitted_date": "2025-12-12T17:13:03.994652",
+      "questionnaire_responses": {
+        "smoking": "No",
+        "health_conditions": "None",
+        "medications": "None",
+        "family_history": "Good"
+      }
+    },
+    {
+      "application_id": "UW-20251212-9539",
+      "customer_id": "CUST-79211",
+      "customer_name": "Jane Smith",
+      "customer_email": "jane.smith@example.com",
+      "customer_phone": "+1-555-234-5678",
+      "customer_dob": "1990-08-20",
+      "policy_id": "POL-20251212-4460",
+      "policy_type": "disability",
+      "coverage_amount": 500000,
+      "annual_premium": 1950,
+      "monthly_premium": 162.5,
+      "status": "pending",
+      "risk_assessment": "medium",
+      "medical_exam_required": false,
+      "submitted_date": "2025-12-12T17:13:03.994688",
+      "questionnaire_responses": {
+        "smoking": "Yes",
+        "health_conditions": "None",
+        "medications": "None",
+        "family_history": "Fair"
+      }
+    },
+    {
+      "application_id": "UW-20251212-6392",
+      "customer_id": "CUST-69517",
+      "customer_name": "Robert Johnson",
+      "customer_email": "robert.j@example.com",
+      "customer_phone": "+1-555-345-6789",
+      "customer_dob": "1978-03-12",
+      "policy_id": "POL-20251212-4658",
+      "policy_type": "health",
+      "coverage_amount": 1000000,
+      "annual_premium": 1440,
+      "monthly_premium": 120.0,
+      "status": "pending",
+      "risk_assessment": "high",
+      "medical_exam_required": true,
+      "submitted_date": "2025-12-12T17:13:03.994714",
+      "questionnaire_responses": {
+        "smoking": "Yes",
+        "health_conditions": "Diabetes",
+        "medications": "Metformin",
+        "family_history": "Fair"
+      }
+    },
+    {
+      "application_id": "UW-20251212-2293",
+      "customer_id": "CUST-23639",
+      "customer_name": "Maria Garcia",
+      "customer_email": "maria.garcia@example.com",
+      "customer_phone": "+1-555-456-7890",
+      "customer_dob": "1992-11-30",
+      "policy_id": "POL-20251212-4832",
+      "policy_type": "disability",
+      "coverage_amount": 750000,
+      "annual_premium": 1500,
+      "monthly_premium": 125.0,
+      "status": "pending",
+      "risk_assessment": "low",
+      "medical_exam_required": false,
+      "submitted_date": "2025-12-12T17:13:03.994734",
+      "questionnaire_responses": {
+        "smoking": "No",
+        "health_conditions": "None",
+        "medications": "None",
+        "family_history": "Good"
+      }
+    },
+    {
+      "application_id": "UW-20251212-1862",
+      "customer_id": "CUST-84717",
+      "customer_name": "David Lee",
+      "customer_email": "david.lee@example.com",
+      "customer_phone": "+1-555-567-8901",
+      "customer_dob": "1980-07-25",
+      "policy_id": "POL-20251212-1486",
+      "policy_type": "life",
+      "coverage_amount": 350000,
+      "annual_premium": 1560,
+      "monthly_premium": 130.0,
+      "status": "pending",
+      "risk_assessment": "medium",
+      "medical_exam_required": false,
+      "submitted_date": "2025-12-12T17:13:03.994756",
+      "questionnaire_responses": {
+        "smoking": "Yes",
+        "health_conditions": "None",
+        "medications": "None",
+        "family_history": "Fair"
+      }
+    }
+  ]
+}

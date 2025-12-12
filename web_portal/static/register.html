@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>PHINS Portal — Register</title>
+  <link rel="stylesheet" href="/styles.css">
+  <style>
+    body {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      background: linear-gradient(135deg, #005b96 0%, #003d66 100%);
+    }
+    .register-container {
+      width: 100%;
+      max-width: 500px;
+      padding: 16px;
+    }
+    .register-card {
+      background: #fff;
+      border-radius: 16px;
+      padding: 48px;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+    }
+    .register-header {
+      text-align: center;
+      margin-bottom: 32px;
+    }
+    .register-logo {
+      font-size: 3rem;
+      margin-bottom: 16px;
+    }
+    .register-title {
+      color: var(--brand);
+      margin: 0 0 8px 0;
+      font-size: 1.8rem;
+    }
+    .register-subtitle {
+      color: var(--muted);
+      margin: 0;
+      font-size: 0.95rem;
+    }
+    .form-group {
+      margin-bottom: 20px;
+    }
+    .form-group label {
+      display: block;
+      margin-bottom: 8px;
+      font-weight: 600;
+      color: var(--brand);
+    }
+    .form-group input, .form-group select {
+      width: 100%;
+      padding: 14px;
+      border: 2px solid var(--border);
+      border-radius: 8px;
+      font-size: 1rem;
+      transition: border-color 0.3s;
+    }
+    .form-group input:focus, .form-group select:focus {
+      outline: none;
+      border-color: var(--brand);
+    }
+    .form-group small {
+      display: block;
+      margin-top: 4px;
+      color: var(--muted);
+      font-size: 0.85rem;
+    }
+    .btn-submit {
+      width: 100%;
+      padding: 14px;
+      background: var(--brand);
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      font-size: 1.1rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.3s;
+    }
+    .btn-submit:hover {
+      background: var(--brand-dark);
+    }
+    .btn-submit:disabled {
+      background: var(--muted);
+      cursor: not-allowed;
+    }
+    .back-link {
+      display: block;
+      text-align: center;
+      margin-top: 24px;
+      color: var(--brand);
+      text-decoration: none;
+      font-weight: 600;
+    }
+    .back-link:hover {
+      opacity: 0.8;
+    }
+    #register-msg {
+      margin-top: 16px;
+      text-align: center;
+      font-weight: 600;
+    }
+    .password-strength {
+      height: 4px;
+      background: var(--border);
+      border-radius: 2px;
+      margin-top: 8px;
+      overflow: hidden;
+    }
+    .password-strength-bar {
+      height: 100%;
+      width: 0%;
+      transition: width 0.3s, background 0.3s;
+    }
+    .password-requirements {
+      margin-top: 8px;
+      font-size: 0.8rem;
+      color: var(--muted);
+    }
+    .requirement {
+      margin: 4px 0;
+    }
+    .requirement.met {
+      color: #28a745;
+    }
+  </style>
+</head>
+<body>
+  <div class="register-container">
+    <div class="register-card">
+      <div class="register-header">
+        <div class="register-logo">🛡️</div>
+        <h1 class="register-title">Create Account</h1>
+        <p class="register-subtitle">Join PHINS Portal</p>
+      </div>
+      
+      <form id="register-form">
+        <div class="form-group">
+          <label for="full-name">Full Name *</label>
+          <input type="text" id="full-name" name="full_name" required autofocus placeholder="Enter your full name" />
+        </div>
+
+        <div class="form-group">
+          <label for="email">Email Address *</label>
+          <input type="email" id="email" name="email" required placeholder="Enter your email" />
+          <small>This will be your username</small>
+        </div>
+
+        <div class="form-group">
+          <label for="phone">Phone Number</label>
+          <input type="tel" id="phone" name="phone" placeholder="Enter your phone number" />
+        </div>
+
+        <div class="form-group">
+          <label for="dob">Date of Birth</label>
+          <input type="date" id="dob" name="dob" />
+        </div>
+
+        <div class="form-group">
+          <label for="password">Password *</label>
+          <input type="password" id="password" name="password" required placeholder="Create a strong password" />
+          <div class="password-strength">
+            <div class="password-strength-bar" id="strength-bar"></div>
+          </div>
+          <div class="password-requirements">
+            <div class="requirement" id="req-length">✗ At least 8 characters</div>
+            <div class="requirement" id="req-uppercase">✗ One uppercase letter</div>
+            <div class="requirement" id="req-lowercase">✗ One lowercase letter</div>
+            <div class="requirement" id="req-number">✗ One number</div>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="confirm-password">Confirm Password *</label>
+          <input type="password" id="confirm-password" name="confirm_password" required placeholder="Re-enter your password" />
+        </div>
+
+        <button type="submit" class="btn-submit" id="submit-btn">Create Account</button>
+      </form>
+      
+      <div id="register-msg"></div>
+
+      <div style="margin-top: 20px; text-align: center;">
+        <a href="/login.html" style="color: var(--brand); text-decoration: none; font-size: 0.9rem;">Already have an account? Sign In</a>
+      </div>
+
+      <a href="/" class="back-link">← Back to Home</a>
+    </div>
+  </div>
+  
+  <script src="/register.js"></script>
+</body>
+</html>

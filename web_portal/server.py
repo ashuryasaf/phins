@@ -40,6 +40,18 @@ CUSTOMERS = {}
 UNDERWRITING_APPLICATIONS = {}
 SESSIONS = {}  # token -> {username, expires, customer_id}
 
+# Security tracking
+RATE_LIMIT = {}  # IP -> {count, reset_time}
+FAILED_LOGINS = {}  # IP -> {count, lockout_until}
+BLOCKED_IPS = {}  # IP -> {reason, blocked_at, attempts}
+MALICIOUS_ATTEMPTS = []  # Log of all malicious attempts
+SUSPICIOUS_PATTERNS = {}  # IP -> {pattern_type, count, first_seen}
+MAX_REQUESTS_PER_MINUTE = 60
+MAX_LOGIN_ATTEMPTS = 5
+LOCKOUT_DURATION = 900  # 15 minutes in seconds
+MAX_MALICIOUS_ATTEMPTS = 10  # Permanent block after this many attempts
+MAX_REQUEST_SIZE = 10 * 1024 * 1024  # 10MB max request size
+
 # Hash passwords for security (in production, use proper password hashing)
 def hash_password(password: str) -> dict:
     salt = secrets.token_hex(16)
@@ -49,6 +61,231 @@ def hash_password(password: str) -> dict:
 def verify_password(password: str, stored_hash: str, salt: str) -> bool:
     hashed = hashlib.pbkdf2_hmac('sha256', password.encode(), salt.encode(), 100000)
     return secrets.compare_digest(hashed.hex(), stored_hash)
+
+def validate_session(token: str) -> dict:
+    """Validate session token and return user info or None"""
+    if not token or not token.startswith('phins_'):
+        return None
+    
+    session = SESSIONS.get(token)
+    if not session:
+        return None
+    
+    # Check if session expired
+    try:
+        expires = datetime.fromisoformat(session['expires'])
+        if datetime.now() > expires:
+            del SESSIONS[token]
+            return None
+    except (KeyError, ValueError):
+        return None
+    
+    return session
+
+def check_rate_limit(client_ip: str) -> bool:
+    """Check if client has exceeded rate limit"""
+    now = datetime.now().timestamp()
+    
+    if client_ip in RATE_LIMIT:
+        limit_data = RATE_LIMIT[client_ip]
+        # Reset counter if minute has passed
+        if now > limit_data['reset_time']:
+            RATE_LIMIT[client_ip] = {'count': 1, 'reset_time': now + 60}
+            return True
+        elif limit_data['count'] < MAX_REQUESTS_PER_MINUTE:
+            limit_data['count'] += 1
+            return True
+        else:
+            return False
+    else:
+        RATE_LIMIT[client_ip] = {'count': 1, 'reset_time': now + 60}
+        return True
+
+def check_login_lockout(client_ip: str) -> bool:
+    """Check if IP is locked out due to failed login attempts"""
+    if client_ip in FAILED_LOGINS:
+        lockout_data = FAILED_LOGINS[client_ip]
+        if datetime.now().timestamp() < lockout_data.get('lockout_until', 0):
+            return False  # Still locked out
+        elif lockout_data['count'] >= MAX_LOGIN_ATTEMPTS:
+            # Reset after lockout period
+            del FAILED_LOGINS[client_ip]
+    return True
+
+def record_failed_login(client_ip: str):
+    """Record a failed login attempt"""
+    if client_ip not in FAILED_LOGINS:
+        FAILED_LOGINS[client_ip] = {'count': 0}
+    
+    FAILED_LOGINS[client_ip]['count'] += 1
+    
+    if FAILED_LOGINS[client_ip]['count'] >= MAX_LOGIN_ATTEMPTS:
+        FAILED_LOGINS[client_ip]['lockout_until'] = datetime.now().timestamp() + LOCKOUT_DURATION
+
+def require_role(session: dict, allowed_roles: list) -> bool:
+    """Check if user has required role"""
+    if not session:
+        return False
+    
+    username = session.get('username')
+    if not username:
+        return False
+    
+    user = USERS.get(username)
+    if not user:
+        return False
+    
+    return user.get('role') in allowed_roles
+
+def log_malicious_attempt(client_ip: str, reason: str, details: dict = None):
+    """Log a malicious attempt for monitoring and analysis"""
+    attempt = {
+        'timestamp': datetime.now().isoformat(),
+        'ip': client_ip,
+        'reason': reason,
+        'details': details or {}
+    }
+    MALICIOUS_ATTEMPTS.append(attempt)
+    
+    # Keep only last 1000 attempts in memory
+    if len(MALICIOUS_ATTEMPTS) > 1000:
+        MALICIOUS_ATTEMPTS.pop(0)
+    
+    # Check if IP should be permanently blocked
+    ip_attempts = sum(1 for a in MALICIOUS_ATTEMPTS if a['ip'] == client_ip)
+    if ip_attempts >= MAX_MALICIOUS_ATTEMPTS:
+        block_ip(client_ip, f"Exceeded {MAX_MALICIOUS_ATTEMPTS} malicious attempts", permanent=True)
+    
+    # Print to console for real-time monitoring
+    print(f"🚨 SECURITY ALERT: {client_ip} - {reason}")
+    if details:
+        print(f"   Details: {json.dumps(details, indent=2)}")
+
+def block_ip(client_ip: str, reason: str, permanent: bool = False):
+    """Block an IP address"""
+    BLOCKED_IPS[client_ip] = {
+        'reason': reason,
+        'blocked_at': datetime.now().isoformat(),
+        'permanent': permanent,
+        'attempts': BLOCKED_IPS.get(client_ip, {}).get('attempts', 0) + 1
+    }
+    print(f"🚫 BLOCKED IP: {client_ip} - {reason} {'(PERMANENT)' if permanent else ''}")
+
+def is_ip_blocked(client_ip: str) -> tuple:
+    """Check if IP is blocked, returns (is_blocked, reason)"""
+    if client_ip in BLOCKED_IPS:
+        block_data = BLOCKED_IPS[client_ip]
+        if block_data.get('permanent'):
+            return (True, block_data['reason'])
+        # Temporary blocks expire after 24 hours
+        blocked_at = datetime.fromisoformat(block_data['blocked_at'])
+        if datetime.now() - blocked_at < timedelta(hours=24):
+            return (True, block_data['reason'])
+        else:
+            del BLOCKED_IPS[client_ip]
+    return (False, None)
+
+def detect_sql_injection(value: str) -> bool:
+    """Detect potential SQL injection attempts"""
+    sql_patterns = [
+        "' OR '", '" OR "', "1=1", "1' OR '1", 'DROP TABLE', 'DELETE FROM',
+        'INSERT INTO', 'UPDATE ', 'UNION SELECT', '--', '/*', '*/', 'xp_',
+        'sp_', 'EXEC ', 'EXECUTE', ';--', "';--", '";--'
+    ]
+    value_upper = value.upper()
+    return any(pattern.upper() in value_upper for pattern in sql_patterns)
+
+def detect_xss_attempt(value: str) -> bool:
+    """Detect potential XSS (Cross-Site Scripting) attempts"""
+    xss_patterns = [
+        '<script', '</script>', 'javascript:', 'onerror=', 'onload=',
+        'onclick=', 'onmouseover=', '<iframe', '<object', '<embed',
+        'eval(', 'alert(', 'document.cookie', 'window.location'
+    ]
+    value_lower = value.lower()
+    return any(pattern.lower() in value_lower for pattern in xss_patterns)
+
+def detect_path_traversal(value: str) -> bool:
+    """Detect path traversal attempts"""
+    patterns = ['../', '..\\', '%2e%2e', '%252e%252e', '/etc/passwd', '/etc/shadow']
+    return any(pattern in value.lower() for pattern in patterns)
+
+def detect_command_injection(value: str) -> bool:
+    """Detect command injection attempts"""
+    patterns = ['&&', '||', ';', '|', '`', '$(',  'system(', 'exec(', 'shell_exec', 'passthru']
+    return any(pattern in value for pattern in patterns)
+
+def validate_input_security(value: str, client_ip: str, field_name: str = 'input') -> tuple:
+    """Comprehensive input validation, returns (is_valid, error_message)"""
+    if not value:
+        return (True, None)
+    
+    value_str = str(value)
+    
+    # Check for SQL injection
+    if detect_sql_injection(value_str):
+        log_malicious_attempt(client_ip, 'SQL Injection Attempt', {
+            'field': field_name,
+            'value_length': len(value_str),
+            'sample': value_str[:100]
+        })
+        return (False, 'Invalid input detected')
+    
+    # Check for XSS
+    if detect_xss_attempt(value_str):
+        log_malicious_attempt(client_ip, 'XSS Attempt', {
+            'field': field_name,
+            'value_length': len(value_str),
+            'sample': value_str[:100]
+        })
+        return (False, 'Invalid input detected')
+    
+    # Check for path traversal
+    if detect_path_traversal(value_str):
+        log_malicious_attempt(client_ip, 'Path Traversal Attempt', {
+            'field': field_name,
+            'value': value_str[:100]
+        })
+        return (False, 'Invalid input detected')
+    
+    # Check for command injection
+    if detect_command_injection(value_str):
+        log_malicious_attempt(client_ip, 'Command Injection Attempt', {
+            'field': field_name,
+            'value': value_str[:100]
+        })
+        return (False, 'Invalid input detected')
+    
+    return (True, None)
+
+def sanitize_input(value: str, max_length: int = 255) -> str:
+    """Sanitize user input to prevent injection attacks"""
+    if not value:
+        return ''
+    
+    # Truncate to max length
+    value = str(value)[:max_length]
+    
+    # Remove potentially dangerous characters
+    dangerous_chars = ['<', '>', '"', "'", '\\', '\x00', '\n', '\r', '\t']
+    for char in dangerous_chars:
+        value = value.replace(char, '')
+    
+    return value.strip()
+
+def validate_email(email: str) -> bool:
+    """Basic email validation"""
+    import re
+    pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+    return bool(re.match(pattern, email)) and len(email) <= 254
+
+def validate_amount(amount) -> bool:
+    """Validate monetary amounts"""
+    try:
+        amount = float(amount)
+        return 0 <= amount <= 100000000  # Max 100 million
+    except (ValueError, TypeError):
+        return False
 
 # Store hashed passwords
 USERS = {
@@ -191,6 +428,12 @@ class PortalHandler(BaseHTTPRequestHandler):
     def _set_json_headers(self, status=200):
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
+        # Security headers
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("X-Frame-Options", "DENY")
+        self.send_header("X-XSS-Protection", "1; mode=block")
+        self.send_header("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+        self.send_header("Content-Security-Policy", "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'")
         self.end_headers()
 
     def _set_file_headers(self, path):
@@ -203,31 +446,132 @@ class PortalHandler(BaseHTTPRequestHandler):
             self.send_header('Content-Type', 'text/css; charset=utf-8')
         else:
             self.send_header('Content-Type', 'application/octet-stream')
+        # Security headers
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("X-Frame-Options", "SAMEORIGIN")
+        self.send_header("X-XSS-Protection", "1; mode=block")
         self.end_headers()
 
     def do_GET(self):
+        # Security checks
+        client_ip = self.client_address[0]
+        
+        # Check if IP is blocked
+        is_blocked, block_reason = is_ip_blocked(client_ip)
+        if is_blocked:
+            self.send_response(403)
+            self.send_header('Content-Type', 'application/json')
+            self.end_headers()
+            self.wfile.write(json.dumps({
+                'error': 'Access denied',
+                'message': 'Your IP has been blocked due to suspicious activity'
+            }).encode('utf-8'))
+            return
+        
+        # Rate limiting
+        if not check_rate_limit(client_ip):
+            log_malicious_attempt(client_ip, 'Rate Limit Exceeded', {'endpoint': self.path})
+            self.send_response(429)
+            self.send_header('Content-Type', 'application/json')
+            self.send_header('Retry-After', '60')
+            self.end_headers()
+            self.wfile.write(json.dumps({'error': 'Too many requests. Please try again later.'}).encode('utf-8'))
+            return
+        
         parsed = urlparse.urlparse(self.path)
         path = parsed.path
         qs = urlparse.parse_qs(parsed.query)
+        
+        # Validate query parameters for injection attacks
+        for key, values in qs.items():
+            for value in values:
+                is_valid, error = validate_input_security(value, client_ip, f"query_param_{key}")
+                if not is_valid:
+                    self.send_response(400)
+                    self.send_header('Content-Type', 'application/json')
+                    self.end_headers()
+                    self.wfile.write(json.dumps({'error': error}).encode('utf-8'))
+                    return
 
-        # API endpoints
-        
-        # Admin authentication check for protected endpoints
+        # Session validation
         auth_header = self.headers.get('Authorization', '')
-        is_authenticated = auth_header.startswith('Bearer demo-token-')
+        token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+        session = validate_session(token) if token else None
+        is_authenticated = session is not None
         
-        # BI Dashboard Endpoints
+        # Security monitoring endpoint (Admin only)
+        if path == '/api/security/threats':
+            if not require_role(session, ['admin']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Unauthorized. Admin access required.'}).encode('utf-8'))
+                return
+            
+            # Get query parameters
+            limit = int(qs.get('limit', [100])[0])
+            
+            self._set_json_headers()
+            self.wfile.write(json.dumps({
+                'malicious_attempts': MALICIOUS_ATTEMPTS[-limit:],
+                'blocked_ips': dict(list(BLOCKED_IPS.items())[-50:]),  # Last 50 blocked IPs
+                'failed_logins': {k: v for k, v in list(FAILED_LOGINS.items())[-20:]},  # Last 20
+                'statistics': {
+                    'total_malicious_attempts': len(MALICIOUS_ATTEMPTS),
+                    'total_blocked_ips': len(BLOCKED_IPS),
+                    'permanent_blocks': sum(1 for b in BLOCKED_IPS.values() if b.get('permanent')),
+                    'active_lockouts': sum(1 for f in FAILED_LOGINS.values() 
+                                          if f.get('lockout_until', 0) > datetime.now().timestamp())
+                }
+            }, default=str).encode('utf-8'))
+            return
+        
+        # User Profile Endpoint
+        if path == '/api/profile':
+            if not session:
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Unauthorized'}).encode('utf-8'))
+                return
+            
+            username = session.get('username')
+            user = USERS.get(username)
+            
+            if not user:
+                self._set_json_headers(404)
+                self.wfile.write(json.dumps({'error': 'User not found'}).encode('utf-8'))
+                return
+            
+            self._set_json_headers()
+            self.wfile.write(json.dumps({
+                'username': username,
+                'name': user.get('name'),
+                'role': user.get('role'),
+                'customer_id': user.get('customer_id')
+            }).encode('utf-8'))
+            return
+        
+        # BI Dashboard Endpoints (Admin/Management only)
         if path == '/api/bi/actuary':
+            if not require_role(session, ['admin', 'accountant', 'underwriter']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Unauthorized. Admin access required.'}).encode('utf-8'))
+                return
             self._set_json_headers()
             self.wfile.write(json.dumps(get_bi_data_actuary()).encode('utf-8'))
             return
         
         if path == '/api/bi/underwriting':
+            if not require_role(session, ['admin', 'underwriter']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Unauthorized. Admin access required.'}).encode('utf-8'))
+                return
             self._set_json_headers()
             self.wfile.write(json.dumps(get_bi_data_underwriting()).encode('utf-8'))
             return
         
         if path == '/api/bi/accounting':
+            if not require_role(session, ['admin', 'accountant']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Unauthorized. Admin access required.'}).encode('utf-8'))
+                return
             self._set_json_headers()
             self.wfile.write(json.dumps(get_bi_data_accounting()).encode('utf-8'))
             return
@@ -488,6 +832,44 @@ class PortalHandler(BaseHTTPRequestHandler):
             self.send_error(404, 'Not Found: %s' % self.path)
 
     def do_POST(self):
+        # Security checks
+        client_ip = self.client_address[0]
+        
+        # Check if IP is blocked
+        is_blocked, block_reason = is_ip_blocked(client_ip)
+        if is_blocked:
+            self.send_response(403)
+            self.send_header('Content-Type', 'application/json')
+            self.end_headers()
+            self.wfile.write(json.dumps({
+                'error': 'Access denied',
+                'message': 'Your IP has been blocked due to suspicious activity'
+            }).encode('utf-8'))
+            return
+        
+        # Rate limiting
+        if not check_rate_limit(client_ip):
+            log_malicious_attempt(client_ip, 'Rate Limit Exceeded (POST)', {'endpoint': self.path})
+            self.send_response(429)
+            self.send_header('Content-Type', 'application/json')
+            self.send_header('Retry-After', '60')
+            self.end_headers()
+            self.wfile.write(json.dumps({'error': 'Too many requests. Please try again later.'}).encode('utf-8'))
+            return
+        
+        # Check request size
+        content_length = int(self.headers.get('Content-Length', 0))
+        if content_length > MAX_REQUEST_SIZE:
+            log_malicious_attempt(client_ip, 'Oversized Request', {
+                'size': content_length,
+                'max_allowed': MAX_REQUEST_SIZE
+            })
+            self.send_response(413)
+            self.send_header('Content-Type', 'application/json')
+            self.end_headers()
+            self.wfile.write(json.dumps({'error': 'Request too large'}).encode('utf-8'))
+            return
+        
         parsed = urlparse.urlparse(self.path)
         path = parsed.path
         
@@ -502,13 +884,49 @@ class PortalHandler(BaseHTTPRequestHandler):
         
         # Demo login endpoint with secure password verification
         if path == '/api/login':
+            client_ip = self.client_address[0]
+            
+            # Check if IP is locked out
+            if not check_login_lockout(client_ip):
+                lockout_data = FAILED_LOGINS.get(client_ip, {})
+                remaining = int(lockout_data.get('lockout_until', 0) - datetime.now().timestamp())
+                self._set_json_headers(429)
+                self.wfile.write(json.dumps({
+                    'error': f'Too many failed login attempts. Try again in {remaining} seconds.',
+                    'lockout_remaining': remaining
+                }).encode('utf-8'))
+                return
+            
             try:
                 creds = json.loads(body)
-                username = creds.get('username', '')
+                username = creds.get('username', '').strip()
                 password = creds.get('password', '')
+                
+                # Input validation
+                if not username or not password:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'Username and password required'}).encode('utf-8'))
+                    return
+                
+                # Security validation on username
+                is_valid, error = validate_input_security(username, client_ip, 'username')
+                if not is_valid:
+                    record_failed_login(client_ip)
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'Invalid username format'}).encode('utf-8'))
+                    return
+                
+                if len(password) < 6:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'Invalid credentials'}).encode('utf-8'))
+                    return
                 
                 user = USERS.get(username)
                 if user and verify_password(password, user['hash'], user['salt']):
+                    # Clear failed login attempts on success
+                    if client_ip in FAILED_LOGINS:
+                        del FAILED_LOGINS[client_ip]
+                    
                     # Generate secure session token
                     token = f"phins_{secrets.token_urlsafe(32)}"
                     expires = datetime.now() + timedelta(hours=24)
@@ -517,7 +935,9 @@ class PortalHandler(BaseHTTPRequestHandler):
                     SESSIONS[token] = {
                         'username': username,
                         'expires': expires.isoformat(),
-                        'customer_id': user.get('customer_id')
+                        'customer_id': user.get('customer_id'),
+                        'ip': client_ip,
+                        'created_at': datetime.now().isoformat()
                     }
                     
                     self._set_json_headers()
@@ -529,17 +949,317 @@ class PortalHandler(BaseHTTPRequestHandler):
                         'expires': expires.isoformat()
                     }).encode('utf-8'))
                 else:
+                    # Record failed login attempt
+                    record_failed_login(client_ip)
+                    
                     self._set_json_headers(401)
                     self.wfile.write(json.dumps({'error': 'Invalid credentials'}).encode('utf-8'))
-            except Exception as e:
+            except json.JSONDecodeError:
                 self._set_json_headers(400)
-                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+                self.wfile.write(json.dumps({'error': 'Invalid JSON payload'}).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': 'Internal server error'}).encode('utf-8'))
+            return
+        
+        # User Registration Endpoint
+        if path == '/api/register':
+            try:
+                data = json.loads(body)
+                name = sanitize_input(data.get('name', ''), 100)
+                email = sanitize_input(data.get('email', ''), 254).lower()
+                phone = sanitize_input(data.get('phone', ''), 20)
+                dob = data.get('dob', '')
+                password = data.get('password', '')
+                
+                # Validation
+                if not name or not email or not password:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'Name, email, and password are required'}).encode('utf-8'))
+                    return
+                
+                if not validate_email(email):
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'Invalid email format'}).encode('utf-8'))
+                    return
+                
+                if len(password) < 8:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'Password must be at least 8 characters'}).encode('utf-8'))
+                    return
+                
+                # Check if user already exists
+                if email in USERS:
+                    self._set_json_headers(409)
+                    self.wfile.write(json.dumps({'error': 'Email already registered'}).encode('utf-8'))
+                    return
+                
+                # Create customer record
+                customer_id = generate_customer_id()
+                CUSTOMERS[customer_id] = {
+                    'id': customer_id,
+                    'name': name,
+                    'email': email,
+                    'phone': phone,
+                    'dob': dob,
+                    'created_date': datetime.now().isoformat()
+                }
+                
+                # Create user account
+                pwd_hash = hash_password(password)
+                USERS[email] = {
+                    'hash': pwd_hash['hash'],
+                    'salt': pwd_hash['salt'],
+                    'role': 'customer',
+                    'name': name,
+                    'customer_id': customer_id
+                }
+                
+                self._set_json_headers(201)
+                self.wfile.write(json.dumps({
+                    'success': True,
+                    'customer_id': customer_id,
+                    'email': email,
+                    'message': 'Account created successfully. Please login with your credentials.'
+                }).encode('utf-8'))
+            except json.JSONDecodeError:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'Invalid JSON payload'}).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': 'Registration failed'}).encode('utf-8'))
+            return
+        
+        # Password Reset Endpoint
+        if path == '/api/reset-password':
+            try:
+                data = json.loads(body)
+                username = sanitize_input(data.get('username', ''), 254).lower()
+                email = sanitize_input(data.get('email', ''), 254).lower()
+                new_password = data.get('new_password', '')
+                
+                # Validation
+                if not username or not email or not new_password:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'All fields are required'}).encode('utf-8'))
+                    return
+                
+                if len(new_password) < 8:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'Password must be at least 8 characters'}).encode('utf-8'))
+                    return
+                
+                # Verify user exists and email matches
+                user = USERS.get(username)
+                if not user:
+                    # Try to find by email
+                    user = USERS.get(email)
+                    username = email
+                
+                if not user:
+                    self._set_json_headers(401)
+                    self.wfile.write(json.dumps({'error': 'Invalid credentials'}).encode('utf-8'))
+                    return
+                
+                # Verify email matches customer record
+                customer_id = user.get('customer_id')
+                if customer_id:
+                    customer = CUSTOMERS.get(customer_id)
+                    if customer and customer.get('email', '').lower() != email:
+                        self._set_json_headers(401)
+                        self.wfile.write(json.dumps({'error': 'Email does not match our records'}).encode('utf-8'))
+                        return
+                
+                # Update password
+                pwd_hash = hash_password(new_password)
+                USERS[username]['hash'] = pwd_hash['hash']
+                USERS[username]['salt'] = pwd_hash['salt']
+                
+                # Invalidate all existing sessions for this user
+                sessions_to_remove = [token for token, sess in SESSIONS.items() if sess.get('username') == username]
+                for token in sessions_to_remove:
+                    del SESSIONS[token]
+                
+                self._set_json_headers()
+                self.wfile.write(json.dumps({
+                    'success': True,
+                    'message': 'Password reset successfully. Please login with your new password.'
+                }).encode('utf-8'))
+            except json.JSONDecodeError:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'Invalid JSON payload'}).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': 'Password reset failed'}).encode('utf-8'))
+            return
+        
+        # Change Password Endpoint (authenticated users)
+        if path == '/api/change-password':
+            auth_header = self.headers.get('Authorization', '')
+            token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+            session = validate_session(token) if token else None
+            
+            if not session:
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Unauthorized. Please login.'}).encode('utf-8'))
+                return
+            
+            try:
+                data = json.loads(body)
+                current_password = data.get('current_password', '')
+                new_password = data.get('new_password', '')
+                
+                if not current_password or not new_password:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'Current and new password are required'}).encode('utf-8'))
+                    return
+                
+                if len(new_password) < 8:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'New password must be at least 8 characters'}).encode('utf-8'))
+                    return
+                
+                username = session.get('username')
+                user = USERS.get(username)
+                
+                if not user:
+                    self._set_json_headers(401)
+                    self.wfile.write(json.dumps({'error': 'User not found'}).encode('utf-8'))
+                    return
+                
+                # Verify current password
+                if not verify_password(current_password, user['hash'], user['salt']):
+                    self._set_json_headers(401)
+                    self.wfile.write(json.dumps({'error': 'Current password is incorrect'}).encode('utf-8'))
+                    return
+                
+                # Update password
+                pwd_hash = hash_password(new_password)
+                USERS[username]['hash'] = pwd_hash['hash']
+                USERS[username]['salt'] = pwd_hash['salt']
+                
+                # Invalidate all sessions except current
+                sessions_to_remove = [t for t, s in SESSIONS.items() if s.get('username') == username and t != token]
+                for t in sessions_to_remove:
+                    del SESSIONS[t]
+                
+                self._set_json_headers()
+                self.wfile.write(json.dumps({
+                    'success': True,
+                    'message': 'Password changed successfully'
+                }).encode('utf-8'))
+            except json.JSONDecodeError:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'Invalid JSON payload'}).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': 'Password change failed'}).encode('utf-8'))
+            return
+        
+        # Admin: Create New User Endpoint
+        if path == '/api/admin/create-user':
+            auth_header = self.headers.get('Authorization', '')
+            token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+            session = validate_session(token) if token else None
+            
+            if not require_role(session, ['admin']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Unauthorized. Admin access required.'}).encode('utf-8'))
+                return
+            
+            try:
+                data = json.loads(body)
+                username = sanitize_input(data.get('username', ''), 100).lower()
+                name = sanitize_input(data.get('name', ''), 100)
+                email = sanitize_input(data.get('email', ''), 254).lower()
+                role = data.get('role', 'customer')
+                password = data.get('password', '')
+                
+                # Validation
+                if not username or not name or not password:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'Username, name, and password are required'}).encode('utf-8'))
+                    return
+                
+                if role not in ['customer', 'admin', 'underwriter', 'claims', 'accountant']:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'Invalid role'}).encode('utf-8'))
+                    return
+                
+                if len(password) < 8:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'Password must be at least 8 characters'}).encode('utf-8'))
+                    return
+                
+                # Check if user already exists
+                if username in USERS:
+                    self._set_json_headers(409)
+                    self.wfile.write(json.dumps({'error': 'Username already exists'}).encode('utf-8'))
+                    return
+                
+                # Create customer record if role is customer
+                customer_id = None
+                if role == 'customer':
+                    customer_id = generate_customer_id()
+                    CUSTOMERS[customer_id] = {
+                        'id': customer_id,
+                        'name': name,
+                        'email': email,
+                        'created_date': datetime.now().isoformat()
+                    }
+                
+                # Create user account
+                pwd_hash = hash_password(password)
+                USERS[username] = {
+                    'hash': pwd_hash['hash'],
+                    'salt': pwd_hash['salt'],
+                    'role': role,
+                    'name': name,
+                    'customer_id': customer_id
+                }
+                
+                self._set_json_headers(201)
+                self.wfile.write(json.dumps({
+                    'success': True,
+                    'username': username,
+                    'role': role,
+                    'customer_id': customer_id,
+                    'message': 'User created successfully'
+                }).encode('utf-8'))
+            except json.JSONDecodeError:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'Invalid JSON payload'}).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': 'User creation failed'}).encode('utf-8'))
             return
         
         # Create Policy Endpoint
         if path == '/api/policies/create':
             try:
                 data = json.loads(body)
+                
+                # Validate and sanitize inputs
+                customer_name = sanitize_input(data.get('customer_name', ''), 100)
+                customer_email = sanitize_input(data.get('customer_email', ''), 254)
+                customer_phone = sanitize_input(data.get('customer_phone', ''), 20)
+                
+                if not customer_name:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'Customer name is required'}).encode('utf-8'))
+                    return
+                
+                if customer_email and not validate_email(customer_email):
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'Invalid email format'}).encode('utf-8'))
+                    return
+                
+                coverage_amount = data.get('coverage_amount', 100000)
+                if not validate_amount(coverage_amount):
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'Invalid coverage amount'}).encode('utf-8'))
+                    return
+                
                 policy_id = generate_policy_id()
                 customer_id = data.get('customer_id') or generate_customer_id()
                 
@@ -547,9 +1267,9 @@ class PortalHandler(BaseHTTPRequestHandler):
                 if customer_id not in CUSTOMERS:
                     CUSTOMERS[customer_id] = {
                         'id': customer_id,
-                        'name': data.get('customer_name', 'Unknown'),
-                        'email': data.get('customer_email', ''),
-                        'phone': data.get('customer_phone', ''),
+                        'name': customer_name,
+                        'email': customer_email,
+                        'phone': customer_phone,
                         'dob': data.get('customer_dob', ''),
                         'created_date': datetime.now().isoformat()
                     }
@@ -939,53 +1659,212 @@ class PortalHandler(BaseHTTPRequestHandler):
     def handle_quote_submission(self):
         """Handle quote form submission with multipart data"""
         try:
-            # Parse multipart form data
+            # Validate all form inputs for security
             content_type = self.headers.get('Content-Type', '')
             if not content_type.startswith('multipart/form-data'):
                 self._set_json_headers(400)
                 self.wfile.write(json.dumps({'error': 'Invalid content type'}).encode('utf-8'))
                 return
             
-            # Read the form data
+            # Read and parse the form data
             length = int(self.headers.get('Content-Length', 0))
             form_data = self.rfile.read(length)
             
-            # For demo purposes, just accept the submission
-            # In production, parse multipart data properly and integrate with underwriting_assistant
-            quote_id = f"QT-{datetime.now().strftime('%Y%m%d%H%M%S')}"
+            # Extract boundary from content type
+            boundary = content_type.split('boundary=')[1] if 'boundary=' in content_type else None
+            if not boundary:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'No boundary in multipart data'}).encode('utf-8'))
+                return
             
-            # Try to integrate with underwriting assistant
-            try:
-                sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
-                from underwriting_assistant import UnderwritingAssistant
-                from customer_validation import Customer, HealthAssessment
-                
-                # Create a demo customer record (in production, parse from form_data)
-                # For now, just log the submission
-                print(f"Quote submission received: {quote_id}")
-                
-            except Exception as e:
-                print(f"Underwriting integration unavailable: {e}")
+            # Parse multipart form data
+            fields = self._parse_multipart_data(form_data, boundary.encode())
             
-            # Return success response
+            # Validate all critical fields for security threats
+            critical_fields = ['first-name', 'last-name', 'email', 'phone', 'address', 
+                             'city', 'state', 'occupation', 'medical-conditions']
+            for field_name in critical_fields:
+                field_value = fields.get(field_name, '')
+                if field_value:
+                    threat = validate_input_security(field_value, field_name, self.client_address[0])
+                    if threat:
+                        self._set_json_headers(400)
+                        self.wfile.write(json.dumps({'error': f'Invalid input in {field_name}: {threat}'}).encode('utf-8'))
+                        return
+            
+            # Generate IDs
+            customer_id = generate_customer_id()
+            policy_id = generate_policy_id()
+            uw_id = f"UW-{datetime.now().strftime('%Y%m%d')}-{random.randint(1000, 9999)}"
+            
+            # Create customer record
+            customer_name = f"{fields.get('first-name', '')} {fields.get('last-name', '')}".strip()
+            CUSTOMERS[customer_id] = {
+                'id': customer_id,
+                'name': customer_name,
+                'first_name': fields.get('first-name', ''),
+                'last_name': fields.get('last-name', ''),
+                'email': fields.get('email', ''),
+                'phone': fields.get('phone', ''),
+                'dob': fields.get('dob', ''),
+                'gender': fields.get('gender', ''),
+                'address': fields.get('address', ''),
+                'city': fields.get('city', ''),
+                'state': fields.get('state', ''),
+                'zip': fields.get('zip', ''),
+                'occupation': fields.get('occupation', ''),
+                'created_date': datetime.now().isoformat()
+            }
+            
+            # Provision portal login for the customer
+            cust_email = CUSTOMERS[customer_id].get('email') or f"{customer_id.lower()}@example.com"
+            temp_password = f"pw-{uuid.uuid4().hex[:10]}"
+            pwd_hash = hash_password(temp_password)
+            USERS[cust_email] = {
+                'hash': pwd_hash['hash'],
+                'salt': pwd_hash['salt'],
+                'role': 'customer',
+                'name': customer_name,
+                'customer_id': customer_id
+            }
+            
+            # Parse coverage amount
+            coverage_amount = int(fields.get('coverage-amount', '250000'))
+            policy_type = fields.get('policy-type', 'disability')
+            
+            # Assess risk based on health information
+            risk_score = 'low'
+            medical_exam_required = False
+            
+            smoking = fields.get('smoking', '').lower()
+            if smoking in ['yes', 'smoker', 'current']:
+                risk_score = 'medium'
+            
+            health_conditions = fields.get('health-conditions', '').lower()
+            if any(condition in health_conditions for condition in ['diabetes', 'heart', 'cancer', 'chronic']):
+                risk_score = 'high'
+                medical_exam_required = True
+            
+            # Create underwriting application
+            UNDERWRITING_APPLICATIONS[uw_id] = {
+                'id': uw_id,
+                'policy_id': policy_id,
+                'customer_id': customer_id,
+                'status': 'pending',
+                'questionnaire_responses': {
+                    'smoking': fields.get('smoking', 'No'),
+                    'health_conditions': fields.get('health-conditions', 'None'),
+                    'medications': fields.get('medications', 'None'),
+                    'family_history': fields.get('family-history', 'Good'),
+                    'occupation': fields.get('occupation', ''),
+                    'height': fields.get('height', ''),
+                    'weight': fields.get('weight', '')
+                },
+                'risk_assessment': risk_score,
+                'medical_exam_required': medical_exam_required,
+                'submitted_date': datetime.now().isoformat()
+            }
+            
+            # Calculate premium
+            premium_data = calculate_premium({
+                'type': policy_type,
+                'coverage_amount': coverage_amount,
+                'age': self._calculate_age(fields.get('dob', '1990-01-01')),
+                'risk_score': risk_score
+            })
+            
+            # Create policy
+            POLICIES[policy_id] = {
+                'id': policy_id,
+                'customer_id': customer_id,
+                'type': policy_type,
+                'coverage_amount': coverage_amount,
+                'annual_premium': premium_data['annual'],
+                'monthly_premium': premium_data['monthly'],
+                'status': 'pending_underwriting',
+                'underwriting_id': uw_id,
+                'risk_score': risk_score,
+                'start_date': datetime.now().isoformat(),
+                'end_date': (datetime.now() + timedelta(days=365)).isoformat(),
+                'created_date': datetime.now().isoformat()
+            }
+            
+            print(f"✅ Application submitted: {uw_id} for customer {customer_id}")
+            print(f"   Customer: {customer_name} ({cust_email})")
+            print(f"   Policy: {policy_type.title()} - ${coverage_amount:,}")
+            print(f"   Risk: {risk_score}, Status: pending")
+            
+            # Return success response with all created records
             self._set_json_headers(200)
             response = {
                 'success': True,
-                'quote_id': quote_id,
-                'message': 'Your quote request has been submitted successfully. Our underwriting team will review your application and contact you within 2-3 business days.',
-                'estimated_premium': self.calculate_demo_premium(),
+                'application_id': uw_id,
+                'customer_id': customer_id,
+                'policy_id': policy_id,
+                'message': 'Your application has been submitted successfully. Our underwriting team will review it and contact you within 2-3 business days.',
+                'estimated_premium': premium_data,
+                'login_credentials': {
+                    'username': cust_email,
+                    'temporary_password': temp_password,
+                    'portal_url': '/login.html'
+                },
                 'next_steps': [
-                    'Review your email for confirmation',
+                    'Check your email for confirmation',
+                    'Login to customer portal to track your application',
                     'Our underwriter will contact you for any additional information',
                     'Complete medical examination if required',
                     'Receive final quote and policy terms'
-                ]
+                ],
+                'application_summary': {
+                    'customer_name': customer_name,
+                    'policy_type': policy_type,
+                    'coverage_amount': coverage_amount,
+                    'risk_assessment': risk_score,
+                    'status': 'pending'
+                }
             }
             self.wfile.write(json.dumps(response).encode('utf-8'))
             
         except Exception as e:
             self._set_json_headers(500)
-            self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            self.wfile.write(json.dumps({'error': str(e), 'details': str(e.__class__.__name__)}).encode('utf-8'))
+    
+    def _parse_multipart_data(self, data, boundary):
+        """Parse multipart/form-data into dictionary of fields"""
+        fields = {}
+        parts = data.split(b'--' + boundary)
+        
+        for part in parts:
+            if b'Content-Disposition: form-data' not in part:
+                continue
+            
+            # Extract field name
+            if b'name="' in part:
+                name_start = part.find(b'name="') + 6
+                name_end = part.find(b'"', name_start)
+                field_name = part[name_start:name_end].decode('utf-8')
+                
+                # Extract field value
+                value_start = part.find(b'\r\n\r\n')
+                if value_start != -1:
+                    value_start += 4
+                    value_end = part.rfind(b'\r\n')
+                    if value_end > value_start:
+                        field_value = part[value_start:value_end].decode('utf-8', errors='ignore').strip()
+                        if field_value:  # Only add non-empty values
+                            fields[field_name] = field_value
+        
+        return fields
+    
+    def _calculate_age(self, dob_str):
+        """Calculate age from date of birth string"""
+        try:
+            dob = datetime.strptime(dob_str, '%Y-%m-%d')
+            today = datetime.now()
+            age = today.year - dob.year - ((today.month, today.day) < (dob.month, dob.day))
+            return age
+        except:
+            return 30  # Default age
     
     def calculate_demo_premium(self):
         """Calculate a demo premium estimate"""

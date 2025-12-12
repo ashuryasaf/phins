@@ -186,7 +186,7 @@ After logging in, you can:
 - Handle claims
 - View BI dashboards (Actuary, Underwriting, Accounting)
 
-For deployment to ``www.phins.ai``, see:
+For deployment to ```www.phins.ai```, see:
 
 - [DEPLOYMENT.md](DEPLOYMENT.md)
 - [DOMAIN_SETUP.md](DOMAIN_SETUP.md)

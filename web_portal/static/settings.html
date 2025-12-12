@@ -1,0 +1,331 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>PHINS Portal — Account Settings</title>
+  <link rel="stylesheet" href="/styles.css">
+  <style>
+    .settings-container {
+      max-width: 800px;
+      margin: 40px auto;
+      padding: 20px;
+    }
+    .settings-card {
+      background: #fff;
+      border-radius: 12px;
+      padding: 32px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+      margin-bottom: 24px;
+    }
+    .settings-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 32px;
+    }
+    .settings-title {
+      color: var(--brand);
+      margin: 0;
+    }
+    .section-title {
+      color: var(--brand);
+      font-size: 1.3rem;
+      margin-bottom: 20px;
+      padding-bottom: 10px;
+      border-bottom: 2px solid var(--border);
+    }
+    .form-group {
+      margin-bottom: 20px;
+    }
+    .form-group label {
+      display: block;
+      margin-bottom: 8px;
+      font-weight: 600;
+      color: var(--brand);
+    }
+    .form-group input {
+      width: 100%;
+      padding: 12px;
+      border: 2px solid var(--border);
+      border-radius: 8px;
+      font-size: 1rem;
+    }
+    .form-group input:focus {
+      outline: none;
+      border-color: var(--brand);
+    }
+    .form-group input:disabled {
+      background: var(--bg);
+      cursor: not-allowed;
+    }
+    .btn-primary {
+      padding: 12px 24px;
+      background: var(--brand);
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.3s;
+    }
+    .btn-primary:hover {
+      background: var(--brand-dark);
+    }
+    .btn-primary:disabled {
+      background: var(--muted);
+      cursor: not-allowed;
+    }
+    .btn-secondary {
+      padding: 12px 24px;
+      background: #6c757d;
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+      margin-left: 10px;
+    }
+    .message {
+      padding: 12px;
+      margin: 16px 0;
+      border-radius: 8px;
+      font-weight: 600;
+    }
+    .message.success {
+      background: #d4edda;
+      color: #155724;
+      border: 1px solid #c3e6cb;
+    }
+    .message.error {
+      background: #f8d7da;
+      color: #721c24;
+      border: 1px solid #f5c6cb;
+    }
+    .info-text {
+      color: var(--muted);
+      font-size: 0.9rem;
+      margin-top: 8px;
+    }
+  </style>
+</head>
+<body>
+  <div class="settings-container">
+    <div class="settings-header">
+      <h1 class="settings-title">Account Settings</h1>
+      <a href="/dashboard.html" class="btn-secondary">← Back to Dashboard</a>
+    </div>
+
+    <!-- Profile Information -->
+    <div class="settings-card">
+      <h2 class="section-title">Profile Information</h2>
+      <div class="form-group">
+        <label>Name</label>
+        <input type="text" id="profile-name" disabled />
+      </div>
+      <div class="form-group">
+        <label>Email</label>
+        <input type="email" id="profile-email" disabled />
+      </div>
+      <div class="form-group">
+        <label>Role</label>
+        <input type="text" id="profile-role" disabled />
+      </div>
+      <div class="form-group">
+        <label>Customer ID</label>
+        <input type="text" id="profile-customer-id" disabled />
+      </div>
+      <p class="info-text">Contact an administrator to update your profile information.</p>
+    </div>
+
+    <!-- Change Password -->
+    <div class="settings-card">
+      <h2 class="section-title">Change Password</h2>
+      <form id="password-form">
+        <div class="form-group">
+          <label for="current-password">Current Password *</label>
+          <input type="password" id="current-password" name="current_password" required />
+        </div>
+        <div class="form-group">
+          <label for="new-password">New Password *</label>
+          <input type="password" id="new-password" name="new_password" required minlength="8" />
+          <p class="info-text">Must be at least 8 characters long</p>
+        </div>
+        <div class="form-group">
+          <label for="confirm-new-password">Confirm New Password *</label>
+          <input type="password" id="confirm-new-password" name="confirm_new_password" required />
+        </div>
+        <div id="password-msg"></div>
+        <button type="submit" class="btn-primary">Update Password</button>
+      </form>
+    </div>
+
+    <!-- Admin Section: Create User -->
+    <div class="settings-card" id="admin-section" style="display: none;">
+      <h2 class="section-title">Admin: Create New User</h2>
+      <form id="create-user-form">
+        <div class="form-group">
+          <label for="new-username">Username/Email *</label>
+          <input type="text" id="new-username" name="username" required />
+        </div>
+        <div class="form-group">
+          <label for="new-name">Full Name *</label>
+          <input type="text" id="new-name" name="name" required />
+        </div>
+        <div class="form-group">
+          <label for="new-email">Email Address</label>
+          <input type="email" id="new-email" name="email" />
+        </div>
+        <div class="form-group">
+          <label for="new-role">Role *</label>
+          <select id="new-role" name="role" required style="width: 100%; padding: 12px; border: 2px solid var(--border); border-radius: 8px;">
+            <option value="customer">Customer</option>
+            <option value="underwriter">Underwriter</option>
+            <option value="claims">Claims Adjuster</option>
+            <option value="accountant">Accountant</option>
+            <option value="admin">Admin</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="new-password-admin">Password *</label>
+          <input type="password" id="new-password-admin" name="password" required minlength="8" />
+        </div>
+        <div id="create-user-msg"></div>
+        <button type="submit" class="btn-primary">Create User</button>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    // Load user profile
+    const token = localStorage.getItem('phins_token');
+    if (!token) {
+      window.location.href = '/login.html';
+    }
+
+    // Fetch user profile info from session
+    fetch('/api/profile', {
+      headers: { 'Authorization': 'Bearer ' + token }
+    })
+      .then(r => r.json())
+      .then(data => {
+        if (data.error) {
+          window.location.href = '/login.html';
+          return;
+        }
+        
+        document.getElementById('profile-name').value = data.name || '';
+        document.getElementById('profile-email').value = data.username || '';
+        document.getElementById('profile-role').value = data.role || '';
+        document.getElementById('profile-customer-id').value = data.customer_id || 'N/A';
+        
+        // Show admin section if user is admin
+        if (data.role === 'admin') {
+          document.getElementById('admin-section').style.display = 'block';
+        }
+      })
+      .catch(err => {
+        console.error('Failed to load profile:', err);
+      });
+
+    // Change Password Form
+    document.getElementById('password-form').addEventListener('submit', function(e) {
+      e.preventDefault();
+      
+      const currentPassword = this.current_password.value;
+      const newPassword = this.new_password.value;
+      const confirmPassword = this.confirm_new_password.value;
+      const msg = document.getElementById('password-msg');
+      
+      if (newPassword !== confirmPassword) {
+        msg.className = 'message error';
+        msg.textContent = 'New passwords do not match';
+        return;
+      }
+      
+      if (newPassword.length < 8) {
+        msg.className = 'message error';
+        msg.textContent = 'Password must be at least 8 characters';
+        return;
+      }
+      
+      msg.className = 'message';
+      msg.textContent = 'Updating password...';
+      
+      fetch('/api/change-password', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer ' + token
+        },
+        body: JSON.stringify({
+          current_password: currentPassword,
+          new_password: newPassword
+        })
+      })
+        .then(r => r.json())
+        .then(data => {
+          if (data.success) {
+            msg.className = 'message success';
+            msg.textContent = 'Password updated successfully!';
+            this.reset();
+          } else {
+            msg.className = 'message error';
+            msg.textContent = 'Error: ' + (data.error || 'Failed to update password');
+          }
+        })
+        .catch(err => {
+          msg.className = 'message error';
+          msg.textContent = 'Error updating password. Please try again.';
+        });
+    });
+
+    // Create User Form (Admin only)
+    document.getElementById('create-user-form').addEventListener('submit', function(e) {
+      e.preventDefault();
+      
+      const username = this.username.value.trim();
+      const name = this.name.value.trim();
+      const email = this.email.value.trim();
+      const role = this.role.value;
+      const password = this.password.value;
+      const msg = document.getElementById('create-user-msg');
+      
+      msg.className = 'message';
+      msg.textContent = 'Creating user...';
+      
+      fetch('/api/admin/create-user', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer ' + token
+        },
+        body: JSON.stringify({
+          username: username,
+          name: name,
+          email: email,
+          role: role,
+          password: password
+        })
+      })
+        .then(r => r.json())
+        .then(data => {
+          if (data.success) {
+            msg.className = 'message success';
+            msg.textContent = 'User created successfully! Username: ' + data.username;
+            this.reset();
+          } else {
+            msg.className = 'message error';
+            msg.textContent = 'Error: ' + (data.error || 'Failed to create user');
+          }
+        })
+        .catch(err => {
+          msg.className = 'message error';
+          msg.textContent = 'Error creating user. Please try again.';
+        });
+    });
+  </script>
+</body>
+</html>

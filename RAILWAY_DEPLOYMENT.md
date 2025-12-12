@@ -53,14 +53,14 @@ Or use the automated script:
 ./deploy_railway.sh
 ```
 
-## Adding Custom Domain (`www.phins.ai`)
+## Adding Custom Domain (``www.phins.ai``)
 
 ### Step 1: In Railway Dashboard
 
 1. Go to your project
 2. Click **Settings** → **Domains**
 3. Click **Custom Domain**
-4. Enter: ```www.phins.ai```
+4. Enter: ````www.phins.ai````
 5. Railway will provide a CNAME target (like `[project].up.railway.app`)
 
 ### Step 2: Configure DNS
@@ -93,7 +93,7 @@ Proxy: Off (DNS only)
 Railway automatically provisions SSL via Let's Encrypt:
 
 - Takes 5-15 minutes after DNS propagates
-- Your site will be accessible at `https://``www.phins.ai```
+- Your site will be accessible at `https://```www.phins.ai````
 
 ## Verify Deployment
 
@@ -131,7 +131,7 @@ If you need custom configuration:
 
    ```
    PORT=8000
-   DOMAIN=``www.phins.ai``
+   DOMAIN=```www.phins.ai```
    ENVIRONMENT=production
    ```
 
@@ -226,8 +226,8 @@ Server didn't start properly.
 **Verify DNS:**
 
 ```bash
-nslookup ``www.phins.ai``
-dig ``www.phins.ai``
+nslookup ```www.phins.ai```
+dig ```www.phins.ai```
 ```
 
 Should return Railway's domain.
@@ -316,7 +316,7 @@ railway link
 2. **Bookmark your URLs:**
    - Production: `https://[project].up.railway.app`
    - Admin Portal: `https://[project].up.railway.app/admin-portal.html`
-   - Custom Domain: `https://``www.phins.ai``` (when DNS propagates)
+   - Custom Domain: `https://```www.phins.ai```` (when DNS propagates)
 
 3. **Monitor regularly:**
    - Check logs for errors
