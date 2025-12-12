@@ -20,6 +20,7 @@ import random
 import uuid
 import hashlib
 import secrets
+from typing import Dict, Any
 
 # Import billing engine
 try:
@@ -39,6 +40,7 @@ CLAIMS = {}
 CUSTOMERS = {}
 UNDERWRITING_APPLICATIONS = {}
 SESSIONS = {}  # token -> {username, expires, customer_id}
+BILLING = {}  # bill_id -> bill data (for metrics)
 
 # Security tracking
 RATE_LIMIT = {}  # IP -> {count, reset_time}
@@ -676,6 +678,24 @@ class PortalHandler(BaseHTTPRequestHandler):
                 return
             self._set_json_headers()
             self.wfile.write(json.dumps(get_bi_data_accounting()).encode('utf-8'))
+            return
+
+        # Platform Metrics Endpoint (for dashboards)
+        if path == '/api/metrics':
+            try:
+                from services.metrics_service import MetricsService
+                ms = MetricsService(POLICIES, CLAIMS, BILLING)
+                data = ms.summary()
+            except Exception:
+                data = {
+                    'policies': {'total': len(POLICIES), 'active': sum(1 for p in POLICIES.values() if p.get('status') == 'active')},
+                    'claims': {'pending': sum(1 for c in CLAIMS.values() if c.get('status') in ['pending', 'under_review']),
+                               'approved': sum(1 for c in CLAIMS.values() if c.get('status') == 'approved')},
+                    'billing': {'overdue': sum(1 for b in BILLING.values() if b.get('status') == 'overdue'),
+                                'outstanding': sum(1 for b in BILLING.values() if b.get('status') in ['outstanding', 'partial'])}
+                }
+            self._set_json_headers()
+            self.wfile.write(json.dumps({'metrics': data, 'ts': datetime.now().isoformat()}).encode('utf-8'))
             return
         
         # Policy Management Endpoints
