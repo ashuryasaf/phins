@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>PHINS – Application Status</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header>
+    <h1>Application & Policy Status</h1>
+    <nav>
+      <a href="/index.html">Home</a>
+      <a href="/login.html">Login</a>
+      <a href="/dashboard.html">Dashboard</a>
+    </nav>
+  </header>
+
+  <main>
+    <section class="card">
+      <h2>Your Status</h2>
+      <p id="status-summary" class="muted">Loading status...</p>
+      <div id="status-details" class="grid"></div>
+    </section>
+
+    <section class="card">
+      <h3>Policies</h3>
+      <ul id="policy-list"></ul>
+    </section>
+
+    <section class="card">
+      <h3>Underwriting Applications</h3>
+      <ul id="uw-list"></ul>
+    </section>
+  </main>
+
+  <script src="/status.js"></script>
+</body>
+</html>

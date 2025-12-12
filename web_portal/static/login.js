@@ -23,11 +23,16 @@ document.addEventListener('DOMContentLoaded', function () {
           // Store token and username
           localStorage.setItem('phins_token', data.token);
           sessionStorage.setItem('username', username);
+          if (data.customer_id) {
+            localStorage.setItem('phins_customer_id', data.customer_id);
+          }
           
           // Redirect based on user type
           setTimeout(() => {
             if (username === 'admin') {
               window.location.href = '/admin.html';
+            } else if (data.role === 'customer') {
+              window.location.href = '/status.html';
             } else {
               window.location.href = '/dashboard.html';
             }

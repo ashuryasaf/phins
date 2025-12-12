@@ -276,6 +276,49 @@ class PortalHandler(BaseHTTPRequestHandler):
                 self._set_json_headers()
                 self.wfile.write(json.dumps(list(CUSTOMERS.values())).encode('utf-8'))
             return
+
+        # Customer status endpoint (post-application visibility)
+        if path == '/api/customer/status':
+            customer_id = qs.get('customer_id', [None])[0]
+            if not customer_id:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'customer_id is required'}).encode('utf-8'))
+                return
+
+            customer = CUSTOMERS.get(customer_id)
+            if not customer:
+                self._set_json_headers(404)
+                self.wfile.write(json.dumps({'error': 'Customer not found'}).encode('utf-8'))
+                return
+
+            policies = [p for p in POLICIES.values() if p.get('customer_id') == customer_id]
+            uw_apps = [u for u in UNDERWRITING_APPLICATIONS.values() if u.get('customer_id') == customer_id]
+
+            # Determine overall application status (simple heuristic)
+            overall = 'no_application'
+            if uw_apps:
+                most_recent = sorted(uw_apps, key=lambda x: x.get('submitted_date', ''), reverse=True)[0]
+                overall = most_recent.get('status', 'pending')
+                if overall == 'approved':
+                    # Check if policy is active
+                    linked = next((p for p in policies if p.get('underwriting_id') == most_recent.get('id')), None)
+                    if linked and linked.get('status') == 'active':
+                        overall = 'active_policy'
+
+            payload = {
+                'customer': {
+                    'id': customer_id,
+                    'name': customer.get('name'),
+                    'email': customer.get('email')
+                },
+                'overall_status': overall,
+                'policies': policies,
+                'underwriting_applications': uw_apps
+            }
+
+            self._set_json_headers()
+            self.wfile.write(json.dumps(payload).encode('utf-8'))
+            return
         
         if path.startswith('/api/statement'):
             customer_id = qs.get('customer_id', ['CUST001'])[0]
@@ -447,7 +490,8 @@ class PortalHandler(BaseHTTPRequestHandler):
                     self.wfile.write(json.dumps({
                         'token': token,
                         'role': user['role'],
-                        'name': user['name']
+                        'name': user['name'],
+                        'customer_id': user.get('customer_id')
                     }).encode('utf-8'))
                 else:
                     self._set_json_headers(401)
@@ -473,6 +517,15 @@ class PortalHandler(BaseHTTPRequestHandler):
                         'phone': data.get('customer_phone', ''),
                         'dob': data.get('customer_dob', ''),
                         'created_date': datetime.now().isoformat()
+                    }
+                    # Provision portal login for the customer
+                    cust_email = CUSTOMERS[customer_id].get('email') or f"{customer_id.lower()}@example.com"
+                    temp_password = f"pw-{uuid.uuid4().hex[:10]}"
+                    USERS[cust_email] = {
+                        'password': temp_password,
+                        'role': 'customer',
+                        'name': CUSTOMERS[customer_id].get('name') or customer_id,
+                        'customer_id': customer_id
                     }
                 
                 # Create underwriting application
@@ -513,7 +566,11 @@ class PortalHandler(BaseHTTPRequestHandler):
                 self.wfile.write(json.dumps({
                     'policy': policy,
                     'underwriting': UNDERWRITING_APPLICATIONS[uw_id],
-                    'customer': CUSTOMERS[customer_id]
+                    'customer': CUSTOMERS[customer_id],
+                    'provisioned_login': {
+                        'username': (CUSTOMERS[customer_id].get('email') or f"{customer_id.lower()}@example.com"),
+                        'password': USERS[(CUSTOMERS[customer_id].get('email') or f"{customer_id.lower()}@example.com")]['password']
+                    }
                 }).encode('utf-8'))
             except Exception as e:
                 self._set_json_headers(400)
