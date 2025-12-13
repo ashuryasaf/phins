@@ -151,7 +151,7 @@ def require_role(session: dict[str, str] | None, allowed_roles: list[str]) -> bo
 
 def log_malicious_attempt(client_ip: str, reason: str, details: Dict[str, Any] | None = None):
     """Log a malicious attempt for monitoring and analysis"""
-    attempt = {
+    attempt: Dict[str, Any] = {
         'timestamp': datetime.now().isoformat(),
         'ip': client_ip,
         'reason': reason,
@@ -520,11 +520,12 @@ def try_get_statement_from_engine(customer_id: str) -> Any:
         engine = ae.AccountingEngine()
         # Try to call a best-effort method and coerce result to JSON-serializable
         if hasattr(engine, "get_customer_statement"):
-            stmt = engine.get_customer_statement(customer_id)
+            stmt = engine.get_customer_statement(customer_id)  # type: ignore
             try:
-                return json.loads(json.dumps(stmt, default=lambda o: o.__dict__))
+                result: Any = json.loads(json.dumps(stmt, default=lambda o: o.__dict__))
+                return result
             except Exception:
-                return stmt
+                return stmt  # type: ignore
     except Exception:
         pass
     return None
@@ -916,8 +917,11 @@ class PortalHandler(BaseHTTPRequestHandler):
                 import importlib.util
                 conn_path = os.path.join(os.path.dirname(__file__), 'connectors.py')
                 spec = importlib.util.spec_from_file_location('web_portal.connectors', conn_path)
-                connectors = importlib.util.module_from_spec(spec)
-                spec.loader.exec_module(connectors)
+                if spec and spec.loader:
+                    connectors = importlib.util.module_from_spec(spec)
+                    spec.loader.exec_module(connectors)
+                else:
+                    raise ImportError('Cannot load connectors')
 
                 if t == 'ni':
                     res = connectors.NationalInsuranceConnector().validate(national_id=value, dob=extra)
@@ -943,7 +947,7 @@ class PortalHandler(BaseHTTPRequestHandler):
             action = qs.get('action', [None])[0]
             disc_type = qs.get('type', [None])[0]
             
-            result = {'disclaimers': []}
+            result: Dict[str, Any] = {'disclaimers': []}
             try:
                 # Try to import accounting_engine to get disclaimers
                 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
@@ -988,8 +992,8 @@ class PortalHandler(BaseHTTPRequestHandler):
                 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
                 from accounting_engine import AccountingEngine
                 engine = AccountingEngine()
-                portfolio = engine.get_investment_portfolio_summary(customer_id)
-                result = portfolio
+                portfolio = engine.get_investment_portfolio_summary(customer_id)  # type: ignore
+                result = portfolio  # type: ignore
             except Exception as e:
                 result['error'] = str(e)
             
@@ -1006,8 +1010,8 @@ class PortalHandler(BaseHTTPRequestHandler):
                 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
                 from accounting_engine import AccountingEngine
                 engine = AccountingEngine()
-                returns = engine.get_projected_returns_analysis(customer_id, years)
-                result = returns
+                returns = engine.get_projected_returns_analysis(customer_id, years)  # type: ignore
+                result = returns  # type: ignore
             except Exception as e:
                 result['error'] = str(e)
             
@@ -2057,7 +2061,7 @@ class PortalHandler(BaseHTTPRequestHandler):
                 return
             
             # Parse multipart form data
-            fields = self._parse_multipart_data(form_data, boundary.encode())
+            fields = self._parse_multipart_data(form_data, boundary.encode())  # type: ignore
             
             # Validate all critical fields for security threats
             critical_fields = ['first-name', 'last-name', 'email', 'phone', 'address', 
@@ -2208,9 +2212,9 @@ class PortalHandler(BaseHTTPRequestHandler):
             self._set_json_headers(500)
             self.wfile.write(json.dumps({'error': str(e), 'details': str(e.__class__.__name__)}).encode('utf-8'))
     
-    def _parse_multipart_data(self, data, boundary):
+    def _parse_multipart_data(self, data: bytes, boundary: bytes) -> Dict[str, str]:
         """Parse multipart/form-data into dictionary of fields"""
-        fields = {}
+        fields: Dict[str, str] = {}
         parts = data.split(b'--' + boundary)
         
         for part in parts:
@@ -2235,7 +2239,7 @@ class PortalHandler(BaseHTTPRequestHandler):
         
         return fields
     
-    def _calculate_age(self, dob_str):
+    def _calculate_age(self, dob_str: str) -> int:
         """Calculate age from date of birth string"""
         try:
             dob = datetime.strptime(dob_str, '%Y-%m-%d')
@@ -2245,7 +2249,7 @@ class PortalHandler(BaseHTTPRequestHandler):
         except:
             return 30  # Default age
     
-    def calculate_demo_premium(self):
+    def calculate_demo_premium(self) -> Dict[str, Any]:
         """Calculate a demo premium estimate"""
         # Simple demo calculation
         import random
@@ -2257,7 +2261,7 @@ class PortalHandler(BaseHTTPRequestHandler):
         }
 
 
-def run_server(port=PORT):
+def run_server(port: int = PORT) -> None:
     server_address = ('0.0.0.0', port)
     httpd = HTTPServer(server_address, PortalHandler)
     httpd.timeout = CONNECTION_TIMEOUT  # Set connection timeout
@@ -2284,8 +2288,11 @@ def run_tests():
         import importlib.util
         conn_path = os.path.join(os.path.dirname(__file__), 'connectors.py')
         spec = importlib.util.spec_from_file_location('web_portal.connectors', conn_path)
-        connectors = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(connectors)
+        if spec and spec.loader:
+            connectors = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(connectors)
+        else:
+            raise ImportError('Cannot load connectors')
         print('\nConnector demo results:')
         res = connectors.demo_validators()
         for k, v in res.items():
