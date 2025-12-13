@@ -7,11 +7,10 @@ echo ""
 echo "Choose your deployment platform:"
 echo ""
 echo "1. Railway (Recommended - Free, Easy)"
-echo "2. Render (Free with auto-sleep)"
-echo "3. Docker (Self-hosted)"
-echo "4. Show deployment instructions"
+echo "2. Docker (Self-hosted)"
+echo "3. Show deployment instructions"
 echo ""
-read -p "Enter your choice (1-4): " choice
+read -p "Enter your choice (1-3): " choice
 
 case $choice in
   1)
@@ -28,24 +27,6 @@ case $choice in
     echo ""
     read -p "Press Enter to open Railway in browser..."
     $BROWSER "https://railway.app/new" 2>/dev/null || echo "Please visit: https://railway.app/new"
-    ;;
-  2)
-    echo ""
-    echo "🎨 Render Deployment"
-    echo "-------------------"
-    echo "1. Go to: https://render.com"
-    echo "2. Sign in with GitHub"
-    echo "3. Click 'New +' → 'Web Service'"
-    echo "4. Connect repository: ashuryasaf/phins"
-    echo "5. Settings:"
-    echo "   - Name: phins-portal"
-    echo "   - Environment: Python 3"
-    echo "   - Build Command: pip install -r requirements.txt"
-    echo "   - Start Command: python3 web_portal/server.py"
-    echo "6. Click 'Create Web Service'"
-    echo ""
-    read -p "Press Enter to open Render in browser..."
-    $BROWSER "https://dashboard.render.com/select-repo?type=web" 2>/dev/null || echo "Please visit: https://dashboard.render.com/"
     ;;
   3)
     echo ""
@@ -69,7 +50,7 @@ case $choice in
       echo "❌ Docker build failed. Make sure Docker is running."
     fi
     ;;
-  4)
+  3)
     echo ""
     echo "📖 Opening deployment documentation..."
     cat DEPLOYMENT.md

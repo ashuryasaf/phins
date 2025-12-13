@@ -35,19 +35,24 @@ PORT = 8000
 ROOT = os.path.join(os.path.dirname(__file__), "static")
 
 # In-memory storage for demo purposes
-POLICIES = {}
-CLAIMS = {}
-CUSTOMERS = {}
-UNDERWRITING_APPLICATIONS = {}
-SESSIONS = {}  # token -> {username, expires, customer_id}
-BILLING = {}  # bill_id -> bill data (for metrics)
+POLICIES: Dict[str, Dict[str, Any]] = {}
+CLAIMS: Dict[str, Dict[str, Any]] = {}
+CUSTOMERS: Dict[str, Dict[str, Any]] = {}
+UNDERWRITING_APPLICATIONS: Dict[str, Dict[str, Any]] = {}
+SESSIONS: Dict[str, Dict[str, Any]] = {}  # token -> {username, expires, customer_id}
+BILLING: Dict[str, Dict[str, Any]] = {}  # bill_id -> bill data (for metrics)
+try:
+    from services.audit_service import AuditService
+    audit = AuditService()
+except Exception:
+    audit = None
 
 # Security tracking
-RATE_LIMIT = {}  # IP -> {count, reset_time}
-FAILED_LOGINS = {}  # IP -> {count, lockout_until}
-BLOCKED_IPS = {}  # IP -> {reason, blocked_at, attempts}
-MALICIOUS_ATTEMPTS = []  # Log of all malicious attempts
-SUSPICIOUS_PATTERNS = {}  # IP -> {pattern_type, count, first_seen}
+RATE_LIMIT: Dict[str, Dict[str, Any]] = {}  # IP -> {count, reset_time}
+FAILED_LOGINS: Dict[str, Dict[str, Any]] = {}  # IP -> {count, lockout_until}
+BLOCKED_IPS: Dict[str, Dict[str, Any]] = {}  # IP -> {reason, blocked_at, attempts}
+MALICIOUS_ATTEMPTS: list[Dict[str, Any]] = []  # Log of all malicious attempts
+SUSPICIOUS_PATTERNS: Dict[str, Dict[str, Any]] = {}  # IP -> {pattern_type, count, first_seen}
 MAX_REQUESTS_PER_MINUTE = 60
 MAX_LOGIN_ATTEMPTS = 5
 LOCKOUT_DURATION = 900  # 15 minutes in seconds
@@ -57,7 +62,7 @@ SESSION_TIMEOUT = 3600  # 1 hour session timeout
 CONNECTION_TIMEOUT = 30  # 30 seconds connection timeout
 MAX_SESSIONS_PER_IP = 10  # Max concurrent sessions per IP
 CLEANUP_INTERVAL = 300  # Cleanup stale data every 5 minutes
-LAST_CLEANUP = datetime.now()
+last_cleanup = datetime.now()
 
 # Hash passwords for security (in production, use proper password hashing)
 def hash_password(password: str) -> dict[str, str]:
@@ -129,7 +134,7 @@ def record_failed_login(client_ip: str):
     if FAILED_LOGINS[client_ip]['count'] >= MAX_LOGIN_ATTEMPTS:
         FAILED_LOGINS[client_ip]['lockout_until'] = datetime.now().timestamp() + LOCKOUT_DURATION
 
-def require_role(session: dict[str, str], allowed_roles: list[str]) -> bool:
+def require_role(session: dict[str, str] | None, allowed_roles: list[str]) -> bool:
     """Check if user has required role"""
     if not session:
         return False
@@ -144,7 +149,7 @@ def require_role(session: dict[str, str], allowed_roles: list[str]) -> bool:
     
     return user.get('role') in allowed_roles
 
-def log_malicious_attempt(client_ip: str, reason: str, details: dict[str, str] | None = None):
+def log_malicious_attempt(client_ip: str, reason: str, details: Dict[str, Any] | None = None):
     """Log a malicious attempt for monitoring and analysis"""
     attempt = {
         'timestamp': datetime.now().isoformat(),
@@ -190,7 +195,7 @@ def is_ip_blocked(client_ip: str) -> tuple[bool, str]:
             return (True, block_data['reason'])
         else:
             del BLOCKED_IPS[client_ip]
-    return (False, None)
+    return (False, "")
 
 def detect_sql_injection(value: str) -> bool:
     """Detect potential SQL injection attempts"""
@@ -252,14 +257,14 @@ def detect_malicious_payload(value: str) -> bool:
 
 def cleanup_stale_data():
     """Clean up expired sessions, old rate limits, and stale security data"""
-    global LAST_CLEANUP
+    global last_cleanup
     now = datetime.now()
     
     # Only cleanup every CLEANUP_INTERVAL seconds
-    if (now - LAST_CLEANUP).total_seconds() < CLEANUP_INTERVAL:
+    if (now - last_cleanup).total_seconds() < CLEANUP_INTERVAL:
         return
     
-    LAST_CLEANUP = now
+    last_cleanup = now
     timestamp = now.timestamp()
     
     # Clean expired sessions
@@ -380,7 +385,7 @@ def validate_email(email: str) -> bool:
     pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
     return bool(re.match(pattern, email)) and len(email) <= 254
 
-def validate_amount(amount) -> bool:
+def validate_amount(amount: Any) -> bool:
     """Validate monetary amounts"""
     try:
         amount = float(amount)
@@ -389,7 +394,7 @@ def validate_amount(amount) -> bool:
         return False
 
 # Store hashed passwords
-USERS = {
+USERS: Dict[str, Dict[str, Any]] = {
     'admin': {**hash_password('admin123'), 'role': 'admin', 'name': 'Admin User'},
     'underwriter': {**hash_password('under123'), 'role': 'underwriter', 'name': 'John Underwriter'},
     'claims_adjuster': {**hash_password('claims123'), 'role': 'claims', 'name': 'Jane Claims'},
@@ -397,7 +402,7 @@ USERS = {
 }
 
 
-def get_mock_statement(customer_id):
+def get_mock_statement(customer_id: str) -> Dict[str, Any]:
     return {
         "customer_id": customer_id,
         "total_premium": 300.0,
@@ -411,16 +416,16 @@ def get_mock_statement(customer_id):
     }
 
 
-def generate_policy_id():
+def generate_policy_id() -> str:
     return f"POL-{datetime.now().strftime('%Y%m%d')}-{random.randint(1000, 9999)}"
 
-def generate_claim_id():
+def generate_claim_id() -> str:
     return f"CLM-{datetime.now().strftime('%Y%m%d')}-{random.randint(1000, 9999)}"
 
-def generate_customer_id():
+def generate_customer_id() -> str:
     return f"CUST-{random.randint(10000, 99999)}"
 
-def calculate_premium(policy_data):
+def calculate_premium(policy_data: Dict[str, Any]) -> Dict[str, float]:
     """Calculate premium based on policy type and customer data"""
     base_premium = {
         'life': 1200,
@@ -450,7 +455,7 @@ def calculate_premium(policy_data):
         'quarterly': round(annual_premium / 4, 2)
     }
 
-def get_bi_data_actuary():
+def get_bi_data_actuary() -> Dict[str, Any]:
     """Generate actuarial BI data"""
     return {
         'total_policies': len(POLICIES),
@@ -472,7 +477,7 @@ def get_bi_data_actuary():
         }
     }
 
-def get_bi_data_underwriting():
+def get_bi_data_underwriting() -> Dict[str, Any]:
     """Generate underwriting BI data"""
     return {
         'pending_applications': sum(1 for u in UNDERWRITING_APPLICATIONS.values() if u.get('status') == 'pending'),
@@ -488,7 +493,7 @@ def get_bi_data_underwriting():
         'medical_exams_required': sum(1 for u in UNDERWRITING_APPLICATIONS.values() if u.get('medical_exam_required', False))
     }
 
-def get_bi_data_accounting():
+def get_bi_data_accounting() -> Dict[str, Any]:
     """Generate accounting BI data"""
     total_premium_collected = sum(p.get('annual_premium', 0) for p in POLICIES.values() if p.get('status') == 'active')
     total_claims_paid = sum(c.get('approved_amount', 0) for c in CLAIMS.values() if c.get('status') == 'paid')
@@ -508,7 +513,7 @@ def get_bi_data_accounting():
         ][::-1]
     }
 
-def try_get_statement_from_engine(customer_id):
+def try_get_statement_from_engine(customer_id: str) -> Any:
     try:
         import accounting_engine as ae
 
@@ -526,7 +531,7 @@ def try_get_statement_from_engine(customer_id):
 
 
 class PortalHandler(BaseHTTPRequestHandler):
-    def _set_json_headers(self, status=200):
+    def _set_json_headers(self, status: int = 200) -> None:
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         # Security headers
@@ -537,7 +542,7 @@ class PortalHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Security-Policy", "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'")
         self.end_headers()
 
-    def _set_file_headers(self, path):
+    def _set_file_headers(self, path: str) -> None:
         self.send_response(200)
         if path.endswith('.html'):
             self.send_header('Content-Type', 'text/html; charset=utf-8')
@@ -627,6 +632,51 @@ class PortalHandler(BaseHTTPRequestHandler):
                 }
             }, default=str).encode('utf-8'))
             return
+
+        # Audit log endpoint (Admin only)
+        if path == '/api/audit':
+            if not require_role(session, ['admin']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Unauthorized. Admin access required.'}).encode('utf-8'))
+                return
+            # Pagination and basic filtering
+            page = int(qs.get('page', ['1'])[0])
+            page_size = int(qs.get('page_size', ['50'])[0])
+            page = max(1, page)
+            page_size = max(1, min(500, page_size))
+            actor = qs.get('actor', [None])[0]
+            action = qs.get('action', [None])[0]
+            entity_type = qs.get('entity_type', [None])[0]
+            logs = []
+            try:
+                # audit may be None if service unavailable
+                if audit and hasattr(audit, 'recent'):
+                    logs = audit.recent(10000)  # recent window
+                else:
+                    logs = []
+            except Exception:
+                logs = []
+            # Apply filters
+            def _match(entry: Dict[str, Any]) -> bool:
+                if actor and entry.get('actor') != actor:
+                    return False
+                if action and entry.get('action') != action:
+                    return False
+                if entity_type and entry.get('entity_type') != entity_type:
+                    return False
+                return True
+            filtered = [e for e in logs if _match(e)]
+            start = (page - 1) * page_size
+            end = start + page_size
+            payload = {
+                'items': filtered[start:end],
+                'page': page,
+                'page_size': page_size,
+                'total': len(filtered)
+            }
+            self._set_json_headers()
+            self.wfile.write(json.dumps(payload, default=str).encode('utf-8'))
+            return
         
         # User Profile Endpoint
         if path == '/api/profile':
@@ -636,6 +686,10 @@ class PortalHandler(BaseHTTPRequestHandler):
                 return
             
             username = session.get('username')
+            if not username:
+                self._set_json_headers(404)
+                self.wfile.write(json.dumps({'error': 'User not found'}).encode('utf-8'))
+                return
             user = USERS.get(username)
             
             if not user:
@@ -710,8 +764,21 @@ class PortalHandler(BaseHTTPRequestHandler):
                     self._set_json_headers(404)
                     self.wfile.write(json.dumps({'error': 'Policy not found'}).encode('utf-8'))
             else:
+                page = int(qs.get('page', ['1'])[0])
+                page_size = int(qs.get('page_size', ['50'])[0])
+                page = max(1, page)
+                page_size = max(1, min(500, page_size))
+                items = list(POLICIES.values())
+                start = (page - 1) * page_size
+                end = start + page_size
+                payload = {
+                    'items': items[start:end],
+                    'page': page,
+                    'page_size': page_size,
+                    'total': len(items)
+                }
                 self._set_json_headers()
-                self.wfile.write(json.dumps(list(POLICIES.values())).encode('utf-8'))
+                self.wfile.write(json.dumps(payload).encode('utf-8'))
             return
         
         # Claims Management Endpoints
@@ -731,8 +798,20 @@ class PortalHandler(BaseHTTPRequestHandler):
                 claims_list = list(CLAIMS.values())
                 if status:
                     claims_list = [c for c in claims_list if c.get('status') == status]
+                page = int(qs.get('page', ['1'])[0])
+                page_size = int(qs.get('page_size', ['50'])[0])
+                page = max(1, page)
+                page_size = max(1, min(500, page_size))
+                start = (page - 1) * page_size
+                end = start + page_size
+                payload = {
+                    'items': claims_list[start:end],
+                    'page': page,
+                    'page_size': page_size,
+                    'total': len(claims_list)
+                }
                 self._set_json_headers()
-                self.wfile.write(json.dumps(claims_list).encode('utf-8'))
+                self.wfile.write(json.dumps(payload).encode('utf-8'))
             return
         
         # Underwriting Applications Endpoints
@@ -983,6 +1062,7 @@ class PortalHandler(BaseHTTPRequestHandler):
             return
         
         # Check request size
+        # Check request size
         content_length = int(self.headers.get('Content-Length', 0))
         if content_length > MAX_REQUEST_SIZE:
             log_malicious_attempt(client_ip, 'Oversized Request', {
@@ -1150,7 +1230,7 @@ class PortalHandler(BaseHTTPRequestHandler):
             except json.JSONDecodeError:
                 self._set_json_headers(400)
                 self.wfile.write(json.dumps({'error': 'Invalid JSON payload'}).encode('utf-8'))
-            except Exception as e:
+            except Exception:
                 self._set_json_headers(500)
                 self.wfile.write(json.dumps({'error': 'Registration failed'}).encode('utf-8'))
             return
@@ -1445,6 +1525,12 @@ class PortalHandler(BaseHTTPRequestHandler):
                 }
                 
                 POLICIES[policy_id] = policy
+                if audit:
+                    actor = session.get('username') if 'session' in locals() and session else 'system'
+                    try:
+                        audit.log(actor, 'create', 'policy', policy_id, {'customer_id': customer_id, 'coverage_amount': policy.get('coverage_amount')})
+                    except Exception:
+                        pass
                 
                 self._set_json_headers(201)
                 
@@ -1462,6 +1548,73 @@ class PortalHandler(BaseHTTPRequestHandler):
             except Exception as e:
                 self._set_json_headers(400)
                 self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+
+        # Create Policy (Safe Minimal) Endpoint
+        if path == '/api/policies/create_simple':
+            try:
+                data = json.loads(body)
+                customer_id = data.get('customer_id') or generate_customer_id()
+                policy_type = data.get('type', 'life')
+                coverage_amount = data.get('coverage_amount', 100000)
+                if not validate_amount(coverage_amount):
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'Invalid coverage amount'}).encode('utf-8'))
+                    return
+                # Upsert minimal customer record if needed
+                if customer_id not in CUSTOMERS:
+                    CUSTOMERS[customer_id] = {
+                        'id': customer_id,
+                        'name': data.get('customer_name') or customer_id,
+                        'email': data.get('customer_email', ''),
+                        'created_date': datetime.now().isoformat()
+                    }
+                # Generate IDs
+                policy_id = generate_policy_id()
+                uw_id = f"UW-{datetime.now().strftime('%Y%m%d')}-{random.randint(1000, 9999)}"
+                # Underwriting minimal record
+                UNDERWRITING_APPLICATIONS[uw_id] = {
+                    'id': uw_id,
+                    'policy_id': policy_id,
+                    'customer_id': customer_id,
+                    'status': 'pending',
+                    'risk_assessment': data.get('risk_score', 'medium'),
+                    'submitted_date': datetime.now().isoformat()
+                }
+                # Premium calc
+                premium_data = calculate_premium({
+                    'type': policy_type,
+                    'coverage_amount': coverage_amount,
+                    'age': data.get('age', 30),
+                    'risk_score': data.get('risk_score', 'medium')
+                })
+                # Create policy
+                policy = {
+                    'id': policy_id,
+                    'customer_id': customer_id,
+                    'type': policy_type,
+                    'coverage_amount': coverage_amount,
+                    'annual_premium': premium_data['annual'],
+                    'monthly_premium': premium_data['monthly'],
+                    'status': 'pending_underwriting',
+                    'underwriting_id': uw_id,
+                    'risk_score': data.get('risk_score', 'medium'),
+                    'start_date': datetime.now().isoformat(),
+                    'end_date': (datetime.now() + timedelta(days=365)).isoformat(),
+                    'created_date': datetime.now().isoformat()
+                }
+                POLICIES[policy_id] = policy
+                if audit:
+                    actor = 'system'
+                    try:
+                        audit.log(actor, 'create', 'policy', policy_id, {'customer_id': customer_id, 'safe': True})
+                    except Exception:
+                        pass
+                self._set_json_headers(201)
+                self.wfile.write(json.dumps({'policy': policy, 'underwriting': UNDERWRITING_APPLICATIONS[uw_id], 'customer': CUSTOMERS[customer_id]}).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'Invalid request', 'details': str(e)}).encode('utf-8'))
             return
         
         # Approve Underwriting Endpoint
@@ -1481,6 +1634,12 @@ class PortalHandler(BaseHTTPRequestHandler):
                     if policy_id and policy_id in POLICIES:
                         POLICIES[policy_id]['status'] = 'active'
                         POLICIES[policy_id]['approval_date'] = datetime.now().isoformat()
+                    if audit:
+                        actor = data.get('approved_by', 'admin')
+                        try:
+                            audit.log(actor, 'approve', 'underwriting', uw_id, {'policy_id': policy_id})
+                        except Exception:
+                            pass
                     
                     self._set_json_headers()
                     self.wfile.write(json.dumps({'success': True, 'application': app}).encode('utf-8'))
@@ -1508,6 +1667,12 @@ class PortalHandler(BaseHTTPRequestHandler):
                     policy_id = app.get('policy_id')
                     if policy_id and policy_id in POLICIES:
                         POLICIES[policy_id]['status'] = 'rejected'
+                    if audit:
+                        actor = data.get('rejected_by', 'admin')
+                        try:
+                            audit.log(actor, 'reject', 'underwriting', uw_id, {'policy_id': policy_id, 'reason': app['rejection_reason']})
+                        except Exception:
+                            pass
                     
                     self._set_json_headers()
                     self.wfile.write(json.dumps({'success': True, 'application': app}).encode('utf-8'))
@@ -1538,6 +1703,12 @@ class PortalHandler(BaseHTTPRequestHandler):
                 }
                 
                 CLAIMS[claim_id] = claim
+                if audit:
+                    actor = session.get('username') if 'session' in locals() and session else 'system'
+                    try:
+                        audit.log(actor, 'create', 'claim', claim_id, {'policy_id': claim.get('policy_id'), 'claimed_amount': claim.get('claimed_amount')})
+                    except Exception:
+                        pass
                 
                 self._set_json_headers(201)
                 self.wfile.write(json.dumps(claim).encode('utf-8'))
@@ -1559,6 +1730,12 @@ class PortalHandler(BaseHTTPRequestHandler):
                     claim['approval_date'] = datetime.now().isoformat()
                     claim['approved_by'] = data.get('approved_by', 'admin')
                     claim['approval_notes'] = data.get('notes', '')
+                    if audit:
+                        actor = claim.get('approved_by', 'admin')
+                        try:
+                            audit.log(actor, 'approve', 'claim', claim_id, {'approved_amount': claim['approved_amount']})
+                        except Exception:
+                            pass
                     
                     self._set_json_headers()
                     self.wfile.write(json.dumps({'success': True, 'claim': claim}).encode('utf-8'))
@@ -1581,6 +1758,12 @@ class PortalHandler(BaseHTTPRequestHandler):
                     claim['status'] = 'rejected'
                     claim['rejection_date'] = datetime.now().isoformat()
                     claim['rejection_reason'] = data.get('reason', 'Not covered')
+                    if audit:
+                        actor = data.get('rejected_by', 'admin')
+                        try:
+                            audit.log(actor, 'reject', 'claim', claim_id, {'reason': claim['rejection_reason']})
+                        except Exception:
+                            pass
                     
                     self._set_json_headers()
                     self.wfile.write(json.dumps({'success': True, 'claim': claim}).encode('utf-8'))
@@ -1605,6 +1788,12 @@ class PortalHandler(BaseHTTPRequestHandler):
                     claim['payment_method'] = data.get('payment_method', 'bank_transfer')
                     claim['payment_reference'] = f"PAY-{datetime.now().strftime('%Y%m%d')}-{random.randint(1000, 9999)}"
                     claim['paid_amount'] = claim.get('approved_amount', claim['claimed_amount'])
+                    if audit:
+                        actor = data.get('processed_by', 'accountant')
+                        try:
+                            audit.log(actor, 'pay', 'claim', claim_id, {'paid_amount': claim['paid_amount'], 'payment_method': claim['payment_method']})
+                        except Exception:
+                            pass
                     
                     self._set_json_headers()
                     self.wfile.write(json.dumps({'success': True, 'claim': claim}).encode('utf-8'))
@@ -1777,6 +1966,71 @@ class PortalHandler(BaseHTTPRequestHandler):
                     self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
                 return
         # ========== END BILLING API ==========
+        # Minimal billing endpoints (demo fallback when engine routes are not used)
+        if path == '/api/billing/create':
+            try:
+                data = json.loads(body)
+                policy_id = data.get('policy_id')
+                amount_due = float(data.get('amount_due', 0))
+                due_days = int(data.get('due_days', 30))
+                if not policy_id or not validate_amount(amount_due):
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'policy_id and valid amount_due required'}).encode('utf-8'))
+                    return
+                bill_id = f"BILL-{datetime.now().strftime('%Y%m%d')}-{random.randint(1000,9999)}"
+                bill = {
+                    'bill_id': bill_id,
+                    'policy_id': policy_id,
+                    'amount_due': amount_due,
+                    'amount_paid': 0.0,
+                    'status': 'outstanding',
+                    'created_date': datetime.now().isoformat(),
+                    'due_date': (datetime.now() + timedelta(days=due_days)).isoformat()
+                }
+                BILLING[bill_id] = bill
+                if audit:
+                    try:
+                        audit.log('system', 'create', 'bill', bill_id, {'policy_id': policy_id, 'amount_due': amount_due})
+                    except Exception:
+                        pass
+                self._set_json_headers(201)
+                self.wfile.write(json.dumps({'bill': bill}).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'Invalid request', 'details': str(e)}).encode('utf-8'))
+            return
+
+        if path == '/api/billing/pay':
+            try:
+                data = json.loads(body)
+                bill_id = data.get('bill_id')
+                amount = float(data.get('amount', 0))
+                bill = BILLING.get(bill_id)
+                if not bill:
+                    self._set_json_headers(404)
+                    self.wfile.write(json.dumps({'error': 'Bill not found'}).encode('utf-8'))
+                    return
+                if not validate_amount(amount):
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'Invalid amount'}).encode('utf-8'))
+                    return
+                bill['amount_paid'] = bill.get('amount_paid', 0.0) + amount
+                if bill['amount_paid'] >= bill['amount_due']:
+                    bill['status'] = 'paid'
+                    bill['paid_date'] = datetime.now().isoformat()
+                else:
+                    bill['status'] = 'partial'
+                if audit:
+                    try:
+                        audit.log('system', 'update', 'bill', bill_id, {'paid': amount, 'status': bill['status']})
+                    except Exception:
+                        pass
+                self._set_json_headers(200)
+                self.wfile.write(json.dumps({'bill': bill}).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'Invalid request', 'details': str(e)}).encode('utf-8'))
+            return
         
         # Default: not found
         self.send_error(404, 'Not Found')

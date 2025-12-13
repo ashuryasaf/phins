@@ -21,8 +21,7 @@ git push origin $(git rev-parse --abbrev-ref HEAD)
 
 echo "✅ Push complete"
 echo "" 
-echo "Next steps (choose one):"
+echo "Next steps:"
 echo "  - Railway: https://railway.app/new → Select repo ashuryasaf/phins"
-echo "  - Render:  https://dashboard.render.com/select-repo?type=web → Connect repo"
 echo "" 
-echo "Once connected, future runs of this script will auto-trigger deployments on push."
+echo "Once connected to Railway, future runs of this script will auto-trigger deployments on push."

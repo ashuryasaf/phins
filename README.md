@@ -1,5 +1,10 @@
 # PHINS Insurance Management System - Global Edition
 
+**Last Updated:** December 2025
+**Version:** 1.0.0
+
+---
+
 **🌐 Live at: [www.phins.ai](https://www.phins.ai)**
 
 ## 🌍 Now Available in 20 Languages with Enterprise-Grade Scalability
@@ -698,3 +703,35 @@ Website: <https://www.phins.com>
 
 **Last Updated:** December 2025
 **Version:** 1.0.0
+
+---
+
+
+## API Addendum: Pagination & Audit
+
+### Pagination
+
+- Endpoints:
+  - `GET /api/policies` (supports `page`, `page_size`)
+  - `GET /api/claims` (supports `status`, `page`, `page_size`)
+
+- Response shape:
+
+```json
+{
+  "items": [ ... ],
+  "page": 1,
+  "page_size": 50,
+  "total": 123
+}
+```
+
+### Audit Logging
+
+- Actions logged:
+  - Policy: `create`
+  - Underwriting: `approve`, `reject`
+  - Claims: `create`, `approve`, `reject`, `pay`
+
+- Entry fields: `actor`, `action`, `entity_type`, `entity_id`, `details`
+- Implementation: Uses `services/audit_service.AuditService` when available; demo stores in-memory.
