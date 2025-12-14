@@ -275,7 +275,8 @@ def test_session_timeout():
     
     # Note: Testing actual timeout would take 3600 seconds
     # We just verify the session validation logic exists
-    assert 'expires' in str(portal.SESSIONS.get(token, {}))
+    session = portal.SESSIONS.get(token, {})
+    assert 'expires' in session, "Session should have expires field"
     
     srv.stop()
 

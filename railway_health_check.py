@@ -330,7 +330,8 @@ class HealthChecker:
         
         print(f"\n{'='*60}")
         
-        success_rate = len(self.passed) / (len(self.passed) + len(self.failed)) * 100
+        total = len(self.passed) + len(self.failed)
+        success_rate = (len(self.passed) / total * 100) if total > 0 else 100
         if success_rate == 100:
             print("✅ ALL CHECKS PASSED!")
         elif success_rate >= 80:
