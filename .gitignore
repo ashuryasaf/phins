@@ -21,6 +21,6 @@ rad.json
 #Test results file
 TestResults.xml
 
-# Python artifacts
+# Python cache and compiled files
 __pycache__/
 *.pyc
