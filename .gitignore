@@ -24,3 +24,9 @@ TestResults.xml
 # Python cache and compiled files
 __pycache__/
 *.pyc
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+phins.db
