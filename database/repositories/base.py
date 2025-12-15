@@ -2,6 +2,18 @@
 Base Repository Class
 
 Provides common CRUD operations for all repositories.
+
+NOTE: Repository methods that modify data (create, update, delete) automatically
+commit transactions. When using repositories within a larger transaction context,
+it's recommended to use the DatabaseManager's session_scope() context manager
+to ensure proper transaction boundaries.
+
+Example:
+    with DatabaseManager() as db:
+        # Multiple operations in one transaction
+        customer = db.customers.create(...)
+        policy = db.policies.create(...)
+        # All committed together at context exit
 """
 
 from typing import TypeVar, Generic, List, Optional, Dict, Any

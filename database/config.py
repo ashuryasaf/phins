@@ -31,7 +31,9 @@ class DatabaseConfig:
     POOL_RECYCLE = 3600  # 1 hour
     
     # Query settings
-    ECHO_SQL = False  # Set to True to log all SQL queries
+    # WARNING: ECHO_SQL logs all SQL queries including sensitive data like passwords
+    # Only enable for debugging in development environments, NEVER in production
+    ECHO_SQL = False  # Set to True to log all SQL queries (SECURITY RISK in production)
     
     @classmethod
     def get_database_url(cls) -> str:

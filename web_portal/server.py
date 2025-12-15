@@ -444,8 +444,10 @@ if USE_DATABASE and database_enabled:
                             'role': user.role,
                             'name': user.name
                         }
-            except Exception:
-                pass
+            except ImportError as e:
+                print(f"Warning: Database module not available: {e}")
+            except Exception as e:
+                print(f"Warning: Error fetching user from database: {e}")
             return default
         
         def __getitem__(self, username: str):

@@ -5,6 +5,9 @@ from datetime import datetime
 from sqlalchemy.orm import Session as DBSession
 from database.models import Session
 from .base import BaseRepository
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class SessionRepository(BaseRepository[Session]):
@@ -26,13 +29,20 @@ class SessionRepository(BaseRepository[Session]):
         return self.filter_by(customer_id=customer_id)
     
     def delete_expired_sessions(self) -> int:
-        """Delete all expired sessions, returns count of deleted sessions"""
+        """
+        Delete all expired sessions, returns count of deleted sessions.
+        
+        NOTE: This method commits the transaction automatically.
+        If you need to include this in a larger transaction, use the
+        DatabaseManager's session_scope() context manager.
+        """
         try:
             now = datetime.utcnow()
             count = self.session.query(Session).filter(Session.expires < now).delete()
             self.session.commit()
             return count
-        except Exception:
+        except Exception as e:
+            logger.error(f"Error deleting expired sessions: {e}")
             self.session.rollback()
             return 0
     
