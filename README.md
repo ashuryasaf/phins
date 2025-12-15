@@ -28,7 +28,7 @@ PHINS (Professional Insurance Management System) is a **globally-ready, producti
 - Intelligent pagination for large result sets
 - Connection pooling and rate limiting
 - Performance monitoring and metrics
-- Zero external database dependencies (demo-ready in pure Python)
+- **Optional database support** (SQLite/PostgreSQL) or in-memory mode for demos
 
 ### ⚡ Performance Optimized
 
@@ -160,6 +160,64 @@ ConnectionPool (efficient resource usage)
 PerformanceMonitor (metrics & alerts)
 
 ```text
+
+---
+
+## 💾 Database Support (New!)
+
+PHINS now supports **persistent database storage** using SQLite (development) or PostgreSQL (production):
+
+### Key Features
+
+- **Dual-Mode Operation**: Run with in-memory storage (default) or database persistence
+- **SQLite for Development**: Zero-config local development with file-based database
+- **PostgreSQL for Production**: Enterprise-grade persistent storage with connection pooling
+- **Automatic Schema Management**: Tables created automatically on first startup
+- **Backward Compatible**: Existing code works unchanged with database backend
+- **Repository Pattern**: Clean data access layer with full CRUD operations
+- **Migration Tools**: Utilities to migrate from in-memory to database storage
+
+### Quick Start
+
+**Enable Database Mode:**
+```bash
+# Local development with SQLite
+export USE_DATABASE=1
+export USE_SQLITE=1
+python3 web_portal/server.py
+
+# Production with PostgreSQL (Railway)
+export USE_DATABASE=1
+# DATABASE_URL automatically provided by Railway
+python3 web_portal/server.py
+```
+
+### Database Schema
+
+Automatically creates these tables:
+- `customers` - Customer profiles
+- `policies` - Insurance policies
+- `claims` - Claims and settlements
+- `underwriting_applications` - Underwriting workflow
+- `bills` - Billing and invoices
+- `users` - Staff accounts
+- `sessions` - User sessions
+- `audit_logs` - Complete audit trail
+
+### Default Users (Seeded Automatically)
+
+| Username | Role | Default Password |
+|----------|------|-----------------|
+| admin | admin | admin123 |
+| underwriter | underwriter | under123 |
+| claims_adjuster | claims | claims123 |
+| accountant | accountant | acct123 |
+
+⚠️ **Change passwords in production!**
+
+### Documentation
+
+See [DATABASE_SETUP.md](DATABASE_SETUP.md) for complete setup, configuration, and deployment guide.
 
 ---
 
