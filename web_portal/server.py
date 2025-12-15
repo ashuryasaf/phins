@@ -31,16 +31,49 @@ except ImportError:
     billing_enabled = False
     print("Warning: Billing engine not available. Payment features disabled.")
 
+# Database support (optional, falls back to in-memory)
+USE_DATABASE = os.environ.get('USE_DATABASE', '').lower() in ('true', '1', 'yes')
+database_enabled = False
+
+if USE_DATABASE:
+    try:
+        from database import init_database, check_database_connection, get_database_info
+        from database.seeds import seed_default_users
+        from database.data_access import CUSTOMERS as DB_CUSTOMERS
+        from database.data_access import POLICIES as DB_POLICIES
+        from database.data_access import CLAIMS as DB_CLAIMS
+        from database.data_access import UNDERWRITING_APPLICATIONS as DB_UNDERWRITING
+        from database.data_access import SESSIONS as DB_SESSIONS
+        from database.data_access import BILLING as DB_BILLING
+        from database.data_access import USERS_DB as DB_USERS
+        
+        database_enabled = True
+        print("✓ Database support enabled")
+    except ImportError as e:
+        print(f"Warning: Database support not available: {e}")
+        print("         Falling back to in-memory storage")
+        USE_DATABASE = False
+
 PORT = 8000
 ROOT = os.path.join(os.path.dirname(__file__), "static")
 
-# In-memory storage for demo purposes
-POLICIES: Dict[str, Dict[str, Any]] = {}
-CLAIMS: Dict[str, Dict[str, Any]] = {}
-CUSTOMERS: Dict[str, Dict[str, Any]] = {}
-UNDERWRITING_APPLICATIONS: Dict[str, Dict[str, Any]] = {}
-SESSIONS: Dict[str, Dict[str, Any]] = {}  # token -> {username, expires, customer_id}
-BILLING: Dict[str, Dict[str, Any]] = {}  # bill_id -> bill data (for metrics)
+# Storage - either database-backed or in-memory
+if USE_DATABASE and database_enabled:
+    # Use database-backed dictionaries
+    POLICIES = DB_POLICIES
+    CLAIMS = DB_CLAIMS
+    CUSTOMERS = DB_CUSTOMERS
+    UNDERWRITING_APPLICATIONS = DB_UNDERWRITING
+    SESSIONS = DB_SESSIONS
+    BILLING = DB_BILLING
+else:
+    # In-memory storage for demo purposes
+    POLICIES: Dict[str, Dict[str, Any]] = {}
+    CLAIMS: Dict[str, Dict[str, Any]] = {}
+    CUSTOMERS: Dict[str, Dict[str, Any]] = {}
+    UNDERWRITING_APPLICATIONS: Dict[str, Dict[str, Any]] = {}
+    SESSIONS: Dict[str, Dict[str, Any]] = {}  # token -> {username, expires, customer_id}
+    BILLING: Dict[str, Dict[str, Any]] = {}  # bill_id -> bill data (for metrics)
 try:
     from services.audit_service import AuditService
     audit = AuditService()
@@ -394,12 +427,44 @@ def validate_amount(amount: Any) -> bool:
         return False
 
 # Store hashed passwords
-USERS: Dict[str, Dict[str, Any]] = {
-    'admin': {**hash_password('admin123'), 'role': 'admin', 'name': 'Admin User'},
-    'underwriter': {**hash_password('under123'), 'role': 'underwriter', 'name': 'John Underwriter'},
-    'claims_adjuster': {**hash_password('claims123'), 'role': 'claims', 'name': 'Jane Claims'},
-    'accountant': {**hash_password('acct123'), 'role': 'accountant', 'name': 'Bob Accountant'}
-}
+if USE_DATABASE and database_enabled:
+    # Users are stored in database, but we need a helper to check them
+    # We'll create a wrapper that checks the database
+    class UserDictWrapper:
+        """Wrapper to make database users work like a dict"""
+        def get(self, username: str, default=None):
+            try:
+                from database.manager import DatabaseManager
+                with DatabaseManager() as db:
+                    user = db.users.get_by_username(username)
+                    if user:
+                        return {
+                            'hash': user.password_hash,
+                            'salt': user.password_salt,
+                            'role': user.role,
+                            'name': user.name
+                        }
+            except Exception:
+                pass
+            return default
+        
+        def __getitem__(self, username: str):
+            result = self.get(username)
+            if result is None:
+                raise KeyError(username)
+            return result
+        
+        def __contains__(self, username: str):
+            return self.get(username) is not None
+    
+    USERS = UserDictWrapper()
+else:
+    USERS: Dict[str, Dict[str, Any]] = {
+        'admin': {**hash_password('admin123'), 'role': 'admin', 'name': 'Admin User'},
+        'underwriter': {**hash_password('under123'), 'role': 'underwriter', 'name': 'John Underwriter'},
+        'claims_adjuster': {**hash_password('claims123'), 'role': 'claims', 'name': 'Jane Claims'},
+        'accountant': {**hash_password('acct123'), 'role': 'accountant', 'name': 'Bob Accountant'}
+    }
 
 
 def get_mock_statement(customer_id: str) -> Dict[str, Any]:
@@ -2262,13 +2327,45 @@ class PortalHandler(BaseHTTPRequestHandler):
 
 
 def run_server(port: int = PORT) -> None:
+    # Initialize database if enabled
+    if USE_DATABASE and database_enabled:
+        print("📊 Initializing database...")
+        try:
+            # Check connection
+            if check_database_connection():
+                print("✓ Database connection successful")
+                db_info = get_database_info()
+                print(f"   Type: {db_info['database_type']}")
+                print(f"   URL: {db_info['database_url'][:50]}...")
+            else:
+                print("⚠️  Database connection failed, will try to initialize anyway")
+            
+            # Initialize schema
+            init_database()
+            print("✓ Database schema initialized")
+            
+            # Seed default users
+            try:
+                seed_default_users()
+                print("✓ Default users seeded")
+            except Exception as e:
+                print(f"Note: User seeding skipped (may already exist): {e}")
+        except Exception as e:
+            print(f"❌ Database initialization failed: {e}")
+            print("   Server will continue with in-memory storage")
+            # Don't fail - just fall back to in-memory
+    
     server_address = ('0.0.0.0', port)
     httpd = HTTPServer(server_address, PortalHandler)
     httpd.timeout = CONNECTION_TIMEOUT  # Set connection timeout
-    print(f'Serving web portal at http://0.0.0.0:{port} (static from {ROOT})')
-    print(f'Access via: http://localhost:{port}')
+    print(f'\n🚀 Serving web portal at http://0.0.0.0:{port} (static from {ROOT})')
+    print(f'   Access via: http://localhost:{port}')
     print(f'🔒 Security: Rate limiting, malicious code blocking, auto-cleanup enabled')
     print(f'⏱️  Connection timeout: {CONNECTION_TIMEOUT}s | Session timeout: {SESSION_TIMEOUT}s')
+    if USE_DATABASE and database_enabled:
+        print(f'💾 Storage: Database (persistent)')
+    else:
+        print(f'💾 Storage: In-memory (volatile)')
     httpd.serve_forever()
 
 
