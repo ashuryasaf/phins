@@ -6,6 +6,9 @@
   "deploy": {
     "startCommand": "python3 web_portal/server.py",
     "restartPolicyType": "ON_FAILURE",
-    "restartPolicyMaxRetries": 10
+    "restartPolicyMaxRetries": 10,
+    "environmentVariables": {
+      "USE_DATABASE": "1"
+    }
   }
 }
