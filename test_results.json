@@ -1,0 +1,109 @@
+{
+  "timestamp": "2025-12-16T19:51:57.290584",
+  "total_tests": 11,
+  "passed": 8,
+  "failed": 0,
+  "skipped": 3,
+  "execution_time": "0.00s",
+  "tests": [
+    {
+      "name": "Auto Quote Generation",
+      "category": "ai",
+      "status": "passed",
+      "message": "",
+      "error": "",
+      "execution_time": "0.000s",
+      "timestamp": "2025-12-16T19:51:57.290149"
+    },
+    {
+      "name": "Auto Underwriting - Low Risk",
+      "category": "ai",
+      "status": "passed",
+      "message": "",
+      "error": "",
+      "execution_time": "0.000s",
+      "timestamp": "2025-12-16T19:51:57.290199"
+    },
+    {
+      "name": "Auto Underwriting - High Risk",
+      "category": "ai",
+      "status": "passed",
+      "message": "",
+      "error": "",
+      "execution_time": "0.000s",
+      "timestamp": "2025-12-16T19:51:57.290248"
+    },
+    {
+      "name": "Smart Claims Processing",
+      "category": "ai",
+      "status": "passed",
+      "message": "",
+      "error": "",
+      "execution_time": "0.000s",
+      "timestamp": "2025-12-16T19:51:57.290288"
+    },
+    {
+      "name": "Fraud Detection",
+      "category": "ai",
+      "status": "passed",
+      "message": "",
+      "error": "",
+      "execution_time": "0.000s",
+      "timestamp": "2025-12-16T19:51:57.290319"
+    },
+    {
+      "name": "Database Initialization",
+      "category": "database",
+      "status": "skipped",
+      "message": "Database module not available",
+      "error": "",
+      "execution_time": "0.000s",
+      "timestamp": "2025-12-16T19:51:57.290360"
+    },
+    {
+      "name": "Database Initialization",
+      "category": "database",
+      "status": "passed",
+      "message": "",
+      "error": "",
+      "execution_time": "0.000s",
+      "timestamp": "2025-12-16T19:51:57.290378"
+    },
+    {
+      "name": "Default Users Exist",
+      "category": "database",
+      "status": "skipped",
+      "message": "Database module not available",
+      "error": "",
+      "execution_time": "0.000s",
+      "timestamp": "2025-12-16T19:51:57.290399"
+    },
+    {
+      "name": "Default Users Exist",
+      "category": "database",
+      "status": "passed",
+      "message": "",
+      "error": "",
+      "execution_time": "0.000s",
+      "timestamp": "2025-12-16T19:51:57.290420"
+    },
+    {
+      "name": "Data Consistency",
+      "category": "database",
+      "status": "skipped",
+      "message": "Database module not available",
+      "error": "",
+      "execution_time": "0.000s",
+      "timestamp": "2025-12-16T19:51:57.290449"
+    },
+    {
+      "name": "Data Consistency",
+      "category": "database",
+      "status": "passed",
+      "message": "",
+      "error": "",
+      "execution_time": "0.000s",
+      "timestamp": "2025-12-16T19:51:57.290468"
+    }
+  ]
+}
