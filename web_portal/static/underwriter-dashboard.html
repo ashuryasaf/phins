@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Underwriter Dashboard - PHINS</title>
+    <link rel="stylesheet" href="/styles.css">
+    <style>
+        .dashboard-container { max-width: 1400px; margin: 0 auto; padding: 20px; }
+        .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 30px; border-radius: 10px; margin-bottom: 30px; }
+        .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px; margin-bottom: 30px; }
+        .stat-card { background: white; border-radius: 10px; padding: 25px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        .stat-value { font-size: 2.5rem; font-weight: 700; color: #667eea; }
+        .stat-label { color: #666; margin-top: 10px; }
+        .section { background: white; border-radius: 10px; padding: 25px; margin-bottom: 20px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        .application-item { border: 1px solid #e0e0e0; border-radius: 8px; padding: 20px; margin-bottom: 15px; }
+        .app-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
+        .risk-badge { padding: 5px 15px; border-radius: 20px; font-size: 0.85rem; font-weight: 600; }
+        .risk-low { background: #d4edda; color: #155724; }
+        .risk-medium { background: #fff3cd; color: #856404; }
+        .risk-high { background: #f8d7da; color: #721c24; }
+        .btn { padding: 10px 20px; border-radius: 5px; border: none; cursor: pointer; font-weight: 600; margin-right: 10px; }
+        .btn-approve { background: #28a745; color: white; }
+        .btn-approve:hover { background: #218838; }
+        .btn-reject { background: #dc3545; color: white; }
+        .btn-reject:hover { background: #c82333; }
+        .btn-refer { background: #ffc107; color: #333; }
+        .btn-refer:hover { background: #e0a800; }
+        .modal { display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); }
+        .modal-content { background: white; margin: 5% auto; padding: 30px; width: 80%; max-width: 600px; border-radius: 10px; }
+        .close { float: right; font-size: 28px; font-weight: bold; cursor: pointer; }
+        .form-group { margin-bottom: 20px; }
+        .form-group label { display: block; margin-bottom: 5px; font-weight: 600; }
+        .form-group input, .form-group textarea, .form-group select { width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 5px; }
+    </style>
+</head>
+<body>
+    <div class="dashboard-container">
+        <div class="header">
+            <h1>🔍 Underwriter Dashboard</h1>
+            <p>Review and assess insurance applications</p>
+        </div>
+        
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-value" id="pending-count">0</div>
+                <div class="stat-label">Pending Applications</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="approved-today">0</div>
+                <div class="stat-label">Approved Today</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="high-risk-count">0</div>
+                <div class="stat-label">High Risk Applications</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="avg-processing">-</div>
+                <div class="stat-label">Avg Processing Time</div>
+            </div>
+        </div>
+        
+        <div class="section">
+            <h2>Pending Applications</h2>
+            <div id="applications-list">
+                <p>Loading applications...</p>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Assessment Modal -->
+    <div id="assessment-modal" class="modal">
+        <div class="modal-content">
+            <span class="close" onclick="closeModal()">&times;</span>
+            <h2>Assess Application</h2>
+            <div id="app-details"></div>
+            <div class="form-group">
+                <label>Decision</label>
+                <select id="decision">
+                    <option value="approve">Approve</option>
+                    <option value="approve_conditional">Approve with Conditions</option>
+                    <option value="reject">Reject</option>
+                    <option value="refer">Refer for Manual Review</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Premium Adjustment (%)</label>
+                <input type="number" id="premium-adjustment" value="0" min="-50" max="100">
+            </div>
+            <div class="form-group">
+                <label>Notes</label>
+                <textarea id="notes" rows="4"></textarea>
+            </div>
+            <button class="btn btn-approve" onclick="submitDecision()">Submit Decision</button>
+        </div>
+    </div>
+    
+    <script>
+        const token = localStorage.getItem('phins_token');
+        if (!token) window.location.href = '/login.html';
+        
+        let currentAppId = null;
+        
+        async function loadApplications() {
+            try {
+                const response = await fetch('/api/underwriting', {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                
+                if (!response.ok) {
+                    if (response.status === 401) {
+                        window.location.href = '/login.html';
+                        return;
+                    }
+                    throw new Error('Failed to load applications');
+                }
+                
+                const data = await response.json();
+                displayApplications(data.applications || []);
+                updateStats(data.applications || []);
+            } catch (error) {
+                console.error('Error loading applications:', error);
+                document.getElementById('applications-list').innerHTML = 
+                    '<p>Error loading applications. Please refresh the page.</p>';
+            }
+        }
+        
+        function displayApplications(applications) {
+            const container = document.getElementById('applications-list');
+            const pending = applications.filter(a => a.status === 'pending');
+            
+            if (pending.length === 0) {
+                container.innerHTML = '<p>No pending applications at this time.</p>';
+                return;
+            }
+            
+            container.innerHTML = pending.map(app => `
+                <div class="application-item">
+                    <div class="app-header">
+                        <div>
+                            <strong>Application #${app.id}</strong><br>
+                            <span style="color: #666;">Customer: ${app.customer_name || 'N/A'}</span>
+                        </div>
+                        <span class="risk-badge risk-${['low', 'medium', 'high'].includes(app.risk_score) ? app.risk_score : 'medium'}">
+                            ${(['low', 'medium', 'high'].includes(app.risk_score) ? app.risk_score : 'medium').toUpperCase()} RISK
+                        </span>
+                    </div>
+                    <p><strong>Policy Type:</strong> ${app.policy_type || 'N/A'}</p>
+                    <p><strong>Coverage Amount:</strong> $${Number(app.coverage_amount || 0).toLocaleString()}</p>
+                    <p><strong>Age:</strong> ${app.age || 'N/A'} | <strong>Smoker:</strong> ${app.smoker ? 'Yes' : 'No'}</p>
+                    <p><strong>Submitted:</strong> ${new Date(app.created_date).toLocaleDateString()}</p>
+                    ${app.medical_exam_required ? '<p style="color: #dc3545;"><strong>⚠️ Medical Exam Required</strong></p>' : ''}
+                    <div style="margin-top: 15px;">
+                        <button class="btn btn-approve" onclick="openAssessment('${app.id}', 'approve')">Approve</button>
+                        <button class="btn btn-reject" onclick="openAssessment('${app.id}', 'reject')">Reject</button>
+                        <button class="btn btn-refer" onclick="openAssessment('${app.id}', 'refer')">Refer</button>
+                    </div>
+                </div>
+            `).join('');
+        }
+        
+        function updateStats(applications) {
+            const pending = applications.filter(a => a.status === 'pending');
+            const approvedToday = applications.filter(a => 
+                a.status === 'approved' && 
+                new Date(a.updated_date).toDateString() === new Date().toDateString()
+            );
+            const highRisk = pending.filter(a => a.risk_score === 'high');
+            
+            document.getElementById('pending-count').textContent = pending.length;
+            document.getElementById('approved-today').textContent = approvedToday.length;
+            document.getElementById('high-risk-count').textContent = highRisk.length;
+            document.getElementById('avg-processing').textContent = '2.5h';
+        }
+        
+        function openAssessment(appId, defaultDecision) {
+            currentAppId = appId;
+            document.getElementById('decision').value = defaultDecision;
+            document.getElementById('assessment-modal').style.display = 'block';
+            
+            // Load app details
+            document.getElementById('app-details').innerHTML = `
+                <p><strong>Assessing Application:</strong> #${appId}</p>
+            `;
+        }
+        
+        function closeModal() {
+            document.getElementById('assessment-modal').style.display = 'none';
+            currentAppId = null;
+        }
+        
+        async function submitDecision() {
+            if (!currentAppId) return;
+            
+            const decision = document.getElementById('decision').value;
+            const adjustment = document.getElementById('premium-adjustment').value;
+            const notes = document.getElementById('notes').value;
+            
+            try {
+                const endpoint = decision === 'approve' || decision === 'approve_conditional' 
+                    ? '/api/underwriting/approve' 
+                    : '/api/underwriting/reject';
+                
+                const response = await fetch(endpoint, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        id: currentAppId,
+                        premium_adjustment: parseFloat(adjustment),
+                        notes: notes,
+                        approved_by: 'Current User'
+                    })
+                });
+                
+                if (response.ok) {
+                    alert('Decision submitted successfully!');
+                    closeModal();
+                    loadApplications();
+                } else {
+                    alert('Failed to submit decision. Please try again.');
+                }
+            } catch (error) {
+                console.error('Error submitting decision:', error);
+                alert('Error submitting decision. Please try again.');
+            }
+        }
+        
+        // Load applications on page load
+        loadApplications();
+        
+        // Refresh every 30 seconds
+        setInterval(loadApplications, 30000);
+    </script>
+</body>
+</html>

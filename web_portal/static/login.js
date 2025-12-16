@@ -27,13 +27,22 @@ document.addEventListener('DOMContentLoaded', function () {
             localStorage.setItem('phins_customer_id', data.customer_id);
           }
           
-          // Redirect based on user type
+          // Redirect based on user role
           setTimeout(() => {
-            if (username === 'admin') {
-              window.location.href = '/admin.html';
-            } else if (data.role === 'customer') {
-              window.location.href = '/status.html';
+            const role = data.role || '';
+            
+            if (role === 'admin') {
+              window.location.href = '/admin-portal.html';
+            } else if (role === 'customer') {
+              window.location.href = '/client-portal.html';
+            } else if (role === 'underwriter') {
+              window.location.href = '/underwriter-dashboard.html';
+            } else if (role === 'claims' || role === 'claims_adjuster') {
+              window.location.href = '/claims-adjuster-dashboard.html';
+            } else if (role === 'accountant') {
+              window.location.href = '/accountant-dashboard.html';
             } else {
+              // Default fallback
               window.location.href = '/dashboard.html';
             }
           }, 500);

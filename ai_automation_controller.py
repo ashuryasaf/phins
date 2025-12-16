@@ -411,6 +411,12 @@ class AIAutomationController:
         if billing_frequency == 'monthly':
             due_date = datetime.now().replace(day=1)
         elif billing_frequency == 'quarterly':
+            # First day of next quarter with proper year rollover
+            current_month = datetime.now().month
+            current_year = datetime.now().year
+            next_quarter_month = ((current_month - 1) // 3 + 1) * 3 + 1
+            if next_quarter_month > 12:
+                next_quarter_month = 1
             # Calculate next quarter properly (Q1=Jan, Q2=Apr, Q3=Jul, Q4=Oct)
             current_month = datetime.now().month
             current_year = datetime.now().year
@@ -469,6 +475,8 @@ def get_automation_controller() -> AIAutomationController:
     return _controller_instance
 
 
+# Export public interface
+__all__ = [
 # =========================================================================
 # BACKWARD COMPATIBILITY - Function-based API
 # =========================================================================
@@ -680,6 +688,7 @@ __all__ = [
     'AutomationDecision',
     'FraudRisk',
     'AutomationMetrics',
+    'get_automation_controller'
     'get_automation_controller',
     # Backward compatible function-based API
     'auto_quote',

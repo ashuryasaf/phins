@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Claims Adjuster Dashboard - PHINS</title>
+    <link rel="stylesheet" href="/styles.css">
+    <style>
+        .dashboard-container { max-width: 1400px; margin: 0 auto; padding: 20px; }
+        .header { background: linear-gradient(135deg, #dc3545 0%, #c82333 100%); color: white; padding: 30px; border-radius: 10px; margin-bottom: 30px; }
+        .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px; margin-bottom: 30px; }
+        .stat-card { background: white; border-radius: 10px; padding: 25px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        .stat-value { font-size: 2.5rem; font-weight: 700; color: #dc3545; }
+        .stat-label { color: #666; margin-top: 10px; }
+        .section { background: white; border-radius: 10px; padding: 25px; margin-bottom: 20px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        .claim-item { border: 1px solid #e0e0e0; border-radius: 8px; padding: 20px; margin-bottom: 15px; }
+        .claim-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
+        .priority-badge { padding: 5px 15px; border-radius: 20px; font-size: 0.85rem; font-weight: 600; }
+        .priority-high { background: #f8d7da; color: #721c24; }
+        .priority-medium { background: #fff3cd; color: #856404; }
+        .priority-low { background: #d4edda; color: #155724; }
+        .btn { padding: 10px 20px; border-radius: 5px; border: none; cursor: pointer; font-weight: 600; margin-right: 10px; }
+        .btn-approve { background: #28a745; color: white; }
+        .btn-approve:hover { background: #218838; }
+        .btn-reject { background: #dc3545; color: white; }
+        .btn-reject:hover { background: #c82333; }
+        .btn-pay { background: #007bff; color: white; }
+        .btn-pay:hover { background: #0056b3; }
+        .modal { display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); }
+        .modal-content { background: white; margin: 5% auto; padding: 30px; width: 80%; max-width: 600px; border-radius: 10px; }
+        .close { float: right; font-size: 28px; font-weight: bold; cursor: pointer; }
+        .form-group { margin-bottom: 20px; }
+        .form-group label { display: block; margin-bottom: 5px; font-weight: 600; }
+        .form-group input, .form-group textarea { width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 5px; }
+    </style>
+</head>
+<body>
+    <div class="dashboard-container">
+        <div class="header">
+            <h1>📋 Claims Adjuster Dashboard</h1>
+            <p>Process and manage insurance claims</p>
+        </div>
+        
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-value" id="pending-claims">0</div>
+                <div class="stat-label">Pending Claims</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="processed-today">0</div>
+                <div class="stat-label">Processed Today</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="total-amount">$0</div>
+                <div class="stat-label">Total Claim Amount</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="avg-time">-</div>
+                <div class="stat-label">Avg Processing Time</div>
+            </div>
+        </div>
+        
+        <div class="section">
+            <h2>Claims Queue</h2>
+            <div style="margin-bottom: 20px;">
+                <label style="margin-right: 10px;">Filter:</label>
+                <select id="status-filter" onchange="filterClaims()" style="padding: 8px; border-radius: 5px; border: 1px solid #ddd;">
+                    <option value="all">All Claims</option>
+                    <option value="Pending">Pending</option>
+                    <option value="Under Review" selected>Under Review</option>
+                    <option value="Approved">Approved</option>
+                    <option value="Paid">Paid</option>
+                </select>
+            </div>
+            <div id="claims-list">
+                <p>Loading claims...</p>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Claim Review Modal -->
+    <div id="review-modal" class="modal">
+        <div class="modal-content">
+            <span class="close" onclick="closeModal()">&times;</span>
+            <h2>Review Claim</h2>
+            <div id="claim-details"></div>
+            <div class="form-group">
+                <label>Approved Amount ($)</label>
+                <input type="number" id="approved-amount" min="0" step="0.01">
+            </div>
+            <div class="form-group">
+                <label>Adjuster Notes</label>
+                <textarea id="adjuster-notes" rows="4"></textarea>
+            </div>
+            <button class="btn btn-approve" onclick="approveClaim()">Approve Claim</button>
+            <button class="btn btn-reject" onclick="rejectClaim()">Reject Claim</button>
+        </div>
+    </div>
+    
+    <script>
+        const token = localStorage.getItem('phins_token');
+        if (!token) window.location.href = '/login.html';
+        
+        let allClaims = [];
+        let currentClaimId = null;
+        
+        async function loadClaims() {
+            try {
+                const response = await fetch('/api/claims', {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                
+                if (!response.ok) {
+                    if (response.status === 401) {
+                        window.location.href = '/login.html';
+                        return;
+                    }
+                    throw new Error('Failed to load claims');
+                }
+                
+                const data = await response.json();
+                allClaims = data.claims || [];
+                filterClaims();
+                updateStats(allClaims);
+            } catch (error) {
+                console.error('Error loading claims:', error);
+                document.getElementById('claims-list').innerHTML = 
+                    '<p>Error loading claims. Please refresh the page.</p>';
+            }
+        }
+        
+        function filterClaims() {
+            const filter = document.getElementById('status-filter').value;
+            const filtered = filter === 'all' 
+                ? allClaims 
+                : allClaims.filter(c => c.status === filter);
+            displayClaims(filtered);
+        }
+        
+        function displayClaims(claims) {
+            const container = document.getElementById('claims-list');
+            
+            if (claims.length === 0) {
+                container.innerHTML = '<p>No claims match the selected filter.</p>';
+                return;
+            }
+            
+            container.innerHTML = claims.map(claim => {
+                const priority = getPriority(claim);
+                return `
+                <div class="claim-item">
+                    <div class="claim-header">
+                        <div>
+                            <strong>Claim #${claim.id}</strong><br>
+                            <span style="color: #666;">Policy: ${claim.policy_id || 'N/A'}</span>
+                        </div>
+                        <span class="priority-badge priority-${priority.toLowerCase()}">
+                            ${priority.toUpperCase()} PRIORITY
+                        </span>
+                    </div>
+                    <p><strong>Type:</strong> ${claim.type || 'N/A'}</p>
+                    <p><strong>Customer:</strong> ${claim.customer_name || 'N/A'}</p>
+                    <p><strong>Claimed Amount:</strong> $${Number(claim.claimed_amount || 0).toFixed(2)}</p>
+                    ${claim.approved_amount ? `<p><strong>Approved Amount:</strong> $${Number(claim.approved_amount).toFixed(2)}</p>` : ''}
+                    <p><strong>Status:</strong> ${claim.status}</p>
+                    <p><strong>Submitted:</strong> ${new Date(claim.created_date).toLocaleDateString()}</p>
+                    <p><strong>Description:</strong> ${claim.description || 'No description provided'}</p>
+                    <div style="margin-top: 15px;">
+                        ${claim.status === 'Pending' || claim.status === 'Under Review' ? `
+                            <button class="btn btn-approve" onclick="openReview('${claim.id}')">Review Claim</button>
+                        ` : ''}
+                        ${claim.status === 'Approved' && !claim.payment_date ? `
+                            <button class="btn btn-pay" onclick="payClaim('${claim.id}')">Process Payment</button>
+                        ` : ''}
+                        ${claim.payment_date ? `
+                            <p style="color: #28a745; margin-top: 10px;">✓ Paid on ${new Date(claim.payment_date).toLocaleDateString()}</p>
+                        ` : ''}
+                    </div>
+                </div>
+            `}).join('');
+        }
+        
+        function getPriority(claim) {
+            const amount = Number(claim.claimed_amount || 0);
+            if (amount > 50000) return 'High';
+            if (amount > 10000) return 'Medium';
+            return 'Low';
+        }
+        
+        function updateStats(claims) {
+            const pending = claims.filter(c => c.status === 'Pending' || c.status === 'Under Review');
+            const processedToday = claims.filter(c => 
+                c.status !== 'Pending' && 
+                new Date(c.updated_date || c.created_date).toDateString() === new Date().toDateString()
+            );
+            const totalAmount = pending.reduce((sum, c) => sum + Number(c.claimed_amount || 0), 0);
+            
+            document.getElementById('pending-claims').textContent = pending.length;
+            document.getElementById('processed-today').textContent = processedToday.length;
+            document.getElementById('total-amount').textContent = '$' + totalAmount.toLocaleString();
+            document.getElementById('avg-time').textContent = '1.5 days';
+        }
+        
+        function openReview(claimId) {
+            currentClaimId = claimId;
+            const claim = allClaims.find(c => c.id === claimId);
+            
+            if (!claim) return;
+            
+            document.getElementById('claim-details').innerHTML = `
+                <p><strong>Claim #${claim.id}</strong></p>
+                <p><strong>Type:</strong> ${claim.type}</p>
+                <p><strong>Claimed Amount:</strong> $${Number(claim.claimed_amount).toFixed(2)}</p>
+                <p><strong>Description:</strong> ${claim.description}</p>
+            `;
+            
+            document.getElementById('approved-amount').value = claim.claimed_amount;
+            document.getElementById('review-modal').style.display = 'block';
+        }
+        
+        function closeModal() {
+            document.getElementById('review-modal').style.display = 'none';
+            currentClaimId = null;
+        }
+        
+        async function approveClaim() {
+            if (!currentClaimId) return;
+            
+            const approvedAmount = document.getElementById('approved-amount').value;
+            const notes = document.getElementById('adjuster-notes').value;
+            
+            try {
+                const response = await fetch('/api/claims/approve', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        id: currentClaimId,
+                        approved_amount: parseFloat(approvedAmount),
+                        approved_by: 'Current User',
+                        notes: notes
+                    })
+                });
+                
+                if (response.ok) {
+                    alert('Claim approved successfully!');
+                    closeModal();
+                    loadClaims();
+                } else {
+                    alert('Failed to approve claim. Please try again.');
+                }
+            } catch (error) {
+                console.error('Error approving claim:', error);
+                alert('Error approving claim. Please try again.');
+            }
+        }
+        
+        async function rejectClaim() {
+            if (!currentClaimId) return;
+            
+            const notes = document.getElementById('adjuster-notes').value;
+            if (!notes) {
+                alert('Please provide a reason for rejection in the notes.');
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/claims/reject', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        id: currentClaimId,
+                        rejected_by: 'Current User',
+                        reason: notes
+                    })
+                });
+                
+                if (response.ok) {
+                    alert('Claim rejected.');
+                    closeModal();
+                    loadClaims();
+                } else {
+                    alert('Failed to reject claim. Please try again.');
+                }
+            } catch (error) {
+                console.error('Error rejecting claim:', error);
+                alert('Error rejecting claim. Please try again.');
+            }
+        }
+        
+        async function payClaim(claimId) {
+            if (!confirm('Process payment for this claim?')) return;
+            
+            try {
+                const response = await fetch('/api/claims/pay', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        id: claimId,
+                        payment_method: 'direct_deposit'
+                    })
+                });
+                
+                if (response.ok) {
+                    alert('Payment processed successfully!');
+                    loadClaims();
+                } else {
+                    alert('Failed to process payment. Please try again.');
+                }
+            } catch (error) {
+                console.error('Error processing payment:', error);
+                alert('Error processing payment. Please try again.');
+            }
+        }
+        
+        loadClaims();
+        setInterval(loadClaims, 30000);
+    </script>
+</body>
+</html>
