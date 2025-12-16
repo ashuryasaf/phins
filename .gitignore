@@ -30,3 +30,7 @@ __pycache__/
 *.sqlite
 *.sqlite3
 phins.db
+
+# Test reports (generated during test runs)
+test_report.html
+test_results.json

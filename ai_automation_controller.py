@@ -417,6 +417,17 @@ class AIAutomationController:
             next_quarter_month = ((current_month - 1) // 3 + 1) * 3 + 1
             if next_quarter_month > 12:
                 next_quarter_month = 1
+            # Calculate next quarter properly (Q1=Jan, Q2=Apr, Q3=Jul, Q4=Oct)
+            current_month = datetime.now().month
+            current_year = datetime.now().year
+            # Get current quarter (0-3) and calculate next quarter
+            current_quarter = (current_month - 1) // 3
+            next_quarter = (current_quarter + 1) % 4
+            # Map quarters to first month: [1, 4, 7, 10]
+            quarter_months = [1, 4, 7, 10]
+            next_quarter_month = quarter_months[next_quarter]
+            # Handle year rollover when going from Q4 to Q1
+            if next_quarter == 0:  # Q1 of next year
                 current_year += 1
             due_date = datetime.now().replace(year=current_year, month=next_quarter_month, day=1)
         else:  # annual
@@ -466,9 +477,222 @@ def get_automation_controller() -> AIAutomationController:
 
 # Export public interface
 __all__ = [
+# =========================================================================
+# BACKWARD COMPATIBILITY - Function-based API
+# =========================================================================
+# These functions provide backward compatibility with the old function-based API
+# while using the enhanced class-based implementation internally
+
+
+def auto_quote(data: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Generate automated insurance quote (backward compatible wrapper).
+    
+    Args:
+        data: Dictionary containing customer information
+        
+    Returns:
+        Quote with premium, coverage, and confidence score
+    """
+    controller = get_automation_controller()
+    result = controller.generate_auto_quote(data)
+    
+    # Map to old format for compatibility
+    return {
+        'quote_amount': result['annual_premium'],
+        'confidence_score': result['confidence_score'],
+        'risk_factors': list(result['risk_factors'].keys()) if isinstance(result['risk_factors'], dict) else [],
+        'monthly_premium': result['monthly_premium'],
+        'coverage_type': data.get('coverage_type', 'life')
+    }
+
+
+def auto_underwrite(data: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Automated underwriting decision (backward compatible wrapper).
+    
+    Args:
+        data: Dictionary containing application information
+        
+    Returns:
+        Dictionary with decision, risk_score, risk_level, and reasons
+    """
+    controller = get_automation_controller()
+    decision, details = controller.auto_underwrite(data)
+    
+    # Map to old format
+    risk_score = details.get('risk_score', 0.5)
+    
+    # Determine risk level from risk score
+    if risk_score >= 0.8:
+        risk_level = 'low'
+    elif risk_score >= 0.6:
+        risk_level = 'medium'
+    elif risk_score >= 0.4:
+        risk_level = 'high'
+    else:
+        risk_level = 'very_high'
+    
+    # Map decision to old format
+    decision_map = {
+        AutomationDecision.AUTO_APPROVE: 'AUTO_APPROVE',
+        AutomationDecision.AUTO_REJECT: 'AUTO_REJECT',
+        AutomationDecision.HUMAN_REVIEW: 'MANUAL_REVIEW',
+        AutomationDecision.NEEDS_MORE_INFO: 'MANUAL_REVIEW'
+    }
+    
+    return {
+        'decision': decision_map.get(decision, 'MANUAL_REVIEW'),
+        'risk_score': round(risk_score, 2),
+        'risk_level': risk_level,
+        'reasons': [details.get('reason', 'standard_assessment')],
+        'requires_medical_exam': risk_score < 0.7,
+        'recommended_premium_adjustment': round((1.0 - risk_score) * 50, 2)
+    }
+
+
+def auto_process_claim(claim: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Automated claims processing decision (backward compatible wrapper).
+    
+    Args:
+        claim: Dictionary containing claim information
+        
+    Returns:
+        Dictionary with decision, approved_amount, confidence, and reasons
+    """
+    # Normalize field names for backward compatibility
+    normalized_claim = claim.copy()
+    if 'amount' in claim and 'claimed_amount' not in claim:
+        normalized_claim['claimed_amount'] = claim['amount']
+    if 'has_documents' in claim and 'has_complete_documentation' not in claim:
+        normalized_claim['has_complete_documentation'] = claim['has_documents']
+    if 'claim_type' in claim and 'type' not in claim:
+        normalized_claim['type'] = claim['claim_type']
+    # Provide a reasonable default for policy_coverage if missing
+    if 'policy_coverage' not in normalized_claim:
+        normalized_claim['policy_coverage'] = 1000000  # $1M default coverage
+    
+    controller = get_automation_controller()
+    decision, details = controller.auto_process_claim(normalized_claim)
+    
+    # Map decision to old format
+    decision_map = {
+        AutomationDecision.AUTO_APPROVE: 'AUTO_APPROVED',
+        AutomationDecision.AUTO_REJECT: 'AUTO_REJECTED',
+        AutomationDecision.HUMAN_REVIEW: 'MANUAL_REVIEW',
+        AutomationDecision.NEEDS_MORE_INFO: 'MANUAL_REVIEW'
+    }
+    
+    return {
+        'decision': decision_map.get(decision, 'MANUAL_REVIEW'),
+        'approved_amount': details.get('approved_amount', 0),
+        'confidence': 0.9 if decision == AutomationDecision.AUTO_APPROVE else 0.5,
+        'reasons': [details.get('reason', 'standard_review')],
+        'processing_time_hours': 1 if decision == AutomationDecision.AUTO_APPROVE else 48
+    }
+
+
+def detect_fraud(data: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Detect potential fraudulent activity patterns (backward compatible wrapper).
+    
+    Args:
+        data: Dictionary containing activity patterns to analyze
+        
+    Returns:
+        Dictionary with fraud_risk_level, fraud_score, flags, and recommended_action
+    """
+    # Calculate fraud score based on indicators (replicate detection logic)
+    fraud_score = 0.0
+    flags = []
+    
+    # Multiple applications from same IP
+    multiple_apps = data.get('multiple_applications', 0)
+    if multiple_apps >= 5:
+        fraud_score += 0.4
+        flags.append('multiple_applications_same_ip')
+    elif multiple_apps >= 3:
+        fraud_score += 0.2
+        flags.append('several_applications_same_ip')
+    
+    # Unrealistic claim amount
+    claim_amount = data.get('claim_amount', 0)
+    policy_age_days = data.get('policy_age_days', 365)
+    
+    if claim_amount > 0:
+        if claim_amount > 500000:
+            fraud_score += 0.3
+            flags.append('unusually_high_claim_amount')
+        
+        # Claim too soon after policy start
+        if policy_age_days < 30 and claim_amount > 10000:
+            fraud_score += 0.4
+            flags.append('claim_shortly_after_policy_start')
+    
+    # High claim frequency
+    claim_frequency = data.get('claim_frequency', 0)
+    if claim_frequency >= 5:
+        fraud_score += 0.3
+        flags.append('excessive_claim_frequency')
+    elif claim_frequency >= 3:
+        fraud_score += 0.15
+        flags.append('high_claim_frequency')
+    
+    # Data inconsistencies
+    if data.get('inconsistent_data', False):
+        fraud_score += 0.25
+        flags.append('data_inconsistencies_detected')
+    
+    # Round-number claims
+    if claim_amount > 0 and claim_amount % 1000 == 0 and claim_amount >= 5000:
+        fraud_score += 0.1
+        flags.append('suspicious_round_number_claim')
+    
+    # Application velocity
+    application_velocity = data.get('applications_last_24h', 0)
+    if application_velocity >= 10:
+        fraud_score += 0.5
+        flags.append('suspicious_application_velocity')
+    
+    # Ensure fraud score is between 0 and 1
+    fraud_score = min(1.0, fraud_score)
+    
+    # Determine risk level
+    if fraud_score >= 0.7:
+        fraud_risk_level = 'CRITICAL'
+        recommended_action = 'BLOCK_AND_INVESTIGATE'
+    elif fraud_score >= 0.5:
+        fraud_risk_level = 'HIGH'
+        recommended_action = 'MANUAL_REVIEW_REQUIRED'
+    elif fraud_score >= 0.3:
+        fraud_risk_level = 'MEDIUM'
+        recommended_action = 'ENHANCED_VERIFICATION'
+    else:
+        fraud_risk_level = 'LOW'
+        recommended_action = 'PROCEED_NORMALLY'
+    
+    return {
+        'fraud_risk_level': fraud_risk_level,
+        'fraud_score': round(fraud_score, 2),
+        'flags': flags,
+        'recommended_action': recommended_action,
+        'requires_investigation': fraud_score >= 0.5
+    }
+
+
+# Export public interface
+__all__ = [
+    # New class-based API
     'AIAutomationController',
     'AutomationDecision',
     'FraudRisk',
     'AutomationMetrics',
     'get_automation_controller'
+    'get_automation_controller',
+    # Backward compatible function-based API
+    'auto_quote',
+    'auto_underwrite',
+    'auto_process_claim',
+    'detect_fraud'
 ]

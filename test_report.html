@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>PHINS Test Report - PR #4</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #2c3e50;
+            border-bottom: 3px solid #3498db;
+            padding-bottom: 10px;
+        }
+        .summary {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin: 30px 0;
+        }
+        .summary-card {
+            padding: 20px;
+            border-radius: 6px;
+            text-align: center;
+        }
+        .summary-card h3 {
+            margin: 0;
+            font-size: 2em;
+        }
+        .summary-card p {
+            margin: 5px 0 0 0;
+            color: #666;
+        }
+        .passed { background: #d4edda; color: #155724; }
+        .failed { background: #f8d7da; color: #721c24; }
+        .skipped { background: #fff3cd; color: #856404; }
+        .total { background: #d1ecf1; color: #0c5460; }
+        .category {
+            margin: 30px 0;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            overflow: hidden;
+        }
+        .category-header {
+            background: #3498db;
+            color: white;
+            padding: 15px;
+            font-weight: bold;
+            font-size: 1.1em;
+        }
+        .test-item {
+            padding: 15px;
+            border-bottom: 1px solid #eee;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .test-item:last-child {
+            border-bottom: none;
+        }
+        .test-item.passed {
+            background: #f8fff9;
+        }
+        .test-item.failed {
+            background: #fff8f8;
+        }
+        .test-item.skipped {
+            background: #fffef8;
+        }
+        .status-badge {
+            padding: 5px 15px;
+            border-radius: 20px;
+            font-weight: bold;
+            font-size: 0.9em;
+        }
+        .status-badge.passed {
+            background: #28a745;
+            color: white;
+        }
+        .status-badge.failed {
+            background: #dc3545;
+            color: white;
+        }
+        .status-badge.skipped {
+            background: #ffc107;
+            color: #333;
+        }
+        .error-message {
+            color: #dc3545;
+            font-size: 0.9em;
+            margin-top: 5px;
+            font-style: italic;
+        }
+        .timestamp {
+            color: #666;
+            font-size: 0.9em;
+            margin-top: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🧪 PHINS System Integration Test Report</h1>
+        <p class="timestamp">Generated: 2025-12-16 21:57:27</p>
+        
+        <div class="summary">
+            <div class="summary-card total">
+                <h3>5</h3>
+                <p>Total Tests</p>
+            </div>
+            <div class="summary-card passed">
+                <h3>5</h3>
+                <p>Passed</p>
+            </div>
+            <div class="summary-card failed">
+                <h3>0</h3>
+                <p>Failed</p>
+            </div>
+            <div class="summary-card skipped">
+                <h3>0</h3>
+                <p>Skipped</p>
+            </div>
+        </div>
+        
+        <div class="summary-card passed" 
+             style="margin: 20px 0;">
+            <h3>100.0%</h3>
+            <p>Pass Rate</p>
+        </div>
+
+        <div class="category">
+            <div class="category-header">
+                AI (5/5 passed)
+            </div>
+
+            <div class="test-item passed">
+                <div>
+                    <strong>Auto Quote Generation</strong>
+                    
+                    
+                </div>
+                <span class="status-badge passed">PASSED</span>
+            </div>
+
+            <div class="test-item passed">
+                <div>
+                    <strong>Auto Underwriting - Low Risk</strong>
+                    
+                    
+                </div>
+                <span class="status-badge passed">PASSED</span>
+            </div>
+
+            <div class="test-item passed">
+                <div>
+                    <strong>Auto Underwriting - High Risk</strong>
+                    
+                    
+                </div>
+                <span class="status-badge passed">PASSED</span>
+            </div>
+
+            <div class="test-item passed">
+                <div>
+                    <strong>Smart Claims Processing</strong>
+                    
+                    
+                </div>
+                <span class="status-badge passed">PASSED</span>
+            </div>
+
+            <div class="test-item passed">
+                <div>
+                    <strong>Fraud Detection</strong>
+                    
+                    
+                </div>
+                <span class="status-badge passed">PASSED</span>
+            </div>
+
+        </div>
+
+    </div>
+</body>
+</html>
