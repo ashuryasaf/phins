@@ -411,12 +411,17 @@ class AIAutomationController:
         if billing_frequency == 'monthly':
             due_date = datetime.now().replace(day=1)
         elif billing_frequency == 'quarterly':
-            # First day of next quarter with proper year rollover
+            # Calculate next quarter properly (Q1=Jan, Q2=Apr, Q3=Jul, Q4=Oct)
             current_month = datetime.now().month
             current_year = datetime.now().year
-            next_quarter_month = ((current_month - 1) // 3 + 1) * 3 + 1
-            if next_quarter_month > 12:
-                next_quarter_month = 1
+            # Get current quarter (0-3) and calculate next quarter
+            current_quarter = (current_month - 1) // 3
+            next_quarter = (current_quarter + 1) % 4
+            # Map quarters to first month: [1, 4, 7, 10]
+            quarter_months = [1, 4, 7, 10]
+            next_quarter_month = quarter_months[next_quarter]
+            # Handle year rollover when going from Q4 to Q1
+            if next_quarter == 0:  # Q1 of next year
                 current_year += 1
             due_date = datetime.now().replace(year=current_year, month=next_quarter_month, day=1)
         else:  # annual
@@ -590,11 +595,7 @@ def detect_fraud(data: Dict[str, Any]) -> Dict[str, Any]:
     Returns:
         Dictionary with fraud_risk_level, fraud_score, flags, and recommended_action
     """
-    # Use the fraud detection logic from the controller
-    controller = get_automation_controller()
-    fraud_risk = controller._detect_fraud(data)
-    
-    # Calculate fraud score based on indicators
+    # Calculate fraud score based on indicators (replicate detection logic)
     fraud_score = 0.0
     flags = []
     
