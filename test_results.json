@@ -1,128 +1,11 @@
 {
-  "timestamp": "2025-12-16T19:56:53.818874",
-  "total_tests": 30,
-  "passed": 25,
-  "failed": 2,
+  "timestamp": "2025-12-16T19:57:46.153202",
+  "total_tests": 11,
+  "passed": 8,
+  "failed": 0,
   "skipped": 3,
-  "execution_time": "0.22s",
+  "execution_time": "0.00s",
   "tests": [
-    {
-      "name": "Landing Page Loads",
-      "category": "routing",
-      "status": "passed",
-      "message": "",
-      "error": "",
-      "execution_time": "0.003s",
-      "timestamp": "2025-12-16T19:56:53.599040"
-    },
-    {
-      "name": "Login Page Routing",
-      "category": "routing",
-      "status": "passed",
-      "message": "",
-      "error": "",
-      "execution_time": "0.002s",
-      "timestamp": "2025-12-16T19:56:53.600870"
-    },
-    {
-      "name": "Admin Login",
-      "category": "rbac",
-      "status": "failed",
-      "message": "",
-      "error": "Login failed with status 401",
-      "execution_time": "0.034s",
-      "timestamp": "2025-12-16T19:56:53.635010"
-    },
-    {
-      "name": "Underwriter Login",
-      "category": "rbac",
-      "status": "passed",
-      "message": "",
-      "error": "",
-      "execution_time": "0.033s",
-      "timestamp": "2025-12-16T19:56:53.667894"
-    },
-    {
-      "name": "Accountant Login",
-      "category": "rbac",
-      "status": "passed",
-      "message": "",
-      "error": "",
-      "execution_time": "0.033s",
-      "timestamp": "2025-12-16T19:56:53.700708"
-    },
-    {
-      "name": "Claims Adjuster Login",
-      "category": "rbac",
-      "status": "passed",
-      "message": "",
-      "error": "",
-      "execution_time": "0.037s",
-      "timestamp": "2025-12-16T19:56:53.737709"
-    },
-    {
-      "name": "RBAC Enforcement",
-      "category": "rbac",
-      "status": "passed",
-      "message": "",
-      "error": "",
-      "execution_time": "0.001s",
-      "timestamp": "2025-12-16T19:56:53.739081"
-    },
-    {
-      "name": "Password Change",
-      "category": "password",
-      "status": "failed",
-      "message": "",
-      "error": "Cannot test password change - login failed",
-      "execution_time": "0.033s",
-      "timestamp": "2025-12-16T19:56:53.772021"
-    },
-    {
-      "name": "Password Reset Request",
-      "category": "password",
-      "status": "passed",
-      "message": "",
-      "error": "",
-      "execution_time": "0.002s",
-      "timestamp": "2025-12-16T19:56:53.773583"
-    },
-    {
-      "name": "Password Validation",
-      "category": "password",
-      "status": "passed",
-      "message": "",
-      "error": "",
-      "execution_time": "0.001s",
-      "timestamp": "2025-12-16T19:56:53.774740"
-    },
-    {
-      "name": "Quote Submission",
-      "category": "forms",
-      "status": "passed",
-      "message": "",
-      "error": "",
-      "execution_time": "0.001s",
-      "timestamp": "2025-12-16T19:56:53.775957"
-    },
-    {
-      "name": "Policy Application",
-      "category": "forms",
-      "status": "passed",
-      "message": "",
-      "error": "",
-      "execution_time": "0.001s",
-      "timestamp": "2025-12-16T19:56:53.777205"
-    },
-    {
-      "name": "Form Validation",
-      "category": "forms",
-      "status": "passed",
-      "message": "",
-      "error": "",
-      "execution_time": "0.001s",
-      "timestamp": "2025-12-16T19:56:53.778371"
-    },
     {
       "name": "Auto Quote Generation",
       "category": "ai",
@@ -130,7 +13,7 @@
       "message": "",
       "error": "",
       "execution_time": "0.000s",
-      "timestamp": "2025-12-16T19:56:53.778395"
+      "timestamp": "2025-12-16T19:57:46.152791"
     },
     {
       "name": "Auto Underwriting - Low Risk",
@@ -139,7 +22,7 @@
       "message": "",
       "error": "",
       "execution_time": "0.000s",
-      "timestamp": "2025-12-16T19:56:53.778407"
+      "timestamp": "2025-12-16T19:57:46.152832"
     },
     {
       "name": "Auto Underwriting - High Risk",
@@ -148,7 +31,7 @@
       "message": "",
       "error": "",
       "execution_time": "0.000s",
-      "timestamp": "2025-12-16T19:56:53.778419"
+      "timestamp": "2025-12-16T19:57:46.152866"
     },
     {
       "name": "Smart Claims Processing",
@@ -157,7 +40,7 @@
       "message": "",
       "error": "",
       "execution_time": "0.000s",
-      "timestamp": "2025-12-16T19:56:53.778431"
+      "timestamp": "2025-12-16T19:57:46.152902"
     },
     {
       "name": "Fraud Detection",
@@ -166,7 +49,7 @@
       "message": "",
       "error": "",
       "execution_time": "0.000s",
-      "timestamp": "2025-12-16T19:56:53.778441"
+      "timestamp": "2025-12-16T19:57:46.152931"
     },
     {
       "name": "Database Initialization",
@@ -175,7 +58,7 @@
       "message": "Database module not available",
       "error": "",
       "execution_time": "0.000s",
-      "timestamp": "2025-12-16T19:56:53.778445"
+      "timestamp": "2025-12-16T19:57:46.152949"
     },
     {
       "name": "Database Initialization",
@@ -184,7 +67,7 @@
       "message": "",
       "error": "",
       "execution_time": "0.000s",
-      "timestamp": "2025-12-16T19:56:53.778449"
+      "timestamp": "2025-12-16T19:57:46.152972"
     },
     {
       "name": "Default Users Exist",
@@ -193,7 +76,7 @@
       "message": "Database module not available",
       "error": "",
       "execution_time": "0.000s",
-      "timestamp": "2025-12-16T19:56:53.778452"
+      "timestamp": "2025-12-16T19:57:46.152993"
     },
     {
       "name": "Default Users Exist",
@@ -202,7 +85,7 @@
       "message": "",
       "error": "",
       "execution_time": "0.000s",
-      "timestamp": "2025-12-16T19:56:53.778455"
+      "timestamp": "2025-12-16T19:57:46.153013"
     },
     {
       "name": "Data Consistency",
@@ -211,7 +94,7 @@
       "message": "Database module not available",
       "error": "",
       "execution_time": "0.000s",
-      "timestamp": "2025-12-16T19:56:53.778458"
+      "timestamp": "2025-12-16T19:57:46.153031"
     },
     {
       "name": "Data Consistency",
@@ -220,61 +103,7 @@
       "message": "",
       "error": "",
       "execution_time": "0.000s",
-      "timestamp": "2025-12-16T19:56:53.778461"
-    },
-    {
-      "name": "Quote to Policy Journey",
-      "category": "integration",
-      "status": "passed",
-      "message": "",
-      "error": "",
-      "execution_time": "0.001s",
-      "timestamp": "2025-12-16T19:56:53.779601"
-    },
-    {
-      "name": "Claims Journey",
-      "category": "integration",
-      "status": "passed",
-      "message": "",
-      "error": "",
-      "execution_time": "0.001s",
-      "timestamp": "2025-12-16T19:56:53.780729"
-    },
-    {
-      "name": "Session Management",
-      "category": "integration",
-      "status": "passed",
-      "message": "",
-      "error": "",
-      "execution_time": "0.033s",
-      "timestamp": "2025-12-16T19:56:53.813862"
-    },
-    {
-      "name": "Authentication Endpoints",
-      "category": "api",
-      "status": "passed",
-      "message": "",
-      "error": "",
-      "execution_time": "0.003s",
-      "timestamp": "2025-12-16T19:56:53.816484"
-    },
-    {
-      "name": "Quote Endpoints",
-      "category": "api",
-      "status": "passed",
-      "message": "",
-      "error": "",
-      "execution_time": "0.001s",
-      "timestamp": "2025-12-16T19:56:53.817621"
-    },
-    {
-      "name": "Application Endpoints",
-      "category": "api",
-      "status": "passed",
-      "message": "",
-      "error": "",
-      "execution_time": "0.001s",
-      "timestamp": "2025-12-16T19:56:53.818834"
+      "timestamp": "2025-12-16T19:57:46.153062"
     }
   ]
 }
