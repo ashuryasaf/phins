@@ -429,12 +429,16 @@
             const activePolicies = policies.filter(p => p.status === 'Active');
             const totalCoverage = activePolicies.reduce((sum, p) => sum + Number(p.coverage_amount || 0), 0);
             const pendingClaims = claims.filter(c => c.status === 'Pending' || c.status === 'Under Review');
-            const nextPayment = activePolicies.length > 0 ? activePolicies[0].premium : 0;
+            
+            // Calculate total next payment across all active policies
+            const nextPayment = activePolicies.reduce((sum, p) => sum + Number(p.premium || 0), 0);
             
             document.getElementById('active-policies-count').textContent = activePolicies.length;
             document.getElementById('total-coverage').textContent = '$' + totalCoverage.toLocaleString();
             document.getElementById('pending-claims-count').textContent = pendingClaims.length;
-            document.getElementById('next-payment').textContent = '$' + Number(nextPayment).toFixed(2);
+            document.getElementById('next-payment').textContent = activePolicies.length > 1 
+                ? '$' + Number(nextPayment).toFixed(2) + ' (total)'
+                : '$' + Number(nextPayment).toFixed(2);
         }
         
         function showNewClaimForm() {

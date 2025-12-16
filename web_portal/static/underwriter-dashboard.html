@@ -141,8 +141,8 @@
                             <strong>Application #${app.id}</strong><br>
                             <span style="color: #666;">Customer: ${app.customer_name || 'N/A'}</span>
                         </div>
-                        <span class="risk-badge risk-${app.risk_score || 'medium'}">
-                            ${(app.risk_score || 'medium').toUpperCase()} RISK
+                        <span class="risk-badge risk-${['low', 'medium', 'high'].includes(app.risk_score) ? app.risk_score : 'medium'}">
+                            ${(['low', 'medium', 'high'].includes(app.risk_score) ? app.risk_score : 'medium').toUpperCase()} RISK
                         </span>
                     </div>
                     <p><strong>Policy Type:</strong> ${app.policy_type || 'N/A'}</p>

@@ -411,10 +411,14 @@ class AIAutomationController:
         if billing_frequency == 'monthly':
             due_date = datetime.now().replace(day=1)
         elif billing_frequency == 'quarterly':
-            # First day of next quarter
+            # First day of next quarter with proper year rollover
             current_month = datetime.now().month
+            current_year = datetime.now().year
             next_quarter_month = ((current_month - 1) // 3 + 1) * 3 + 1
-            due_date = datetime.now().replace(month=min(next_quarter_month, 12), day=1)
+            if next_quarter_month > 12:
+                next_quarter_month = 1
+                current_year += 1
+            due_date = datetime.now().replace(year=current_year, month=next_quarter_month, day=1)
         else:  # annual
             due_date = datetime.now().replace(month=1, day=1)
         
