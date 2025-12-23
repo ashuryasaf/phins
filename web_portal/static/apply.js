@@ -42,6 +42,21 @@ function setupEventListeners() {
     document.getElementById('height').addEventListener('input', calculateBMI);
     document.getElementById('weight').addEventListener('input', calculateBMI);
     
+    // Real-time validation for Step 1 fields
+    const step1Fields = ['first-name', 'last-name', 'email', 'phone', 'dob'];
+    step1Fields.forEach(fieldId => {
+        const field = document.getElementById(fieldId);
+        if (field) {
+            field.addEventListener('blur', function() {
+                validateField(this);
+            });
+            field.addEventListener('input', function() {
+                // Clear error styling on input
+                this.style.borderColor = '';
+            });
+        }
+    });
+    
     // Conditional fields
     document.querySelectorAll('input[name="medical-conditions"]').forEach(radio => {
         radio.addEventListener('change', function() {
@@ -246,19 +261,112 @@ function updateStepDisplay() {
     document.getElementById('submit-btn').style.display = currentStep === totalSteps ? 'block' : 'none';
 }
 
+// Field validation function
+function validateField(field) {
+    let isValid = true;
+    let errorMessage = '';
+    
+    // Check if field is required and empty
+    if (field.required && !field.value.trim()) {
+        isValid = false;
+        errorMessage = 'This field is required';
+    }
+    
+    // Specific format validations
+    if (isValid && field.value.trim()) {
+        switch(field.id) {
+            case 'first-name':
+            case 'last-name':
+                // Name validation: letters, spaces, hyphens, apostrophes only (2-100 chars)
+                if (!/^[a-zA-Z\s\-']{2,100}$/.test(field.value)) {
+                    isValid = false;
+                    errorMessage = 'Only letters, spaces, hyphens, and apostrophes allowed (2-100 characters)';
+                }
+                break;
+                
+            case 'email':
+                // Email format validation
+                if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(field.value)) {
+                    isValid = false;
+                    errorMessage = 'Please enter a valid email address (e.g., name@example.com)';
+                }
+                break;
+                
+            case 'phone':
+                // Phone format validation (7-30 chars, allows international format)
+                const phoneRegex = /^\+?[\d\s\-\(\)\.]{7,30}$/;
+                const digitCount = field.value.replace(/\D/g, '').length;
+                if (!phoneRegex.test(field.value) || digitCount < 7) {
+                    isValid = false;
+                    errorMessage = 'Please enter a valid phone number (e.g., +1-555-0123 or 555-0123)';
+                }
+                break;
+                
+            case 'dob':
+                // Age validation: must be 18-100 years old
+                const birthDate = new Date(field.value);
+                const today = new Date();
+                let age = today.getFullYear() - birthDate.getFullYear();
+                const monthDiff = today.getMonth() - birthDate.getMonth();
+                if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
+                    age--;
+                }
+                
+                if (age < 18) {
+                    isValid = false;
+                    errorMessage = 'Applicant must be at least 18 years old';
+                } else if (age > 100) {
+                    isValid = false;
+                    errorMessage = 'Please enter a valid date of birth';
+                }
+                break;
+                
+            case 'zip':
+                // ZIP code validation: 5 digits or 5+4 format
+                if (!/^\d{5}(-\d{4})?$/.test(field.value)) {
+                    isValid = false;
+                    errorMessage = 'Please enter a valid ZIP code (e.g., 12345 or 12345-6789)';
+                }
+                break;
+        }
+    }
+    
+    // Visual feedback
+    if (!isValid) {
+        field.style.borderColor = '#dc3545';
+        field.style.backgroundColor = '#fff5f5';
+        // Show error message if available
+        if (errorMessage) {
+            field.title = errorMessage;
+        }
+    } else {
+        field.style.borderColor = '#28a745';
+        field.style.backgroundColor = '';
+        field.title = '';
+    }
+    
+    return isValid;
+}
+
 function validateStep(step) {
     const currentStepEl = document.querySelector(`.form-step[data-step="${step}"]`);
     const inputs = currentStepEl.querySelectorAll('input[required], select[required], textarea[required]');
     
     let isValid = true;
+    let firstInvalidField = null;
+    let errorMessages = [];
     
     inputs.forEach(input => {
-        if (!input.value || (input.type === 'checkbox' && !input.checked)) {
+        const fieldValid = validateField(input);
+        if (!fieldValid) {
             isValid = false;
-            input.style.borderColor = '#dc3545';
-            setTimeout(() => {
-                input.style.borderColor = '';
-            }, 3000);
+            if (!firstInvalidField) {
+                firstInvalidField = input;
+            }
+            // Collect error message
+            if (input.title) {
+                errorMessages.push(`${input.previousElementSibling?.textContent || input.placeholder || 'Field'}: ${input.title}`);
+            }
         }
     });
     
@@ -272,7 +380,17 @@ function validateStep(step) {
     }
     
     if (!isValid) {
-        alert('Please fill in all required fields');
+        // Show detailed error messages
+        if (errorMessages.length > 0) {
+            alert('Please correct the following errors:\n\n' + errorMessages.join('\n'));
+        } else {
+            alert('Please fill in all required fields correctly');
+        }
+        
+        // Focus on first invalid field
+        if (firstInvalidField) {
+            firstInvalidField.focus();
+        }
     }
     
     return isValid;
