@@ -344,3 +344,97 @@ class AuditLog(Base):
             'ip_address': self.ip_address,
             'success': self.success
         }
+
+
+# ============================================================================
+# Admin data (actuarial tables) + token registry (crypto/asset enablement)
+# ============================================================================
+
+
+class DataClassification(str, enum.Enum):
+    """Data sensitivity classification (insurance-grade defaults)."""
+
+    PUBLIC = "public"
+    INTERNAL = "internal"
+    CONFIDENTIAL = "confidential"
+    RESTRICTED = "restricted"
+
+
+class ActuarialTable(Base):
+    """
+    Actuarial table store (mortality/morbidity/pricing/etc).
+
+    The `payload` field stores an encrypted JSON blob (see `security.vault`).
+    """
+
+    __tablename__ = "actuarial_tables"
+
+    id = Column(String(50), primary_key=True)
+    name = Column(String(200), nullable=False, index=True)
+    table_type = Column(String(100), nullable=False, index=True)  # mortality, morbidity, pricing, lapse, etc
+    version = Column(String(50), nullable=False, index=True)
+    effective_date = Column(DateTime, nullable=True, index=True)
+    payload = Column(Text, nullable=False)  # VaultBlob JSON
+    classification = Column(String(50), default=DataClassification.RESTRICTED.value, nullable=False, index=True)
+    created_by = Column(String(100), index=True)
+    created_date = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "name": self.name,
+            "table_type": self.table_type,
+            "version": self.version,
+            "effective_date": self.effective_date.isoformat() if self.effective_date else None,
+            "classification": self.classification,
+            "created_by": self.created_by,
+            "created_date": self.created_date.isoformat() if self.created_date else None,
+        }
+
+
+class TokenAssetType(str, enum.Enum):
+    """Supported asset types in the registry."""
+
+    CURRENCY = "currency"
+    STABLECOIN = "stablecoin"
+    NFT = "nft"
+    INDEX = "index"
+
+
+class TokenRegistry(Base):
+    """
+    Registry of supported tokens/currencies/NFT identifiers used by billing/investments.
+
+    This is NOT an on-chain indexer; it's a governance/allow-list for what the platform will accept.
+    """
+
+    __tablename__ = "token_registry"
+
+    id = Column(String(50), primary_key=True)
+    symbol = Column(String(50), nullable=False, index=True)  # BTC, ETH, USDC, etc
+    name = Column(String(200), nullable=False)
+    asset_type = Column(String(50), default=TokenAssetType.CURRENCY.value, nullable=False, index=True)
+    chain = Column(String(50), nullable=True)  # ethereum, solana, polygon, etc
+    contract_address = Column(String(200), nullable=True)  # for tokens/NFTs (optional)
+    decimals = Column(Integer, nullable=True)
+    enabled = Column(Boolean, default=True, nullable=False, index=True)
+    metadata = Column(Text, nullable=True)  # JSON string
+    classification = Column(String(50), default=DataClassification.INTERNAL.value, nullable=False, index=True)
+    created_by = Column(String(100), index=True)
+    created_date = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "symbol": self.symbol,
+            "name": self.name,
+            "asset_type": self.asset_type,
+            "chain": self.chain,
+            "contract_address": self.contract_address,
+            "decimals": self.decimals,
+            "enabled": self.enabled,
+            "metadata": self.metadata,
+            "classification": self.classification,
+            "created_by": self.created_by,
+            "created_date": self.created_date.isoformat() if self.created_date else None,
+        }

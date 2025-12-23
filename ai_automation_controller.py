@@ -474,15 +474,11 @@ def get_automation_controller() -> AIAutomationController:
         _controller_instance = AIAutomationController()
     return _controller_instance
 
-
-# Export public interface
-__all__ = [
 # =========================================================================
 # BACKWARD COMPATIBILITY - Function-based API
 # =========================================================================
 # These functions provide backward compatibility with the old function-based API
-# while using the enhanced class-based implementation internally
-
+# while using the enhanced class-based implementation internally.
 
 def auto_quote(data: Dict[str, Any]) -> Dict[str, Any]:
     """
@@ -688,7 +684,6 @@ __all__ = [
     'AutomationDecision',
     'FraudRisk',
     'AutomationMetrics',
-    'get_automation_controller'
     'get_automation_controller',
     # Backward compatible function-based API
     'auto_quote',

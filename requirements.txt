@@ -13,3 +13,4 @@ moto>=4.0
 sqlalchemy>=2.0.0
 psycopg2-binary>=2.9.0  # PostgreSQL adapter
 alembic>=1.12.0  # Database migrations
+cryptography>=45.0.0

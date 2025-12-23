@@ -13,13 +13,16 @@ for mobile-friendly web UI or to be used by a simple mobile app prototype.
 import json
 import os
 import urllib.parse as urlparse
-from http.server import HTTPServer, BaseHTTPRequestHandler
+from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 import sys
 from datetime import datetime, timedelta
 import random
 import uuid
 import hashlib
 import secrets
+import threading
+import csv
+import io
 from typing import Dict, Any
 
 # Import billing engine
@@ -80,6 +83,18 @@ try:
 except Exception:
     audit = None
 
+# Optional: admin datasets (actuarial tables) and market data (crypto/index)
+try:
+    from security.vault import encrypt_json
+except Exception:
+    encrypt_json = None  # type: ignore
+
+try:
+    from services.market_data_service import MarketDataService
+    _market_data = MarketDataService()
+except Exception:
+    _market_data = None
+
 # Security tracking
 RATE_LIMIT: Dict[str, Dict[str, Any]] = {}  # IP -> {count, reset_time}
 FAILED_LOGINS: Dict[str, Dict[str, Any]] = {}  # IP -> {count, lockout_until}
@@ -97,6 +112,13 @@ MAX_SESSIONS_PER_IP = 10  # Max concurrent sessions per IP
 CLEANUP_INTERVAL = 300  # Cleanup stale data every 5 minutes
 last_cleanup = datetime.now()
 
+# Global lock for in-process shared state (threaded server safety)
+STATE_LOCK = threading.RLock()
+
+# Admin data stores (in-memory fallback when DB is disabled)
+ACTUARIAL_TABLES: Dict[str, Dict[str, Any]] = {}  # table_id -> metadata + encrypted payload
+TOKEN_REGISTRY: Dict[str, Dict[str, Any]] = {}  # entry_id -> token metadata
+
 # Hash passwords for security (in production, use proper password hashing)
 def hash_password(password: str) -> dict[str, str]:
     salt = secrets.token_hex(16)
@@ -111,61 +133,69 @@ def validate_session(token: str) -> dict[str, str] | None:
     """Validate session token and return user info or None"""
     if not token or not token.startswith('phins_'):
         return None
-    
-    session = SESSIONS.get(token)
-    if not session:
-        return None
-    
-    # Check if session expired
-    try:
-        expires = datetime.fromisoformat(session['expires'])
-        if datetime.now() > expires:
-            del SESSIONS[token]
+
+    with STATE_LOCK:
+        session = SESSIONS.get(token)
+        if not session:
             return None
-    except (KeyError, ValueError):
-        return None
-    
-    return session
+
+        # Check if session expired
+        try:
+            expires = datetime.fromisoformat(session['expires'])
+            if datetime.now() > expires:
+                try:
+                    del SESSIONS[token]
+                except Exception:
+                    # Best-effort cleanup (DB-backed dict may not support del in all cases)
+                    pass
+                return None
+        except (KeyError, ValueError):
+            return None
+
+        return session
 
 def check_rate_limit(client_ip: str) -> bool:
     """Check if client has exceeded rate limit"""
     now = datetime.now().timestamp()
-    
-    if client_ip in RATE_LIMIT:
-        limit_data = RATE_LIMIT[client_ip]
-        # Reset counter if minute has passed
-        if now > limit_data['reset_time']:
+
+    with STATE_LOCK:
+        if client_ip in RATE_LIMIT:
+            limit_data = RATE_LIMIT[client_ip]
+            # Reset counter if minute has passed
+            if now > limit_data['reset_time']:
+                RATE_LIMIT[client_ip] = {'count': 1, 'reset_time': now + 60}
+                return True
+            elif limit_data['count'] < MAX_REQUESTS_PER_MINUTE:
+                limit_data['count'] += 1
+                return True
+            else:
+                return False
+        else:
             RATE_LIMIT[client_ip] = {'count': 1, 'reset_time': now + 60}
             return True
-        elif limit_data['count'] < MAX_REQUESTS_PER_MINUTE:
-            limit_data['count'] += 1
-            return True
-        else:
-            return False
-    else:
-        RATE_LIMIT[client_ip] = {'count': 1, 'reset_time': now + 60}
-        return True
 
 def check_login_lockout(client_ip: str) -> bool:
     """Check if IP is locked out due to failed login attempts"""
-    if client_ip in FAILED_LOGINS:
-        lockout_data = FAILED_LOGINS[client_ip]
-        if datetime.now().timestamp() < lockout_data.get('lockout_until', 0):
-            return False  # Still locked out
-        elif lockout_data['count'] >= MAX_LOGIN_ATTEMPTS:
-            # Reset after lockout period
-            del FAILED_LOGINS[client_ip]
-    return True
+    with STATE_LOCK:
+        if client_ip in FAILED_LOGINS:
+            lockout_data = FAILED_LOGINS[client_ip]
+            if datetime.now().timestamp() < lockout_data.get('lockout_until', 0):
+                return False  # Still locked out
+            elif lockout_data['count'] >= MAX_LOGIN_ATTEMPTS:
+                # Reset after lockout period
+                del FAILED_LOGINS[client_ip]
+        return True
 
 def record_failed_login(client_ip: str):
     """Record a failed login attempt"""
-    if client_ip not in FAILED_LOGINS:
-        FAILED_LOGINS[client_ip] = {'count': 0}
-    
-    FAILED_LOGINS[client_ip]['count'] += 1
-    
-    if FAILED_LOGINS[client_ip]['count'] >= MAX_LOGIN_ATTEMPTS:
-        FAILED_LOGINS[client_ip]['lockout_until'] = datetime.now().timestamp() + LOCKOUT_DURATION
+    with STATE_LOCK:
+        if client_ip not in FAILED_LOGINS:
+            FAILED_LOGINS[client_ip] = {'count': 0}
+
+        FAILED_LOGINS[client_ip]['count'] += 1
+
+        if FAILED_LOGINS[client_ip]['count'] >= MAX_LOGIN_ATTEMPTS:
+            FAILED_LOGINS[client_ip]['lockout_until'] = datetime.now().timestamp() + LOCKOUT_DURATION
 
 def require_role(session: dict[str, str] | None, allowed_roles: list[str]) -> bool:
     """Check if user has required role"""
@@ -182,6 +212,17 @@ def require_role(session: dict[str, str] | None, allowed_roles: list[str]) -> bo
     
     return user.get('role') in allowed_roles
 
+
+def get_session_user(session: dict[str, str] | None) -> Dict[str, Any] | None:
+    """Resolve the user dict from a session (best-effort)."""
+    if not session:
+        return None
+    username = session.get('username')
+    if not username:
+        return None
+    with STATE_LOCK:
+        return USERS.get(username)
+
 def log_malicious_attempt(client_ip: str, reason: str, details: Dict[str, Any] | None = None):
     """Log a malicious attempt for monitoring and analysis"""
     attempt: Dict[str, Any] = {
@@ -190,17 +231,18 @@ def log_malicious_attempt(client_ip: str, reason: str, details: Dict[str, Any] |
         'reason': reason,
         'details': details or {}
     }
-    MALICIOUS_ATTEMPTS.append(attempt)
-    
-    # Keep only last 1000 attempts in memory
-    if len(MALICIOUS_ATTEMPTS) > 1000:
-        MALICIOUS_ATTEMPTS.pop(0)
-    
-    # Check if IP should be permanently blocked
-    ip_attempts = sum(1 for a in MALICIOUS_ATTEMPTS if a['ip'] == client_ip)
-    if ip_attempts >= MAX_MALICIOUS_ATTEMPTS:
-        block_ip(client_ip, f"Exceeded {MAX_MALICIOUS_ATTEMPTS} malicious attempts", permanent=True)
-    
+    with STATE_LOCK:
+        MALICIOUS_ATTEMPTS.append(attempt)
+
+        # Keep only last 1000 attempts in memory
+        if len(MALICIOUS_ATTEMPTS) > 1000:
+            MALICIOUS_ATTEMPTS.pop(0)
+
+        # Check if IP should be permanently blocked
+        ip_attempts = sum(1 for a in MALICIOUS_ATTEMPTS if a['ip'] == client_ip)
+        if ip_attempts >= MAX_MALICIOUS_ATTEMPTS:
+            block_ip(client_ip, f"Exceeded {MAX_MALICIOUS_ATTEMPTS} malicious attempts", permanent=True)
+
     # Print to console for real-time monitoring
     print(f"🚨 SECURITY ALERT: {client_ip} - {reason}")
     if details:
@@ -208,27 +250,29 @@ def log_malicious_attempt(client_ip: str, reason: str, details: Dict[str, Any] |
 
 def block_ip(client_ip: str, reason: str, permanent: bool = False):
     """Block an IP address"""
-    BLOCKED_IPS[client_ip] = {
-        'reason': reason,
-        'blocked_at': datetime.now().isoformat(),
-        'permanent': permanent,
-        'attempts': BLOCKED_IPS.get(client_ip, {}).get('attempts', 0) + 1
-    }
+    with STATE_LOCK:
+        BLOCKED_IPS[client_ip] = {
+            'reason': reason,
+            'blocked_at': datetime.now().isoformat(),
+            'permanent': permanent,
+            'attempts': BLOCKED_IPS.get(client_ip, {}).get('attempts', 0) + 1
+        }
     print(f"🚫 BLOCKED IP: {client_ip} - {reason} {'(PERMANENT)' if permanent else ''}")
 
 def is_ip_blocked(client_ip: str) -> tuple[bool, str]:
     """Check if IP is blocked, returns (is_blocked, reason)"""
-    if client_ip in BLOCKED_IPS:
-        block_data = BLOCKED_IPS[client_ip]
-        if block_data.get('permanent'):
-            return (True, block_data['reason'])
-        # Temporary blocks expire after 24 hours
-        blocked_at = datetime.fromisoformat(block_data['blocked_at'])
-        if datetime.now() - blocked_at < timedelta(hours=24):
-            return (True, block_data['reason'])
-        else:
-            del BLOCKED_IPS[client_ip]
-    return (False, "")
+    with STATE_LOCK:
+        if client_ip in BLOCKED_IPS:
+            block_data = BLOCKED_IPS[client_ip]
+            if block_data.get('permanent'):
+                return (True, block_data['reason'])
+            # Temporary blocks expire after 24 hours
+            blocked_at = datetime.fromisoformat(block_data['blocked_at'])
+            if datetime.now() - blocked_at < timedelta(hours=24):
+                return (True, block_data['reason'])
+            else:
+                del BLOCKED_IPS[client_ip]
+        return (False, "")
 
 def detect_sql_injection(value: str) -> bool:
     """Detect potential SQL injection attempts"""
@@ -300,34 +344,38 @@ def cleanup_stale_data():
     last_cleanup = now
     timestamp = now.timestamp()
     
-    # Clean expired sessions
-    expired_sessions = [token for token, sess in SESSIONS.items() 
-                       if datetime.fromisoformat(sess['expires']) < now]
-    for token in expired_sessions:
-        del SESSIONS[token]
-    
-    # Clean expired rate limits
-    expired_limits = [ip for ip, data in RATE_LIMIT.items() 
-                     if timestamp > data['reset_time'] + 300]  # 5 min grace
-    for ip in expired_limits:
-        del RATE_LIMIT[ip]
-    
-    # Clean expired login lockouts
-    expired_lockouts = [ip for ip, data in FAILED_LOGINS.items() 
-                       if timestamp > data.get('lockout_until', 0) + 300]
-    for ip in expired_lockouts:
-        del FAILED_LOGINS[ip]
-    
-    # Clean old temporary IP blocks (keep permanent ones)
-    expired_blocks = [ip for ip, data in BLOCKED_IPS.items() 
-                     if not data.get('permanent') and 
-                     (now - datetime.fromisoformat(data['blocked_at'])).total_seconds() > 86400]
-    for ip in expired_blocks:
-        del BLOCKED_IPS[ip]
-    
-    # Trim malicious attempts log to last 1000
-    if len(MALICIOUS_ATTEMPTS) > 1000:
-        MALICIOUS_ATTEMPTS[:] = MALICIOUS_ATTEMPTS[-1000:]
+    with STATE_LOCK:
+        # Clean expired sessions
+        expired_sessions = [token for token, sess in SESSIONS.items()
+                           if datetime.fromisoformat(sess['expires']) < now]
+        for token in expired_sessions:
+            try:
+                del SESSIONS[token]
+            except Exception:
+                pass
+
+        # Clean expired rate limits
+        expired_limits = [ip for ip, data in RATE_LIMIT.items()
+                         if timestamp > data['reset_time'] + 300]  # 5 min grace
+        for ip in expired_limits:
+            del RATE_LIMIT[ip]
+
+        # Clean expired login lockouts
+        expired_lockouts = [ip for ip, data in FAILED_LOGINS.items()
+                           if timestamp > data.get('lockout_until', 0) + 300]
+        for ip in expired_lockouts:
+            del FAILED_LOGINS[ip]
+
+        # Clean old temporary IP blocks (keep permanent ones)
+        expired_blocks = [ip for ip, data in BLOCKED_IPS.items()
+                         if not data.get('permanent') and
+                         (now - datetime.fromisoformat(data['blocked_at'])).total_seconds() > 86400]
+        for ip in expired_blocks:
+            del BLOCKED_IPS[ip]
+
+        # Trim malicious attempts log to last 1000
+        if len(MALICIOUS_ATTEMPTS) > 1000:
+            MALICIOUS_ATTEMPTS[:] = MALICIOUS_ATTEMPTS[-1000:]
     
     if expired_sessions or expired_limits or expired_lockouts or expired_blocks:
         print(f"🧹 Cleanup: Removed {len(expired_sessions)} sessions, {len(expired_limits)} rate limits, "
@@ -335,10 +383,11 @@ def cleanup_stale_data():
 
 def check_session_limit(client_ip: str) -> bool:
     """Check if IP has too many concurrent sessions"""
-    active_sessions = sum(1 for sess in SESSIONS.values() 
-                         if sess.get('ip') == client_ip and 
-                         datetime.fromisoformat(sess['expires']) > datetime.now())
-    return active_sessions < MAX_SESSIONS_PER_IP
+    with STATE_LOCK:
+        active_sessions = sum(1 for sess in SESSIONS.values()
+                             if sess.get('ip') == client_ip and
+                             datetime.fromisoformat(sess['expires']) > datetime.now())
+        return active_sessions < MAX_SESSIONS_PER_IP
 
 def validate_input_security(value: str, client_ip: str, field_name: str = 'input') -> tuple[bool, str | None]:
     """Comprehensive input validation, returns (is_valid, error_message)"""
@@ -524,6 +573,19 @@ def calculate_premium(policy_data: Dict[str, Any]) -> Dict[str, float]:
 
 def get_bi_data_actuary() -> Dict[str, Any]:
     """Generate actuarial BI data"""
+    # Best-effort include actuarial upload state (table governance signal)
+    actuarial_count = len(ACTUARIAL_TABLES)
+    latest_uploaded = None
+    try:
+        if ACTUARIAL_TABLES:
+            latest_uploaded = sorted(
+                ACTUARIAL_TABLES.values(),
+                key=lambda x: x.get('created_date', ''),
+                reverse=True
+            )[0].get('created_date')
+    except Exception:
+        latest_uploaded = None
+
     return {
         'total_policies': len(POLICIES),
         'total_exposure': sum(p.get('coverage_amount', 0) for p in POLICIES.values()),
@@ -541,6 +603,10 @@ def get_bi_data_actuary() -> Dict[str, Any]:
             'health': sum(1 for p in POLICIES.values() if p.get('type') == 'health'),
             'auto': sum(1 for p in POLICIES.values() if p.get('type') == 'auto'),
             'property': sum(1 for p in POLICIES.values() if p.get('type') == 'property')
+        },
+        'actuarial_tables': {
+            'count': actuarial_count,
+            'latest_uploaded': latest_uploaded
         }
     }
 
@@ -758,19 +824,29 @@ class PortalHandler(BaseHTTPRequestHandler):
                 self._set_json_headers(404)
                 self.wfile.write(json.dumps({'error': 'User not found'}).encode('utf-8'))
                 return
-            user = USERS.get(username)
+            user = get_session_user(session)
             
             if not user:
                 self._set_json_headers(404)
                 self.wfile.write(json.dumps({'error': 'User not found'}).encode('utf-8'))
                 return
+
+            # Best-effort enrich with customer record fields (email/phone/dob)
+            customer_id = user.get('customer_id') or session.get('customer_id')
+            customer = None
+            if customer_id:
+                with STATE_LOCK:
+                    customer = CUSTOMERS.get(customer_id)
             
             self._set_json_headers()
             self.wfile.write(json.dumps({
                 'username': username,
                 'name': user.get('name'),
                 'role': user.get('role'),
-                'customer_id': user.get('customer_id')
+                'customer_id': customer_id,
+                'email': (customer.get('email') if isinstance(customer, dict) else None) or username,
+                'phone': (customer.get('phone') if isinstance(customer, dict) else None),
+                'dob': (customer.get('dob') if isinstance(customer, dict) else None),
             }).encode('utf-8'))
             return
         
@@ -819,44 +895,179 @@ class PortalHandler(BaseHTTPRequestHandler):
             self._set_json_headers()
             self.wfile.write(json.dumps({'metrics': data, 'ts': datetime.now().isoformat()}).encode('utf-8'))
             return
+
+        # Market data endpoints (crypto + indexes)
+        if path == '/api/market/crypto':
+            if not require_role(session, ['admin', 'accountant', 'customer', 'underwriter', 'claims']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Unauthorized'}).encode('utf-8'))
+                return
+            symbols = qs.get('symbols', ['BTC,ETH'])[0]
+            symbols_list = [s.strip() for s in symbols.split(',') if s.strip()]
+            if not _market_data:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Market data service unavailable'}).encode('utf-8'))
+                return
+            try:
+                data = _market_data.get_crypto_prices_usd(symbols_list)
+                self._set_json_headers()
+                self.wfile.write(json.dumps(data).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(502)
+                self.wfile.write(json.dumps({'error': 'Market data fetch failed', 'details': str(e)}).encode('utf-8'))
+            return
+
+        if path == '/api/market/index':
+            if not require_role(session, ['admin', 'accountant', 'customer', 'underwriter', 'claims']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Unauthorized'}).encode('utf-8'))
+                return
+            symbols = qs.get('symbols', ['^spx'])[0]
+            symbols_list = [s.strip() for s in symbols.split(',') if s.strip()]
+            if not _market_data:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Market data service unavailable'}).encode('utf-8'))
+                return
+            try:
+                data = _market_data.get_index_quotes(symbols_list)
+                self._set_json_headers()
+                self.wfile.write(json.dumps(data).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(502)
+                self.wfile.write(json.dumps({'error': 'Market data fetch failed', 'details': str(e)}).encode('utf-8'))
+            return
+
+        # Admin: list actuarial tables (metadata only)
+        if path == '/api/admin/actuarial-tables':
+            if not require_role(session, ['admin']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Unauthorized. Admin access required.'}).encode('utf-8'))
+                return
+
+            # DB mode: list via repository; otherwise in-memory list.
+            if USE_DATABASE and database_enabled:
+                try:
+                    from database.manager import DatabaseManager
+                    with DatabaseManager() as db:
+                        tables = [t.to_dict() for t in db.actuarial.list(limit=200)]
+                    self._set_json_headers()
+                    self.wfile.write(json.dumps({'items': tables}).encode('utf-8'))
+                    return
+                except Exception as e:
+                    self._set_json_headers(500)
+                    self.wfile.write(json.dumps({'error': 'Failed to load actuarial tables', 'details': str(e)}).encode('utf-8'))
+                    return
+
+            with STATE_LOCK:
+                items = list(ACTUARIAL_TABLES.values())
+            items = sorted(items, key=lambda x: x.get('created_date', ''), reverse=True)
+            self._set_json_headers()
+            self.wfile.write(json.dumps({'items': items}).encode('utf-8'))
+            return
+
+        # Token registry (enabled-only for customers)
+        if path == '/api/token-registry':
+            if not session:
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Unauthorized'}).encode('utf-8'))
+                return
+
+            user = get_session_user(session) or {}
+            role = (user.get('role') or '').lower()
+            enabled_only = role == 'customer'
+
+            if USE_DATABASE and database_enabled:
+                try:
+                    from database.manager import DatabaseManager
+                    with DatabaseManager() as db:
+                        rows = [r.to_dict() for r in db.tokens.list(enabled_only=enabled_only, limit=500)]
+                    self._set_json_headers()
+                    self.wfile.write(json.dumps({'items': rows}).encode('utf-8'))
+                    return
+                except Exception as e:
+                    self._set_json_headers(500)
+                    self.wfile.write(json.dumps({'error': 'Failed to load token registry', 'details': str(e)}).encode('utf-8'))
+                    return
+
+            with STATE_LOCK:
+                rows = list(TOKEN_REGISTRY.values())
+            if enabled_only:
+                rows = [r for r in rows if r.get('enabled', True)]
+            self._set_json_headers()
+            self.wfile.write(json.dumps({'items': rows}).encode('utf-8'))
+            return
         
         # Policy Management Endpoints
         if path == '/api/policies':
+            if not session:
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Unauthorized'}).encode('utf-8'))
+                return
+
+            user = get_session_user(session) or {}
+            role = (user.get('role') or '').lower()
+            session_customer_id = user.get('customer_id') or session.get('customer_id')
+
             policy_id = qs.get('id', [None])[0]
             if policy_id:
                 policy = POLICIES.get(policy_id)
-                if policy:
+                # Customers can only view their own policies
+                if policy and (role != 'customer' or (session_customer_id and policy.get('customer_id') == session_customer_id)):
                     self._set_json_headers()
                     self.wfile.write(json.dumps(policy).encode('utf-8'))
                 else:
                     self._set_json_headers(404)
                     self.wfile.write(json.dumps({'error': 'Policy not found'}).encode('utf-8'))
             else:
-                page = int(qs.get('page', ['1'])[0])
-                page_size = int(qs.get('page_size', ['50'])[0])
-                page = max(1, page)
-                page_size = max(1, min(500, page_size))
-                items = list(POLICIES.values())
-                start = (page - 1) * page_size
-                end = start + page_size
-                payload = {
-                    'items': items[start:end],
-                    'page': page,
-                    'page_size': page_size,
-                    'total': len(items)
-                }
-                self._set_json_headers()
-                self.wfile.write(json.dumps(payload).encode('utf-8'))
+                all_items = list(POLICIES.values())
+                if role == 'customer' and session_customer_id:
+                    all_items = [p for p in all_items if p.get('customer_id') == session_customer_id]
+
+                wants_paging = ('page' in qs) or ('page_size' in qs)
+                if not wants_paging:
+                    # Backward-compatible: older UIs expect a plain list
+                    self._set_json_headers()
+                    self.wfile.write(json.dumps(all_items).encode('utf-8'))
+                else:
+                    page = int(qs.get('page', ['1'])[0])
+                    page_size = int(qs.get('page_size', ['50'])[0])
+                    page = max(1, page)
+                    page_size = max(1, min(500, page_size))
+                    start = (page - 1) * page_size
+                    end = start + page_size
+                    page_items = all_items[start:end]
+                    payload = {
+                        'items': page_items,
+                        # Convenience alias (some UIs expect this)
+                        'policies': page_items,
+                        'page': page,
+                        'page_size': page_size,
+                        'total': len(all_items)
+                    }
+                    self._set_json_headers()
+                    self.wfile.write(json.dumps(payload).encode('utf-8'))
             return
         
         # Claims Management Endpoints
         if path == '/api/claims':
+            if not session:
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Unauthorized'}).encode('utf-8'))
+                return
+
+            user = get_session_user(session) or {}
+            role = (user.get('role') or '').lower()
+            session_customer_id = user.get('customer_id') or session.get('customer_id')
+
             claim_id = qs.get('id', [None])[0]
             status = qs.get('status', [None])[0]
             
             if claim_id:
                 claim = CLAIMS.get(claim_id)
-                if claim:
+                if claim and (role != 'customer' or (session_customer_id and (
+                    claim.get('customer_id') == session_customer_id or
+                    (claim.get('policy_id') and POLICIES.get(claim.get('policy_id'), {}).get('customer_id') == session_customer_id)
+                ))):
                     self._set_json_headers()
                     self.wfile.write(json.dumps(claim).encode('utf-8'))
                 else:
@@ -866,20 +1077,36 @@ class PortalHandler(BaseHTTPRequestHandler):
                 claims_list = list(CLAIMS.values())
                 if status:
                     claims_list = [c for c in claims_list if c.get('status') == status]
-                page = int(qs.get('page', ['1'])[0])
-                page_size = int(qs.get('page_size', ['50'])[0])
-                page = max(1, page)
-                page_size = max(1, min(500, page_size))
-                start = (page - 1) * page_size
-                end = start + page_size
-                payload = {
-                    'items': claims_list[start:end],
-                    'page': page,
-                    'page_size': page_size,
-                    'total': len(claims_list)
-                }
-                self._set_json_headers()
-                self.wfile.write(json.dumps(payload).encode('utf-8'))
+                if role == 'customer' and session_customer_id:
+                    def _belongs(c: Dict[str, Any]) -> bool:
+                        if c.get('customer_id') == session_customer_id:
+                            return True
+                        pid = c.get('policy_id')
+                        return bool(pid and POLICIES.get(pid, {}).get('customer_id') == session_customer_id)
+                    claims_list = [c for c in claims_list if _belongs(c)]
+
+                wants_paging = ('page' in qs) or ('page_size' in qs)
+                if not wants_paging:
+                    self._set_json_headers()
+                    self.wfile.write(json.dumps(claims_list).encode('utf-8'))
+                else:
+                    page = int(qs.get('page', ['1'])[0])
+                    page_size = int(qs.get('page_size', ['50'])[0])
+                    page = max(1, page)
+                    page_size = max(1, min(500, page_size))
+                    start = (page - 1) * page_size
+                    end = start + page_size
+                    page_items = claims_list[start:end]
+                    payload = {
+                        'items': page_items,
+                        # Convenience alias (some UIs expect this)
+                        'claims': page_items,
+                        'page': page,
+                        'page_size': page_size,
+                        'total': len(claims_list)
+                    }
+                    self._set_json_headers()
+                    self.wfile.write(json.dumps(payload).encode('utf-8'))
             return
         
         # Underwriting Applications Endpoints
@@ -916,10 +1143,29 @@ class PortalHandler(BaseHTTPRequestHandler):
 
         # Customer status endpoint (post-application visibility)
         if path == '/api/customer/status':
-            customer_id = qs.get('customer_id', [None])[0]
+            if not session:
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Unauthorized'}).encode('utf-8'))
+                return
+
+            user = get_session_user(session) or {}
+            role = (user.get('role') or '').lower()
+            session_customer_id = user.get('customer_id') or session.get('customer_id')
+
+            requested_customer_id = qs.get('customer_id', [None])[0]
+            customer_id = requested_customer_id
+            if role == 'customer':
+                customer_id = session_customer_id
+
             if not customer_id:
                 self._set_json_headers(400)
                 self.wfile.write(json.dumps({'error': 'customer_id is required'}).encode('utf-8'))
+                return
+
+            # Non-customer roles can request arbitrary customer_id; customers cannot.
+            if role == 'customer' and requested_customer_id and requested_customer_id != customer_id:
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Forbidden'}).encode('utf-8'))
                 return
 
             customer = CUSTOMERS.get(customer_id)
@@ -955,6 +1201,40 @@ class PortalHandler(BaseHTTPRequestHandler):
 
             self._set_json_headers()
             self.wfile.write(json.dumps(payload).encode('utf-8'))
+            return
+
+        # Customer billing "next due" (portal convenience)
+        if path == '/api/billing/next-due':
+            if not session:
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Unauthorized'}).encode('utf-8'))
+                return
+
+            user = get_session_user(session) or {}
+            role = (user.get('role') or '').lower()
+            session_customer_id = user.get('customer_id') or session.get('customer_id')
+            if role == 'customer' and not session_customer_id:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'customer_id unavailable'}).encode('utf-8'))
+                return
+
+            # Determine which policies belong to this customer
+            if role == 'customer':
+                policy_ids = {p.get('id') for p in POLICIES.values() if p.get('customer_id') == session_customer_id}
+                bills = [b for b in BILLING.values()
+                         if b.get('policy_id') in policy_ids and b.get('status') not in ('paid',)]
+            else:
+                bills = [b for b in BILLING.values() if b.get('status') not in ('paid',)]
+
+            def _due_ts(b: Dict[str, Any]) -> float:
+                try:
+                    return datetime.fromisoformat(b.get('due_date', '')).timestamp()
+                except Exception:
+                    return float('inf')
+
+            next_bill = sorted(bills, key=_due_ts)[0] if bills else None
+            self._set_json_headers()
+            self.wfile.write(json.dumps({'next_due': next_bill}).encode('utf-8'))
             return
         
         if path.startswith('/api/statement'):
@@ -1200,21 +1480,23 @@ class PortalHandler(BaseHTTPRequestHandler):
                 user = USERS.get(username)
                 if user and verify_password(password, user['hash'], user['salt']):
                     # Clear failed login attempts on success
-                    if client_ip in FAILED_LOGINS:
-                        del FAILED_LOGINS[client_ip]
+                    with STATE_LOCK:
+                        if client_ip in FAILED_LOGINS:
+                            del FAILED_LOGINS[client_ip]
                     
                     # Generate secure session token
                     token = f"phins_{secrets.token_urlsafe(32)}"
-                    expires = datetime.now() + timedelta(hours=24)
+                    expires = datetime.now() + timedelta(seconds=SESSION_TIMEOUT)
                     
                     # Store session
-                    SESSIONS[token] = {
-                        'username': username,
-                        'expires': expires.isoformat(),
-                        'customer_id': user.get('customer_id'),
-                        'ip': client_ip,
-                        'created_at': datetime.now().isoformat()
-                    }
+                    with STATE_LOCK:
+                        SESSIONS[token] = {
+                            'username': username,
+                            'expires': expires.isoformat(),
+                            'customer_id': user.get('customer_id'),
+                            'ip': client_ip,
+                            'created_at': datetime.now().isoformat()
+                        }
                     
                     self._set_json_headers()
                     self.wfile.write(json.dumps({
@@ -1265,31 +1547,35 @@ class PortalHandler(BaseHTTPRequestHandler):
                     return
                 
                 # Check if user already exists
-                if email in USERS:
+                with STATE_LOCK:
+                    user_exists = email in USERS
+                if user_exists:
                     self._set_json_headers(409)
                     self.wfile.write(json.dumps({'error': 'Email already registered'}).encode('utf-8'))
                     return
                 
                 # Create customer record
                 customer_id = generate_customer_id()
-                CUSTOMERS[customer_id] = {
-                    'id': customer_id,
-                    'name': name,
-                    'email': email,
-                    'phone': phone,
-                    'dob': dob,
-                    'created_date': datetime.now().isoformat()
-                }
+                with STATE_LOCK:
+                    CUSTOMERS[customer_id] = {
+                        'id': customer_id,
+                        'name': name,
+                        'email': email,
+                        'phone': phone,
+                        'dob': dob,
+                        'created_date': datetime.now().isoformat()
+                    }
                 
                 # Create user account
                 pwd_hash = hash_password(password)
-                USERS[email] = {
-                    'hash': pwd_hash['hash'],
-                    'salt': pwd_hash['salt'],
-                    'role': 'customer',
-                    'name': name,
-                    'customer_id': customer_id
-                }
+                with STATE_LOCK:
+                    USERS[email] = {
+                        'hash': pwd_hash['hash'],
+                        'salt': pwd_hash['salt'],
+                        'role': 'customer',
+                        'name': name,
+                        'customer_id': customer_id
+                    }
                 
                 self._set_json_headers(201)
                 self.wfile.write(json.dumps({
@@ -1508,6 +1794,382 @@ class PortalHandler(BaseHTTPRequestHandler):
             except Exception as e:
                 self._set_json_headers(500)
                 self.wfile.write(json.dumps({'error': 'User creation failed'}).encode('utf-8'))
+            return
+
+        # Admin: Upload actuarial table (JSON or CSV)
+        if path == '/api/admin/actuarial-tables/upload':
+            auth_header = self.headers.get('Authorization', '')
+            token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+            session = validate_session(token) if token else None
+            if not require_role(session, ['admin']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Unauthorized. Admin access required.'}).encode('utf-8'))
+                return
+
+            try:
+                content_type = (self.headers.get('Content-Type') or '').lower()
+                raw = body
+                payload: Dict[str, Any] = {}
+
+                if 'text/csv' in content_type:
+                    # CSV upload: first row is headers; store rows as list of dicts
+                    reader = csv.DictReader(io.StringIO(raw))
+                    rows = [r for r in reader]
+                    payload = {
+                        "name": f"CSV Upload {datetime.now().strftime('%Y-%m-%d')}",
+                        "table_type": "pricing",
+                        "version": datetime.now().strftime('%Y%m%d'),
+                        "effective_date": datetime.now().strftime('%Y-%m-%d'),
+                        "data": rows,
+                    }
+                else:
+                    payload = json.loads(raw or '{}')
+
+                name = str(payload.get('name') or '').strip() or 'Actuarial Table'
+                table_type = str(payload.get('table_type') or payload.get('type') or 'pricing').strip().lower()
+                version = str(payload.get('version') or datetime.now().strftime('%Y%m%d')).strip()
+                effective_date = payload.get('effective_date')  # YYYY-MM-DD optional
+                data_obj = payload.get('data')
+
+                if data_obj is None:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'Missing data field'}).encode('utf-8'))
+                    return
+
+                actor = (session or {}).get('username') if session else 'admin'
+                table_id = f"AT-{datetime.now().strftime('%Y%m%d')}-{random.randint(1000,9999)}"
+
+                if encrypt_json:
+                    blob = encrypt_json(data_obj).to_json()
+                else:
+                    blob = json.dumps({"scheme": "plain", "ciphertext": json.dumps(data_obj)})
+
+                if USE_DATABASE and database_enabled:
+                    from database.manager import DatabaseManager
+                    from database.models import ActuarialTable
+                    eff_dt = None
+                    try:
+                        eff_dt = datetime.strptime(str(effective_date), '%Y-%m-%d') if effective_date else None
+                    except Exception:
+                        eff_dt = None
+                    with DatabaseManager() as db:
+                        row = ActuarialTable(
+                            id=table_id,
+                            name=name,
+                            table_type=table_type,
+                            version=version,
+                            effective_date=eff_dt,
+                            payload=blob,
+                            classification="restricted",
+                            created_by=actor,
+                        )
+                        db.actuarial.create(row)
+
+                    if audit:
+                        try:
+                            audit.log(actor, 'upload', 'actuarial_table', table_id, {'table_type': table_type, 'version': version})
+                        except Exception:
+                            pass
+
+                    self._set_json_headers(201)
+                    self.wfile.write(json.dumps({'success': True, 'id': table_id}).encode('utf-8'))
+                    return
+
+                with STATE_LOCK:
+                    ACTUARIAL_TABLES[table_id] = {
+                        "id": table_id,
+                        "name": name,
+                        "table_type": table_type,
+                        "version": version,
+                        "effective_date": effective_date,
+                        "classification": "restricted",
+                        "created_by": actor,
+                        "created_date": datetime.now().isoformat(),
+                        "payload": blob,
+                    }
+
+                if audit:
+                    try:
+                        audit.log(actor, 'upload', 'actuarial_table', table_id, {'table_type': table_type, 'version': version})
+                    except Exception:
+                        pass
+
+                self._set_json_headers(201)
+                self.wfile.write(json.dumps({'success': True, 'id': table_id}).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'Upload failed', 'details': str(e)}).encode('utf-8'))
+            return
+
+        # Admin: Bulk upload customers (JSON list or CSV)
+        if path == '/api/admin/customers/upload':
+            auth_header = self.headers.get('Authorization', '')
+            token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+            session = validate_session(token) if token else None
+            if not require_role(session, ['admin']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Unauthorized. Admin access required.'}).encode('utf-8'))
+                return
+
+            try:
+                content_type = (self.headers.get('Content-Type') or '').lower()
+                actor = (session or {}).get('username') if session else 'admin'
+                created = 0
+                errors: list[Dict[str, Any]] = []
+
+                rows: list[Dict[str, Any]] = []
+                if 'text/csv' in content_type:
+                    reader = csv.DictReader(io.StringIO(body or ''))
+                    rows = [r for r in reader]
+                else:
+                    parsed = json.loads(body or '[]')
+                    if isinstance(parsed, dict) and 'items' in parsed:
+                        parsed = parsed['items']
+                    if not isinstance(parsed, list):
+                        raise ValueError("Expected JSON list")
+                    rows = [dict(r) for r in parsed]
+
+                if USE_DATABASE and database_enabled:
+                    from database.manager import DatabaseManager
+                    from database.models import Customer
+                    with DatabaseManager() as db:
+                        for i, r in enumerate(rows):
+                            try:
+                                email = str(r.get('email') or '').strip().lower()
+                                name = str(r.get('name') or '').strip()
+                                if not email or not name:
+                                    raise ValueError("name and email required")
+                                cust_id = str(r.get('id') or '').strip() or generate_customer_id()
+                                cust = Customer(
+                                    id=cust_id,
+                                    name=name,
+                                    email=email,
+                                    phone=str(r.get('phone') or '').strip() or None,
+                                    dob=str(r.get('dob') or '').strip() or None,
+                                    address=str(r.get('address') or '').strip() or None,
+                                    city=str(r.get('city') or '').strip() or None,
+                                    state=str(r.get('state') or '').strip() or None,
+                                    zip=str(r.get('zip') or '').strip() or None,
+                                    occupation=str(r.get('occupation') or '').strip() or None,
+                                )
+                                # DatabaseManager keeps a private session; access it directly for bulk insert.
+                                db._ensure_session().add(cust)  # type: ignore[attr-defined]
+                                created += 1
+                            except Exception as e:
+                                errors.append({"row": i, "error": str(e)})
+
+                    if audit:
+                        try:
+                            audit.log(actor, 'upload', 'customers', 'bulk', {'created': created, 'errors': len(errors)})
+                        except Exception:
+                            pass
+
+                    self._set_json_headers(201)
+                    self.wfile.write(json.dumps({'success': True, 'created': created, 'errors': errors}).encode('utf-8'))
+                    return
+
+                with STATE_LOCK:
+                    for i, r in enumerate(rows):
+                        try:
+                            email = str(r.get('email') or '').strip().lower()
+                            name = str(r.get('name') or '').strip()
+                            if not email or not name:
+                                raise ValueError("name and email required")
+                            cust_id = str(r.get('id') or '').strip() or generate_customer_id()
+                            CUSTOMERS[cust_id] = {
+                                'id': cust_id,
+                                'name': name,
+                                'email': email,
+                                'phone': str(r.get('phone') or '').strip(),
+                                'dob': str(r.get('dob') or '').strip(),
+                                'created_date': datetime.now().isoformat()
+                            }
+                            created += 1
+                        except Exception as e:
+                            errors.append({"row": i, "error": str(e)})
+
+                if audit:
+                    try:
+                        audit.log(actor, 'upload', 'customers', 'bulk', {'created': created, 'errors': len(errors)})
+                    except Exception:
+                        pass
+
+                self._set_json_headers(201)
+                self.wfile.write(json.dumps({'success': True, 'created': created, 'errors': errors}).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'Upload failed', 'details': str(e)}).encode('utf-8'))
+            return
+
+        # Admin: token registry upsert (enable crypto/NFT/index allow-list)
+        if path == '/api/admin/token-registry':
+            auth_header = self.headers.get('Authorization', '')
+            token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+            session = validate_session(token) if token else None
+            if not require_role(session, ['admin']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Unauthorized. Admin access required.'}).encode('utf-8'))
+                return
+
+            try:
+                data = json.loads(body or '{}')
+                symbol = str(data.get('symbol') or '').strip().upper()
+                name = str(data.get('name') or symbol).strip()
+                asset_type = str(data.get('asset_type') or 'currency').strip().lower()
+                chain = str(data.get('chain') or '').strip() or None
+                contract_address = str(data.get('contract_address') or '').strip() or None
+                decimals = data.get('decimals')
+                enabled = bool(data.get('enabled', True))
+                actor = (session or {}).get('username') if session else 'admin'
+
+                if not symbol:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'symbol required'}).encode('utf-8'))
+                    return
+
+                entry_id = f"TK-{symbol}"
+                meta = data.get('metadata')
+                meta_json = json.dumps(meta) if isinstance(meta, (dict, list)) else (str(meta) if meta else None)
+
+                if USE_DATABASE and database_enabled:
+                    from database.manager import DatabaseManager
+                    from database.models import TokenRegistry
+                    with DatabaseManager() as db:
+                        existing = db.tokens.get_by_symbol(symbol)
+                        if existing:
+                            existing.name = name
+                            existing.asset_type = asset_type
+                            existing.chain = chain
+                            existing.contract_address = contract_address
+                            existing.decimals = int(decimals) if decimals is not None else None
+                            existing.enabled = enabled
+                            existing.metadata = meta_json
+                        else:
+                            row = TokenRegistry(
+                                id=entry_id,
+                                symbol=symbol,
+                                name=name,
+                                asset_type=asset_type,
+                                chain=chain,
+                                contract_address=contract_address,
+                                decimals=int(decimals) if decimals is not None else None,
+                                enabled=enabled,
+                                metadata=meta_json,
+                                classification="internal",
+                                created_by=actor,
+                            )
+                            db.tokens.create(row)
+
+                    if audit:
+                        try:
+                            audit.log(actor, 'upsert', 'token_registry', entry_id, {'symbol': symbol, 'asset_type': asset_type, 'enabled': enabled})
+                        except Exception:
+                            pass
+
+                    self._set_json_headers(201)
+                    self.wfile.write(json.dumps({'success': True, 'id': entry_id}).encode('utf-8'))
+                    return
+
+                with STATE_LOCK:
+                    TOKEN_REGISTRY[entry_id] = {
+                        "id": entry_id,
+                        "symbol": symbol,
+                        "name": name,
+                        "asset_type": asset_type,
+                        "chain": chain,
+                        "contract_address": contract_address,
+                        "decimals": decimals,
+                        "enabled": enabled,
+                        "metadata": meta_json,
+                        "classification": "internal",
+                        "created_by": actor,
+                        "created_date": datetime.now().isoformat(),
+                    }
+
+                if audit:
+                    try:
+                        audit.log(actor, 'upsert', 'token_registry', entry_id, {'symbol': symbol, 'asset_type': asset_type, 'enabled': enabled})
+                    except Exception:
+                        pass
+
+                self._set_json_headers(201)
+                self.wfile.write(json.dumps({'success': True, 'id': entry_id}).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'Upsert failed', 'details': str(e)}).encode('utf-8'))
+            return
+
+        # Admin: reset demo dataset (in-memory only)
+        if path == '/api/admin/reset-demo-data':
+            auth_header = self.headers.get('Authorization', '')
+            token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+            session = validate_session(token) if token else None
+            if not require_role(session, ['admin']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Unauthorized. Admin access required.'}).encode('utf-8'))
+                return
+
+            try:
+                data = json.loads(body or '{}')
+                confirm = str(data.get('confirm') or '').lower() in ('true', '1', 'yes')
+                if not confirm:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'confirm=true required'}).encode('utf-8'))
+                    return
+
+                if USE_DATABASE and database_enabled:
+                    self._set_json_headers(501)
+                    self.wfile.write(json.dumps({'error': 'DB reset is disabled by default. Use init_database(drop_existing=True) offline.'}).encode('utf-8'))
+                    return
+
+                with STATE_LOCK:
+                    POLICIES.clear()
+                    CLAIMS.clear()
+                    CUSTOMERS.clear()
+                    UNDERWRITING_APPLICATIONS.clear()
+                    BILLING.clear()
+                    ACTUARIAL_TABLES.clear()
+                    TOKEN_REGISTRY.clear()
+
+                    # Seed a minimal working dataset
+                    cust_id = generate_customer_id()
+                    CUSTOMERS[cust_id] = {'id': cust_id, 'name': 'Demo Customer', 'email': 'demo.customer@phins.ai', 'phone': '555-0100', 'dob': '1990-01-01', 'created_date': datetime.now().isoformat()}
+                    pol_id = generate_policy_id()
+                    prem = calculate_premium({'type': 'life', 'age': 35, 'coverage_amount': 250000, 'risk_score': 'medium'})
+                    POLICIES[pol_id] = {
+                        'id': pol_id,
+                        'customer_id': cust_id,
+                        'type': 'life',
+                        'coverage_amount': 250000,
+                        'annual_premium': prem['annual'],
+                        'monthly_premium': prem['monthly'],
+                        'status': 'active',
+                        'risk_score': 'medium',
+                        'created_date': datetime.now().isoformat(),
+                        'start_date': datetime.now().isoformat(),
+                    }
+                    uw_id = f"UW-{datetime.now().strftime('%Y%m%d')}-{random.randint(1000,9999)}"
+                    UNDERWRITING_APPLICATIONS[uw_id] = {
+                        'id': uw_id,
+                        'policy_id': pol_id,
+                        'customer_id': cust_id,
+                        'status': 'approved',
+                        'risk_assessment': 'medium',
+                        'submitted_date': datetime.now().isoformat(),
+                        'decision_date': datetime.now().isoformat(),
+                    }
+                    bill_id = f"BILL-{datetime.now().strftime('%Y%m%d')}-{random.randint(1000,9999)}"
+                    BILLING[bill_id] = {'bill_id': bill_id, 'policy_id': pol_id, 'amount_due': prem['monthly'], 'amount_paid': 0.0, 'status': 'outstanding', 'created_date': datetime.now().isoformat(), 'due_date': (datetime.now() + timedelta(days=30)).isoformat()}
+
+                    # Seed a basic token registry
+                    TOKEN_REGISTRY['TK-BTC'] = {'id': 'TK-BTC', 'symbol': 'BTC', 'name': 'Bitcoin', 'asset_type': 'currency', 'enabled': True, 'classification': 'internal', 'created_by': 'system', 'created_date': datetime.now().isoformat()}
+                    TOKEN_REGISTRY['TK-ETH'] = {'id': 'TK-ETH', 'symbol': 'ETH', 'name': 'Ethereum', 'asset_type': 'currency', 'enabled': True, 'classification': 'internal', 'created_by': 'system', 'created_date': datetime.now().isoformat()}
+
+                self._set_json_headers(200)
+                self.wfile.write(json.dumps({'success': True}).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'Reset failed', 'details': str(e)}).encode('utf-8'))
             return
         
         # Create Policy Endpoint
@@ -1757,9 +2419,36 @@ class PortalHandler(BaseHTTPRequestHandler):
         
         # Create Claim Endpoint
         if path == '/api/claims/create':
+            # Resolve session (customers must be authenticated to create claims)
+            auth_header = self.headers.get('Authorization', '')
+            token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+            session = validate_session(token) if token else None
+
+            if not session:
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Unauthorized. Please login.'}).encode('utf-8'))
+                return
+
+            user = get_session_user(session) or {}
+            role = (user.get('role') or '').lower()
+            session_customer_id = user.get('customer_id') or session.get('customer_id')
+
             try:
                 data = json.loads(body)
                 claim_id = generate_claim_id()
+
+                # If customer, force customer_id to session and verify policy ownership
+                if role == 'customer':
+                    if not session_customer_id:
+                        self._set_json_headers(400)
+                        self.wfile.write(json.dumps({'error': 'customer_id unavailable'}).encode('utf-8'))
+                        return
+                    policy_id = data.get('policy_id')
+                    if policy_id and POLICIES.get(policy_id, {}).get('customer_id') != session_customer_id:
+                        self._set_json_headers(403)
+                        self.wfile.write(json.dumps({'error': 'Forbidden'}).encode('utf-8'))
+                        return
+                    data['customer_id'] = session_customer_id
                 
                 claim = {
                     'id': claim_id,
@@ -1775,7 +2464,7 @@ class PortalHandler(BaseHTTPRequestHandler):
                 
                 CLAIMS[claim_id] = claim
                 if audit:
-                    actor = session.get('username') if 'session' in locals() and session else 'system'
+                    actor = session.get('username') if session else 'system'
                     try:
                         audit.log(actor, 'create', 'claim', claim_id, {'policy_id': claim.get('policy_id'), 'claimed_amount': claim.get('claimed_amount')})
                     except Exception:
@@ -1919,18 +2608,70 @@ class PortalHandler(BaseHTTPRequestHandler):
                     amount = float(data.get('amount', 0))
                     policy_id = data.get('policy_id')
                     payment_token = data.get('payment_token')
+                    currency = str(data.get('currency') or 'USD').upper()
+                    crypto_amount = data.get('crypto_amount')
                     
                     if not customer_id or not policy_id:
                         self._set_json_headers(400)
                         self.wfile.write(json.dumps({'error': 'customer_id and policy_id required'}).encode('utf-8'))
                         return
+
+                    fx_rate = None
+                    if currency != 'USD':
+                        # Validate currency is enabled in token registry (governance allow-list)
+                        allowed = False
+                        if USE_DATABASE and database_enabled:
+                            try:
+                                from database.manager import DatabaseManager
+                                with DatabaseManager() as db:
+                                    entry = db.tokens.get_by_symbol(currency)
+                                    allowed = bool(entry and entry.enabled)
+                            except Exception:
+                                allowed = False
+                        else:
+                            with STATE_LOCK:
+                                allowed = any(v.get('symbol') == currency and v.get('enabled', True) for v in TOKEN_REGISTRY.values())
+
+                        if not allowed:
+                            self._set_json_headers(400)
+                            self.wfile.write(json.dumps({'error': f'Currency {currency} is not enabled'}).encode('utf-8'))
+                            return
+
+                        # Fetch USD spot price for currency and validate
+                        if not _market_data:
+                            self._set_json_headers(503)
+                            self.wfile.write(json.dumps({'error': 'Market data service unavailable'}).encode('utf-8'))
+                            return
+
+                        prices = _market_data.get_crypto_prices_usd([currency]).get('prices', {})
+                        if currency not in prices or not prices[currency]:
+                            self._set_json_headers(502)
+                            self.wfile.write(json.dumps({'error': f'No USD price available for {currency}'}).encode('utf-8'))
+                            return
+                        fx_rate = float(prices[currency])
+
+                        # If crypto_amount is provided, compute USD amount; otherwise treat `amount` as USD-equivalent already
+                        if crypto_amount is not None:
+                            try:
+                                crypto_amount_f = float(crypto_amount)
+                            except Exception:
+                                self._set_json_headers(400)
+                                self.wfile.write(json.dumps({'error': 'crypto_amount must be numeric'}).encode('utf-8'))
+                                return
+                            amount = crypto_amount_f * fx_rate
                     
                     result = billing_engine.process_payment(
                         customer_id=customer_id,
                         amount=amount,
                         policy_id=policy_id,
                         payment_token=payment_token,
-                        metadata=data.get('metadata', {})
+                        metadata={
+                            **(data.get('metadata', {}) or {}),
+                            **({'original_currency': currency} if currency else {}),
+                            **({'crypto_amount': crypto_amount} if crypto_amount is not None else {}),
+                        },
+                        currency=currency,
+                        fx_rate_to_usd=fx_rate,
                     )
                     
                     self._set_json_headers(200 if result['success'] else 400)
@@ -2358,7 +3099,8 @@ def run_server(port: int = PORT) -> None:
             # Don't fail - just fall back to in-memory
     
     server_address = ('0.0.0.0', port)
-    httpd = HTTPServer(server_address, PortalHandler)
+    httpd = ThreadingHTTPServer(server_address, PortalHandler)
+    httpd.daemon_threads = True  # Ensure worker threads exit on shutdown
     httpd.timeout = CONNECTION_TIMEOUT  # Set connection timeout
     print(f'\n🚀 Serving web portal at http://0.0.0.0:{port} (static from {ROOT})')
     print(f'   Access via: http://localhost:{port}')
