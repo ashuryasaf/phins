@@ -13,13 +13,14 @@ for mobile-friendly web UI or to be used by a simple mobile app prototype.
 import json
 import os
 import urllib.parse as urlparse
-from http.server import HTTPServer, BaseHTTPRequestHandler
+from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 import sys
 from datetime import datetime, timedelta
 import random
 import uuid
 import hashlib
 import secrets
+import threading
 from typing import Dict, Any
 
 # Import billing engine
@@ -97,6 +98,9 @@ MAX_SESSIONS_PER_IP = 10  # Max concurrent sessions per IP
 CLEANUP_INTERVAL = 300  # Cleanup stale data every 5 minutes
 last_cleanup = datetime.now()
 
+# Global lock for in-process shared state (threaded server safety)
+STATE_LOCK = threading.RLock()
+
 # Hash passwords for security (in production, use proper password hashing)
 def hash_password(password: str) -> dict[str, str]:
     salt = secrets.token_hex(16)
@@ -111,61 +115,69 @@ def validate_session(token: str) -> dict[str, str] | None:
     """Validate session token and return user info or None"""
     if not token or not token.startswith('phins_'):
         return None
-    
-    session = SESSIONS.get(token)
-    if not session:
-        return None
-    
-    # Check if session expired
-    try:
-        expires = datetime.fromisoformat(session['expires'])
-        if datetime.now() > expires:
-            del SESSIONS[token]
+
+    with STATE_LOCK:
+        session = SESSIONS.get(token)
+        if not session:
             return None
-    except (KeyError, ValueError):
-        return None
-    
-    return session
+
+        # Check if session expired
+        try:
+            expires = datetime.fromisoformat(session['expires'])
+            if datetime.now() > expires:
+                try:
+                    del SESSIONS[token]
+                except Exception:
+                    # Best-effort cleanup (DB-backed dict may not support del in all cases)
+                    pass
+                return None
+        except (KeyError, ValueError):
+            return None
+
+        return session
 
 def check_rate_limit(client_ip: str) -> bool:
     """Check if client has exceeded rate limit"""
     now = datetime.now().timestamp()
-    
-    if client_ip in RATE_LIMIT:
-        limit_data = RATE_LIMIT[client_ip]
-        # Reset counter if minute has passed
-        if now > limit_data['reset_time']:
+
+    with STATE_LOCK:
+        if client_ip in RATE_LIMIT:
+            limit_data = RATE_LIMIT[client_ip]
+            # Reset counter if minute has passed
+            if now > limit_data['reset_time']:
+                RATE_LIMIT[client_ip] = {'count': 1, 'reset_time': now + 60}
+                return True
+            elif limit_data['count'] < MAX_REQUESTS_PER_MINUTE:
+                limit_data['count'] += 1
+                return True
+            else:
+                return False
+        else:
             RATE_LIMIT[client_ip] = {'count': 1, 'reset_time': now + 60}
             return True
-        elif limit_data['count'] < MAX_REQUESTS_PER_MINUTE:
-            limit_data['count'] += 1
-            return True
-        else:
-            return False
-    else:
-        RATE_LIMIT[client_ip] = {'count': 1, 'reset_time': now + 60}
-        return True
 
 def check_login_lockout(client_ip: str) -> bool:
     """Check if IP is locked out due to failed login attempts"""
-    if client_ip in FAILED_LOGINS:
-        lockout_data = FAILED_LOGINS[client_ip]
-        if datetime.now().timestamp() < lockout_data.get('lockout_until', 0):
-            return False  # Still locked out
-        elif lockout_data['count'] >= MAX_LOGIN_ATTEMPTS:
-            # Reset after lockout period
-            del FAILED_LOGINS[client_ip]
-    return True
+    with STATE_LOCK:
+        if client_ip in FAILED_LOGINS:
+            lockout_data = FAILED_LOGINS[client_ip]
+            if datetime.now().timestamp() < lockout_data.get('lockout_until', 0):
+                return False  # Still locked out
+            elif lockout_data['count'] >= MAX_LOGIN_ATTEMPTS:
+                # Reset after lockout period
+                del FAILED_LOGINS[client_ip]
+        return True
 
 def record_failed_login(client_ip: str):
     """Record a failed login attempt"""
-    if client_ip not in FAILED_LOGINS:
-        FAILED_LOGINS[client_ip] = {'count': 0}
-    
-    FAILED_LOGINS[client_ip]['count'] += 1
-    
-    if FAILED_LOGINS[client_ip]['count'] >= MAX_LOGIN_ATTEMPTS:
-        FAILED_LOGINS[client_ip]['lockout_until'] = datetime.now().timestamp() + LOCKOUT_DURATION
+    with STATE_LOCK:
+        if client_ip not in FAILED_LOGINS:
+            FAILED_LOGINS[client_ip] = {'count': 0}
+
+        FAILED_LOGINS[client_ip]['count'] += 1
+
+        if FAILED_LOGINS[client_ip]['count'] >= MAX_LOGIN_ATTEMPTS:
+            FAILED_LOGINS[client_ip]['lockout_until'] = datetime.now().timestamp() + LOCKOUT_DURATION
 
 def require_role(session: dict[str, str] | None, allowed_roles: list[str]) -> bool:
     """Check if user has required role"""
@@ -190,17 +202,18 @@ def log_malicious_attempt(client_ip: str, reason: str, details: Dict[str, Any] |
         'reason': reason,
         'details': details or {}
     }
-    MALICIOUS_ATTEMPTS.append(attempt)
-    
-    # Keep only last 1000 attempts in memory
-    if len(MALICIOUS_ATTEMPTS) > 1000:
-        MALICIOUS_ATTEMPTS.pop(0)
-    
-    # Check if IP should be permanently blocked
-    ip_attempts = sum(1 for a in MALICIOUS_ATTEMPTS if a['ip'] == client_ip)
-    if ip_attempts >= MAX_MALICIOUS_ATTEMPTS:
-        block_ip(client_ip, f"Exceeded {MAX_MALICIOUS_ATTEMPTS} malicious attempts", permanent=True)
-    
+    with STATE_LOCK:
+        MALICIOUS_ATTEMPTS.append(attempt)
+
+        # Keep only last 1000 attempts in memory
+        if len(MALICIOUS_ATTEMPTS) > 1000:
+            MALICIOUS_ATTEMPTS.pop(0)
+
+        # Check if IP should be permanently blocked
+        ip_attempts = sum(1 for a in MALICIOUS_ATTEMPTS if a['ip'] == client_ip)
+        if ip_attempts >= MAX_MALICIOUS_ATTEMPTS:
+            block_ip(client_ip, f"Exceeded {MAX_MALICIOUS_ATTEMPTS} malicious attempts", permanent=True)
+
     # Print to console for real-time monitoring
     print(f"🚨 SECURITY ALERT: {client_ip} - {reason}")
     if details:
@@ -208,27 +221,29 @@ def log_malicious_attempt(client_ip: str, reason: str, details: Dict[str, Any] |
 
 def block_ip(client_ip: str, reason: str, permanent: bool = False):
     """Block an IP address"""
-    BLOCKED_IPS[client_ip] = {
-        'reason': reason,
-        'blocked_at': datetime.now().isoformat(),
-        'permanent': permanent,
-        'attempts': BLOCKED_IPS.get(client_ip, {}).get('attempts', 0) + 1
-    }
+    with STATE_LOCK:
+        BLOCKED_IPS[client_ip] = {
+            'reason': reason,
+            'blocked_at': datetime.now().isoformat(),
+            'permanent': permanent,
+            'attempts': BLOCKED_IPS.get(client_ip, {}).get('attempts', 0) + 1
+        }
     print(f"🚫 BLOCKED IP: {client_ip} - {reason} {'(PERMANENT)' if permanent else ''}")
 
 def is_ip_blocked(client_ip: str) -> tuple[bool, str]:
     """Check if IP is blocked, returns (is_blocked, reason)"""
-    if client_ip in BLOCKED_IPS:
-        block_data = BLOCKED_IPS[client_ip]
-        if block_data.get('permanent'):
-            return (True, block_data['reason'])
-        # Temporary blocks expire after 24 hours
-        blocked_at = datetime.fromisoformat(block_data['blocked_at'])
-        if datetime.now() - blocked_at < timedelta(hours=24):
-            return (True, block_data['reason'])
-        else:
-            del BLOCKED_IPS[client_ip]
-    return (False, "")
+    with STATE_LOCK:
+        if client_ip in BLOCKED_IPS:
+            block_data = BLOCKED_IPS[client_ip]
+            if block_data.get('permanent'):
+                return (True, block_data['reason'])
+            # Temporary blocks expire after 24 hours
+            blocked_at = datetime.fromisoformat(block_data['blocked_at'])
+            if datetime.now() - blocked_at < timedelta(hours=24):
+                return (True, block_data['reason'])
+            else:
+                del BLOCKED_IPS[client_ip]
+        return (False, "")
 
 def detect_sql_injection(value: str) -> bool:
     """Detect potential SQL injection attempts"""
@@ -300,34 +315,38 @@ def cleanup_stale_data():
     last_cleanup = now
     timestamp = now.timestamp()
     
-    # Clean expired sessions
-    expired_sessions = [token for token, sess in SESSIONS.items() 
-                       if datetime.fromisoformat(sess['expires']) < now]
-    for token in expired_sessions:
-        del SESSIONS[token]
-    
-    # Clean expired rate limits
-    expired_limits = [ip for ip, data in RATE_LIMIT.items() 
-                     if timestamp > data['reset_time'] + 300]  # 5 min grace
-    for ip in expired_limits:
-        del RATE_LIMIT[ip]
-    
-    # Clean expired login lockouts
-    expired_lockouts = [ip for ip, data in FAILED_LOGINS.items() 
-                       if timestamp > data.get('lockout_until', 0) + 300]
-    for ip in expired_lockouts:
-        del FAILED_LOGINS[ip]
-    
-    # Clean old temporary IP blocks (keep permanent ones)
-    expired_blocks = [ip for ip, data in BLOCKED_IPS.items() 
-                     if not data.get('permanent') and 
-                     (now - datetime.fromisoformat(data['blocked_at'])).total_seconds() > 86400]
-    for ip in expired_blocks:
-        del BLOCKED_IPS[ip]
-    
-    # Trim malicious attempts log to last 1000
-    if len(MALICIOUS_ATTEMPTS) > 1000:
-        MALICIOUS_ATTEMPTS[:] = MALICIOUS_ATTEMPTS[-1000:]
+    with STATE_LOCK:
+        # Clean expired sessions
+        expired_sessions = [token for token, sess in SESSIONS.items()
+                           if datetime.fromisoformat(sess['expires']) < now]
+        for token in expired_sessions:
+            try:
+                del SESSIONS[token]
+            except Exception:
+                pass
+
+        # Clean expired rate limits
+        expired_limits = [ip for ip, data in RATE_LIMIT.items()
+                         if timestamp > data['reset_time'] + 300]  # 5 min grace
+        for ip in expired_limits:
+            del RATE_LIMIT[ip]
+
+        # Clean expired login lockouts
+        expired_lockouts = [ip for ip, data in FAILED_LOGINS.items()
+                           if timestamp > data.get('lockout_until', 0) + 300]
+        for ip in expired_lockouts:
+            del FAILED_LOGINS[ip]
+
+        # Clean old temporary IP blocks (keep permanent ones)
+        expired_blocks = [ip for ip, data in BLOCKED_IPS.items()
+                         if not data.get('permanent') and
+                         (now - datetime.fromisoformat(data['blocked_at'])).total_seconds() > 86400]
+        for ip in expired_blocks:
+            del BLOCKED_IPS[ip]
+
+        # Trim malicious attempts log to last 1000
+        if len(MALICIOUS_ATTEMPTS) > 1000:
+            MALICIOUS_ATTEMPTS[:] = MALICIOUS_ATTEMPTS[-1000:]
     
     if expired_sessions or expired_limits or expired_lockouts or expired_blocks:
         print(f"🧹 Cleanup: Removed {len(expired_sessions)} sessions, {len(expired_limits)} rate limits, "
@@ -335,10 +354,11 @@ def cleanup_stale_data():
 
 def check_session_limit(client_ip: str) -> bool:
     """Check if IP has too many concurrent sessions"""
-    active_sessions = sum(1 for sess in SESSIONS.values() 
-                         if sess.get('ip') == client_ip and 
-                         datetime.fromisoformat(sess['expires']) > datetime.now())
-    return active_sessions < MAX_SESSIONS_PER_IP
+    with STATE_LOCK:
+        active_sessions = sum(1 for sess in SESSIONS.values()
+                             if sess.get('ip') == client_ip and
+                             datetime.fromisoformat(sess['expires']) > datetime.now())
+        return active_sessions < MAX_SESSIONS_PER_IP
 
 def validate_input_security(value: str, client_ip: str, field_name: str = 'input') -> tuple[bool, str | None]:
     """Comprehensive input validation, returns (is_valid, error_message)"""
@@ -1200,21 +1220,23 @@ class PortalHandler(BaseHTTPRequestHandler):
                 user = USERS.get(username)
                 if user and verify_password(password, user['hash'], user['salt']):
                     # Clear failed login attempts on success
-                    if client_ip in FAILED_LOGINS:
-                        del FAILED_LOGINS[client_ip]
+                    with STATE_LOCK:
+                        if client_ip in FAILED_LOGINS:
+                            del FAILED_LOGINS[client_ip]
                     
                     # Generate secure session token
                     token = f"phins_{secrets.token_urlsafe(32)}"
-                    expires = datetime.now() + timedelta(hours=24)
+                    expires = datetime.now() + timedelta(seconds=SESSION_TIMEOUT)
                     
                     # Store session
-                    SESSIONS[token] = {
-                        'username': username,
-                        'expires': expires.isoformat(),
-                        'customer_id': user.get('customer_id'),
-                        'ip': client_ip,
-                        'created_at': datetime.now().isoformat()
-                    }
+                    with STATE_LOCK:
+                        SESSIONS[token] = {
+                            'username': username,
+                            'expires': expires.isoformat(),
+                            'customer_id': user.get('customer_id'),
+                            'ip': client_ip,
+                            'created_at': datetime.now().isoformat()
+                        }
                     
                     self._set_json_headers()
                     self.wfile.write(json.dumps({
@@ -1265,31 +1287,35 @@ class PortalHandler(BaseHTTPRequestHandler):
                     return
                 
                 # Check if user already exists
-                if email in USERS:
+                with STATE_LOCK:
+                    user_exists = email in USERS
+                if user_exists:
                     self._set_json_headers(409)
                     self.wfile.write(json.dumps({'error': 'Email already registered'}).encode('utf-8'))
                     return
                 
                 # Create customer record
                 customer_id = generate_customer_id()
-                CUSTOMERS[customer_id] = {
-                    'id': customer_id,
-                    'name': name,
-                    'email': email,
-                    'phone': phone,
-                    'dob': dob,
-                    'created_date': datetime.now().isoformat()
-                }
+                with STATE_LOCK:
+                    CUSTOMERS[customer_id] = {
+                        'id': customer_id,
+                        'name': name,
+                        'email': email,
+                        'phone': phone,
+                        'dob': dob,
+                        'created_date': datetime.now().isoformat()
+                    }
                 
                 # Create user account
                 pwd_hash = hash_password(password)
-                USERS[email] = {
-                    'hash': pwd_hash['hash'],
-                    'salt': pwd_hash['salt'],
-                    'role': 'customer',
-                    'name': name,
-                    'customer_id': customer_id
-                }
+                with STATE_LOCK:
+                    USERS[email] = {
+                        'hash': pwd_hash['hash'],
+                        'salt': pwd_hash['salt'],
+                        'role': 'customer',
+                        'name': name,
+                        'customer_id': customer_id
+                    }
                 
                 self._set_json_headers(201)
                 self.wfile.write(json.dumps({
@@ -2358,7 +2384,8 @@ def run_server(port: int = PORT) -> None:
             # Don't fail - just fall back to in-memory
     
     server_address = ('0.0.0.0', port)
-    httpd = HTTPServer(server_address, PortalHandler)
+    httpd = ThreadingHTTPServer(server_address, PortalHandler)
+    httpd.daemon_threads = True  # Ensure worker threads exit on shutdown
     httpd.timeout = CONNECTION_TIMEOUT  # Set connection timeout
     print(f'\n🚀 Serving web portal at http://0.0.0.0:{port} (static from {ROOT})')
     print(f'   Access via: http://localhost:{port}')
