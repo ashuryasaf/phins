@@ -119,6 +119,27 @@
             background: #fff3cd;
             color: #856404;
         }
+
+        .status-approved {
+            background: #d4edda;
+            color: #155724;
+        }
+
+        .status-rejected {
+            background: #f8d7da;
+            color: #721c24;
+        }
+
+        .status-under-review,
+        .status-under_review {
+            background: #fff3cd;
+            color: #856404;
+        }
+
+        .status-paid {
+            background: #d4edda;
+            color: #155724;
+        }
         
         .btn {
             padding: 10px 20px;
@@ -355,18 +376,35 @@
                 const policiesResponse = await fetch('/api/policies', {
                     headers: { 'Authorization': `Bearer ${token}` }
                 });
-                const policies = policiesResponse.ok ? await policiesResponse.json() : { policies: [] };
-                displayPolicies(policies.policies || []);
+                const policiesJson = policiesResponse.ok ? await policiesResponse.json() : [];
+                const policiesList = Array.isArray(policiesJson) ? policiesJson : (policiesJson.policies || policiesJson.items || []);
+                displayPolicies(policiesList);
                 
                 // Load claims
                 const claimsResponse = await fetch('/api/claims', {
                     headers: { 'Authorization': `Bearer ${token}` }
                 });
-                const claims = claimsResponse.ok ? await claimsResponse.json() : { claims: [] };
-                displayClaims(claims.claims || []);
+                const claimsJson = claimsResponse.ok ? await claimsResponse.json() : [];
+                const claimsList = Array.isArray(claimsJson) ? claimsJson : (claimsJson.claims || claimsJson.items || []);
+                displayClaims(claimsList);
                 
                 // Update dashboard stats
-                updateDashboard(policies.policies || [], claims.claims || []);
+                updateDashboard(policiesList, claimsList);
+
+                // Load next payment due (best-effort)
+                try {
+                    const nextDueResp = await fetch('/api/billing/next-due', {
+                        headers: { 'Authorization': `Bearer ${token}` }
+                    });
+                    const nextDueJson = nextDueResp.ok ? await nextDueResp.json() : {};
+                    const next = nextDueJson.next_due;
+                    if (next && next.amount_due != null && next.due_date) {
+                        const due = new Date(next.due_date).toLocaleDateString();
+                        document.getElementById('next-payment').textContent = `$${Number(next.amount_due).toFixed(2)} due ${due}`;
+                    }
+                } catch (e) {
+                    // ignore
+                }
                 
             } catch (error) {
                 console.error('Error loading portal data:', error);
@@ -387,12 +425,16 @@
                 <div class="policy-item">
                     <div class="policy-header">
                         <span class="policy-number">Policy #${policy.id}</span>
-                        <span class="status-badge status-${policy.status.toLowerCase()}">${policy.status}</span>
+                        <span class="status-badge status-${String(policy.status || '').toLowerCase().replace(/[_\s]+/g, '-')}">${policy.status}</span>
                     </div>
                     <p><strong>Type:</strong> ${policy.type}</p>
                     <p><strong>Coverage:</strong> $${Number(policy.coverage_amount || 0).toLocaleString()}</p>
-                    <p><strong>Premium:</strong> $${Number(policy.premium || 0).toFixed(2)}/month</p>
-                    <p><strong>Start Date:</strong> ${new Date(policy.start_date).toLocaleDateString()}</p>
+                    <p><strong>Premium:</strong> $${Number(
+                        policy.monthly_premium != null ? policy.monthly_premium :
+                        (policy.premium != null ? policy.premium :
+                        ((policy.annual_premium || 0) / 12))
+                    ).toFixed(2)}/month</p>
+                    <p><strong>Start Date:</strong> ${new Date(policy.start_date || policy.created_date || Date.now()).toLocaleDateString()}</p>
                     <button class="btn btn-secondary" onclick="downloadPolicy('${policy.id}')">Download Documents</button>
                 </div>
             `).join('');
@@ -414,31 +456,38 @@
                 <div class="policy-item">
                     <div class="policy-header">
                         <span class="policy-number">Claim #${claim.id}</span>
-                        <span class="status-badge status-${claim.status.toLowerCase().replace(' ', '-')}">${claim.status}</span>
+                        <span class="status-badge status-${String(claim.status || '').toLowerCase().replace(/[_\s]+/g, '-')}">${claim.status}</span>
                     </div>
                     <p><strong>Type:</strong> ${claim.type}</p>
                     <p><strong>Claimed Amount:</strong> $${Number(claim.claimed_amount || 0).toFixed(2)}</p>
                     ${claim.approved_amount ? `<p><strong>Approved Amount:</strong> $${Number(claim.approved_amount).toFixed(2)}</p>` : ''}
-                    <p><strong>Submitted:</strong> ${new Date(claim.created_date).toLocaleDateString()}</p>
+                    <p><strong>Submitted:</strong> ${new Date(claim.filed_date || claim.created_date || Date.now()).toLocaleDateString()}</p>
                     <p><strong>Description:</strong> ${claim.description || 'N/A'}</p>
                 </div>
             `).join('');
         }
         
         function updateDashboard(policies, claims) {
-            const activePolicies = policies.filter(p => p.status === 'Active');
+            const activePolicies = policies.filter(p => String(p.status || '').toLowerCase() === 'active');
             const totalCoverage = activePolicies.reduce((sum, p) => sum + Number(p.coverage_amount || 0), 0);
-            const pendingClaims = claims.filter(c => c.status === 'Pending' || c.status === 'Under Review');
+            const pendingClaims = claims.filter(c => {
+                const s = String(c.status || '').toLowerCase();
+                return s === 'pending' || s === 'under_review' || s === 'under review';
+            });
             
             // Calculate total next payment across all active policies
-            const nextPayment = activePolicies.reduce((sum, p) => sum + Number(p.premium || 0), 0);
+            const nextPayment = activePolicies.reduce((sum, p) => sum + Number(
+                p.monthly_premium != null ? p.monthly_premium :
+                (p.premium != null ? p.premium : ((p.annual_premium || 0) / 12))
+            ), 0);
             
             document.getElementById('active-policies-count').textContent = activePolicies.length;
             document.getElementById('total-coverage').textContent = '$' + totalCoverage.toLocaleString();
             document.getElementById('pending-claims-count').textContent = pendingClaims.length;
-            document.getElementById('next-payment').textContent = activePolicies.length > 1 
-                ? '$' + Number(nextPayment).toFixed(2) + ' (total)'
-                : '$' + Number(nextPayment).toFixed(2);
+            // This value may be overwritten by /api/billing/next-due if available
+            document.getElementById('next-payment').textContent = activePolicies.length > 1
+                ? '$' + Number(nextPayment).toFixed(2) + ' (est.)'
+                : '$' + Number(nextPayment).toFixed(2) + ' (est.)';
         }
         
         function showNewClaimForm() {

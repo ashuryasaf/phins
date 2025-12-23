@@ -5,15 +5,14 @@ document.addEventListener('DOMContentLoaded', () => {
   const uwList = document.getElementById('uw-list');
 
   const token = localStorage.getItem('phins_token');
-  const customerId = localStorage.getItem('phins_customer_id');
 
-  if (!token || !customerId) {
+  if (!token) {
     statusSummary.textContent = 'Please log in to view your status.';
     statusSummary.className = 'warn';
     return;
   }
 
-  fetch(`/api/customer/status?customer_id=${encodeURIComponent(customerId)}`, {
+  fetch(`/api/customer/status`, {
     headers: { 'Authorization': `Bearer ${token}` }
   })
     .then(r => r.json())

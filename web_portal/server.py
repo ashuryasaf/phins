@@ -194,6 +194,17 @@ def require_role(session: dict[str, str] | None, allowed_roles: list[str]) -> bo
     
     return user.get('role') in allowed_roles
 
+
+def get_session_user(session: dict[str, str] | None) -> Dict[str, Any] | None:
+    """Resolve the user dict from a session (best-effort)."""
+    if not session:
+        return None
+    username = session.get('username')
+    if not username:
+        return None
+    with STATE_LOCK:
+        return USERS.get(username)
+
 def log_malicious_attempt(client_ip: str, reason: str, details: Dict[str, Any] | None = None):
     """Log a malicious attempt for monitoring and analysis"""
     attempt: Dict[str, Any] = {
@@ -778,19 +789,29 @@ class PortalHandler(BaseHTTPRequestHandler):
                 self._set_json_headers(404)
                 self.wfile.write(json.dumps({'error': 'User not found'}).encode('utf-8'))
                 return
-            user = USERS.get(username)
+            user = get_session_user(session)
             
             if not user:
                 self._set_json_headers(404)
                 self.wfile.write(json.dumps({'error': 'User not found'}).encode('utf-8'))
                 return
+
+            # Best-effort enrich with customer record fields (email/phone/dob)
+            customer_id = user.get('customer_id') or session.get('customer_id')
+            customer = None
+            if customer_id:
+                with STATE_LOCK:
+                    customer = CUSTOMERS.get(customer_id)
             
             self._set_json_headers()
             self.wfile.write(json.dumps({
                 'username': username,
                 'name': user.get('name'),
                 'role': user.get('role'),
-                'customer_id': user.get('customer_id')
+                'customer_id': customer_id,
+                'email': (customer.get('email') if isinstance(customer, dict) else None) or username,
+                'phone': (customer.get('phone') if isinstance(customer, dict) else None),
+                'dob': (customer.get('dob') if isinstance(customer, dict) else None),
             }).encode('utf-8'))
             return
         
@@ -842,41 +863,75 @@ class PortalHandler(BaseHTTPRequestHandler):
         
         # Policy Management Endpoints
         if path == '/api/policies':
+            if not session:
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Unauthorized'}).encode('utf-8'))
+                return
+
+            user = get_session_user(session) or {}
+            role = (user.get('role') or '').lower()
+            session_customer_id = user.get('customer_id') or session.get('customer_id')
+
             policy_id = qs.get('id', [None])[0]
             if policy_id:
                 policy = POLICIES.get(policy_id)
-                if policy:
+                # Customers can only view their own policies
+                if policy and (role != 'customer' or (session_customer_id and policy.get('customer_id') == session_customer_id)):
                     self._set_json_headers()
                     self.wfile.write(json.dumps(policy).encode('utf-8'))
                 else:
                     self._set_json_headers(404)
                     self.wfile.write(json.dumps({'error': 'Policy not found'}).encode('utf-8'))
             else:
-                page = int(qs.get('page', ['1'])[0])
-                page_size = int(qs.get('page_size', ['50'])[0])
-                page = max(1, page)
-                page_size = max(1, min(500, page_size))
-                items = list(POLICIES.values())
-                start = (page - 1) * page_size
-                end = start + page_size
-                payload = {
-                    'items': items[start:end],
-                    'page': page,
-                    'page_size': page_size,
-                    'total': len(items)
-                }
-                self._set_json_headers()
-                self.wfile.write(json.dumps(payload).encode('utf-8'))
+                all_items = list(POLICIES.values())
+                if role == 'customer' and session_customer_id:
+                    all_items = [p for p in all_items if p.get('customer_id') == session_customer_id]
+
+                wants_paging = ('page' in qs) or ('page_size' in qs)
+                if not wants_paging:
+                    # Backward-compatible: older UIs expect a plain list
+                    self._set_json_headers()
+                    self.wfile.write(json.dumps(all_items).encode('utf-8'))
+                else:
+                    page = int(qs.get('page', ['1'])[0])
+                    page_size = int(qs.get('page_size', ['50'])[0])
+                    page = max(1, page)
+                    page_size = max(1, min(500, page_size))
+                    start = (page - 1) * page_size
+                    end = start + page_size
+                    page_items = all_items[start:end]
+                    payload = {
+                        'items': page_items,
+                        # Convenience alias (some UIs expect this)
+                        'policies': page_items,
+                        'page': page,
+                        'page_size': page_size,
+                        'total': len(all_items)
+                    }
+                    self._set_json_headers()
+                    self.wfile.write(json.dumps(payload).encode('utf-8'))
             return
         
         # Claims Management Endpoints
         if path == '/api/claims':
+            if not session:
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Unauthorized'}).encode('utf-8'))
+                return
+
+            user = get_session_user(session) or {}
+            role = (user.get('role') or '').lower()
+            session_customer_id = user.get('customer_id') or session.get('customer_id')
+
             claim_id = qs.get('id', [None])[0]
             status = qs.get('status', [None])[0]
             
             if claim_id:
                 claim = CLAIMS.get(claim_id)
-                if claim:
+                if claim and (role != 'customer' or (session_customer_id and (
+                    claim.get('customer_id') == session_customer_id or
+                    (claim.get('policy_id') and POLICIES.get(claim.get('policy_id'), {}).get('customer_id') == session_customer_id)
+                ))):
                     self._set_json_headers()
                     self.wfile.write(json.dumps(claim).encode('utf-8'))
                 else:
@@ -886,20 +941,36 @@ class PortalHandler(BaseHTTPRequestHandler):
                 claims_list = list(CLAIMS.values())
                 if status:
                     claims_list = [c for c in claims_list if c.get('status') == status]
-                page = int(qs.get('page', ['1'])[0])
-                page_size = int(qs.get('page_size', ['50'])[0])
-                page = max(1, page)
-                page_size = max(1, min(500, page_size))
-                start = (page - 1) * page_size
-                end = start + page_size
-                payload = {
-                    'items': claims_list[start:end],
-                    'page': page,
-                    'page_size': page_size,
-                    'total': len(claims_list)
-                }
-                self._set_json_headers()
-                self.wfile.write(json.dumps(payload).encode('utf-8'))
+                if role == 'customer' and session_customer_id:
+                    def _belongs(c: Dict[str, Any]) -> bool:
+                        if c.get('customer_id') == session_customer_id:
+                            return True
+                        pid = c.get('policy_id')
+                        return bool(pid and POLICIES.get(pid, {}).get('customer_id') == session_customer_id)
+                    claims_list = [c for c in claims_list if _belongs(c)]
+
+                wants_paging = ('page' in qs) or ('page_size' in qs)
+                if not wants_paging:
+                    self._set_json_headers()
+                    self.wfile.write(json.dumps(claims_list).encode('utf-8'))
+                else:
+                    page = int(qs.get('page', ['1'])[0])
+                    page_size = int(qs.get('page_size', ['50'])[0])
+                    page = max(1, page)
+                    page_size = max(1, min(500, page_size))
+                    start = (page - 1) * page_size
+                    end = start + page_size
+                    page_items = claims_list[start:end]
+                    payload = {
+                        'items': page_items,
+                        # Convenience alias (some UIs expect this)
+                        'claims': page_items,
+                        'page': page,
+                        'page_size': page_size,
+                        'total': len(claims_list)
+                    }
+                    self._set_json_headers()
+                    self.wfile.write(json.dumps(payload).encode('utf-8'))
             return
         
         # Underwriting Applications Endpoints
@@ -936,10 +1007,29 @@ class PortalHandler(BaseHTTPRequestHandler):
 
         # Customer status endpoint (post-application visibility)
         if path == '/api/customer/status':
-            customer_id = qs.get('customer_id', [None])[0]
+            if not session:
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Unauthorized'}).encode('utf-8'))
+                return
+
+            user = get_session_user(session) or {}
+            role = (user.get('role') or '').lower()
+            session_customer_id = user.get('customer_id') or session.get('customer_id')
+
+            requested_customer_id = qs.get('customer_id', [None])[0]
+            customer_id = requested_customer_id
+            if role == 'customer':
+                customer_id = session_customer_id
+
             if not customer_id:
                 self._set_json_headers(400)
                 self.wfile.write(json.dumps({'error': 'customer_id is required'}).encode('utf-8'))
+                return
+
+            # Non-customer roles can request arbitrary customer_id; customers cannot.
+            if role == 'customer' and requested_customer_id and requested_customer_id != customer_id:
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Forbidden'}).encode('utf-8'))
                 return
 
             customer = CUSTOMERS.get(customer_id)
@@ -975,6 +1065,40 @@ class PortalHandler(BaseHTTPRequestHandler):
 
             self._set_json_headers()
             self.wfile.write(json.dumps(payload).encode('utf-8'))
+            return
+
+        # Customer billing "next due" (portal convenience)
+        if path == '/api/billing/next-due':
+            if not session:
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Unauthorized'}).encode('utf-8'))
+                return
+
+            user = get_session_user(session) or {}
+            role = (user.get('role') or '').lower()
+            session_customer_id = user.get('customer_id') or session.get('customer_id')
+            if role == 'customer' and not session_customer_id:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'customer_id unavailable'}).encode('utf-8'))
+                return
+
+            # Determine which policies belong to this customer
+            if role == 'customer':
+                policy_ids = {p.get('id') for p in POLICIES.values() if p.get('customer_id') == session_customer_id}
+                bills = [b for b in BILLING.values()
+                         if b.get('policy_id') in policy_ids and b.get('status') not in ('paid',)]
+            else:
+                bills = [b for b in BILLING.values() if b.get('status') not in ('paid',)]
+
+            def _due_ts(b: Dict[str, Any]) -> float:
+                try:
+                    return datetime.fromisoformat(b.get('due_date', '')).timestamp()
+                except Exception:
+                    return float('inf')
+
+            next_bill = sorted(bills, key=_due_ts)[0] if bills else None
+            self._set_json_headers()
+            self.wfile.write(json.dumps({'next_due': next_bill}).encode('utf-8'))
             return
         
         if path.startswith('/api/statement'):
@@ -1783,9 +1907,36 @@ class PortalHandler(BaseHTTPRequestHandler):
         
         # Create Claim Endpoint
         if path == '/api/claims/create':
+            # Resolve session (customers must be authenticated to create claims)
+            auth_header = self.headers.get('Authorization', '')
+            token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+            session = validate_session(token) if token else None
+
+            if not session:
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Unauthorized. Please login.'}).encode('utf-8'))
+                return
+
+            user = get_session_user(session) or {}
+            role = (user.get('role') or '').lower()
+            session_customer_id = user.get('customer_id') or session.get('customer_id')
+
             try:
                 data = json.loads(body)
                 claim_id = generate_claim_id()
+
+                # If customer, force customer_id to session and verify policy ownership
+                if role == 'customer':
+                    if not session_customer_id:
+                        self._set_json_headers(400)
+                        self.wfile.write(json.dumps({'error': 'customer_id unavailable'}).encode('utf-8'))
+                        return
+                    policy_id = data.get('policy_id')
+                    if policy_id and POLICIES.get(policy_id, {}).get('customer_id') != session_customer_id:
+                        self._set_json_headers(403)
+                        self.wfile.write(json.dumps({'error': 'Forbidden'}).encode('utf-8'))
+                        return
+                    data['customer_id'] = session_customer_id
                 
                 claim = {
                     'id': claim_id,
@@ -1801,7 +1952,7 @@ class PortalHandler(BaseHTTPRequestHandler):
                 
                 CLAIMS[claim_id] = claim
                 if audit:
-                    actor = session.get('username') if 'session' in locals() and session else 'system'
+                    actor = session.get('username') if session else 'system'
                     try:
                         audit.log(actor, 'create', 'claim', claim_id, {'policy_id': claim.get('policy_id'), 'claimed_amount': claim.get('claimed_amount')})
                     except Exception:
