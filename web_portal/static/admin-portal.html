@@ -64,6 +64,7 @@
                         <li><a href="#" data-screen="underwriting" class="nav-link">✍️ Underwriting</a></li>
                         <li><a href="#" data-screen="claims" class="nav-link">💰 Claims</a></li>
                         <li><a href="#" data-screen="bi-actuary" class="nav-link">📈 BI - Actuary</a></li>
+                        <li><a href="#" data-screen="data-admin" class="nav-link">🗂️ Data Admin</a></li>
                         <li><a href="#" data-screen="bi-underwriting" class="nav-link">📊 BI - Underwriting</a></li>
                         <li><a href="#" data-screen="bi-accounting" class="nav-link">💹 BI - Accounting</a></li>
                         <li><hr style="border-color: #555; margin: 10px 0;"></li>
@@ -300,6 +301,123 @@
                                 <h3>Policy Types</h3>
                                 <div id="policy-types-chart" class="chart"></div>
                             </div>
+                        </div>
+                        <div class="bi-dashboard" style="margin-top: 20px;">
+                            <div class="bi-card">
+                                <h3>Actuarial Tables</h3>
+                                <p id="bi-actuary-table-count" class="bi-value">0</p>
+                                <small id="bi-actuary-table-latest" style="color:#666;">Latest: -</small>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Data Admin View -->
+                    <div id="data-admin-view" class="view">
+                        <h2>Data Admin (Uploads + Registry)</h2>
+                        <p style="color:#666;">Upload actuarial tables, bulk customers, and manage supported tokens.</p>
+
+                        <div class="form-section">
+                            <h3>Upload Actuarial Table (JSON)</h3>
+                            <div class="form-row">
+                                <div class="form-group" style="flex:1;">
+                                    <label>Name</label>
+                                    <input type="text" id="act-table-name" placeholder="e.g., Mortality Table 2026">
+                                </div>
+                                <div class="form-group" style="flex:1;">
+                                    <label>Type</label>
+                                    <select id="act-table-type">
+                                        <option value="pricing">pricing</option>
+                                        <option value="mortality">mortality</option>
+                                        <option value="morbidity">morbidity</option>
+                                        <option value="lapse">lapse</option>
+                                    </select>
+                                </div>
+                                <div class="form-group" style="flex:1;">
+                                    <label>Version</label>
+                                    <input type="text" id="act-table-version" placeholder="e.g., v1">
+                                </div>
+                                <div class="form-group" style="flex:1;">
+                                    <label>Effective Date</label>
+                                    <input type="date" id="act-table-effective">
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label>JSON Data</label>
+                                <textarea id="act-table-json" rows="8" placeholder='{"rows":[...]} or [...]'></textarea>
+                            </div>
+                            <div class="form-actions">
+                                <button type="button" class="btn btn-primary" onclick="uploadActuarialTable()">Upload Table</button>
+                                <button type="button" class="btn btn-secondary" onclick="loadActuarialTables()">Refresh List</button>
+                            </div>
+                            <div id="act-table-result" class="result-message"></div>
+                            <div id="act-table-list" class="data-table" style="margin-top:10px;"></div>
+                        </div>
+
+                        <div class="form-section">
+                            <h3>Bulk Upload Customers (JSON list)</h3>
+                            <div class="form-group">
+                                <label>JSON Array</label>
+                                <textarea id="customers-json" rows="6" placeholder='[{"name":"Jane Doe","email":"jane@example.com","phone":"..."}]'></textarea>
+                            </div>
+                            <div class="form-actions">
+                                <button type="button" class="btn btn-primary" onclick="uploadCustomers()">Upload Customers</button>
+                            </div>
+                            <div id="customers-result" class="result-message"></div>
+                        </div>
+
+                        <div class="form-section">
+                            <h3>Token Registry (Enable currencies/NFT/index identifiers)</h3>
+                            <div class="form-row">
+                                <div class="form-group" style="flex:1;">
+                                    <label>Symbol</label>
+                                    <input type="text" id="token-symbol" placeholder="BTC">
+                                </div>
+                                <div class="form-group" style="flex:1;">
+                                    <label>Name</label>
+                                    <input type="text" id="token-name" placeholder="Bitcoin">
+                                </div>
+                                <div class="form-group" style="flex:1;">
+                                    <label>Asset Type</label>
+                                    <select id="token-type">
+                                        <option value="currency">currency</option>
+                                        <option value="stablecoin">stablecoin</option>
+                                        <option value="nft">nft</option>
+                                        <option value="index">index</option>
+                                    </select>
+                                </div>
+                                <div class="form-group" style="flex:1;">
+                                    <label>Chain</label>
+                                    <input type="text" id="token-chain" placeholder="ethereum">
+                                </div>
+                            </div>
+                            <div class="form-row">
+                                <div class="form-group" style="flex:1;">
+                                    <label>Contract Address (optional)</label>
+                                    <input type="text" id="token-contract" placeholder="0x...">
+                                </div>
+                                <div class="form-group" style="flex:1;">
+                                    <label>Enabled</label>
+                                    <select id="token-enabled">
+                                        <option value="true" selected>true</option>
+                                        <option value="false">false</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="form-actions">
+                                <button type="button" class="btn btn-primary" onclick="upsertToken()">Save Token</button>
+                                <button type="button" class="btn btn-secondary" onclick="loadTokenRegistry()">Refresh List</button>
+                            </div>
+                            <div id="token-result" class="result-message"></div>
+                            <div id="token-list" class="data-table" style="margin-top:10px;"></div>
+                        </div>
+
+                        <div class="form-section">
+                            <h3>Reset Demo Data (in-memory mode)</h3>
+                            <p style="color:#b00;">This clears in-memory customers/policies/claims/billing and reseeds a minimal dataset.</p>
+                            <div class="form-actions">
+                                <button type="button" class="btn btn-primary" onclick="resetDemoData()">Reset Demo Data</button>
+                            </div>
+                            <div id="reset-result" class="result-message"></div>
                         </div>
                     </div>
 

@@ -157,8 +157,9 @@ class BillingEngine:
         except Exception as e:
             return {'success': False, 'error': f'Payment method validation failed: {str(e)}'}
     
-    def process_payment(self, customer_id: str, amount: float, policy_id: str, 
-                       payment_token: str = None, metadata: Dict = None) -> Dict:
+    def process_payment(self, customer_id: str, amount: float, policy_id: str,
+                        payment_token: str = None, metadata: Dict = None,
+                        currency: str = 'USD', fx_rate_to_usd: float = None) -> Dict:
         """
         Process payment with fraud detection and security checks
         """
@@ -211,11 +212,14 @@ class BillingEngine:
                 'customer_id': customer_id,
                 'policy_id': policy_id,
                 'amount': amount,
-                'currency': 'USD',
+                'currency': currency,
                 'status': 'success' if processing_success else 'failed',
                 'payment_method': payment_method['masked_card'] if payment_method else 'N/A',
                 'payment_token': payment_token,
-                'metadata': metadata or {},
+                'metadata': {
+                    **(metadata or {}),
+                    **({'fx_rate_to_usd': fx_rate_to_usd} if fx_rate_to_usd is not None else {})
+                },
                 'timestamp': datetime.now().isoformat(),
                 'processed_date': datetime.now().isoformat(),
                 'failure_reason': None if processing_success else 'Card declined',

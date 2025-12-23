@@ -19,7 +19,9 @@ from database.repositories import (
     BillingRepository,
     UserRepository,
     SessionRepository,
-    AuditRepository
+    AuditRepository,
+    ActuarialRepository,
+    TokenRepository,
 )
 
 logger = logging.getLogger(__name__)
@@ -54,6 +56,8 @@ class DatabaseManager:
         self._users = None
         self._sessions = None
         self._audit = None
+        self._actuarial = None
+        self._tokens = None
     
     def _ensure_session(self) -> Session:
         """Ensure we have a database session"""
@@ -117,6 +121,20 @@ class DatabaseManager:
         if self._audit is None:
             self._audit = AuditRepository(self._ensure_session())
         return self._audit
+
+    @property
+    def actuarial(self) -> ActuarialRepository:
+        """Get actuarial tables repository"""
+        if self._actuarial is None:
+            self._actuarial = ActuarialRepository(self._ensure_session())
+        return self._actuarial
+
+    @property
+    def tokens(self) -> TokenRepository:
+        """Get token registry repository"""
+        if self._tokens is None:
+            self._tokens = TokenRepository(self._ensure_session())
+        return self._tokens
     
     def commit(self):
         """Commit current transaction"""
@@ -142,6 +160,8 @@ class DatabaseManager:
             self._users = None
             self._sessions = None
             self._audit = None
+            self._actuarial = None
+            self._tokens = None
     
     @contextmanager
     def session_scope(self):

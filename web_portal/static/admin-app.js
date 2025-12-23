@@ -163,6 +163,10 @@ function handleNavigation(e) {
         case 'bi-accounting':
             loadBIAccounting();
             break;
+        case 'data-admin':
+            loadActuarialTables();
+            loadTokenRegistry();
+            break;
     }
 }
 
@@ -518,9 +522,223 @@ async function loadBIActuary() {
         
         renderBarChart('risk-distribution-chart', data.risk_distribution);
         renderBarChart('policy-types-chart', data.policy_by_type);
+
+        // Actuarial upload governance signal
+        if (data.actuarial_tables) {
+            const countEl = document.getElementById('bi-actuary-table-count');
+            const latestEl = document.getElementById('bi-actuary-table-latest');
+            if (countEl) countEl.textContent = data.actuarial_tables.count ?? 0;
+            if (latestEl) latestEl.textContent = `Latest: ${data.actuarial_tables.latest_uploaded || '-'}`;
+        }
     } catch (error) {
         console.error('Error loading actuary BI:', error);
     }
+}
+
+// ============================================================================
+// Data Admin (Actuarial Tables + Customers + Token Registry)
+// ============================================================================
+
+async function loadActuarialTables() {
+    try {
+        const resp = await fetch(`${API_BASE}/api/admin/actuarial-tables`, {headers: getAuthHeaders()});
+        const data = await resp.json();
+        const items = data.items || [];
+        const html = `
+            <table>
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Name</th>
+                        <th>Type</th>
+                        <th>Version</th>
+                        <th>Effective</th>
+                        <th>Created</th>
+                        <th>By</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${items.map(t => `
+                        <tr>
+                            <td>${escapeHtml(t.id || '')}</td>
+                            <td>${escapeHtml(t.name || '')}</td>
+                            <td>${escapeHtml(t.table_type || '')}</td>
+                            <td>${escapeHtml(t.version || '')}</td>
+                            <td>${formatDate(t.effective_date || '')}</td>
+                            <td>${formatDate(t.created_date || '')}</td>
+                            <td>${escapeHtml(t.created_by || '')}</td>
+                        </tr>
+                    `).join('')}
+                </tbody>
+            </table>
+        `;
+        const el = document.getElementById('act-table-list');
+        if (el) el.innerHTML = items.length ? html : '<p>No actuarial tables uploaded yet.</p>';
+    } catch (e) {
+        const el = document.getElementById('act-table-list');
+        if (el) el.innerHTML = '<p>Error loading actuarial tables</p>';
+    }
+}
+
+async function uploadActuarialTable() {
+    const name = document.getElementById('act-table-name')?.value || '';
+    const table_type = document.getElementById('act-table-type')?.value || 'pricing';
+    const version = document.getElementById('act-table-version')?.value || '';
+    const effective_date = document.getElementById('act-table-effective')?.value || '';
+    const jsonText = document.getElementById('act-table-json')?.value || '';
+    const resultEl = document.getElementById('act-table-result');
+
+    let dataObj = null;
+    try {
+        dataObj = JSON.parse(jsonText);
+    } catch (e) {
+        if (resultEl) resultEl.textContent = 'Invalid JSON';
+        return;
+    }
+
+    try {
+        const resp = await fetch(`${API_BASE}/api/admin/actuarial-tables/upload`, {
+            method: 'POST',
+            headers: {...getAuthHeaders(), 'Content-Type': 'application/json'},
+            body: JSON.stringify({name, table_type, version, effective_date, data: dataObj})
+        });
+        const out = await resp.json();
+        if (resp.ok) {
+            if (resultEl) resultEl.textContent = `Uploaded: ${out.id}`;
+            await loadActuarialTables();
+            await loadBIActuary();
+        } else {
+            if (resultEl) resultEl.textContent = out.error || 'Upload failed';
+        }
+    } catch (e) {
+        if (resultEl) resultEl.textContent = 'Upload failed';
+    }
+}
+
+async function uploadCustomers() {
+    const jsonText = document.getElementById('customers-json')?.value || '';
+    const resultEl = document.getElementById('customers-result');
+
+    let arr = null;
+    try {
+        arr = JSON.parse(jsonText);
+    } catch (e) {
+        if (resultEl) resultEl.textContent = 'Invalid JSON';
+        return;
+    }
+    try {
+        const resp = await fetch(`${API_BASE}/api/admin/customers/upload`, {
+            method: 'POST',
+            headers: {...getAuthHeaders(), 'Content-Type': 'application/json'},
+            body: JSON.stringify(arr)
+        });
+        const out = await resp.json();
+        if (resp.ok) {
+            if (resultEl) resultEl.textContent = `Created: ${out.created} (errors: ${out.errors?.length || 0})`;
+            await loadDashboardData();
+        } else {
+            if (resultEl) resultEl.textContent = out.error || 'Upload failed';
+        }
+    } catch (e) {
+        if (resultEl) resultEl.textContent = 'Upload failed';
+    }
+}
+
+async function loadTokenRegistry() {
+    try {
+        const resp = await fetch(`${API_BASE}/api/token-registry`, {headers: getAuthHeaders()});
+        const data = await resp.json();
+        const items = data.items || [];
+        const html = `
+            <table>
+                <thead>
+                    <tr>
+                        <th>Symbol</th>
+                        <th>Name</th>
+                        <th>Type</th>
+                        <th>Chain</th>
+                        <th>Enabled</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${items.map(t => `
+                        <tr>
+                            <td>${escapeHtml(t.symbol || '')}</td>
+                            <td>${escapeHtml(t.name || '')}</td>
+                            <td>${escapeHtml(t.asset_type || '')}</td>
+                            <td>${escapeHtml(t.chain || '')}</td>
+                            <td>${t.enabled ? 'true' : 'false'}</td>
+                        </tr>
+                    `).join('')}
+                </tbody>
+            </table>
+        `;
+        const el = document.getElementById('token-list');
+        if (el) el.innerHTML = items.length ? html : '<p>No tokens configured.</p>';
+    } catch (e) {
+        const el = document.getElementById('token-list');
+        if (el) el.innerHTML = '<p>Error loading token registry</p>';
+    }
+}
+
+async function upsertToken() {
+    const symbol = document.getElementById('token-symbol')?.value || '';
+    const name = document.getElementById('token-name')?.value || '';
+    const asset_type = document.getElementById('token-type')?.value || 'currency';
+    const chain = document.getElementById('token-chain')?.value || '';
+    const contract_address = document.getElementById('token-contract')?.value || '';
+    const enabled = (document.getElementById('token-enabled')?.value || 'true') === 'true';
+    const resultEl = document.getElementById('token-result');
+
+    try {
+        const resp = await fetch(`${API_BASE}/api/admin/token-registry`, {
+            method: 'POST',
+            headers: {...getAuthHeaders(), 'Content-Type': 'application/json'},
+            body: JSON.stringify({symbol, name, asset_type, chain, contract_address, enabled})
+        });
+        const out = await resp.json();
+        if (resp.ok) {
+            if (resultEl) resultEl.textContent = `Saved: ${out.id}`;
+            await loadTokenRegistry();
+        } else {
+            if (resultEl) resultEl.textContent = out.error || 'Save failed';
+        }
+    } catch (e) {
+        if (resultEl) resultEl.textContent = 'Save failed';
+    }
+}
+
+async function resetDemoData() {
+    const resultEl = document.getElementById('reset-result');
+    try {
+        const resp = await fetch(`${API_BASE}/api/admin/reset-demo-data`, {
+            method: 'POST',
+            headers: {...getAuthHeaders(), 'Content-Type': 'application/json'},
+            body: JSON.stringify({confirm: true})
+        });
+        const out = await resp.json();
+        if (resp.ok) {
+            if (resultEl) resultEl.textContent = 'Demo data reset complete.';
+            await loadDashboardData();
+            await loadBIActuary();
+            await loadActuarialTables();
+            await loadTokenRegistry();
+        } else {
+            if (resultEl) resultEl.textContent = out.error || 'Reset failed';
+        }
+    } catch (e) {
+        if (resultEl) resultEl.textContent = 'Reset failed';
+    }
+}
+
+function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, c => ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#39;'
+    }[c]));
 }
 
 async function loadBIUnderwriting() {
