@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="180" viewBox="0 0 640 180" role="img" aria-label="PHINS AI logo">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0b6cff"/>
+      <stop offset="1" stop-color="#0b2a5a"/>
+    </linearGradient>
+    <linearGradient id="a" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#00d4ff" stop-opacity="0.9"/>
+      <stop offset="1" stop-color="#00ffa3" stop-opacity="0.9"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Mark -->
+  <g transform="translate(18,20)">
+    <path d="M72 0C112 8 138 20 156 34V86c0 48-32 70-84 94C20 156 0 134 0 86V34C18 20 44 8 72 0Z" fill="url(#g)"/>
+    <!-- stylized 'A' + 'I' -->
+    <path d="M54 118 72 46l18 72h-12l-3-14H69l-3 14H54Zm17-26h8l-4-20-4 20Z" fill="white" opacity="0.95"/>
+    <rect x="98" y="56" width="10" height="62" rx="5" fill="url(#a)"/>
+    <circle cx="103" cy="46" r="6" fill="url(#a)"/>
+  </g>
+
+  <!-- Wordmark -->
+  <g transform="translate(210,54)" fill="#0b2a5a">
+    <text x="0" y="56" font-family="Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial" font-size="64" font-weight="800" letter-spacing="-1.2">PHINS</text>
+    <text x="258" y="56" font-family="Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial" font-size="28" font-weight="700" fill="#0b6cff">.ai</text>
+    <text x="0" y="90" font-family="Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial" font-size="18" font-weight="600" fill="#2c4c7c">Global Insurance + AI Operations</text>
+  </g>
+</svg>
+

@@ -10,7 +10,9 @@
 <body>
     <header class="topbar">
         <div class="container">
-            <h1 class="brand">🛡️ PHINS Insurance</h1>
+            <div class="brand">
+                <img class="brand-logo" src="/assets/phins-ai-logo.svg" alt="PHINS.ai" />
+            </div>
             <nav class="nav">
                 <a href="/">Home</a>
                 <a href="/#products">Products</a>
@@ -164,8 +166,8 @@
                                 <p>Severe disability protection with wealth building</p>
                                 <ul>
                                     <li>ADL-based coverage</li>
-                                    <li>75% investment growth</li>
-                                    <li>25% guaranteed savings</li>
+                                    <li>Adjustable savings allocation (e.g., 25% / 50% / 90%)</li>
+                                    <li>UK/US actuarial pricing by age</li>
                                     <li>Lifetime benefits</li>
                                 </ul>
                                 <button type="button" class="select-policy" data-type="disability">Select</button>
@@ -211,6 +213,34 @@
                                     </div>
                                 </div>
                                 <small>*Final premium determined after underwriting review</small>
+                            </div>
+
+                            <div class="premium-estimate" id="phi-investment-settings" style="margin-top: 16px; display:none;">
+                                <h4>PHI Investment Settings</h4>
+                                <div class="premium-breakdown">
+                                    <div class="premium-item">
+                                        <span>Jurisdiction</span>
+                                        <strong>
+                                            <select id="phi-jurisdiction" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 8px;">
+                                                <option value="US" selected>US</option>
+                                                <option value="UK">UK</option>
+                                            </select>
+                                        </strong>
+                                    </div>
+                                    <div class="premium-item">
+                                        <span>Savings Allocation (%)</span>
+                                        <strong>
+                                            <input id="phi-savings-percentage" type="number" min="0" max="95" step="1" value="25" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 8px;">
+                                        </strong>
+                                    </div>
+                                    <div class="premium-item">
+                                        <span>Operational + Reinsurance Load (%)</span>
+                                        <strong>
+                                            <input id="phi-operational-load" type="number" min="0" max="300" step="1" value="50" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 8px;">
+                                        </strong>
+                                    </div>
+                                </div>
+                                <small class="muted-text">Higher savings allocation increases total premium because risk cost must still be funded.</small>
                             </div>
                         </div>
                     </div>

@@ -32,9 +32,9 @@ def demo_company_management(system: PHINSInsuranceSystem):
         registration_number="REG-2025-001",
         business_address="123 Insurance Ave, New York, NY 10001",
         phone="+1-800-PHINS-01",
-        email="info@phins.com",
+        email="info@phins.ai",
         license_number="LIC-NY-2025-001",
-        website="https://www.phins.com"
+        website="https://www.phins.ai"
     )
 
     system.register_company(company)

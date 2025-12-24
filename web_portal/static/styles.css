@@ -1,8 +1,9 @@
 :root{
-  --brand:#005b96;
-  --brand-dark:#003d66;
-  --brand-light:#0078c8;
-  --accent:#ff6b35;
+  /* Brand (PHINS.ai) */
+  --brand:#0b6cff;
+  --brand-dark:#0b2a5a;
+  --brand-light:#2b8dff;
+  --accent:#00d4ff;
   --success:#28a745;
   --muted:#666;
   --bg:#f6f9fc;
@@ -13,7 +14,7 @@
 *{box-sizing:border-box}
 
 body{
-  font-family:system-ui,-apple-system,Segoe UI,Roboto,'Helvetica Neue',Arial; 
+  font-family:Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial;
   margin:0; 
   background:var(--bg); 
   color:var(--text);
@@ -41,8 +42,18 @@ body{
 
 .brand{
   margin:0;
-  font-size:1.5rem;
-  font-weight:700;
+  font-size:1.4rem;
+  font-weight:800;
+  display:flex;
+  align-items:center;
+  gap:12px;
+}
+
+.brand-logo{
+  height:34px;
+  width:auto;
+  display:block;
+  filter: drop-shadow(0 6px 12px rgba(0,0,0,0.12));
 }
 
 .nav{
@@ -65,14 +76,15 @@ body{
 }
 
 .btn-login{
-  background:var(--accent);
+  background:rgba(255,255,255,0.14);
+  border:1px solid rgba(255,255,255,0.28);
   padding:10px 20px !important;
   border-radius:6px;
   font-weight:600;
 }
 
 .btn-login:hover{
-  background:#ff5722;
+  background:rgba(255,255,255,0.22);
 }
 
 .language-selector{

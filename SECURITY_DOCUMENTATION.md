@@ -360,8 +360,8 @@ if len(MALICIOUS_ATTEMPTS) > 1000:
 - Main Server: `web_portal/server.py`
 
 ### Contact
-For security vulnerabilities, contact: security@phins.com
-For general questions: support@phins.com
+For security vulnerabilities, contact: security@phins.ai
+For general questions: support@phins.ai
 
 ---
 

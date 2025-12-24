@@ -174,10 +174,13 @@ async function loadDashboardData() {
             fetch(`${API_BASE}/api/claims`, {headers: getAuthHeaders()}).then(r => r.json()),
             fetch(`${API_BASE}/api/bi/accounting`, {headers: getAuthHeaders()}).then(r => r.json())
         ]);
+        const policyItems = Array.isArray(policies.items) ? policies.items : (Array.isArray(policies) ? policies : []);
+        const uwItems = Array.isArray(underwriting.items) ? underwriting.items : (Array.isArray(underwriting) ? underwriting : []);
+        const claimItems = Array.isArray(claims.items) ? claims.items : (Array.isArray(claims) ? claims : []);
         
-        document.getElementById('stat-policies').textContent = policies.length;
-        document.getElementById('stat-pending').textContent = underwriting.filter(u => u.status === 'pending').length;
-        document.getElementById('stat-claims').textContent = claims.filter(c => c.status !== 'paid' && c.status !== 'rejected').length;
+        document.getElementById('stat-policies').textContent = policyItems.length;
+        document.getElementById('stat-pending').textContent = uwItems.filter(u => u.status === 'pending').length;
+        document.getElementById('stat-claims').textContent = claimItems.filter(c => c.status !== 'paid' && c.status !== 'rejected').length;
         document.getElementById('stat-revenue').textContent = `$${formatNumber(biAccounting.total_revenue)}`;
     } catch (error) {
         console.error('Error loading dashboard data:', error);
@@ -186,7 +189,8 @@ async function loadDashboardData() {
 
 async function loadPoliciesData() {
     try {
-        const policies = await fetch(`${API_BASE}/api/policies`, {headers: getAuthHeaders()}).then(r => r.json());
+        const payload = await fetch(`${API_BASE}/api/policies`, {headers: getAuthHeaders()}).then(r => r.json());
+        const policies = Array.isArray(payload.items) ? payload.items : (Array.isArray(payload) ? payload : []);
         
         const html = `
             <table>
@@ -234,6 +238,9 @@ async function handleCreatePolicy(e) {
         type: document.getElementById('policy-type').value,
         coverage_amount: parseFloat(document.getElementById('coverage-amount').value),
         risk_score: document.getElementById('risk-score').value,
+        jurisdiction: document.getElementById('jurisdiction')?.value || 'US',
+        savings_percentage: parseFloat(document.getElementById('savings-percentage')?.value || '25'),
+        operational_reinsurance_load: parseFloat(document.getElementById('operational-load')?.value || '50'),
         medical_exam_required: document.getElementById('medical-exam-required').checked,
         age: calculateAge(document.getElementById('customer-dob').value),
         questionnaire: {
@@ -276,7 +283,8 @@ async function handleCreatePolicy(e) {
 async function loadUnderwritingData() {
     try {
         const filter = document.getElementById('uw-filter').value;
-        const applications = await fetch(`${API_BASE}/api/underwriting`, {headers: getAuthHeaders()}).then(r => r.json());
+        const payload = await fetch(`${API_BASE}/api/underwriting`, {headers: getAuthHeaders()}).then(r => r.json());
+        const applications = Array.isArray(payload.items) ? payload.items : (Array.isArray(payload) ? payload : []);
         
         const filtered = filter === 'all' ? applications : applications.filter(a => a.status === filter);
         
@@ -362,7 +370,8 @@ async function rejectUnderwriting(id) {
 async function loadClaimsData() {
     try {
         const filter = document.getElementById('claims-filter').value;
-        const claims = await fetch(`${API_BASE}/api/claims`, {headers: getAuthHeaders()}).then(r => r.json());
+        const payload = await fetch(`${API_BASE}/api/claims`, {headers: getAuthHeaders()}).then(r => r.json());
+        const claims = Array.isArray(payload.items) ? payload.items : (Array.isArray(payload) ? payload : []);
         
         const filtered = filter === 'all' ? claims : claims.filter(c => c.status === filter);
         
