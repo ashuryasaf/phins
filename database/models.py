@@ -343,3 +343,33 @@ class AuditLog(Base):
             'ip_address': self.ip_address,
             'success': self.success
         }
+
+
+class TokenRegistry(Base):
+    """
+    Token registry table (optional).
+
+    IMPORTANT: Do NOT name a mapped attribute 'metadata' with SQLAlchemy Declarative,
+    because 'metadata' is reserved. Use 'meta' (attribute) mapped to 'metadata' (column).
+    """
+    __tablename__ = 'token_registry'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    token = Column(String(200), unique=True, nullable=False, index=True)
+    kind = Column(String(50), default='session')  # e.g. session, api_key, reset
+    status = Column(String(50), default='active')  # active, revoked
+    # Column name stays 'metadata' for compatibility, but attribute is NOT 'metadata'
+    meta = Column('metadata', Text)
+    created_date = Column(DateTime, default=datetime.utcnow, nullable=False)
+    expires = Column(DateTime)
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'token': self.token,
+            'kind': self.kind,
+            'status': self.status,
+            'metadata': self.meta,
+            'created_date': self.created_date.isoformat() if self.created_date else None,
+            'expires': self.expires.isoformat() if self.expires else None,
+        }
