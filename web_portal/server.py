@@ -50,6 +50,7 @@ if USE_DATABASE:
         from database.data_access import USERS_DB as DB_USERS
         from database.data_access import TOKEN_REGISTRY as DB_TOKEN_REGISTRY
         from database.data_access import NOTIFICATIONS as DB_NOTIFICATIONS
+        from database.data_access import FORM_SUBMISSIONS as DB_FORM_SUBMISSIONS
         
         database_enabled = True
         print("✓ Database support enabled")
@@ -88,6 +89,7 @@ if USE_DATABASE and database_enabled:
     BILLING = DB_BILLING
     TOKEN_REGISTRY = DB_TOKEN_REGISTRY
     NOTIFICATIONS = DB_NOTIFICATIONS
+    FORM_SUBMISSIONS = DB_FORM_SUBMISSIONS
 else:
     # In-memory storage for demo purposes
     POLICIES: Dict[str, Dict[str, Any]] = {}
@@ -98,6 +100,7 @@ else:
     BILLING: Dict[str, Dict[str, Any]] = {}  # bill_id -> bill data (for metrics)
     TOKEN_REGISTRY: Dict[str, Dict[str, Any]] = {}  # token -> token record
     NOTIFICATIONS: Dict[str, Dict[str, Any]] = {}  # notification_id -> record
+    FORM_SUBMISSIONS: Dict[str, Dict[str, Any]] = {}  # id -> {customer_id,email,source,payload,created_date}
 try:
     from services.audit_service import AuditService
     audit = AuditService()
@@ -326,6 +329,21 @@ def resolve_billing_link(token: str) -> Dict[str, Any] | None:
     except Exception:
         meta = {}
     return {"token": token, "expires": rec.get("expires"), "meta": meta}
+
+
+def store_form_submission(*, source: str, customer_id: str | None, email: str | None, payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Persist a form submission (DB-backed when enabled)."""
+    sid = f"SUB-{datetime.now().strftime('%Y%m%d')}-{random.randint(100000, 999999)}"
+    rec = {
+        "id": sid,
+        "customer_id": customer_id,
+        "email": (email or "").strip().lower() if email else None,
+        "source": source,
+        "payload": json.dumps(payload),
+        "created_date": datetime.now().isoformat(),
+    }
+    FORM_SUBMISSIONS[sid] = rec
+    return rec
 
 
 def _should_auto_approve(*, policy: Dict[str, Any], app: Dict[str, Any], customer: Dict[str, Any]) -> bool:
@@ -1266,6 +1284,64 @@ class PortalHandler(BaseHTTPRequestHandler):
             self._set_json_headers()
             self.wfile.write(json.dumps({'items': items, 'total': len(items)}).encode('utf-8'))
             return
+
+        # Form submissions (customer can view their own; admin can view all or filter)
+        if path == '/api/submissions':
+            if not session:
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Unauthorized'}).encode('utf-8'))
+                return
+
+            role = USERS.get(session.get('username') if session else '', {}).get('role') if session else None
+            customer_scope = session.get('customer_id') if (session and role == 'customer') else None
+            sub_id = qs.get('id', [None])[0]
+            email_q = qs.get('email', [None])[0]
+            source_q = qs.get('source', [None])[0]
+
+            # Customers can only see their own submissions
+            if role == 'customer':
+                if sub_id:
+                    rec = FORM_SUBMISSIONS.get(sub_id)
+                    if not isinstance(rec, dict) or rec.get('customer_id') != customer_scope:
+                        self._set_json_headers(404)
+                        self.wfile.write(json.dumps({'error': 'Not found'}).encode('utf-8'))
+                        return
+                    self._set_json_headers()
+                    self.wfile.write(json.dumps({'item': rec}).encode('utf-8'))
+                    return
+
+                items = [s for s in FORM_SUBMISSIONS.values() if s.get('customer_id') == customer_scope]
+                items.sort(key=lambda x: str(x.get('created_date', '')), reverse=True)
+                self._set_json_headers()
+                self.wfile.write(json.dumps({'items': items[:200], 'total': len(items)}).encode('utf-8'))
+                return
+
+            # Staff: admin/underwriter/accountant/claims
+            if not require_role(session, ['admin', 'underwriter', 'accountant', 'claims']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Unauthorized'}).encode('utf-8'))
+                return
+
+            if sub_id:
+                rec = FORM_SUBMISSIONS.get(sub_id)
+                if not isinstance(rec, dict):
+                    self._set_json_headers(404)
+                    self.wfile.write(json.dumps({'error': 'Not found'}).encode('utf-8'))
+                    return
+                self._set_json_headers()
+                self.wfile.write(json.dumps({'item': rec}).encode('utf-8'))
+                return
+
+            items = list(FORM_SUBMISSIONS.values())
+            if email_q:
+                e = str(email_q).strip().lower()
+                items = [s for s in items if str(s.get('email') or '').lower() == e]
+            if source_q:
+                items = [s for s in items if str(s.get('source') or '') == str(source_q)]
+            items.sort(key=lambda x: str(x.get('created_date', '')), reverse=True)
+            self._set_json_headers()
+            self.wfile.write(json.dumps({'items': items[:500], 'total': len(items)}).encode('utf-8'))
+            return
         
         # BI Dashboard Endpoints (Admin/Management only)
         if path == '/api/bi/actuary':
@@ -1299,12 +1375,16 @@ class PortalHandler(BaseHTTPRequestHandler):
         if path == '/api/metrics':
             try:
                 from services.metrics_service import MetricsService
-                ms = MetricsService(POLICIES, CLAIMS, BILLING)
+                ms = MetricsService(POLICIES, CLAIMS, BILLING, CUSTOMERS, UNDERWRITING_APPLICATIONS)
                 data = ms.summary()
             except Exception:
                 data = {
                     'customers': {'total': len(CUSTOMERS)},
-                    'policies': {'total': len(POLICIES), 'active': sum(1 for p in POLICIES.values() if p.get('status') == 'active')},
+                    'policies': {
+                        'total': len(POLICIES),
+                        'active': sum(1 for p in POLICIES.values() if p.get('status') == 'active'),
+                        'pending': sum(1 for p in POLICIES.values() if p.get('status') == 'pending_underwriting'),
+                    },
                     'claims': {'pending': sum(1 for c in CLAIMS.values() if c.get('status') in ['pending', 'under_review']),
                                'approved': sum(1 for c in CLAIMS.values() if c.get('status') == 'approved')},
                     'billing': {'overdue': sum(1 for b in BILLING.values() if b.get('status') == 'overdue'),
@@ -1480,6 +1560,41 @@ class PortalHandler(BaseHTTPRequestHandler):
             else:
                 self._set_json_headers()
                 self.wfile.write(json.dumps(list(CUSTOMERS.values())).encode('utf-8'))
+            return
+
+        # Admin/staff: customer lookup by email (e.g., asaf@assurance.co.il)
+        if path == '/api/customers/search':
+            if not require_role(session, ['admin', 'underwriter', 'accountant', 'claims']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Unauthorized'}).encode('utf-8'))
+                return
+            email_q = (qs.get('email', [''])[0] or '').strip().lower()
+            if not email_q:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'email is required'}).encode('utf-8'))
+                return
+            cust = None
+            for c in CUSTOMERS.values():
+                if isinstance(c, dict) and (c.get('email') or '').lower() == email_q:
+                    cust = c
+                    break
+            if not cust:
+                self._set_json_headers(404)
+                self.wfile.write(json.dumps({'error': 'Customer not found'}).encode('utf-8'))
+                return
+            customer_id = cust.get('id')
+            policies = [p for p in POLICIES.values() if p.get('customer_id') == customer_id]
+            apps = [u for u in UNDERWRITING_APPLICATIONS.values() if u.get('customer_id') == customer_id]
+            claims = [c for c in CLAIMS.values() if c.get('customer_id') == customer_id]
+            bills = [b for b in BILLING.values() if b.get('customer_id') == customer_id]
+            self._set_json_headers()
+            self.wfile.write(json.dumps({
+                'customer': cust,
+                'policies': policies,
+                'underwriting': apps,
+                'claims': claims,
+                'billing': bills,
+            }).encode('utf-8'))
             return
 
         # Customer status endpoint (post-application visibility)
@@ -1763,6 +1878,10 @@ class PortalHandler(BaseHTTPRequestHandler):
             rel = path.lstrip('/')
             file_path = os.path.join(ROOT, rel)
 
+        # Support "folder" routes by serving index.html
+        if os.path.isdir(file_path):
+            file_path = os.path.join(file_path, 'index.html')
+
         if os.path.isfile(file_path):
             try:
                 self._set_file_headers(file_path)
@@ -1975,6 +2094,12 @@ class PortalHandler(BaseHTTPRequestHandler):
                     'dob': dob,
                     'created_date': created_date or datetime.now().isoformat()
                 }
+
+                # Store submission for admin/customer support
+                try:
+                    store_form_submission(source='register', customer_id=customer_id, email=email, payload={'name': name, 'email': email, 'phone': phone, 'dob': dob})
+                except Exception:
+                    pass
 
                 # Create user account (DB-backed users require repository writes)
                 pwd_hash = hash_password(password)
@@ -2298,6 +2423,17 @@ class PortalHandler(BaseHTTPRequestHandler):
                     'dob': data.get('customer_dob', (existing.get('dob') if isinstance(existing, dict) else '')),
                     'created_date': created_date or datetime.now().isoformat()
                 }
+
+                # Store raw submission payload (Apply / Buy Insurance)
+                try:
+                    store_form_submission(
+                        source=str(data.get('source') or 'apply'),
+                        customer_id=customer_id,
+                        email=customer_email,
+                        payload=data,
+                    )
+                except Exception:
+                    pass
                 
                 # Create underwriting application
                 uw_id = f"UW-{datetime.now().strftime('%Y%m%d')}-{random.randint(1000, 9999)}"
@@ -2656,6 +2792,20 @@ class PortalHandler(BaseHTTPRequestHandler):
                 }
                 
                 CLAIMS[claim_id] = claim
+                # Store claim submission + notify customer
+                try:
+                    cust = CUSTOMERS.get(claim.get('customer_id')) if claim.get('customer_id') else None
+                    store_form_submission(source='claim', customer_id=claim.get('customer_id'), email=(cust.get('email') if isinstance(cust, dict) else None), payload=data)
+                    if isinstance(cust, dict):
+                        notify_customer(
+                            customer_id=claim.get('customer_id'),
+                            email=cust.get('email'),
+                            subject="Claim received",
+                            message=f"Your claim {claim_id} has been received and is pending review.",
+                            kind="claims",
+                        )
+                except Exception:
+                    pass
                 if audit:
                     actor = session.get('username') if 'session' in locals() and session else 'system'
                     try:
@@ -3025,6 +3175,22 @@ class PortalHandler(BaseHTTPRequestHandler):
                 # Revoke token
                 TOKEN_REGISTRY[token] = {**(TOKEN_REGISTRY.get(token) or {}), 'token': token, 'kind': 'billing_link', 'status': 'revoked'}
 
+                # Store billing payment submission + notify customer
+                try:
+                    customer_id = meta.get('customer_id')
+                    cust = CUSTOMERS.get(customer_id) if customer_id else None
+                    store_form_submission(source='billing', customer_id=customer_id, email=(cust.get('email') if isinstance(cust, dict) else None), payload={'token': token, 'bill_id': bill_id, 'amount_paid': total})
+                    if isinstance(cust, dict):
+                        notify_customer(
+                            customer_id=customer_id,
+                            email=cust.get('email'),
+                            subject="Payment received",
+                            message="We received your payment. Your PHINS.ai policy is now in good standing.",
+                            kind="billing",
+                        )
+                except Exception:
+                    pass
+
                 self._set_json_headers(200)
                 self.wfile.write(json.dumps({'success': True, 'bill': bill}).encode('utf-8'))
             except Exception as e:
@@ -3077,6 +3243,12 @@ class PortalHandler(BaseHTTPRequestHandler):
                 self.wfile.write(json.dumps({'error': 'Valid email is required'}).encode('utf-8'))
                 return
 
+            # Store quote form submission for support/audit
+            try:
+                store_form_submission(source='quote', customer_id=None, email=email, payload=fields)  # customer_id set after we resolve/create customer
+            except Exception:
+                pass
+
             # Generate IDs (reuse customer_id by email when possible)
             customer_id = None
             try:
@@ -3112,6 +3284,12 @@ class PortalHandler(BaseHTTPRequestHandler):
                 'occupation': fields.get('occupation', ''),
                 'created_date': created_date or datetime.now().isoformat()
             }
+
+            # Update stored quote submission with customer_id (best-effort)
+            try:
+                store_form_submission(source='quote_customer_link', customer_id=customer_id, email=email, payload={'customer_id': customer_id, 'email': email})
+            except Exception:
+                pass
             
             # Parse coverage amount
             coverage_sel = (fields.get('coverageAmount', '') or '').strip()

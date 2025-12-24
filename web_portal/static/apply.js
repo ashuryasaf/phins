@@ -575,6 +575,7 @@ async function handleSubmit(e) {
     
     // Prepare submission data
     const submissionData = {
+        source: 'apply',
         customer_name: `${formData.personal.firstName} ${formData.personal.lastName}`,
         customer_email: formData.personal.email,
         customer_phone: formData.personal.phone,

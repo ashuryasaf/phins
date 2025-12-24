@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>PHINS.ai — Submissions</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="container">
+      <div class="brand">
+        <img class="brand-logo" src="/assets/phins-ai-logo.svg" alt="PHINS.ai" />
+      </div>
+      <nav class="nav">
+        <a href="/dashboard.html">Customer</a>
+        <a href="/admin.html">Admin</a>
+        <a href="/" class="btn-logout">Logout</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="container" style="padding-top:32px">
+    <h1>Stored Submissions</h1>
+    <p class="muted-text">All Apply / Quote / Register / Billing / Claims submissions are retained here for audit and support.</p>
+
+    <div class="card" style="margin-top:16px">
+      <div style="display:flex; gap:12px; flex-wrap:wrap; align-items:flex-end">
+        <div>
+          <label class="muted-text" style="display:block; margin-bottom:6px">Filter by email (admin only)</label>
+          <input id="email-filter" class="filter-select" type="email" placeholder="asaf@assurance.co.il" />
+        </div>
+        <div>
+          <label class="muted-text" style="display:block; margin-bottom:6px">Source</label>
+          <select id="source-filter" class="filter-select">
+            <option value="">All</option>
+            <option value="apply">apply</option>
+            <option value="quote">quote</option>
+            <option value="register">register</option>
+            <option value="claim">claim</option>
+            <option value="billing">billing</option>
+          </select>
+        </div>
+        <div>
+          <button class="btn-small" id="refresh-btn">Refresh</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="table-card" style="margin-top:16px">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Created</th>
+            <th>Source</th>
+            <th>Email</th>
+            <th>Customer</th>
+            <th>Payload</th>
+          </tr>
+        </thead>
+        <tbody id="subs-table">
+          <tr><td colspan="6" style="color:var(--muted)">Loading…</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </main>
+
+  <script src="/submissions/submissions.js"></script>
+</body>
+</html>
+

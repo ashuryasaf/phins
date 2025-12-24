@@ -40,6 +40,21 @@ async function loadMetrics() {
 
   const openClaims = (m.claims && m.claims.pending) || 0;
   document.getElementById('stat-claims-open').textContent = String(openClaims);
+
+  const pendingPolicies = (m.policies && m.policies.pending) || 0;
+  const outstanding = (m.billing && m.billing.outstanding) || 0;
+  const exposure = (m.actuary && m.actuary.total_exposure) || 0;
+  const disExposure = (m.actuary && m.actuary.disability_exposure) || 0;
+
+  const money0 = (x) => '$' + Number(x || 0).toLocaleString(undefined, { maximumFractionDigits: 0 });
+  const elPending = document.getElementById('stat-policies-pending');
+  if (elPending) elPending.textContent = String(pendingPolicies);
+  const elOut = document.getElementById('stat-billing-outstanding');
+  if (elOut) elOut.textContent = String(outstanding);
+  const elExp = document.getElementById('stat-actuary-exposure');
+  if (elExp) elExp.textContent = money0(exposure);
+  const elDisExp = document.getElementById('stat-actuary-disability-exposure');
+  if (elDisExp) elDisExp.textContent = money0(disExposure);
 }
 
 async function loadPipeline() {

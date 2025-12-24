@@ -401,3 +401,25 @@ class Notification(Base):
             'read': self.read,
             'created_date': self.created_date.isoformat() if self.created_date else None,
         }
+
+
+class FormSubmission(Base):
+    """Stored form submissions for auditability and support (Apply/Quote/Register/Claims/Billing)."""
+    __tablename__ = 'form_submissions'
+
+    id = Column(String(80), primary_key=True)
+    customer_id = Column(String(50), index=True)
+    email = Column(String(254), index=True)
+    source = Column(String(50), index=True)  # apply, quote, register, claim, billing
+    payload = Column(Text)  # JSON string
+    created_date = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'customer_id': self.customer_id,
+            'email': self.email,
+            'source': self.source,
+            'payload': self.payload,
+            'created_date': self.created_date.isoformat() if self.created_date else None,
+        }

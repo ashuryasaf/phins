@@ -163,6 +163,55 @@ function renderClaims(claims) {
   tbody.innerHTML = rows.join('');
 }
 
+function setupClaimModal(profile, policies) {
+  const modal = document.getElementById('claim-modal');
+  const openBtn = document.getElementById('open-claim-modal');
+  const closeBtn = document.getElementById('close-claim-modal');
+  const cancelBtn = document.getElementById('cancel-claim');
+  const form = document.getElementById('claim-form');
+  const msg = document.getElementById('claim-msg');
+  const policySel = document.getElementById('claim-policy');
+
+  if (!modal || !openBtn || !closeBtn || !cancelBtn || !form || !policySel) return;
+
+  const eligible = (policies || []).filter(p => String(p.status || '').toLowerCase() !== 'rejected');
+  policySel.innerHTML = eligible.length
+    ? eligible.map(p => `<option value="${p.id}">${p.id} — ${String(p.type || '').toUpperCase()}</option>`).join('')
+    : `<option value="">No policies available</option>`;
+
+  function open() { modal.classList.add('active'); if (msg) msg.textContent = ''; }
+  function close() { modal.classList.remove('active'); if (msg) msg.textContent = ''; }
+
+  openBtn.addEventListener('click', open);
+  closeBtn.addEventListener('click', close);
+  cancelBtn.addEventListener('click', close);
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    if (msg) msg.textContent = 'Submitting…';
+    const payload = {
+      customer_id: profile.customer_id,
+      policy_id: policySel.value,
+      type: document.getElementById('claim-type').value,
+      claimed_amount: Number(document.getElementById('claim-amount').value),
+      description: document.getElementById('claim-description').value,
+    };
+    try {
+      const resp = await fetch('/api/claims/create', {
+        method: 'POST',
+        headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const data = await resp.json();
+      if (!resp.ok) throw new Error(data.error || 'Failed to create claim');
+      if (msg) msg.textContent = `Claim submitted: ${data.id}`;
+      setTimeout(() => { close(); window.location.reload(); }, 700);
+    } catch (err) {
+      if (msg) msg.textContent = 'Error: ' + (err?.message || 'failed');
+    }
+  });
+}
+
 function renderStatement(stmt) {
   const summary = document.getElementById('summary');
   const allocations = Array.isArray(stmt.allocations) ? stmt.allocations : [];
@@ -327,6 +376,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     renderClaims(claims);
     renderStatement(statement);
     updateTopStats(policies, claims, statement, market);
+    setupClaimModal(profile, policies);
   } catch (err) {
     console.error('Dashboard load error:', err);
     alert('Failed to load dashboard. Please try again.');

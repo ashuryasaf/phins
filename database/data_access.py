@@ -187,6 +187,7 @@ BILLING = DatabaseDict('billing')
 USERS_DB = DatabaseDict('users')
 TOKEN_REGISTRY = DatabaseDict('token_registry')
 NOTIFICATIONS = DatabaseDict('notifications')
+FORM_SUBMISSIONS = DatabaseDict('form_submissions')
 
 
 def get_db_backed_dicts():
@@ -201,6 +202,7 @@ def get_db_backed_dicts():
         'USERS': USERS_DB,
         'TOKEN_REGISTRY': TOKEN_REGISTRY,
         'NOTIFICATIONS': NOTIFICATIONS,
+        'FORM_SUBMISSIONS': FORM_SUBMISSIONS,
     }
 
 
@@ -215,5 +217,6 @@ __all__ = [
     'USERS_DB',
     'TOKEN_REGISTRY',
     'NOTIFICATIONS',
+    'FORM_SUBMISSIONS',
     'get_db_backed_dicts'
 ]

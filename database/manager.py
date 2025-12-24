@@ -22,6 +22,7 @@ from database.repositories import (
     AuditRepository,
     TokenRegistryRepository,
     NotificationRepository,
+    FormSubmissionRepository,
 )
 
 logger = logging.getLogger(__name__)
@@ -58,6 +59,7 @@ class DatabaseManager:
         self._audit = None
         self._token_registry = None
         self._notifications = None
+        self._form_submissions = None
     
     def _ensure_session(self) -> Session:
         """Ensure we have a database session"""
@@ -135,6 +137,13 @@ class DatabaseManager:
         if self._notifications is None:
             self._notifications = NotificationRepository(self._ensure_session())
         return self._notifications
+
+    @property
+    def form_submissions(self) -> FormSubmissionRepository:
+        """Get form submissions repository"""
+        if self._form_submissions is None:
+            self._form_submissions = FormSubmissionRepository(self._ensure_session())
+        return self._form_submissions
     
     def commit(self):
         """Commit current transaction"""
@@ -162,6 +171,7 @@ class DatabaseManager:
             self._audit = None
             self._token_registry = None
             self._notifications = None
+            self._form_submissions = None
     
     @contextmanager
     def session_scope(self):

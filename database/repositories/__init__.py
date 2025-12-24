@@ -16,6 +16,7 @@ from .session_repository import SessionRepository
 from .audit_repository import AuditRepository
 from .token_registry_repository import TokenRegistryRepository
 from .notification_repository import NotificationRepository
+from .form_submission_repository import FormSubmissionRepository
 
 __all__ = [
     'BaseRepository',
@@ -29,4 +30,5 @@ __all__ = [
     'AuditRepository',
     'TokenRegistryRepository',
     'NotificationRepository',
+    'FormSubmissionRepository',
 ]
