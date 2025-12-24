@@ -81,7 +81,26 @@
             <input id="uw-auto-max-coverage" class="filter-select" type="number" min="10000" step="1000" value="250000" />
           </div>
           <div>
+            <label class="muted-text" style="display:block; margin-bottom:6px">Policy type</label>
+            <select id="uw-auto-policy-type" class="filter-select">
+              <option value="disability" selected>PHINS Permanent Disability (ADL-based)</option>
+              <option value="life">Life</option>
+              <option value="health">Health</option>
+              <option value="auto">Auto</option>
+              <option value="property">Property</option>
+              <option value="business">Business</option>
+            </select>
+          </div>
+          <div>
+            <label class="muted-text" style="display:block; margin-bottom:6px">ADL trigger (min)</label>
+            <input id="uw-auto-adl-min" class="filter-select" type="number" min="1" max="6" value="3" />
+          </div>
+          <div>
             <button class="btn-small" id="uw-auto-save">Save</button>
+          </div>
+          <div>
+            <input id="uw-auto-file" type="file" accept="application/json,text/csv" />
+            <button class="btn-small" id="uw-auto-upload" style="margin-left:8px">Upload config</button>
           </div>
           <div id="uw-auto-msg" class="muted-text" style="margin-left:auto"></div>
         </div>

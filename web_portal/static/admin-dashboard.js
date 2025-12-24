@@ -116,12 +116,18 @@ async function loadUwAutomationConfig() {
     const enabled = String(cfg.enabled ?? true);
     const maxAge = cfg.max_age ?? 30;
     const maxCov = cfg.max_coverage_amount ?? 250000;
+    const policyType = cfg.policy_type ?? 'disability';
+    const adlMin = cfg.adl_trigger_min ?? 3;
     const sel = document.getElementById('uw-auto-enabled');
     const age = document.getElementById('uw-auto-max-age');
     const cov = document.getElementById('uw-auto-max-coverage');
+    const ptype = document.getElementById('uw-auto-policy-type');
+    const adl = document.getElementById('uw-auto-adl-min');
     if (sel) sel.value = enabled === 'false' ? 'false' : 'true';
     if (age) age.value = String(maxAge);
     if (cov) cov.value = String(maxCov);
+    if (ptype) ptype.value = String(policyType);
+    if (adl) adl.value = String(adlMin);
     if (msg) msg.textContent = '';
   } catch (e) {
     if (msg) msg.textContent = 'Automation config unavailable.';
@@ -133,11 +139,13 @@ async function saveUwAutomationConfig() {
   const enabled = document.getElementById('uw-auto-enabled')?.value === 'true';
   const maxAge = Number(document.getElementById('uw-auto-max-age')?.value || 30);
   const maxCov = Number(document.getElementById('uw-auto-max-coverage')?.value || 250000);
+  const policyType = String(document.getElementById('uw-auto-policy-type')?.value || 'disability');
+  const adlMin = Number(document.getElementById('uw-auto-adl-min')?.value || 3);
   try {
     const resp = await fetch('/api/underwriting/automation/config', {
       method: 'POST',
       headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
-      body: JSON.stringify({ enabled, max_age: maxAge, max_coverage_amount: maxCov }),
+      body: JSON.stringify({ enabled, max_age: maxAge, max_coverage_amount: maxCov, policy_type: policyType, adl_trigger_min: adlMin }),
     });
     const data = await resp.json();
     if (!resp.ok || !data.success) throw new Error(data.error || 'Save failed');
@@ -145,6 +153,33 @@ async function saveUwAutomationConfig() {
     setTimeout(() => { if (msg) msg.textContent = ''; }, 2000);
   } catch (e) {
     if (msg) msg.textContent = 'Save failed.';
+  }
+}
+
+async function uploadUwAutomationConfig() {
+  const msg = document.getElementById('uw-auto-msg');
+  const file = document.getElementById('uw-auto-file')?.files?.[0];
+  if (!file) {
+    if (msg) msg.textContent = 'Choose a file first.';
+    return;
+  }
+  try {
+    const text = await file.text();
+    const payload = file.name.toLowerCase().endsWith('.csv')
+      ? { csv: text }
+      : { json: text };
+    const resp = await fetch('/api/underwriting/automation/config/import', {
+      method: 'POST',
+      headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const data = await resp.json();
+    if (!resp.ok || !data.success) throw new Error(data.error || 'Upload failed');
+    if (msg) msg.textContent = 'Uploaded.';
+    await loadUwAutomationConfig();
+    setTimeout(() => { if (msg) msg.textContent = ''; }, 2000);
+  } catch (e) {
+    if (msg) msg.textContent = 'Upload failed.';
   }
 }
 
@@ -231,6 +266,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   const saveBtn = document.getElementById('uw-auto-save');
   if (saveBtn) saveBtn.addEventListener('click', saveUwAutomationConfig);
+  const uploadBtn = document.getElementById('uw-auto-upload');
+  if (uploadBtn) uploadBtn.addEventListener('click', uploadUwAutomationConfig);
   await loadUwAutomationConfig();
 
   document.getElementById('actuarial-refresh').addEventListener('click', loadActuarialTable);

@@ -71,6 +71,9 @@ UNDERWRITING_AUTOMATION_CONFIG: Dict[str, Any] = {
     "enabled": True,
     "max_age": 30,
     "max_coverage_amount": 250_000,
+    # Default: only auto-approve PHINS permanent disability product (ADL-based)
+    "policy_type": "disability",
+    "adl_trigger_min": 3,
 }
 
 # Storage - either database-backed or in-memory
@@ -328,6 +331,24 @@ def _should_auto_approve(*, policy: Dict[str, Any], app: Dict[str, Any], custome
     """Autonomous underwriting rule for low-risk, younger applicants."""
     cfg = UNDERWRITING_AUTOMATION_CONFIG
     if not cfg.get("enabled", True):
+        return False
+
+    # Policy type gating (default: disability only)
+    required_type = str(cfg.get("policy_type") or "").strip().lower()
+    if required_type:
+        if str(policy.get("type") or "").strip().lower() != required_type:
+            return False
+
+    # Product gating (default: ADL-based product with ADL trigger >= 3)
+    min_adl = int(cfg.get("adl_trigger_min", 3))
+    try:
+        notes_raw = app.get("notes") or "{}"
+        notes = json.loads(notes_raw) if isinstance(notes_raw, str) else dict(notes_raw)
+        adl_trigger = int(((notes.get("product") or {}).get("adl_trigger_min") if isinstance(notes.get("product"), dict) else notes.get("adl_trigger_min")) or 0)
+        if adl_trigger < min_adl:
+            return False
+    except Exception:
+        # If we can't confirm the product is ADL>=min, do not auto-approve.
         return False
     age = _calc_age_from_dob(str(customer.get("dob") or ""))
     if age is None:
@@ -2259,6 +2280,7 @@ class PortalHandler(BaseHTTPRequestHandler):
                 uw_id = f"UW-{datetime.now().strftime('%Y%m%d')}-{random.randint(1000, 9999)}"
                 uw_notes = {
                     'source': 'apply',
+                    'product': {'name': 'phins_permanent_phi_disability', 'adl_trigger_min': 3},
                     'questionnaire': data.get('questionnaire', {}),
                     'phi': {
                         'jurisdiction': data.get('jurisdiction') or data.get('country'),
@@ -2375,6 +2397,7 @@ class PortalHandler(BaseHTTPRequestHandler):
                 # Underwriting record (keep extended fields inside notes for DB compatibility)
                 uw_notes = {
                     'source': 'new_policy',
+                    'product': {'name': 'phins_permanent_phi_disability', 'adl_trigger_min': 3},
                     'phi': {
                         'jurisdiction': jurisdiction,
                         'savings_percentage': savings_percentage,
@@ -2530,6 +2553,60 @@ class PortalHandler(BaseHTTPRequestHandler):
                     UNDERWRITING_AUTOMATION_CONFIG['max_age'] = int(data.get('max_age'))
                 if 'max_coverage_amount' in data:
                     UNDERWRITING_AUTOMATION_CONFIG['max_coverage_amount'] = float(data.get('max_coverage_amount'))
+                if 'policy_type' in data:
+                    UNDERWRITING_AUTOMATION_CONFIG['policy_type'] = str(data.get('policy_type') or '').strip().lower()
+                if 'adl_trigger_min' in data:
+                    UNDERWRITING_AUTOMATION_CONFIG['adl_trigger_min'] = int(data.get('adl_trigger_min'))
+                self._set_json_headers()
+                self.wfile.write(json.dumps({'success': True, 'config': UNDERWRITING_AUTOMATION_CONFIG}).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'success': False, 'error': str(e)}).encode('utf-8'))
+            return
+
+        # Underwriting automation config import (admin) - paste JSON or upload CSV/JSON externally
+        if path == '/api/underwriting/automation/config/import':
+            if not require_role(session, ['admin']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Unauthorized'}).encode('utf-8'))
+                return
+            try:
+                data = json.loads(body) if body else {}
+                # Accept either {"config": {...}} or {"json": "{...}"} or {"csv": "key,value\\n..."}
+                cfg_in = data.get('config')
+                if isinstance(data.get('json'), str):
+                    cfg_in = json.loads(data['json'])
+                if isinstance(data.get('csv'), str):
+                    import csv
+                    from io import StringIO
+                    cfg_in = {}
+                    reader = csv.reader(StringIO(data['csv']))
+                    for row in reader:
+                        if not row or len(row) < 2:
+                            continue
+                        k = str(row[0]).strip()
+                        v = str(row[1]).strip()
+                        if not k or k.lower() in ('key', 'name'):
+                            continue
+                        cfg_in[k] = v
+
+                if not isinstance(cfg_in, dict):
+                    raise ValueError("config must be an object")
+
+                # Normalize and apply
+                mapped = {
+                    'enabled': cfg_in.get('enabled', UNDERWRITING_AUTOMATION_CONFIG.get('enabled')),
+                    'max_age': cfg_in.get('max_age', UNDERWRITING_AUTOMATION_CONFIG.get('max_age')),
+                    'max_coverage_amount': cfg_in.get('max_coverage_amount', UNDERWRITING_AUTOMATION_CONFIG.get('max_coverage_amount')),
+                    'policy_type': cfg_in.get('policy_type', UNDERWRITING_AUTOMATION_CONFIG.get('policy_type')),
+                    'adl_trigger_min': cfg_in.get('adl_trigger_min', UNDERWRITING_AUTOMATION_CONFIG.get('adl_trigger_min')),
+                }
+                UNDERWRITING_AUTOMATION_CONFIG['enabled'] = bool(mapped['enabled'])
+                UNDERWRITING_AUTOMATION_CONFIG['max_age'] = int(float(mapped['max_age']))
+                UNDERWRITING_AUTOMATION_CONFIG['max_coverage_amount'] = float(mapped['max_coverage_amount'])
+                UNDERWRITING_AUTOMATION_CONFIG['policy_type'] = str(mapped['policy_type'] or '').strip().lower()
+                UNDERWRITING_AUTOMATION_CONFIG['adl_trigger_min'] = int(float(mapped['adl_trigger_min']))
+
                 self._set_json_headers()
                 self.wfile.write(json.dumps({'success': True, 'config': UNDERWRITING_AUTOMATION_CONFIG}).encode('utf-8'))
             except Exception as e:
@@ -3040,6 +3117,7 @@ class PortalHandler(BaseHTTPRequestHandler):
             # Create underwriting application
             uw_notes = {
                 'source': 'quote',
+                'product': {'name': 'phins_permanent_phi_disability', 'adl_trigger_min': 3},
                 'form': fields,
             }
             UNDERWRITING_APPLICATIONS[uw_id] = {
