@@ -73,8 +73,8 @@ UNDERWRITING_AUTOMATION_CONFIG: Dict[str, Any] = {
     "max_coverage_amount": 250_000,
     # Default: only auto-approve PHINS permanent disability product (ADL-based)
     "policy_type": "disability",
-    # Actuarial gate: annual ADL claim probability must be < 0.3% (0.003 fraction)
-    "max_adl_actuarial_risk_rate": 0.003,
+    # Actuarial gate: annual ADL claim probability must be < 3% (0.03 fraction)
+    "max_adl_actuarial_risk_rate": 0.03,
 }
 
 # Storage - either database-backed or in-memory
@@ -340,16 +340,38 @@ def _should_auto_approve(*, policy: Dict[str, Any], app: Dict[str, Any], custome
         if str(policy.get("type") or "").strip().lower() != required_type:
             return False
 
-    # Product gating (default: ADL-based product with ADL trigger >= 3)
-    min_adl = int(cfg.get("adl_trigger_min", 3))
+    # Product gating (default: PHINS permanent disability ADL product)
     try:
         notes_raw = app.get("notes") or "{}"
         notes = json.loads(notes_raw) if isinstance(notes_raw, str) else dict(notes_raw)
-        adl_trigger = int(((notes.get("product") or {}).get("adl_trigger_min") if isinstance(notes.get("product"), dict) else notes.get("adl_trigger_min")) or 0)
-        if adl_trigger < min_adl:
+        product_name = ""
+        if isinstance(notes.get("product"), dict):
+            product_name = str(notes.get("product", {}).get("name") or "")
+        else:
+            product_name = str(notes.get("product_name") or "")
+        if product_name and product_name != "phins_permanent_phi_disability":
             return False
     except Exception:
-        # If we can't confirm the product is ADL>=min, do not auto-approve.
+        # If we can't confirm the product, do not auto-approve.
+        return False
+
+    # Actuarial gate: ADL risk rate must be below threshold
+    try:
+        from services.actuarial_disability_tables import get_adl_disability_rate
+
+        age = _calc_age_from_dob(str(customer.get("dob") or ""))
+        if age is None:
+            return False
+
+        jurisdiction = str(policy.get("jurisdiction") or "").upper() or "US"
+        if jurisdiction not in ("US", "UK"):
+            jurisdiction = "US"
+
+        risk_rate = float(get_adl_disability_rate(jurisdiction, int(age)))
+        max_rate = float(cfg.get("max_adl_actuarial_risk_rate", 0.03))
+        if risk_rate >= max_rate:
+            return False
+    except Exception:
         return False
     age = _calc_age_from_dob(str(customer.get("dob") or ""))
     if age is None:
@@ -2556,8 +2578,8 @@ class PortalHandler(BaseHTTPRequestHandler):
                     UNDERWRITING_AUTOMATION_CONFIG['max_coverage_amount'] = float(data.get('max_coverage_amount'))
                 if 'policy_type' in data:
                     UNDERWRITING_AUTOMATION_CONFIG['policy_type'] = str(data.get('policy_type') or '').strip().lower()
-                if 'adl_trigger_min' in data:
-                    UNDERWRITING_AUTOMATION_CONFIG['adl_trigger_min'] = int(data.get('adl_trigger_min'))
+                if 'max_adl_actuarial_risk_rate' in data:
+                    UNDERWRITING_AUTOMATION_CONFIG['max_adl_actuarial_risk_rate'] = float(data.get('max_adl_actuarial_risk_rate'))
                 self._set_json_headers()
                 self.wfile.write(json.dumps({'success': True, 'config': UNDERWRITING_AUTOMATION_CONFIG}).encode('utf-8'))
             except Exception as e:
@@ -2600,13 +2622,13 @@ class PortalHandler(BaseHTTPRequestHandler):
                     'max_age': cfg_in.get('max_age', UNDERWRITING_AUTOMATION_CONFIG.get('max_age')),
                     'max_coverage_amount': cfg_in.get('max_coverage_amount', UNDERWRITING_AUTOMATION_CONFIG.get('max_coverage_amount')),
                     'policy_type': cfg_in.get('policy_type', UNDERWRITING_AUTOMATION_CONFIG.get('policy_type')),
-                    'adl_trigger_min': cfg_in.get('adl_trigger_min', UNDERWRITING_AUTOMATION_CONFIG.get('adl_trigger_min')),
+                    'max_adl_actuarial_risk_rate': cfg_in.get('max_adl_actuarial_risk_rate', UNDERWRITING_AUTOMATION_CONFIG.get('max_adl_actuarial_risk_rate')),
                 }
                 UNDERWRITING_AUTOMATION_CONFIG['enabled'] = bool(mapped['enabled'])
                 UNDERWRITING_AUTOMATION_CONFIG['max_age'] = int(float(mapped['max_age']))
                 UNDERWRITING_AUTOMATION_CONFIG['max_coverage_amount'] = float(mapped['max_coverage_amount'])
                 UNDERWRITING_AUTOMATION_CONFIG['policy_type'] = str(mapped['policy_type'] or '').strip().lower()
-                UNDERWRITING_AUTOMATION_CONFIG['adl_trigger_min'] = int(float(mapped['adl_trigger_min']))
+                UNDERWRITING_AUTOMATION_CONFIG['max_adl_actuarial_risk_rate'] = float(mapped['max_adl_actuarial_risk_rate'])
 
                 self._set_json_headers()
                 self.wfile.write(json.dumps({'success': True, 'config': UNDERWRITING_AUTOMATION_CONFIG}).encode('utf-8'))
