@@ -73,7 +73,8 @@ UNDERWRITING_AUTOMATION_CONFIG: Dict[str, Any] = {
     "max_coverage_amount": 250_000,
     # Default: only auto-approve PHINS permanent disability product (ADL-based)
     "policy_type": "disability",
-    "adl_trigger_min": 3,
+    # Actuarial gate: annual ADL claim probability must be < 0.3% (0.003 fraction)
+    "max_adl_actuarial_risk_rate": 0.003,
 }
 
 # Storage - either database-backed or in-memory
