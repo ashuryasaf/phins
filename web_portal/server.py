@@ -49,7 +49,9 @@ if USE_DATABASE:
         
         database_enabled = True
         print("✓ Database support enabled")
-    except ImportError as e:
+    except Exception as e:
+        # IMPORTANT: Any SQLAlchemy model/registry error will surface during import time.
+        # We must not crash the whole service; fall back to in-memory and print the root cause.
         print(f"Warning: Database support not available: {e}")
         print("         Falling back to in-memory storage")
         USE_DATABASE = False
