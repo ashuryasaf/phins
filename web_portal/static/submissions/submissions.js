@@ -14,7 +14,12 @@ function esc(s) {
 async function loadProfile() {
   const resp = await fetch('/api/profile', { headers: getAuthHeaders() });
   if (resp.status === 401) return null;
-  return resp.json();
+  const prof = await resp.json();
+  // Keep strict separation: send admins to admin dashboard by default
+  if (String(prof.role || '').toLowerCase() === 'admin') {
+    // ok
+  }
+  return prof;
 }
 
 async function fetchSubmissions({ email, source }) {

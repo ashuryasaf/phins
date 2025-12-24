@@ -2181,8 +2181,13 @@ class PortalHandler(BaseHTTPRequestHandler):
                 
                 # Update password
                 pwd_hash = hash_password(new_password)
-                USERS[username]['hash'] = pwd_hash['hash']
-                USERS[username]['salt'] = pwd_hash['salt']
+                if USE_DATABASE and database_enabled:
+                    from database.manager import DatabaseManager
+                    with DatabaseManager() as db:
+                        db.users.update(username, password_hash=pwd_hash['hash'], password_salt=pwd_hash['salt'])
+                else:
+                    USERS[username]['hash'] = pwd_hash['hash']
+                    USERS[username]['salt'] = pwd_hash['salt']
                 
                 # Invalidate all existing sessions for this user
                 sessions_to_remove = [token for token, sess in SESSIONS.items() if sess.get('username') == username]
@@ -2200,6 +2205,112 @@ class PortalHandler(BaseHTTPRequestHandler):
             except Exception as e:
                 self._set_json_headers(500)
                 self.wfile.write(json.dumps({'error': 'Password reset failed'}).encode('utf-8'))
+            return
+
+        # Admin: Reset any user's password (staff operation)
+        if path == '/api/admin/reset-password':
+            auth_header = self.headers.get('Authorization', '')
+            token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+            session = validate_session(token) if token else None
+            if not require_role(session, ['admin']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'success': False, 'error': 'Unauthorized'}).encode('utf-8'))
+                return
+            try:
+                data = json.loads(body) if body else {}
+                target = sanitize_input(data.get('username') or data.get('email') or '', 254).lower()
+                if not target:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'success': False, 'error': 'username or email is required'}).encode('utf-8'))
+                    return
+
+                # Determine username key
+                username = target
+                user = USERS.get(username)
+                if not user:
+                    # Best-effort: search by email in in-memory users
+                    try:
+                        for k, v in USERS.items():  # type: ignore[attr-defined]
+                            if isinstance(v, dict) and (v.get('email') or '').lower() == target:
+                                username = k
+                                user = v
+                                break
+                    except Exception:
+                        user = None
+                if not user:
+                    self._set_json_headers(404)
+                    self.wfile.write(json.dumps({'success': False, 'error': 'User not found'}).encode('utf-8'))
+                    return
+
+                # Generate temporary password
+                temp_password = f"pw-{uuid.uuid4().hex[:10]}"
+                pwd_hash = hash_password(temp_password)
+
+                email = None
+                customer_id = None
+                try:
+                    email = user.get('email') if isinstance(user, dict) else None
+                    customer_id = user.get('customer_id') if isinstance(user, dict) else None
+                except Exception:
+                    email = None
+                    customer_id = None
+
+                # Update password in DB or in-memory
+                if USE_DATABASE and database_enabled:
+                    from database.manager import DatabaseManager
+                    with DatabaseManager() as db:
+                        db.users.update(username, password_hash=pwd_hash['hash'], password_salt=pwd_hash['salt'])
+                        # Try to refresh email from DB
+                        try:
+                            u2 = db.users.get_by_username(username)
+                            email = (u2.email if u2 else None) or email
+                        except Exception:
+                            pass
+                else:
+                    USERS[username]['hash'] = pwd_hash['hash']
+                    USERS[username]['salt'] = pwd_hash['salt']
+
+                # Invalidate all sessions for this user
+                try:
+                    sessions_to_remove = [t for t, s in list(SESSIONS.items()) if isinstance(s, dict) and s.get('username') == username]
+                    for t in sessions_to_remove:
+                        del SESSIONS[t]
+                except Exception:
+                    pass
+
+                # Notify user
+                try:
+                    store_form_submission(source='admin_reset_password', customer_id=customer_id, email=email, payload={'username': username, 'requested_by': session.get('username')})
+                except Exception:
+                    pass
+                email_sent = False
+                if email and validate_email(str(email)):
+                    email_sent = send_email_notification(
+                        str(email),
+                        subject="PHINS.ai password reset",
+                        body=f"Your password has been reset by an administrator.\n\nTemporary password: {temp_password}\n\nPlease login and change your password immediately.\n\n— PHINS.ai",
+                    )
+                create_notification(
+                    customer_id=customer_id,
+                    role='customer',
+                    kind='security',
+                    subject='Password reset',
+                    message='Your password was reset by an administrator. Check your email for the temporary password and change it after login.',
+                    link='/login.html',
+                )
+
+                return_temp = os.environ.get("RETURN_TEMP_PASSWORD", "").lower() in ("1", "true", "yes")
+                self._set_json_headers()
+                self.wfile.write(json.dumps({
+                    'success': True,
+                    'username': username,
+                    'email': email,
+                    'email_sent': bool(email_sent),
+                    **({'temporary_password': temp_password} if return_temp or not email_sent else {}),
+                }).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'success': False, 'error': str(e)}).encode('utf-8'))
             return
         
         # Change Password Endpoint (authenticated users)

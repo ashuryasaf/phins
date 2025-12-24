@@ -1,29 +1,27 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="640" height="180" viewBox="0 0 640 180" role="img" aria-label="PHINS AI logo">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 420 96" role="img" aria-label="PHINS.ai">
   <defs>
-    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+    <linearGradient id="shield" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0" stop-color="#0b6cff"/>
       <stop offset="1" stop-color="#0b2a5a"/>
     </linearGradient>
-    <linearGradient id="a" x1="0" y1="0" x2="1" y2="0">
-      <stop offset="0" stop-color="#00d4ff" stop-opacity="0.9"/>
-      <stop offset="1" stop-color="#00ffa3" stop-opacity="0.9"/>
+    <linearGradient id="spark" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#00d4ff"/>
+      <stop offset="1" stop-color="#00ffa3"/>
     </linearGradient>
   </defs>
 
-  <!-- Mark -->
-  <g transform="translate(18,20)">
-    <path d="M72 0C112 8 138 20 156 34V86c0 48-32 70-84 94C20 156 0 134 0 86V34C18 20 44 8 72 0Z" fill="url(#g)"/>
-    <!-- stylized 'A' + 'I' -->
-    <path d="M54 118 72 46l18 72h-12l-3-14H69l-3 14H54Zm17-26h8l-4-20-4 20Z" fill="white" opacity="0.95"/>
-    <rect x="98" y="56" width="10" height="62" rx="5" fill="url(#a)"/>
-    <circle cx="103" cy="46" r="6" fill="url(#a)"/>
+  <!-- Shield mark -->
+  <g transform="translate(12,10)">
+    <path d="M36 0c20 5 34 12 44 20v28c0 26-18 38-44 48C10 86 0 74 0 48V20C10 12 24 5 36 0Z" fill="url(#shield)"/>
+    <!-- Spark -->
+    <path d="M18 46c9-8 16-11 26-13-7 6-11 11-13 18 7-2 12-1 20 3-10 1-16 4-23 11 1-8-1-14-10-19Z" fill="url(#spark)" opacity="0.95"/>
+    <circle cx="62" cy="18" r="3.5" fill="url(#spark)"/>
+    <circle cx="14" cy="22" r="2.5" fill="url(#spark)" opacity="0.9"/>
   </g>
 
   <!-- Wordmark -->
-  <g transform="translate(210,54)" fill="#0b2a5a">
-    <text x="0" y="56" font-family="Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial" font-size="64" font-weight="800" letter-spacing="-1.2">PHINS</text>
-    <text x="258" y="56" font-family="Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial" font-size="28" font-weight="700" fill="#0b6cff">.ai</text>
-    <text x="0" y="90" font-family="Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial" font-size="18" font-weight="600" fill="#2c4c7c">Global Insurance + AI Operations</text>
+  <g transform="translate(108,24)">
+    <text x="0" y="40" font-family="Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial" font-size="44" font-weight="800" letter-spacing="-1.1" fill="#0b2a5a">PHINS</text>
+    <text x="172" y="40" font-family="Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial" font-size="22" font-weight="800" fill="#0b6cff">.ai</text>
   </g>
 </svg>
-

@@ -27,7 +27,14 @@ async function loadProfile() {
     window.location.href = '/login.html';
     return null;
   }
-  return resp.json();
+  const prof = await resp.json();
+  // Hard separation: if a staff/admin account somehow lands here, send them to admin.
+  const role = String(prof.role || '').toLowerCase();
+  if (role && role !== 'customer') {
+    window.location.href = '/admin.html';
+    return null;
+  }
+  return prof;
 }
 
 async function loadPolicies() {

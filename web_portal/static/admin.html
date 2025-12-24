@@ -15,6 +15,7 @@
       <nav class="nav">
         <a href="/admin.html" class="active">Overview</a>
         <a href="/billing.html">Billing</a>
+        <a href="/submissions/">Submissions</a>
         <select id="language-selector" class="language-selector" onchange="changeLanguage(this.value)">
           <option value="en">🌐 English</option>
           <option value="es">🌐 Español</option>
@@ -146,6 +147,39 @@
             <tr><td colspan="8" style="color:var(--muted)">Loading…</td></tr>
           </tbody>
         </table>
+      </div>
+    </section>
+
+    <section class="section-content" id="support">
+      <h2>Support Console</h2>
+      <div class="card">
+        <div style="display:flex; gap:12px; flex-wrap:wrap; align-items:flex-end">
+          <div style="min-width:260px">
+            <label class="muted-text" style="display:block; margin-bottom:6px">Find customer by email</label>
+            <input id="support-email" class="filter-select" type="email" placeholder="asaf@assurance.co.il" />
+          </div>
+          <div>
+            <button class="btn-small" id="support-search">Search</button>
+          </div>
+          <div style="margin-left:auto">
+            <a class="link" href="/submissions/">Open submissions archive →</a>
+          </div>
+        </div>
+        <div id="support-result" style="margin-top:14px; color:var(--muted)">Search results will appear here.</div>
+      </div>
+
+      <div class="card" style="margin-top:12px">
+        <h3 style="margin-top:0">Reset password (admin)</h3>
+        <div style="display:flex; gap:12px; flex-wrap:wrap; align-items:flex-end">
+          <div style="min-width:260px">
+            <label class="muted-text" style="display:block; margin-bottom:6px">Username or email</label>
+            <input id="reset-username" class="filter-select" type="text" placeholder="asaf@assurance.co.il" />
+          </div>
+          <div>
+            <button class="btn-small" id="reset-btn">Reset</button>
+          </div>
+          <div id="reset-msg" style="margin-left:auto; color:var(--muted)"></div>
+        </div>
       </div>
     </section>
 

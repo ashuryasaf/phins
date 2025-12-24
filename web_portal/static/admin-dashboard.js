@@ -25,7 +25,7 @@ async function requireAdmin() {
   const prof = await fetch('/api/profile', { headers: getAuthHeaders() }).then(r => r.json());
   if (!prof || !['admin'].includes(String(prof.role || '').toLowerCase())) {
     alert('Admin access required.');
-    window.location.href = '/login.html';
+    window.location.href = '/dashboard.html';
     return null;
   }
   return prof;
@@ -287,6 +287,80 @@ document.addEventListener('DOMContentLoaded', async () => {
   const uploadBtn = document.getElementById('uw-auto-upload');
   if (uploadBtn) uploadBtn.addEventListener('click', uploadUwAutomationConfig);
   await loadUwAutomationConfig();
+
+  // Support console: search + admin password reset
+  const supportBtn = document.getElementById('support-search');
+  const resetBtn = document.getElementById('reset-btn');
+
+  async function supportSearch() {
+    const email = String(document.getElementById('support-email')?.value || '').trim();
+    const out = document.getElementById('support-result');
+    if (!out) return;
+    if (!email) {
+      out.textContent = 'Enter an email address.';
+      return;
+    }
+    out.textContent = 'Searching…';
+    try {
+      const resp = await fetch(`/api/customers/search?email=${encodeURIComponent(email)}`, { headers: getAuthHeaders() });
+      const data = await resp.json();
+      if (!resp.ok) throw new Error(data.error || 'Not found');
+
+      const c = data.customer || {};
+      const uw = Array.isArray(data.underwriting) ? data.underwriting : [];
+      const pol = Array.isArray(data.policies) ? data.policies : [];
+      const clm = Array.isArray(data.claims) ? data.claims : [];
+      const bill = Array.isArray(data.billing) ? data.billing : [];
+
+      out.innerHTML = `
+        <div style="display:flex; gap:12px; flex-wrap:wrap">
+          <div class="card" style="flex:1; min-width:260px">
+            <div style="font-weight:800">Customer</div>
+            <div style="color:var(--muted); margin-top:6px">${c.name || '-'}</div>
+            <div><strong>ID:</strong> ${c.id || '-'}</div>
+            <div><strong>Email:</strong> ${c.email || '-'}</div>
+            <div><strong>Phone:</strong> ${c.phone || '-'}</div>
+          </div>
+          <div class="card" style="flex:1; min-width:220px">
+            <div style="font-weight:800">Pipeline</div>
+            <div style="margin-top:6px"><strong>Underwriting:</strong> ${uw.length}</div>
+            <div><strong>Policies:</strong> ${pol.length}</div>
+            <div><strong>Claims:</strong> ${clm.length}</div>
+            <div><strong>Bills:</strong> ${bill.length}</div>
+          </div>
+        </div>
+        <div style="margin-top:10px; color:var(--muted)">Tip: open <a class="link" href="/submissions/">Submissions</a> and filter by this email for full form history.</div>
+      `;
+    } catch (e) {
+      out.textContent = 'Not found or access denied.';
+    }
+  }
+
+  async function adminResetPassword() {
+    const input = String(document.getElementById('reset-username')?.value || '').trim();
+    const msg = document.getElementById('reset-msg');
+    if (!input) {
+      if (msg) msg.textContent = 'Enter username or email.';
+      return;
+    }
+    if (msg) msg.textContent = 'Resetting…';
+    try {
+      const resp = await fetch('/api/admin/reset-password', {
+        method: 'POST',
+        headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: input }),
+      });
+      const data = await resp.json();
+      if (!resp.ok || !data.success) throw new Error(data.error || 'Reset failed');
+      const tp = data.temporary_password ? ` Temp password: ${data.temporary_password}` : '';
+      if (msg) msg.textContent = `Reset OK.${tp}`;
+    } catch (e) {
+      if (msg) msg.textContent = 'Reset failed.';
+    }
+  }
+
+  if (supportBtn) supportBtn.addEventListener('click', supportSearch);
+  if (resetBtn) resetBtn.addEventListener('click', adminResetPassword);
 
   document.getElementById('actuarial-refresh').addEventListener('click', loadActuarialTable);
   document.getElementById('actuarial-jurisdiction').addEventListener('change', loadActuarialTable);
