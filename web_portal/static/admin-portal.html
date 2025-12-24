@@ -11,8 +11,11 @@
         <!-- Login Screen -->
         <div id="login-screen" class="screen active">
             <div class="login-box">
-                <h1>🔒 PHINS Admin Portal</h1>
-                <p style="color: #666; margin-bottom: 20px;">Already logged in as admin? <a href="#" onclick="window.location.reload(); return false;" style="color: #4CAF50;">Click here to auto-login</a></p>
+                <div style="display:flex; justify-content:center; margin-bottom: 12px;">
+                    <img src="/assets/phins-ai-logo.svg" alt="PHINS.ai" style="height:44px; width:auto;">
+                </div>
+                <h1>PHINS.ai Admin Portal</h1>
+                <p style="color: #666; margin-bottom: 20px;">Use your admin credentials to sign in. (For production: disable seeded users and enforce MFA.)</p>
                 <form id="login-form">
                     <div class="form-group">
                         <label for="username">Username</label>
@@ -25,15 +28,7 @@
                     <button type="submit" class="btn btn-primary">Login</button>
                     <div id="login-error" class="error-message"></div>
                 </form>
-                <div class="demo-accounts">
-                    <p><strong>Demo Accounts:</strong></p>
-                    <ul>
-                        <li>admin / admin123 - Full Access</li>
-                        <li>underwriter / under123 - Underwriting</li>
-                        <li>claims_adjuster / claims123 - Claims</li>
-                        <li>accountant / acct123 - Accounting</li>
-                    </ul>
-                </div>
+                <!-- Demo accounts removed: do not publish default credentials in UI -->
                 <div style="margin-top: 20px; text-align: center;">
                     <a href="/admin.html" style="color: #4CAF50; text-decoration: none;">← Back to Main Dashboard</a>
                 </div>

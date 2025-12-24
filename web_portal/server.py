@@ -1059,6 +1059,9 @@ class PortalHandler(BaseHTTPRequestHandler):
         # Customer status endpoint (post-application visibility)
         if path == '/api/customer/status':
             customer_id = qs.get('customer_id', [None])[0]
+            # If missing, infer from authenticated session
+            if not customer_id and session and session.get('customer_id'):
+                customer_id = session.get('customer_id')
             if not customer_id:
                 self._set_json_headers(400)
                 self.wfile.write(json.dumps({'error': 'customer_id is required'}).encode('utf-8'))

@@ -29,7 +29,7 @@ body {
     align-items: center;
     justify-content: center;
     min-height: 100vh;
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    background: linear-gradient(135deg, #0b6cff 0%, #0b2a5a 100%);
 }
 
 .login-box {
@@ -74,7 +74,7 @@ body {
 .form-group select:focus,
 .form-group textarea:focus {
     outline: none;
-    border-color: #667eea;
+    border-color: #0b6cff;
 }
 
 .btn {
@@ -88,7 +88,7 @@ body {
 }
 
 .btn-primary {
-    background: #667eea;
+    background: #0b6cff;
     color: white;
     width: 100%;
 }
@@ -159,7 +159,7 @@ body {
 .nav-brand {
     font-size: 1.5rem;
     font-weight: 700;
-    color: #667eea;
+    color: #0b6cff;
 }
 
 .nav-user {
@@ -206,7 +206,7 @@ body {
 .nav-link.active {
     background: #34495e;
     color: white;
-    border-left: 4px solid #667eea;
+    border-left: 4px solid #0b6cff;
 }
 
 /* Content Area */
@@ -255,7 +255,7 @@ body {
 .stat-number {
     font-size: 2rem;
     font-weight: 700;
-    color: #667eea;
+    color: #0b6cff;
 }
 
 /* Data Table */
@@ -436,7 +436,7 @@ tr:hover {
 .bi-value {
     font-size: 2rem;
     font-weight: 700;
-    color: #667eea;
+    color: #0b6cff;
 }
 
 .bi-charts {

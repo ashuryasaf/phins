@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>PHINS Portal — Account Settings</title>
+  <title>PHINS.ai — Account Settings</title>
   <link rel="stylesheet" href="/styles.css">
   <style>
     .settings-container {
@@ -112,7 +112,19 @@
   </style>
 </head>
 <body>
-  <div class="settings-container">
+  <header class="topbar">
+    <div class="container">
+      <div class="brand">
+        <img class="brand-logo" src="/assets/phins-ai-logo.svg" alt="PHINS.ai" />
+      </div>
+      <nav class="nav">
+        <a href="/dashboard.html">Dashboard</a>
+        <a href="/billing.html">Billing</a>
+        <a href="/" class="btn-logout">Logout</a>
+      </nav>
+    </div>
+  </header>
+  <div class="settings-container" style="margin-top: 16px;">
     <div class="settings-header">
       <h1 class="settings-title">Account Settings</h1>
       <a href="/dashboard.html" class="btn-secondary">← Back to Dashboard</a>

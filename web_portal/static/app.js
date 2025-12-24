@@ -20,8 +20,14 @@ document.addEventListener('DOMContentLoaded', function () {
     });
   }
 
-  // Fetch statement
-  fetch('/api/statement?customer_id=CUST001')
+  // Fetch statement for the authenticated customer (no hardcoded IDs)
+  const token = localStorage.getItem('phins_token');
+  if (!token) {
+    summaryEl.innerHTML = '<p class="muted">Please log in to view your statement.</p>';
+    return;
+  }
+
+  fetch('/api/statement', { headers: { 'Authorization': `Bearer ${token}` } })
     .then(function (r) { return r.json(); })
     .then(function (data) {
       renderSummary(data);
