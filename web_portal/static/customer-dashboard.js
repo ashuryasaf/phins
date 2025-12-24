@@ -260,6 +260,10 @@ function renderStatement(stmt) {
 
 function renderMarket(snapshot) {
   const el = document.getElementById('market-snapshot');
+  // If the new chart widget is present, don't render the old snapshot block.
+  if (document.getElementById('customer-market')) {
+    return;
+  }
   const crypto = snapshot.crypto || [];
   const indexes = snapshot.indexes || [];
 
@@ -384,6 +388,15 @@ document.addEventListener('DOMContentLoaded', async () => {
     renderStatement(statement);
     updateTopStats(policies, claims, statement, market);
     setupClaimModal(profile, policies);
+
+    // Market charts (adjustable, best-effort realtime)
+    try {
+      if (typeof renderMarketCharts === 'function') {
+        await renderMarketCharts('customer-market', { storeKeyCrypto: 'phins_customer_crypto', storeKeyIndex: 'phins_customer_index', intervalSeconds: 30 });
+      }
+    } catch (e) {
+      console.error(e);
+    }
   } catch (err) {
     console.error('Dashboard load error:', err);
     alert('Failed to load dashboard. Please try again.');

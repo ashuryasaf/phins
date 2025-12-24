@@ -78,6 +78,19 @@ UNDERWRITING_AUTOMATION_CONFIG: Dict[str, Any] = {
     "max_adl_actuarial_risk_rate": 0.03,
 }
 
+# Market time-series (in-memory, best-effort)
+MARKET_SERIES_MAX_POINTS = int(os.environ.get("MARKET_SERIES_MAX_POINTS", "240"))
+MARKET_SERIES: Dict[str, Dict[str, list[Dict[str, Any]]]] = {"crypto": {}, "index": {}}
+
+def _series_append(kind: str, symbol: str, price: float) -> None:
+    kind = "crypto" if kind == "crypto" else "index"
+    sym = str(symbol).upper()
+    series = MARKET_SERIES.setdefault(kind, {}).setdefault(sym, [])
+    series.append({"t": datetime.utcnow().isoformat(), "p": float(price)})
+    # keep rolling buffer
+    if len(series) > MARKET_SERIES_MAX_POINTS:
+        del series[:-MARKET_SERIES_MAX_POINTS]
+
 # Storage - either database-backed or in-memory
 if USE_DATABASE and database_enabled:
     # Use database-backed dictionaries
@@ -1711,8 +1724,12 @@ class PortalHandler(BaseHTTPRequestHandler):
             symbols = (qs.get('symbols', ['BTC,ETH'])[0] or 'BTC,ETH').split(',')
             vs = qs.get('vs', ['USD'])[0] or 'USD'
             try:
-                from services.market_data_service import MarketDataClient
-                payload = MarketDataClient().crypto([s.strip() for s in symbols]).vs(vs).fetch()
+                from services.market_data_service import MarketDataService
+                svc = MarketDataService(ttl_seconds=30)
+                quotes = svc.get_crypto_quotes([s.strip() for s in symbols], vs_currency=vs)
+                for q in quotes:
+                    _series_append("crypto", q.symbol, q.price)
+                payload = {"items": [q.to_dict() for q in quotes], "ts": datetime.utcnow().isoformat()}
             except Exception as e:
                 payload = {'items': [], 'error': str(e)}
             self._set_json_headers()
@@ -1723,12 +1740,38 @@ class PortalHandler(BaseHTTPRequestHandler):
             symbols = (qs.get('symbols', ['SPX,NASDAQ,DOW,FTSE'])[0] or 'SPX,NASDAQ,DOW,FTSE').split(',')
             currency = qs.get('currency', ['USD'])[0] or 'USD'
             try:
-                from services.market_data_service import MarketDataClient
-                payload = MarketDataClient().indexes([s.strip() for s in symbols]).vs(currency).fetch()
+                from services.market_data_service import MarketDataService
+                svc = MarketDataService(ttl_seconds=30)
+                quotes = svc.get_index_quotes([s.strip() for s in symbols], currency=currency)
+                for q in quotes:
+                    _series_append("index", q.symbol, q.price)
+                payload = {"items": [q.to_dict() for q in quotes], "ts": datetime.utcnow().isoformat()}
             except Exception as e:
                 payload = {'items': [], 'error': str(e)}
             self._set_json_headers()
             self.wfile.write(json.dumps(payload).encode('utf-8'))
+            return
+
+        if path == '/api/market/series':
+            kind = (qs.get('kind', ['crypto'])[0] or 'crypto').lower()
+            symbols = (qs.get('symbols', [''])[0] or '').split(',')
+            points = int(qs.get('points', ['60'])[0] or 60)
+            points = max(5, min(500, points))
+
+            kind_key = "crypto" if kind == "crypto" else "index"
+            syms = [s.strip().upper() for s in symbols if s.strip()]
+            if not syms:
+                self._set_json_headers()
+                self.wfile.write(json.dumps({'kind': kind_key, 'items': [], 'ts': datetime.utcnow().isoformat()}).encode('utf-8'))
+                return
+
+            items = []
+            for s in syms:
+                series = MARKET_SERIES.get(kind_key, {}).get(s, [])
+                items.append({"symbol": s, "points": series[-points:]})
+
+            self._set_json_headers()
+            self.wfile.write(json.dumps({'kind': kind_key, 'items': items, 'ts': datetime.utcnow().isoformat()}).encode('utf-8'))
             return
 
         # Validation endpoints (connectors)

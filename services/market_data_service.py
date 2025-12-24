@@ -19,6 +19,7 @@ import urllib.parse
 
 
 MarketKind = Literal["crypto", "index", "fx"]
+MarketSource = Literal["live", "fallback"]
 
 
 class MarketDataError(RuntimeError):
@@ -47,6 +48,7 @@ class MarketQuote:
     price: float
     change_24h: float
     updated_at: str
+    source: MarketSource = "fallback"
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -57,6 +59,7 @@ class MarketQuote:
             "price": self.price,
             "change_24h": self.change_24h,
             "updated_at": self.updated_at,
+            "source": self.source,
         }
 
 
@@ -191,6 +194,7 @@ class MarketDataService:
                             price=round(price, 4),
                             change_24h=round(ch, 4),
                             updated_at=now,
+                            source="live",
                         )
                     )
                 if out:
@@ -217,6 +221,7 @@ class MarketDataService:
                 price=round(float(fallback_prices.get(s, 100.0)), 4),
                 change_24h=0.0,
                 updated_at=now,
+                source="fallback",
             )
             for s in symbols
         ]
@@ -278,6 +283,7 @@ class MarketDataService:
                         price=round(close, 4),
                         change_24h=0.0,
                         updated_at=now,
+                        source="live",
                     )
                 )
             if out:
@@ -301,6 +307,7 @@ class MarketDataService:
                 price=round(float(fallback.get(s, 1000.0)), 4),
                 change_24h=0.0,
                 updated_at=now,
+                source="fallback",
             )
             for s in symbols
         ]
@@ -327,7 +334,7 @@ class MarketDataService:
             ("EUR", "USD"): 1.09,
         }
         price = float(fallback_fx.get((base, quote), 1.0))
-        q = MarketQuote(symbol=f"{base}/{quote}", name=f"{base}/{quote}", kind="fx", currency=quote, price=price, change_24h=0.0, updated_at=now)
+        q = MarketQuote(symbol=f"{base}/{quote}", name=f"{base}/{quote}", kind="fx", currency=quote, price=price, change_24h=0.0, updated_at=now, source="fallback")
         return self._cache_set(key, q)
 
 

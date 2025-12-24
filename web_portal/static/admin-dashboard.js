@@ -370,5 +370,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   } catch (e) {
     console.error(e);
   }
+
+  // Market charts are initialized from market-charts.js (loaded after this file).
 });
 

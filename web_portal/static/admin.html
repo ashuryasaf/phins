@@ -211,7 +211,23 @@
     <section class="section-content">
       <h2>Investments: Market Snapshot</h2>
       <div class="table-card">
-        <div id="market-block" style="color:var(--muted)">Loading…</div>
+        <div id="market-controls" style="padding:12px">
+          <div style="display:flex; gap:12px; flex-wrap:wrap; align-items:flex-end">
+            <div>
+              <label class="muted-text" style="display:block; margin-bottom:6px">Crypto symbols</label>
+              <input class="filter-select" data-kind="crypto" data-role="symbols" placeholder="BTC,ETH,SOL" value="BTC,ETH,SOL" />
+            </div>
+            <div>
+              <label class="muted-text" style="display:block; margin-bottom:6px">Index symbols</label>
+              <input class="filter-select" data-kind="index" data-role="symbols" placeholder="SPX,NASDAQ,DOW,FTSE" value="SPX,NASDAQ,DOW,FTSE" />
+            </div>
+            <div>
+              <button class="btn-small" data-role="refresh">Refresh</button>
+            </div>
+            <div class="muted-text" data-role="status" style="margin-left:auto"></div>
+          </div>
+        </div>
+        <div id="market-charts" data-role="charts" style="padding:12px"></div>
       </div>
     </section>
   </main>
@@ -222,6 +238,7 @@
     </div>
   </footer>
 
+  <script src="/market-charts.js"></script>
   <script src="/admin-dashboard.js"></script>
 </body>
 </html>
