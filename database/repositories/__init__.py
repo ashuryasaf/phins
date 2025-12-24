@@ -14,6 +14,8 @@ from .billing_repository import BillingRepository
 from .user_repository import UserRepository
 from .session_repository import SessionRepository
 from .audit_repository import AuditRepository
+from .token_registry_repository import TokenRegistryRepository
+from .notification_repository import NotificationRepository
 
 __all__ = [
     'BaseRepository',
@@ -24,5 +26,7 @@ __all__ = [
     'BillingRepository',
     'UserRepository',
     'SessionRepository',
-    'AuditRepository'
+    'AuditRepository',
+    'TokenRegistryRepository',
+    'NotificationRepository',
 ]

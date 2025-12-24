@@ -47,23 +47,105 @@ async function loadPipeline() {
   const items = Array.isArray(data.items) ? data.items : [];
   const tbody = document.getElementById('uw-table');
   if (!items.length) {
-    tbody.innerHTML = '<tr><td colspan="6" style="color:var(--muted)">No underwriting applications yet.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="8" style="color:var(--muted)">No underwriting applications yet.</td></tr>';
     return;
   }
+
+  async function approve(id) {
+    await fetch('/api/underwriting/approve', {
+      method: 'POST',
+      headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id, approved_by: 'admin' }),
+    });
+    await loadPipeline();
+  }
+
+  async function reject(id) {
+    const reason = prompt('Rejection reason:');
+    if (!reason) return;
+    await fetch('/api/underwriting/reject', {
+      method: 'POST',
+      headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id, rejected_by: 'admin', reason }),
+    });
+    await loadPipeline();
+  }
+
   const rows = items
     .sort((a, b) => String(b.submitted_date || '').localeCompare(String(a.submitted_date || '')))
     .slice(0, 50)
-    .map(u => `
+    .map(u => {
+      let source = '-';
+      try {
+        if (u.notes) {
+          const n = typeof u.notes === 'string' ? JSON.parse(u.notes) : u.notes;
+          source = n && n.source ? String(n.source) : '-';
+          if (n && n.auto_approved) source = source + ' (auto)';
+        }
+      } catch (e) {}
+      const canAct = String(u.status || '').toLowerCase() === 'pending';
+      const actions = canAct
+        ? `<button class="btn-small" onclick="window.__uwApprove('${u.id}')">Approve</button>
+           <button class="btn-small" style="margin-left:8px" onclick="window.__uwReject('${u.id}')">Reject</button>`
+        : '<span style="color:var(--muted)">—</span>';
+      return `
       <tr>
         <td>${u.id || '-'}</td>
         <td>${u.policy_id || '-'}</td>
         <td>${u.customer_id || '-'}</td>
+        <td>${source}</td>
         <td>${badge(u.status || 'pending')}</td>
         <td>${u.risk_assessment ? badge(u.risk_assessment) : '-'}</td>
         <td>${u.submitted_date ? new Date(u.submitted_date).toLocaleString() : '-'}</td>
+        <td>${actions}</td>
       </tr>
-    `);
+    `;
+    });
   tbody.innerHTML = rows.join('');
+
+  // Expose handlers for inline onclick (keeps file dependency-free)
+  window.__uwApprove = approve;
+  window.__uwReject = reject;
+}
+
+async function loadUwAutomationConfig() {
+  const msg = document.getElementById('uw-auto-msg');
+  try {
+    const data = await fetch('/api/underwriting/automation/config', { headers: getAuthHeaders() }).then(r => r.json());
+    const cfg = data.config || {};
+    const enabled = String(cfg.enabled ?? true);
+    const maxAge = cfg.max_age ?? 30;
+    const maxCov = cfg.max_coverage_amount ?? 250000;
+    const sel = document.getElementById('uw-auto-enabled');
+    const age = document.getElementById('uw-auto-max-age');
+    const cov = document.getElementById('uw-auto-max-coverage');
+    if (sel) sel.value = enabled === 'false' ? 'false' : 'true';
+    if (age) age.value = String(maxAge);
+    if (cov) cov.value = String(maxCov);
+    if (msg) msg.textContent = '';
+  } catch (e) {
+    if (msg) msg.textContent = 'Automation config unavailable.';
+  }
+}
+
+async function saveUwAutomationConfig() {
+  const msg = document.getElementById('uw-auto-msg');
+  const enabled = document.getElementById('uw-auto-enabled')?.value === 'true';
+  const maxAge = Number(document.getElementById('uw-auto-max-age')?.value || 30);
+  const maxCov = Number(document.getElementById('uw-auto-max-coverage')?.value || 250000);
+  try {
+    const resp = await fetch('/api/underwriting/automation/config', {
+      method: 'POST',
+      headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled, max_age: maxAge, max_coverage_amount: maxCov }),
+    });
+    const data = await resp.json();
+    if (!resp.ok || !data.success) throw new Error(data.error || 'Save failed');
+    if (msg) msg.textContent = 'Saved.';
+    setTimeout(() => { if (msg) msg.textContent = ''; }, 2000);
+  } catch (e) {
+    if (msg) msg.textContent = 'Save failed.';
+  }
 }
 
 async function loadActuarialTable() {
@@ -146,6 +228,10 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   const prof = await requireAdmin();
   if (!prof) return;
+
+  const saveBtn = document.getElementById('uw-auto-save');
+  if (saveBtn) saveBtn.addEventListener('click', saveUwAutomationConfig);
+  await loadUwAutomationConfig();
 
   document.getElementById('actuarial-refresh').addEventListener('click', loadActuarialTable);
   document.getElementById('actuarial-jurisdiction').addEventListener('change', loadActuarialTable);

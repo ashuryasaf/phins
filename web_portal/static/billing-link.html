@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>PHINS.ai — Billing Link</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="container">
+      <div class="brand">
+        <img class="brand-logo" src="/assets/phins-ai-logo.svg" alt="PHINS.ai" />
+      </div>
+      <nav class="nav">
+        <a href="/">Home</a>
+        <a href="/login.html">Login</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="container" style="padding-top:32px">
+    <h1>Complete Payment</h1>
+    <p class="muted-text">This billing link expires after 48 hours.</p>
+
+    <div class="card" style="margin-top:16px">
+      <div id="bill-block" style="color:var(--muted)">Loading…</div>
+      <div style="margin-top:16px">
+        <button id="pay-btn" class="btn btn-primary" disabled>Pay now</button>
+      </div>
+      <div id="msg" style="margin-top:12px"></div>
+    </div>
+  </main>
+
+  <script src="/billing-link.js"></script>
+</body>
+</html>
+

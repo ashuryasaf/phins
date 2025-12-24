@@ -20,6 +20,8 @@ import random
 import uuid
 import hashlib
 import secrets
+import smtplib
+from email.message import EmailMessage
 from typing import Dict, Any
 
 # Import billing engine
@@ -46,6 +48,8 @@ if USE_DATABASE:
         from database.data_access import SESSIONS as DB_SESSIONS
         from database.data_access import BILLING as DB_BILLING
         from database.data_access import USERS_DB as DB_USERS
+        from database.data_access import TOKEN_REGISTRY as DB_TOKEN_REGISTRY
+        from database.data_access import NOTIFICATIONS as DB_NOTIFICATIONS
         
         database_enabled = True
         print("✓ Database support enabled")
@@ -59,6 +63,16 @@ if USE_DATABASE:
 PORT = 8000
 ROOT = os.path.join(os.path.dirname(__file__), "static")
 
+# Public base URL used in emails (set in production, e.g. https://your-app.up.railway.app)
+APP_BASE_URL = os.environ.get("APP_BASE_URL", "").rstrip("/")
+
+# Underwriting automation config (autonomous approvals for low risk / younger ages)
+UNDERWRITING_AUTOMATION_CONFIG: Dict[str, Any] = {
+    "enabled": True,
+    "max_age": 30,
+    "max_coverage_amount": 250_000,
+}
+
 # Storage - either database-backed or in-memory
 if USE_DATABASE and database_enabled:
     # Use database-backed dictionaries
@@ -68,6 +82,8 @@ if USE_DATABASE and database_enabled:
     UNDERWRITING_APPLICATIONS = DB_UNDERWRITING
     SESSIONS = DB_SESSIONS
     BILLING = DB_BILLING
+    TOKEN_REGISTRY = DB_TOKEN_REGISTRY
+    NOTIFICATIONS = DB_NOTIFICATIONS
 else:
     # In-memory storage for demo purposes
     POLICIES: Dict[str, Dict[str, Any]] = {}
@@ -76,6 +92,8 @@ else:
     UNDERWRITING_APPLICATIONS: Dict[str, Dict[str, Any]] = {}
     SESSIONS: Dict[str, Dict[str, Any]] = {}  # token -> {username, expires, customer_id}
     BILLING: Dict[str, Dict[str, Any]] = {}  # bill_id -> bill data (for metrics)
+    TOKEN_REGISTRY: Dict[str, Dict[str, Any]] = {}  # token -> token record
+    NOTIFICATIONS: Dict[str, Dict[str, Any]] = {}  # notification_id -> record
 try:
     from services.audit_service import AuditService
     audit = AuditService()
@@ -128,6 +146,285 @@ def validate_session(token: str) -> dict[str, str] | None:
         return None
     
     return session
+
+
+def _safe_parse_dt(value: Any) -> datetime | None:
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value
+    if isinstance(value, str):
+        try:
+            return datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except Exception:
+            return None
+    return None
+
+
+def _calc_age_from_dob(dob_str: str) -> int | None:
+    try:
+        dob = datetime.strptime(dob_str, "%Y-%m-%d")
+        today = datetime.now()
+        return today.year - dob.year - ((today.month, today.day) < (dob.month, dob.day))
+    except Exception:
+        return None
+
+
+def send_email_notification(to_email: str, *, subject: str, body: str) -> bool:
+    """Best-effort SMTP email sender. If SMTP is not configured, returns False."""
+    to_email = (to_email or "").strip().lower()
+    if not to_email or not validate_email(to_email):
+        return False
+
+    smtp_host = os.environ.get("SMTP_HOST", "").strip()
+    if not smtp_host:
+        return False
+
+    smtp_port = int(os.environ.get("SMTP_PORT", "587"))
+    smtp_user = os.environ.get("SMTP_USER", "")
+    smtp_password = os.environ.get("SMTP_PASSWORD", "")
+    smtp_from = os.environ.get("SMTP_FROM", smtp_user or "no-reply@phins.ai").strip()
+
+    msg = EmailMessage()
+    msg["From"] = smtp_from
+    msg["To"] = to_email
+    msg["Subject"] = subject
+    msg.set_content(body)
+
+    try:
+        with smtplib.SMTP(smtp_host, smtp_port, timeout=10) as s:
+            s.starttls()
+            if smtp_user:
+                s.login(smtp_user, smtp_password)
+            s.send_message(msg)
+        return True
+    except Exception:
+        return False
+
+
+def create_notification(
+    *,
+    customer_id: str | None,
+    role: str = "customer",
+    kind: str = "info",
+    subject: str,
+    message: str,
+    link: str | None = None,
+) -> Dict[str, Any] | None:
+    """Create an in-app notification (DB-backed when enabled)."""
+    if USE_DATABASE and database_enabled:
+        try:
+            from database.manager import DatabaseManager
+            with DatabaseManager() as db:
+                n = db.notifications.create(
+                    customer_id=customer_id,
+                    role=role,
+                    kind=kind,
+                    subject=subject,
+                    message=message,
+                    link=link,
+                    read=False,
+                    created_date=datetime.utcnow(),
+                )
+                return n.to_dict() if n else None
+        except Exception:
+            return None
+
+    notif_id = f"NTF-{datetime.now().strftime('%Y%m%d')}-{random.randint(100000, 999999)}"
+    rec = {
+        "id": notif_id,
+        "customer_id": customer_id,
+        "role": role,
+        "kind": kind,
+        "subject": subject,
+        "message": message,
+        "link": link,
+        "read": False,
+        "created_date": datetime.now().isoformat(),
+    }
+    NOTIFICATIONS[notif_id] = rec
+    return rec
+
+
+def notify_customer(
+    *,
+    customer_id: str | None,
+    email: str | None,
+    subject: str,
+    message: str,
+    link: str | None = None,
+    kind: str = "info",
+) -> None:
+    """Send in-app notification + best-effort email."""
+    create_notification(customer_id=customer_id, role="customer", kind=kind, subject=subject, message=message, link=link)
+
+    # Email is optional and depends on SMTP configuration.
+    if email and validate_email(email):
+        url_line = f"\n\nLink: {link}" if link else ""
+        body = f"{message}{url_line}\n\n— PHINS.ai"
+        send_email_notification(email, subject=subject, body=body)
+
+
+def create_bill(*, policy_id: str, customer_id: str, amount: float, due_days: int = 30) -> Dict[str, Any]:
+    """Create a bill record compatible with both in-memory and DB-backed BILLING."""
+    bill_id = f"BILL-{datetime.now().strftime('%Y%m%d')}-{random.randint(1000,9999)}"
+    now = datetime.now()
+    bill = {
+        "id": bill_id,
+        "policy_id": policy_id,
+        "customer_id": customer_id,
+        "amount": float(amount),
+        "amount_paid": 0.0,
+        "status": "outstanding",
+        "created_date": now.isoformat(),
+        "due_date": (now + timedelta(days=int(due_days))).isoformat(),
+    }
+    BILLING[bill_id] = bill
+    return bill
+
+
+def create_billing_link(*, bill_id: str, policy_id: str, customer_id: str, amount: float, hours_valid: int = 48) -> Dict[str, Any]:
+    """Create a 48h billing link token stored in TokenRegistry (DB-backed when enabled)."""
+    token = f"bl_{secrets.token_urlsafe(24)}"
+    now = datetime.now()
+    expires_at = now + timedelta(hours=int(hours_valid))
+    meta = {
+        "bill_id": bill_id,
+        "policy_id": policy_id,
+        "customer_id": customer_id,
+        "amount": float(amount),
+        "currency": "USD",
+    }
+    TOKEN_REGISTRY[token] = {
+        "token": token,
+        "kind": "billing_link",
+        "status": "active",
+        "meta": json.dumps(meta),
+        "created_date": now.isoformat(),
+        "expires": expires_at.isoformat(),
+    }
+    link = f"{APP_BASE_URL}/billing-link.html?token={token}" if APP_BASE_URL else f"/billing-link.html?token={token}"
+    return {"token": token, "expires": expires_at.isoformat(), "url": link}
+
+
+def resolve_billing_link(token: str) -> Dict[str, Any] | None:
+    rec = TOKEN_REGISTRY.get(token)
+    if not isinstance(rec, dict):
+        return None
+    if rec.get("kind") != "billing_link" or rec.get("status") != "active":
+        return None
+    expires = _safe_parse_dt(rec.get("expires"))
+    if expires and expires < datetime.now():
+        return None
+    meta_raw = rec.get("meta") or rec.get("metadata") or "{}"
+    try:
+        meta = json.loads(meta_raw) if isinstance(meta_raw, str) else dict(meta_raw)
+    except Exception:
+        meta = {}
+    return {"token": token, "expires": rec.get("expires"), "meta": meta}
+
+
+def _should_auto_approve(*, policy: Dict[str, Any], app: Dict[str, Any], customer: Dict[str, Any]) -> bool:
+    """Autonomous underwriting rule for low-risk, younger applicants."""
+    cfg = UNDERWRITING_AUTOMATION_CONFIG
+    if not cfg.get("enabled", True):
+        return False
+    age = _calc_age_from_dob(str(customer.get("dob") or ""))
+    if age is None:
+        return False
+    if age > int(cfg.get("max_age", 30)):
+        return False
+    if str(app.get("risk_assessment") or "").lower() != "low":
+        return False
+    if bool(app.get("medical_exam_required", False)):
+        return False
+    cov = float(policy.get("coverage_amount") or 0.0)
+    if cov > float(cfg.get("max_coverage_amount", 250_000)):
+        return False
+    return True
+
+
+def _approve_underwriting_and_notify(*, uw_id: str, approved_by: str, automated: bool = False) -> Dict[str, Any] | None:
+    app = UNDERWRITING_APPLICATIONS.get(uw_id)
+    if not isinstance(app, dict):
+        return None
+    policy_id = app.get("policy_id")
+    policy = POLICIES.get(policy_id) if policy_id else None
+    if not isinstance(policy, dict):
+        policy = None
+
+    # Update underwriting app
+    app["status"] = "approved"
+    app["decision_date"] = datetime.now().isoformat()
+    app["approved_by"] = approved_by
+    if automated:
+        # mark for admin visibility
+        try:
+            notes = json.loads(app.get("notes") or "{}") if isinstance(app.get("notes"), str) else {}
+        except Exception:
+            notes = {}
+        notes["auto_approved"] = True
+        notes["auto_rule"] = UNDERWRITING_AUTOMATION_CONFIG
+        app["notes"] = json.dumps(notes)
+
+    # Update policy
+    if policy:
+        policy["status"] = "active"
+        policy["approval_date"] = datetime.now().isoformat()
+        policy["uw_status"] = "approved"
+
+    # Create bill + 48h billing link (for first premium)
+    billing_link = None
+    if policy and isinstance(policy.get("annual_premium"), (int, float)):
+        customer_id = policy.get("customer_id")
+        cust = CUSTOMERS.get(customer_id) if customer_id else None
+        if isinstance(cust, dict):
+            bill = create_bill(policy_id=policy["id"], customer_id=customer_id, amount=float(policy["annual_premium"]), due_days=2)
+            billing_link = create_billing_link(
+                bill_id=bill["id"],
+                policy_id=policy["id"],
+                customer_id=customer_id,
+                amount=float(policy["annual_premium"]),
+                hours_valid=48,
+            )
+            notify_customer(
+                customer_id=customer_id,
+                email=cust.get("email"),
+                subject="Your PHINS.ai application was approved",
+                message="Your application has been approved. Please complete payment within 48 hours to activate billing.",
+                link=billing_link.get("url"),
+                kind="billing",
+            )
+    return {"application": app, "policy": policy, "billing_link": billing_link}
+
+
+def _reject_underwriting_and_notify(*, uw_id: str, rejected_by: str, reason: str) -> Dict[str, Any] | None:
+    app = UNDERWRITING_APPLICATIONS.get(uw_id)
+    if not isinstance(app, dict):
+        return None
+    app["status"] = "rejected"
+    app["decision_date"] = datetime.now().isoformat()
+    app["rejection_reason"] = reason
+    app["rejected_by"] = rejected_by
+
+    policy_id = app.get("policy_id")
+    if policy_id and policy_id in POLICIES:
+        try:
+            POLICIES[policy_id]["status"] = "rejected"
+            POLICIES[policy_id]["uw_status"] = "rejected"
+        except Exception:
+            pass
+    customer_id = app.get("customer_id")
+    cust = CUSTOMERS.get(customer_id) if customer_id else None
+    if isinstance(cust, dict):
+        notify_customer(
+            customer_id=customer_id,
+            email=cust.get("email"),
+            subject="Your PHINS.ai application was reviewed",
+            message=f"Your application was not approved. Reason: {reason}",
+            kind="underwriting",
+        )
+    return {"application": app}
 
 def check_rate_limit(client_ip: str) -> bool:
     """Check if client has exceeded rate limit"""
@@ -891,6 +1188,40 @@ class PortalHandler(BaseHTTPRequestHandler):
                 'phone': cust.get('phone') if isinstance(cust, dict) else None,
             }).encode('utf-8'))
             return
+
+        # Notifications (customer + admin)
+        if path == '/api/notifications':
+            if not session:
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Unauthorized'}).encode('utf-8'))
+                return
+
+            role = USERS.get(session.get('username') if session else '', {}).get('role') if session else None
+            customer_scope = session.get('customer_id') if (session and role == 'customer') else None
+            requested_customer_id = qs.get('customer_id', [None])[0]
+            customer_id = customer_scope or requested_customer_id
+
+            # For staff, require explicit customer_id to avoid leaking data
+            if role != 'customer' and not requested_customer_id:
+                customer_id = None
+
+            items: list[Dict[str, Any]] = []
+            if customer_id:
+                if USE_DATABASE and database_enabled:
+                    try:
+                        from database.manager import DatabaseManager
+                        with DatabaseManager() as db:
+                            rows = db.notifications.get_for_customer(customer_id, limit=200)
+                            items = [r.to_dict() for r in rows]
+                    except Exception:
+                        items = []
+                else:
+                    items = [n for n in NOTIFICATIONS.values() if n.get('customer_id') == customer_id]
+                    items.sort(key=lambda x: str(x.get('created_date', '')), reverse=True)
+
+            self._set_json_headers()
+            self.wfile.write(json.dumps({'items': items, 'total': len(items)}).encode('utf-8'))
+            return
         
         # BI Dashboard Endpoints (Admin/Management only)
         if path == '/api/bi/actuary':
@@ -1056,6 +1387,35 @@ class PortalHandler(BaseHTTPRequestHandler):
                 payload = {'items': items, 'total': len(items)}
                 self._set_json_headers()
                 self.wfile.write(json.dumps(payload).encode('utf-8'))
+            return
+
+        # Underwriting automation configuration (admin)
+        if path == '/api/underwriting/automation/config':
+            if not require_role(session, ['admin']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Unauthorized'}).encode('utf-8'))
+                return
+            self._set_json_headers()
+            self.wfile.write(json.dumps({'config': UNDERWRITING_AUTOMATION_CONFIG}).encode('utf-8'))
+            return
+
+        # Billing link resolve (48h token)
+        if path == '/api/billing/link':
+            token_q = qs.get('token', [None])[0]
+            if not token_q:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'token is required'}).encode('utf-8'))
+                return
+            resolved = resolve_billing_link(token_q)
+            if not resolved:
+                self._set_json_headers(404)
+                self.wfile.write(json.dumps({'valid': False, 'error': 'Invalid or expired link'}).encode('utf-8'))
+                return
+            meta = resolved.get('meta') or {}
+            bill_id = meta.get('bill_id')
+            bill = BILLING.get(bill_id) if bill_id else None
+            self._set_json_headers()
+            self.wfile.write(json.dumps({'valid': True, 'expires': resolved.get('expires'), 'bill': bill, 'meta': meta}).encode('utf-8'))
             return
         
         # Customers Endpoint
@@ -1963,12 +2323,23 @@ class PortalHandler(BaseHTTPRequestHandler):
                         audit.log(actor, 'create', 'policy', policy_id, {'customer_id': customer_id, 'coverage_amount': policy.get('coverage_amount')})
                     except Exception:
                         pass
-                
+
+                # Autonomous underwriting for low-risk / young applicants
+                auto = False
+                try:
+                    cust = CUSTOMERS.get(customer_id)
+                    if isinstance(cust, dict) and _should_auto_approve(policy=policy, app=UNDERWRITING_APPLICATIONS[uw_id], customer=cust):
+                        auto = True
+                        _approve_underwriting_and_notify(uw_id=uw_id, approved_by="automation", automated=True)
+                except Exception:
+                    auto = False
+
                 self._set_json_headers(201)
                 self.wfile.write(json.dumps({
                     'policy': policy,
                     'underwriting': UNDERWRITING_APPLICATIONS[uw_id],
                     'customer': CUSTOMERS[customer_id],
+                    'autonomous': {'auto_approved': auto, 'config': UNDERWRITING_AUTOMATION_CONFIG},
                     'tracking': {'login_url': '/login.html', 'register_url': '/register.html', 'email': customer_email}
                 }).encode('utf-8'))
             except Exception as e:
@@ -2001,14 +2372,23 @@ class PortalHandler(BaseHTTPRequestHandler):
                 # Generate IDs
                 policy_id = generate_policy_id()
                 uw_id = f"UW-{datetime.now().strftime('%Y%m%d')}-{random.randint(1000, 9999)}"
-                # Underwriting minimal record
+                # Underwriting record (keep extended fields inside notes for DB compatibility)
+                uw_notes = {
+                    'source': 'new_policy',
+                    'phi': {
+                        'jurisdiction': jurisdiction,
+                        'savings_percentage': savings_percentage,
+                        'operational_reinsurance_load': operational_reinsurance_load,
+                    }
+                }
                 UNDERWRITING_APPLICATIONS[uw_id] = {
                     'id': uw_id,
                     'policy_id': policy_id,
                     'customer_id': customer_id,
                     'status': 'pending',
                     'risk_assessment': data.get('risk_score', 'medium'),
-                    'submitted_date': datetime.now().isoformat()
+                    'submitted_date': datetime.now().isoformat(),
+                    'notes': json.dumps(uw_notes),
                 }
                 # Premium calc
                 premium_request = {
@@ -2028,7 +2408,7 @@ class PortalHandler(BaseHTTPRequestHandler):
                 except Exception:
                     premium_data = calculate_premium(premium_request)
                     premium_breakdown = {}
-                # Create policy
+                # Create policy (DB schema supports core fields only)
                 policy = {
                     'id': policy_id,
                     'customer_id': customer_id,
@@ -2039,13 +2419,10 @@ class PortalHandler(BaseHTTPRequestHandler):
                     'status': 'pending_underwriting',
                     'underwriting_id': uw_id,
                     'risk_score': data.get('risk_score', 'medium'),
-                    'jurisdiction': jurisdiction,
-                    'savings_percentage': savings_percentage,
-                    'operational_reinsurance_load': operational_reinsurance_load,
-                    'pricing_breakdown': premium_breakdown,
                     'start_date': datetime.now().isoformat(),
                     'end_date': (datetime.now() + timedelta(days=365)).isoformat(),
-                    'created_date': datetime.now().isoformat()
+                    'created_date': datetime.now().isoformat(),
+                    'uw_status': 'pending',
                 }
                 POLICIES[policy_id] = policy
                 if audit:
@@ -2054,8 +2431,24 @@ class PortalHandler(BaseHTTPRequestHandler):
                         audit.log(actor, 'create', 'policy', policy_id, {'customer_id': customer_id, 'safe': True})
                     except Exception:
                         pass
+                # Autonomous underwriting for low-risk / young applicants
+                auto = False
+                try:
+                    cust = CUSTOMERS.get(customer_id)
+                    app = UNDERWRITING_APPLICATIONS.get(uw_id)
+                    if isinstance(cust, dict) and isinstance(app, dict) and _should_auto_approve(policy=policy, app=app, customer=cust):
+                        auto = True
+                        _approve_underwriting_and_notify(uw_id=uw_id, approved_by="automation", automated=True)
+                except Exception:
+                    auto = False
+
                 self._set_json_headers(201)
-                self.wfile.write(json.dumps({'policy': policy, 'underwriting': UNDERWRITING_APPLICATIONS[uw_id], 'customer': CUSTOMERS[customer_id]}).encode('utf-8'))
+                self.wfile.write(json.dumps({
+                    'policy': policy,
+                    'underwriting': UNDERWRITING_APPLICATIONS[uw_id],
+                    'customer': CUSTOMERS[customer_id],
+                    'autonomous': {'auto_approved': auto, 'config': UNDERWRITING_AUTOMATION_CONFIG},
+                }).encode('utf-8'))
             except Exception as e:
                 self._set_json_headers(400)
                 self.wfile.write(json.dumps({'error': 'Invalid request', 'details': str(e)}).encode('utf-8'))
@@ -2069,15 +2462,12 @@ class PortalHandler(BaseHTTPRequestHandler):
                 app = UNDERWRITING_APPLICATIONS.get(uw_id)
                 
                 if app:
-                    app['status'] = 'approved'
-                    app['decision_date'] = datetime.now().isoformat()
-                    app['approved_by'] = data.get('approved_by', 'admin')
-                    
-                    # Update policy status
                     policy_id = app.get('policy_id')
-                    if policy_id and policy_id in POLICIES:
-                        POLICIES[policy_id]['status'] = 'active'
-                        POLICIES[policy_id]['approval_date'] = datetime.now().isoformat()
+                    result = _approve_underwriting_and_notify(
+                        uw_id=uw_id,
+                        approved_by=data.get('approved_by', 'admin'),
+                        automated=False,
+                    )
                     if audit:
                         actor = data.get('approved_by', 'admin')
                         try:
@@ -2086,7 +2476,7 @@ class PortalHandler(BaseHTTPRequestHandler):
                             pass
                     
                     self._set_json_headers()
-                    self.wfile.write(json.dumps({'success': True, 'application': app}).encode('utf-8'))
+                    self.wfile.write(json.dumps({'success': True, **(result or {'application': app})}).encode('utf-8'))
                 else:
                     self._set_json_headers(404)
                     self.wfile.write(json.dumps({'error': 'Application not found'}).encode('utf-8'))
@@ -2103,14 +2493,12 @@ class PortalHandler(BaseHTTPRequestHandler):
                 app = UNDERWRITING_APPLICATIONS.get(uw_id)
                 
                 if app:
-                    app['status'] = 'rejected'
-                    app['decision_date'] = datetime.now().isoformat()
-                    app['rejection_reason'] = data.get('reason', 'Risk assessment failed')
-                    
-                    # Update policy status
                     policy_id = app.get('policy_id')
-                    if policy_id and policy_id in POLICIES:
-                        POLICIES[policy_id]['status'] = 'rejected'
+                    result = _reject_underwriting_and_notify(
+                        uw_id=uw_id,
+                        rejected_by=data.get('rejected_by', 'admin'),
+                        reason=data.get('reason', 'Risk assessment failed'),
+                    )
                     if audit:
                         actor = data.get('rejected_by', 'admin')
                         try:
@@ -2119,13 +2507,34 @@ class PortalHandler(BaseHTTPRequestHandler):
                             pass
                     
                     self._set_json_headers()
-                    self.wfile.write(json.dumps({'success': True, 'application': app}).encode('utf-8'))
+                    self.wfile.write(json.dumps({'success': True, **(result or {'application': app})}).encode('utf-8'))
                 else:
                     self._set_json_headers(404)
                     self.wfile.write(json.dumps({'error': 'Application not found'}).encode('utf-8'))
             except Exception as e:
                 self._set_json_headers(400)
                 self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+
+        # Underwriting automation configuration (admin)
+        if path == '/api/underwriting/automation/config':
+            if not require_role(session, ['admin']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Unauthorized'}).encode('utf-8'))
+                return
+            try:
+                data = json.loads(body) if body else {}
+                if 'enabled' in data:
+                    UNDERWRITING_AUTOMATION_CONFIG['enabled'] = bool(data.get('enabled'))
+                if 'max_age' in data:
+                    UNDERWRITING_AUTOMATION_CONFIG['max_age'] = int(data.get('max_age'))
+                if 'max_coverage_amount' in data:
+                    UNDERWRITING_AUTOMATION_CONFIG['max_coverage_amount'] = float(data.get('max_coverage_amount'))
+                self._set_json_headers()
+                self.wfile.write(json.dumps({'success': True, 'config': UNDERWRITING_AUTOMATION_CONFIG}).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'success': False, 'error': str(e)}).encode('utf-8'))
             return
         
         # Create Claim Endpoint
@@ -2415,30 +2824,29 @@ class PortalHandler(BaseHTTPRequestHandler):
             try:
                 data = json.loads(body)
                 policy_id = data.get('policy_id')
-                amount_due = float(data.get('amount_due', 0))
+                amount_due = float(data.get('amount_due', data.get('amount', 0)))
                 due_days = int(data.get('due_days', 30))
                 if not policy_id or not validate_amount(amount_due):
                     self._set_json_headers(400)
                     self.wfile.write(json.dumps({'error': 'policy_id and valid amount_due required'}).encode('utf-8'))
                     return
-                bill_id = f"BILL-{datetime.now().strftime('%Y%m%d')}-{random.randint(1000,9999)}"
-                bill = {
-                    'bill_id': bill_id,
-                    'policy_id': policy_id,
-                    'amount_due': amount_due,
-                    'amount_paid': 0.0,
-                    'status': 'outstanding',
-                    'created_date': datetime.now().isoformat(),
-                    'due_date': (datetime.now() + timedelta(days=due_days)).isoformat()
-                }
-                BILLING[bill_id] = bill
+                # Infer customer_id from policy if possible
+                customer_id = data.get("customer_id")
+                if not customer_id and policy_id in POLICIES:
+                    customer_id = POLICIES[policy_id].get("customer_id")
+                if not customer_id:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'customer_id required (or policy must exist)'}).encode('utf-8'))
+                    return
+
+                bill = create_bill(policy_id=policy_id, customer_id=customer_id, amount=amount_due, due_days=due_days)
                 if audit:
                     try:
-                        audit.log('system', 'create', 'bill', bill_id, {'policy_id': policy_id, 'amount_due': amount_due})
+                        audit.log('system', 'create', 'bill', bill['id'], {'policy_id': policy_id, 'amount': amount_due})
                     except Exception:
                         pass
                 self._set_json_headers(201)
-                self.wfile.write(json.dumps({'bill': bill}).encode('utf-8'))
+                self.wfile.write(json.dumps({'bill': {**bill, 'bill_id': bill['id'], 'amount_due': bill['amount']}}).encode('utf-8'))
             except Exception as e:
                 self._set_json_headers(400)
                 self.wfile.write(json.dumps({'error': 'Invalid request', 'details': str(e)}).encode('utf-8'))
@@ -2458,8 +2866,11 @@ class PortalHandler(BaseHTTPRequestHandler):
                     self._set_json_headers(400)
                     self.wfile.write(json.dumps({'error': 'Invalid amount'}).encode('utf-8'))
                     return
-                bill['amount_paid'] = bill.get('amount_paid', 0.0) + amount
-                if bill['amount_paid'] >= bill['amount_due']:
+                # Normalize for DB-backed Bill schema: amount vs amount_due
+                if 'amount' not in bill and 'amount_due' in bill:
+                    bill['amount'] = bill.get('amount_due', 0.0)
+                bill['amount_paid'] = float(bill.get('amount_paid', 0.0)) + amount
+                if bill['amount_paid'] >= float(bill.get('amount', 0.0)):
                     bill['status'] = 'paid'
                     bill['paid_date'] = datetime.now().isoformat()
                 else:
@@ -2470,7 +2881,52 @@ class PortalHandler(BaseHTTPRequestHandler):
                     except Exception:
                         pass
                 self._set_json_headers(200)
-                self.wfile.write(json.dumps({'bill': bill}).encode('utf-8'))
+                self.wfile.write(json.dumps({'bill': {**bill, 'bill_id': bill.get('id', bill_id), 'amount_due': bill.get('amount', bill.get('amount_due'))}}).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'Invalid request', 'details': str(e)}).encode('utf-8'))
+            return
+
+        # Pay via billing link token (no login required; token is secret and expires in 48h)
+        if path == '/api/billing/link/pay':
+            try:
+                data = json.loads(body) if body else {}
+                token = data.get('token')
+                if not token:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'token is required'}).encode('utf-8'))
+                    return
+                resolved = resolve_billing_link(token)
+                if not resolved:
+                    self._set_json_headers(404)
+                    self.wfile.write(json.dumps({'error': 'Invalid or expired link'}).encode('utf-8'))
+                    return
+                meta = resolved.get('meta') or {}
+                bill_id = meta.get('bill_id')
+                bill = BILLING.get(bill_id) if bill_id else None
+                if not isinstance(bill, dict):
+                    self._set_json_headers(404)
+                    self.wfile.write(json.dumps({'error': 'Bill not found'}).encode('utf-8'))
+                    return
+                # Pay full remaining balance
+                total = float(bill.get('amount', bill.get('amount_due', 0.0)) or 0.0)
+                paid = float(bill.get('amount_paid', 0.0) or 0.0)
+                to_pay = max(0.0, total - paid)
+                if to_pay <= 0.0:
+                    self._set_json_headers(200)
+                    self.wfile.write(json.dumps({'success': True, 'bill': bill, 'message': 'Already paid'}).encode('utf-8'))
+                    return
+                bill['amount'] = total
+                bill['amount_paid'] = total
+                bill['status'] = 'paid'
+                bill['paid_date'] = datetime.now().isoformat()
+                BILLING[bill_id] = bill
+
+                # Revoke token
+                TOKEN_REGISTRY[token] = {**(TOKEN_REGISTRY.get(token) or {}), 'token': token, 'kind': 'billing_link', 'status': 'revoked'}
+
+                self._set_json_headers(200)
+                self.wfile.write(json.dumps({'success': True, 'bill': bill}).encode('utf-8'))
             except Exception as e:
                 self._set_json_headers(400)
                 self.wfile.write(json.dumps({'error': 'Invalid request', 'details': str(e)}).encode('utf-8'))
@@ -2622,9 +3078,22 @@ class PortalHandler(BaseHTTPRequestHandler):
             }
             
             print(f"✅ Application submitted: {uw_id} for customer {customer_id}")
-            print(f"   Customer: {customer_name} ({cust_email})")
+            print(f"   Customer: {customer_name} ({email})")
             print(f"   Policy: {policy_type.title()} - ${coverage_amount:,}")
             print(f"   Risk: {risk_score}, Status: pending")
+
+            # Autonomous underwriting for low-risk / young applicants (quote flow)
+            auto = False
+            try:
+                cust = CUSTOMERS.get(customer_id)
+                pol = POLICIES.get(policy_id)
+                app = UNDERWRITING_APPLICATIONS.get(uw_id)
+                if isinstance(cust, dict) and isinstance(pol, dict) and isinstance(app, dict):
+                    if _should_auto_approve(policy=pol, app=app, customer=cust):
+                        auto = True
+                        _approve_underwriting_and_notify(uw_id=uw_id, approved_by="automation", automated=True)
+            except Exception:
+                auto = False
             
             # Return success response with all created records
             self._set_json_headers(200)
@@ -2635,6 +3104,7 @@ class PortalHandler(BaseHTTPRequestHandler):
                 'policy_id': policy_id,
                 'message': 'Quote request submitted. You can register/login with the same email to track your application.',
                 'estimated_premium': premium_data,
+                'autonomous': {'auto_approved': auto, 'config': UNDERWRITING_AUTOMATION_CONFIG},
                 'tracking': {'login_url': '/login.html', 'register_url': '/register.html', 'email': email},
                 'application_summary': {
                     'customer_name': customer_name,

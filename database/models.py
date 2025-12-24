@@ -354,8 +354,9 @@ class TokenRegistry(Base):
     """
     __tablename__ = 'token_registry'
 
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    token = Column(String(200), unique=True, nullable=False, index=True)
+    # Use token as the primary key so we can look up by token directly.
+    # (Also makes it compatible with the DatabaseDict wrapper which prefers id/username/token keys.)
+    token = Column(String(200), primary_key=True)
     kind = Column(String(50), default='session')  # e.g. session, api_key, reset
     status = Column(String(50), default='active')  # active, revoked
     # Column name stays 'metadata' for compatibility, but attribute is NOT 'metadata'
@@ -365,11 +366,38 @@ class TokenRegistry(Base):
 
     def to_dict(self):
         return {
-            'id': self.id,
             'token': self.token,
             'kind': self.kind,
             'status': self.status,
             'metadata': self.meta,
             'created_date': self.created_date.isoformat() if self.created_date else None,
             'expires': self.expires.isoformat() if self.expires else None,
+        }
+
+
+class Notification(Base):
+    """In-app notifications for customers and staff"""
+    __tablename__ = 'notifications'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    customer_id = Column(String(50), index=True)
+    role = Column(String(50))  # e.g. customer, admin, underwriter
+    kind = Column(String(50), default='info')  # info, underwriting, billing
+    subject = Column(String(200))
+    message = Column(Text)
+    link = Column(String(500))
+    read = Column(Boolean, default=False)
+    created_date = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'customer_id': self.customer_id,
+            'role': self.role,
+            'kind': self.kind,
+            'subject': self.subject,
+            'message': self.message,
+            'link': self.link,
+            'read': self.read,
+            'created_date': self.created_date.isoformat() if self.created_date else None,
         }

@@ -19,7 +19,9 @@ from database.repositories import (
     BillingRepository,
     UserRepository,
     SessionRepository,
-    AuditRepository
+    AuditRepository,
+    TokenRegistryRepository,
+    NotificationRepository,
 )
 
 logger = logging.getLogger(__name__)
@@ -54,6 +56,8 @@ class DatabaseManager:
         self._users = None
         self._sessions = None
         self._audit = None
+        self._token_registry = None
+        self._notifications = None
     
     def _ensure_session(self) -> Session:
         """Ensure we have a database session"""
@@ -117,6 +121,20 @@ class DatabaseManager:
         if self._audit is None:
             self._audit = AuditRepository(self._ensure_session())
         return self._audit
+
+    @property
+    def token_registry(self) -> TokenRegistryRepository:
+        """Get token registry repository"""
+        if self._token_registry is None:
+            self._token_registry = TokenRegistryRepository(self._ensure_session())
+        return self._token_registry
+
+    @property
+    def notifications(self) -> NotificationRepository:
+        """Get notifications repository"""
+        if self._notifications is None:
+            self._notifications = NotificationRepository(self._ensure_session())
+        return self._notifications
     
     def commit(self):
         """Commit current transaction"""
@@ -142,6 +160,8 @@ class DatabaseManager:
             self._users = None
             self._sessions = None
             self._audit = None
+            self._token_registry = None
+            self._notifications = None
     
     @contextmanager
     def session_scope(self):

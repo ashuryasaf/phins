@@ -63,6 +63,29 @@
       <div class="section-header">
         <h2>Pipeline (New Applications)</h2>
       </div>
+      <div class="card" style="margin-bottom:12px">
+        <div style="display:flex; gap:12px; flex-wrap:wrap; align-items:flex-end">
+          <div>
+            <label class="muted-text" style="display:block; margin-bottom:6px">Autonomous underwriting</label>
+            <select id="uw-auto-enabled" class="filter-select">
+              <option value="true">Enabled</option>
+              <option value="false">Disabled</option>
+            </select>
+          </div>
+          <div>
+            <label class="muted-text" style="display:block; margin-bottom:6px">Max age</label>
+            <input id="uw-auto-max-age" class="filter-select" type="number" min="18" max="100" value="30" />
+          </div>
+          <div>
+            <label class="muted-text" style="display:block; margin-bottom:6px">Max coverage</label>
+            <input id="uw-auto-max-coverage" class="filter-select" type="number" min="10000" step="1000" value="250000" />
+          </div>
+          <div>
+            <button class="btn-small" id="uw-auto-save">Save</button>
+          </div>
+          <div id="uw-auto-msg" class="muted-text" style="margin-left:auto"></div>
+        </div>
+      </div>
       <div class="table-card">
         <table class="data-table">
           <thead>
@@ -70,13 +93,15 @@
               <th>Application ID</th>
               <th>Policy ID</th>
               <th>Customer ID</th>
+              <th>Source</th>
               <th>Status</th>
               <th>Risk</th>
               <th>Submitted</th>
+              <th>Actions</th>
             </tr>
           </thead>
           <tbody id="uw-table">
-            <tr><td colspan="6" style="color:var(--muted)">Loading…</td></tr>
+            <tr><td colspan="8" style="color:var(--muted)">Loading…</td></tr>
           </tbody>
         </table>
       </div>

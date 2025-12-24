@@ -53,6 +53,12 @@ async function loadStatement() {
   return resp.json();
 }
 
+async function loadNotifications() {
+  const resp = await fetch('/api/notifications', { headers: getAuthHeaders() });
+  const data = await resp.json();
+  return Array.isArray(data.items) ? data.items : [];
+}
+
 async function loadMarketSnapshot() {
   const [crypto, indexes] = await Promise.all([
     fetch('/api/market/crypto?symbols=BTC,ETH&vs=USD', { headers: getAuthHeaders() }).then(r => r.json()),
@@ -80,6 +86,30 @@ function renderApplications(apps) {
       </tr>
     `);
   tbody.innerHTML = rows.join('');
+}
+
+function renderNotifications(items) {
+  const el = document.getElementById('notifications-list');
+  if (!el) return;
+  if (!items.length) {
+    el.innerHTML = '<span style="color:var(--muted)">No messages yet.</span>';
+    return;
+  }
+  const rows = items.slice(0, 20).map(n => {
+    const created = n.created_date ? new Date(n.created_date).toLocaleString() : '';
+    const subj = n.subject || 'Notification';
+    const msg = n.message || '';
+    const link = n.link ? `<div style="margin-top:6px"><a class="link" href="${n.link}">Open link →</a></div>` : '';
+    return `
+      <div style="padding:12px 0; border-bottom:1px solid var(--border)">
+        <div style="font-weight:700">${subj}</div>
+        <div style="color:var(--muted); font-size:12px; margin-top:2px">${created}</div>
+        <div style="margin-top:6px">${msg}</div>
+        ${link}
+      </div>
+    `;
+  }).join('');
+  el.innerHTML = rows;
 }
 
 function renderPolicies(policies) {
@@ -282,15 +312,17 @@ document.addEventListener('DOMContentLoaded', async () => {
     const username = sessionStorage.getItem('username') || profile.username || 'Customer';
     document.getElementById('username').textContent = username;
 
-    const [policies, claims, apps, statement, market] = await Promise.all([
+    const [policies, claims, apps, statement, market, notifs] = await Promise.all([
       loadPolicies(),
       loadClaims(),
       loadApplications(),
       loadStatement(),
       loadMarketSnapshot(),
+      loadNotifications(),
     ]);
 
     renderApplications(apps);
+    renderNotifications(notifs);
     renderPolicies(policies);
     renderClaims(claims);
     renderStatement(statement);

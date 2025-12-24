@@ -100,12 +100,15 @@ class DatabaseDict:
                 repo.update(key, **value)
             else:
                 # Create new (ensure id is set)
-                if 'id' not in value and self.repository_name not in ['users', 'sessions']:
-                    value['id'] = key
-                elif 'username' not in value and self.repository_name == 'users':
+                if self.repository_name == 'users' and 'username' not in value:
                     value['username'] = key
-                elif 'token' not in value and self.repository_name == 'sessions':
+                elif self.repository_name == 'sessions' and 'token' not in value:
                     value['token'] = key
+                elif self.repository_name == 'token_registry' and 'token' not in value:
+                    value['token'] = key
+                elif self.repository_name not in ['users', 'sessions', 'token_registry', 'notifications'] and 'id' not in value:
+                    # Most tables use string ids as primary keys; autoincrement tables (notifications) are excluded.
+                    value['id'] = key
                 repo.create(**value)
         self._cache_valid = False
     
@@ -182,6 +185,8 @@ UNDERWRITING_APPLICATIONS = DatabaseDict('underwriting')
 SESSIONS = DatabaseDict('sessions')
 BILLING = DatabaseDict('billing')
 USERS_DB = DatabaseDict('users')
+TOKEN_REGISTRY = DatabaseDict('token_registry')
+NOTIFICATIONS = DatabaseDict('notifications')
 
 
 def get_db_backed_dicts():
@@ -193,7 +198,9 @@ def get_db_backed_dicts():
         'UNDERWRITING_APPLICATIONS': UNDERWRITING_APPLICATIONS,
         'SESSIONS': SESSIONS,
         'BILLING': BILLING,
-        'USERS': USERS_DB
+        'USERS': USERS_DB,
+        'TOKEN_REGISTRY': TOKEN_REGISTRY,
+        'NOTIFICATIONS': NOTIFICATIONS,
     }
 
 
@@ -206,5 +213,7 @@ __all__ = [
     'SESSIONS',
     'BILLING',
     'USERS_DB',
+    'TOKEN_REGISTRY',
+    'NOTIFICATIONS',
     'get_db_backed_dicts'
 ]
