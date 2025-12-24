@@ -32,7 +32,7 @@ document.addEventListener('DOMContentLoaded', function () {
             const role = data.role || '';
             
             if (role === 'admin') {
-              window.location.href = '/admin-portal.html';
+              window.location.href = '/admin.html';
             } else if (role === 'customer') {
               window.location.href = '/dashboard.html';
             } else if (role === 'underwriter') {

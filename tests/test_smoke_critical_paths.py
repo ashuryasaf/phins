@@ -78,22 +78,30 @@ def test_api_returns_json():
     time.sleep(0.2)
     
     base = f"http://127.0.0.1:{port}"
-    
-    endpoints = [
-        "/api/metrics",
-        "/api/policies",
-        "/api/customers",
-        "/api/underwriting"
-    ]
-    
-    for endpoint in endpoints:
+
+    # Public endpoints (no auth)
+    public_endpoints = ["/api/metrics", "/api/policies", "/api/underwriting"]
+    for endpoint in public_endpoints:
         req = Request(base + endpoint)
         with urlopen(req) as resp:
             body = resp.read().decode('utf-8')
-            # Should parse as valid JSON
             data = json.loads(body)
             assert isinstance(data, (dict, list))
             assert resp.status == 200
+
+    # Restricted endpoints require admin auth
+    login = json.dumps({"username": "admin", "password": "admin123"}).encode("utf-8")
+    req = Request(base + "/api/login", data=login, headers={"Content-Type": "application/json"})
+    with urlopen(req) as resp:
+        admin_login = json.loads(resp.read().decode("utf-8"))
+    token = admin_login["token"]
+
+    req = Request(base + "/api/customers", headers={"Authorization": f"Bearer {token}"})
+    with urlopen(req) as resp:
+        body = resp.read().decode("utf-8")
+        data = json.loads(body)
+        assert isinstance(data, (dict, list))
+        assert resp.status == 200
     
     srv.stop()
 
@@ -155,17 +163,25 @@ def test_403_forbidden():
     req = Request(base + "/api/policies/create", data=data, headers={'Content-Type': 'application/json'})
     with urlopen(req) as resp:
         create_data = json.loads(resp.read().decode('utf-8'))
-    
-    login_creds = create_data['provisioned_login']
-    data = json.dumps({
-        "username": login_creds['username'],
-        "password": login_creds['password']
-    }).encode('utf-8')
-    req = Request(base + "/api/login", data=data, headers={'Content-Type': 'application/json'})
+
+    # Register the customer account (applications are created before registration)
+    reg = json.dumps({
+        "name": "Test Customer",
+        "email": "test@example.com",
+        "phone": "+1-555-0000",
+        "dob": "1990-01-01",
+        "password": "StrongPass123"
+    }).encode("utf-8")
+    req = Request(base + "/api/register", data=reg, headers={"Content-Type": "application/json"})
     with urlopen(req) as resp:
-        login_data = json.loads(resp.read().decode('utf-8'))
-    
-    customer_token = login_data['token']
+        _ = json.loads(resp.read().decode("utf-8"))
+
+    # Login as customer
+    login = json.dumps({"username": "test@example.com", "password": "StrongPass123"}).encode("utf-8")
+    req = Request(base + "/api/login", data=login, headers={"Content-Type": "application/json"})
+    with urlopen(req) as resp:
+        login_data = json.loads(resp.read().decode("utf-8"))
+    customer_token = login_data["token"]
     
     # Try to access admin endpoint
     try:
@@ -310,7 +326,14 @@ def test_data_persists_in_memory():
         assert policy['id'] == policy_id
     
     # Verify customer exists
-    req = Request(base + f"/api/customers?id={customer_id}")
+    # /api/customers is restricted; verify via admin auth
+    login = json.dumps({"username": "admin", "password": "admin123"}).encode("utf-8")
+    req = Request(base + "/api/login", data=login, headers={"Content-Type": "application/json"})
+    with urlopen(req) as resp:
+        admin_login = json.loads(resp.read().decode("utf-8"))
+    token = admin_login["token"]
+
+    req = Request(base + f"/api/customers?id={customer_id}", headers={"Authorization": f"Bearer {token}"})
     with urlopen(req) as resp:
         customer = json.loads(resp.read().decode('utf-8'))
         assert customer['id'] == customer_id
@@ -337,25 +360,31 @@ def test_authentication_flow():
     req = Request(base + "/api/policies/create", data=data, headers={'Content-Type': 'application/json'})
     with urlopen(req) as resp:
         create_result = json.loads(resp.read().decode('utf-8'))
-    
-    login_creds = create_result['provisioned_login']
-    
-    # Login
-    data = json.dumps({
-        "username": login_creds['username'],
-        "password": login_creds['password']
-    }).encode('utf-8')
-    req = Request(base + "/api/login", data=data, headers={'Content-Type': 'application/json'})
+
+    # Register + Login as the same email used for application
+    reg = json.dumps({
+        "name": "Auth Test",
+        "email": "auth@example.com",
+        "phone": "+1-555-0001",
+        "dob": "1990-01-01",
+        "password": "StrongPass123"
+    }).encode("utf-8")
+    req = Request(base + "/api/register", data=reg, headers={"Content-Type": "application/json"})
     with urlopen(req) as resp:
-        login_result = json.loads(resp.read().decode('utf-8'))
-        assert 'token' in login_result
-        token = login_result['token']
+        _ = json.loads(resp.read().decode("utf-8"))
+
+    login = json.dumps({"username": "auth@example.com", "password": "StrongPass123"}).encode("utf-8")
+    req = Request(base + "/api/login", data=login, headers={"Content-Type": "application/json"})
+    with urlopen(req) as resp:
+        login_result = json.loads(resp.read().decode("utf-8"))
+        assert "token" in login_result
+        token = login_result["token"]
     
     # Use token to access profile
     req = Request(base + "/api/profile", headers={'Authorization': f'Bearer {token}'})
     with urlopen(req) as resp:
         profile = json.loads(resp.read().decode('utf-8'))
-        assert profile['username'] == login_creds['username']
+        assert profile['username'] == "auth@example.com"
     
     srv.stop()
 

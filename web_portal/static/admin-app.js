@@ -125,6 +125,9 @@ function handleLogout() {
     currentUser = null;
     localStorage.removeItem('phins_admin_token');
     localStorage.removeItem('phins_admin_user');
+    // Also clear main session token to avoid confusing cross-app auth states
+    localStorage.removeItem('phins_token');
+    sessionStorage.clear();
     showLogin();
 }
 
