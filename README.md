@@ -754,8 +754,8 @@ MIT License - See LICENSE file for details
 ## Contact
 
 PHINS Insurance Company
-Email: <support@phins.com>
-Website: <https://www.phins.com>
+Email: <support@phins.ai>
+Website: <https://www.phins.ai>
 
 ---
 

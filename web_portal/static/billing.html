@@ -47,7 +47,7 @@
     }
     .stat-card {
       padding: 1.5rem;
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      background: linear-gradient(135deg, var(--brand) 0%, var(--brand-dark) 100%);
       color: white;
       border-radius: 8px;
       text-align: center;
@@ -67,16 +67,20 @@
   </style>
 </head>
 <body>
-  <header>
-    <h1>💳 Billing & Payment Management</h1>
-    <nav>
-      <a href="/admin.html">Admin Dashboard</a>
-      <a href="/dashboard.html">Customer Portal</a>
-      <a href="/login.html">Logout</a>
-    </nav>
+  <header class="topbar">
+    <div class="container">
+      <div class="brand">
+        <img class="brand-logo" src="/assets/phins-ai-logo.svg" alt="PHINS.ai" />
+      </div>
+      <nav class="nav">
+        <a href="/admin.html">Admin</a>
+        <a href="/dashboard.html">Customer</a>
+        <a href="/" class="btn-logout">Logout</a>
+      </nav>
+    </div>
   </header>
 
-  <main>
+  <main class="container" style="padding-top:32px">
     <!-- Statistics Overview -->
     <section class="card">
       <h2>Payment Statistics</h2>

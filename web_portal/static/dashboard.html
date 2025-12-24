@@ -3,13 +3,15 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>PHINS Portal — My Dashboard</title>
+  <title>PHINS.ai — Dashboard</title>
   <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
   <header class="topbar">
     <div class="container">
-      <h1 class="brand">🛡️ PHINS Insurance</h1>
+      <div class="brand">
+        <img class="brand-logo" src="/assets/phins-ai-logo.svg" alt="PHINS.ai" />
+      </div>
       <nav class="nav">
         <a href="/dashboard.html">Dashboard</a>
         <a href="/dashboard.html#policies">My Policies</a>
@@ -49,25 +51,46 @@
     <div class="dashboard-stats">
       <div class="stat-box">
         <div class="stat-icon">📋</div>
-        <div class="stat-value" id="policy-count">2</div>
+        <div class="stat-value" id="policy-count">-</div>
         <div class="stat-label">Active PHINS Contracts</div>
       </div>
       <div class="stat-box">
         <div class="stat-icon">💰</div>
-        <div class="stat-value" id="total-premium">$550</div>
+        <div class="stat-value" id="total-premium">-</div>
         <div class="stat-label">Monthly Premium Total</div>
       </div>
       <div class="stat-box">
         <div class="stat-icon">📝</div>
-        <div class="stat-value" id="claim-count">1</div>
-        <div class="stat-label">ADL Assessment Pending</div>
+        <div class="stat-value" id="claim-count">-</div>
+        <div class="stat-label">Open Claims</div>
       </div>
       <div class="stat-box">
         <div class="stat-icon">📈</div>
-        <div class="stat-value" id="investment-value">$12,450</div>
+        <div class="stat-value" id="investment-value">-</div>
         <div class="stat-label">Total Investment Value</div>
       </div>
     </div>
+
+    <!-- Applications Pipeline -->
+    <section id="applications" class="section-content">
+      <h2>Applications Pipeline</h2>
+      <div class="table-card">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Application ID</th>
+              <th>Policy ID</th>
+              <th>Status</th>
+              <th>Risk</th>
+              <th>Submitted</th>
+            </tr>
+          </thead>
+          <tbody id="applications-table">
+            <tr><td colspan="5" style="color:var(--muted)">Loading applications...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
 
     <!-- My Policies Section -->
     <section id="policies" class="section-content">
@@ -86,29 +109,12 @@
             </tr>
           </thead>
           <tbody id="policies-table">
-            <tr>
-              <td>POL-000123</td>
-              <td>PHINS Standard</td>
-              <td>$1,000,000</td>
-              <td>$200/mo</td>
-              <td>$5,450</td>
-              <td><span class="badge badge-active">Active</span></td>
-              <td><button class="btn-small">View</button></td>
-            </tr>
-            <tr>
-              <td>POL-000124</td>
-              <td>PHINS Premium</td>
-              <td>$2,000,000</td>
-              <td>$350/mo</td>
-              <td>$7,000</td>
-              <td><span class="badge badge-active">Active</span></td>
-              <td><button class="btn-small">View</button></td>
-            </tr>
+            <tr><td colspan="7" style="color:var(--muted)">Loading policies...</td></tr>
           </tbody>
         </table>
       </div>
       <div style="margin-top:16px">
-        <p style="color:var(--muted); margin-bottom:12px;"><strong>Coverage Details:</strong> All policies provide severe permanent disability protection (3+ ADLs) with integrated investment component (75% risk / 25% savings allocation).</p>
+        <p id="coverage-details" style="color:var(--muted); margin-bottom:12px;"><strong>Coverage Details:</strong> Loading…</p>
         <a href="/#quote" class="btn btn-primary">Increase Coverage</a>
       </div>
     </section>
@@ -118,18 +124,9 @@
       <h2>Premium Statement</h2>
       <div class="card">
         <div id="summary" class="summary-grid">
-          <div class="summary-item">
-            <div class="summary-label">Total Premium</div>
-            <div class="summary-value">$300.00</div>
-          </div>
-          <div class="summary-item">
-            <div class="summary-label">Risk Allocation (75%)</div>
-            <div class="summary-value">$225.00</div>
-          </div>
-          <div class="summary-item">
-            <div class="summary-label">Savings Allocation (25%)</div>
-            <div class="summary-value">$75.00</div>
-          </div>
+          <div class="summary-item"><div class="summary-label">Total Premium</div><div class="summary-value">-</div></div>
+          <div class="summary-item"><div class="summary-label">Risk Allocation</div><div class="summary-value">-</div></div>
+          <div class="summary-item"><div class="summary-label">Savings Allocation</div><div class="summary-value">-</div></div>
         </div>
         
         <h3 style="margin-top:32px">Premium Allocations</h3>
@@ -152,23 +149,8 @@
               <th>Actions</th>
             </tr>
           </thead>
-          <tbody>
-            <tr>
-              <td>CLM-001234</td>
-              <td>PHINS Standard (POL-000123)</td>
-              <td>2025-12-05</td>
-              <td>$50,000/mo lifetime</td>
-              <td><span class="badge badge-pending">ADL Assessment</span></td>
-              <td><button class="btn-small">Details</button></td>
-            </tr>
-            <tr>
-              <td>CLM-001198</td>
-              <td>PHINS Premium (POL-000124)</td>
-              <td>2025-11-20</td>
-              <td>$850,000 lump sum</td>
-              <td><span class="badge badge-active">Approved - 3 ADLs Confirmed</span></td>
-              <td><button class="btn-small">Details</button></td>
-            </tr>
+          <tbody id="claims-table">
+            <tr><td colspan="6" style="color:var(--muted)">Loading claims…</td></tr>
           </tbody>
         </table>
       </div>
@@ -183,27 +165,14 @@
       <div class="billing-grid">
         <div class="card">
           <h3>Current Balance</h3>
-          <div class="balance-amount">$450.00</div>
-          <p class="muted-text">Due Date: December 25, 2025</p>
+          <div class="balance-amount" id="billing-balance">-</div>
+          <p class="muted-text" id="billing-due-date">Due Date: -</p>
           <button class="btn btn-primary btn-full" onclick="alert('Payment feature - Coming Soon!')">Make Payment</button>
         </div>
         <div class="card">
           <h3>Payment History</h3>
-          <ul class="payment-list">
-            <li>
-              <span>Nov 2025</span>
-              <span class="payment-amount">$450.00</span>
-            </li>
-            <li>
-              <span>Oct 2025</span>
-              <span class="payment-amount">$450.00</span>
-            </li>
-            <li>
-              <span>Sep 2025</span>
-              <span class="payment-amount">$450.00</span>
-            </li>
-          </ul>
-          <a href="#" class="link">View All Payments</a>
+          <ul class="payment-list" id="billing-history"></ul>
+          <a href="/billing.html" class="link">View Billing & Payments</a>
         </div>
       </div>
     </section>
@@ -215,15 +184,21 @@
         <div class="portfolio-summary">
           <div class="portfolio-item">
             <div class="portfolio-label">Total Investment Value</div>
-            <div class="portfolio-value">$12,450.00</div>
+            <div class="portfolio-value" id="portfolio-total-value">-</div>
           </div>
           <div class="portfolio-item">
             <div class="portfolio-label">Total Contributions</div>
-            <div class="portfolio-value">$10,800.00</div>
+            <div class="portfolio-value" id="portfolio-contributions">-</div>
           </div>
           <div class="portfolio-item">
             <div class="portfolio-label">Total Returns</div>
-            <div class="portfolio-value text-success">+$1,650.00 (15.3%)</div>
+            <div class="portfolio-value" id="portfolio-returns">-</div>
+          </div>
+        </div>
+        <div style="margin-top:24px">
+          <h3 style="margin:0 0 12px 0; color:var(--brand);">Market Snapshot</h3>
+          <div class="table-card" style="padding:16px">
+            <div id="market-snapshot" style="color:var(--muted)">Loading market data…</div>
           </div>
         </div>
         <div style="margin-top:24px">
@@ -235,66 +210,10 @@
 
   <footer class="footer">
     <div class="container">
-      <p>© 2025 PHINS Insurance Company. All rights reserved.</p>
+      <p>© 2025 PHINS.ai. All rights reserved.</p>
     </div>
   </footer>
 
-  <script>
-    // Load statement data
-    fetch('/api/statement?customer_id=CUST001')
-      .then(res => res.json())
-      .then(data => {
-        document.getElementById('summary').innerHTML = `
-          <div class="summary-item">
-            <div class="summary-label">Total Premium</div>
-            <div class="summary-value">$${data.total_premium.toFixed(2)}</div>
-          </div>
-          <div class="summary-item">
-            <div class="summary-label">Risk Allocation (75%)</div>
-            <div class="summary-value">$${data.risk_total.toFixed(2)}</div>
-          </div>
-          <div class="summary-item">
-            <div class="summary-label">Savings Allocation (25%)</div>
-            <div class="summary-value">$${data.savings_total.toFixed(2)}</div>
-          </div>
-        `;
-        
-        const list = document.getElementById('alloc-list');
-        list.innerHTML = data.allocations.map(a => `
-          <li>
-            <span><strong>${a.allocation_id}</strong></span>
-            <span>Total: $${a.amount.toFixed(2)} | Risk: $${a.risk_amount.toFixed(2)} | Savings: $${a.savings_amount.toFixed(2)}</span>
-          </li>
-        `).join('');
-      })
-      .catch(err => console.error('Error loading statement:', err));
-
-    // Set username from sessionStorage if available
-    const storedUser = sessionStorage.getItem('username');
-    if (storedUser) {
-      document.getElementById('username').textContent = storedUser;
-    }
-
-    // Logout functionality
-    document.querySelector('.btn-logout').addEventListener('click', function(e) {
-      e.preventDefault();
-      sessionStorage.clear();
-      window.location.href = '/';
-    });
-
-    // Language change functionality
-    function changeLanguage(lang) {
-      localStorage.setItem('phins_language', lang);
-      const notification = document.createElement('div');
-      notification.style.cssText = 'position:fixed;top:80px;right:20px;background:#28a745;color:#fff;padding:16px 24px;border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,0.2);z-index:1000;font-weight:600;';
-      notification.textContent = 'Language changed to ' + document.getElementById('language-selector').selectedOptions[0].text;
-      document.body.appendChild(notification);
-      setTimeout(() => notification.remove(), 3000);
-    }
-    
-    // Load saved language
-    const savedLang = localStorage.getItem('phins_language');
-    if (savedLang) document.getElementById('language-selector').value = savedLang;
-  </script>
+  <script src="/customer-dashboard.js"></script>
 </body>
 </html>

@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>PHINS Portal — Register</title>
+  <title>PHINS.ai — Register</title>
   <link rel="stylesheet" href="/styles.css">
   <style>
     body {
@@ -11,7 +11,7 @@
       align-items: center;
       justify-content: center;
       min-height: 100vh;
-      background: linear-gradient(135deg, #005b96 0%, #003d66 100%);
+      background: linear-gradient(135deg, var(--brand) 0%, var(--brand-dark) 100%);
     }
     .register-container {
       width: 100%;
@@ -29,8 +29,13 @@
       margin-bottom: 32px;
     }
     .register-logo {
-      font-size: 3rem;
-      margin-bottom: 16px;
+      display:flex;
+      justify-content:center;
+      margin-bottom: 18px;
+    }
+    .register-logo img{
+      height: 44px;
+      width: auto;
     }
     .register-title {
       color: var(--brand);
@@ -133,9 +138,9 @@
   <div class="register-container">
     <div class="register-card">
       <div class="register-header">
-        <div class="register-logo">🛡️</div>
-        <h1 class="register-title">Create Account</h1>
-        <p class="register-subtitle">Join PHINS Portal</p>
+        <div class="register-logo"><img src="/assets/phins-ai-logo.svg" alt="PHINS.ai"></div>
+        <h1 class="register-title">Create PHINS.ai Account</h1>
+        <p class="register-subtitle">Join PHINS.ai to manage policies, claims, and billing</p>
       </div>
       
       <form id="register-form">

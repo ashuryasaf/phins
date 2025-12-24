@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>PHINS Portal — Login</title>
+  <title>PHINS.ai — Login</title>
   <link rel="stylesheet" href="/styles.css">
   <style>
     body {
@@ -11,7 +11,7 @@
       align-items: center;
       justify-content: center;
       min-height: 100vh;
-      background: linear-gradient(135deg, #005b96 0%, #003d66 100%);
+      background: linear-gradient(135deg, var(--brand) 0%, var(--brand-dark) 100%);
     }
     .login-container {
       width: 100%;
@@ -29,8 +29,13 @@
       margin-bottom: 32px;
     }
     .login-logo {
-      font-size: 3rem;
-      margin-bottom: 16px;
+      display:flex;
+      justify-content:center;
+      margin-bottom: 18px;
+    }
+    .login-logo img{
+      height: 44px;
+      width: auto;
     }
     .login-title {
       color: var(--brand);
@@ -100,8 +105,8 @@
   <div class="login-container">
     <div class="login-card">
       <div class="login-header">
-        <div class="login-logo">🛡️</div>
-        <h1 class="login-title">PHINS Portal</h1>
+        <div class="login-logo"><img src="/assets/phins-ai-logo.svg" alt="PHINS.ai"></div>
+        <h1 class="login-title">PHINS.ai Portal</h1>
         <p class="login-subtitle">Sign in to access your account</p>
       </div>
       

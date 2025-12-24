@@ -5,15 +5,15 @@ document.addEventListener('DOMContentLoaded', () => {
   const uwList = document.getElementById('uw-list');
 
   const token = localStorage.getItem('phins_token');
-  const customerId = localStorage.getItem('phins_customer_id');
 
-  if (!token || !customerId) {
-    statusSummary.textContent = 'Please log in to view your status.';
+  if (!token) {
+    statusSummary.innerHTML = 'Please <a href="/login.html">log in</a> to view your status.';
     statusSummary.className = 'warn';
     return;
   }
 
-  fetch(`/api/customer/status?customer_id=${encodeURIComponent(customerId)}`, {
+  // Use the authenticated session (server can infer customer_id).
+  fetch(`/api/customer/status`, {
     headers: { 'Authorization': `Bearer ${token}` }
   })
     .then(r => r.json())
@@ -48,7 +48,7 @@ document.addEventListener('DOMContentLoaded', () => {
         uwList.appendChild(li);
       });
     })
-    .catch(err => {
+    .catch(() => {
       statusSummary.textContent = 'Failed to load status.';
       statusSummary.className = 'error';
     });

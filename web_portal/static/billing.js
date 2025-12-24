@@ -7,56 +7,81 @@ document.addEventListener('DOMContentLoaded', () => {
     return;
   }
 
-  // Load initial data
-  loadStats();
-  loadFraudAlerts();
-  loadRecentTransactions();
+  // Load initial data (real, not mocked)
+  initializeBillingDashboard();
 
   // Set up form handlers
   document.getElementById('payment-form').addEventListener('submit', handlePayment);
   document.getElementById('lookup-form').addEventListener('submit', handleLookup);
 });
 
-async function loadStats() {
+async function initializeBillingDashboard() {
   try {
-    const response = await fetch('/api/billing/fraud-alerts', {
+    const profile = await fetch('/api/profile', {
+      headers: { 'Authorization': `Bearer ${localStorage.getItem('phins_token')}` }
+    }).then(r => r.json());
+
+    const customerId = profile.customer_id;
+    if (!customerId) {
+      document.getElementById('stats-grid').innerHTML = '<p class="error">No customer profile linked to this account.</p>';
+      return;
+    }
+
+    await Promise.all([
+      loadStats(customerId),
+      loadFraudAlerts(),
+      loadRecentTransactions(customerId)
+    ]);
+  } catch (err) {
+    console.error('Failed to initialize billing dashboard:', err);
+    document.getElementById('stats-grid').innerHTML = '<p class="error">Failed to load billing dashboard.</p>';
+  }
+}
+
+async function loadStats(customerId) {
+  try {
+    const statement = await fetch('/api/billing/statement', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${localStorage.getItem('phins_token')}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ customer_id: customerId })
+    }).then(r => r.json());
+
+    const summary = statement.summary || {};
+
+    const fraud = await fetch('/api/billing/fraud-alerts', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${localStorage.getItem('phins_token')}`,
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({})
-    });
-    
-    // Mock stats for demo
-    const stats = {
-      total_transactions: 156,
-      successful_payments: 142,
-      failed_payments: 14,
-      total_revenue: 45780.50,
-      pending_alerts: 3
-    };
-    
+    }).then(r => r.json());
+
+    const pendingAlerts = (fraud.alerts || []).filter(a => (a.status || '').toLowerCase() === 'flagged').length;
+
     const grid = document.getElementById('stats-grid');
     grid.innerHTML = `
       <div class="stat-card">
-        <div class="stat-value">${stats.total_transactions}</div>
+        <div class="stat-value">${summary.total_transactions || 0}</div>
         <div class="stat-label">Total Transactions</div>
       </div>
       <div class="stat-card">
-        <div class="stat-value">${stats.successful_payments}</div>
+        <div class="stat-value">${summary.successful_payments || 0}</div>
         <div class="stat-label">Successful</div>
       </div>
       <div class="stat-card">
-        <div class="stat-value">${stats.failed_payments}</div>
+        <div class="stat-value">${summary.failed_payments || 0}</div>
         <div class="stat-label">Failed</div>
       </div>
       <div class="stat-card">
-        <div class="stat-value">$${stats.total_revenue.toLocaleString()}</div>
-        <div class="stat-label">Total Revenue</div>
+        <div class="stat-value">$${Number(summary.total_amount_paid || 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</div>
+        <div class="stat-label">Total Paid</div>
       </div>
       <div class="stat-card">
-        <div class="stat-value">${stats.pending_alerts}</div>
+        <div class="stat-value">${pendingAlerts}</div>
         <div class="stat-label">Fraud Alerts</div>
       </div>
     `;
@@ -103,37 +128,26 @@ async function loadFraudAlerts() {
   }
 }
 
-async function loadRecentTransactions() {
-  // For demo, show mock transactions
-  const mockTransactions = [
-    {
-      transaction_id: 'TXN-20251212-a1b2c3d4',
-      customer_id: 'CUST-12345',
-      amount: 250.00,
-      status: 'success',
-      timestamp: new Date().toISOString(),
-      payment_method: '****-****-****-4242'
-    },
-    {
-      transaction_id: 'TXN-20251212-e5f6g7h8',
-      customer_id: 'CUST-67890',
-      amount: 180.00,
-      status: 'success',
-      timestamp: new Date(Date.now() - 3600000).toISOString(),
-      payment_method: '****-****-****-1234'
-    },
-    {
-      transaction_id: 'TXN-20251212-i9j0k1l2',
-      customer_id: 'CUST-11111',
-      amount: 420.00,
-      status: 'failed',
-      timestamp: new Date(Date.now() - 7200000).toISOString(),
-      payment_method: '****-****-****-5678'
+async function loadRecentTransactions(customerId) {
+  try {
+    const resp = await fetch('/api/billing/history', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${localStorage.getItem('phins_token')}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ customer_id: customerId })
+    });
+    const data = await resp.json();
+    const transactions = (data.transactions || []).slice(0, 10);
+
+    const list = document.getElementById('transaction-list');
+    if (transactions.length === 0) {
+      list.innerHTML = '<p class="muted">No transactions yet.</p>';
+      return;
     }
-  ];
-  
-  const list = document.getElementById('transaction-list');
-  list.innerHTML = mockTransactions.map(txn => `
+
+    list.innerHTML = transactions.map(txn => `
     <div class="transaction-item">
       <div>
         <strong>${txn.transaction_id}</strong><br>
@@ -151,6 +165,10 @@ async function loadRecentTransactions() {
       </div>
     </div>
   `).join('');
+  } catch (err) {
+    console.error('Failed to load recent transactions:', err);
+    document.getElementById('transaction-list').innerHTML = '<p class="error">Failed to load transactions</p>';
+  }
 }
 
 async function handlePayment(e) {
@@ -220,8 +238,7 @@ async function handlePayment(e) {
       
       // Reload transactions
       setTimeout(() => {
-        loadRecentTransactions();
-        loadStats();
+        initializeBillingDashboard();
       }, 1000);
     } else {
       result.textContent = `❌ Payment failed: ${chargeResult.error}`;

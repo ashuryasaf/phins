@@ -3,20 +3,19 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>PHINS Admin Portal</title>
+  <title>PHINS Admin Dashboard</title>
   <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
   <header class="topbar">
     <div class="container">
-      <h1 class="brand">🛡️ PHINS Admin Portal</h1>
+      <div class="brand">
+        <img class="brand-logo" src="/assets/phins-ai-logo.svg" alt="PHINS.ai" />
+      </div>
       <nav class="nav">
-        <a href="/admin.html">Overview</a>
-        <a href="/admin.html#policies">Policies</a>
-        <a href="/admin.html#claims">Claims</a>
-        <a href="/admin.html#underwriting">Underwriting</a>
-        <a href="/billing.html">💳 Billing</a>
-        <a href="/admin-portal.html">⚙️ Advanced Tools</a>
+        <a href="/admin.html" class="active">Overview</a>
+        <a href="/admin-portal.html">Advanced Tools</a>
+        <a href="/billing.html">Billing</a>
         <select id="language-selector" class="language-selector" onchange="changeLanguage(this.value)">
           <option value="en">🌐 English</option>
           <option value="es">🌐 Español</option>
@@ -34,462 +33,97 @@
 
   <main class="container" style="padding-top:32px">
     <div class="welcome-section">
-      <h1>Admin Dashboard 🎯</h1>
-      <p class="muted-text">Comprehensive system management and oversight</p>
+      <h1>Operational Overview</h1>
+      <p class="muted-text">Live system metrics, pipeline visibility, actuarial tables, and market snapshots.</p>
     </div>
 
-    <!-- System Statistics -->
     <div class="dashboard-stats">
       <div class="stat-box stat-box-blue">
         <div class="stat-icon">👥</div>
-        <div class="stat-value">12,458</div>
+        <div class="stat-value" id="stat-customers">-</div>
         <div class="stat-label">Total Customers</div>
-        <div class="stat-change">+234 this month</div>
       </div>
       <div class="stat-box stat-box-green">
         <div class="stat-icon">📋</div>
-        <div class="stat-value">50,123</div>
+        <div class="stat-value" id="stat-active-policies">-</div>
         <div class="stat-label">Active Policies</div>
-        <div class="stat-change">+456 this month</div>
       </div>
       <div class="stat-box stat-box-orange">
-        <div class="stat-icon">📝</div>
-        <div class="stat-value">89</div>
-        <div class="stat-label">Pending Claims</div>
-        <div class="stat-change">Requires attention</div>
+        <div class="stat-icon">🧾</div>
+        <div class="stat-value" id="stat-uw-pending">-</div>
+        <div class="stat-label">Pending Underwriting</div>
       </div>
       <div class="stat-box stat-box-purple">
-        <div class="stat-icon">💰</div>
-        <div class="stat-value">$2.5B</div>
-        <div class="stat-label">Total AUM</div>
-        <div class="stat-change">+$45M this quarter</div>
+        <div class="stat-icon">📝</div>
+        <div class="stat-value" id="stat-claims-open">-</div>
+        <div class="stat-label">Open Claims</div>
       </div>
     </div>
 
-    <!-- Division-Specific Sections -->
-    
-    <!-- Sales Division -->
-    <section id="policies" class="section-content">
+    <section class="section-content">
       <div class="section-header">
-        <h2>📊 Sales Division — Policy Management</h2>
-        <button class="btn btn-primary" onclick="openNewPolicyForm()">➕ New Policy</button>
+        <h2>Pipeline (New Applications)</h2>
+        <button class="btn btn-primary" onclick="window.location.href='/admin-portal.html'">➕ Create Policy</button>
       </div>
-      
-      <div style="background: #e7f3ff; border-left: 4px solid #667eea; padding: 12px 16px; margin-bottom: 20px; border-radius: 4px;">
-        <strong>✨ Enhanced Policy Creation Available!</strong><br>
-        <span style="font-size: 0.9em; color: #555;">Click "New Policy" to access the comprehensive underwriting questionnaire, risk assessment, and automated premium calculation system.</span>
+      <div class="table-card">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Application ID</th>
+              <th>Policy ID</th>
+              <th>Customer ID</th>
+              <th>Status</th>
+              <th>Risk</th>
+              <th>Submitted</th>
+            </tr>
+          </thead>
+          <tbody id="uw-table">
+            <tr><td colspan="6" style="color:var(--muted)">Loading…</td></tr>
+          </tbody>
+        </table>
       </div>
-      
+    </section>
+
+    <section class="section-content">
+      <h2>Actuarial: Permanent Disability (ADL) Tables</h2>
       <div class="table-card">
         <div class="filter-bar">
-          <input type="text" placeholder="Search policies..." class="search-input">
-          <select class="filter-select">
-            <option>All Status</option>
-            <option>Active</option>
-            <option>Pending</option>
-            <option>Cancelled</option>
+          <select id="actuarial-jurisdiction" class="filter-select">
+            <option value="US">US</option>
+            <option value="UK">UK</option>
           </select>
-          <select class="filter-select">
-            <option>All Coverage Levels</option>
-            <option>Basic ($500K)</option>
-            <option>Standard ($1M)</option>
-            <option>Premium ($2M)</option>
-            <option>Elite ($5M+)</option>
-          </select>
+          <button class="btn-small" id="actuarial-refresh">Refresh</button>
+          <a href="/admin-portal.html" class="link" style="margin-left:auto">Configure PHI defaults →</a>
         </div>
-        
         <table class="data-table">
           <thead>
             <tr>
-              <th>Policy ID</th>
-              <th>Customer</th>
-              <th>Coverage Level</th>
-              <th>Premium</th>
-              <th>Coverage Amount</th>
-              <th>Investment Value</th>
-              <th>Status</th>
-              <th>Start Date</th>
-              <th>Actions</th>
+              <th>Age</th>
+              <th>Annual ADL Claim Risk</th>
             </tr>
           </thead>
-          <tbody>
-            <tr>
-              <td>POL-000123</td>
-              <td>John Smith</td>
-              <td>PHINS Standard</td>
-              <td>$200/mo</td>
-              <td>$1,000,000</td>
-              <td>$5,450</td>
-              <td><span class="badge badge-active">Active</span></td>
-              <td>2024-01-15</td>
-              <td>
-                <button class="btn-icon" title="View">👁️</button>
-                <button class="btn-icon" title="Edit">✏️</button>
-                <button class="btn-icon" title="Renew">🔄</button>
-              </td>
-            </tr>
-            <tr>
-              <td>POL-000124</td>
-              <td>Jane Doe</td>
-              <td>PHINS Premium</td>
-              <td>$350/mo</td>
-              <td>$2,000,000</td>
-              <td>$7,000</td>
-              <td><span class="badge badge-active">Active</span></td>
-              <td>2024-03-20</td>
-              <td>
-                <button class="btn-icon" title="View">👁️</button>
-                <button class="btn-icon" title="Edit">✏️</button>
-                <button class="btn-icon" title="Renew">🔄</button>
-              </td>
-            </tr>
-            <tr>
-              <td>POL-000125</td>
-              <td>Bob Johnson</td>
-              <td>PHINS Elite</td>
-              <td>$800/mo</td>
-              <td>$5,000,000</td>
-              <td>$0</td>
-              <td><span class="badge badge-pending">Pending UW</span></td>
-              <td>2025-12-01</td>
-              <td>
-                <button class="btn-icon" title="View">👁️</button>
-                <button class="btn-icon" title="Edit">✏️</button>
-                <button class="btn-icon" title="Approve">✓</button>
-              </td>
-            </tr>
+          <tbody id="actuarial-table">
+            <tr><td colspan="2" style="color:var(--muted)">Loading…</td></tr>
           </tbody>
         </table>
       </div>
+      <p class="muted-text" style="margin-top:10px">Pricing uses these tables + operational/reinsurance load + adjustable savings allocation.</p>
     </section>
 
-    <!-- Underwriting Division -->
-    <section id="underwriting" class="section-content">
-      <div class="section-header">
-        <h2>🔍 Underwriting Division — Risk Assessment</h2>
-        <span class="badge badge-orange">15 Pending Reviews</span>
-      </div>
-      
-      <div class="table-card">
-        <table class="data-table">
-          <thead>
-            <tr>
-              <th>UW ID</th>
-              <th>Policy ID</th>
-              <th>Customer</th>
-              <th>Risk Level</th>
-              <th>Medical Required</th>
-              <th>Premium Adjustment</th>
-              <th>Status</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td>UW-00123</td>
-              <td>POL-000125</td>
-              <td>Bob Johnson</td>
-              <td><span class="badge badge-orange">Medium</span></td>
-              <td>Yes</td>
-              <td>+10%</td>
-              <td><span class="badge badge-pending">Pending</span></td>
-              <td>
-                <button class="btn-small btn-success" onclick="alert('Approve')">Approve</button>
-                <button class="btn-small btn-danger" onclick="alert('Reject')">Reject</button>
-              </td>
-            </tr>
-            <tr>
-              <td>UW-00124</td>
-              <td>POL-000126</td>
-              <td>Alice Williams</td>
-              <td><span class="badge badge-success">Low</span></td>
-              <td>No</td>
-              <td>0%</td>
-              <td><span class="badge badge-pending">Pending</span></td>
-              <td>
-                <button class="btn-small btn-success" onclick="alert('Approve')">Approve</button>
-                <button class="btn-small btn-danger" onclick="alert('Reject')">Reject</button>
-              </td>
-            </tr>
-            <tr>
-              <td>UW-00122</td>
-              <td>POL-000123</td>
-              <td>John Smith</td>
-              <td><span class="badge badge-success">Low</span></td>
-              <td>No</td>
-              <td>0%</td>
-              <td><span class="badge badge-active">Approved</span></td>
-              <td>
-                <button class="btn-icon" title="View">👁️</button>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </section>
-
-    <!-- Claims Division -->
-    <section id="claims" class="section-content">
-      <div class="section-header">
-        <h2>📝 Claims Division — ADL-Based Disability Claims</h2>
-        <span class="badge badge-orange">15 ADL Assessments Pending</span>
-      </div>
-      
-      <div class="table-card">
-        <table class="data-table">
-          <thead>
-            <tr>
-              <th>Claim ID</th>
-              <th>Policy ID</th>
-              <th>Customer</th>
-              <th>ADLs Impaired</th>
-              <th>Benefit Type</th>
-              <th>Amount Claimed</th>
-              <th>Amount Approved</th>
-              <th>Date Filed</th>
-              <th>Status</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td>CLM-001234</td>
-              <td>POL-000123</td>
-              <td>John Smith</td>
-              <td>Bathing, Dressing, Transferring (3)</td>
-              <td>Monthly Lifetime</td>
-              <td>$50,000/mo</td>
-              <td>-</td>
-              <td>2025-12-05</td>
-              <td><span class="badge badge-pending">Medical Assessment</span></td>
-              <td>
-                <button class="btn-small btn-success" onclick="approveClaim('CLM-001234')">Approve</button>
-                <button class="btn-small btn-danger" onclick="alert('Reject')">Reject</button>
-              </td>
-            </tr>
-            <tr>
-              <td>CLM-001235</td>
-              <td>POL-000124</td>
-              <td>Jane Doe</td>
-              <td>Eating, Toileting, Continence, Dressing (4)</td>
-              <td>Lump Sum</td>
-              <td>$850,000</td>
-              <td>$850,000</td>
-              <td>2025-12-03</td>
-              <td><span class="badge badge-active">Approved - Permanent Disability Confirmed</span></td>
-              <td>
-                <button class="btn-small" onclick="alert('Process Payment')">Pay</button>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </section>
-
-    <!-- Accounting/Billing Division -->
-    <section id="billing" class="section-content">
-      <div class="section-header">
-        <h2>💰 Accounting Division — Billing & Payments</h2>
-      </div>
-      
-      <div class="billing-stats">
-        <div class="card">
-          <h3>Revenue Overview</h3>
-          <div class="revenue-item">
-            <span>Monthly Premium Income:</span>
-            <span class="revenue-value">$8,234,500</span>
-          </div>
-          <div class="revenue-item">
-            <span>Outstanding Receivables:</span>
-            <span class="revenue-value text-warning">$456,780</span>
-          </div>
-          <div class="revenue-item">
-            <span>Claims Paid (This Month):</span>
-            <span class="revenue-value">$2,345,600</span>
-          </div>
-          <div class="revenue-item">
-            <span>Investment Returns:</span>
-            <span class="revenue-value text-success">+$1,234,500</span>
-          </div>
-        </div>
-      </div>
-
-      <div class="table-card" style="margin-top:24px">
-        <h3>Recent Transactions</h3>
-        <table class="data-table">
-          <thead>
-            <tr>
-              <th>Transaction ID</th>
-              <th>Customer</th>
-              <th>Type</th>
-              <th>Amount</th>
-              <th>Status</th>
-              <th>Date</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td>TXN-98765</td>
-              <td>John Smith</td>
-              <td>Premium Payment</td>
-              <td class="text-success">+$200</td>
-              <td><span class="badge badge-active">Paid</span></td>
-              <td>2025-12-10</td>
-            </tr>
-            <tr>
-              <td>TXN-98764</td>
-              <td>Jane Doe</td>
-              <td>Claim Payment</td>
-              <td class="text-danger">-$3,200</td>
-              <td><span class="badge badge-active">Processed</span></td>
-              <td>2025-12-09</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </section>
-
-    <!-- Reinsurance Division -->
     <section class="section-content">
-      <div class="section-header">
-        <h2>🤝 Reinsurance Division — Partner Management</h2>
-      </div>
-      
+      <h2>Investments: Market Snapshot</h2>
       <div class="table-card">
-        <table class="data-table">
-          <thead>
-            <tr>
-              <th>Partner</th>
-              <th>Type</th>
-              <th>Ceded Amount</th>
-              <th>Commission Rate</th>
-              <th>Status</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td>Swiss Re</td>
-              <td>Proportional</td>
-              <td>$125,000,000</td>
-              <td>15%</td>
-              <td><span class="badge badge-active">Active</span></td>
-              <td><button class="btn-icon">👁️</button></td>
-            </tr>
-            <tr>
-              <td>Munich Re</td>
-              <td>Excess-of-Loss</td>
-              <td>$50,000,000</td>
-              <td>12%</td>
-              <td><span class="badge badge-active">Active</span></td>
-              <td><button class="btn-icon">👁️</button></td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </section>
-
-    <!-- Legal Division -->
-    <section class="section-content">
-      <div class="section-header">
-        <h2>⚖️ Legal Division — Compliance & Disputes</h2>
-      </div>
-      
-      <div class="legal-stats">
-        <div class="card">
-          <h3>Legal Overview</h3>
-          <div class="legal-item">
-            <span>Open Disputes:</span>
-            <span class="legal-value">12</span>
-          </div>
-          <div class="legal-item">
-            <span>Pending Litigations:</span>
-            <span class="legal-value text-warning">3</span>
-          </div>
-          <div class="legal-item">
-            <span>Compliance Audits:</span>
-            <span class="legal-value text-success">All Clear</span>
-          </div>
-          <div class="legal-item">
-            <span>Regulatory Filings:</span>
-            <span class="legal-value text-success">Up to Date</span>
-          </div>
-        </div>
+        <div id="market-block" style="color:var(--muted)">Loading…</div>
       </div>
     </section>
   </main>
 
   <footer class="footer">
     <div class="container">
-      <p>© 2025 PHINS Insurance Company — Admin Portal</p>
+      <p>© 2025 PHINS.ai — Admin</p>
     </div>
   </footer>
 
-  <script>
-    // Set admin username
-    const storedUser = sessionStorage.getItem('username');
-    if (storedUser !== 'admin') {
-      // Redirect non-admin users
-      alert('Admin access required');
-      window.location.href = '/login.html';
-    }
-
-    // Logout functionality
-    document.querySelector('.btn-logout').addEventListener('click', function(e) {
-      e.preventDefault();
-      sessionStorage.clear();
-      window.location.href = '/';
-    });
-
-    // Approve claim function
-    function approveClaim(claimId) {
-      if (confirm(`Approve claim ${claimId}?`)) {
-        alert(`Claim ${claimId} approved successfully!`);
-        // In production, this would call the API
-      }
-    }
-
-    // Language change functionality
-    function changeLanguage(lang) {
-      localStorage.setItem('phins_language', lang);
-      const notification = document.createElement('div');
-      notification.style.cssText = 'position:fixed;top:80px;right:20px;background:#28a745;color:#fff;padding:16px 24px;border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,0.2);z-index:1000;font-weight:600;';
-      notification.textContent = 'Language changed to ' + document.getElementById('language-selector').selectedOptions[0].text;
-      document.body.appendChild(notification);
-      setTimeout(() => notification.remove(), 3000);
-    }
-    
-    // Enhanced New Policy Button Handler
-    function openNewPolicyForm() {
-      // Ensure current authentication is stored
-      const currentToken = localStorage.getItem('phins_token');
-      const currentUser = sessionStorage.getItem('username');
-      
-      if (!currentToken || !currentUser) {
-        alert('Authentication error. Please log in again.');
-        window.location.href = '/login.html';
-        return;
-      }
-      
-      // Store admin authentication state for admin-portal
-      localStorage.setItem('phins_redirect_source', 'admin-dashboard');
-      localStorage.setItem('phins_admin_verified', 'true');
-      localStorage.setItem('phins_admin_token', currentToken);
-      localStorage.setItem('phins_admin_user', JSON.stringify({name: currentUser, role: 'admin'}));
-      
-      // Check if user wants to stay in same tab or open new
-      const useNewTab = confirm('Open policy creation in:\n\nOK = New Tab\nCancel = Same Window');
-      
-      if (useNewTab) {
-        window.open('/admin-portal.html', '_blank');
-      } else {
-        window.location.href = '/admin-portal.html';
-      }
-    }
-    
-    // Load saved language
-    const savedLang = localStorage.getItem('phins_language');
-    if (savedLang) document.getElementById('language-selector').value = savedLang;
-  </script>
+  <script src="/admin-dashboard.js"></script>
 </body>
 </html>

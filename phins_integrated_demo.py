@@ -278,7 +278,7 @@ def integrated_workflow_demo():
             "total_premium": str(monthly_premium),
             "risk_amount": str(monthly_premium * risk_allocation_pct / 100),
             "savings_amount": str(monthly_premium * (100 - risk_allocation_pct) / 100),
-            "statement_url": f"https://portal.phins.com/statement/{customer.customer_id}"
+            "statement_url": f"https://portal.phins.ai/statement/{customer.customer_id}"
         },
         signature_required=False
     )
@@ -297,7 +297,7 @@ def integrated_workflow_demo():
     print(f"   Risk Coverage ({risk_allocation_pct:.1f}%): ${monthly_premium * risk_allocation_pct / 100:.2f}")
     print(f"   Your Savings ({100 - risk_allocation_pct:.1f}%): ${monthly_premium * (100 - risk_allocation_pct) / 100:.2f}")
     print(f"   ")
-    print(f"   View your complete statement: portal.phins.com")
+    print(f"   View your complete statement: portal.phins.ai")
     print(f"   ")
     print(f"   Best regards,")
     print(f"   PHINS Insurance Team")

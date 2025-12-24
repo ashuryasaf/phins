@@ -470,16 +470,14 @@ else:
 
 
 def get_mock_statement(customer_id: str) -> Dict[str, Any]:
+    # For production, the platform should not fabricate financial statements.
+    # This fallback returns an *empty* statement so UIs don't show fake data.
     return {
         "customer_id": customer_id,
-        "total_premium": 300.0,
-        "risk_total": 225.0,
-        "savings_total": 75.0,
-        "allocations": [
-            {"allocation_id": "ALLOC-000001", "amount": 100.0, "risk_amount": 75.0, "savings_amount": 25.0},
-            {"allocation_id": "ALLOC-000002", "amount": 100.0, "risk_amount": 75.0, "savings_amount": 25.0},
-            {"allocation_id": "ALLOC-000003", "amount": 100.0, "risk_amount": 75.0, "savings_amount": 25.0},
-        ],
+        "total_premium": 0.0,
+        "risk_total": 0.0,
+        "savings_total": 0.0,
+        "allocations": [],
     }
 
 
@@ -493,34 +491,32 @@ def generate_customer_id() -> str:
     return f"CUST-{random.randint(10000, 99999)}"
 
 def calculate_premium(policy_data: Dict[str, Any]) -> Dict[str, float]:
-    """Calculate premium based on policy type and customer data"""
-    base_premium = {
-        'life': 1200,
-        'health': 800,
-        'auto': 600,
-        'property': 1500,
-        'business': 3000
-    }.get(policy_data.get('type', 'life'), 1000)
-    
-    # Age factor
-    age = policy_data.get('age', 30)
-    age_factor = 1.0 + (max(0, age - 25) * 0.02)
-    
-    # Coverage factor
-    coverage = policy_data.get('coverage_amount', 100000)
-    coverage_factor = coverage / 100000
-    
-    # Risk factor based on underwriting
-    risk_score = policy_data.get('risk_score', 'medium')
-    risk_factors = {'low': 0.8, 'medium': 1.0, 'high': 1.3, 'very_high': 1.6}
-    risk_factor = risk_factors.get(risk_score, 1.0)
-    
-    annual_premium = base_premium * age_factor * coverage_factor * risk_factor
-    return {
-        'annual': round(annual_premium, 2),
-        'monthly': round(annual_premium / 12, 2),
-        'quarterly': round(annual_premium / 4, 2)
-    }
+    """
+    Calculate premium based on policy type and customer data.
+
+    For PHI (ADL-based permanent disability) policies, pricing uses:
+      - UK/US disability actuarial tables (by age)
+      - adjustable operational+reinsurance load
+      - adjustable savings/investment split (e.g., 25% / 50% / 90%)
+    """
+    try:
+        from services.pricing_service import price_policy
+
+        priced = price_policy(policy_data)
+        # Preserve backward-compatible shape {annual, monthly, quarterly}
+        return {
+            "annual": float(priced.get("annual", 0.0)),
+            "monthly": float(priced.get("monthly", 0.0)),
+            "quarterly": float(priced.get("quarterly", 0.0)),
+        }
+    except Exception:
+        # Extreme fallback – keep the server responsive even if pricing import fails
+        annual_premium = 1000.0
+        return {
+            "annual": round(annual_premium, 2),
+            "monthly": round(annual_premium / 12.0, 2),
+            "quarterly": round(annual_premium / 4.0, 2),
+        }
 
 def get_bi_data_actuary() -> Dict[str, Any]:
     """Generate actuarial BI data"""
@@ -598,6 +594,96 @@ def try_get_statement_from_engine(customer_id: str) -> Any:
     return None
 
 
+# =============================================================================
+# PHI PRODUCT CONFIG + STATEMENTS (NO FAKE FINANCIAL DATA)
+# =============================================================================
+
+# Default PHI configuration (admin can change via API).
+# Values are percent-like numbers for easier UI entry (e.g., 50 means 50%).
+PHI_PRODUCT_CONFIG: Dict[str, Any] = {
+    "default_jurisdiction": "US",  # "US" | "UK"
+    "default_operational_reinsurance_load": 50,  # 50%
+    "default_savings_percentage": 25,  # 25%
+}
+
+
+def _pct_to_fraction(value: Any, default: float) -> float:
+    try:
+        v = float(value)
+    except Exception:
+        return default
+    if v > 1.0:
+        v = v / 100.0
+    return max(0.0, min(0.99, v))
+
+
+def get_policy_allocation(policy: Dict[str, Any]) -> Dict[str, float]:
+    """
+    Return (risk_percentage, savings_percentage) as fractions.
+    """
+    savings = policy.get("savings_percentage", PHI_PRODUCT_CONFIG.get("default_savings_percentage", 25))
+    savings_f = _pct_to_fraction(savings, 0.25)
+    risk_f = max(0.01, 1.0 - savings_f)
+    return {"risk_percentage": risk_f, "savings_percentage": savings_f}
+
+
+def build_customer_statement_from_transactions(customer_id: str) -> Dict[str, Any]:
+    """
+    Build a premium statement from actual payment transactions.
+    """
+    allocations: list[Dict[str, Any]] = []
+    total = 0.0
+    risk_total = 0.0
+    savings_total = 0.0
+
+    # Prefer billing_engine records if available.
+    txns: list[Dict[str, Any]] = []
+    if billing_enabled:
+        try:
+            txns = billing_engine.get_customer_transactions(customer_id)  # type: ignore
+        except Exception:
+            txns = []
+
+    # Only successful payments count toward premium allocation.
+    for t in sorted(txns, key=lambda x: x.get("timestamp", ""), reverse=False):
+        if t.get("status") != "success":
+            continue
+        try:
+            amount = float(t.get("amount", 0.0))
+        except Exception:
+            amount = 0.0
+        if amount <= 0:
+            continue
+        policy_id = t.get("policy_id")
+        policy = POLICIES.get(policy_id) if policy_id else None
+        alloc_pct = get_policy_allocation(policy or {})
+        risk_amt = round(amount * alloc_pct["risk_percentage"], 2)
+        savings_amt = round(amount * alloc_pct["savings_percentage"], 2)
+        allocations.append(
+            {
+                "allocation_id": t.get("transaction_id") or f"ALLOC-{uuid.uuid4().hex[:10]}",
+                "policy_id": policy_id,
+                "timestamp": t.get("timestamp"),
+                "amount": round(amount, 2),
+                "risk_amount": risk_amt,
+                "savings_amount": savings_amt,
+                "risk_percentage": round(alloc_pct["risk_percentage"] * 100.0, 2),
+                "savings_percentage": round(alloc_pct["savings_percentage"] * 100.0, 2),
+            }
+        )
+        total += amount
+        risk_total += risk_amt
+        savings_total += savings_amt
+
+    return {
+        "customer_id": customer_id,
+        "total_premium": round(total, 2),
+        "risk_total": round(risk_total, 2),
+        "savings_total": round(savings_total, 2),
+        "allocations": allocations[-100:],  # last 100 allocations
+    }
+
+
 class PortalHandler(BaseHTTPRequestHandler):
     def _set_json_headers(self, status: int = 200) -> None:
         self.send_response(status)
@@ -618,6 +704,12 @@ class PortalHandler(BaseHTTPRequestHandler):
             self.send_header('Content-Type', 'application/javascript; charset=utf-8')
         elif path.endswith('.css'):
             self.send_header('Content-Type', 'text/css; charset=utf-8')
+        elif path.endswith('.svg'):
+            self.send_header('Content-Type', 'image/svg+xml; charset=utf-8')
+        elif path.endswith('.png'):
+            self.send_header('Content-Type', 'image/png')
+        elif path.endswith('.jpg') or path.endswith('.jpeg'):
+            self.send_header('Content-Type', 'image/jpeg')
         else:
             self.send_header('Content-Type', 'application/octet-stream')
         # Security headers
@@ -766,11 +858,15 @@ class PortalHandler(BaseHTTPRequestHandler):
                 return
             
             self._set_json_headers()
+            customer_id = user.get('customer_id')
+            cust = CUSTOMERS.get(customer_id) if customer_id else None
             self.wfile.write(json.dumps({
                 'username': username,
                 'name': user.get('name'),
                 'role': user.get('role'),
-                'customer_id': user.get('customer_id')
+                'customer_id': customer_id,
+                'email': cust.get('email') if isinstance(cust, dict) else None,
+                'phone': cust.get('phone') if isinstance(cust, dict) else None,
             }).encode('utf-8'))
             return
         
@@ -810,22 +906,40 @@ class PortalHandler(BaseHTTPRequestHandler):
                 data = ms.summary()
             except Exception:
                 data = {
+                    'customers': {'total': len(CUSTOMERS)},
                     'policies': {'total': len(POLICIES), 'active': sum(1 for p in POLICIES.values() if p.get('status') == 'active')},
                     'claims': {'pending': sum(1 for c in CLAIMS.values() if c.get('status') in ['pending', 'under_review']),
                                'approved': sum(1 for c in CLAIMS.values() if c.get('status') == 'approved')},
                     'billing': {'overdue': sum(1 for b in BILLING.values() if b.get('status') == 'overdue'),
-                                'outstanding': sum(1 for b in BILLING.values() if b.get('status') in ['outstanding', 'partial'])}
+                                'outstanding': sum(1 for b in BILLING.values() if b.get('status') in ['outstanding', 'partial'])},
+                    'underwriting': {'pending': sum(1 for u in UNDERWRITING_APPLICATIONS.values() if u.get('status') == 'pending')}
                 }
             self._set_json_headers()
             self.wfile.write(json.dumps({'metrics': data, 'ts': datetime.now().isoformat()}).encode('utf-8'))
+            return
+
+        # PHI Product Config (read-only; admin can update via POST)
+        if path == '/api/products/phi/config':
+            if not require_role(session, ['admin', 'underwriter', 'accountant']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Unauthorized'}).encode('utf-8'))
+                return
+            self._set_json_headers()
+            self.wfile.write(json.dumps({'phi_config': PHI_PRODUCT_CONFIG, 'ts': datetime.now().isoformat()}).encode('utf-8'))
             return
         
         # Policy Management Endpoints
         if path == '/api/policies':
             policy_id = qs.get('id', [None])[0]
+            role = USERS.get(session.get('username') if session else '', {}).get('role') if session else None
+            customer_scope = session.get('customer_id') if (session and role == 'customer') else None
             if policy_id:
                 policy = POLICIES.get(policy_id)
                 if policy:
+                    if customer_scope and policy.get('customer_id') != customer_scope:
+                        self._set_json_headers(403)
+                        self.wfile.write(json.dumps({'error': 'Forbidden'}).encode('utf-8'))
+                        return
                     self._set_json_headers()
                     self.wfile.write(json.dumps(policy).encode('utf-8'))
                 else:
@@ -837,6 +951,8 @@ class PortalHandler(BaseHTTPRequestHandler):
                 page = max(1, page)
                 page_size = max(1, min(500, page_size))
                 items = list(POLICIES.values())
+                if customer_scope:
+                    items = [p for p in items if p.get('customer_id') == customer_scope]
                 start = (page - 1) * page_size
                 end = start + page_size
                 payload = {
@@ -853,10 +969,16 @@ class PortalHandler(BaseHTTPRequestHandler):
         if path == '/api/claims':
             claim_id = qs.get('id', [None])[0]
             status = qs.get('status', [None])[0]
+            role = USERS.get(session.get('username') if session else '', {}).get('role') if session else None
+            customer_scope = session.get('customer_id') if (session and role == 'customer') else None
             
             if claim_id:
                 claim = CLAIMS.get(claim_id)
                 if claim:
+                    if customer_scope and claim.get('customer_id') != customer_scope:
+                        self._set_json_headers(403)
+                        self.wfile.write(json.dumps({'error': 'Forbidden'}).encode('utf-8'))
+                        return
                     self._set_json_headers()
                     self.wfile.write(json.dumps(claim).encode('utf-8'))
                 else:
@@ -864,6 +986,8 @@ class PortalHandler(BaseHTTPRequestHandler):
                     self.wfile.write(json.dumps({'error': 'Claim not found'}).encode('utf-8'))
             else:
                 claims_list = list(CLAIMS.values())
+                if customer_scope:
+                    claims_list = [c for c in claims_list if c.get('customer_id') == customer_scope]
                 if status:
                     claims_list = [c for c in claims_list if c.get('status') == status]
                 page = int(qs.get('page', ['1'])[0])
@@ -885,21 +1009,39 @@ class PortalHandler(BaseHTTPRequestHandler):
         # Underwriting Applications Endpoints
         if path == '/api/underwriting':
             app_id = qs.get('id', [None])[0]
+            role = USERS.get(session.get('username') if session else '', {}).get('role') if session else None
+            customer_scope = session.get('customer_id') if (session and role == 'customer') else None
             if app_id:
                 app = UNDERWRITING_APPLICATIONS.get(app_id)
                 if app:
+                    if customer_scope and app.get('customer_id') != customer_scope:
+                        self._set_json_headers(403)
+                        self.wfile.write(json.dumps({'error': 'Forbidden'}).encode('utf-8'))
+                        return
                     self._set_json_headers()
                     self.wfile.write(json.dumps(app).encode('utf-8'))
                 else:
                     self._set_json_headers(404)
                     self.wfile.write(json.dumps({'error': 'Application not found'}).encode('utf-8'))
             else:
+                items = list(UNDERWRITING_APPLICATIONS.values())
+                if customer_scope:
+                    items = [u for u in items if u.get('customer_id') == customer_scope]
+                # Optional filter by status
+                status = qs.get('status', [None])[0]
+                if status:
+                    items = [u for u in items if u.get('status') == status]
+                payload = {'items': items, 'total': len(items)}
                 self._set_json_headers()
-                self.wfile.write(json.dumps(list(UNDERWRITING_APPLICATIONS.values())).encode('utf-8'))
+                self.wfile.write(json.dumps(payload).encode('utf-8'))
             return
         
         # Customers Endpoint
         if path == '/api/customers':
+            if not require_role(session, ['admin', 'underwriter', 'accountant', 'claims']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Unauthorized'}).encode('utf-8'))
+                return
             customer_id = qs.get('id', [None])[0]
             if customer_id:
                 customer = CUSTOMERS.get(customer_id)
@@ -917,6 +1059,9 @@ class PortalHandler(BaseHTTPRequestHandler):
         # Customer status endpoint (post-application visibility)
         if path == '/api/customer/status':
             customer_id = qs.get('customer_id', [None])[0]
+            # If missing, infer from authenticated session
+            if not customer_id and session and session.get('customer_id'):
+                customer_id = session.get('customer_id')
             if not customer_id:
                 self._set_json_headers(400)
                 self.wfile.write(json.dumps({'error': 'customer_id is required'}).encode('utf-8'))
@@ -958,17 +1103,91 @@ class PortalHandler(BaseHTTPRequestHandler):
             return
         
         if path.startswith('/api/statement'):
-            customer_id = qs.get('customer_id', ['CUST001'])[0]
-            data = try_get_statement_from_engine(customer_id) or get_mock_statement(customer_id)
+            # Prefer authenticated identity; allow explicit customer_id only for admins.
+            requested_customer_id = qs.get('customer_id', [None])[0]
+            if session and session.get("customer_id"):
+                customer_id = session["customer_id"]
+            else:
+                customer_id = requested_customer_id or ""
+
+            if not customer_id:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({"error": "customer_id is required"}).encode("utf-8"))
+                return
+
+            # If a customer is logged in, they can only view their own statement.
+            if session and USERS.get(session.get("username", ""), {}).get("role") == "customer":
+                if requested_customer_id and requested_customer_id != customer_id:
+                    self._set_json_headers(403)
+                    self.wfile.write(json.dumps({"error": "Forbidden"}).encode("utf-8"))
+                    return
+
+            data = build_customer_statement_from_transactions(customer_id)
             self._set_json_headers()
             self.wfile.write(json.dumps(data).encode('utf-8'))
             return
 
         if path.startswith('/api/allocations'):
-            customer_id = qs.get('customer_id', ['CUST001'])[0]
-            data = {"allocations": (try_get_statement_from_engine(customer_id) or get_mock_statement(customer_id))["allocations"]}
+            requested_customer_id = qs.get('customer_id', [None])[0]
+            if session and session.get("customer_id"):
+                customer_id = session["customer_id"]
+            else:
+                customer_id = requested_customer_id or ""
+            if not customer_id:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({"error": "customer_id is required"}).encode("utf-8"))
+                return
+            data = build_customer_statement_from_transactions(customer_id)
             self._set_json_headers()
-            self.wfile.write(json.dumps(data).encode('utf-8'))
+            self.wfile.write(json.dumps({"allocations": data.get("allocations", [])}).encode('utf-8'))
+            return
+
+        # Actuarial tables (Admin only)
+        if path == '/api/actuarial/disability-table':
+            if not require_role(session, ['admin', 'underwriter', 'accountant']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Unauthorized'}).encode('utf-8'))
+                return
+            jurisdiction = (qs.get('jurisdiction', ['US'])[0] or 'US').upper()
+            age_min = int(qs.get('age_min', ['18'])[0])
+            age_max = int(qs.get('age_max', ['100'])[0])
+            try:
+                from services.actuarial_disability_tables import build_disability_table
+                rows = build_disability_table('UK' if jurisdiction in ('UK', 'GB', 'GBR') else 'US', age_min=age_min, age_max=age_max)  # type: ignore[arg-type]
+                payload = {
+                    'jurisdiction': 'UK' if jurisdiction in ('UK', 'GB', 'GBR') else 'US',
+                    'items': [{'age': r.age, 'annual_adl_claim_rate': r.annual_adl_claim_rate, 'annual_adl_claim_rate_percent': r.annual_adl_claim_rate_percent} for r in rows],
+                    'ts': datetime.now().isoformat()
+                }
+            except Exception as e:
+                payload = {'error': str(e), 'items': []}
+            self._set_json_headers()
+            self.wfile.write(json.dumps(payload).encode('utf-8'))
+            return
+
+        # Market data (Admin + customer portals)
+        if path == '/api/market/crypto':
+            symbols = (qs.get('symbols', ['BTC,ETH'])[0] or 'BTC,ETH').split(',')
+            vs = qs.get('vs', ['USD'])[0] or 'USD'
+            try:
+                from services.market_data_service import MarketDataClient
+                payload = MarketDataClient().crypto([s.strip() for s in symbols]).vs(vs).fetch()
+            except Exception as e:
+                payload = {'items': [], 'error': str(e)}
+            self._set_json_headers()
+            self.wfile.write(json.dumps(payload).encode('utf-8'))
+            return
+
+        if path == '/api/market/indexes':
+            symbols = (qs.get('symbols', ['SPX,NASDAQ,DOW,FTSE'])[0] or 'SPX,NASDAQ,DOW,FTSE').split(',')
+            currency = qs.get('currency', ['USD'])[0] or 'USD'
+            try:
+                from services.market_data_service import MarketDataClient
+                payload = MarketDataClient().indexes([s.strip() for s in symbols]).vs(currency).fetch()
+            except Exception as e:
+                payload = {'items': [], 'error': str(e)}
+            self._set_json_headers()
+            self.wfile.write(json.dumps(payload).encode('utf-8'))
             return
 
         # Validation endpoints (connectors)
@@ -1006,6 +1225,31 @@ class PortalHandler(BaseHTTPRequestHandler):
 
             self._set_json_headers()
             self.wfile.write(json.dumps(result).encode('utf-8'))
+            return
+
+        # Pricing estimate endpoint (no persistence; safe to call from UI)
+        if path == '/api/pricing/estimate':
+            try:
+                policy_type = qs.get('type', ['disability'])[0]
+                coverage_amount = float(qs.get('coverage_amount', ['100000'])[0])
+                age = int(qs.get('age', ['30'])[0])
+                jurisdiction = qs.get('jurisdiction', [PHI_PRODUCT_CONFIG.get('default_jurisdiction', 'US')])[0]
+                savings_percentage = qs.get('savings_percentage', [PHI_PRODUCT_CONFIG.get('default_savings_percentage', 25)])[0]
+                operational_reinsurance_load = qs.get('operational_reinsurance_load', [PHI_PRODUCT_CONFIG.get('default_operational_reinsurance_load', 50)])[0]
+                from services.pricing_service import price_policy
+                priced = price_policy({
+                    'type': policy_type,
+                    'coverage_amount': coverage_amount,
+                    'age': age,
+                    'jurisdiction': jurisdiction,
+                    'savings_percentage': savings_percentage,
+                    'operational_reinsurance_load': operational_reinsurance_load,
+                })
+                self._set_json_headers()
+                self.wfile.write(json.dumps(priced).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
             return
 
         # Disclaimers endpoint
@@ -1509,6 +1753,32 @@ class PortalHandler(BaseHTTPRequestHandler):
                 self._set_json_headers(500)
                 self.wfile.write(json.dumps({'error': 'User creation failed'}).encode('utf-8'))
             return
+
+        # Admin: Update PHI product configuration (savings split, load, default jurisdiction)
+        if path == '/api/products/phi/config':
+            auth_header = self.headers.get('Authorization', '')
+            token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+            session = validate_session(token) if token else None
+            if not require_role(session, ['admin']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Unauthorized. Admin access required.'}).encode('utf-8'))
+                return
+            try:
+                data = json.loads(body) if body else {}
+                if 'default_jurisdiction' in data:
+                    j = str(data.get('default_jurisdiction', 'US')).upper()
+                    PHI_PRODUCT_CONFIG['default_jurisdiction'] = 'UK' if j in ('UK', 'GB', 'GBR') else 'US'
+                if 'default_savings_percentage' in data:
+                    PHI_PRODUCT_CONFIG['default_savings_percentage'] = float(data.get('default_savings_percentage'))
+                if 'default_operational_reinsurance_load' in data:
+                    PHI_PRODUCT_CONFIG['default_operational_reinsurance_load'] = float(data.get('default_operational_reinsurance_load'))
+
+                self._set_json_headers(200)
+                self.wfile.write(json.dumps({'success': True, 'phi_config': PHI_PRODUCT_CONFIG}).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'success': False, 'error': str(e)}).encode('utf-8'))
+            return
         
         # Create Policy Endpoint
         if path == '/api/policies/create':
@@ -1538,6 +1808,7 @@ class PortalHandler(BaseHTTPRequestHandler):
                 
                 policy_id = generate_policy_id()
                 customer_id = data.get('customer_id') or generate_customer_id()
+                temp_password = None
                 
                 # Create customer if new
                 if customer_id not in CUSTOMERS:
@@ -1576,8 +1847,26 @@ class PortalHandler(BaseHTTPRequestHandler):
                     'submitted_date': datetime.now().isoformat()
                 }
                 
-                # Calculate premium
-                premium_data = calculate_premium(data)
+                # PHI configuration (adjustable savings split + load + jurisdiction)
+                savings_percentage = data.get('savings_percentage', PHI_PRODUCT_CONFIG.get('default_savings_percentage', 25))
+                operational_reinsurance_load = data.get('operational_reinsurance_load', PHI_PRODUCT_CONFIG.get('default_operational_reinsurance_load', 50))
+                jurisdiction = data.get('jurisdiction') or data.get('country') or PHI_PRODUCT_CONFIG.get('default_jurisdiction', 'US')
+
+                # Calculate premium (+ breakdown)
+                premium_request = dict(data)
+                premium_request.update({
+                    'savings_percentage': savings_percentage,
+                    'operational_reinsurance_load': operational_reinsurance_load,
+                    'jurisdiction': jurisdiction,
+                })
+                try:
+                    from services.pricing_service import price_policy
+                    priced = price_policy(premium_request)
+                    premium_data = {'annual': priced['annual'], 'monthly': priced['monthly'], 'quarterly': priced['quarterly']}
+                    premium_breakdown = priced.get('breakdown', {})
+                except Exception:
+                    premium_data = calculate_premium(premium_request)
+                    premium_breakdown = {}
                 
                 # Create policy
                 policy = {
@@ -1590,6 +1879,10 @@ class PortalHandler(BaseHTTPRequestHandler):
                     'status': 'pending_underwriting',
                     'underwriting_id': uw_id,
                     'risk_score': data.get('risk_score', 'medium'),
+                    'jurisdiction': jurisdiction,
+                    'savings_percentage': savings_percentage,
+                    'operational_reinsurance_load': operational_reinsurance_load,
+                    'pricing_breakdown': premium_breakdown,
                     'start_date': data.get('start_date', datetime.now().isoformat()),
                     'end_date': data.get('end_date', (datetime.now() + timedelta(days=365)).isoformat()),
                     'created_date': datetime.now().isoformat()
@@ -1605,7 +1898,9 @@ class PortalHandler(BaseHTTPRequestHandler):
                 
                 self._set_json_headers(201)
                 
-                # Return temp_password (stored in closure before hashing)
+                # Never return plaintext passwords in production.
+                # For local demos, allow returning it only when explicitly enabled.
+                return_temp = os.environ.get("RETURN_TEMP_PASSWORD", "").lower() in ("1", "true", "yes")
                 login_username = CUSTOMERS[customer_id].get('email') or f"{customer_id.lower()}@example.com"
                 self.wfile.write(json.dumps({
                     'policy': policy,
@@ -1613,7 +1908,8 @@ class PortalHandler(BaseHTTPRequestHandler):
                     'customer': CUSTOMERS[customer_id],
                     'provisioned_login': {
                         'username': login_username,
-                        'password': temp_password  # Return plain password for first login
+                        **({'password': temp_password} if (return_temp and temp_password) else {}),
+                        'requires_password_reset': True if (temp_password and not return_temp) else False
                     }
                 }).encode('utf-8'))
             except Exception as e:
@@ -1628,6 +1924,9 @@ class PortalHandler(BaseHTTPRequestHandler):
                 customer_id = data.get('customer_id') or generate_customer_id()
                 policy_type = data.get('type', 'life')
                 coverage_amount = data.get('coverage_amount', 100000)
+                savings_percentage = data.get('savings_percentage', PHI_PRODUCT_CONFIG.get('default_savings_percentage', 25))
+                operational_reinsurance_load = data.get('operational_reinsurance_load', PHI_PRODUCT_CONFIG.get('default_operational_reinsurance_load', 50))
+                jurisdiction = data.get('jurisdiction') or data.get('country') or PHI_PRODUCT_CONFIG.get('default_jurisdiction', 'US')
                 if not validate_amount(coverage_amount):
                     self._set_json_headers(400)
                     self.wfile.write(json.dumps({'error': 'Invalid coverage amount'}).encode('utf-8'))
@@ -1653,12 +1952,23 @@ class PortalHandler(BaseHTTPRequestHandler):
                     'submitted_date': datetime.now().isoformat()
                 }
                 # Premium calc
-                premium_data = calculate_premium({
+                premium_request = {
                     'type': policy_type,
                     'coverage_amount': coverage_amount,
                     'age': data.get('age', 30),
-                    'risk_score': data.get('risk_score', 'medium')
-                })
+                    'risk_score': data.get('risk_score', 'medium'),
+                    'savings_percentage': savings_percentage,
+                    'operational_reinsurance_load': operational_reinsurance_load,
+                    'jurisdiction': jurisdiction,
+                }
+                try:
+                    from services.pricing_service import price_policy
+                    priced = price_policy(premium_request)
+                    premium_data = {'annual': priced['annual'], 'monthly': priced['monthly'], 'quarterly': priced['quarterly']}
+                    premium_breakdown = priced.get('breakdown', {})
+                except Exception:
+                    premium_data = calculate_premium(premium_request)
+                    premium_breakdown = {}
                 # Create policy
                 policy = {
                     'id': policy_id,
@@ -1670,6 +1980,10 @@ class PortalHandler(BaseHTTPRequestHandler):
                     'status': 'pending_underwriting',
                     'underwriting_id': uw_id,
                     'risk_score': data.get('risk_score', 'medium'),
+                    'jurisdiction': jurisdiction,
+                    'savings_percentage': savings_percentage,
+                    'operational_reinsurance_load': operational_reinsurance_load,
+                    'pricing_breakdown': premium_breakdown,
                     'start_date': datetime.now().isoformat(),
                     'end_date': (datetime.now() + timedelta(days=365)).isoformat(),
                     'created_date': datetime.now().isoformat()
@@ -2181,6 +2495,9 @@ class PortalHandler(BaseHTTPRequestHandler):
             # Parse coverage amount
             coverage_amount = int(fields.get('coverage-amount', '250000'))
             policy_type = fields.get('policy-type', 'disability')
+            jurisdiction = (fields.get('jurisdiction', '') or fields.get('country', '') or PHI_PRODUCT_CONFIG.get('default_jurisdiction', 'US')).upper()
+            savings_percentage = fields.get('savings-percentage', PHI_PRODUCT_CONFIG.get('default_savings_percentage', 25))
+            operational_reinsurance_load = fields.get('operational-reinsurance-load', PHI_PRODUCT_CONFIG.get('default_operational_reinsurance_load', 50))
             
             # Assess risk based on health information
             risk_score = 'low'
@@ -2220,7 +2537,10 @@ class PortalHandler(BaseHTTPRequestHandler):
                 'type': policy_type,
                 'coverage_amount': coverage_amount,
                 'age': self._calculate_age(fields.get('dob', '1990-01-01')),
-                'risk_score': risk_score
+                'risk_score': risk_score,
+                'jurisdiction': jurisdiction,
+                'savings_percentage': savings_percentage,
+                'operational_reinsurance_load': operational_reinsurance_load,
             })
             
             # Create policy
@@ -2234,6 +2554,9 @@ class PortalHandler(BaseHTTPRequestHandler):
                 'status': 'pending_underwriting',
                 'underwriting_id': uw_id,
                 'risk_score': risk_score,
+                'jurisdiction': 'UK' if jurisdiction in ('UK', 'GB', 'GBR') else 'US',
+                'savings_percentage': savings_percentage,
+                'operational_reinsurance_load': operational_reinsurance_load,
                 'start_date': datetime.now().isoformat(),
                 'end_date': (datetime.now() + timedelta(days=365)).isoformat(),
                 'created_date': datetime.now().isoformat()
@@ -2255,7 +2578,9 @@ class PortalHandler(BaseHTTPRequestHandler):
                 'estimated_premium': premium_data,
                 'login_credentials': {
                     'username': cust_email,
-                    'temporary_password': temp_password,
+                    # Never return plaintext passwords in production.
+                    **({'temporary_password': temp_password} if (os.environ.get("RETURN_TEMP_PASSWORD", "").lower() in ("1", "true", "yes")) else {}),
+                    'requires_password_reset': os.environ.get("RETURN_TEMP_PASSWORD", "").lower() not in ("1", "true", "yes"),
                     'portal_url': '/login.html'
                 },
                 'next_steps': [

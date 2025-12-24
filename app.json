@@ -5,10 +5,10 @@
   "version": "1.0.0.0",
   "brief": "Comprehensive insurance contract and policy management system",
   "description": "Complete insurance management platform including sales, underwriting, accounting, claims, legal, and reinsurance divisions with client portal access",
-  "privacyStatement": "https://www.phins.com/privacy",
-  "EULA": "https://www.phins.com/eula",
-  "help": "https://www.phins.com/help",
-  "url": "https://www.phins.com",
+  "privacyStatement": "https://www.phins.ai/privacy",
+  "EULA": "https://www.phins.ai/eula",
+  "help": "https://www.phins.ai/help",
+  "url": "https://www.phins.ai",
   "logo": "",
   "dependencies": [
     {

@@ -25,6 +25,15 @@ function setupEventListeners() {
     if (slider) {
         slider.addEventListener('input', updateCoverageDisplay);
     }
+
+    // PHI investment settings trigger re-price
+    ['phi-jurisdiction', 'phi-savings-percentage', 'phi-operational-load'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) {
+            el.addEventListener('input', () => updateCoverageDisplay());
+            el.addEventListener('change', () => updateCoverageDisplay());
+        }
+    });
     
     // Quick amount buttons
     document.querySelectorAll('.quick-amount').forEach(btn => {
@@ -100,6 +109,12 @@ function selectPolicy(e) {
     
     // Show coverage details
     document.getElementById('coverage-details').style.display = 'block';
+
+    // Show PHI investment settings only for disability/PHI product
+    const phiSettings = document.getElementById('phi-investment-settings');
+    if (phiSettings) {
+        phiSettings.style.display = type === 'disability' ? 'block' : 'none';
+    }
     
     // Update premium estimate
     updateCoverageDisplay();
@@ -114,6 +129,8 @@ function updateCoverageDisplay() {
     calculatePremium(amount);
 }
 
+let _pricingEstimateTimer = null;
+
 function calculatePremium(coverageAmount) {
     const policyType = document.getElementById('policy-type').value;
     const dob = document.getElementById('dob').value;
@@ -123,40 +140,54 @@ function calculatePremium(coverageAmount) {
     }
     
     const age = calculateAge(dob);
-    
-    // Base premium by type
-    const basePremiums = {
-        'life': 1200,
-        'health': 800,
-        'auto': 600,
-        'property': 1500,
-        'disability': 1500
-    };
-    
+
+    // For PHI disability, get a live estimate from the server pricing engine (actuarial table + adjustable split).
+    if (policyType === 'disability') {
+        const jurisdiction = document.getElementById('phi-jurisdiction')?.value || 'US';
+        const savingsPercentage = document.getElementById('phi-savings-percentage')?.value || '25';
+        const operationalLoad = document.getElementById('phi-operational-load')?.value || '50';
+
+        // Debounce to avoid spamming API while typing
+        if (_pricingEstimateTimer) clearTimeout(_pricingEstimateTimer);
+        _pricingEstimateTimer = setTimeout(async () => {
+            try {
+                const url = `/api/pricing/estimate?type=disability&coverage_amount=${encodeURIComponent(coverageAmount)}&age=${encodeURIComponent(age)}&jurisdiction=${encodeURIComponent(jurisdiction)}&savings_percentage=${encodeURIComponent(savingsPercentage)}&operational_reinsurance_load=${encodeURIComponent(operationalLoad)}`;
+                const priced = await fetch(url).then(r => r.json());
+                const annualPremium = Number(priced.annual || 0);
+                const monthlyPremium = Number(priced.monthly || 0);
+                const quarterlyPremium = Number(priced.quarterly || 0);
+
+                document.getElementById('monthly-premium').textContent =
+                    new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(monthlyPremium);
+                document.getElementById('quarterly-premium').textContent =
+                    new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(quarterlyPremium);
+                document.getElementById('annual-premium').textContent =
+                    new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(annualPremium);
+
+                formData.premiums = { monthly: monthlyPremium, quarterly: quarterlyPremium, annual: annualPremium, breakdown: priced.breakdown };
+            } catch (e) {
+                console.error('Pricing estimate failed:', e);
+            }
+        }, 250);
+        return;
+    }
+
+    // Fallback estimate for other products (simple)
+    const basePremiums = { life: 1200, health: 800, auto: 600, property: 1500, business: 3000 };
     const basePremium = basePremiums[policyType] || 1000;
-    
-    // Age factor
     const ageFactor = 1.0 + (Math.max(0, age - 25) * 0.02);
-    
-    // Coverage factor
     const coverageFactor = coverageAmount / 100000;
-    
-    // Risk factor (will be determined after health assessment, using medium for now)
-    const riskFactor = 1.0;
-    
-    const annualPremium = Math.round(basePremium * ageFactor * coverageFactor * riskFactor);
+    const annualPremium = Math.round(basePremium * ageFactor * coverageFactor);
     const monthlyPremium = Math.round(annualPremium / 12);
     const quarterlyPremium = Math.round(annualPremium / 4);
-    
-    // Update display
-    document.getElementById('monthly-premium').textContent = 
+
+    document.getElementById('monthly-premium').textContent =
         new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(monthlyPremium);
-    document.getElementById('quarterly-premium').textContent = 
+    document.getElementById('quarterly-premium').textContent =
         new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(quarterlyPremium);
-    document.getElementById('annual-premium').textContent = 
+    document.getElementById('annual-premium').textContent =
         new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(annualPremium);
-    
-    // Store for later
+
     formData.premiums = { monthly: monthlyPremium, quarterly: quarterlyPremium, annual: annualPremium };
 }
 
@@ -553,6 +584,10 @@ async function handleSubmit(e) {
         age: calculateAge(formData.personal.dob),
         risk_score: calculateRiskScore(),
         medical_exam_required: formData.health.medicalConditions === 'yes' || formData.health.surgery === 'yes',
+        // PHI configuration fields (only used for disability/PHI product)
+        jurisdiction: document.getElementById('phi-jurisdiction')?.value || 'US',
+        savings_percentage: parseFloat(document.getElementById('phi-savings-percentage')?.value || '25'),
+        operational_reinsurance_load: parseFloat(document.getElementById('phi-operational-load')?.value || '50'),
         questionnaire: {
             smoke: formData.health.tobacco,
             medical_conditions: formData.health.medicalConditions,
