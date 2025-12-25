@@ -1228,12 +1228,17 @@ class PortalHandler(BaseHTTPRequestHandler):
         # Ensure absolute URLs are available for notifications/emails
         self._maybe_set_app_base_url()
         
+        parsed = urlparse.urlparse(self.path)
+        path = parsed.path
+
         # Security checks
         client_ip = self._get_client_ip()
         
         # Check if IP is blocked
         is_blocked, block_reason = is_ip_blocked(client_ip)
-        if is_blocked:
+        # IMPORTANT: Only block API requests on GET. Never block static pages
+        # (Railway reverse proxy IPs can be shared, and false positives would take down the site).
+        if is_blocked and (path.startswith('/api/') or path == '/api'):
             self.send_response(403)
             self.send_header('Content-Type', 'application/json')
             self.end_headers()
@@ -1253,8 +1258,6 @@ class PortalHandler(BaseHTTPRequestHandler):
             self.wfile.write(json.dumps({'error': 'Too many requests. Please try again later.'}).encode('utf-8'))
             return
         
-        parsed = urlparse.urlparse(self.path)
-        path = parsed.path
         qs = urlparse.parse_qs(parsed.query)
         
         # Validate query parameters for injection attacks
@@ -2132,10 +2135,20 @@ class PortalHandler(BaseHTTPRequestHandler):
         
         # Security checks
         client_ip = self._get_client_ip()
+
+        parsed = urlparse.urlparse(self.path)
+        path = parsed.path
         
         # Check if IP is blocked
         is_blocked, block_reason = is_ip_blocked(client_ip)
-        if is_blocked:
+        # Allow basic auth/registration flows even if an IP was previously flagged.
+        # (Avoid locking out legitimate users behind shared proxies.)
+        allow_when_blocked = {
+            '/api/login',
+            '/api/register',
+            '/api/validate-email',
+        }
+        if is_blocked and path not in allow_when_blocked:
             self.send_response(403)
             self.send_header('Content-Type', 'application/json')
             self.end_headers()
@@ -2168,9 +2181,6 @@ class PortalHandler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(json.dumps({'error': 'Request too large'}).encode('utf-8'))
             return
-        
-        parsed = urlparse.urlparse(self.path)
-        path = parsed.path
         
         # Handle multipart form data for quote submission
         if path == '/api/submit-quote':
