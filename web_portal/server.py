@@ -2124,6 +2124,23 @@ class PortalHandler(BaseHTTPRequestHandler):
             except Exception as e:
                 self.send_error(500, str(e))
         else:
+            # Friendly fallback for unknown HTML routes (e.g. "/phins" from bookmarks/health checks).
+            # Do NOT mask missing assets like .js/.css/.svg with index.html.
+            try:
+                accept = (self.headers.get("Accept") or "").lower()
+            except Exception:
+                accept = ""
+            looks_like_asset = any(path.endswith(ext) for ext in ('.js', '.css', '.svg', '.png', '.jpg', '.jpeg', '.gif', '.webp', '.ico', '.map'))
+            if (not looks_like_asset) and ("text/html" in accept or accept == "" or path.count('/') <= 1) and not path.startswith('/api/'):
+                try:
+                    idx = os.path.join(ROOT, 'index.html')
+                    if os.path.isfile(idx):
+                        self._set_file_headers(idx)
+                        with open(idx, 'rb') as fh:
+                            self.wfile.write(fh.read())
+                        return
+                except Exception:
+                    pass
             self.send_error(404, 'Not Found: %s' % self.path)
 
     def do_POST(self):
