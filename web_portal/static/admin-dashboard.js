@@ -32,10 +32,19 @@ async function requireAdmin() {
     window.location.href = '/login.html';
     return null;
   }
-  const prof = await fetch('/api/profile', { headers: getAuthHeaders() }).then(r => r.json());
+  const resp = await fetch('/api/profile', { headers: getAuthHeaders() });
+  if (resp.status === 401) {
+    alert('Session expired. Please log in again.');
+    localStorage.removeItem('phins_token');
+    localStorage.removeItem('phins_admin_token');
+    window.location.href = '/login.html';
+    return null;
+  }
+  const prof = await resp.json().catch(() => ({}));
   if (!prof || !['admin'].includes(String(prof.role || '').toLowerCase())) {
     alert('Admin access required.');
-    window.location.href = '/dashboard.html';
+    // Do not dump users into customer view on auth mismatch.
+    window.location.href = '/login.html';
     return null;
   }
   return prof;

@@ -30,13 +30,12 @@ document.addEventListener('DOMContentLoaded', function () {
           sessionStorage.setItem('username', username);
           if (data.customer_id) localStorage.setItem('phins_customer_id', data.customer_id);
 
-          // Separate customer token from staff/admin token
+          // Backward-compatible token storage:
+          // - Always set phins_token so older pages keep working.
+          // - Also set phins_admin_token for staff/admin so admin pages can prefer it.
+          localStorage.setItem('phins_token', data.token);
           const isStaff = ['admin', 'underwriter', 'claims', 'claims_adjuster', 'accountant'].includes(role);
-          if (isStaff) {
-            localStorage.setItem('phins_admin_token', data.token);
-          } else {
-            localStorage.setItem('phins_token', data.token);
-          }
+          if (isStaff) localStorage.setItem('phins_admin_token', data.token);
           
           // Redirect based on user role
           setTimeout(() => {

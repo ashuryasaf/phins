@@ -480,6 +480,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       e.preventDefault();
       sessionStorage.clear();
       localStorage.removeItem('phins_token');
+      localStorage.removeItem('phins_admin_token');
       window.location.href = '/';
     });
   }
