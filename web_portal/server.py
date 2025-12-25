@@ -1644,6 +1644,12 @@ class PortalHandler(BaseHTTPRequestHandler):
 
         # Security checks
         client_ip = self._get_client_ip()
+
+        # Session validation (needed for block bypass + role-aware rate limits)
+        # NOTE: this MUST run before any IP-block checks that reference `session`.
+        auth_header = self.headers.get('Authorization', '')
+        token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+        session = validate_session(token) if token else None
         
         # Check if IP is blocked
         is_blocked, block_reason = is_ip_blocked(client_ip)
@@ -1669,11 +1675,7 @@ class PortalHandler(BaseHTTPRequestHandler):
                 'message': 'Your IP has been blocked due to suspicious activity'
             }).encode('utf-8'))
             return
-        
-        # Session validation (needed for role-aware rate limits)
-        auth_header = self.headers.get('Authorization', '')
-        token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
-        session = validate_session(token) if token else None
+
         # Derive role (best-effort)
         role_for_limit = None
         try:
