@@ -97,7 +97,21 @@ async function loadPipeline() {
       alert(`Approve failed: ${j.error || 'Unknown error'}`);
       return;
     }
+    // Surface created artifacts so the operator can validate the pipeline immediately.
+    try {
+      const p = j.policy || {};
+      const lines = [
+        `Policy created: ${p.id || '-'}`,
+        `Status: ${p.status || '-'}`,
+        p.billing_link_url ? `Billing link (48h): ${p.billing_link_url}` : null,
+        p.nft_token ? `NFT token: ${p.nft_token}` : null,
+        p.policy_terms_url ? `Policy PDF: ${p.policy_terms_url}` : null,
+        p.policy_terms_csv_url ? `Policy CSV: ${p.policy_terms_csv_url}` : null,
+      ].filter(Boolean);
+      if (lines.length) alert(lines.join('\n'));
+    } catch (_) {}
     await loadPipeline();
+    await loadBillingPendingPolicies();
   }
 
   async function reject(id) {
@@ -506,6 +520,48 @@ async function savePolicyTermsTemplate(text) {
   setTimeout(() => { if (msg) msg.textContent = ''; }, 2000);
 }
 
+async function loadPolicyConditionsPdf() {
+  const el = document.getElementById('policy-conditions-current');
+  const msg = document.getElementById('policy-conditions-msg');
+  if (!el) return;
+  try {
+    const resp = await fetch('/api/policy-terms/conditions', { headers: getAuthHeaders() });
+    const j = await resp.json().catch(() => ({}));
+    if (resp.ok && j && j.available) {
+      const link = j.download_url ? `<a class="link" href="${j.download_url}" target="_blank">Download current conditions PDF</a>` : '';
+      const hash = j.sha256 ? `<span style="font-family:monospace">SHA256: ${j.sha256}</span>` : '';
+      el.innerHTML = `${link} ${hash}`;
+      if (msg) msg.textContent = '';
+    } else {
+      el.innerHTML = '<span style="color:var(--muted)">No conditions PDF uploaded yet.</span>';
+    }
+  } catch (_) {
+    if (msg) msg.textContent = 'Unable to load conditions PDF.';
+  }
+}
+
+async function uploadPolicyConditionsPdf(file) {
+  const msg = document.getElementById('policy-conditions-msg');
+  if (!file) return;
+  if (msg) msg.textContent = 'Uploading…';
+  const fd = new FormData();
+  fd.append('file', file, file.name);
+  const resp = await fetch('/api/admin/policy-terms/conditions/upload', {
+    method: 'POST',
+    headers: { ...getAuthHeaders() },
+    body: fd,
+  });
+  const j = await resp.json().catch(() => ({}));
+  if (!resp.ok || !j.success) {
+    if (msg) msg.textContent = 'Upload failed.';
+    alert(`Upload failed: ${j.error || 'Unknown error'}`);
+    return;
+  }
+  if (msg) msg.textContent = 'Uploaded.';
+  await loadPolicyConditionsPdf();
+  setTimeout(() => { if (msg) msg.textContent = ''; }, 2000);
+}
+
 // Language selector (same UX as other pages)
 window.changeLanguage = function changeLanguage(lang) {
   localStorage.setItem('phins_language', lang);
@@ -561,6 +617,17 @@ document.addEventListener('DOMContentLoaded', async () => {
         await savePolicyTermsTemplate(text);
         await loadPolicyTermsTemplate();
       } catch (_) {}
+    });
+  }
+
+  // Policy conditions master PDF upload + current status
+  await loadPolicyConditionsPdf();
+  const condBtn = document.getElementById('policy-conditions-upload');
+  if (condBtn) {
+    condBtn.addEventListener('click', async () => {
+      const f = document.getElementById('policy-conditions-pdf')?.files?.[0];
+      if (!f) { alert('Choose a PDF file first.'); return; }
+      await uploadPolicyConditionsPdf(f);
     });
   }
 

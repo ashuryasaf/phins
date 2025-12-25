@@ -459,6 +459,44 @@ def _get_policy_terms_template_lines() -> list[str]:
     return default_lines
 
 
+def _get_latest_policy_conditions_pdf() -> Dict[str, Any] | None:
+    """
+    Return latest uploaded master conditions PDF record:
+      {media_token, download_url, sha256, filename, uploaded_at}
+    """
+    try:
+        best = None
+        best_ts = ""
+        for rec in TOKEN_REGISTRY.values():
+            if not isinstance(rec, dict):
+                continue
+            if rec.get("kind") != "policy_conditions_pdf_template":
+                continue
+            if rec.get("status") != "active":
+                continue
+            ts = str(rec.get("created_date") or "")
+            if ts >= best_ts:
+                best_ts = ts
+                best = rec
+        if not best:
+            return None
+        meta_raw = best.get("meta") or "{}"
+        meta = json.loads(meta_raw) if isinstance(meta_raw, str) else (meta_raw or {})
+        media_token = meta.get("media_token")
+        if not media_token:
+            return None
+        dl = f"/api/media/download?token={urlparse.quote(str(media_token))}"
+        return {
+            "media_token": media_token,
+            "download_url": dl,
+            "sha256": meta.get("sha256"),
+            "filename": meta.get("filename"),
+            "uploaded_at": meta.get("uploaded_at") or best.get("created_date"),
+        }
+    except Exception:
+        return None
+
+
 def _create_policy_terms_csv_bytes(
     *,
     policy: Dict[str, Any],
@@ -537,6 +575,8 @@ def _create_policy_terms_pdf_bytes(
     form_snapshot: Any = None,
     pricing_snapshot: Any = None,
     attachments: list[Dict[str, Any]] | None = None,
+    underwriting_snapshot: Dict[str, Any] | None = None,
+    billing_conditions_pdf: Dict[str, Any] | None = None,
 ) -> bytes:
     """
     Generate a simple policy-terms PDF (insurance audit artifact).
@@ -579,6 +619,88 @@ def _create_policy_terms_pdf_bytes(
             c.showPage()
             y = height - 60
 
+    # Underwriting summary (structured, insurance-friendly)
+    try:
+        y -= 6
+        if y < 140:
+            c.showPage()
+            y = height - 60
+        c.setFont("Helvetica", 12)
+        c.drawString(54, y, "Applicant & Underwriting Summary"); y -= 16
+        c.setFont("Helvetica", 10)
+        u = underwriting_snapshot or {}
+        risk = str(u.get("risk_assessment") or policy.get("risk_score") or "-")
+        c.drawString(60, y, f"Underwriting decision: APPROVED  |  Risk assessment: {risk}"); y -= 14
+        phone = str(customer.get("phone") or "-")
+        addr = str(customer.get("address") or "")
+        if not addr:
+            # commonly stored in form snapshot
+            try:
+                addr = str((form_snapshot or {}).get("address") or (form_snapshot or {}).get("street") or "")
+            except Exception:
+                addr = ""
+        c.drawString(60, y, f"Phone: {phone}"); y -= 14
+        if addr:
+            c.drawString(60, y, f"Address: {addr}"[:110]); y -= 14
+        # Health statement (best-effort extraction from form)
+        hs = "-"
+        try:
+            fs = form_snapshot or {}
+            for k in ("healthStatement", "health_statement", "medicalAssessment", "medical_assessment", "medicalConditions", "medical_conditions", "familyHistory", "family_history"):
+                v = fs.get(k) if isinstance(fs, dict) else None
+                if v:
+                    hs = str(v)
+                    break
+        except Exception:
+            hs = "-"
+        if hs and hs != "-":
+            c.drawString(60, y, "Health statement (excerpt):"); y -= 14
+            c.setFont("Helvetica", 8)
+            for ln in (hs.splitlines()[:12] if isinstance(hs, str) else [str(hs)])[:12]:
+                c.drawString(70, y, str(ln)[:115]); y -= 10
+                if y < 80:
+                    c.showPage()
+                    y = height - 60
+                    c.setFont("Helvetica", 8)
+            c.setFont("Helvetica", 10)
+        # Cash flow / allocation summary (from pricing snapshot)
+        try:
+            b = (pricing_snapshot or {}).get("breakdown") if isinstance(pricing_snapshot, dict) else None
+            if isinstance(b, dict):
+                mt = b.get("monthly_total_premium")
+                ms = b.get("monthly_savings_allocation")
+                mr = b.get("monthly_risk_allocation")
+                c.drawString(60, y, f"Cash flow (monthly): total={mt}  savings={ms}  risk={mr}"); y -= 14
+        except Exception:
+            pass
+    except Exception:
+        pass
+
+    # Disclaimer + master conditions reference
+    try:
+        if y < 120:
+            c.showPage()
+            y = height - 60
+        c.setFont("Helvetica", 11)
+        c.drawString(54, y, "Disclaimer"); y -= 14
+        c.setFont("Helvetica", 9)
+        disc = [
+            "This policy document package is generated electronically for compliance and audit.",
+            "It is not legal advice. Final policy wording is governed by the master insurance conditions and endorsements.",
+            "All key actions (approval, terms acceptance, payment) are recorded in the PHINS.ai ledger (NFT + audit logs).",
+        ]
+        for t in disc:
+            c.drawString(60, y, t[:120]); y -= 12
+        if billing_conditions_pdf and isinstance(billing_conditions_pdf, dict):
+            url = str(billing_conditions_pdf.get("download_url") or "")
+            sha = str(billing_conditions_pdf.get("sha256") or "")
+            if url:
+                c.drawString(60, y, f"Master conditions PDF: {url}"[:120]); y -= 12
+            if sha:
+                c.drawString(60, y, f"Master conditions SHA256: {sha}"[:120]); y -= 12
+    except Exception:
+        pass
+
     # Compliance section: embed immutable hashes + stored snapshots
     try:
         y -= 6
@@ -596,6 +718,8 @@ def _create_policy_terms_pdf_bytes(
             c.drawString(60, y, f"Application snapshot SHA256: {form_hash}"); y -= 14
         if pricing_hash:
             c.drawString(60, y, f"Pricing snapshot SHA256: {pricing_hash}"); y -= 14
+        if billing_conditions_pdf and isinstance(billing_conditions_pdf, dict) and billing_conditions_pdf.get("sha256"):
+            c.drawString(60, y, f"Master conditions SHA256: {billing_conditions_pdf.get('sha256')}"); y -= 14
         if attachments:
             c.drawString(60, y, "Attachments:"); y -= 14
             for a in attachments[:50]:
@@ -1040,6 +1164,7 @@ def _approve_underwriting_and_notify(*, uw_id: str, approved_by: str, automated:
         customer_id = policy.get("customer_id")
         cust = CUSTOMERS.get(customer_id) if customer_id else None
         if isinstance(cust, dict):
+            conditions_pdf = _get_latest_policy_conditions_pdf()
             bill = create_bill(policy_id=policy["id"], customer_id=customer_id, amount=float(policy["annual_premium"]), due_days=2)
             billing_link = create_billing_link(
                 bill_id=bill["id"],
@@ -1053,6 +1178,9 @@ def _approve_underwriting_and_notify(*, uw_id: str, approved_by: str, automated:
                 policy["billing_link_token"] = billing_link.get("token") if isinstance(billing_link, dict) else None
                 policy["billing_link_url"] = billing_link.get("url") if isinstance(billing_link, dict) else None
                 policy["billing_link_expires"] = billing_link.get("expires") if isinstance(billing_link, dict) else None
+                if conditions_pdf:
+                    policy["conditions_pdf_url"] = conditions_pdf.get("download_url")
+                    policy["conditions_pdf_sha256"] = conditions_pdf.get("sha256")
             except Exception:
                 pass
             # Issue policy NFT ledger token (architecture placeholder)
@@ -1090,6 +1218,8 @@ def _approve_underwriting_and_notify(*, uw_id: str, approved_by: str, automated:
                     form_snapshot=form_snapshot,
                     pricing_snapshot=pricing_snapshot,
                     attachments=attachments,
+                    underwriting_snapshot=app,
+                    billing_conditions_pdf=conditions_pdf,
                 )
                 if pdf_bytes:
                     docs = _persist_media_assets(
@@ -1148,6 +1278,7 @@ def _approve_underwriting_and_notify(*, uw_id: str, approved_by: str, automated:
                             "policy_terms_csv_sha256": policy.get("policy_terms_csv_sha256"),
                             "application_snapshot_sha256": _sha256_hex(_stable_json_bytes(form_snapshot)),
                             "pricing_snapshot_sha256": _sha256_hex(_stable_json_bytes(pricing_snapshot)),
+                            "master_conditions_sha256": (conditions_pdf.get("sha256") if isinstance(conditions_pdf, dict) else None),
                         })
                         TOKEN_REGISTRY[nft_tok] = {**rec, "meta": json.dumps(meta_obj)}
                 except Exception:
@@ -2686,6 +2817,16 @@ class PortalHandler(BaseHTTPRequestHandler):
             self._set_json_headers()
             self.wfile.write(json.dumps({'lines': lines, 'ts': datetime.utcnow().isoformat()}).encode('utf-8'))
             return
+
+        # Public: latest master insurance conditions PDF (referenced from policy artifacts)
+        if path == '/api/policy-terms/conditions':
+            info = _get_latest_policy_conditions_pdf()
+            self._set_json_headers()
+            if not info:
+                self.wfile.write(json.dumps({'available': False}).encode('utf-8'))
+            else:
+                self.wfile.write(json.dumps({'available': True, **info}).encode('utf-8'))
+            return
         
         # Policy Management Endpoints
         if path == '/api/policies':
@@ -2956,6 +3097,80 @@ class PortalHandler(BaseHTTPRequestHandler):
                 self.wfile.write(json.dumps({'error': 'Invalid request', 'details': str(e)}).encode('utf-8'))
             return
 
+        # Admin: upload master insurance conditions PDF (stored as media asset + ledger)
+        if path == '/api/admin/policy-terms/conditions/upload':
+            if not require_role(session, ['admin']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Unauthorized. Admin access required.'}).encode('utf-8'))
+                return
+            try:
+                content_type = (self.headers.get('Content-Type') or '')
+                if 'multipart/form-data' not in content_type:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'multipart/form-data required'}).encode('utf-8'))
+                    return
+                boundary = content_type.split('boundary=')[-1].strip()
+                if not boundary:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'Missing boundary'}).encode('utf-8'))
+                    return
+                # body bytes already read above as `body`
+                fields, uploaded_files = self._parse_multipart_data_with_files(body, boundary.encode())
+                # pick first PDF file
+                f0 = None
+                for f in uploaded_files:
+                    ct = str(f.get('content_type') or '').lower()
+                    name = str(f.get('filename') or '')
+                    if ct == 'application/pdf' or name.lower().endswith('.pdf'):
+                        f0 = f
+                        break
+                if not f0:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'PDF file is required'}).encode('utf-8'))
+                    return
+                raw = f0.get('data') or b''
+                if not isinstance(raw, (bytes, bytearray)) or len(raw) <= 0:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'Empty file'}).encode('utf-8'))
+                    return
+                sha = _sha256_hex(bytes(raw))
+                saved = _persist_media_assets(
+                    customer_id="global",
+                    uw_id="policy_terms",
+                    policy_id=None,
+                    files=[{
+                        "field": "policy_conditions_pdf",
+                        "filename": str(f0.get('filename') or 'policy_conditions.pdf'),
+                        "content_type": "application/pdf",
+                        "data": bytes(raw),
+                    }],
+                )
+                doc = saved[0] if saved else None
+                if not isinstance(doc, dict) or not doc.get('token'):
+                    self._set_json_headers(500)
+                    self.wfile.write(json.dumps({'error': 'Failed to store file'}).encode('utf-8'))
+                    return
+                tok = f"COND-{uuid.uuid4().hex[:12]}"
+                TOKEN_REGISTRY[tok] = {
+                    "token": tok,
+                    "kind": "policy_conditions_pdf_template",
+                    "status": "active",
+                    "meta": json.dumps({
+                        "media_token": doc.get("token"),
+                        "sha256": sha,
+                        "filename": doc.get("filename"),
+                        "uploaded_at": datetime.utcnow().isoformat(),
+                    }),
+                    "created_date": datetime.now().isoformat(),
+                    "expires": None,
+                }
+                self._set_json_headers(200)
+                self.wfile.write(json.dumps({'success': True, 'template_token': tok, 'document': doc, 'sha256': sha}).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'Invalid request', 'details': str(e)}).encode('utf-8'))
+            return
+
         # Billing link resolve (48h token)
         if path == '/api/billing/link':
             token_q = qs.get('token', [None])[0]
@@ -2975,11 +3190,14 @@ class PortalHandler(BaseHTTPRequestHandler):
             policy = POLICIES.get(meta.get('policy_id')) if meta.get('policy_id') else None
             extra = {"terms_accepted": _has_terms_acceptance_for_billing_token(token_q)}
             if isinstance(policy, dict):
+                cond = _get_latest_policy_conditions_pdf()
                 extra = {
                     "policy_id": policy.get("id"),
                     "nft_token": policy.get("nft_token"),
                     "policy_terms_url": policy.get("policy_terms_url"),
                     "terms_accepted": _has_terms_acceptance_for_billing_token(token_q),
+                    "master_conditions_url": (cond.get("download_url") if isinstance(cond, dict) else None),
+                    "master_conditions_sha256": (cond.get("sha256") if isinstance(cond, dict) else None),
                 }
             self._set_json_headers()
             self.wfile.write(json.dumps({'valid': True, 'expires': resolved.get('expires'), 'bill': bill, 'meta': {**meta, **extra}}).encode('utf-8'))

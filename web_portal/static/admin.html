@@ -162,6 +162,16 @@
           <button class="btn-small" id="policy-terms-save">Save template</button>
           <div id="policy-terms-msg" class="muted-text" style="margin-left:auto"></div>
         </div>
+        <div style="margin-top:12px; padding-top:12px; border-top:1px solid var(--border)">
+          <div style="font-weight:800">Master insurance conditions (PDF)</div>
+          <div class="muted-text">Upload your official policy conditions/disclaimer PDF. The generated policy PDF will reference it (link + SHA256) and store it for audit.</div>
+          <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-top:10px">
+            <input id="policy-conditions-pdf" type="file" accept="application/pdf" />
+            <button class="btn-small" id="policy-conditions-upload">Upload conditions PDF</button>
+            <div id="policy-conditions-msg" class="muted-text" style="margin-left:auto"></div>
+          </div>
+          <div id="policy-conditions-current" class="muted-text" style="margin-top:8px"></div>
+        </div>
       </div>
     </section>
 
