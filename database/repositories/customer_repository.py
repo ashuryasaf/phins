@@ -2,6 +2,7 @@
 
 from typing import Optional, List
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 from database.models import Customer
 from .base import BaseRepository
 
@@ -15,6 +16,16 @@ class CustomerRepository(BaseRepository[Customer]):
     def get_by_email(self, email: str) -> Optional[Customer]:
         """Get customer by email address"""
         return self.find_one_by(email=email)
+
+    def get_by_email_ci(self, email: str) -> Optional[Customer]:
+        """Case-insensitive lookup by email (for legacy mixed-case records)."""
+        try:
+            e = str(email or "").strip()
+            if not e:
+                return None
+            return self.session.query(Customer).filter(func.lower(Customer.email) == e.lower()).first()
+        except Exception:
+            return None
     
     def search_by_name(self, name: str) -> List[Customer]:
         """Search customers by name (partial match)"""

@@ -2,6 +2,7 @@
 
 from typing import Optional, List
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 from database.models import User
 from .base import BaseRepository
 
@@ -15,6 +16,26 @@ class UserRepository(BaseRepository[User]):
     def get_by_username(self, username: str) -> Optional[User]:
         """Get user by username (primary key)"""
         return self.get_by_id(username)
+
+    def get_by_username_ci(self, username: str) -> Optional[User]:
+        """Case-insensitive lookup by username (for legacy mixed-case records)."""
+        try:
+            u = str(username or "").strip()
+            if not u:
+                return None
+            return self.session.query(User).filter(func.lower(User.username) == u.lower()).first()
+        except Exception:
+            return None
+
+    def get_by_email_ci(self, email: str) -> List[User]:
+        """Case-insensitive lookup by email (returns possibly multiple users)."""
+        try:
+            e = str(email or "").strip()
+            if not e:
+                return []
+            return self.session.query(User).filter(func.lower(User.email) == e.lower()).all()
+        except Exception:
+            return []
     
     def get_by_role(self, role: str) -> List[User]:
         """Get all users with a specific role"""

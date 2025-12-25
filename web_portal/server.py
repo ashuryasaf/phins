@@ -955,7 +955,12 @@ if USE_DATABASE and database_enabled:
             try:
                 from database.manager import DatabaseManager
                 with DatabaseManager() as db:
-                    user = db.users.get_by_username(username)
+                    # Legacy compatibility: usernames/emails were not always normalized in older deployments.
+                    user = db.users.get_by_username(username) or db.users.get_by_username_ci(username)
+                    if not user and "@" in (username or ""):
+                        # Allow login by email even if the stored username differs.
+                        matches = db.users.get_by_email_ci(username)
+                        user = matches[0] if matches else None
                     if user:
                         # Customer accounts are stored in the users table too, but the user row
                         # doesn't store customer_id. We resolve it via the customers table by email.
@@ -963,7 +968,7 @@ if USE_DATABASE and database_enabled:
                         try:
                             lookup_email = (user.email or username or "").strip().lower()
                             if lookup_email:
-                                cust = db.customers.get_by_email(lookup_email)
+                                cust = db.customers.get_by_email_ci(lookup_email) or db.customers.get_by_email(lookup_email)
                                 if cust:
                                     customer_id = cust.id
                         except Exception:
