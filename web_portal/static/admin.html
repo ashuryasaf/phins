@@ -152,6 +152,17 @@
         <h3 style="margin-top:0">Application details</h3>
         <div id="uw-detail" style="color:var(--muted)">Select an application to view full form + pricing used for underwriting.</div>
       </div>
+
+      <div class="card" style="margin-top:12px">
+        <h3 style="margin-top:0">Policy terms conditions (template for future approvals)</h3>
+        <div class="muted-text">These lines are embedded into the policy terms PDF/CSV generated on approval.</div>
+        <textarea id="policy-terms-template" style="width:100%; min-height:140px; margin-top:10px" placeholder="- Enter one condition per line"></textarea>
+        <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-top:10px">
+          <input id="policy-terms-file" type="file" accept="text/plain,application/json" />
+          <button class="btn-small" id="policy-terms-save">Save template</button>
+          <div id="policy-terms-msg" class="muted-text" style="margin-left:auto"></div>
+        </div>
+      </div>
     </section>
 
     <section class="section-content" id="support">

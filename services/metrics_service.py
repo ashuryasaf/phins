@@ -17,8 +17,9 @@ class MetricsService:
 
     def summary(self) -> Dict[str, Any]:
         total_policies = len(self._policies)
-        active_policies = sum(1 for p in self._policies.values() if p.get('status') == 'active')
-        pending_policies = sum(1 for p in self._policies.values() if p.get('status') == 'pending_underwriting')
+        active_policies = sum(1 for p in self._policies.values() if p.get('status') in ('active', 'in_force'))
+        # pending underwriting + pending first-payment/billing window
+        pending_policies = sum(1 for p in self._policies.values() if p.get('status') in ('pending_underwriting', 'billing_pending'))
         pending_claims = sum(1 for c in self._claims.values() if c.get('status') in ['pending', 'under_review'])
         approved_claims = sum(1 for c in self._claims.values() if c.get('status') == 'approved')
         overdue_bills = sum(1 for b in self._bills.values() if b.get('status') == 'overdue')

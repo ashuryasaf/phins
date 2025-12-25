@@ -369,7 +369,145 @@ def issue_policy_nft_token(*, policy_id: str, customer_id: str) -> Dict[str, Any
     return {"token": token, "meta": meta}
 
 
-def _create_policy_terms_pdf_bytes(*, policy: Dict[str, Any], customer: Dict[str, Any], nft_token: str | None, billing_expires: str | None) -> bytes:
+def _stable_json_bytes(obj: Any) -> bytes:
+    try:
+        return json.dumps(obj, sort_keys=True, separators=(",", ":"), default=str).encode("utf-8")
+    except Exception:
+        try:
+            return str(obj).encode("utf-8")
+        except Exception:
+            return b""
+
+
+def _sha256_hex(data: bytes) -> str:
+    try:
+        return hashlib.sha256(data).hexdigest()
+    except Exception:
+        return ""
+
+
+def _get_policy_terms_template_lines() -> list[str]:
+    """
+    Return the latest admin-provided policy-terms template (line list), else defaults.
+    Stored as TokenRegistry records with kind="policy_terms_template".
+    """
+    default_lines = [
+        "- This document is an electronically generated record for underwriting and compliance.",
+        "- Coverage activates upon underwriting approval AND successful payment within the billing window.",
+        "- Health risk loading applies ONLY to the risk cover portion, per PHINS underwriting rules.",
+        "- All actions are logged to an internal ledger (audit log + token registry).",
+    ]
+    try:
+        # Pick latest by created_date.
+        best = None
+        best_ts = ""
+        for rec in TOKEN_REGISTRY.values():
+            if not isinstance(rec, dict):
+                continue
+            if rec.get("kind") != "policy_terms_template":
+                continue
+            if rec.get("status") != "active":
+                continue
+            ts = str(rec.get("created_date") or "")
+            if ts >= best_ts:
+                best_ts = ts
+                best = rec
+        if best:
+            meta = best.get("meta")
+            meta_obj = json.loads(meta) if isinstance(meta, str) else (meta or {})
+            lines = meta_obj.get("lines")
+            if isinstance(lines, list):
+                out = []
+                for l in lines:
+                    s = str(l or "").strip()
+                    if s:
+                        out.append(s)
+                if out:
+                    return out[:200]
+    except Exception:
+        pass
+    return default_lines
+
+
+def _create_policy_terms_csv_bytes(
+    *,
+    policy: Dict[str, Any],
+    customer: Dict[str, Any],
+    uw_id: str | None,
+    nft_token: str | None,
+    billing_expires: str | None,
+    terms_lines: list[str],
+    form_snapshot: Any,
+    pricing_snapshot: Any,
+    attachments: list[Dict[str, Any]] | None,
+) -> bytes:
+    try:
+        import csv
+    except Exception:
+        return b""
+    bio = BytesIO()
+    try:
+        # NOTE: newline='' is required for csv in text mode; we are writing bytes.
+        out = BytesIO()
+        text = out  # placeholder to satisfy type-checkers
+    except Exception:
+        pass
+    # Use TextIOWrapper to write csv to bytes.
+    import io
+    f = io.TextIOWrapper(bio, encoding="utf-8", newline="")
+    w = csv.writer(f)
+    w.writerow(["field", "value"])
+    w.writerow(["generated_utc", datetime.utcnow().isoformat()])
+    w.writerow(["underwriting_id", uw_id or ""])
+    w.writerow(["policy_id", str(policy.get("id") or "")])
+    w.writerow(["policy_status", str(policy.get("status") or "")])
+    w.writerow(["policy_type", str(policy.get("type") or "")])
+    w.writerow(["jurisdiction", str(policy.get("jurisdiction") or "")])
+    w.writerow(["coverage_amount", str(policy.get("coverage_amount") or "")])
+    w.writerow(["annual_premium", str(policy.get("annual_premium") or "")])
+    w.writerow(["monthly_premium", str(policy.get("monthly_premium") or "")])
+    w.writerow(["savings_percentage", str(policy.get("savings_percentage") or "")])
+    w.writerow(["customer_id", str(customer.get("id") or policy.get("customer_id") or "")])
+    w.writerow(["customer_name", str(customer.get("name") or "")])
+    w.writerow(["customer_email", str(customer.get("email") or "")])
+    if nft_token:
+        w.writerow(["policy_nft_token", nft_token])
+    if billing_expires:
+        w.writerow(["billing_deadline", billing_expires])
+
+    form_hash = _sha256_hex(_stable_json_bytes(form_snapshot))
+    pricing_hash = _sha256_hex(_stable_json_bytes(pricing_snapshot))
+    w.writerow(["application_snapshot_sha256", form_hash])
+    w.writerow(["pricing_snapshot_sha256", pricing_hash])
+
+    if attachments:
+        for i, a in enumerate(attachments[:200]):
+            try:
+                w.writerow([f"attachment_{i}_filename", str(a.get("filename") or "")])
+                w.writerow([f"attachment_{i}_token", str(a.get("token") or "")])
+                w.writerow([f"attachment_{i}_download_url", str(a.get("download_url") or "")])
+            except Exception:
+                continue
+
+    w.writerow(["terms_version", "template"])
+    for i, t in enumerate(terms_lines[:200], start=1):
+        w.writerow([f"term_{i}", t])
+    f.flush()
+    return bio.getvalue()
+
+
+def _create_policy_terms_pdf_bytes(
+    *,
+    policy: Dict[str, Any],
+    customer: Dict[str, Any],
+    nft_token: str | None,
+    billing_expires: str | None,
+    uw_id: str | None = None,
+    terms_lines: list[str] | None = None,
+    form_snapshot: Any = None,
+    pricing_snapshot: Any = None,
+    attachments: list[Dict[str, Any]] | None = None,
+) -> bytes:
     """
     Generate a simple policy-terms PDF (insurance audit artifact).
     Uses ReportLab; if unavailable, returns empty bytes.
@@ -404,17 +542,80 @@ def _create_policy_terms_pdf_bytes(*, policy: Dict[str, Any], customer: Dict[str
     y -= 10
     line(y, "Key terms (summary):", 12); y -= 16
     c.setFont("Helvetica", 10)
-    terms = [
-        "- This document is an electronically generated record for underwriting and compliance.",
-        "- Coverage activates upon underwriting approval and successful payment within the billing window.",
-        "- Health risk loading applies ONLY to the risk cover portion, per PHINS underwriting rules.",
-        "- All actions are logged to an internal ledger (audit log + token registry).",
-    ]
+    terms = terms_lines or _get_policy_terms_template_lines()
     for t in terms:
         c.drawString(60, y, t); y -= 14
         if y < 80:
             c.showPage()
             y = height - 60
+
+    # Compliance section: embed immutable hashes + stored snapshots
+    try:
+        y -= 6
+        if y < 120:
+            c.showPage()
+            y = height - 60
+        c.setFont("Helvetica", 12)
+        c.drawString(54, y, "Compliance (stored snapshots)",); y -= 16
+        c.setFont("Helvetica", 10)
+        if uw_id:
+            c.drawString(60, y, f"Underwriting Application ID: {uw_id}"); y -= 14
+        form_hash = _sha256_hex(_stable_json_bytes(form_snapshot))
+        pricing_hash = _sha256_hex(_stable_json_bytes(pricing_snapshot))
+        if form_hash:
+            c.drawString(60, y, f"Application snapshot SHA256: {form_hash}"); y -= 14
+        if pricing_hash:
+            c.drawString(60, y, f"Pricing snapshot SHA256: {pricing_hash}"); y -= 14
+        if attachments:
+            c.drawString(60, y, "Attachments:"); y -= 14
+            for a in attachments[:50]:
+                fn = str(a.get("filename") or "")
+                tok = str(a.get("token") or "")
+                c.drawString(70, y, f"- {fn}  ({tok})"); y -= 12
+                if y < 80:
+                    c.showPage()
+                    y = height - 60
+    except Exception:
+        pass
+
+    # Embed full snapshots (bounded) for audit packages
+    try:
+        def _emit_json_block(title: str, obj: Any) -> None:
+            nonlocal y
+            txt = ""
+            try:
+                txt = json.dumps(obj or {}, sort_keys=True, indent=2, default=str)
+            except Exception:
+                txt = str(obj or "")
+            c.showPage()
+            y = height - 60
+            c.setFont("Helvetica", 12)
+            c.drawString(54, y, title); y -= 16
+            c.setFont("Helvetica", 7)
+            # Hard cap lines to keep PDFs reasonable.
+            lines = []
+            for raw in (txt.splitlines() if isinstance(txt, str) else [str(txt)]):
+                s = str(raw)
+                while len(s) > 110:
+                    lines.append(s[:110])
+                    s = s[110:]
+                lines.append(s)
+                if len(lines) > 900:
+                    lines.append("... truncated ...")
+                    break
+            for ln in lines:
+                c.drawString(54, y, ln)
+                y -= 9
+                if y < 60:
+                    c.showPage()
+                    y = height - 60
+                    c.setFont("Helvetica", 7)
+
+        _emit_json_block("Application snapshot (stored)", form_snapshot)
+        _emit_json_block("Pricing snapshot (stored)", pricing_snapshot)
+    except Exception:
+        pass
+
     c.showPage()
     c.save()
     return bio.getvalue()
@@ -676,14 +877,17 @@ def _approve_underwriting_and_notify(*, uw_id: str, approved_by: str, automated:
 
     # Update policy
     if policy:
-        policy["status"] = "active"
+        # Underwriting approved, but policy becomes "active/in-force" only after first payment.
+        policy["status"] = "billing_pending"
         policy["approval_date"] = datetime.now().isoformat()
         policy["uw_status"] = "approved"
+        policy["billing_status"] = "payment_required"
 
     # Create bill + 48h billing link (for first premium)
     billing_link = None
     nft = None
     terms_doc = None
+    terms_csv_doc = None
     if policy and isinstance(policy.get("annual_premium"), (int, float)):
         customer_id = policy.get("customer_id")
         cust = CUSTOMERS.get(customer_id) if customer_id else None
@@ -696,6 +900,13 @@ def _approve_underwriting_and_notify(*, uw_id: str, approved_by: str, automated:
                 amount=float(policy["annual_premium"]),
                 hours_valid=48,
             )
+            try:
+                policy["bill_id"] = bill.get("id")
+                policy["billing_link_token"] = billing_link.get("token") if isinstance(billing_link, dict) else None
+                policy["billing_link_url"] = billing_link.get("url") if isinstance(billing_link, dict) else None
+                policy["billing_link_expires"] = billing_link.get("expires") if isinstance(billing_link, dict) else None
+            except Exception:
+                pass
             # Issue policy NFT ledger token (architecture placeholder)
             try:
                 nft = issue_policy_nft_token(policy_id=policy["id"], customer_id=customer_id)
@@ -706,11 +917,31 @@ def _approve_underwriting_and_notify(*, uw_id: str, approved_by: str, automated:
                 nft = None
             # Generate policy terms PDF and store as a downloadable media asset
             try:
+                # Pull stored application + pricing snapshots for compliance hashing / export
+                notes = {}
+                try:
+                    notes = json.loads(app.get("notes") or "{}") if isinstance(app.get("notes"), str) else (app.get("notes") or {})
+                except Exception:
+                    notes = {}
+                form_snapshot = (notes.get("form") if isinstance(notes, dict) else None) or {}
+                pricing_snapshot = (notes.get("pricing") if isinstance(notes, dict) else None) or {}
+                attachments = []
+                try:
+                    if isinstance(notes, dict) and isinstance(notes.get("attachments"), list):
+                        attachments = notes.get("attachments") or []
+                except Exception:
+                    attachments = []
+                terms_lines = _get_policy_terms_template_lines()
                 pdf_bytes = _create_policy_terms_pdf_bytes(
                     policy=policy,
                     customer=cust,
                     nft_token=(policy.get("nft_token") if isinstance(policy, dict) else None),
                     billing_expires=(billing_link.get("expires") if isinstance(billing_link, dict) else None),
+                    uw_id=str(uw_id),
+                    terms_lines=terms_lines,
+                    form_snapshot=form_snapshot,
+                    pricing_snapshot=pricing_snapshot,
+                    attachments=attachments,
                 )
                 if pdf_bytes:
                     docs = _persist_media_assets(
@@ -723,6 +954,56 @@ def _approve_underwriting_and_notify(*, uw_id: str, approved_by: str, automated:
                     if isinstance(terms_doc, dict):
                         policy["policy_terms_token"] = terms_doc.get("token")
                         policy["policy_terms_url"] = terms_doc.get("download_url")
+                        # include immutable hash for audits
+                        policy["policy_terms_pdf_sha256"] = _sha256_hex(pdf_bytes)
+
+                # Also generate a CSV export for underwriting/compliance files
+                csv_bytes = _create_policy_terms_csv_bytes(
+                    policy=policy,
+                    customer=cust,
+                    uw_id=str(uw_id),
+                    nft_token=(policy.get("nft_token") if isinstance(policy, dict) else None),
+                    billing_expires=(billing_link.get("expires") if isinstance(billing_link, dict) else None),
+                    terms_lines=terms_lines,
+                    form_snapshot=form_snapshot,
+                    pricing_snapshot=pricing_snapshot,
+                    attachments=attachments,
+                )
+                if csv_bytes:
+                    docs2 = _persist_media_assets(
+                        customer_id=customer_id,
+                        uw_id=str(uw_id),
+                        policy_id=str(policy.get("id")),
+                        files=[{"field": "policy_terms_csv", "filename": f"{policy.get('id','policy')}_terms.csv", "content_type": "text/csv", "data": csv_bytes}],
+                    )
+                    terms_csv_doc = docs2[0] if docs2 else None
+                    if isinstance(terms_csv_doc, dict):
+                        policy["policy_terms_csv_token"] = terms_csv_doc.get("token")
+                        policy["policy_terms_csv_url"] = terms_csv_doc.get("download_url")
+                        policy["policy_terms_csv_sha256"] = _sha256_hex(csv_bytes)
+
+                # Enrich NFT meta with compliance hashes (best-effort; keeps token "insurance-grade")
+                try:
+                    nft_tok = policy.get("nft_token")
+                    if nft_tok and isinstance(TOKEN_REGISTRY.get(nft_tok), dict):
+                        rec = TOKEN_REGISTRY.get(nft_tok) or {}
+                        meta_obj = {}
+                        try:
+                            meta_obj = json.loads(rec.get("meta") or "{}") if isinstance(rec.get("meta"), str) else (rec.get("meta") or {})
+                        except Exception:
+                            meta_obj = {}
+                        meta_obj.update({
+                            "underwriting_id": str(uw_id),
+                            "bill_id": bill.get("id"),
+                            "billing_link_token": billing_link.get("token") if isinstance(billing_link, dict) else None,
+                            "policy_terms_pdf_sha256": policy.get("policy_terms_pdf_sha256"),
+                            "policy_terms_csv_sha256": policy.get("policy_terms_csv_sha256"),
+                            "application_snapshot_sha256": _sha256_hex(_stable_json_bytes(form_snapshot)),
+                            "pricing_snapshot_sha256": _sha256_hex(_stable_json_bytes(pricing_snapshot)),
+                        })
+                        TOKEN_REGISTRY[nft_tok] = {**rec, "meta": json.dumps(meta_obj)}
+                except Exception:
+                    pass
             except Exception:
                 terms_doc = None
             notify_customer(
@@ -736,11 +1017,12 @@ def _approve_underwriting_and_notify(*, uw_id: str, approved_by: str, automated:
                     "2) Accept terms + complete payment to activate billing.\n\n"
                     f"Policy NFT ledger token: {policy.get('nft_token') if isinstance(policy, dict) else ''}\n"
                     + (f"Policy terms PDF: {terms_doc.get('download_url')}\n" if isinstance(terms_doc, dict) and terms_doc.get("download_url") else "")
+                    + (f"Policy terms CSV: {terms_csv_doc.get('download_url')}\n" if isinstance(terms_csv_doc, dict) and terms_csv_doc.get("download_url") else "")
                 ),
                 link=billing_link.get("url"),
                 kind="billing",
             )
-    return {"application": app, "policy": policy, "billing_link": billing_link, "policy_nft": nft, "policy_terms": terms_doc}
+    return {"application": app, "policy": policy, "billing_link": billing_link, "policy_nft": nft, "policy_terms": terms_doc, "policy_terms_csv": terms_csv_doc}
 
 
 def _reject_underwriting_and_notify(*, uw_id: str, rejected_by: str, reason: str) -> Dict[str, Any] | None:
@@ -2227,6 +2509,17 @@ class PortalHandler(BaseHTTPRequestHandler):
             self._set_json_headers()
             self.wfile.write(json.dumps({'phi_config': PHI_PRODUCT_CONFIG, 'ts': datetime.now().isoformat()}).encode('utf-8'))
             return
+
+        # Policy terms template (admin-managed; used for future approvals)
+        if path == '/api/admin/policy-terms/template':
+            if not require_role(session, ['admin']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Unauthorized. Admin access required.'}).encode('utf-8'))
+                return
+            lines = _get_policy_terms_template_lines()
+            self._set_json_headers()
+            self.wfile.write(json.dumps({'lines': lines, 'ts': datetime.utcnow().isoformat()}).encode('utf-8'))
+            return
         
         # Policy Management Endpoints
         if path == '/api/policies':
@@ -2443,6 +2736,58 @@ class PortalHandler(BaseHTTPRequestHandler):
                 return
             self._set_json_headers()
             self.wfile.write(json.dumps({'config': UNDERWRITING_AUTOMATION_CONFIG}).encode('utf-8'))
+            return
+
+        # Policy terms template (admin upload/update)
+        if path == '/api/admin/policy-terms/template':
+            if not require_role(session, ['admin']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Unauthorized. Admin access required.'}).encode('utf-8'))
+                return
+            try:
+                data = json.loads(body) if body else {}
+                text = data.get('text')
+                lines = data.get('lines')
+                out_lines: list[str] = []
+                if isinstance(lines, list):
+                    for l in lines:
+                        s = str(l or '').strip()
+                        if s:
+                            out_lines.append(s)
+                elif isinstance(text, str) and text.strip():
+                    for l in text.splitlines():
+                        s = l.strip()
+                        if s:
+                            out_lines.append(s)
+                # Allow posting raw JSON-string payload as text
+                elif isinstance(text, str):
+                    try:
+                        maybe = json.loads(text)
+                        if isinstance(maybe, list):
+                            for l in maybe:
+                                s = str(l or '').strip()
+                                if s:
+                                    out_lines.append(s)
+                    except Exception:
+                        pass
+                if not out_lines:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'No terms provided'}).encode('utf-8'))
+                    return
+                tok = f"TERMS-{uuid.uuid4().hex[:12]}"
+                TOKEN_REGISTRY[tok] = {
+                    "token": tok,
+                    "kind": "policy_terms_template",
+                    "status": "active",
+                    "meta": json.dumps({"lines": out_lines[:500]}),
+                    "created_date": datetime.now().isoformat(),
+                    "expires": None,
+                }
+                self._set_json_headers(200)
+                self.wfile.write(json.dumps({'success': True, 'token': tok, 'lines': out_lines[:200]}).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'Invalid request', 'details': str(e)}).encode('utf-8'))
             return
 
         # Billing link resolve (48h token)
@@ -4856,6 +5201,16 @@ class PortalHandler(BaseHTTPRequestHandler):
                 bill['status'] = 'paid'
                 bill['paid_date'] = datetime.now().isoformat()
                 BILLING[bill_id] = bill
+
+                # Activate policy after successful payment
+                try:
+                    policy_id = meta.get('policy_id')
+                    if policy_id and isinstance(POLICIES.get(policy_id), dict):
+                        POLICIES[policy_id]['status'] = 'active'
+                        POLICIES[policy_id]['billing_status'] = 'paid'
+                        POLICIES[policy_id]['activated_date'] = datetime.now().isoformat()
+                except Exception:
+                    pass
 
                 # Revoke token
                 TOKEN_REGISTRY[token] = {**(TOKEN_REGISTRY.get(token) or {}), 'token': token, 'kind': 'billing_link', 'status': 'revoked'}

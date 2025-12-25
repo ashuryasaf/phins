@@ -78,7 +78,8 @@ async function loadMetrics() {
 
 async function loadPipeline() {
   const data = await fetch('/api/underwriting', { headers: getAuthHeaders() }).then(r => r.json());
-  const items = Array.isArray(data.items) ? data.items : [];
+  // This table is explicitly "New Applications" – hide decisions already made.
+  const items = (Array.isArray(data.items) ? data.items : []).filter(u => ['pending', 'draft'].includes(String(u.status || '').toLowerCase()));
   const tbody = document.getElementById('uw-table');
   if (!items.length) {
     tbody.innerHTML = '<tr><td colspan="8" style="color:var(--muted)">No underwriting applications yet.</td></tr>';
@@ -86,11 +87,16 @@ async function loadPipeline() {
   }
 
   async function approve(id) {
-    await fetch('/api/underwriting/approve', {
+    const resp = await fetch('/api/underwriting/approve', {
       method: 'POST',
       headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
       body: JSON.stringify({ id, approved_by: 'admin' }),
     });
+    const j = await resp.json().catch(() => ({}));
+    if (!resp.ok || j.error) {
+      alert(`Approve failed: ${j.error || 'Unknown error'}`);
+      return;
+    }
     await loadPipeline();
   }
 
@@ -415,6 +421,42 @@ function renderAdminInvestmentAllocations(data) {
   `;
 }
 
+async function loadPolicyTermsTemplate() {
+  const ta = document.getElementById('policy-terms-template');
+  const msg = document.getElementById('policy-terms-msg');
+  if (!ta) return;
+  try {
+    const resp = await fetch('/api/admin/policy-terms/template', { headers: getAuthHeaders() });
+    const j = await resp.json().catch(() => ({}));
+    if (resp.ok && Array.isArray(j.lines)) {
+      ta.value = j.lines.join('\n');
+      if (msg) msg.textContent = '';
+    } else {
+      if (msg) msg.textContent = 'Template unavailable.';
+    }
+  } catch (_) {
+    if (msg) msg.textContent = 'Template unavailable.';
+  }
+}
+
+async function savePolicyTermsTemplate(text) {
+  const msg = document.getElementById('policy-terms-msg');
+  if (msg) msg.textContent = 'Saving…';
+  const resp = await fetch('/api/admin/policy-terms/template', {
+    method: 'POST',
+    headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text }),
+  });
+  const j = await resp.json().catch(() => ({}));
+  if (!resp.ok || j.error) {
+    if (msg) msg.textContent = 'Save failed.';
+    alert(`Save failed: ${j.error || 'Unknown error'}`);
+    return;
+  }
+  if (msg) msg.textContent = 'Saved.';
+  setTimeout(() => { if (msg) msg.textContent = ''; }, 2000);
+}
+
 // Language selector (same UX as other pages)
 window.changeLanguage = function changeLanguage(lang) {
   localStorage.setItem('phins_language', lang);
@@ -444,6 +486,34 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   const prof = await requireAdmin();
   if (!prof) return;
+
+  // Policy terms template (used for future approvals)
+  await loadPolicyTermsTemplate();
+  const termsSaveBtn = document.getElementById('policy-terms-save');
+  if (termsSaveBtn) {
+    termsSaveBtn.addEventListener('click', async () => {
+      const ta = document.getElementById('policy-terms-template');
+      const text = String(ta?.value || '').trim();
+      if (!text) {
+        alert('Please enter at least one condition line.');
+        return;
+      }
+      await savePolicyTermsTemplate(text);
+    });
+  }
+  const termsFile = document.getElementById('policy-terms-file');
+  if (termsFile) {
+    termsFile.addEventListener('change', async (e) => {
+      try {
+        const f = e.target?.files?.[0];
+        if (!f) return;
+        const text = String(await f.text());
+        if (!text.trim()) return;
+        await savePolicyTermsTemplate(text);
+        await loadPolicyTermsTemplate();
+      } catch (_) {}
+    });
+  }
 
   // Market: allow admin to push price points for charts (persisted server-side)
   const pushBtn = document.getElementById('market-push-btn');
