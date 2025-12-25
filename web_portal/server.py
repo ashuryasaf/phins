@@ -78,14 +78,16 @@ UNDERWRITING_AUTOMATION_CONFIG: Dict[str, Any] = {
     "max_adl_actuarial_risk_rate": 0.03,
 }
 
-# Market time-series (in-memory, best-effort)
+# Market time-series (in-memory, best-effort). Keyed by SYMBOL@CURRENCY to avoid mixing currencies.
 MARKET_SERIES_MAX_POINTS = int(os.environ.get("MARKET_SERIES_MAX_POINTS", "240"))
 MARKET_SERIES: Dict[str, Dict[str, list[Dict[str, Any]]]] = {"crypto": {}, "index": {}}
 
-def _series_append(kind: str, symbol: str, price: float) -> None:
+def _series_append(kind: str, symbol: str, price: float, *, currency: str = "USD") -> None:
     kind = "crypto" if kind == "crypto" else "index"
     sym = str(symbol).upper()
-    series = MARKET_SERIES.setdefault(kind, {}).setdefault(sym, [])
+    cur = str(currency or "USD").upper()
+    key = f"{sym}@{cur}"
+    series = MARKET_SERIES.setdefault(kind, {}).setdefault(key, [])
     series.append({"t": datetime.utcnow().isoformat(), "p": float(price)})
     # keep rolling buffer
     if len(series) > MARKET_SERIES_MAX_POINTS:
@@ -905,6 +907,83 @@ def calculate_premium(policy_data: Dict[str, Any]) -> Dict[str, float]:
             "quarterly": round(annual_premium / 4.0, 2),
         }
 
+
+def _health_risk_loading_factor(health_condition_score: Any) -> float:
+    """
+    Map a 1-10 health condition score to a risk-loading factor applied to the *risk cover* portion.
+
+    Requirements:
+      - 1-3  -> +0%
+      - 4-6  -> +15%
+      - 7-8  -> +50%
+      - 9-10 -> +100%
+    """
+    try:
+        s = int(float(health_condition_score))
+    except Exception:
+        s = 3
+    if s <= 3:
+        return 0.0
+    if 4 <= s <= 6:
+        return 0.15
+    if 7 <= s <= 8:
+        return 0.50
+    return 1.00
+
+
+def _apply_health_risk_loading(priced: Dict[str, Any], *, health_condition_score: Any) -> Dict[str, Any]:
+    """
+    Apply health risk loading to pricing, adding the uplift ONLY to the risk allocation.
+    """
+    factor = _health_risk_loading_factor(health_condition_score)
+    if not factor:
+        # Still annotate for transparency.
+        b = priced.get("breakdown") if isinstance(priced, dict) else None
+        if isinstance(b, dict):
+            b["health_condition_score"] = int(float(health_condition_score)) if str(health_condition_score).strip() else 3
+            b["health_risk_loading_factor"] = 0.0
+            b["health_risk_loading_percent"] = 0.0
+        return priced
+
+    out = dict(priced or {})
+    b = out.get("breakdown") if isinstance(out, dict) else None
+    if not isinstance(b, dict):
+        b = {}
+        out["breakdown"] = b
+
+    # Base allocations from pricing_service
+    monthly_total = float(out.get("monthly") or 0.0)
+    annual_total = float(out.get("annual") or 0.0)
+    monthly_risk = float(b.get("monthly_risk_allocation") or 0.0)
+    annual_risk = float(b.get("annual_risk_allocation") or 0.0)
+
+    # Loading is charged on risk cover only, per requirement.
+    monthly_extra = round(monthly_risk * factor, 2)
+    annual_extra = round(annual_risk * factor, 2)
+
+    out["monthly"] = round(monthly_total + monthly_extra, 2)
+    out["annual"] = round(annual_total + annual_extra, 2)
+    out["quarterly"] = round(float(out["annual"]) / 4.0, 2)
+
+    # Keep the savings allocation the same; all uplift goes to risk cover.
+    b["health_condition_score"] = int(float(health_condition_score)) if str(health_condition_score).strip() else 3
+    b["health_risk_loading_factor"] = float(factor)
+    b["health_risk_loading_percent"] = float(factor) * 100.0
+    b["monthly_risk_loading_amount"] = float(monthly_extra)
+    b["annual_risk_loading_amount"] = float(annual_extra)
+    b["monthly_total_premium"] = float(out["monthly"])
+    b["annual_total_premium"] = float(out["annual"])
+    b["monthly_risk_allocation"] = round(monthly_risk + monthly_extra, 2)
+    b["annual_risk_allocation"] = round(annual_risk + annual_extra, 2)
+
+    # Savings allocations remain unchanged from the base result; ensure present.
+    if "monthly_savings_allocation" in b:
+        b["monthly_savings_allocation"] = float(b.get("monthly_savings_allocation") or 0.0)
+    if "annual_savings_allocation" in b:
+        b["annual_savings_allocation"] = float(b.get("annual_savings_allocation") or 0.0)
+
+    return out
+
 def get_bi_data_actuary() -> Dict[str, Any]:
     """Generate actuarial BI data"""
     return {
@@ -1526,6 +1605,46 @@ class PortalHandler(BaseHTTPRequestHandler):
                 self.wfile.write(json.dumps(payload).encode('utf-8'))
             return
 
+        # Underwriting application details (includes parsed form + pricing) for editing / admin decisioning
+        if path == '/api/underwriting/details':
+            app_id = qs.get('id', [None])[0]
+            if not app_id:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'id is required'}).encode('utf-8'))
+                return
+            role = USERS.get(session.get('username') if session else '', {}).get('role') if session else None
+            customer_scope = session.get('customer_id') if (session and role == 'customer') else None
+            app = UNDERWRITING_APPLICATIONS.get(app_id)
+            if not isinstance(app, dict):
+                self._set_json_headers(404)
+                self.wfile.write(json.dumps({'error': 'Application not found'}).encode('utf-8'))
+                return
+            if customer_scope and app.get('customer_id') != customer_scope:
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Forbidden'}).encode('utf-8'))
+                return
+            if not customer_scope and not require_role(session, ['admin', 'underwriter', 'accountant', 'claims']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Unauthorized'}).encode('utf-8'))
+                return
+            notes = {}
+            try:
+                notes = json.loads(app.get('notes') or '{}') if isinstance(app.get('notes'), str) else (app.get('notes') or {})
+            except Exception:
+                notes = {}
+            policy = POLICIES.get(app.get('policy_id')) if app.get('policy_id') else None
+            customer = CUSTOMERS.get(app.get('customer_id')) if app.get('customer_id') else None
+            self._set_json_headers()
+            self.wfile.write(json.dumps({
+                'application': app,
+                'policy': policy if isinstance(policy, dict) else None,
+                'customer': customer if isinstance(customer, dict) else None,
+                'notes': notes if isinstance(notes, dict) else {},
+                'form': (notes.get('form') if isinstance(notes, dict) else None),
+                'pricing': (notes.get('pricing') if isinstance(notes, dict) else None),
+            }).encode('utf-8'))
+            return
+
         # Underwriting automation configuration (admin)
         if path == '/api/underwriting/automation/config':
             if not require_role(session, ['admin']):
@@ -1728,7 +1847,7 @@ class PortalHandler(BaseHTTPRequestHandler):
                 svc = MarketDataService(ttl_seconds=30)
                 quotes = svc.get_crypto_quotes([s.strip() for s in symbols], vs_currency=vs)
                 for q in quotes:
-                    _series_append("crypto", q.symbol, q.price)
+                    _series_append("crypto", q.symbol, q.price, currency=vs)
                 payload = {"items": [q.to_dict() for q in quotes], "ts": datetime.utcnow().isoformat()}
             except Exception as e:
                 payload = {'items': [], 'error': str(e)}
@@ -1744,7 +1863,7 @@ class PortalHandler(BaseHTTPRequestHandler):
                 svc = MarketDataService(ttl_seconds=30)
                 quotes = svc.get_index_quotes([s.strip() for s in symbols], currency=currency)
                 for q in quotes:
-                    _series_append("index", q.symbol, q.price)
+                    _series_append("index", q.symbol, q.price, currency=currency)
                 payload = {"items": [q.to_dict() for q in quotes], "ts": datetime.utcnow().isoformat()}
             except Exception as e:
                 payload = {'items': [], 'error': str(e)}
@@ -1759,6 +1878,7 @@ class PortalHandler(BaseHTTPRequestHandler):
             points = max(5, min(500, points))
 
             kind_key = "crypto" if kind == "crypto" else "index"
+            currency = (qs.get('currency', [None])[0] or qs.get('vs', [None])[0] or "USD").upper()
             syms = [s.strip().upper() for s in symbols if s.strip()]
             if not syms:
                 self._set_json_headers()
@@ -1772,7 +1892,7 @@ class PortalHandler(BaseHTTPRequestHandler):
                     from database.manager import DatabaseManager
                     with DatabaseManager() as db:
                         for sym in syms:
-                            rows = db.market_ticks.latest_for_symbol(kind_key, sym, limit=max(points, 240))
+                            rows = db.market_ticks.latest_for_symbol(kind_key, sym, currency=currency, limit=max(points, 240))
                             # repository returns newest-first; API expects oldest->newest
                             pts = []
                             for r in reversed(rows or []):
@@ -1787,7 +1907,7 @@ class PortalHandler(BaseHTTPRequestHandler):
 
             items = []
             for s in syms:
-                mem_series = MARKET_SERIES.get(kind_key, {}).get(s, []) or []
+                mem_series = MARKET_SERIES.get(kind_key, {}).get(f"{s}@{currency}", []) or MARKET_SERIES.get(kind_key, {}).get(s, []) or []
                 merged = (db_points.get(s) or []) + list(mem_series)
                 if merged:
                     try:
@@ -1797,7 +1917,7 @@ class PortalHandler(BaseHTTPRequestHandler):
                 items.append({"symbol": s, "points": merged[-points:] if merged else []})
 
             self._set_json_headers()
-            self.wfile.write(json.dumps({'kind': kind_key, 'items': items, 'ts': datetime.utcnow().isoformat()}).encode('utf-8'))
+            self.wfile.write(json.dumps({'kind': kind_key, 'currency': currency, 'items': items, 'ts': datetime.utcnow().isoformat()}).encode('utf-8'))
             return
 
         # Validation endpoints (connectors)
@@ -1846,6 +1966,7 @@ class PortalHandler(BaseHTTPRequestHandler):
                 jurisdiction = qs.get('jurisdiction', [PHI_PRODUCT_CONFIG.get('default_jurisdiction', 'US')])[0]
                 savings_percentage = qs.get('savings_percentage', [PHI_PRODUCT_CONFIG.get('default_savings_percentage', 25)])[0]
                 operational_reinsurance_load = qs.get('operational_reinsurance_load', [PHI_PRODUCT_CONFIG.get('default_operational_reinsurance_load', 50)])[0]
+                health_condition_score = qs.get('health_condition_score', [qs.get('healthCondition', ['3'])[0]])[0]
                 from services.pricing_service import price_policy
                 priced = price_policy({
                     'type': policy_type,
@@ -1855,6 +1976,7 @@ class PortalHandler(BaseHTTPRequestHandler):
                     'savings_percentage': savings_percentage,
                     'operational_reinsurance_load': operational_reinsurance_load,
                 })
+                priced = _apply_health_risk_loading(priced, health_condition_score=health_condition_score)
                 self._set_json_headers()
                 self.wfile.write(json.dumps(priced).encode('utf-8'))
             except Exception as e:
@@ -2237,7 +2359,8 @@ class PortalHandler(BaseHTTPRequestHandler):
                 try:
                     kind_key = "crypto" if kind == "crypto" else "index"
                     sym = symbol
-                    series = MARKET_SERIES.setdefault(kind_key, {}).setdefault(sym, [])
+                    cur = currency
+                    series = MARKET_SERIES.setdefault(kind_key, {}).setdefault(f"{sym}@{cur}", [])
                     series.append({"t": created_dt.isoformat(), "p": float(price)})
                     if len(series) > MARKET_SERIES_MAX_POINTS:
                         del series[:-MARKET_SERIES_MAX_POINTS]
@@ -3518,6 +3641,129 @@ class PortalHandler(BaseHTTPRequestHandler):
             except Exception:
                 authed_customer_id = None
 
+            # If this is an edit of an existing pending application, update it in-place.
+            application_id_in = (fields.get('application_id') or fields.get('applicationId') or '').strip()
+            if application_id_in:
+                if not authed_customer_id:
+                    self._set_json_headers(401)
+                    self.wfile.write(json.dumps({'error': 'Login required to edit an application'}).encode('utf-8'))
+                    return
+                app = UNDERWRITING_APPLICATIONS.get(application_id_in)
+                if not isinstance(app, dict):
+                    self._set_json_headers(404)
+                    self.wfile.write(json.dumps({'error': 'Application not found'}).encode('utf-8'))
+                    return
+                if app.get('customer_id') != authed_customer_id:
+                    self._set_json_headers(403)
+                    self.wfile.write(json.dumps({'error': 'Forbidden'}).encode('utf-8'))
+                    return
+                if str(app.get('status') or '').lower() != 'pending':
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'Only pending applications can be edited'}).encode('utf-8'))
+                    return
+                policy_id_existing = app.get('policy_id')
+                policy = POLICIES.get(policy_id_existing) if policy_id_existing else None
+                if not isinstance(policy, dict):
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'Linked policy not found'}).encode('utf-8'))
+                    return
+
+                # Parse coverage + pricing inputs
+                coverage_sel = (fields.get('coverageAmount', '') or '').strip()
+                if coverage_sel == 'custom':
+                    coverage_sel = (fields.get('customCoverage', '') or '').strip()
+                try:
+                    coverage_amount = int(float(coverage_sel or policy.get('coverage_amount') or '100000'))
+                except Exception:
+                    coverage_amount = int(policy.get('coverage_amount') or 100000)
+
+                health_condition_score = int(float(fields.get('healthCondition', '3') or '3')) if (fields.get('healthCondition') or '').strip() else int(policy.get('health_condition_score') or 3)
+                savings_percentage = fields.get('savingsPercentage', fields.get('savings_percentage', policy.get('savings_percentage', PHI_PRODUCT_CONFIG.get('default_savings_percentage', 25))))
+                jurisdiction = (fields.get('jurisdiction') or fields.get('country') or policy.get('jurisdiction') or PHI_PRODUCT_CONFIG.get('default_jurisdiction', 'US'))
+                operational_reinsurance_load = fields.get('operationalReinsuranceLoad', fields.get('operational_reinsurance_load', policy.get('operational_reinsurance_load', PHI_PRODUCT_CONFIG.get('default_operational_reinsurance_load', 50))))
+
+                # Update customer record (best-effort)
+                try:
+                    cust = CUSTOMERS.get(authed_customer_id)
+                    if isinstance(cust, dict):
+                        cust.update({
+                            'name': f"{(fields.get('firstName','') or '').strip()} {(fields.get('lastName','') or '').strip()}".strip() or cust.get('name') or email,
+                            'first_name': (fields.get('firstName','') or '').strip() or cust.get('first_name'),
+                            'last_name': (fields.get('lastName','') or '').strip() or cust.get('last_name'),
+                            'phone': fields.get('phone', cust.get('phone','')),
+                            'dob': fields.get('dob', cust.get('dob','')),
+                            'gender': fields.get('gender', cust.get('gender','')),
+                            'address': fields.get('address', cust.get('address','')),
+                            'city': fields.get('city', cust.get('city','')),
+                            'zip': fields.get('postalCode', cust.get('zip','')),
+                            'occupation': fields.get('occupation', cust.get('occupation','')),
+                        })
+                        CUSTOMERS[authed_customer_id] = cust
+                except Exception:
+                    pass
+
+                # Re-price and update policy (risk loading applied to risk cover portion)
+                try:
+                    age_i = self._calculate_age(fields.get('dob', policy.get('dob', '1990-01-01')))
+                    from services.pricing_service import price_policy
+                    priced = price_policy({
+                        'type': 'disability',
+                        'coverage_amount': coverage_amount,
+                        'age': age_i,
+                        'jurisdiction': jurisdiction,
+                        'savings_percentage': savings_percentage,
+                        'operational_reinsurance_load': operational_reinsurance_load,
+                    })
+                    priced = _apply_health_risk_loading(priced, health_condition_score=health_condition_score)
+                    policy.update({
+                        'type': 'disability',
+                        'coverage_amount': coverage_amount,
+                        'annual_premium': float(priced.get('annual', 0.0)),
+                        'monthly_premium': float(priced.get('monthly', 0.0)),
+                        'jurisdiction': 'UK' if str(jurisdiction).upper() in ('UK', 'GB', 'GBR') else 'US',
+                        'savings_percentage': savings_percentage,
+                        'operational_reinsurance_load': operational_reinsurance_load,
+                        'health_condition_score': health_condition_score,
+                        'health_risk_loading_factor': _health_risk_loading_factor(health_condition_score),
+                        'updated_date': datetime.utcnow().isoformat(),
+                    })
+                    POLICIES[policy_id_existing] = policy
+
+                    # Update underwriting notes: keep full form + pricing for admin decision
+                    n = {}
+                    try:
+                        n = json.loads(app.get('notes') or '{}') if isinstance(app.get('notes'), str) else (app.get('notes') or {})
+                    except Exception:
+                        n = {}
+                    if isinstance(n, dict):
+                        n['source'] = 'quote_edit'
+                        n['form'] = fields
+                        n['pricing'] = priced.get('breakdown', {})
+                        app['notes'] = json.dumps(n)
+                    app['submitted_date'] = datetime.utcnow().isoformat()
+                    UNDERWRITING_APPLICATIONS[application_id_in] = app
+
+                    # Store submission
+                    try:
+                        store_form_submission(source='quote_update', customer_id=authed_customer_id, email=email, payload={'application_id': application_id_in, 'policy_id': policy_id_existing, 'fields': fields})
+                    except Exception:
+                        pass
+
+                    self._set_json_headers(200)
+                    self.wfile.write(json.dumps({
+                        'success': True,
+                        'application_id': application_id_in,
+                        'customer_id': authed_customer_id,
+                        'policy_id': policy_id_existing,
+                        'message': 'Application updated successfully.',
+                        'estimated_premium': {'annual': priced.get('annual'), 'monthly': priced.get('monthly'), 'quarterly': priced.get('quarterly'), 'breakdown': priced.get('breakdown', {})},
+                    }).encode('utf-8'))
+                    return
+                except Exception as e:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'Update failed', 'details': str(e)}).encode('utf-8'))
+                    return
+
             # Generate IDs (reuse customer_id by email when possible)
             customer_id = authed_customer_id
             try:
@@ -3569,9 +3815,14 @@ class PortalHandler(BaseHTTPRequestHandler):
                 coverage_amount = int(float(coverage_sel or '100000'))
             except Exception:
                 coverage_amount = 100000
-            policy_type = 'life'
+            policy_type = 'disability'
+
+            # Savings preference and jurisdiction (important for pricing + allocations)
+            savings_percentage = fields.get('savingsPercentage', fields.get('savings_percentage', PHI_PRODUCT_CONFIG.get('default_savings_percentage', 25)))
+            jurisdiction = (fields.get('jurisdiction') or fields.get('country') or PHI_PRODUCT_CONFIG.get('default_jurisdiction', 'US'))
+            operational_reinsurance_load = fields.get('operationalReinsuranceLoad', fields.get('operational_reinsurance_load', PHI_PRODUCT_CONFIG.get('default_operational_reinsurance_load', 50)))
             
-            # Assess risk based on health information
+            # Assess risk based on health information (and expose numeric score for pricing load)
             risk_score = 'low'
             medical_exam_required = False
             
@@ -3579,10 +3830,20 @@ class PortalHandler(BaseHTTPRequestHandler):
             pre_existing = (fields.get('preExisting', '') or '').lower()
             health_condition_score = int(float(fields.get('healthCondition', '3') or '3')) if (fields.get('healthCondition') or '').strip() else 3
 
-            if 'smoker' in smoking or smoking in ('yes', 'current'):
+            # Base risk tier by health score (1-10)
+            if 4 <= health_condition_score <= 6:
                 risk_score = 'medium'
-            if pre_existing == 'yes' or health_condition_score >= 7:
+            elif 7 <= health_condition_score <= 8:
                 risk_score = 'high'
+            elif health_condition_score >= 9:
+                risk_score = 'very_high'
+
+            if 'smoker' in smoking or smoking in ('yes', 'current'):
+                risk_score = 'high' if risk_score in ('medium', 'low') else risk_score
+            if pre_existing == 'yes':
+                risk_score = 'high' if risk_score in ('medium', 'low') else risk_score
+                medical_exam_required = True
+            if health_condition_score >= 7:
                 medical_exam_required = True
             
             # Create underwriting application
@@ -3602,13 +3863,34 @@ class PortalHandler(BaseHTTPRequestHandler):
                 'notes': json.dumps(uw_notes),
             }
             
-            # Calculate premium
-            premium_data = calculate_premium({
-                'type': policy_type,
-                'coverage_amount': coverage_amount,
-                'age': self._calculate_age(fields.get('dob', '1990-01-01')),
-                'risk_score': risk_score,
-            })
+            # Calculate premium (+ breakdown) including savings preference and health-risk loading
+            age_i = self._calculate_age(fields.get('dob', '1990-01-01'))
+            try:
+                from services.pricing_service import price_policy
+                priced = price_policy({
+                    'type': policy_type,
+                    'coverage_amount': coverage_amount,
+                    'age': age_i,
+                    'jurisdiction': jurisdiction,
+                    'savings_percentage': savings_percentage,
+                    'operational_reinsurance_load': operational_reinsurance_load,
+                })
+                priced = _apply_health_risk_loading(priced, health_condition_score=health_condition_score)
+                premium_data = {
+                    'annual': float(priced.get('annual', 0.0)),
+                    'monthly': float(priced.get('monthly', 0.0)),
+                    'quarterly': float(priced.get('quarterly', 0.0)),
+                    'breakdown': priced.get('breakdown', {}),
+                }
+            except Exception:
+                premium_data = calculate_premium({
+                    'type': policy_type,
+                    'coverage_amount': coverage_amount,
+                    'age': age_i,
+                    'jurisdiction': jurisdiction,
+                    'savings_percentage': savings_percentage,
+                    'operational_reinsurance_load': operational_reinsurance_load,
+                })
             
             # Create policy
             POLICIES[policy_id] = {
@@ -3618,6 +3900,11 @@ class PortalHandler(BaseHTTPRequestHandler):
                 'coverage_amount': coverage_amount,
                 'annual_premium': premium_data['annual'],
                 'monthly_premium': premium_data['monthly'],
+                'jurisdiction': 'UK' if str(jurisdiction).upper() in ('UK', 'GB', 'GBR') else 'US',
+                'savings_percentage': savings_percentage,
+                'operational_reinsurance_load': operational_reinsurance_load,
+                'health_condition_score': health_condition_score,
+                'health_risk_loading_factor': _health_risk_loading_factor(health_condition_score),
                 'status': 'pending_underwriting',
                 'underwriting_id': uw_id,
                 'risk_score': risk_score,
@@ -3625,6 +3912,22 @@ class PortalHandler(BaseHTTPRequestHandler):
                 'end_date': (datetime.now() + timedelta(days=365)).isoformat(),
                 'created_date': datetime.now().isoformat()
             }
+
+            # Attach pricing to the underwriting record notes (admin decision-making)
+            try:
+                app = UNDERWRITING_APPLICATIONS.get(uw_id)
+                if isinstance(app, dict):
+                    n = {}
+                    try:
+                        n = json.loads(app.get('notes') or '{}') if isinstance(app.get('notes'), str) else (app.get('notes') or {})
+                    except Exception:
+                        n = {}
+                    if isinstance(n, dict):
+                        n['pricing'] = premium_data.get('breakdown') if isinstance(premium_data, dict) else None
+                        app['notes'] = json.dumps(n)
+                        UNDERWRITING_APPLICATIONS[uw_id] = app
+            except Exception:
+                pass
             
             print(f"✅ Application submitted: {uw_id} for customer {customer_id}")
             print(f"   Customer: {customer_name} ({email})")

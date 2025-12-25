@@ -19,7 +19,8 @@ const requiredFields = [
   'address', 'city', 'postalCode', 'nationalId', 'healthCondition',
   'height', 'weight', 'smoking', 'preExisting', 'maritalStatus',
   'occupation', 'incomeRange', 'exercise', 'coverageAmount',
-  'policyTerm', 'truthDeclaration', 'privacyConsent', 'termsAccept', 'signature'
+  'policyTerm', 'truthDeclaration', 'privacyConsent', 'termsAccept', 'signature',
+  'jurisdiction', 'savingsPercentage'
 ];
 
 function getToken() {
@@ -48,8 +49,56 @@ document.addEventListener('DOMContentLoaded', function() {
   setupFormValidation();
   setupConditionalFields();
   setupHealthSlider();
+  setupSavingsSlider();
   loadDraft();
   updateProgress();
+  updatePremiumPreview();
+
+  // Edit existing application (pending)
+  (async function maybeLoadApplication() {
+    const t = getToken();
+    if (!t) return;
+    const u = new URL(window.location.href);
+    const appId = u.searchParams.get('application_id') || u.searchParams.get('id');
+    if (!appId) return;
+    try {
+      const resp = await fetch(`/api/underwriting/details?id=${encodeURIComponent(appId)}`, { headers: { Authorization: `Bearer ${t}` } });
+      const data = await resp.json();
+      if (!resp.ok) return;
+      const form = data.form || (data.notes && data.notes.form) || {};
+      // Best-effort: populate matching fields by name/id
+      Object.keys(form || {}).forEach((k) => {
+        const v = form[k];
+        const el = document.getElementById(k) || document.querySelector(`[name="${k}"]`);
+        if (!el) return;
+        if (el.type === 'radio') {
+          const r = document.querySelector(`input[name="${k}"][value="${String(v)}"]`);
+          if (r) r.checked = true;
+          return;
+        }
+        if (el.type === 'checkbox') {
+          // for single checkboxes, treat "on"/true as checked
+          el.checked = !!v && String(v) !== 'false';
+          return;
+        }
+        if (el.type === 'file') return;
+        el.value = String(v ?? '');
+      });
+      // Map saved keys to current fields (savings/jurisdiction)
+      if (form.savingsPercentage && document.getElementById('savingsPercentage')) {
+        document.getElementById('savingsPercentage').value = String(form.savingsPercentage);
+        const d = document.getElementById('savingsPercentageValue'); if (d) d.textContent = String(form.savingsPercentage);
+      }
+      if (form.jurisdiction && document.getElementById('jurisdiction')) {
+        document.getElementById('jurisdiction').value = String(form.jurisdiction);
+      }
+      setQuoteLocked(false);
+      updateProgress();
+      updatePremiumPreview();
+      const btn = document.getElementById('submitBtn');
+      if (btn) btn.textContent = 'Save Application Changes';
+    } catch (_) {}
+  })();
 
   // Gate the rest of the application behind account creation/login,
   // so we can send underwriting/billing/claims notifications and keep the pipeline linked.
@@ -135,6 +184,98 @@ document.addEventListener('DOMContentLoaded', function() {
   }
 });
 
+function setupSavingsSlider() {
+  const slider = document.getElementById('savingsPercentage');
+  const valueDisplay = document.getElementById('savingsPercentageValue');
+  if (!slider || !valueDisplay) return;
+  slider.addEventListener('input', function () {
+    valueDisplay.textContent = String(this.value || '25');
+    updatePremiumPreview();
+  });
+  valueDisplay.textContent = String(slider.value || '25');
+}
+
+function getCoverageAmount() {
+  const sel = document.getElementById('coverageAmount');
+  if (!sel) return null;
+  const v = String(sel.value || '').trim();
+  if (!v) return null;
+  if (v === 'custom') {
+    const c = document.getElementById('customCoverage');
+    const n = Number(c && c.value ? c.value : 0);
+    return n > 0 ? n : null;
+  }
+  const n = Number(v);
+  return n > 0 ? n : null;
+}
+
+function calcAge(dobStr) {
+  try {
+    const d = new Date(dobStr);
+    if (Number.isNaN(d.getTime())) return null;
+    const now = new Date();
+    let age = now.getFullYear() - d.getFullYear();
+    const m = now.getMonth() - d.getMonth();
+    if (m < 0 || (m === 0 && now.getDate() < d.getDate())) age--;
+    return age;
+  } catch (_) {
+    return null;
+  }
+}
+
+async function updatePremiumPreview() {
+  const out = document.getElementById('premium-preview');
+  if (!out) return;
+
+  const cov = getCoverageAmount();
+  const dob = document.getElementById('dob')?.value;
+  const age = calcAge(dob);
+  const health = Number(document.getElementById('healthCondition')?.value || 3);
+  const savings = Number(document.getElementById('savingsPercentage')?.value || 25);
+  const jurisdiction = String(document.getElementById('jurisdiction')?.value || 'US');
+
+  if (!cov || !age || age < 18) {
+    out.textContent = 'Enter DOB and coverage amount to calculate.';
+    return;
+  }
+
+  try {
+    const qs = new URLSearchParams();
+    qs.set('type', 'disability');
+    qs.set('coverage_amount', String(cov));
+    qs.set('age', String(age));
+    qs.set('jurisdiction', jurisdiction);
+    qs.set('savings_percentage', String(savings));
+    qs.set('health_condition_score', String(health));
+    const resp = await fetch(`/api/pricing/estimate?${qs.toString()}`);
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || 'Pricing failed');
+
+    const b = data.breakdown || {};
+    const monthly = Number(data.monthly || 0);
+    const mRisk = Number(b.monthly_risk_allocation || 0);
+    const mSav = Number(b.monthly_savings_allocation || 0);
+    const loadPct = Number(b.health_risk_loading_percent || 0);
+    const loadAmt = Number(b.monthly_risk_loading_amount || 0);
+
+    out.innerHTML = `
+      <div style="display:flex; gap:14px; flex-wrap:wrap; align-items:flex-end">
+        <div style="flex:1; min-width:220px">
+          <div style="font-size:28px; font-weight:900; color:var(--brand)">$${monthly.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / mo</div>
+          <div style="color:var(--muted); margin-top:4px">Coverage: $${Number(cov).toLocaleString()} • Age: ${age} • ${jurisdiction}</div>
+        </div>
+        <div style="min-width:220px">
+          <div><strong>Risk cover:</strong> $${mRisk.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / mo</div>
+          <div><strong>Savings:</strong> $${mSav.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / mo</div>
+          <div style="color:var(--muted); font-size:12px; margin-top:4px">Health loading: ${loadPct.toFixed(0)}% (+$${loadAmt.toFixed(2)}/mo) applied to risk cover</div>
+        </div>
+      </div>
+    `;
+  } catch (e) {
+    out.textContent = 'Pricing unavailable right now.';
+  }
+}
+
 // Setup real-time validation for all inputs
 function setupFormValidation() {
   const form = document.getElementById('quoteForm');
@@ -214,6 +355,7 @@ function setupConditionalFields() {
       customGroup.style.display = 'none';
       customField.required = false;
     }
+    updatePremiumPreview();
   });
 }
 
@@ -225,6 +367,7 @@ function setupHealthSlider() {
   slider.addEventListener('input', function() {
     valueDisplay.textContent = this.value;
     updateSliderColor(this);
+    updatePremiumPreview();
   });
   
   updateSliderColor(slider);
@@ -296,6 +439,7 @@ function validateField(field) {
           isValid = false;
           errorMessage = 'Please enter a valid date of birth';
         }
+        updatePremiumPreview();
         break;
         
       case 'nationalId':
@@ -334,6 +478,11 @@ function validateField(field) {
           isValid = false;
           errorMessage = 'Please enter a valid postal code';
         }
+        break;
+      
+      case 'jurisdiction':
+      case 'savingsPercentage':
+        updatePremiumPreview();
         break;
     }
   }
@@ -732,6 +881,13 @@ async function handleSubmit() {
   // Never submit passwords as part of the quote payload (registration/login is handled separately)
   formData.delete('accountPassword');
   formData.delete('accountPasswordConfirm');
+
+  // If editing an existing pending application, include its id so the server updates in-place.
+  try {
+    const u = new URL(window.location.href);
+    const appId = u.searchParams.get('application_id') || u.searchParams.get('id');
+    if (appId) formData.set('application_id', appId);
+  } catch (_) {}
   
   // Add multimedia files
   if (photoBlob) {

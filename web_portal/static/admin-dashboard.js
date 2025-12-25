@@ -16,6 +16,15 @@ function badge(status) {
   return `<span class="${cls}">${String(status || 'unknown')}</span>`;
 }
 
+function esc(s) {
+  return String(s || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
 async function requireAdmin() {
   const token = getToken();
   if (!token) {
@@ -86,6 +95,55 @@ async function loadPipeline() {
     await loadPipeline();
   }
 
+  async function view(id) {
+    const out = document.getElementById('uw-detail');
+    if (out) out.textContent = 'Loading details…';
+    try {
+      const resp = await fetch(`/api/underwriting/details?id=${encodeURIComponent(id)}`, { headers: getAuthHeaders() });
+      const data = await resp.json();
+      if (!resp.ok) throw new Error(data.error || 'Failed');
+      const c = data.customer || {};
+      const p = data.policy || {};
+      const pricing = data.pricing || (data.notes && data.notes.pricing) || {};
+      const form = data.form || (data.notes && data.notes.form) || {};
+      const monthly = Number((p && p.monthly_premium) || (pricing && pricing.monthly_total_premium) || 0);
+      const savingsPct = (p && p.savings_percentage) ?? (pricing && pricing.savings_percentage_percent);
+      const healthScore = (p && p.health_condition_score) ?? (pricing && pricing.health_condition_score);
+      const healthLoad = (pricing && pricing.health_risk_loading_percent) ?? ((p && p.health_risk_loading_factor) ? Number(p.health_risk_loading_factor) * 100 : 0);
+
+      if (out) {
+        out.innerHTML = `
+          <div style="display:flex; gap:12px; flex-wrap:wrap">
+            <div class="card" style="flex:1; min-width:260px">
+              <div style="font-weight:900">Customer</div>
+              <div style="margin-top:6px"><strong>${c.name || '-'}</strong></div>
+              <div style="color:var(--muted)">${c.email || '-'}</div>
+              <div><strong>ID:</strong> ${c.id || '-'}</div>
+            </div>
+            <div class="card" style="flex:1; min-width:260px">
+              <div style="font-weight:900">Policy request</div>
+              <div style="margin-top:6px"><strong>Coverage:</strong> $${Number(p.coverage_amount || 0).toLocaleString()}</div>
+              <div><strong>Monthly premium:</strong> $${monthly.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+              <div><strong>Savings %:</strong> ${savingsPct ?? '-'}%</div>
+              <div><strong>Jurisdiction:</strong> ${p.jurisdiction || '-'}</div>
+              <div style="color:var(--muted); margin-top:6px">Health score: ${healthScore ?? '-'} (risk loading: ${Number(healthLoad || 0).toFixed(0)}%)</div>
+            </div>
+          </div>
+          <details style="margin-top:10px">
+            <summary style="cursor:pointer; font-weight:800">Full application form (stored)</summary>
+            <pre style="white-space:pre-wrap; margin-top:10px; background:var(--bg); padding:12px; border-radius:10px; border:1px solid var(--border)">${esc(JSON.stringify(form || {}, null, 2))}</pre>
+          </details>
+          <details style="margin-top:10px">
+            <summary style="cursor:pointer; font-weight:800">Pricing breakdown</summary>
+            <pre style="white-space:pre-wrap; margin-top:10px; background:var(--bg); padding:12px; border-radius:10px; border:1px solid var(--border)">${esc(JSON.stringify(pricing || {}, null, 2))}</pre>
+          </details>
+        `;
+      }
+    } catch (e) {
+      if (out) out.textContent = 'Could not load details.';
+    }
+  }
+
   const rows = items
     .sort((a, b) => String(b.submitted_date || '').localeCompare(String(a.submitted_date || '')))
     .slice(0, 50)
@@ -99,10 +157,11 @@ async function loadPipeline() {
         }
       } catch (e) {}
       const canAct = String(u.status || '').toLowerCase() === 'pending';
-      const actions = canAct
-        ? `<button class="btn-small" onclick="window.__uwApprove('${u.id}')">Approve</button>
-           <button class="btn-small" style="margin-left:8px" onclick="window.__uwReject('${u.id}')">Reject</button>`
-        : '<span style="color:var(--muted)">—</span>';
+      const actions = `
+        <button class="btn-small" onclick="window.__uwView('${u.id}')">View</button>
+        ${canAct ? `<button class="btn-small" style="margin-left:8px" onclick="window.__uwApprove('${u.id}')">Approve</button>
+                    <button class="btn-small" style="margin-left:8px" onclick="window.__uwReject('${u.id}')">Reject</button>` : `<span style="color:var(--muted); margin-left:8px">—</span>`}
+      `;
       return `
       <tr>
         <td>${u.id || '-'}</td>
@@ -121,6 +180,7 @@ async function loadPipeline() {
   // Expose handlers for inline onclick (keeps file dependency-free)
   window.__uwApprove = approve;
   window.__uwReject = reject;
+  window.__uwView = view;
 }
 
 async function loadUwAutomationConfig() {
@@ -404,6 +464,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     console.error(e);
   }
 
-  // Market charts are initialized from market-charts.js (loaded after this file).
+  // Market charts (indexes + currencies) for admin
+  try {
+    if (typeof renderMarketCharts === 'function' && document.getElementById('market-controls')) {
+      await renderMarketCharts('market-controls', { storeKeyCrypto: 'phins_admin_crypto', storeKeyIndex: 'phins_admin_index', intervalSeconds: 30 });
+    }
+  } catch (e) {}
 });
 

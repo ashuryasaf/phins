@@ -148,6 +148,10 @@
           </tbody>
         </table>
       </div>
+      <div class="card" style="margin-top:12px">
+        <h3 style="margin-top:0">Application details</h3>
+        <div id="uw-detail" style="color:var(--muted)">Select an application to view full form + pricing used for underwriting.</div>
+      </div>
     </section>
 
     <section class="section-content" id="support">
@@ -218,8 +222,26 @@
               <input class="filter-select" data-kind="crypto" data-role="symbols" placeholder="BTC,ETH,SOL" value="BTC,ETH,SOL" />
             </div>
             <div>
+              <label class="muted-text" style="display:block; margin-bottom:6px">Crypto currency</label>
+              <select class="filter-select" data-kind="crypto" data-role="currency">
+                <option value="USD" selected>USD</option>
+                <option value="EUR">EUR</option>
+                <option value="GBP">GBP</option>
+                <option value="ILS">ILS</option>
+              </select>
+            </div>
+            <div>
               <label class="muted-text" style="display:block; margin-bottom:6px">Index symbols</label>
               <input class="filter-select" data-kind="index" data-role="symbols" placeholder="SPX,NASDAQ,DOW,FTSE" value="SPX,NASDAQ,DOW,FTSE" />
+            </div>
+            <div>
+              <label class="muted-text" style="display:block; margin-bottom:6px">Index currency</label>
+              <select class="filter-select" data-kind="index" data-role="currency">
+                <option value="USD" selected>USD</option>
+                <option value="EUR">EUR</option>
+                <option value="GBP">GBP</option>
+                <option value="ILS">ILS</option>
+              </select>
             </div>
             <div>
               <button class="btn-small" data-role="refresh">Refresh</button>
@@ -250,7 +272,7 @@
             <div id="market-push-msg" class="muted-text" style="margin-left:auto"></div>
           </div>
         </div>
-        <div id="market-charts" data-role="charts" style="padding:12px"></div>
+        <div data-role="charts" style="padding:12px"></div>
       </div>
     </section>
   </main>

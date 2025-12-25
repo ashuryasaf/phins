@@ -88,10 +88,11 @@
               <th>Status</th>
               <th>Risk</th>
               <th>Submitted</th>
+              <th>Actions</th>
             </tr>
           </thead>
           <tbody id="applications-table">
-            <tr><td colspan="5" style="color:var(--muted)">Loading applications...</td></tr>
+            <tr><td colspan="6" style="color:var(--muted)">Loading applications...</td></tr>
           </tbody>
         </table>
       </div>
@@ -128,7 +129,7 @@
       </div>
       <div style="margin-top:16px">
         <p id="coverage-details" style="color:var(--muted); margin-bottom:12px;"><strong>Coverage Details:</strong> Loading…</p>
-        <a href="/#quote" class="btn btn-primary">Increase Coverage</a>
+        <a href="/quote.html" class="btn btn-primary">Increase Coverage</a>
       </div>
     </section>
 
@@ -255,8 +256,26 @@
                   <input class="filter-select" data-kind="crypto" data-role="symbols" placeholder="BTC,ETH" value="BTC,ETH" />
                 </div>
                 <div>
+                  <label class="muted-text" style="display:block; margin-bottom:6px">Crypto currency</label>
+                  <select class="filter-select" data-kind="crypto" data-role="currency">
+                    <option value="USD" selected>USD</option>
+                    <option value="EUR">EUR</option>
+                    <option value="GBP">GBP</option>
+                    <option value="ILS">ILS</option>
+                  </select>
+                </div>
+                <div>
                   <label class="muted-text" style="display:block; margin-bottom:6px">Index symbols</label>
                   <input class="filter-select" data-kind="index" data-role="symbols" placeholder="SPX,NASDAQ" value="SPX,NASDAQ" />
+                </div>
+                <div>
+                  <label class="muted-text" style="display:block; margin-bottom:6px">Index currency</label>
+                  <select class="filter-select" data-kind="index" data-role="currency">
+                    <option value="USD" selected>USD</option>
+                    <option value="EUR">EUR</option>
+                    <option value="GBP">GBP</option>
+                    <option value="ILS">ILS</option>
+                  </select>
                 </div>
                 <div>
                   <button class="btn-small" data-role="refresh">Refresh</button>

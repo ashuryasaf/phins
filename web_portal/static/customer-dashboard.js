@@ -77,21 +77,28 @@ async function loadMarketSnapshot() {
 function renderApplications(apps) {
   const tbody = document.getElementById('applications-table');
   if (!apps.length) {
-    tbody.innerHTML = '<tr><td colspan="5" style="color:var(--muted)">No applications in pipeline.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="6" style="color:var(--muted)">No applications in pipeline.</td></tr>';
     return;
   }
   const rows = apps
     .sort((a, b) => String(b.submitted_date || '').localeCompare(String(a.submitted_date || '')))
     .slice(0, 50)
-    .map(a => `
-      <tr>
-        <td>${a.id || '-'}</td>
-        <td>${a.policy_id || '-'}</td>
-        <td>${badge(a.status || 'pending')}</td>
-        <td>${a.risk_assessment ? badge(a.risk_assessment) : '-'}</td>
-        <td>${a.submitted_date ? new Date(a.submitted_date).toLocaleDateString() : '-'}</td>
-      </tr>
-    `);
+    .map(a => {
+      const canEdit = String(a.status || '').toLowerCase() === 'pending';
+      const action = canEdit && a.id
+        ? `<a class="link" href="/quote.html?application_id=${encodeURIComponent(a.id)}">Edit</a>`
+        : '<span style="color:var(--muted)">—</span>';
+      return `
+        <tr>
+          <td>${a.id || '-'}</td>
+          <td>${a.policy_id || '-'}</td>
+          <td>${badge(a.status || 'pending')}</td>
+          <td>${a.risk_assessment ? badge(a.risk_assessment) : '-'}</td>
+          <td>${a.submitted_date ? new Date(a.submitted_date).toLocaleDateString() : '-'}</td>
+          <td>${action}</td>
+        </tr>
+      `;
+    });
   tbody.innerHTML = rows.join('');
 }
 
