@@ -132,7 +132,11 @@ async function loadPipeline() {
           </div>
           <div class="card" style="margin-top:12px">
             <div style="font-weight:900">Savings projection (benchmark)</div>
-            <div id="${projId}" style="color:var(--muted); margin-top:6px">Loading…</div>
+            <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-top:8px">
+              <a class="btn-small" href="/api/admin/underwriting/projection/export?id=${encodeURIComponent(id)}&format=csv" target="_blank">Export CSV</a>
+              <a class="btn-small" href="/api/admin/underwriting/projection/export?id=${encodeURIComponent(id)}&format=pdf" target="_blank">Export PDF</a>
+              <div id="${projId}" style="color:var(--muted); margin-left:auto">Loading…</div>
+            </div>
           </div>
           <details style="margin-top:10px">
             <summary style="cursor:pointer; font-weight:800">Full application form (stored)</summary>

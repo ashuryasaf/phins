@@ -1214,6 +1214,55 @@ def _future_value_monthly_contributions(*, monthly_contribution: float, years: i
     return round(float(fv), 2)
 
 
+def _compute_savings_projection_payload(*, age: int, years: int, policy_type: str, coverage_amount: float, jurisdiction: str, savings_percentage: Any, operational_reinsurance_load: Any, health_condition_score: Any) -> Dict[str, Any]:
+    from services.pricing_service import price_policy
+
+    priced = price_policy({
+        'type': policy_type,
+        'coverage_amount': coverage_amount,
+        'age': age,
+        'jurisdiction': jurisdiction,
+        'savings_percentage': savings_percentage,
+        'operational_reinsurance_load': operational_reinsurance_load,
+    })
+    priced = _apply_health_risk_loading(priced, health_condition_score=health_condition_score)
+    b = priced.get('breakdown', {}) if isinstance(priced, dict) else {}
+    monthly_savings = float(b.get('monthly_savings_allocation') or 0.0)
+    monthly_total = float(b.get('monthly_total_premium') or priced.get('monthly') or 0.0)
+
+    scenarios = [
+        {'name': 'conservative', 'annual_return': 0.02},
+        {'name': 'base', 'annual_return': 0.05},
+        {'name': 'growth', 'annual_return': 0.08},
+    ]
+    proj = []
+    for s in scenarios:
+        r = float(s['annual_return'])
+        proj.append({
+            'scenario': s['name'],
+            'annual_return': r,
+            'annual_return_percent': r * 100.0,
+            'future_value': _future_value_monthly_contributions(monthly_contribution=monthly_savings, years=years, annual_return=r),
+        })
+
+    return {
+        'inputs': {
+            'age': age,
+            'years': years,
+            'type': policy_type,
+            'coverage_amount': coverage_amount,
+            'jurisdiction': 'UK' if str(jurisdiction).upper() in ('UK', 'GB', 'GBR') else 'US',
+            'savings_percentage': savings_percentage,
+            'operational_reinsurance_load': operational_reinsurance_load,
+            'health_condition_score': health_condition_score,
+        },
+        'pricing': priced,
+        'monthly_total_premium': round(monthly_total, 2),
+        'monthly_savings_allocation': round(monthly_savings, 2),
+        'projection': proj,
+    }
+
+
 class PortalHandler(BaseHTTPRequestHandler):
     def _get_client_ip(self) -> str:
         """
@@ -1294,6 +1343,12 @@ class PortalHandler(BaseHTTPRequestHandler):
         
         parsed = urlparse.urlparse(self.path)
         path = parsed.path
+        # Single application entry-point: route Apply to Quote (keeps insurance audit trail consistent)
+        if path in ('/apply', '/apply.html', '/buy', '/buy-insurance'):
+            self.send_response(302)
+            self.send_header('Location', '/quote.html')
+            self.end_headers()
+            return
 
         # Security checks
         client_ip = self._get_client_ip()
@@ -1448,6 +1503,45 @@ class PortalHandler(BaseHTTPRequestHandler):
                 'email': cust.get('email') if isinstance(cust, dict) else None,
                 'phone': cust.get('phone') if isinstance(cust, dict) else None,
                 'dob': cust.get('dob') if isinstance(cust, dict) else None,
+            }).encode('utf-8'))
+            return
+
+        # Quote defaults for logged-in customers (prefill new quote with stored info + last application)
+        if path == '/api/quote/defaults':
+            if not session:
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Unauthorized'}).encode('utf-8'))
+                return
+            role = USERS.get(session.get('username') if session else '', {}).get('role') if session else None
+            if role != 'customer':
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Customer access required'}).encode('utf-8'))
+                return
+            customer_id = session.get('customer_id')
+            cust = CUSTOMERS.get(customer_id) if customer_id else None
+            # Find latest underwriting form for this customer
+            last_app = None
+            try:
+                apps = [a for a in UNDERWRITING_APPLICATIONS.values() if isinstance(a, dict) and a.get('customer_id') == customer_id]
+                apps.sort(key=lambda x: str(x.get('submitted_date') or ''), reverse=True)
+                last_app = apps[0] if apps else None
+            except Exception:
+                last_app = None
+            last_form = {}
+            last_notes = {}
+            if isinstance(last_app, dict):
+                try:
+                    last_notes = json.loads(last_app.get('notes') or '{}') if isinstance(last_app.get('notes'), str) else (last_app.get('notes') or {})
+                except Exception:
+                    last_notes = {}
+                if isinstance(last_notes, dict) and isinstance(last_notes.get('form'), dict):
+                    last_form = last_notes.get('form') or {}
+            self._set_json_headers()
+            self.wfile.write(json.dumps({
+                'customer': cust if isinstance(cust, dict) else None,
+                'last_application_id': last_app.get('id') if isinstance(last_app, dict) else None,
+                'last_form': last_form,
+                'last_notes': last_notes if isinstance(last_notes, dict) else {},
             }).encode('utf-8'))
             return
 
@@ -2364,6 +2458,140 @@ class PortalHandler(BaseHTTPRequestHandler):
             except Exception as e:
                 self._set_json_headers(400)
                 self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+
+        # Admin: export underwriting savings projection for compliance (CSV/PDF)
+        if path == '/api/admin/underwriting/projection/export':
+            if not require_role(session, ['admin', 'underwriter', 'accountant']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Unauthorized'}).encode('utf-8'))
+                return
+            app_id = qs.get('id', [None])[0]
+            fmt = (qs.get('format', ['csv'])[0] or 'csv').lower()
+            if not app_id:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'id is required'}).encode('utf-8'))
+                return
+            app = UNDERWRITING_APPLICATIONS.get(app_id)
+            if not isinstance(app, dict):
+                self._set_json_headers(404)
+                self.wfile.write(json.dumps({'error': 'Application not found'}).encode('utf-8'))
+                return
+            policy = POLICIES.get(app.get('policy_id')) if app.get('policy_id') else None
+            customer = CUSTOMERS.get(app.get('customer_id')) if app.get('customer_id') else None
+            if not isinstance(policy, dict):
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'Linked policy not found'}).encode('utf-8'))
+                return
+
+            # Age derived from customer DOB (preferred) else fallback to 30
+            age = 30
+            try:
+                if isinstance(customer, dict) and customer.get('dob'):
+                    a = _calc_age_from_dob(str(customer.get('dob')))
+                    if a is not None:
+                        age = int(a)
+            except Exception:
+                age = 30
+
+            years = int(policy.get('policy_term_years') or 15)
+            years = max(1, min(60, years))
+            try:
+                payload = _compute_savings_projection_payload(
+                    age=age,
+                    years=years,
+                    policy_type=str(policy.get('type') or 'disability'),
+                    coverage_amount=float(policy.get('coverage_amount') or 100000),
+                    jurisdiction=str(policy.get('jurisdiction') or 'US'),
+                    savings_percentage=policy.get('savings_percentage', 25),
+                    operational_reinsurance_load=policy.get('operational_reinsurance_load', 50),
+                    health_condition_score=policy.get('health_condition_score', 3),
+                )
+            except Exception as e:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+                return
+
+            file_base = f"phins_projection_{app_id}"
+            if fmt == 'csv':
+                import csv
+                from io import StringIO
+                buf = StringIO()
+                w = csv.writer(buf)
+                w.writerow(["PHINS.ai Savings Projection Export"])
+                w.writerow(["application_id", app_id])
+                w.writerow(["policy_id", policy.get('id')])
+                w.writerow(["customer_id", policy.get('customer_id')])
+                w.writerow(["customer_email", (customer.get('email') if isinstance(customer, dict) else '')])
+                w.writerow([])
+                w.writerow(["age", payload['inputs']['age'], "years", payload['inputs']['years']])
+                w.writerow(["coverage_amount", payload['inputs']['coverage_amount']])
+                w.writerow(["jurisdiction", payload['inputs']['jurisdiction']])
+                w.writerow(["savings_percentage", payload['inputs']['savings_percentage']])
+                w.writerow(["monthly_total_premium", payload.get('monthly_total_premium')])
+                w.writerow(["monthly_savings_allocation", payload.get('monthly_savings_allocation')])
+                w.writerow([])
+                w.writerow(["scenario", "annual_return_percent", "future_value"])
+                for r in payload.get('projection') or []:
+                    w.writerow([r.get('scenario'), r.get('annual_return_percent'), r.get('future_value')])
+                raw = buf.getvalue().encode('utf-8')
+                self.send_response(200)
+                self.send_header('Content-Type', 'text/csv; charset=utf-8')
+                self.send_header('Content-Disposition', f'attachment; filename="{file_base}.csv"')
+                self.end_headers()
+                self.wfile.write(raw)
+                return
+
+            if fmt == 'pdf':
+                # Generate a simple compliance PDF (ReportLab).
+                try:
+                    from io import BytesIO
+                    from reportlab.lib.pagesizes import letter
+                    from reportlab.pdfgen import canvas
+                    bio = BytesIO()
+                    c = canvas.Canvas(bio, pagesize=letter)
+                    width, height = letter
+                    y = height - 50
+                    def line(txt: str):
+                        nonlocal y
+                        c.drawString(50, y, txt[:120])
+                        y -= 14
+                        if y < 60:
+                            c.showPage()
+                            y = height - 50
+                    line("PHINS.ai — Savings Projection Export (Compliance)")
+                    line(f"Application ID: {app_id}")
+                    line(f"Policy ID: {policy.get('id')}")
+                    line(f"Customer ID: {policy.get('customer_id')}")
+                    if isinstance(customer, dict):
+                        line(f"Customer Email: {customer.get('email') or ''}")
+                    line("")
+                    line(f"Age: {payload['inputs']['age']}   Term (years): {payload['inputs']['years']}")
+                    line(f"Coverage: ${float(payload['inputs']['coverage_amount']):,.2f}")
+                    line(f"Jurisdiction: {payload['inputs']['jurisdiction']}")
+                    line(f"Savings %: {payload['inputs']['savings_percentage']}")
+                    line(f"Monthly total premium: ${float(payload.get('monthly_total_premium') or 0):,.2f}")
+                    line(f"Monthly savings allocation: ${float(payload.get('monthly_savings_allocation') or 0):,.2f}")
+                    line("")
+                    line("Scenarios:")
+                    for r in payload.get('projection') or []:
+                        line(f" - {r.get('scenario')}: {float(r.get('annual_return_percent') or 0):.0f}%/yr  FV=${float(r.get('future_value') or 0):,.2f}")
+                    c.showPage()
+                    c.save()
+                    pdf_bytes = bio.getvalue()
+                    self.send_response(200)
+                    self.send_header('Content-Type', 'application/pdf')
+                    self.send_header('Content-Disposition', f'attachment; filename="{file_base}.pdf"')
+                    self.end_headers()
+                    self.wfile.write(pdf_bytes)
+                    return
+                except Exception as e:
+                    self._set_json_headers(501)
+                    self.wfile.write(json.dumps({'error': 'PDF export unavailable', 'details': str(e)}).encode('utf-8'))
+                    return
+
+            self._set_json_headers(400)
+            self.wfile.write(json.dumps({'error': 'Invalid format. Use csv or pdf.'}).encode('utf-8'))
             return
 
         # Disclaimers endpoint

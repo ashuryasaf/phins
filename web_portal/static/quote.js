@@ -105,6 +105,66 @@ document.addEventListener('DOMContentLoaded', function() {
   const hasToken = !!getToken();
   setQuoteLocked(!hasToken);
 
+  // Prefill "new quote" for logged-in customers using stored customer data + last application form.
+  (async function maybePrefillFromAccount() {
+    if (!hasToken) return;
+    const u = new URL(window.location.href);
+    const appId = u.searchParams.get('application_id') || u.searchParams.get('id');
+    if (appId) return; // editing an existing application
+    try {
+      const resp = await fetch('/api/quote/defaults', { headers: getAuthHeaders() });
+      const data = await resp.json();
+      if (!resp.ok) return;
+      const cust = data.customer || {};
+      const lastForm = data.last_form || {};
+
+      // Prefer last form values (most complete), fall back to customer profile fields.
+      const merged = { ...cust, ...lastForm };
+      const map = {
+        first_name: 'firstName',
+        last_name: 'lastName',
+        email: 'email',
+        phone: 'phone',
+        dob: 'dob',
+        gender: 'gender',
+        address: 'address',
+        city: 'city',
+        zip: 'postalCode',
+        occupation: 'occupation',
+      };
+      Object.keys(map).forEach((k) => {
+        const id = map[k];
+        const el = document.getElementById(id);
+        if (!el) return;
+        if (String(el.value || '').trim()) return;
+        const v = merged[k] ?? merged[id];
+        if (v != null && v !== '') el.value = String(v);
+      });
+
+      // Best-effort: fill any matching fields (medical assessment, etc.) if empty
+      Object.keys(lastForm || {}).forEach((k) => {
+        const el = document.getElementById(k) || document.querySelector(`[name="${k}"]`);
+        if (!el) return;
+        if (el.type === 'file') return;
+        if (String(el.value || '').trim()) return;
+        const v = lastForm[k];
+        if (el.type === 'radio') {
+          const r = document.querySelector(`input[name="${k}"][value="${String(v)}"]`);
+          if (r) r.checked = true;
+          return;
+        }
+        if (el.type === 'checkbox') {
+          el.checked = !!v && String(v) !== 'false';
+          return;
+        }
+        el.value = String(v ?? '');
+      });
+
+      updateProgress();
+      updatePremiumPreview();
+    } catch (_) {}
+  })();
+
   const nextBtn = document.getElementById('accountNextBtn');
   if (nextBtn) {
     nextBtn.addEventListener('click', async () => {
