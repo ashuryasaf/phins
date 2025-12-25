@@ -283,12 +283,13 @@ def notify_customer(
     *,
     customer_id: str | None,
     email: str | None,
+    phone: str | None = None,
     subject: str,
     message: str,
     link: str | None = None,
     kind: str = "info",
 ) -> None:
-    """Send in-app notification + best-effort email."""
+    """Send in-app notification + best-effort email + optional SMS webhook."""
     create_notification(customer_id=customer_id, role="customer", kind=kind, subject=subject, message=message, link=link)
 
     # Email is optional and depends on SMTP configuration.
@@ -296,6 +297,35 @@ def notify_customer(
         url_line = f"\n\nLink: {link}" if link else ""
         body = f"{message}{url_line}\n\n— PHINS.ai"
         send_email_notification(email, subject=subject, body=body)
+
+    # SMS is optional (webhook-driven). Provide `SMS_WEBHOOK_URL` to enable.
+    # We keep this best-effort and non-blocking for UX.
+    try:
+        sms_url = (os.environ.get("SMS_WEBHOOK_URL") or "").strip()
+        if not sms_url:
+            return
+        to = (phone or "").strip()
+        if (not to) and customer_id:
+            cust = CUSTOMERS.get(customer_id)
+            if isinstance(cust, dict):
+                to = str(cust.get("phone") or "").strip()
+        if not to:
+            return
+        # keep SMS short
+        sms_msg = f"{subject}\n{message}"
+        if link:
+            sms_msg = f"{sms_msg}\n{link}"
+        sms_msg = sms_msg[:900]
+        req = urllib.request.Request(
+            sms_url,
+            data=json.dumps({"to": to, "message": sms_msg, "customer_id": customer_id}).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        # no need to read body; ignore errors
+        urllib.request.urlopen(req, timeout=3)  # nosec - URL is operator-configured
+    except Exception:
+        pass
 
 
 def create_bill(*, policy_id: str, customer_id: str, amount: float, due_days: int = 30) -> Dict[str, Any]:
@@ -700,6 +730,124 @@ def _has_terms_acceptance_for_billing_token(billing_token: str) -> bool:
         return False
 
 
+def _recent_billing_attempts(*, billing_token: str, window_minutes: int = 10) -> int:
+    """Count recent billing payment attempts for a token (simple anti-abuse)."""
+    try:
+        now = datetime.utcnow()
+        cutoff = now - timedelta(minutes=int(window_minutes))
+        n = 0
+        for rec in TOKEN_REGISTRY.values():
+            if not isinstance(rec, dict):
+                continue
+            if rec.get("kind") != "billing_payment_attempt":
+                continue
+            try:
+                meta = json.loads(rec.get("meta") or "{}") if isinstance(rec.get("meta"), str) else (rec.get("meta") or {})
+            except Exception:
+                meta = {}
+            if meta.get("billing_token") != billing_token:
+                continue
+            try:
+                ts = str(meta.get("attempted_at") or rec.get("created_date") or "")
+                # ISO format lexical compare is OK for UTC-ish strings, but parse to be safe
+                dt = datetime.fromisoformat(ts.replace("Z", "+00:00")) if ts else None
+                if not dt:
+                    continue
+            except Exception:
+                continue
+            if dt >= cutoff:
+                n += 1
+        return n
+    except Exception:
+        return 0
+
+
+def _assess_billing_fraud_risk(*, billing_token: str, bill: Dict[str, Any], policy: Dict[str, Any] | None, customer: Dict[str, Any] | None, billing_details: Dict[str, Any], client_ip: str, user_agent: str) -> Dict[str, Any]:
+    """
+    Lightweight fraud/validation scoring for the 48h billing window.
+    This is intentionally simple (rule-based) but ledgered for later BI/AI.
+    """
+    score = 0
+    reasons: list[str] = []
+
+    # Anti-abuse: too many attempts
+    attempts = _recent_billing_attempts(billing_token=billing_token, window_minutes=10)
+    if attempts >= 6:
+        score += 60
+        reasons.append("too_many_attempts_10m")
+
+    payer_name = str(billing_details.get("payer_name") or "").strip()
+    country = str(billing_details.get("billing_country") or "").strip().upper()
+    postal = str(billing_details.get("billing_postal") or "").strip()
+    method = str(billing_details.get("payment_method") or "").strip().lower()
+    last4 = str(billing_details.get("card_last4") or "").strip()
+    signer = str(billing_details.get("signer_name") or "").strip()
+
+    if not payer_name or len(payer_name) < 3:
+        score += 20
+        reasons.append("missing_or_short_payer_name")
+    if not country or len(country) < 2:
+        score += 10
+        reasons.append("missing_country")
+    if not postal:
+        score += 10
+        reasons.append("missing_postal")
+    if method not in ("card", "bank_transfer", "wallet"):
+        score += 25
+        reasons.append("unknown_payment_method")
+    if method == "card":
+        if not last4.isdigit() or len(last4) != 4:
+            score += 30
+            reasons.append("invalid_card_last4")
+
+    # Soft check: signer vs payer mismatch (doesn't block, just increases score)
+    if signer and payer_name and signer.lower() != payer_name.lower():
+        score += 10
+        reasons.append("signer_name_mismatch")
+
+    # Bill and policy consistency checks
+    try:
+        total = float(bill.get("amount", bill.get("amount_due", 0.0)) or 0.0)
+        if total <= 0:
+            score += 40
+            reasons.append("invalid_bill_amount")
+    except Exception:
+        score += 40
+        reasons.append("invalid_bill_amount_parse")
+
+    if policy and isinstance(policy, dict):
+        if str(policy.get("status") or "").lower() not in ("billing_pending", "active"):
+            score += 25
+            reasons.append("unexpected_policy_status")
+    else:
+        score += 30
+        reasons.append("missing_policy")
+
+    # A place to plug in velocity/geo/device intelligence later
+    if not client_ip:
+        score += 5
+        reasons.append("missing_ip")
+    if not user_agent:
+        score += 5
+        reasons.append("missing_user_agent")
+
+    score = max(0, min(100, score))
+    severity = "low" if score < 35 else ("medium" if score < 70 else "high")
+    return {"score": score, "severity": severity, "reasons": reasons, "attempts_10m": attempts}
+
+
+def _find_customer_id_by_email(email: str) -> str | None:
+    e = (email or "").strip().lower()
+    if not e:
+        return None
+    for cid, c in CUSTOMERS.items():
+        if not isinstance(c, dict):
+            continue
+        if str(c.get("email") or "").strip().lower() == e:
+            return str(cid)
+    return None
+
+
 def store_form_submission(*, source: str, customer_id: str | None, email: str | None, payload: Dict[str, Any]) -> Dict[str, Any]:
     """Persist a form submission (DB-backed when enabled)."""
     sid = f"SUB-{datetime.now().strftime('%Y%m%d')}-{random.randint(100000, 999999)}"
@@ -1009,6 +1157,7 @@ def _approve_underwriting_and_notify(*, uw_id: str, approved_by: str, automated:
             notify_customer(
                 customer_id=customer_id,
                 email=cust.get("email"),
+                phone=cust.get("phone"),
                 subject="Your PHINS.ai application was approved",
                 message=(
                     "Your application has been approved.\n\n"
@@ -2110,6 +2259,23 @@ class PortalHandler(BaseHTTPRequestHandler):
                 'phone': cust.get('phone') if isinstance(cust, dict) else None,
                 'dob': cust.get('dob') if isinstance(cust, dict) else None,
             }).encode('utf-8'))
+            return
+
+        # Wallet balance (customer-only; used for deposits/investments)
+        if path == '/api/wallet/balance':
+            if not session:
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Unauthorized'}).encode('utf-8'))
+                return
+            role = USERS.get(session.get('username') if session else '', {}).get('role') if session else None
+            if role != 'customer':
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Customer access required'}).encode('utf-8'))
+                return
+            customer_id = session.get('customer_id')
+            bal = _wallet_balance(str(customer_id or ""))
+            self._set_json_headers()
+            self.wfile.write(json.dumps({'customer_id': customer_id, 'balance': bal, 'currency': 'USD'}).encode('utf-8'))
             return
 
         # Quote defaults for logged-in customers (prefill new quote with stored info + last application)
@@ -3570,6 +3736,292 @@ class PortalHandler(BaseHTTPRequestHandler):
         # Handle multipart form data for quote submission
         if path == '/api/submit-quote':
             self.handle_quote_submission()
+            return
+
+        # Wallet deposit / investment top-up (customer-only)
+        if path == '/api/wallet/deposit':
+            try:
+                if not session:
+                    self._set_json_headers(401)
+                    self.wfile.write(json.dumps({'error': 'Unauthorized'}).encode('utf-8'))
+                    return
+                role = USERS.get(session.get('username') if session else '', {}).get('role') if session else None
+                if role != 'customer':
+                    self._set_json_headers(403)
+                    self.wfile.write(json.dumps({'error': 'Customer access required'}).encode('utf-8'))
+                    return
+                payload = json.loads(body) if body else {}
+                amount = float(payload.get('amount') or 0.0)
+                if amount <= 0 or amount > 100000000:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'Invalid amount'}).encode('utf-8'))
+                    return
+                customer_id = str(session.get('customer_id') or '')
+                if not customer_id:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'No customer profile linked'}).encode('utf-8'))
+                    return
+                policy_id = payload.get('policy_id')
+                if policy_id:
+                    pol = POLICIES.get(policy_id)
+                    if not isinstance(pol, dict) or str(pol.get('customer_id') or '') != customer_id:
+                        self._set_json_headers(403)
+                        self.wfile.write(json.dumps({'error': 'Forbidden'}).encode('utf-8'))
+                        return
+                    # Track embedded savings balance on policy for future portability/hedging
+                    try:
+                        pol['savings_balance'] = round(float(pol.get('savings_balance') or 0.0) + amount, 2)
+                        pol['updated_date'] = datetime.now().isoformat()
+                    except Exception:
+                        pass
+                    # Update NFT meta with embedded savings value (insurance ledger artifact)
+                    try:
+                        nft_tok = pol.get('nft_token')
+                        if nft_tok and isinstance(TOKEN_REGISTRY.get(nft_tok), dict):
+                            rec = TOKEN_REGISTRY.get(nft_tok) or {}
+                            meta_obj = {}
+                            try:
+                                meta_obj = json.loads(rec.get("meta") or "{}") if isinstance(rec.get("meta"), str) else (rec.get("meta") or {})
+                            except Exception:
+                                meta_obj = {}
+                            meta_obj.update({
+                                "embedded_savings_balance": float(pol.get('savings_balance') or 0.0),
+                                "embedded_savings_currency": "USD",
+                                "owner_customer_id": customer_id,
+                                "updated_at": datetime.utcnow().isoformat(),
+                            })
+                            TOKEN_REGISTRY[nft_tok] = {**rec, "meta": json.dumps(meta_obj)}
+                    except Exception:
+                        pass
+                txn = _wallet_add_txn(customer_id=customer_id, amount=amount, kind='deposit', ref=(str(policy_id) if policy_id else None))
+                bal = _wallet_balance(customer_id)
+                self._set_json_headers(200)
+                self.wfile.write(json.dumps({'success': True, 'transaction': txn, 'balance': bal, 'currency': 'USD'}).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'Invalid request', 'details': str(e)}).encode('utf-8'))
+            return
+
+        # Update policy allocation (savings vs risk) for modular coverage (customer-only)
+        if path == '/api/policies/update-allocation':
+            try:
+                if not session:
+                    self._set_json_headers(401)
+                    self.wfile.write(json.dumps({'error': 'Unauthorized'}).encode('utf-8'))
+                    return
+                role = USERS.get(session.get('username') if session else '', {}).get('role') if session else None
+                if role != 'customer':
+                    self._set_json_headers(403)
+                    self.wfile.write(json.dumps({'error': 'Customer access required'}).encode('utf-8'))
+                    return
+                payload = json.loads(body) if body else {}
+                policy_id = payload.get('policy_id')
+                if not policy_id or policy_id not in POLICIES or not isinstance(POLICIES.get(policy_id), dict):
+                    self._set_json_headers(404)
+                    self.wfile.write(json.dumps({'error': 'Policy not found'}).encode('utf-8'))
+                    return
+                pol = POLICIES.get(policy_id)
+                customer_id = str(session.get('customer_id') or '')
+                if str(pol.get('customer_id') or '') != customer_id:
+                    self._set_json_headers(403)
+                    self.wfile.write(json.dumps({'error': 'Forbidden'}).encode('utf-8'))
+                    return
+                try:
+                    savings_pct = float(payload.get('savings_percentage'))
+                except Exception:
+                    savings_pct = float(pol.get('savings_percentage') or 25.0)
+                savings_pct = max(0.0, min(99.0, savings_pct))
+                pol['savings_percentage'] = round(savings_pct, 2)
+                pol['updated_date'] = datetime.now().isoformat()
+                # Best-effort repricing for future cycles (uses customer DOB if available)
+                try:
+                    cust = CUSTOMERS.get(customer_id)
+                    age = _calc_age_from_dob(str(cust.get('dob') or '')) if isinstance(cust, dict) else None
+                    from services.pricing_service import price_policy
+                    priced = price_policy({
+                        'type': pol.get('type') or 'disability',
+                        'coverage_amount': float(pol.get('coverage_amount') or 0.0),
+                        'age': int(age) if age is not None else 30,
+                        'jurisdiction': pol.get('jurisdiction') or 'US',
+                        'savings_percentage': savings_pct,
+                        'operational_reinsurance_load': float(pol.get('operational_reinsurance_load') or PHI_PRODUCT_CONFIG.get('default_operational_reinsurance_load', 50)),
+                    })
+                    # Keep as "next cycle" premiums; do not overwrite paid invoices retroactively
+                    pol['annual_premium_next'] = float(priced.get('annual') or 0.0)
+                    pol['monthly_premium_next'] = float(priced.get('monthly') or 0.0)
+                except Exception:
+                    pass
+                # Update NFT meta so portability includes modular split
+                try:
+                    nft_tok = pol.get('nft_token')
+                    if nft_tok and isinstance(TOKEN_REGISTRY.get(nft_tok), dict):
+                        rec = TOKEN_REGISTRY.get(nft_tok) or {}
+                        meta_obj = {}
+                        try:
+                            meta_obj = json.loads(rec.get("meta") or "{}") if isinstance(rec.get("meta"), str) else (rec.get("meta") or {})
+                        except Exception:
+                            meta_obj = {}
+                        meta_obj.update({
+                            "savings_percentage": pol.get('savings_percentage'),
+                            "risk_percentage": round(100.0 - float(pol.get('savings_percentage') or 0.0), 2),
+                            "updated_at": datetime.utcnow().isoformat(),
+                        })
+                        TOKEN_REGISTRY[nft_tok] = {**rec, "meta": json.dumps(meta_obj)}
+                except Exception:
+                    pass
+                self._set_json_headers(200)
+                self.wfile.write(json.dumps({'success': True, 'policy': pol}).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'Invalid request', 'details': str(e)}).encode('utf-8'))
+            return
+
+        # Policy/NFT transfer (admin-only): supports future portability (parents→children/employer→employee).
+        # This updates the policy owner_customer_id and the NFT ledger meta; it does not merge user accounts.
+        if path == '/api/admin/policy/transfer':
+            try:
+                if not require_role(session, ['admin']):
+                    self._set_json_headers(403)
+                    self.wfile.write(json.dumps({'error': 'Unauthorized. Admin access required.'}).encode('utf-8'))
+                    return
+                payload = json.loads(body) if body else {}
+                policy_id = payload.get('policy_id')
+                to_customer_id = payload.get('to_customer_id')
+                to_email = payload.get('to_email')
+                if not policy_id or not isinstance(POLICIES.get(policy_id), dict):
+                    self._set_json_headers(404)
+                    self.wfile.write(json.dumps({'error': 'Policy not found'}).encode('utf-8'))
+                    return
+                pol = POLICIES.get(policy_id)
+                old_customer_id = str(pol.get('customer_id') or '')
+                new_customer_id = str(to_customer_id or '') if to_customer_id else None
+                if (not new_customer_id) and to_email:
+                    new_customer_id = _find_customer_id_by_email(str(to_email))
+                if not new_customer_id:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'to_customer_id or to_email is required'}).encode('utf-8'))
+                    return
+                if new_customer_id == old_customer_id:
+                    self._set_json_headers(200)
+                    self.wfile.write(json.dumps({'success': True, 'policy': pol, 'message': 'No change'}).encode('utf-8'))
+                    return
+
+                # Update policy owner
+                pol['customer_id'] = new_customer_id
+                pol['transferred_from_customer_id'] = old_customer_id
+                pol['transferred_at'] = datetime.utcnow().isoformat()
+
+                # Update NFT meta (if exists)
+                nft_tok = pol.get('nft_token')
+                if nft_tok and isinstance(TOKEN_REGISTRY.get(nft_tok), dict):
+                    rec = TOKEN_REGISTRY.get(nft_tok) or {}
+                    meta_obj = {}
+                    try:
+                        meta_obj = json.loads(rec.get("meta") or "{}") if isinstance(rec.get("meta"), str) else (rec.get("meta") or {})
+                    except Exception:
+                        meta_obj = {}
+                    meta_obj.update({
+                        "owner_customer_id": new_customer_id,
+                        "previous_owner_customer_id": old_customer_id,
+                        "transferred_at": datetime.utcnow().isoformat(),
+                        "embedded_savings_balance": float(pol.get('savings_balance') or meta_obj.get('embedded_savings_balance') or 0.0),
+                        "embedded_savings_currency": "USD",
+                    })
+                    TOKEN_REGISTRY[nft_tok] = {**rec, "meta": json.dumps(meta_obj)}
+
+                # Ledger record
+                try:
+                    ttok = f"XFER-{uuid.uuid4().hex}"
+                    TOKEN_REGISTRY[ttok] = {
+                        "token": ttok,
+                        "kind": "policy_transfer",
+                        "status": "completed",
+                        "meta": json.dumps({
+                            "policy_id": policy_id,
+                            "nft_token": nft_tok,
+                            "from_customer_id": old_customer_id,
+                            "to_customer_id": new_customer_id,
+                            "embedded_savings_balance": float(pol.get('savings_balance') or 0.0),
+                            "at": datetime.utcnow().isoformat(),
+                        }, default=str),
+                        "created_date": datetime.now().isoformat(),
+                        "expires": None,
+                    }
+                except Exception:
+                    pass
+
+                # Notify both parties (in-app + best-effort email/SMS)
+                try:
+                    old_c = CUSTOMERS.get(old_customer_id) if old_customer_id else None
+                    new_c = CUSTOMERS.get(new_customer_id) if new_customer_id else None
+                    if isinstance(old_c, dict):
+                        notify_customer(
+                            customer_id=old_customer_id,
+                            email=old_c.get('email'),
+                            phone=old_c.get('phone'),
+                            subject="Policy transferred",
+                            message=f"Your policy {policy_id} was transferred to another party. This action is recorded in the policy ledger.",
+                            kind="info",
+                        )
+                    if isinstance(new_c, dict):
+                        notify_customer(
+                            customer_id=new_customer_id,
+                            email=new_c.get('email'),
+                            phone=new_c.get('phone'),
+                            subject="Policy received",
+                            message=f"You received policy {policy_id}. This action is recorded in the policy ledger.",
+                            kind="info",
+                        )
+                except Exception:
+                    pass
+
+                self._set_json_headers(200)
+                self.wfile.write(json.dumps({'success': True, 'policy': pol, 'nft_token': nft_tok}).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'Invalid request', 'details': str(e)}).encode('utf-8'))
+            return
+
+        # Admin: approve a billing validation review (activates policy)
+        if path == '/api/admin/billing/review/approve':
+            try:
+                if not require_role(session, ['admin']):
+                    self._set_json_headers(403)
+                    self.wfile.write(json.dumps({'error': 'Unauthorized. Admin access required.'}).encode('utf-8'))
+                    return
+                payload = json.loads(body) if body else {}
+                bill_id = payload.get('bill_id')
+                if not bill_id or not isinstance(BILLING.get(bill_id), dict):
+                    self._set_json_headers(404)
+                    self.wfile.write(json.dumps({'error': 'Bill not found'}).encode('utf-8'))
+                    return
+                bill = BILLING.get(bill_id)
+                bill['status'] = 'paid'
+                bill['paid_date'] = datetime.now().isoformat()
+                BILLING[bill_id] = bill
+                policy_id = bill.get('policy_id')
+                if policy_id and isinstance(POLICIES.get(policy_id), dict):
+                    POLICIES[policy_id]['status'] = 'active'
+                    POLICIES[policy_id]['billing_status'] = 'paid'
+                    POLICIES[policy_id]['activated_date'] = datetime.now().isoformat()
+                # Ledger
+                try:
+                    tok = f"REVAPP-{uuid.uuid4().hex}"
+                    TOKEN_REGISTRY[tok] = {
+                        "token": tok,
+                        "kind": "billing_review_approved",
+                        "status": "paid",
+                        "meta": json.dumps({"bill_id": bill_id, "policy_id": policy_id, "at": datetime.utcnow().isoformat()}),
+                        "created_date": datetime.now().isoformat(),
+                        "expires": None,
+                    }
+                except Exception:
+                    pass
+                self._set_json_headers(200)
+                self.wfile.write(json.dumps({'success': True, 'bill': bill, 'policy': POLICIES.get(policy_id)}).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'Invalid request', 'details': str(e)}).encode('utf-8'))
             return
         
         # Regular JSON POST requests
@@ -5171,6 +5623,9 @@ class PortalHandler(BaseHTTPRequestHandler):
                     self._set_json_headers(400)
                     self.wfile.write(json.dumps({'error': 'token is required'}).encode('utf-8'))
                     return
+                billing_details = data.get('billing_details') if isinstance(data, dict) else None
+                if not isinstance(billing_details, dict):
+                    billing_details = {}
                 resolved = resolve_billing_link(token)
                 if not resolved:
                     self._set_json_headers(404)
@@ -5188,6 +5643,77 @@ class PortalHandler(BaseHTTPRequestHandler):
                     self._set_json_headers(404)
                     self.wfile.write(json.dumps({'error': 'Bill not found'}).encode('utf-8'))
                     return
+                # Resolve policy/customer for validation + audit
+                policy_id = meta.get("policy_id")
+                policy = POLICIES.get(policy_id) if policy_id else None
+                customer_id = meta.get("customer_id")
+                cust = CUSTOMERS.get(customer_id) if customer_id else None
+
+                # Record attempt to ledger (even if it fails validation) for BI/AI.
+                try:
+                    att_tok = f"ATT-{uuid.uuid4().hex}"
+                    TOKEN_REGISTRY[att_tok] = {
+                        "token": att_tok,
+                        "kind": "billing_payment_attempt",
+                        "status": "attempted",
+                        "meta": json.dumps({
+                            "billing_token": token,
+                            "bill_id": bill_id,
+                            "policy_id": policy_id,
+                            "customer_id": customer_id,
+                            "billing_details": billing_details,
+                            "client_ip": self._get_client_ip(),
+                            "user_agent": str(self.headers.get("User-Agent") or ""),
+                            "attempted_at": datetime.utcnow().isoformat(),
+                        }, default=str),
+                        "created_date": datetime.now().isoformat(),
+                        "expires": None,
+                    }
+                except Exception:
+                    pass
+
+                # Fraud/validation gate (automated, ledgered)
+                review = _assess_billing_fraud_risk(
+                    billing_token=token,
+                    bill=bill,
+                    policy=(policy if isinstance(policy, dict) else None),
+                    customer=(cust if isinstance(cust, dict) else None),
+                    billing_details=billing_details,
+                    client_ip=self._get_client_ip(),
+                    user_agent=str(self.headers.get("User-Agent") or ""),
+                )
+                if review.get("severity") == "high":
+                    # Put into review instead of activating policy.
+                    try:
+                        bill["status"] = "under_review"
+                        bill["review"] = review
+                        BILLING[bill_id] = bill
+                    except Exception:
+                        pass
+                    try:
+                        if policy_id and isinstance(POLICIES.get(policy_id), dict):
+                            POLICIES[policy_id]["status"] = "billing_review"
+                            POLICIES[policy_id]["billing_status"] = "under_review"
+                            POLICIES[policy_id]["billing_review"] = review
+                    except Exception:
+                        pass
+                    # Notify customer (and keep the process visible)
+                    try:
+                        if isinstance(cust, dict):
+                            notify_customer(
+                                customer_id=customer_id,
+                                email=cust.get("email"),
+                                phone=cust.get("phone"),
+                                subject="Payment under validation review",
+                                message="We received your billing details. For security and fraud controls, this payment requires an automated validation review. You will be notified once completed.",
+                                kind="billing",
+                            )
+                    except Exception:
+                        pass
+                    self._set_json_headers(202)
+                    self.wfile.write(json.dumps({"success": True, "review": {"required": True, **review}}).encode("utf-8"))
+                    return
+
                 # Pay full remaining balance
                 total = float(bill.get('amount', bill.get('amount_due', 0.0)) or 0.0)
                 paid = float(bill.get('amount_paid', 0.0) or 0.0)
@@ -5200,11 +5726,12 @@ class PortalHandler(BaseHTTPRequestHandler):
                 bill['amount_paid'] = total
                 bill['status'] = 'paid'
                 bill['paid_date'] = datetime.now().isoformat()
+                bill['billing_details'] = billing_details
+                bill['validation'] = review
                 BILLING[bill_id] = bill
 
                 # Activate policy after successful payment
                 try:
-                    policy_id = meta.get('policy_id')
                     if policy_id and isinstance(POLICIES.get(policy_id), dict):
                         POLICIES[policy_id]['status'] = 'active'
                         POLICIES[policy_id]['billing_status'] = 'paid'
@@ -5238,13 +5765,12 @@ class PortalHandler(BaseHTTPRequestHandler):
 
                 # Store billing payment submission + notify customer
                 try:
-                    customer_id = meta.get('customer_id')
-                    cust = CUSTOMERS.get(customer_id) if customer_id else None
                     store_form_submission(source='billing', customer_id=customer_id, email=(cust.get('email') if isinstance(cust, dict) else None), payload={'token': token, 'bill_id': bill_id, 'amount_paid': total})
                     if isinstance(cust, dict):
                         notify_customer(
                             customer_id=customer_id,
                             email=cust.get('email'),
+                            phone=cust.get('phone'),
                             subject="Payment received",
                             message="We received your payment. Your PHINS.ai policy is now in good standing.",
                             kind="billing",

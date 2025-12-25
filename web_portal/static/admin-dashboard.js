@@ -253,6 +253,55 @@ async function loadPipeline() {
   window.__uwView = view;
 }
 
+function _fmtDeadline(iso) {
+  try {
+    if (!iso) return '-';
+    const d = new Date(String(iso));
+    if (Number.isNaN(d.getTime())) return '-';
+    const hrs = Math.max(0, (d.getTime() - Date.now()) / 36e5);
+    return `${d.toLocaleString()} (${hrs.toFixed(1)}h left)`;
+  } catch (_) {
+    return '-';
+  }
+}
+
+async function loadBillingPendingPolicies() {
+  const tbody = document.getElementById('billing-pending-table');
+  if (!tbody) return;
+  try {
+    const resp = await fetch('/api/policies?page=1&page_size=500', { headers: getAuthHeaders() });
+    const data = await resp.json().catch(() => ({}));
+    const items = Array.isArray(data.items) ? data.items : [];
+    const pending = items.filter(p => String(p.status || '').toLowerCase() === 'billing_pending');
+    if (!pending.length) {
+      tbody.innerHTML = '<tr><td colspan="6" style="color:var(--muted)">No billing-pending policies right now.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = pending
+      .sort((a, b) => String(a.billing_link_expires || '').localeCompare(String(b.billing_link_expires || '')))
+      .slice(0, 100)
+      .map(p => {
+        const artifacts = [
+          p.billing_link_url ? `<a class="link" href="${p.billing_link_url}" target="_blank">Billing link</a>` : null,
+          p.policy_terms_url ? `<a class="link" href="${p.policy_terms_url}" target="_blank">Terms PDF</a>` : null,
+          p.policy_terms_csv_url ? `<a class="link" href="${p.policy_terms_csv_url}" target="_blank">Terms CSV</a>` : null,
+        ].filter(Boolean).join(' • ');
+        return `
+          <tr>
+            <td>${p.id || '-'}</td>
+            <td>${p.customer_id || '-'}</td>
+            <td>${badge(p.status || 'billing_pending')}</td>
+            <td>${_fmtDeadline(p.billing_link_expires)}</td>
+            <td>${p.nft_token ? `<span style="font-family:monospace">${p.nft_token}</span>` : '-'}</td>
+            <td>${artifacts || '<span style="color:var(--muted)">—</span>'}</td>
+          </tr>
+        `;
+      }).join('');
+  } catch (e) {
+    tbody.innerHTML = '<tr><td colspan="6" style="color:var(--muted)">Unable to load policies.</td></tr>';
+  }
+}
+
 async function loadUwAutomationConfig() {
   const msg = document.getElementById('uw-auto-msg');
   try {
@@ -632,7 +681,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('actuarial-jurisdiction').addEventListener('change', loadActuarialTable);
 
   try {
-    const [_, __, ___, ____, inv] = await Promise.all([loadMetrics(), loadPipeline(), loadActuarialTable(), loadMarket(), loadAdminInvestmentAllocations()]);
+    const [_, __, ___, ____, inv, _____] = await Promise.all([loadMetrics(), loadPipeline(), loadActuarialTable(), loadMarket(), loadAdminInvestmentAllocations(), loadBillingPendingPolicies()]);
     renderAdminInvestmentAllocations(inv || {});
   } catch (e) {
     console.error(e);

@@ -35,6 +35,18 @@ function badge(status) {
   return `<span class="${cls}">${String(status || 'unknown')}</span>`;
 }
 
+function hoursLeft(iso) {
+  try {
+    if (!iso) return null;
+    const t = new Date(String(iso));
+    if (Number.isNaN(t.getTime())) return null;
+    const ms = t.getTime() - Date.now();
+    return Math.max(0, ms / 36e5);
+  } catch (_) {
+    return null;
+  }
+}
+
 async function loadProfile() {
   const resp = await fetch('/api/profile', { headers: getAuthHeaders() });
   if (resp.status === 401) {
@@ -85,6 +97,22 @@ async function loadInvestmentAllocations() {
   return resp.json();
 }
 
+async function loadWalletBalance() {
+  const resp = await fetch('/api/wallet/balance', { headers: getAuthHeaders() });
+  return resp.json();
+}
+
+async function depositToWallet({ policy_id, amount }) {
+  const resp = await fetch('/api/wallet/deposit', {
+    method: 'POST',
+    headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ policy_id, amount }),
+  });
+  const data = await resp.json().catch(() => ({}));
+  if (!resp.ok) throw new Error(data.error || 'Deposit failed');
+  return data;
+}
+
 async function loadMarketSnapshot() {
   const [crypto, indexes] = await Promise.all([
     fetch('/api/market/crypto?symbols=BTC,ETH&vs=USD', { headers: getAuthHeaders() }).then(r => r.json()),
@@ -95,7 +123,9 @@ async function loadMarketSnapshot() {
 
 function renderApplications(apps) {
   const tbody = document.getElementById('applications-table');
-  if (!apps.length) {
+  // Once approved, billing is tracked under "My Policies" (billing_pending).
+  const filtered = (apps || []).filter(a => !['approved'].includes(String(a.status || '').toLowerCase()));
+  if (!filtered.length) {
     tbody.innerHTML = '<tr><td colspan="6" style="color:var(--muted)">No applications in pipeline.</td></tr>';
     return;
   }
@@ -106,12 +136,13 @@ function renderApplications(apps) {
   } catch (_) {
     focusId = null;
   }
-  const rows = apps
+  const rows = filtered
     .sort((a, b) => String(b.submitted_date || '').localeCompare(String(a.submitted_date || '')))
     .slice(0, 50)
     .map(a => {
       const st = String(a.status || '').toLowerCase();
       const canEdit = st === 'pending' || st === 'draft';
+      // For approved applications, billing is handled at the policy level (see "My Policies").
       const action = canEdit && a.id
         ? `<a class="link" href="/quote.html?application_id=${encodeURIComponent(a.id)}">${st === 'draft' ? 'Continue' : 'Edit'}</a>`
         : '<span style="color:var(--muted)">—</span>';
@@ -168,6 +199,19 @@ function renderPolicies(policies) {
       const invPct = p.savings_percentage ?? 25;
       const jurisdiction = p.jurisdiction || 'US';
       const monthly = p.monthly_premium ?? (p.annual_premium ? Number(p.annual_premium) / 12 : 0);
+      const st = String(status || '').toLowerCase();
+      let actions = `<span style="color:var(--muted)">${jurisdiction}</span>`;
+      if (st === 'billing_pending' && p.billing_link_url) {
+        const hrs = hoursLeft(p.billing_link_expires);
+        const left = (hrs === null) ? '' : ` • ${(hrs).toFixed(1)}h left`;
+        actions = `<a class="link" href="${p.billing_link_url}">Complete billing (48h)</a><span style="color:var(--muted)">${left}</span>`;
+      } else if (p.policy_terms_url) {
+        actions = `<a class="link" href="${p.policy_terms_url}" target="_blank">Policy terms (PDF)</a>`;
+      }
+      // Modular allocation: allow changing savings% (affects future risk/savings split).
+      if (['active','billing_pending','billing_review'].includes(st)) {
+        actions += ` <button class="btn-small" style="margin-left:8px" onclick="window.__updateAllocation('${String(p.id).replace(/'/g,'')}')">Adjust savings %</button>`;
+      }
       return `
         <tr>
           <td>${p.id}</td>
@@ -176,12 +220,36 @@ function renderPolicies(policies) {
           <td>${money(monthly)} / mo</td>
           <td>${invPct}% savings</td>
           <td>${badge(status)}</td>
-          <td><span style="color:var(--muted)">${jurisdiction}</span></td>
+          <td>${actions}</td>
         </tr>
       `;
     });
   tbody.innerHTML = rows.join('');
 }
+
+window.__updateAllocation = async function __updateAllocation(policyId) {
+  const pct = prompt('New savings percentage (0-99):');
+  if (pct === null) return;
+  const v = Number(pct);
+  if (!Number.isFinite(v) || v < 0 || v > 99) {
+    alert('Invalid value.');
+    return;
+  }
+  try {
+    const resp = await fetch('/api/policies/update-allocation', {
+      method: 'POST',
+      headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ policy_id: policyId, savings_percentage: v }),
+    });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok || !data.success) throw new Error(data.error || 'Update failed');
+    alert('Updated. New premiums apply to next cycle.');
+    const updatedPolicies = await loadPolicies();
+    renderPolicies(updatedPolicies);
+  } catch (e) {
+    alert('Update failed.');
+  }
+};
 
 function renderClaims(claims) {
   const tbody = document.getElementById('claims-table');
@@ -500,7 +568,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const username = sessionStorage.getItem('username') || profile.username || 'Customer';
     document.getElementById('username').textContent = username;
 
-    const [policies, claims, apps, statement, market, notifs, invAllocs] = await Promise.all([
+    const [policies, claims, apps, statement, market, notifs, invAllocs, wallet] = await Promise.all([
       loadPolicies(),
       loadClaims(),
       loadApplications(),
@@ -508,6 +576,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       loadMarketSnapshot(),
       loadNotifications(),
       loadInvestmentAllocations(),
+      loadWalletBalance(),
     ]);
 
     renderApplications(apps);
@@ -519,6 +588,43 @@ document.addEventListener('DOMContentLoaded', async () => {
     updateTopStats(policies, claims, statement, market);
     setupClaimModal(profile, policies);
     renderSavingsProjections({ profile, policies });
+
+    // Deposit / invest UI
+    try {
+      const sel = document.getElementById('deposit-policy');
+      const amt = document.getElementById('deposit-amount');
+      const btn = document.getElementById('deposit-btn');
+      const msg = document.getElementById('deposit-msg');
+      const balEl = document.getElementById('wallet-balance');
+      if (balEl && wallet && typeof wallet.balance !== 'undefined') {
+        balEl.textContent = money(wallet.balance);
+      }
+      if (sel) {
+        const eligible = (policies || []).filter(p => ['active', 'billing_pending', 'billing_review'].includes(String(p.status || '').toLowerCase()));
+        sel.innerHTML = eligible.length
+          ? eligible.map(p => `<option value="${p.id}">${p.id} — ${String(p.type || '').toUpperCase()} (${String(p.status || '')})</option>`).join('')
+          : `<option value="">No eligible policies</option>`;
+      }
+      if (btn) {
+        btn.addEventListener('click', async () => {
+          const policy_id = String(sel?.value || '').trim();
+          const amount = Number(amt?.value || 0);
+          if (!policy_id) { msg && (msg.textContent = 'Select a policy.'); return; }
+          if (!(amount > 0)) { msg && (msg.textContent = 'Enter a valid amount.'); return; }
+          msg && (msg.textContent = 'Depositing…');
+          try {
+            const res = await depositToWallet({ policy_id, amount });
+            msg && (msg.textContent = 'Deposit recorded.');
+            if (balEl) balEl.textContent = money(res.balance || 0);
+            // refresh policy list to reflect embedded savings (best-effort)
+            const updatedPolicies = await loadPolicies();
+            renderPolicies(updatedPolicies);
+          } catch (e) {
+            msg && (msg.textContent = 'Deposit failed.');
+          }
+        });
+      }
+    } catch (_) {}
 
     // Market charts (adjustable, best-effort realtime)
     try {

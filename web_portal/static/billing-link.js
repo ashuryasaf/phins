@@ -17,11 +17,11 @@ async function loadBill(token) {
   return { ok: true, data };
 }
 
-async function pay(token) {
+async function pay(token, billing_details) {
   const resp = await fetch('/api/billing/link/pay', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ token }),
+    body: JSON.stringify({ token, billing_details }),
   });
   const data = await resp.json();
   if (!resp.ok) {
@@ -58,6 +58,12 @@ document.addEventListener('DOMContentLoaded', async () => {
   const sigMsg = document.getElementById('sigMsg');
   const btn = document.getElementById('pay-btn');
   const msg = document.getElementById('msg');
+  const billName = document.getElementById('billName');
+  const billCountry = document.getElementById('billCountry');
+  const billPostal = document.getElementById('billPostal');
+  const billMethod = document.getElementById('billMethod');
+  const billLast4 = document.getElementById('billLast4');
+  const billNetwork = document.getElementById('billNetwork');
 
   if (!token) {
     billBlock.textContent = 'Missing billing token.';
@@ -194,13 +200,39 @@ document.addEventListener('DOMContentLoaded', async () => {
   btn.addEventListener('click', async () => {
     btn.disabled = true;
     msg.textContent = 'Processing payment…';
-    const res = await pay(token);
+    const details = {
+      payer_name: String(billName?.value || '').trim(),
+      billing_country: String(billCountry?.value || '').trim().toUpperCase(),
+      billing_postal: String(billPostal?.value || '').trim(),
+      payment_method: String(billMethod?.value || 'card'),
+      card_last4: String(billLast4?.value || '').trim(),
+      card_network: String(billNetwork?.value || 'other'),
+      signer_name: String(sigName?.value || '').trim(),
+    };
+    // Minimal client-side validation (server enforces the real rules)
+    if (!details.payer_name || !details.billing_country || !details.billing_postal || !details.payment_method) {
+      msg.textContent = 'Please fill all required billing fields.';
+      refreshEnabled();
+      return;
+    }
+    if (details.payment_method === 'card') {
+      if (!/^\d{4}$/.test(details.card_last4 || '')) {
+        msg.textContent = 'Card last 4 must be 4 digits.';
+        refreshEnabled();
+        return;
+      }
+    }
+    const res = await pay(token, details);
     if (!res.ok) {
       msg.textContent = res.error;
       refreshEnabled();
       return;
     }
-    msg.textContent = 'Payment completed. Thank you!';
+    if (res.data && res.data.review && res.data.review.required) {
+      msg.textContent = 'Payment received and is under validation review. You will be notified shortly.';
+      return;
+    }
+    msg.textContent = 'Payment completed. Thank you! Your policy is now active.';
   });
 });
 

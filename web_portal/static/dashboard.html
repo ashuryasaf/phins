@@ -296,6 +296,28 @@
         </div>
 
         <div style="margin-top:24px">
+          <h3 style="margin:0 0 12px 0; color:var(--brand);">Deposit / Invest</h3>
+          <div class="table-card" style="padding:16px">
+            <div class="muted-text">Add an initial deposit now or top up later. Deposits are ledgered and can be embedded in the policy NFT for future portability.</div>
+            <div style="display:flex; gap:12px; flex-wrap:wrap; align-items:flex-end; margin-top:12px">
+              <div style="min-width:240px">
+                <label class="muted-text" style="display:block; margin-bottom:6px">Policy</label>
+                <select id="deposit-policy" class="filter-select"></select>
+              </div>
+              <div style="min-width:220px">
+                <label class="muted-text" style="display:block; margin-bottom:6px">Amount (USD)</label>
+                <input id="deposit-amount" class="filter-select" type="number" min="1" step="0.01" placeholder="1000.00" />
+              </div>
+              <div>
+                <button class="btn-small" id="deposit-btn">Deposit</button>
+              </div>
+              <div id="deposit-msg" class="muted-text" style="margin-left:auto"></div>
+            </div>
+            <div class="muted-text" style="margin-top:10px">Wallet balance: <strong id="wallet-balance">-</strong></div>
+          </div>
+        </div>
+
+        <div style="margin-top:24px">
           <h3 style="margin:0 0 12px 0; color:var(--brand);">Savings Projections (Active Policies)</h3>
           <div class="table-card" style="padding:16px">
             <div class="muted-text" style="margin-bottom:10px">Benchmark scenarios based on your monthly savings allocation. Projections are estimates (not guarantees).</div>

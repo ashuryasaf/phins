@@ -30,6 +30,46 @@
         <button id="open-sign" class="btn btn-secondary">Sign policy terms</button>
         <div id="accept-status" class="muted-text" style="margin-top:8px"></div>
       </div>
+      <div class="card" style="margin-top:12px; background:#fff">
+        <div style="font-weight:900">Billing details (required)</div>
+        <div class="muted-text" style="margin-top:6px">Used for payment validation and fraud controls. No full card numbers are stored.</div>
+        <div style="display:flex; gap:12px; flex-wrap:wrap; margin-top:12px">
+          <div style="flex:1; min-width:240px">
+            <label class="muted-text" style="display:block; margin-bottom:6px">Payer full name</label>
+            <input id="billName" type="text" style="width:100%; padding:10px; border:1px solid var(--border); border-radius:8px" placeholder="Full name" />
+          </div>
+          <div style="width:140px">
+            <label class="muted-text" style="display:block; margin-bottom:6px">Country</label>
+            <input id="billCountry" type="text" style="width:100%; padding:10px; border:1px solid var(--border); border-radius:8px" placeholder="US" />
+          </div>
+          <div style="width:180px">
+            <label class="muted-text" style="display:block; margin-bottom:6px">Postal / ZIP</label>
+            <input id="billPostal" type="text" style="width:100%; padding:10px; border:1px solid var(--border); border-radius:8px" placeholder="ZIP/Postal" />
+          </div>
+          <div style="width:220px">
+            <label class="muted-text" style="display:block; margin-bottom:6px">Payment method</label>
+            <select id="billMethod" style="width:100%; padding:10px; border:1px solid var(--border); border-radius:8px">
+              <option value="card" selected>Card</option>
+              <option value="bank_transfer">Bank transfer</option>
+              <option value="wallet">Internal wallet</option>
+            </select>
+          </div>
+          <div style="width:160px">
+            <label class="muted-text" style="display:block; margin-bottom:6px">Card last 4</label>
+            <input id="billLast4" type="text" inputmode="numeric" maxlength="4" style="width:100%; padding:10px; border:1px solid var(--border); border-radius:8px" placeholder="1234" />
+          </div>
+          <div style="width:180px">
+            <label class="muted-text" style="display:block; margin-bottom:6px">Card network</label>
+            <select id="billNetwork" style="width:100%; padding:10px; border:1px solid var(--border); border-radius:8px">
+              <option value="visa">Visa</option>
+              <option value="mastercard">Mastercard</option>
+              <option value="amex">Amex</option>
+              <option value="discover">Discover</option>
+              <option value="other">Other</option>
+            </select>
+          </div>
+        </div>
+      </div>
       <div style="margin-top:16px">
         <button id="pay-btn" class="btn btn-primary" disabled>Pay now</button>
       </div>
