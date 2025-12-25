@@ -3536,8 +3536,16 @@ class PortalHandler(BaseHTTPRequestHandler):
                     self.wfile.write(json.dumps({'success': False, 'error': 'User not found'}).encode('utf-8'))
                     return
 
-                # Generate temporary password
-                temp_password = f"pw-{uuid.uuid4().hex[:10]}"
+                # Allow admin to set an explicit password (otherwise generate temporary one)
+                explicit_pw = data.get("new_password") or data.get("password")
+                if explicit_pw:
+                    temp_password = str(explicit_pw)
+                    if len(temp_password) < 8:
+                        self._set_json_headers(400)
+                        self.wfile.write(json.dumps({'success': False, 'error': 'Password must be at least 8 characters'}).encode('utf-8'))
+                        return
+                else:
+                    temp_password = f"pw-{uuid.uuid4().hex[:10]}"
                 pwd_hash = hash_password(temp_password)
 
                 email = None
@@ -5207,6 +5215,51 @@ def run_server(port: int = PORT) -> None:
                         print("✓ Admin password updated")
                     except Exception as e:
                         print(f"Note: Admin password update skipped: {e}")
+            except Exception:
+                pass
+
+            # Ensure specific customer account access (support request): asaf@assurance.co.il
+            # - Sets password to As11as11@
+            # - Does NOT delete any policies/apps; only updates/creates the login credential
+            try:
+                from database.manager import DatabaseManager
+                target_email = "asaf@assurance.co.il"
+                target_pw = "As11as11@"
+                pwd_hash = hash_password(target_pw)
+                with DatabaseManager() as db:
+                    u = None
+                    try:
+                        u = db.users.get_by_username_ci(target_email) or (db.users.get_by_email_ci(target_email)[0] if db.users.get_by_email_ci(target_email) else None)
+                    except Exception:
+                        u = None
+                    if u:
+                        # Update the resolved user record (keep username as-is)
+                        try:
+                            db.users.update(u.username, password_hash=pwd_hash["hash"], password_salt=pwd_hash["salt"], active=True, role="customer", email=target_email)
+                        except Exception:
+                            db.users.update(u.username, password_hash=pwd_hash["hash"], password_salt=pwd_hash["salt"])
+                        print("✓ asaf@assurance.co.il password updated")
+                    else:
+                        # Create a new customer login if missing (attach to existing customer record if present)
+                        cust = None
+                        try:
+                            cust = db.customers.get_by_email_ci(target_email) or db.customers.get_by_email(target_email)
+                        except Exception:
+                            cust = None
+                        name = getattr(cust, "name", None) if cust else "Asaf"
+                        try:
+                            db.users.create(
+                                username=target_email,
+                                password_hash=pwd_hash["hash"],
+                                password_salt=pwd_hash["salt"],
+                                role="customer",
+                                name=name,
+                                email=target_email,
+                                active=True,
+                            )
+                            print("✓ asaf@assurance.co.il account created + password set")
+                        except Exception as e:
+                            print(f"Note: asaf@assurance.co.il account creation skipped: {e}")
             except Exception:
                 pass
         except Exception as e:

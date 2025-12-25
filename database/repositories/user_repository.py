@@ -33,7 +33,12 @@ class UserRepository(BaseRepository[User]):
             e = str(email or "").strip()
             if not e:
                 return []
-            return self.session.query(User).filter(func.lower(User.email) == e.lower()).all()
+            return (
+                self.session.query(User)
+                .filter(func.lower(User.email) == e.lower())
+                .order_by(User.created_date.desc())
+                .all()
+            )
         except Exception:
             return []
     
