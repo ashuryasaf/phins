@@ -310,8 +310,11 @@ async function updatePremiumPreview() {
     qs.set('savings_percentage', String(savings));
     qs.set('health_condition_score', String(health));
     const resp = await fetch(`/api/pricing/estimate?${qs.toString()}`);
-    const data = await resp.json();
-    if (!resp.ok) throw new Error(data.error || 'Pricing failed');
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok) {
+      const msg = data && data.error ? String(data.error) : (resp.status === 429 ? 'Too many requests (rate limit). Please wait a moment.' : 'Pricing failed');
+      throw new Error(msg);
+    }
 
     const b = data.breakdown || {};
     const monthly = Number(data.monthly || 0);
@@ -366,7 +369,7 @@ async function updatePremiumPreview() {
       ${projectionHtml}
     `;
   } catch (e) {
-    out.textContent = 'Pricing unavailable right now.';
+    out.textContent = String(e && e.message ? e.message : 'Pricing unavailable right now.');
   }
 }
 

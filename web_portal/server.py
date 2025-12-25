@@ -1446,7 +1446,16 @@ class PortalHandler(BaseHTTPRequestHandler):
             role_for_limit = None
 
         # Rate limiting (API only; never block static assets/pages)
-        if path.startswith('/api/') and (not check_rate_limit(client_ip, role=role_for_limit)):
+        # Exempt high-frequency, stateless read endpoints used by forms/charts.
+        rate_limit_exempt = {
+            '/api/pricing/estimate',
+            '/api/validate-email',
+            '/api/actuarial/table',
+            '/api/market/crypto',
+            '/api/market/indexes',
+            '/api/market/series',
+        }
+        if path.startswith('/api/') and (path not in rate_limit_exempt) and (not check_rate_limit(client_ip, role=role_for_limit)):
             log_malicious_attempt(client_ip, 'Rate Limit Exceeded', {'endpoint': self.path})
             self.send_response(429)
             self.send_header('Content-Type', 'application/json')
