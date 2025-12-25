@@ -4,7 +4,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const policyList = document.getElementById('policy-list');
   const uwList = document.getElementById('uw-list');
 
-  const token = localStorage.getItem('phins_token');
+  const token = localStorage.getItem('phins_token') || localStorage.getItem('phins_admin_token');
 
   if (!token) {
     statusSummary.innerHTML = 'Please <a href="/login.html">log in</a> to view your status.';

@@ -21,7 +21,7 @@ document.addEventListener('DOMContentLoaded', function () {
   }
 
   // Fetch statement for the authenticated customer (no hardcoded IDs)
-  const token = localStorage.getItem('phins_token');
+  const token = localStorage.getItem('phins_token') || localStorage.getItem('phins_admin_token');
   if (!token) {
     summaryEl.innerHTML = '<p class="muted">Please log in to view your statement.</p>';
     return;

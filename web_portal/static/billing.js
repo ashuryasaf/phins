@@ -1,6 +1,10 @@
 // PHINS Billing Dashboard JavaScript
+function getToken() {
+  return localStorage.getItem('phins_token') || localStorage.getItem('phins_admin_token');
+}
+
 document.addEventListener('DOMContentLoaded', () => {
-  const token = localStorage.getItem('phins_token');
+  const token = getToken();
   
   if (!token) {
     window.location.href = '/login.html';
@@ -18,7 +22,7 @@ document.addEventListener('DOMContentLoaded', () => {
 async function initializeBillingDashboard() {
   try {
     const profile = await fetch('/api/profile', {
-      headers: { 'Authorization': `Bearer ${localStorage.getItem('phins_token')}` }
+      headers: { 'Authorization': `Bearer ${getToken()}` }
     }).then(r => r.json());
 
     const customerId = profile.customer_id;
@@ -43,7 +47,7 @@ async function loadStats(customerId) {
     const statement = await fetch('/api/billing/statement', {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${localStorage.getItem('phins_token')}`,
+        'Authorization': `Bearer ${getToken()}`,
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({ customer_id: customerId })
@@ -54,7 +58,7 @@ async function loadStats(customerId) {
     const fraud = await fetch('/api/billing/fraud-alerts', {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${localStorage.getItem('phins_token')}`,
+        'Authorization': `Bearer ${getToken()}`,
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({})
@@ -95,7 +99,7 @@ async function loadFraudAlerts() {
     const response = await fetch('/api/billing/fraud-alerts', {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${localStorage.getItem('phins_token')}`,
+        'Authorization': `Bearer ${getToken()}`,
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({})
@@ -133,7 +137,7 @@ async function loadRecentTransactions(customerId) {
     const resp = await fetch('/api/billing/history', {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${localStorage.getItem('phins_token')}`,
+        'Authorization': `Bearer ${getToken()}`,
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({ customer_id: customerId })
@@ -190,7 +194,7 @@ async function handlePayment(e) {
     const paymentMethodResponse = await fetch('/api/billing/payment-method', {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${localStorage.getItem('phins_token')}`,
+        'Authorization': `Bearer ${getToken()}`,
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
@@ -215,7 +219,7 @@ async function handlePayment(e) {
     const chargeResponse = await fetch('/api/billing/charge', {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${localStorage.getItem('phins_token')}`,
+        'Authorization': `Bearer ${getToken()}`,
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
@@ -263,7 +267,7 @@ async function handleLookup(e) {
     const response = await fetch('/api/billing/statement', {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${localStorage.getItem('phins_token')}`,
+        'Authorization': `Bearer ${getToken()}`,
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({ customer_id: customerId })
@@ -335,7 +339,7 @@ async function refundTransaction(transactionId) {
     const response = await fetch('/api/billing/refund', {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${localStorage.getItem('phins_token')}`,
+        'Authorization': `Bearer ${getToken()}`,
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
