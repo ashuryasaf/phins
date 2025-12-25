@@ -1500,7 +1500,16 @@ class PortalHandler(BaseHTTPRequestHandler):
         is_blocked, block_reason = is_ip_blocked(client_ip)
         # IMPORTANT: Only block API requests on GET. Never block static pages
         # (Railway reverse proxy IPs can be shared, and false positives would take down the site).
-        if is_blocked and (path.startswith('/api/') or path == '/api'):
+        # Allow safe, read-only endpoints even if an IP was flagged (avoid breaking pricing/quotes UX).
+        allow_when_blocked_get = {
+            '/api/pricing/estimate',
+            '/api/actuarial/table',
+            '/api/market/crypto',
+            '/api/market/indexes',
+            '/api/market/series',
+            '/api/validate-email',
+        }
+        if is_blocked and (path.startswith('/api/') or path == '/api') and (path not in allow_when_blocked_get):
             self.send_response(403)
             self.send_header('Content-Type', 'application/json')
             self.end_headers()
