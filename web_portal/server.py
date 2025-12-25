@@ -23,6 +23,7 @@ import secrets
 import smtplib
 from email.message import EmailMessage
 from typing import Dict, Any
+from pathlib import Path
 
 # Import billing engine
 try:
@@ -70,6 +71,7 @@ if USE_DATABASE:
 
 PORT = int(os.environ.get("PORT", "8000"))
 ROOT = os.path.join(os.path.dirname(__file__), "static")
+UPLOAD_ROOT = os.environ.get("UPLOAD_ROOT", os.path.join(os.path.dirname(__file__), "uploads"))
 
 # Public base URL used in emails (set in production, e.g. https://your-app.up.railway.app)
 APP_BASE_URL = os.environ.get("APP_BASE_URL", "").rstrip("/")
@@ -395,6 +397,83 @@ def store_form_submission(*, source: str, customer_id: str | None, email: str | 
     }
     FORM_SUBMISSIONS[sid] = rec
     return rec
+
+
+def _safe_filename(name: str) -> str:
+    """Sanitize filenames to avoid traversal and weird chars."""
+    base = os.path.basename(str(name or "file"))
+    # allow simple set of chars
+    out = []
+    for ch in base:
+        if ch.isalnum() or ch in ("-", "_", ".", " "):
+            out.append(ch)
+        else:
+            out.append("_")
+    s = "".join(out).strip().replace(" ", "_")
+    if not s:
+        s = "file"
+    return s[:120]
+
+
+def _persist_media_assets(*, customer_id: str, uw_id: str, policy_id: str | None, files: list[Dict[str, Any]]) -> list[Dict[str, Any]]:
+    """
+    Persist uploaded media/files and return attachment metadata records.
+    Stored on disk under UPLOAD_ROOT and indexed in TOKEN_REGISTRY as kind=media_asset.
+    """
+    if not files:
+        return []
+    out: list[Dict[str, Any]] = []
+    root = Path(UPLOAD_ROOT)
+    target_dir = root / _safe_filename(customer_id) / _safe_filename(uw_id)
+    target_dir.mkdir(parents=True, exist_ok=True)
+
+    for f in files:
+        try:
+            raw = f.get("data") or b""
+            if not isinstance(raw, (bytes, bytearray)):
+                continue
+            size = int(len(raw))
+            if size <= 0:
+                continue
+            token = f"MED-{uuid.uuid4().hex}"
+            original = _safe_filename(f.get("filename") or f.get("name") or token)
+            stored = f"{token}_{original}"
+            p = target_dir / stored
+            p.write_bytes(raw)
+
+            meta = {
+                "customer_id": customer_id,
+                "uw_id": uw_id,
+                "policy_id": policy_id,
+                "field": str(f.get("field") or ""),
+                "original_filename": str(original),
+                "stored_filename": str(stored),
+                "content_type": str(f.get("content_type") or "application/octet-stream"),
+                "size": size,
+                "storage": "local",
+                "path": str(p),
+                "created_date": datetime.utcnow().isoformat(),
+            }
+            TOKEN_REGISTRY[token] = {
+                "token": token,
+                "kind": "media_asset",
+                "status": "active",
+                "meta": json.dumps(meta),
+                "created_date": datetime.now().isoformat(),
+                "expires": None,
+            }
+            out.append({
+                "token": token,
+                "field": meta["field"],
+                "filename": meta["original_filename"],
+                "content_type": meta["content_type"],
+                "size": size,
+                "created_date": meta["created_date"],
+                "download_url": f"/api/media/download?token={urlparse.quote(token)}",
+            })
+        except Exception:
+            continue
+    return out
 
 
 def _should_auto_approve(*, policy: Dict[str, Any], app: Dict[str, Any], customer: Dict[str, Any]) -> bool:
@@ -2124,6 +2203,12 @@ class PortalHandler(BaseHTTPRequestHandler):
                 notes = {}
             policy = POLICIES.get(app.get('policy_id')) if app.get('policy_id') else None
             customer = CUSTOMERS.get(app.get('customer_id')) if app.get('customer_id') else None
+            attachments = []
+            try:
+                if isinstance(notes, dict) and isinstance(notes.get('attachments'), list):
+                    attachments = notes.get('attachments') or []
+            except Exception:
+                attachments = []
             self._set_json_headers()
             self.wfile.write(json.dumps({
                 'application': app,
@@ -2132,7 +2217,60 @@ class PortalHandler(BaseHTTPRequestHandler):
                 'notes': notes if isinstance(notes, dict) else {},
                 'form': (notes.get('form') if isinstance(notes, dict) else None),
                 'pricing': (notes.get('pricing') if isinstance(notes, dict) else None),
+                'attachments': attachments,
             }).encode('utf-8'))
+            return
+
+        # Download a stored media asset (admin/staff or owning customer only)
+        if path == '/api/media/download':
+            if not session:
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Unauthorized'}).encode('utf-8'))
+                return
+            token_q = qs.get('token', [None])[0]
+            if not token_q:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'token is required'}).encode('utf-8'))
+                return
+            rec = TOKEN_REGISTRY.get(token_q)
+            if not isinstance(rec, dict) or rec.get('kind') != 'media_asset' or rec.get('status') != 'active':
+                self._set_json_headers(404)
+                self.wfile.write(json.dumps({'error': 'Not found'}).encode('utf-8'))
+                return
+            try:
+                meta_raw = rec.get('meta') or rec.get('metadata') or '{}'
+                meta = json.loads(meta_raw) if isinstance(meta_raw, str) else dict(meta_raw)
+            except Exception:
+                meta = {}
+
+            role = USERS.get(session.get('username') if session else '', {}).get('role') if session else None
+            is_staff = str(role or '').lower() in ('admin', 'underwriter', 'accountant', 'claims', 'claims_adjuster')
+            if not is_staff:
+                # customer must own it
+                if str(meta.get('customer_id') or '') != str(session.get('customer_id') or ''):
+                    self._set_json_headers(403)
+                    self.wfile.write(json.dumps({'error': 'Forbidden'}).encode('utf-8'))
+                    return
+
+            p = meta.get('path')
+            if not p or not os.path.exists(str(p)):
+                self._set_json_headers(404)
+                self.wfile.write(json.dumps({'error': 'File missing'}).encode('utf-8'))
+                return
+            try:
+                data = Path(str(p)).read_bytes()
+            except Exception:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': 'Read failed'}).encode('utf-8'))
+                return
+            ct = str(meta.get('content_type') or 'application/octet-stream')
+            fn = str(meta.get('original_filename') or 'attachment')
+            self.send_response(200)
+            self.send_header('Content-Type', ct)
+            self.send_header('Content-Disposition', f'attachment; filename="{_safe_filename(fn)}"')
+            self.send_header('Content-Length', str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
             return
 
         # Underwriting automation configuration (admin)
@@ -3157,6 +3295,55 @@ class PortalHandler(BaseHTTPRequestHandler):
             except Exception:
                 self._set_json_headers(500)
                 self.wfile.write(json.dumps({'error': 'Registration failed'}).encode('utf-8'))
+            return
+
+        # Delete (revoke) a stored media asset (admin/staff or owning customer only)
+        if path == '/api/media/delete':
+            if not session:
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'success': False, 'error': 'Unauthorized'}).encode('utf-8'))
+                return
+            try:
+                data = json.loads(body) if body else {}
+                token_in = data.get('token')
+                if not token_in:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'success': False, 'error': 'token is required'}).encode('utf-8'))
+                    return
+                rec = TOKEN_REGISTRY.get(token_in)
+                if not isinstance(rec, dict) or rec.get('kind') != 'media_asset' or rec.get('status') != 'active':
+                    self._set_json_headers(404)
+                    self.wfile.write(json.dumps({'success': False, 'error': 'Not found'}).encode('utf-8'))
+                    return
+                try:
+                    meta_raw = rec.get('meta') or rec.get('metadata') or '{}'
+                    meta = json.loads(meta_raw) if isinstance(meta_raw, str) else dict(meta_raw)
+                except Exception:
+                    meta = {}
+                role = USERS.get(session.get('username') if session else '', {}).get('role') if session else None
+                is_staff = str(role or '').lower() in ('admin', 'underwriter', 'accountant', 'claims', 'claims_adjuster')
+                if not is_staff:
+                    if str(meta.get('customer_id') or '') != str(session.get('customer_id') or ''):
+                        self._set_json_headers(403)
+                        self.wfile.write(json.dumps({'success': False, 'error': 'Forbidden'}).encode('utf-8'))
+                        return
+
+                # Revoke token and best-effort delete file
+                try:
+                    TOKEN_REGISTRY[token_in] = {**rec, 'token': token_in, 'kind': 'media_asset', 'status': 'revoked'}
+                except Exception:
+                    pass
+                try:
+                    p = meta.get('path')
+                    if p and os.path.exists(str(p)):
+                        os.remove(str(p))
+                except Exception:
+                    pass
+                self._set_json_headers(200)
+                self.wfile.write(json.dumps({'success': True}).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'success': False, 'error': str(e)}).encode('utf-8'))
             return
 
         # Admin: push market data points for charts (persisted; survives restarts)
@@ -4427,8 +4614,8 @@ class PortalHandler(BaseHTTPRequestHandler):
                 self.wfile.write(json.dumps({'error': 'No boundary in multipart data'}).encode('utf-8'))
                 return
             
-            # Parse multipart form data
-            fields = self._parse_multipart_data(form_data, boundary.encode())  # type: ignore
+            # Parse multipart form data (fields + files)
+            fields, uploaded_files = self._parse_multipart_data_with_files(form_data, boundary.encode())  # type: ignore
             
             # Validate critical fields for injection / malicious content
             critical_fields = ['firstName', 'lastName', 'email', 'phone', 'address', 'city', 'occupation', 'nationalId']
@@ -4563,6 +4750,16 @@ class PortalHandler(BaseHTTPRequestHandler):
                         n['source'] = 'quote_edit'
                         n['form'] = fields
                         n['pricing'] = priced.get('breakdown', {})
+                        # Persist new uploads (if any) and attach to application notes
+                        try:
+                            new_attachments = _persist_media_assets(customer_id=authed_customer_id, uw_id=application_id_in, policy_id=policy_id_existing, files=uploaded_files or [])
+                        except Exception:
+                            new_attachments = []
+                        try:
+                            existing = n.get('attachments') if isinstance(n.get('attachments'), list) else []
+                            n['attachments'] = (existing or []) + (new_attachments or [])
+                        except Exception:
+                            n['attachments'] = new_attachments or []
                         app['notes'] = json.dumps(n)
                     app['submitted_date'] = datetime.utcnow().isoformat()
                     UNDERWRITING_APPLICATIONS[application_id_in] = app
@@ -4581,6 +4778,7 @@ class PortalHandler(BaseHTTPRequestHandler):
                         'policy_id': policy_id_existing,
                         'message': 'Application updated successfully.',
                         'estimated_premium': {'annual': priced.get('annual'), 'monthly': priced.get('monthly'), 'quarterly': priced.get('quarterly'), 'breakdown': priced.get('breakdown', {})},
+                        'attachments': (n.get('attachments') if isinstance(n, dict) else []),
                     }).encode('utf-8'))
                     return
                 except Exception as e:
@@ -4694,6 +4892,11 @@ class PortalHandler(BaseHTTPRequestHandler):
                 'form': fields,
                 'policy_term_years': policy_term_years,
             }
+            # Persist uploads and attach to underwriting notes
+            try:
+                uw_notes['attachments'] = _persist_media_assets(customer_id=customer_id, uw_id=uw_id, policy_id=policy_id, files=uploaded_files or [])
+            except Exception:
+                uw_notes['attachments'] = []
             UNDERWRITING_APPLICATIONS[uw_id] = {
                 'id': uw_id,
                 'policy_id': policy_id,
@@ -4799,6 +5002,7 @@ class PortalHandler(BaseHTTPRequestHandler):
                 'policy_id': policy_id,
                 'message': 'Quote request submitted. You can register/login with the same email to track your application.',
                 'estimated_premium': premium_data,
+                'attachments': (uw_notes.get('attachments') if isinstance(uw_notes, dict) else []),
                 'autonomous': {'auto_approved': auto, 'config': UNDERWRITING_AUTOMATION_CONFIG},
                 'tracking': {'login_url': '/login.html', 'register_url': '/register.html', 'email': email},
                 'application_summary': {
@@ -4841,6 +5045,83 @@ class PortalHandler(BaseHTTPRequestHandler):
                             fields[field_name] = field_value
         
         return fields
+
+    def _parse_multipart_data_with_files(self, data: bytes, boundary: bytes) -> tuple[Dict[str, str], list[Dict[str, Any]]]:
+        """
+        Parse multipart/form-data into (fields, files).
+        - fields values are always strings; repeated keys are preserved as JSON strings.
+        - files are returned as dicts: {field, filename, content_type, data}
+        """
+        fields_raw: Dict[str, list[str]] = {}
+        files: list[Dict[str, Any]] = []
+        parts = data.split(b'--' + boundary)
+
+        for part in parts:
+            if b'Content-Disposition: form-data' not in part:
+                continue
+            header_end = part.find(b'\r\n\r\n')
+            if header_end == -1:
+                continue
+            header_blob = part[:header_end].decode('utf-8', errors='ignore')
+            body = part[header_end + 4:]
+            # Trim final CRLF
+            if body.endswith(b'\r\n'):
+                body = body[:-2]
+
+            # Parse name
+            name = None
+            if 'name="' in header_blob:
+                try:
+                    name = header_blob.split('name="', 1)[1].split('"', 1)[0]
+                except Exception:
+                    name = None
+            if not name:
+                continue
+
+            # Parse filename (if present)
+            filename = None
+            if 'filename="' in header_blob:
+                try:
+                    filename = header_blob.split('filename="', 1)[1].split('"', 1)[0]
+                except Exception:
+                    filename = None
+
+            # Content-Type (optional)
+            content_type = "application/octet-stream"
+            if 'Content-Type:' in header_blob:
+                try:
+                    content_type = header_blob.split('Content-Type:', 1)[1].splitlines()[0].strip()
+                except Exception:
+                    content_type = "application/octet-stream"
+
+            if filename:
+                # File part
+                files.append({
+                    "field": name,
+                    "filename": filename,
+                    "content_type": content_type,
+                    "data": bytes(body),
+                })
+            else:
+                # Text field
+                try:
+                    val = body.decode('utf-8', errors='ignore').strip()
+                except Exception:
+                    val = ""
+                if val == "":
+                    continue
+                fields_raw.setdefault(name, []).append(val)
+
+        # Normalize fields to Dict[str, str], preserving repeated keys as JSON strings
+        fields: Dict[str, str] = {}
+        for k, vals in fields_raw.items():
+            if not vals:
+                continue
+            if len(vals) == 1:
+                fields[k] = vals[0]
+            else:
+                fields[k] = json.dumps(vals)
+        return fields, files
     
     def _calculate_age(self, dob_str: str) -> int:
         """Calculate age from date of birth string"""

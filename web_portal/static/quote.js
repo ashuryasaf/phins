@@ -11,6 +11,8 @@ let mediaRecorder = null;
 let recordingTimer = null;
 let recordingSeconds = 0;
 let cameraStream = null;
+let uploadedMediaFiles = []; // {id, file}
+let existingAttachments = []; // server-stored attachments for edit mode
 
 // Form validation state
 const formData = {};
@@ -66,6 +68,7 @@ document.addEventListener('DOMContentLoaded', function() {
       const data = await resp.json();
       if (!resp.ok) return;
       const form = data.form || (data.notes && data.notes.form) || {};
+      const attachments = data.attachments || (data.notes && data.notes.attachments) || [];
       // Best-effort: populate matching fields by name/id
       Object.keys(form || {}).forEach((k) => {
         const v = form[k];
@@ -95,6 +98,7 @@ document.addEventListener('DOMContentLoaded', function() {
       setQuoteLocked(false);
       updateProgress();
       updatePremiumPreview();
+      try { renderExistingAttachments(attachments); } catch (_) {}
       const btn = document.getElementById('submitBtn');
       if (btn) btn.textContent = 'Save Application Changes';
     } catch (_) {}
@@ -913,18 +917,69 @@ function closeAudioRecorder() {
 
 // Handle media file upload
 function handleMediaUpload(input) {
-  const file = input.files[0];
-  if (!file) return;
-  
+  const files = Array.from(input.files || []);
+  if (!files.length) return;
+
   const fileList = document.getElementById('mediaFileList');
-  const li = document.createElement('li');
-  li.innerHTML = `
-    <span>📎 ${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB)</span>
-    <button class="remove-btn" onclick="this.parentElement.remove()">Remove</button>
-  `;
-  fileList.appendChild(li);
-  
-  showSuccess(`${file.name} uploaded successfully!`);
+  files.forEach((file) => {
+    const id = `mf_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+    uploadedMediaFiles.push({ id, file });
+
+    const li = document.createElement('li');
+    li.dataset.mediaId = id;
+    li.innerHTML = `
+      <span>📎 ${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB)</span>
+      <button type="button" class="remove-btn">Remove</button>
+    `;
+    li.querySelector('button')?.addEventListener('click', () => {
+      uploadedMediaFiles = uploadedMediaFiles.filter((x) => x.id !== id);
+      li.remove();
+    });
+    fileList.appendChild(li);
+  });
+
+  // allow selecting the same file again later
+  input.value = '';
+  showSuccess(`${files.length} file(s) added.`);
+}
+
+function renderExistingAttachments(attachments) {
+  const list = document.getElementById('mediaFileList');
+  if (!list) return;
+  existingAttachments = Array.isArray(attachments) ? attachments : [];
+  existingAttachments.forEach((a) => {
+    const token = String(a.token || '');
+    const name = String(a.filename || a.original_filename || 'attachment');
+    const size = Number(a.size || 0);
+    const url = String(a.download_url || '');
+    const li = document.createElement('li');
+    li.dataset.attachmentToken = token;
+    li.innerHTML = `
+      <span>✅ ${name}${size ? ` (${(size / 1024 / 1024).toFixed(2)} MB)` : ''}</span>
+      <span style="display:flex; gap:8px; align-items:center">
+        ${url ? `<a class="btn-small" href="${url}" target="_blank" rel="noopener">Download</a>` : ''}
+        <button type="button" class="remove-btn">Remove</button>
+      </span>
+    `;
+    li.querySelector('button')?.addEventListener('click', async () => {
+      if (!token) return;
+      if (!confirm('Remove this attachment?')) return;
+      try {
+        const t = getToken();
+        const resp = await fetch('/api/media/delete', {
+          method: 'POST',
+          headers: { ...(t ? { Authorization: `Bearer ${t}` } : {}), 'Content-Type': 'application/json' },
+          body: JSON.stringify({ token }),
+        });
+        const data = await resp.json().catch(() => ({}));
+        if (!resp.ok || !data.success) throw new Error(data.error || 'Delete failed');
+        li.remove();
+      } catch (_) {
+        alert('Failed to remove attachment.');
+      }
+    });
+    list.appendChild(li);
+  });
 }
 
 // Clear captured media
@@ -996,6 +1051,14 @@ async function handleSubmit() {
   if (audioBlob) {
     formData.append('audio', audioBlob, 'verification-audio.webm');
   }
+
+  // Add any uploaded media files (custom uploads)
+  try {
+    uploadedMediaFiles.forEach((x, idx) => {
+      if (!x || !x.file) return;
+      formData.append('media_files', x.file, x.file.name || `media_${idx}`);
+    });
+  } catch (_) {}
   
   // Disable submit button
   submitBtn.disabled = true;
