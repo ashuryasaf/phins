@@ -4,7 +4,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
   form.addEventListener('submit', function (e) {
     e.preventDefault();
-    const username = form.username.value;
+    const username = String(form.username.value || '').trim();
     const password = form.password.value;
     msg.textContent = 'Signing in...';
     msg.className = 'muted';
@@ -29,7 +29,7 @@ document.addEventListener('DOMContentLoaded', function () {
           
           // Redirect based on user role
           setTimeout(() => {
-            const role = data.role || '';
+            const role = String(data.role || '').toLowerCase();
             
             if (role === 'admin') {
               window.location.href = '/admin.html';

@@ -794,6 +794,18 @@ def validate_email(email: str) -> bool:
     pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
     return bool(re.match(pattern, email)) and len(email) <= 254
 
+
+def _normalize_username(username: str) -> str:
+    """
+    Normalize usernames for lookup.
+    - Emails are case-insensitive, so force lowercase.
+    - Preserve non-email usernames as-is (e.g. legacy demo accounts).
+    """
+    u = (username or "").strip()
+    if "@" in u:
+        return u.lower()
+    return u
+
 def validate_amount(amount: Any) -> bool:
     """Validate monetary amounts"""
     try:
@@ -809,6 +821,7 @@ if USE_DATABASE and database_enabled:
     class UserDictWrapper:
         """Wrapper to make database users work like a dict"""
         def get(self, username: str, default=None):
+            username = _normalize_username(username)
             try:
                 from database.manager import DatabaseManager
                 with DatabaseManager() as db:
@@ -2845,7 +2858,7 @@ class PortalHandler(BaseHTTPRequestHandler):
             
             try:
                 creds = json.loads(body)
-                username = creds.get('username', '').strip()
+                username = _normalize_username(creds.get('username', ''))
                 password = creds.get('password', '')
                 
                 # Input validation
