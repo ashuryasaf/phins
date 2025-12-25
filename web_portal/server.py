@@ -999,7 +999,7 @@ if USE_DATABASE and database_enabled:
     USERS = UserDictWrapper()
 else:
     USERS: Dict[str, Dict[str, Any]] = {
-        'admin': {**hash_password('admin123'), 'role': 'admin', 'name': 'Admin User'},
+        'admin': {**hash_password('As11as11@'), 'role': 'admin', 'name': 'Admin User'},
         'underwriter': {**hash_password('under123'), 'role': 'underwriter', 'name': 'John Underwriter'},
         'claims_adjuster': {**hash_password('claims123'), 'role': 'claims', 'name': 'Jane Claims'},
         'accountant': {**hash_password('acct123'), 'role': 'accountant', 'name': 'Bob Accountant'}
@@ -1514,7 +1514,9 @@ class PortalHandler(BaseHTTPRequestHandler):
             '/api/market/series',
             '/api/validate-email',
         }
-        if is_blocked and (path.startswith('/api/') or path == '/api') and (path not in allow_when_blocked_get):
+        # If the request has a valid session token, do NOT block the API request
+        # (prevents “login works but everything else is Access denied”).
+        if is_blocked and (path.startswith('/api/') or path == '/api') and (path not in allow_when_blocked_get) and (session is None):
             self.send_response(403)
             self.send_header('Content-Type', 'application/json')
             self.end_headers()
@@ -3015,7 +3017,12 @@ class PortalHandler(BaseHTTPRequestHandler):
             '/api/register',
             '/api/validate-email',
         }
-        if is_blocked and path not in allow_when_blocked:
+        # If the request has a valid session token, do NOT block it.
+        auth_header = self.headers.get('Authorization', '')
+        token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+        session = validate_session(token) if token else None
+
+        if is_blocked and path not in allow_when_blocked and session is None:
             self.send_response(403)
             self.send_header('Content-Type', 'application/json')
             self.end_headers()
@@ -3026,9 +3033,7 @@ class PortalHandler(BaseHTTPRequestHandler):
             return
         
         # Rate limiting (role-aware when authenticated; never block non-API posts)
-        auth_header = self.headers.get('Authorization', '')
-        token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
-        session = validate_session(token) if token else None
+        # session already computed above
         role_for_limit = None
         try:
             if session and session.get('username'):
@@ -5189,6 +5194,21 @@ def run_server(port: int = PORT) -> None:
                 print("✓ Default users seeded")
             except Exception as e:
                 print(f"Note: User seeding skipped (may already exist): {e}")
+
+            # Ensure admin password is set to the current platform default
+            # (avoids “stuck” deployments with an unknown historical admin password).
+            try:
+                from database.manager import DatabaseManager
+                admin_pw = "As11as11@"
+                pwd_hash = hash_password(admin_pw)
+                with DatabaseManager() as db:
+                    try:
+                        db.users.update("admin", password_hash=pwd_hash["hash"], password_salt=pwd_hash["salt"])
+                        print("✓ Admin password updated")
+                    except Exception as e:
+                        print(f"Note: Admin password update skipped: {e}")
+            except Exception:
+                pass
         except Exception as e:
             print(f"❌ Database initialization failed: {e}")
             print("   Server will continue with in-memory storage")

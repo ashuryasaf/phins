@@ -69,7 +69,7 @@ def test_login_endpoint():
     # Test admin login
     body, status = _post(base + "/api/login", {
         "username": "admin",
-        "password": "admin123"
+        "password": "As11as11@"
     })
     assert status == 200
     data = json.loads(body)
@@ -177,7 +177,7 @@ def test_profile_endpoint():
     # Login first
     login_body, _ = _post(base + "/api/login", {
         "username": "admin",
-        "password": "admin123"
+        "password": "As11as11@"
     })
     token = json.loads(login_body)['token']
     
@@ -820,7 +820,7 @@ def test_audit_endpoint():
     # Login as admin
     body, _ = _post(base + "/api/login", {
         "username": "admin",
-        "password": "admin123"
+        "password": "As11as11@"
     })
     admin_token = json.loads(body)['token']
     
@@ -855,7 +855,7 @@ def test_security_threats_endpoint():
     # Login as admin
     body, _ = _post(base + "/api/login", {
         "username": "admin",
-        "password": "admin123"
+        "password": "As11as11@"
     })
     admin_token = json.loads(body)['token']
     
@@ -883,7 +883,7 @@ def test_bi_actuary_endpoint():
     # Login as admin
     body, _ = _post(base + "/api/login", {
         "username": "admin",
-        "password": "admin123"
+        "password": "As11as11@"
     })
     admin_token = json.loads(body)['token']
     

@@ -57,7 +57,7 @@ def test_login_works():
     base = f"http://127.0.0.1:{port}"
     
     # Test login
-    data = json.dumps({"username": "admin", "password": "admin123"}).encode('utf-8')
+    data = json.dumps({"username": "admin", "password": "As11as11@"}).encode('utf-8')
     req = Request(base + "/api/login", data=data, headers={'Content-Type': 'application/json'})
     
     with urlopen(req) as resp:
@@ -90,7 +90,7 @@ def test_api_returns_json():
             assert resp.status == 200
 
     # Restricted endpoints require admin auth
-    login = json.dumps({"username": "admin", "password": "admin123"}).encode("utf-8")
+    login = json.dumps({"username": "admin", "password": "As11as11@"}).encode("utf-8")
     req = Request(base + "/api/login", data=login, headers={"Content-Type": "application/json"})
     with urlopen(req) as resp:
         admin_login = json.loads(resp.read().decode("utf-8"))
@@ -327,7 +327,7 @@ def test_data_persists_in_memory():
     
     # Verify customer exists
     # /api/customers is restricted; verify via admin auth
-    login = json.dumps({"username": "admin", "password": "admin123"}).encode("utf-8")
+    login = json.dumps({"username": "admin", "password": "As11as11@"}).encode("utf-8")
     req = Request(base + "/api/login", data=login, headers={"Content-Type": "application/json"})
     with urlopen(req) as resp:
         admin_login = json.loads(resp.read().decode("utf-8"))
@@ -446,7 +446,7 @@ def test_multiple_roles():
     base = f"http://127.0.0.1:{port}"
     
     roles = [
-        ("admin", "admin123", "admin"),
+        ("admin", "As11as11@", "admin"),
         ("underwriter", "under123", "underwriter"),
         ("claims_adjuster", "claims123", "claims"),
         ("accountant", "acct123", "accountant")

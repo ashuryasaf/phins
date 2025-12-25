@@ -352,7 +352,7 @@ def test_business_intelligence_endpoints():
     # Login as admin
     admin_login = json.loads(_post(base + "/api/login", {
         "username": "admin",
-        "password": "admin123"
+        "password": "As11as11@"
     }))
     assert admin_login['role'] == 'admin'
     admin_token = admin_login['token']
@@ -432,7 +432,7 @@ def test_role_based_access_control():
     # Login as admin
     admin_login = json.loads(_post(base + "/api/login", {
         "username": "admin",
-        "password": "admin123"
+        "password": "As11as11@"
     }))
     admin_token = admin_login['token']
     
@@ -637,7 +637,7 @@ def test_complete_customer_journey():
     print("\n=== Step 12: Admin reviews audit logs ===")
     admin_login = json.loads(_post(base + "/api/login", {
         "username": "admin",
-        "password": "admin123"
+        "password": "As11as11@"
     }))
     
     audit_resp = json.loads(_get(base + "/api/audit?page=1&page_size=10", admin_login['token']))

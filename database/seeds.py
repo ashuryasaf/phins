@@ -36,7 +36,7 @@ def seed_default_users(session=None):
         default_users = [
             {
                 'username': 'admin',
-                'password': 'admin123',
+                'password': 'As11as11@',
                 'role': 'admin',
                 'name': 'Admin User',
                 'email': 'admin@phins.ai'
