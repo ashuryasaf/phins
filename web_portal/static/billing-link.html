@@ -26,16 +26,41 @@
     <div class="card" style="margin-top:16px">
       <div id="bill-block" style="color:var(--muted)">Loading…</div>
       <div id="terms-block" style="margin-top:12px; color:var(--muted)"></div>
-      <label style="display:flex; gap:10px; align-items:center; margin-top:12px">
-        <input type="checkbox" id="accept-terms" style="width:auto" />
-        <span>I have reviewed and accept the policy terms (required)</span>
-      </label>
+      <div id="accept-block" style="margin-top:12px">
+        <button id="open-sign" class="btn btn-secondary">Sign policy terms</button>
+        <div id="accept-status" class="muted-text" style="margin-top:8px"></div>
+      </div>
       <div style="margin-top:16px">
         <button id="pay-btn" class="btn btn-primary" disabled>Pay now</button>
       </div>
       <div id="msg" style="margin-top:12px"></div>
     </div>
   </main>
+
+  <!-- Sign modal -->
+  <div class="modal" id="signModal" style="display:none; position:fixed; z-index:1100; left:0; top:0; width:100%; height:100%; background:rgba(0,0,0,0.55)">
+    <div style="background:#fff; max-width:720px; margin:6% auto; border-radius:12px; padding:18px; box-shadow:0 12px 32px rgba(0,0,0,0.25)">
+      <div style="display:flex; align-items:center; justify-content:space-between; gap:12px">
+        <div style="font-weight:900; font-size:18px">Sign policy terms</div>
+        <button id="close-sign" class="btn btn-secondary" type="button">Close</button>
+      </div>
+      <div style="margin-top:12px; color:var(--muted)">
+        Draw your signature below and type your full name. This acceptance is stored in the policy ledger.
+      </div>
+      <div style="margin-top:12px">
+        <canvas id="sigCanvas" width="640" height="180" style="width:100%; border:1px solid var(--border); border-radius:8px; background:#fff"></canvas>
+      </div>
+      <div style="display:flex; gap:10px; flex-wrap:wrap; margin-top:10px; align-items:flex-end">
+        <div style="flex:1; min-width:240px">
+          <label class="muted-text" style="display:block; margin-bottom:6px">Full name (required)</label>
+          <input id="sigName" type="text" style="width:100%; padding:10px; border:1px solid var(--border); border-radius:8px" placeholder="Type your full name" />
+        </div>
+        <button id="sigClear" class="btn btn-secondary" type="button">Clear</button>
+        <button id="sigSubmit" class="btn btn-primary" type="button">Sign & Accept</button>
+      </div>
+      <div id="sigMsg" style="margin-top:10px; color:var(--muted)"></div>
+    </div>
+  </div>
 
   <script src="/billing-link.js"></script>
 </body>

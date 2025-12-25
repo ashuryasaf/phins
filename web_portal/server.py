@@ -25,6 +25,7 @@ from email.message import EmailMessage
 from typing import Dict, Any
 from pathlib import Path
 from io import BytesIO
+import base64
 
 # Import billing engine
 try:
@@ -476,6 +477,26 @@ def resolve_billing_link(token: str) -> Dict[str, Any] | None:
     except Exception:
         meta = {}
     return {"token": token, "expires": rec.get("expires"), "meta": meta}
+
+
+def _has_terms_acceptance_for_billing_token(billing_token: str) -> bool:
+    """Check if policy terms were accepted for a specific billing link token."""
+    try:
+        for r in TOKEN_REGISTRY.values():
+            if not isinstance(r, dict):
+                continue
+            if r.get("kind") != "policy_terms_accept" or r.get("status") != "accepted":
+                continue
+            meta_raw = r.get("meta") or r.get("metadata") or "{}"
+            try:
+                meta = json.loads(meta_raw) if isinstance(meta_raw, str) else dict(meta_raw)
+            except Exception:
+                meta = {}
+            if str(meta.get("billing_token") or "") == str(billing_token or ""):
+                return True
+        return False
+    except Exception:
+        return False
 
 
 def store_form_submission(*, source: str, customer_id: str | None, email: str | None, payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -2439,12 +2460,13 @@ class PortalHandler(BaseHTTPRequestHandler):
             bill = BILLING.get(bill_id) if bill_id else None
             # Enrich with policy doc + NFT token for a visible, auditable process.
             policy = POLICIES.get(meta.get('policy_id')) if meta.get('policy_id') else None
-            extra = {}
+            extra = {"terms_accepted": _has_terms_acceptance_for_billing_token(token_q)}
             if isinstance(policy, dict):
                 extra = {
                     "policy_id": policy.get("id"),
                     "nft_token": policy.get("nft_token"),
                     "policy_terms_url": policy.get("policy_terms_url"),
+                    "terms_accepted": _has_terms_acceptance_for_billing_token(token_q),
                 }
             self._set_json_headers()
             self.wfile.write(json.dumps({'valid': True, 'expires': resolved.get('expires'), 'bill': bill, 'meta': {**meta, **extra}}).encode('utf-8'))
@@ -4689,6 +4711,111 @@ class PortalHandler(BaseHTTPRequestHandler):
             return
 
         # Pay via billing link token (no login required; token is secret and expires in 48h)
+        # Accept policy terms via billing link token (no login required; token is secret and expires in 48h)
+        if path == '/api/billing/link/accept':
+            try:
+                data = json.loads(body) if body else {}
+                token = data.get('token')
+                signer_name = str(data.get('signer_name') or '').strip()
+                sig_data_url = str(data.get('signature_data_url') or '').strip()
+
+                if not token:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'success': False, 'error': 'token is required'}).encode('utf-8'))
+                    return
+                resolved = resolve_billing_link(token)
+                if not resolved:
+                    self._set_json_headers(404)
+                    self.wfile.write(json.dumps({'success': False, 'error': 'Invalid or expired link'}).encode('utf-8'))
+                    return
+                if not signer_name or len(signer_name) < 3:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'success': False, 'error': 'signer_name is required'}).encode('utf-8'))
+                    return
+                if not sig_data_url.startswith('data:image/png;base64,'):
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'success': False, 'error': 'signature_data_url must be a PNG data URL'}).encode('utf-8'))
+                    return
+
+                # If already accepted, return success idempotently
+                if _has_terms_acceptance_for_billing_token(token):
+                    self._set_json_headers(200)
+                    self.wfile.write(json.dumps({'success': True, 'already_accepted': True}).encode('utf-8'))
+                    return
+
+                meta = resolved.get('meta') or {}
+                customer_id = meta.get('customer_id')
+                policy_id = meta.get('policy_id')
+                bill_id = meta.get('bill_id')
+                cust = CUSTOMERS.get(customer_id) if customer_id else None
+
+                # Decode signature bytes (cap size to keep server safe)
+                b64 = sig_data_url.split(',', 1)[1]
+                raw = base64.b64decode(b64.encode('utf-8'), validate=False)
+                if len(raw) > 600_000:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'success': False, 'error': 'Signature too large'}).encode('utf-8'))
+                    return
+
+                # Store signature image as media asset for audit download
+                sig_doc = None
+                try:
+                    docs = _persist_media_assets(
+                        customer_id=str(customer_id or "unknown"),
+                        uw_id=str(meta.get("policy_id") or meta.get("bill_id") or "billing"),
+                        policy_id=str(policy_id or ""),
+                        files=[{"field": "policy_terms_signature", "filename": f"{policy_id or 'policy'}_signature.png", "content_type": "image/png", "data": raw}],
+                    )
+                    sig_doc = docs[0] if docs else None
+                except Exception:
+                    sig_doc = None
+
+                # Ledger record
+                accept_tok = f"ACC-{uuid.uuid4().hex}"
+                TOKEN_REGISTRY[accept_tok] = {
+                    "token": accept_tok,
+                    "kind": "policy_terms_accept",
+                    "status": "accepted",
+                    "meta": json.dumps({
+                        "billing_token": token,
+                        "bill_id": bill_id,
+                        "policy_id": policy_id,
+                        "customer_id": customer_id,
+                        "signer_name": signer_name,
+                        "ip": self._get_client_ip(),
+                        "user_agent": str(self.headers.get("User-Agent") or ""),
+                        "signature_asset_token": (sig_doc.get("token") if isinstance(sig_doc, dict) else None),
+                        "signature_asset_url": (sig_doc.get("download_url") if isinstance(sig_doc, dict) else None),
+                        "accepted_at": datetime.utcnow().isoformat(),
+                    }),
+                    "created_date": datetime.now().isoformat(),
+                    "expires": None,
+                }
+
+                # Double registry: form submission audit trail
+                try:
+                    store_form_submission(
+                        source='policy_terms_accept',
+                        customer_id=customer_id,
+                        email=(cust.get('email') if isinstance(cust, dict) else None),
+                        payload={
+                            "billing_token": token,
+                            "bill_id": bill_id,
+                            "policy_id": policy_id,
+                            "signer_name": signer_name,
+                            "signature_asset_url": (sig_doc.get("download_url") if isinstance(sig_doc, dict) else None),
+                        },
+                    )
+                except Exception:
+                    pass
+
+                self._set_json_headers(200)
+                self.wfile.write(json.dumps({'success': True, 'accept_token': accept_tok, 'signature': sig_doc}).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'success': False, 'error': 'Invalid request', 'details': str(e)}).encode('utf-8'))
+            return
+
         if path == '/api/billing/link/pay':
             try:
                 data = json.loads(body) if body else {}
@@ -4701,6 +4828,11 @@ class PortalHandler(BaseHTTPRequestHandler):
                 if not resolved:
                     self._set_json_headers(404)
                     self.wfile.write(json.dumps({'error': 'Invalid or expired link'}).encode('utf-8'))
+                    return
+                # Require server-stored acceptance before payment (signature acceptance is an audit requirement)
+                if not _has_terms_acceptance_for_billing_token(token):
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'Policy terms not accepted yet. Please sign and accept first.'}).encode('utf-8'))
                     return
                 meta = resolved.get('meta') or {}
                 bill_id = meta.get('bill_id')
@@ -4726,19 +4858,20 @@ class PortalHandler(BaseHTTPRequestHandler):
                 # Revoke token
                 TOKEN_REGISTRY[token] = {**(TOKEN_REGISTRY.get(token) or {}), 'token': token, 'kind': 'billing_link', 'status': 'revoked'}
 
-                # Record "terms accepted" as part of the 48h completion (ledger action)
+                # Ledger record: billing payment (separate from terms acceptance)
                 try:
-                    accept_tok = f"ACC-{uuid.uuid4().hex}"
-                    TOKEN_REGISTRY[accept_tok] = {
-                        "token": accept_tok,
-                        "kind": "policy_terms_accept",
-                        "status": "accepted",
+                    pay_tok = f"PAY-{uuid.uuid4().hex}"
+                    TOKEN_REGISTRY[pay_tok] = {
+                        "token": pay_tok,
+                        "kind": "billing_payment",
+                        "status": "paid",
                         "meta": json.dumps({
                             "billing_token": token,
                             "bill_id": bill_id,
                             "policy_id": meta.get("policy_id"),
                             "customer_id": meta.get("customer_id"),
-                            "accepted_at": datetime.utcnow().isoformat(),
+                            "amount_paid": total,
+                            "paid_at": datetime.utcnow().isoformat(),
                         }),
                         "created_date": datetime.now().isoformat(),
                         "expires": None,
