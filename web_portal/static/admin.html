@@ -227,6 +227,29 @@
             <div class="muted-text" data-role="status" style="margin-left:auto"></div>
           </div>
         </div>
+        <div style="padding:12px; border-top:1px solid var(--border)">
+          <div style="display:flex; gap:12px; flex-wrap:wrap; align-items:flex-end">
+            <div>
+              <label class="muted-text" style="display:block; margin-bottom:6px">Push data (admin)</label>
+              <select id="market-push-kind" class="filter-select">
+                <option value="crypto">crypto</option>
+                <option value="index">index</option>
+              </select>
+            </div>
+            <div>
+              <label class="muted-text" style="display:block; margin-bottom:6px">Symbol</label>
+              <input id="market-push-symbol" class="filter-select" placeholder="BTC" />
+            </div>
+            <div>
+              <label class="muted-text" style="display:block; margin-bottom:6px">Price</label>
+              <input id="market-push-price" class="filter-select" type="number" step="0.0001" placeholder="0.0" />
+            </div>
+            <div>
+              <button class="btn-small" id="market-push-btn">Push</button>
+            </div>
+            <div id="market-push-msg" class="muted-text" style="margin-left:auto"></div>
+          </div>
+        </div>
         <div id="market-charts" data-role="charts" style="padding:12px"></div>
       </div>
     </section>

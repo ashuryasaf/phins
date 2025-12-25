@@ -423,3 +423,32 @@ class FormSubmission(Base):
             'payload': self.payload,
             'created_date': self.created_date.isoformat() if self.created_date else None,
         }
+
+
+class MarketTick(Base):
+    """
+    Persisted market ticks for charting and "push data" overrides.
+
+    We persist ONLY explicitly pushed data (admin/staff) so the DB doesn't grow
+    unbounded from frequent live quote polling.
+    """
+    __tablename__ = 'market_ticks'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    kind = Column(String(20), nullable=False, index=True)  # crypto | index
+    symbol = Column(String(40), nullable=False, index=True)
+    price = Column(Float, nullable=False)
+    currency = Column(String(10), default='USD')
+    source = Column(String(30), default='push')  # push | live | fallback
+    created_date = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'kind': self.kind,
+            'symbol': self.symbol,
+            'price': self.price,
+            'currency': self.currency,
+            'source': self.source,
+            'created_date': self.created_date.isoformat() if self.created_date else None,
+        }

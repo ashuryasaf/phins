@@ -28,7 +28,6 @@
           <option value="ru">🌐 Русский</option>
           <option value="pt">🌐 Português</option>
         </select>
-        <a href="/login.html" class="btn-login">Login / Sign Up</a>
       </nav>
     </div>
   </header>
@@ -40,10 +39,8 @@
         <h1>PHINS: Specialized Disability Protection & Investment</h1>
         <p class="hero-subtitle">Global coverage for severe permanent disabilities (ADL-based) with integrated wealth building</p>
         <div class="hero-actions">
-          <a href="/apply.html" class="btn btn-primary">Apply Now</a>
-          <a href="/quote.html" class="btn btn-primary">Get a Quote</a>
-          <a href="/apply.html" class="btn btn-secondary">Buy Insurance</a>
-          <a href="/login.html" class="btn btn-secondary">Access My Account</a>
+          <a href="/quote.html" class="btn btn-primary">Get Your Insurance Quote</a>
+          <a href="/login.html" class="btn btn-secondary">Login</a>
         </div>
       </div>
     </div>
@@ -108,7 +105,7 @@
           </div>
 
           <div style="text-align:center; margin-top:32px;">
-            <a href="#quote" class="btn btn-primary" style="margin-right:12px;">Get Your Quote</a>
+            <a href="/quote.html" class="btn btn-primary" style="margin-right:12px;">Get Your Insurance Quote</a>
             <a href="#about" class="btn btn-outline">Learn More About Coverage</a>
           </div>
         </div>
@@ -116,48 +113,7 @@
     </div>
   </section>
 
-  <!-- Get Quote Section -->
-  <section id="quote" class="section section-alt">
-    <div class="container">
-      <h2 class="section-title">Start Your Insurance Journey</h2>
-      <div class="quote-container">
-        <div class="card">
-          <h3>Get a Free Quote</h3>
-          <form id="quote-form" class="quote-form">
-            <div class="form-group">
-              <label for="name">Full Name</label>
-              <input type="text" id="name" name="name" required>
-            </div>
-            <div class="form-group">
-              <label for="email">Email Address</label>
-              <input type="email" id="email" name="email" required>
-            </div>
-            <div class="form-group">
-              <label for="phone">Phone Number</label>
-              <input type="tel" id="phone" name="phone" required>
-            </div>
-            <div class="form-group">
-              <label for="product">Coverage Amount Desired</label>
-              <select id="product" name="product" required>
-                <option value="">Select coverage level...</option>
-                <option value="basic">Basic: $500,000 coverage + investment</option>
-                <option value="standard">Standard: $1,000,000 coverage + investment</option>
-                <option value="premium">Premium: $2,000,000 coverage + investment</option>
-                <option value="elite">Elite: $5,000,000+ coverage + investment</option>
-                <option value="custom">Custom: Let's discuss your needs</option>
-              </select>
-            </div>
-            <div class="form-group">
-              <label for="message">Additional Information</label>
-              <textarea id="message" name="message" rows="4"></textarea>
-            </div>
-            <button type="submit" class="btn btn-primary btn-full">Submit Request</button>
-          </form>
-          <div id="quote-message" class="form-message"></div>
-        </div>
-      </div>
-    </div>
-  </section>
+  <!-- Quote capture is consolidated into /quote.html (single registry flow). -->
 
   <!-- Underwriting Section -->
   <section id="underwriting" class="section">
@@ -279,7 +235,7 @@
       </div>
 
       <div style="text-align:center; margin-top:32px;">
-        <a href="#quote" class="btn btn-primary">Start Your Application</a>
+        <a href="/quote.html" class="btn btn-primary">Start Your Application</a>
       </div>
     </div>
   </section>
@@ -375,16 +331,7 @@
     </div>
   </section>
 
-  <!-- Customer Portal Access -->
-  <section class="section cta-section">
-    <div class="container">
-      <div class="cta-content">
-        <h2>Existing Customer?</h2>
-        <p>Access your account to view policies, make claims, and manage your investments</p>
-        <a href="/login.html" class="btn btn-primary btn-large">Login to Portal</a>
-      </div>
-    </div>
-  </section>
+  <!-- Login is consolidated to the single hero CTA. -->
 
   <footer class="footer">
     <div class="container">
@@ -399,7 +346,6 @@
             <li><a href="#products">Products</a></li>
             <li><a href="#about">About Us</a></li>
             <li><a href="#contact">Contact</a></li>
-            <li><a href="/login.html">Customer Portal</a></li>
           </ul>
         </div>
         <div class="footer-section">
@@ -428,22 +374,6 @@
           target.scrollIntoView({ behavior: 'smooth', block: 'start' });
         }
       });
-    });
-
-    // Quote form submission
-    document.getElementById('quote-form').addEventListener('submit', function(e) {
-      e.preventDefault();
-      const messageDiv = document.getElementById('quote-message');
-      const formData = new FormData(this);
-      
-      // Simulate form submission
-      messageDiv.innerHTML = '<p class="success-message">✓ Thank you! Your quote request has been submitted. Our team will contact you within 24 hours.</p>';
-      messageDiv.style.display = 'block';
-      this.reset();
-      
-      setTimeout(() => {
-        messageDiv.style.display = 'none';
-      }, 5000);
     });
 
     // Language change functionality

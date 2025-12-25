@@ -1765,10 +1765,36 @@ class PortalHandler(BaseHTTPRequestHandler):
                 self.wfile.write(json.dumps({'kind': kind_key, 'items': [], 'ts': datetime.utcnow().isoformat()}).encode('utf-8'))
                 return
 
+            # Optional DB-backed history (only for explicitly pushed ticks)
+            db_points: Dict[str, list[Dict[str, Any]]] = {}
+            if USE_DATABASE and database_enabled:
+                try:
+                    from database.manager import DatabaseManager
+                    with DatabaseManager() as db:
+                        for sym in syms:
+                            rows = db.market_ticks.latest_for_symbol(kind_key, sym, limit=max(points, 240))
+                            # repository returns newest-first; API expects oldest->newest
+                            pts = []
+                            for r in reversed(rows or []):
+                                try:
+                                    pts.append({"t": r.created_date.isoformat() if getattr(r, "created_date", None) else datetime.utcnow().isoformat(), "p": float(r.price)})
+                                except Exception:
+                                    continue
+                            if pts:
+                                db_points[sym] = pts
+                except Exception:
+                    db_points = {}
+
             items = []
             for s in syms:
-                series = MARKET_SERIES.get(kind_key, {}).get(s, [])
-                items.append({"symbol": s, "points": series[-points:]})
+                mem_series = MARKET_SERIES.get(kind_key, {}).get(s, []) or []
+                merged = (db_points.get(s) or []) + list(mem_series)
+                if merged:
+                    try:
+                        merged = sorted(merged, key=lambda p: str(p.get("t") or ""))
+                    except Exception:
+                        pass
+                items.append({"symbol": s, "points": merged[-points:] if merged else []})
 
             self._set_json_headers()
             self.wfile.write(json.dumps({'kind': kind_key, 'items': items, 'ts': datetime.utcnow().isoformat()}).encode('utf-8'))
@@ -1989,6 +2015,11 @@ class PortalHandler(BaseHTTPRequestHandler):
         # Regular JSON POST requests
         length = int(self.headers.get('Content-Length', 0))
         body = self.rfile.read(length).decode('utf-8') if length else ''
+
+        # Session validation (used by many POST endpoints)
+        auth_header = self.headers.get('Authorization', '')
+        token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+        session = validate_session(token) if token else None
         
         # Demo login endpoint with secure password verification
         if path == '/api/login':
@@ -2180,6 +2211,73 @@ class PortalHandler(BaseHTTPRequestHandler):
             except Exception:
                 self._set_json_headers(500)
                 self.wfile.write(json.dumps({'error': 'Registration failed'}).encode('utf-8'))
+            return
+
+        # Admin: push market data points for charts (persisted; survives restarts)
+        if path == '/api/market/push':
+            if not require_role(session, ['admin']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'success': False, 'error': 'Unauthorized'}).encode('utf-8'))
+                return
+            try:
+                data = json.loads(body) if body else {}
+                kind_in = str(data.get('kind') or '').strip().lower()
+                kind = "crypto" if kind_in == "crypto" else "index"
+                symbol = str(data.get('symbol') or '').strip().upper()
+                if not symbol:
+                    raise ValueError("symbol is required")
+                price = float(data.get('price'))
+                if not (price > 0):
+                    raise ValueError("price must be > 0")
+                currency = str(data.get('currency') or 'USD').strip().upper()[:10]
+                t_in = data.get('t') or data.get('timestamp') or None
+                created_dt = _safe_parse_dt(t_in) or datetime.utcnow()
+
+                # In-memory series (for immediate UI update)
+                try:
+                    kind_key = "crypto" if kind == "crypto" else "index"
+                    sym = symbol
+                    series = MARKET_SERIES.setdefault(kind_key, {}).setdefault(sym, [])
+                    series.append({"t": created_dt.isoformat(), "p": float(price)})
+                    if len(series) > MARKET_SERIES_MAX_POINTS:
+                        del series[:-MARKET_SERIES_MAX_POINTS]
+                except Exception:
+                    pass
+
+                # Persist (DB optional)
+                tick_id = None
+                if USE_DATABASE and database_enabled:
+                    try:
+                        from database.manager import DatabaseManager
+                        with DatabaseManager() as db:
+                            rec = db.market_ticks.create(
+                                kind=kind,
+                                symbol=symbol,
+                                price=float(price),
+                                currency=currency,
+                                source='push',
+                                created_date=created_dt,
+                            )
+                            tick_id = rec.id if rec else None
+                    except Exception:
+                        tick_id = None
+
+                # Store as a submission too (audit trail, independent of DB model)
+                try:
+                    store_form_submission(
+                        source='market_push',
+                        customer_id=None,
+                        email=None,
+                        payload={'kind': kind, 'symbol': symbol, 'price': price, 'currency': currency, 't': created_dt.isoformat()},
+                    )
+                except Exception:
+                    pass
+
+                self._set_json_headers(200)
+                self.wfile.write(json.dumps({'success': True, 'id': tick_id, 'kind': kind, 'symbol': symbol, 'price': price, 'currency': currency, 't': created_dt.isoformat()}).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'success': False, 'error': str(e)}).encode('utf-8'))
             return
         
         # Password Reset Endpoint
@@ -3403,13 +3501,31 @@ class PortalHandler(BaseHTTPRequestHandler):
             except Exception:
                 pass
 
-            # Generate IDs (reuse customer_id by email when possible)
-            customer_id = None
+            # If the user is logged in, bind the quote to their customer_id (and prevent cross-account submissions).
+            authed_customer_id = None
             try:
-                for c in CUSTOMERS.values():
-                    if isinstance(c, dict) and (c.get('email') or '').lower() == email:
-                        customer_id = c.get('id')
-                        break
+                auth_header = self.headers.get('Authorization', '')
+                token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+                sess = validate_session(token) if token else None
+                if sess and sess.get('customer_id'):
+                    authed_customer_id = sess.get('customer_id')
+                    existing_cust = CUSTOMERS.get(authed_customer_id)
+                    if isinstance(existing_cust, dict) and existing_cust.get('email'):
+                        if str(existing_cust.get('email') or '').lower() != email:
+                            self._set_json_headers(403)
+                            self.wfile.write(json.dumps({'error': 'Email does not match the logged-in account'}).encode('utf-8'))
+                            return
+            except Exception:
+                authed_customer_id = None
+
+            # Generate IDs (reuse customer_id by email when possible)
+            customer_id = authed_customer_id
+            try:
+                if not customer_id:
+                    for c in CUSTOMERS.values():
+                        if isinstance(c, dict) and (c.get('email') or '').lower() == email:
+                            customer_id = c.get('id')
+                            break
             except Exception:
                 customer_id = None
             customer_id = customer_id or generate_customer_id()

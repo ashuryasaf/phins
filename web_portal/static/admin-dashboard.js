@@ -282,6 +282,39 @@ document.addEventListener('DOMContentLoaded', async () => {
   const prof = await requireAdmin();
   if (!prof) return;
 
+  // Market: allow admin to push price points for charts (persisted server-side)
+  const pushBtn = document.getElementById('market-push-btn');
+  if (pushBtn) {
+    pushBtn.addEventListener('click', async () => {
+      const msg = document.getElementById('market-push-msg');
+      const kind = String(document.getElementById('market-push-kind')?.value || 'crypto').toLowerCase();
+      const symbol = String(document.getElementById('market-push-symbol')?.value || '').trim().toUpperCase();
+      const price = Number(document.getElementById('market-push-price')?.value || 0);
+      if (msg) msg.textContent = '';
+      if (!symbol || !(price > 0)) {
+        if (msg) msg.textContent = 'Enter symbol + price.';
+        return;
+      }
+      if (msg) msg.textContent = 'Pushing…';
+      try {
+        const resp = await fetch('/api/market/push', {
+          method: 'POST',
+          headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+          body: JSON.stringify({ kind, symbol, price, currency: 'USD' }),
+        });
+        const data = await resp.json().catch(() => ({}));
+        if (!resp.ok || !data.success) throw new Error(data.error || 'Push failed');
+        if (msg) msg.textContent = `Pushed ${symbol}.`;
+        // refresh charts immediately
+        const refreshBtn = document.querySelector('#market-controls [data-role="refresh"]');
+        if (refreshBtn) refreshBtn.click();
+        setTimeout(() => { if (msg) msg.textContent = ''; }, 2000);
+      } catch (e) {
+        if (msg) msg.textContent = 'Push failed.';
+      }
+    });
+  }
+
   const saveBtn = document.getElementById('uw-auto-save');
   if (saveBtn) saveBtn.addEventListener('click', saveUwAutomationConfig);
   const uploadBtn = document.getElementById('uw-auto-upload');

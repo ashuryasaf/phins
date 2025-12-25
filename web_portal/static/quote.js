@@ -22,6 +22,27 @@ const requiredFields = [
   'policyTerm', 'truthDeclaration', 'privacyConsent', 'termsAccept', 'signature'
 ];
 
+function getToken() {
+  return localStorage.getItem('phins_token') || localStorage.getItem('phins_admin_token');
+}
+
+function setToken(token) {
+  if (token) localStorage.setItem('phins_token', token);
+}
+
+function setQuoteLocked(locked) {
+  const rest = document.getElementById('quote-rest');
+  const nextBlock = document.getElementById('account-next-block');
+  const pwRow = document.getElementById('account-password-row');
+  const pw = document.getElementById('accountPassword');
+  const pw2 = document.getElementById('accountPasswordConfirm');
+  if (rest) rest.style.display = locked ? 'none' : 'block';
+  if (nextBlock) nextBlock.style.display = locked ? 'flex' : 'none';
+  if (pwRow) pwRow.style.display = locked ? 'grid' : 'none';
+  if (pw) pw.required = !!locked;
+  if (pw2) pw2.required = !!locked;
+}
+
 // Initialize form
 document.addEventListener('DOMContentLoaded', function() {
   setupFormValidation();
@@ -29,6 +50,89 @@ document.addEventListener('DOMContentLoaded', function() {
   setupHealthSlider();
   loadDraft();
   updateProgress();
+
+  // Gate the rest of the application behind account creation/login,
+  // so we can send underwriting/billing/claims notifications and keep the pipeline linked.
+  const hasToken = !!getToken();
+  setQuoteLocked(!hasToken);
+
+  const nextBtn = document.getElementById('accountNextBtn');
+  if (nextBtn) {
+    nextBtn.addEventListener('click', async () => {
+      const msg = document.getElementById('accountNextMsg');
+      if (msg) msg.textContent = '';
+
+      // Validate key identity fields
+      const first = document.getElementById('firstName');
+      const last = document.getElementById('lastName');
+      const dob = document.getElementById('dob');
+      const email = document.getElementById('email');
+      const phone = document.getElementById('phone');
+      const pw = document.getElementById('accountPassword');
+      const pw2 = document.getElementById('accountPasswordConfirm');
+
+      const must = [first, last, dob, email, phone, pw, pw2].filter(Boolean);
+      let ok = true;
+      must.forEach((el) => { if (el && !validateField(el)) ok = false; });
+      if (!ok) {
+        if (msg) msg.textContent = 'Please complete the required fields above.';
+        return;
+      }
+
+      if (String(pw.value || '').length < 8) {
+        const e = document.getElementById('accountPassword-error');
+        if (e) { e.textContent = 'Password must be at least 8 characters'; e.style.display = 'block'; }
+        return;
+      }
+      if (String(pw.value || '') !== String(pw2.value || '')) {
+        const e = document.getElementById('accountPasswordConfirm-error');
+        if (e) { e.textContent = 'Passwords do not match'; e.style.display = 'block'; }
+        return;
+      }
+
+      nextBtn.disabled = true;
+      nextBtn.textContent = 'Saving…';
+      try {
+        const fullName = `${String(first.value || '').trim()} ${String(last.value || '').trim()}`.trim();
+
+        // Register (best-effort; if already registered, proceed to login)
+        const regResp = await fetch('/api/register', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: fullName || String(email.value || '').trim(),
+            email: String(email.value || '').trim(),
+            phone: String(phone.value || '').trim(),
+            dob: String(dob.value || '').trim(),
+            password: String(pw.value || ''),
+          }),
+        });
+        if (!regResp.ok && regResp.status !== 409) {
+          const reg = await regResp.json().catch(() => ({}));
+          throw new Error(reg.error || 'Registration failed');
+        }
+
+        // Login to create an authenticated session for notifications/pipeline
+        const loginResp = await fetch('/api/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username: String(email.value || '').trim().toLowerCase(), password: String(pw.value || '') }),
+        });
+        const login = await loginResp.json().catch(() => ({}));
+        if (!loginResp.ok || !login.token) throw new Error(login.error || 'Login failed');
+
+        setToken(login.token);
+        saveDraft(); // save on "Next"
+        setQuoteLocked(false);
+        if (msg) msg.textContent = 'Account saved. Continue your application below.';
+      } catch (e) {
+        if (msg) msg.textContent = String(e && e.message ? e.message : 'Account setup failed');
+      } finally {
+        nextBtn.disabled = false;
+        nextBtn.textContent = 'Next: Save Account & Continue';
+      }
+    });
+  }
 });
 
 // Setup real-time validation for all inputs
@@ -598,6 +702,11 @@ function clearCapture(type) {
 async function handleSubmit() {
   const form = document.getElementById('quoteForm');
   const submitBtn = document.getElementById('submitBtn');
+
+  if (!getToken()) {
+    showError('Please save your account (Next) before submitting.');
+    return;
+  }
   
   // Validate all required fields
   let isValid = true;
@@ -620,6 +729,9 @@ async function handleSubmit() {
   
   // Prepare form data
   const formData = new FormData(form);
+  // Never submit passwords as part of the quote payload (registration/login is handled separately)
+  formData.delete('accountPassword');
+  formData.delete('accountPasswordConfirm');
   
   // Add multimedia files
   if (photoBlob) {
@@ -640,7 +752,11 @@ async function handleSubmit() {
     // Submit to server
     const response = await fetch('/api/submit-quote', {
       method: 'POST',
-      body: formData
+      headers: (function() {
+        const t = getToken();
+        return t ? { Authorization: `Bearer ${t}` } : {};
+      })(),
+      body: formData,
     });
     
     const result = await response.json();
@@ -675,6 +791,8 @@ function saveDraft() {
   const data = {};
   
   for (let [key, value] of formData.entries()) {
+    // Never store passwords in drafts/localStorage
+    if (key === 'accountPassword' || key === 'accountPasswordConfirm') continue;
     data[key] = value;
   }
   
@@ -691,6 +809,7 @@ function loadDraft() {
   const form = document.getElementById('quoteForm');
   
   Object.keys(data).forEach(key => {
+    if (key === 'accountPassword' || key === 'accountPasswordConfirm') return;
     const field = form.querySelector(`[name="${key}"]`);
     if (field) {
       field.value = data[key];
