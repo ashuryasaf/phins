@@ -61,7 +61,7 @@ if USE_DATABASE:
         print("         Falling back to in-memory storage")
         USE_DATABASE = False
 
-PORT = 8000
+PORT = int(os.environ.get("PORT", "8000"))
 ROOT = os.path.join(os.path.dirname(__file__), "static")
 
 # Public base URL used in emails (set in production, e.g. https://your-app.up.railway.app)

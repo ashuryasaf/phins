@@ -1,15 +1,5 @@
-reportlab>=4.0
-# Optional typing stubs for ReportLab (may or may not exist on PyPI)
-# install if available to silence mypy missing-stub errors
-types-reportlab>=0.0.1
-pytest>=7.0
-mypy>=1.0
+# Production/runtime dependencies (keep this lean for Railway/Nixpacks)
 requests>=2.0
-# Optional: convert PDF pages to images for visual diffing (requires poppler on the system)
-pdf2image>=1.16
-boto3>=1.20
-moto>=4.0
-# Database support
 sqlalchemy>=2.0.0
 psycopg2-binary>=2.9.0  # PostgreSQL adapter
 alembic>=1.12.0  # Database migrations
