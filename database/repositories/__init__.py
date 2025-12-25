@@ -18,6 +18,7 @@ from .token_registry_repository import TokenRegistryRepository
 from .notification_repository import NotificationRepository
 from .form_submission_repository import FormSubmissionRepository
 from .market_tick_repository import MarketTickRepository
+from .investment_preference_repository import InvestmentPreferenceRepository
 
 __all__ = [
     'BaseRepository',
@@ -33,4 +34,5 @@ __all__ = [
     'NotificationRepository',
     'FormSubmissionRepository',
     'MarketTickRepository',
+    'InvestmentPreferenceRepository',
 ]

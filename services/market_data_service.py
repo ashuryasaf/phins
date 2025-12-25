@@ -16,10 +16,11 @@ import json
 import time
 import urllib.request
 import urllib.parse
+import os
 
 
 MarketKind = Literal["crypto", "index", "fx"]
-MarketSource = Literal["live", "fallback"]
+MarketSource = Literal["bloomberg", "live", "fallback"]
 
 
 class MarketDataError(RuntimeError):
@@ -151,6 +152,53 @@ class MarketDataService:
         if cached is not None:
             return cached
 
+        # Try Bloomberg first (optional; requires credentials and a compatible endpoint).
+        # This is intentionally adapter-based: Bloomberg's official offerings require licensing.
+        bloomberg_base = (os.environ.get("BLOOMBERG_API_BASE_URL") or "").strip()  # e.g. https://<your-bloomberg-gateway>
+        bloomberg_key = (os.environ.get("BLOOMBERG_API_KEY") or "").strip()
+        if bloomberg_base and bloomberg_key:
+            try:
+                url = (
+                    bloomberg_base.rstrip("/")
+                    + "/quotes?"
+                    + urllib.parse.urlencode(
+                        {
+                            "provider": "bloomberg",
+                            "type": "crypto",
+                            "symbols": ",".join(symbols),
+                            "currency": vs_currency,
+                            "api_key": bloomberg_key,
+                        }
+                    )
+                )
+                data = _http_get_json(url)
+                items = data.get("items") if isinstance(data, dict) else None
+                if isinstance(items, list) and items:
+                    now = datetime.utcnow().isoformat()
+                    out: List[MarketQuote] = []
+                    for it in items:
+                        if not isinstance(it, dict):
+                            continue
+                        sym = str(it.get("symbol") or "").upper()
+                        if not sym:
+                            continue
+                        out.append(
+                            MarketQuote(
+                                symbol=sym,
+                                name=str(it.get("name") or sym),
+                                kind="crypto",
+                                currency=str(it.get("currency") or vs_currency).upper(),
+                                price=round(float(it.get("price") or 0.0), 4),
+                                change_24h=round(float(it.get("change_24h") or 0.0), 4),
+                                updated_at=str(it.get("updated_at") or now),
+                                source="bloomberg",
+                            )
+                        )
+                    if out:
+                        return self._cache_set(key, out)
+            except Exception:
+                pass
+
         # Try CoinGecko (no API key)
         # Mapping symbol -> id is not perfect; handle common assets.
         symbol_to_id = {
@@ -243,6 +291,52 @@ class MarketDataService:
         cached = self._cache_get(key)
         if cached is not None:
             return cached
+
+        # Try Bloomberg first (optional; requires credentials and a compatible endpoint).
+        bloomberg_base = (os.environ.get("BLOOMBERG_API_BASE_URL") or "").strip()
+        bloomberg_key = (os.environ.get("BLOOMBERG_API_KEY") or "").strip()
+        if bloomberg_base and bloomberg_key:
+            try:
+                url = (
+                    bloomberg_base.rstrip("/")
+                    + "/quotes?"
+                    + urllib.parse.urlencode(
+                        {
+                            "provider": "bloomberg",
+                            "type": "index",
+                            "symbols": ",".join(symbols),
+                            "currency": currency,
+                            "api_key": bloomberg_key,
+                        }
+                    )
+                )
+                data = _http_get_json(url)
+                items = data.get("items") if isinstance(data, dict) else None
+                if isinstance(items, list) and items:
+                    now = datetime.utcnow().isoformat()
+                    out: List[MarketQuote] = []
+                    for it in items:
+                        if not isinstance(it, dict):
+                            continue
+                        sym = str(it.get("symbol") or "").upper()
+                        if not sym:
+                            continue
+                        out.append(
+                            MarketQuote(
+                                symbol=sym,
+                                name=str(it.get("name") or sym),
+                                kind="index",
+                                currency=str(it.get("currency") or currency).upper(),
+                                price=round(float(it.get("price") or 0.0), 4),
+                                change_24h=round(float(it.get("change_24h") or 0.0), 4),
+                                updated_at=str(it.get("updated_at") or now),
+                                source="bloomberg",
+                            )
+                        )
+                    if out:
+                        return self._cache_set(key, out)
+            except Exception:
+                pass
 
         # Stooq symbols mapping (common)
         # Note: Stooq uses caret-prefixed tickers like ^spx for S&P500.

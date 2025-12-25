@@ -66,6 +66,11 @@ async function loadNotifications() {
   return Array.isArray(data.items) ? data.items : [];
 }
 
+async function loadInvestmentAllocations() {
+  const resp = await fetch('/api/investments/allocations?currency=USD', { headers: getAuthHeaders() });
+  return resp.json();
+}
+
 async function loadMarketSnapshot() {
   const [crypto, indexes] = await Promise.all([
     fetch('/api/market/crypto?symbols=BTC,ETH&vs=USD', { headers: getAuthHeaders() }).then(r => r.json()),
@@ -340,6 +345,40 @@ function updateTopStats(policies, claims, statement, marketSnapshot) {
   renderMarket(marketSnapshot);
 }
 
+function renderInvestmentAllocations(data) {
+  const el = document.getElementById('investment-allocations');
+  if (!el) return;
+  const items = Array.isArray(data.items) ? data.items : [];
+  if (!items.length) {
+    el.innerHTML = '<span style="color:var(--muted)">No investment allocations yet (no savings premiums recorded).</span>';
+    return;
+  }
+  const blocks = items.map((p) => {
+    const basket = Array.isArray(p.basket) ? p.basket : [];
+    const currency = p.currency || 'USD';
+    const rows = basket.slice(0, 12).map((b) => {
+      const pct = Math.round(Number(b.weight || 0) * 100);
+      const amt = Number(b.amount || 0);
+      return `
+        <div style="display:flex; justify-content:space-between; gap:12px; padding:6px 0; border-bottom:1px solid var(--border)">
+          <div><strong>${b.symbol}</strong> <span style="color:var(--muted); font-size:12px">${b.kind}</span></div>
+          <div style="text-align:right">${pct}% — <strong>${money(amt)}</strong> <span style="color:var(--muted); font-size:12px">${currency}</span></div>
+        </div>
+      `;
+    }).join('');
+    return `
+      <div class="card" style="margin-bottom:12px">
+        <div style="display:flex; justify-content:space-between; flex-wrap:wrap; gap:10px">
+          <div style="font-weight:900">Policy ${p.policy_id}</div>
+          <div style="color:var(--muted)">Savings total: <strong>${money(p.savings_total)}</strong> • Risk total: <strong>${money(p.risk_total)}</strong></div>
+        </div>
+        <div style="margin-top:10px">${rows}</div>
+      </div>
+    `;
+  }).join('');
+  el.innerHTML = blocks;
+}
+
 // Language selector (kept compatible with existing UI)
 window.changeLanguage = function changeLanguage(lang) {
   localStorage.setItem('phins_language', lang);
@@ -379,13 +418,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     const username = sessionStorage.getItem('username') || profile.username || 'Customer';
     document.getElementById('username').textContent = username;
 
-    const [policies, claims, apps, statement, market, notifs] = await Promise.all([
+    const [policies, claims, apps, statement, market, notifs, invAllocs] = await Promise.all([
       loadPolicies(),
       loadClaims(),
       loadApplications(),
       loadStatement(),
       loadMarketSnapshot(),
       loadNotifications(),
+      loadInvestmentAllocations(),
     ]);
 
     renderApplications(apps);
@@ -393,6 +433,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     renderPolicies(policies);
     renderClaims(claims);
     renderStatement(statement);
+    renderInvestmentAllocations(invAllocs);
     updateTopStats(policies, claims, statement, market);
     setupClaimModal(profile, policies);
 

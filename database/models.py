@@ -452,3 +452,29 @@ class MarketTick(Base):
             'source': self.source,
             'created_date': self.created_date.isoformat() if self.created_date else None,
         }
+
+
+class InvestmentPreference(Base):
+    """
+    Customer investment allocation preferences (per policy).
+
+    Stored for auditability and long-lived product governance.
+    """
+    __tablename__ = 'investment_preferences'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    customer_id = Column(String(50), index=True, nullable=False)
+    policy_id = Column(String(50), index=True, nullable=False)
+    currency = Column(String(10), default='USD')
+    allocations = Column(Text)  # JSON: [{kind, symbol, weight}]
+    created_date = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'customer_id': self.customer_id,
+            'policy_id': self.policy_id,
+            'currency': self.currency,
+            'allocations': self.allocations,
+            'created_date': self.created_date.isoformat() if self.created_date else None,
+        }

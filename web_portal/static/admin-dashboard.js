@@ -312,6 +312,45 @@ async function loadMarket() {
   el.innerHTML = parts.length ? parts.join('') : '<span style="color:var(--muted)">Market data unavailable.</span>';
 }
 
+async function loadAdminInvestmentAllocations() {
+  const resp = await fetch('/api/admin/investments/allocations?currency=USD', { headers: getAuthHeaders() });
+  return resp.json();
+}
+
+function renderAdminInvestmentAllocations(data) {
+  const el = document.getElementById('admin-investment-allocations');
+  if (!el) return;
+  const totals = data.totals || {};
+  const top = Array.isArray(data.top_allocations) ? data.top_allocations : [];
+  if (!top.length) {
+    el.innerHTML = '<span style="color:var(--muted)">No savings allocations recorded yet.</span>';
+    return;
+  }
+  const rows = top.slice(0, 20).map((r) => {
+    const amt = Number(r.amount || 0);
+    return `
+      <div style="display:flex; justify-content:space-between; gap:12px; padding:6px 0; border-bottom:1px solid var(--border)">
+        <div><strong>${r.symbol}</strong> <span style="color:var(--muted); font-size:12px">${r.kind}</span></div>
+        <div style="text-align:right"><strong>$${amt.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong> <span style="color:var(--muted); font-size:12px">${r.currency || data.currency || 'USD'}</span></div>
+      </div>
+    `;
+  }).join('');
+  el.innerHTML = `
+    <div style="display:flex; gap:16px; flex-wrap:wrap">
+      <div class="card" style="flex:1; min-width:260px">
+        <div style="font-weight:900">Totals</div>
+        <div style="margin-top:8px"><strong>Customers:</strong> ${Number(totals.customers || 0)}</div>
+        <div><strong>Risk total:</strong> $${Number(totals.risk_total || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+        <div><strong>Savings total:</strong> $${Number(totals.savings_total || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+      </div>
+      <div class="card" style="flex:2; min-width:320px">
+        <div style="font-weight:900; margin-bottom:8px">Top savings basket exposures</div>
+        ${rows}
+      </div>
+    </div>
+  `;
+}
+
 // Language selector (same UX as other pages)
 window.changeLanguage = function changeLanguage(lang) {
   localStorage.setItem('phins_language', lang);
@@ -459,7 +498,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('actuarial-jurisdiction').addEventListener('change', loadActuarialTable);
 
   try {
-    await Promise.all([loadMetrics(), loadPipeline(), loadActuarialTable(), loadMarket()]);
+    const [_, __, ___, ____, inv] = await Promise.all([loadMetrics(), loadPipeline(), loadActuarialTable(), loadMarket(), loadAdminInvestmentAllocations()]);
+    renderAdminInvestmentAllocations(inv || {});
   } catch (e) {
     console.error(e);
   }

@@ -1150,6 +1150,47 @@ def build_customer_statement_from_transactions(customer_id: str) -> Dict[str, An
     }
 
 
+def _normalize_investment_allocations(items: Any) -> list[Dict[str, Any]]:
+    """
+    Normalize allocation list into [{kind, symbol, weight}] where weight is a fraction and sums to ~1.
+    """
+    out: list[Dict[str, Any]] = []
+    if not isinstance(items, list):
+        return out
+    total_w = 0.0
+    for it in items:
+        if not isinstance(it, dict):
+            continue
+        kind = str(it.get("kind") or "").strip().lower()
+        kind = "crypto" if kind == "crypto" else "index"
+        symbol = str(it.get("symbol") or "").strip().upper()
+        if not symbol:
+            continue
+        try:
+            w = float(it.get("weight") or 0.0)
+        except Exception:
+            w = 0.0
+        if w > 1.0:
+            w = w / 100.0
+        if w <= 0:
+            continue
+        total_w += w
+        out.append({"kind": kind, "symbol": symbol, "weight": w})
+    # normalize
+    if out and total_w > 0:
+        for r in out:
+            r["weight"] = float(r["weight"]) / total_w
+    return out
+
+
+def _default_investment_allocations() -> list[Dict[str, Any]]:
+    # Insurance-grade default: conservative benchmark mix (illustrative)
+    return [
+        {"kind": "index", "symbol": "SPX", "weight": 0.60},
+        {"kind": "crypto", "symbol": "BTC", "weight": 0.40},
+    ]
+
+
 class PortalHandler(BaseHTTPRequestHandler):
     def _get_client_ip(self) -> str:
         """
@@ -1383,6 +1424,211 @@ class PortalHandler(BaseHTTPRequestHandler):
                 'customer_id': customer_id,
                 'email': cust.get('email') if isinstance(cust, dict) else None,
                 'phone': cust.get('phone') if isinstance(cust, dict) else None,
+            }).encode('utf-8'))
+            return
+
+        # Investment allocation preferences (customer private; admin can read per customer/policy)
+        if path == '/api/investments/preferences':
+            if not session:
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Unauthorized'}).encode('utf-8'))
+                return
+            role = USERS.get(session.get('username') if session else '', {}).get('role') if session else None
+            customer_scope = session.get('customer_id') if (session and role == 'customer') else None
+            customer_id = customer_scope or (qs.get('customer_id', [None])[0] if require_role(session, ['admin', 'underwriter', 'accountant']) else None)
+            policy_id = qs.get('policy_id', [None])[0]
+            if not customer_id:
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Forbidden'}).encode('utf-8'))
+                return
+            if not policy_id:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'policy_id is required'}).encode('utf-8'))
+                return
+            currency = (qs.get('currency', ['USD'])[0] or 'USD').upper()
+
+            pref = None
+            if USE_DATABASE and database_enabled:
+                try:
+                    from database.manager import DatabaseManager
+                    with DatabaseManager() as db:
+                        pref = db.investment_preferences.latest_for_policy(customer_id, policy_id)
+                except Exception:
+                    pref = None
+            # Fallback: check submissions for latest preference
+            if pref is None:
+                try:
+                    latest = None
+                    for s in FORM_SUBMISSIONS.values():
+                        if not isinstance(s, dict):
+                            continue
+                        if s.get('source') != 'investment_preference':
+                            continue
+                        if s.get('customer_id') != customer_id:
+                            continue
+                        p = {}
+                        try:
+                            p = json.loads(s.get('payload') or '{}')
+                        except Exception:
+                            p = {}
+                        if str(p.get('policy_id') or '') != str(policy_id):
+                            continue
+                        if latest is None or str(s.get('created_date') or '') > str(latest.get('created_date') or ''):
+                            latest = s
+                    if latest:
+                        payload = json.loads(latest.get('payload') or '{}')
+                        self._set_json_headers()
+                        self.wfile.write(json.dumps({'policy_id': policy_id, 'customer_id': customer_id, 'currency': payload.get('currency', currency), 'allocations': payload.get('allocations', [])}).encode('utf-8'))
+                        return
+                except Exception:
+                    pass
+
+            if pref:
+                alloc = []
+                try:
+                    alloc = json.loads(pref.allocations or '[]')
+                except Exception:
+                    alloc = []
+                self._set_json_headers()
+                self.wfile.write(json.dumps({'policy_id': policy_id, 'customer_id': customer_id, 'currency': pref.currency or currency, 'allocations': alloc, 'created_date': pref.created_date.isoformat() if getattr(pref, 'created_date', None) else None}).encode('utf-8'))
+            else:
+                self._set_json_headers()
+                self.wfile.write(json.dumps({'policy_id': policy_id, 'customer_id': customer_id, 'currency': currency, 'allocations': _default_investment_allocations()}).encode('utf-8'))
+            return
+
+        # Investment allocations (client private)
+        if path == '/api/investments/allocations':
+            if not session:
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Unauthorized'}).encode('utf-8'))
+                return
+            role = USERS.get(session.get('username') if session else '', {}).get('role') if session else None
+            if role != 'customer':
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Customer access required'}).encode('utf-8'))
+                return
+            customer_id = session.get('customer_id')
+            currency = (qs.get('currency', ['USD'])[0] or 'USD').upper()
+            stmt = build_customer_statement_from_transactions(customer_id)
+            allocs = stmt.get('allocations') or []
+
+            # Aggregate per policy
+            per_policy: Dict[str, Dict[str, Any]] = {}
+            for a in allocs:
+                if not isinstance(a, dict):
+                    continue
+                pid = a.get('policy_id')
+                if not pid:
+                    continue
+                rec = per_policy.setdefault(pid, {'policy_id': pid, 'savings_total': 0.0, 'risk_total': 0.0})
+                rec['savings_total'] += float(a.get('savings_amount') or 0.0)
+                rec['risk_total'] += float(a.get('risk_amount') or 0.0)
+
+            # Apply preferences to savings_total for an investable basket view
+            items_out = []
+            for pid, rec in per_policy.items():
+                prefs = None
+                if USE_DATABASE and database_enabled:
+                    try:
+                        from database.manager import DatabaseManager
+                        with DatabaseManager() as db:
+                            prefs = db.investment_preferences.latest_for_policy(customer_id, pid)
+                    except Exception:
+                        prefs = None
+                pref_allocs = None
+                pref_currency = currency
+                if prefs:
+                    pref_currency = (prefs.currency or currency).upper()
+                    try:
+                        pref_allocs = json.loads(prefs.allocations or '[]')
+                    except Exception:
+                        pref_allocs = None
+                alloc_list = _normalize_investment_allocations(pref_allocs) if pref_allocs else _default_investment_allocations()
+                savings_total = float(rec.get('savings_total') or 0.0)
+                basket = []
+                for it in alloc_list:
+                    basket.append({
+                        'kind': it['kind'],
+                        'symbol': it['symbol'],
+                        'weight': it['weight'],
+                        'amount': round(savings_total * float(it['weight']), 2),
+                        'currency': pref_currency,
+                    })
+                items_out.append({
+                    'policy_id': pid,
+                    'risk_total': round(float(rec.get('risk_total') or 0.0), 2),
+                    'savings_total': round(savings_total, 2),
+                    'currency': pref_currency,
+                    'basket': basket,
+                })
+
+            self._set_json_headers()
+            self.wfile.write(json.dumps({
+                'customer_id': customer_id,
+                'currency': currency,
+                'totals': {'risk_total': stmt.get('risk_total', 0.0), 'savings_total': stmt.get('savings_total', 0.0), 'total_premium': stmt.get('total_premium', 0.0)},
+                'items': items_out,
+            }).encode('utf-8'))
+            return
+
+        # Investment allocations (admin cumulative)
+        if path == '/api/admin/investments/allocations':
+            if not require_role(session, ['admin', 'underwriter', 'accountant']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Unauthorized'}).encode('utf-8'))
+                return
+            currency = (qs.get('currency', ['USD'])[0] or 'USD').upper()
+            # Aggregate across customers from real transactions (insurance-grade: no fake portfolio values)
+            customer_ids = [c.get('id') for c in CUSTOMERS.values() if isinstance(c, dict) and c.get('id')]
+            risk_total = 0.0
+            savings_total = 0.0
+            by_symbol: Dict[str, Dict[str, Any]] = {}  # key = KIND:SYMBOL
+
+            for cid in customer_ids:
+                stmt = build_customer_statement_from_transactions(cid)
+                risk_total += float(stmt.get('risk_total') or 0.0)
+                savings_total += float(stmt.get('savings_total') or 0.0)
+                allocs = stmt.get('allocations') or []
+                # Aggregate per policy savings to allocate into baskets
+                per_policy: Dict[str, float] = {}
+                for a in allocs:
+                    if not isinstance(a, dict):
+                        continue
+                    pid = a.get('policy_id')
+                    if not pid:
+                        continue
+                    per_policy[pid] = per_policy.get(pid, 0.0) + float(a.get('savings_amount') or 0.0)
+                for pid, sav_amt in per_policy.items():
+                    prefs = None
+                    if USE_DATABASE and database_enabled:
+                        try:
+                            from database.manager import DatabaseManager
+                            with DatabaseManager() as db:
+                                prefs = db.investment_preferences.latest_for_policy(cid, pid)
+                        except Exception:
+                            prefs = None
+                    pref_allocs = None
+                    if prefs:
+                        try:
+                            pref_allocs = json.loads(prefs.allocations or '[]')
+                        except Exception:
+                            pref_allocs = None
+                    alloc_list = _normalize_investment_allocations(pref_allocs) if pref_allocs else _default_investment_allocations()
+                    for it in alloc_list:
+                        k = f"{it['kind']}:{it['symbol']}"
+                        by_symbol.setdefault(k, {'kind': it['kind'], 'symbol': it['symbol'], 'amount': 0.0})
+                        by_symbol[k]['amount'] += sav_amt * float(it['weight'])
+
+            top = sorted(by_symbol.values(), key=lambda x: float(x.get('amount') or 0.0), reverse=True)[:50]
+            for r in top:
+                r['amount'] = round(float(r.get('amount') or 0.0), 2)
+                r['currency'] = currency
+
+            self._set_json_headers()
+            self.wfile.write(json.dumps({
+                'currency': currency,
+                'totals': {'risk_total': round(risk_total, 2), 'savings_total': round(savings_total, 2), 'customers': len(customer_ids)},
+                'top_allocations': top,
             }).encode('utf-8'))
             return
 

@@ -24,6 +24,7 @@ from database.repositories import (
     NotificationRepository,
     FormSubmissionRepository,
     MarketTickRepository,
+    InvestmentPreferenceRepository,
 )
 
 logger = logging.getLogger(__name__)
@@ -62,6 +63,7 @@ class DatabaseManager:
         self._notifications = None
         self._form_submissions = None
         self._market_ticks = None
+        self._investment_preferences = None
     
     def _ensure_session(self) -> Session:
         """Ensure we have a database session"""
@@ -153,6 +155,13 @@ class DatabaseManager:
         if self._market_ticks is None:
             self._market_ticks = MarketTickRepository(self._ensure_session())
         return self._market_ticks
+
+    @property
+    def investment_preferences(self) -> InvestmentPreferenceRepository:
+        """Get investment preferences repository"""
+        if self._investment_preferences is None:
+            self._investment_preferences = InvestmentPreferenceRepository(self._ensure_session())
+        return self._investment_preferences
     
     def commit(self):
         """Commit current transaction"""
@@ -182,6 +191,7 @@ class DatabaseManager:
             self._notifications = None
             self._form_submissions = None
             self._market_ticks = None
+            self._investment_preferences = None
     
     @contextmanager
     def session_scope(self):
