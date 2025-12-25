@@ -34,7 +34,14 @@ except ImportError:
     print("Warning: Billing engine not available. Payment features disabled.")
 
 # Database support (optional, falls back to in-memory)
-USE_DATABASE = os.environ.get('USE_DATABASE', '').lower() in ('true', '1', 'yes')
+# Production safety: if a DATABASE_URL is provided (Railway/Render), auto-enable DB even if USE_DATABASE isn't set.
+_use_db_env = (os.environ.get('USE_DATABASE', '') or '').strip().lower()
+if _use_db_env in ('false', '0', 'no'):
+    USE_DATABASE = False
+elif _use_db_env in ('true', '1', 'yes'):
+    USE_DATABASE = True
+else:
+    USE_DATABASE = bool(os.environ.get('DATABASE_URL') or os.environ.get('SQLALCHEMY_DATABASE_URL'))
 database_enabled = False
 
 if USE_DATABASE:
@@ -329,6 +336,35 @@ def create_billing_link(*, bill_id: str, policy_id: str, customer_id: str, amoun
     return {"token": token, "expires": expires_at.isoformat(), "url": link}
 
 
+def issue_policy_nft_token(*, policy_id: str, customer_id: str) -> Dict[str, Any]:
+    """
+    Issue a *policy ledger token* (NFT architecture placeholder).
+    This does not mint on-chain inside this demo server; it creates a durable record
+    that can later be reconciled with an on-chain mint/tx.
+    """
+    token = f"NFT-{policy_id}"
+    meta = {
+        "policy_id": policy_id,
+        "customer_id": customer_id,
+        "standard": "ERC-721",
+        "chain": (os.environ.get("POLICY_NFT_CHAIN") or "ethereum-l2").strip() or "ethereum-l2",
+        "contract_address": (os.environ.get("POLICY_NFT_CONTRACT") or "").strip(),
+        "token_id": token,
+        "tx_hash": "",
+        "minted": False,
+        "issued_at": datetime.utcnow().isoformat(),
+    }
+    TOKEN_REGISTRY[token] = {
+        "token": token,
+        "kind": "policy_nft",
+        "status": "issued",
+        "meta": json.dumps(meta),
+        "created_date": datetime.now().isoformat(),
+        "expires": None,
+    }
+    return {"token": token, "meta": meta}
+
+
 def resolve_billing_link(token: str) -> Dict[str, Any] | None:
     rec = TOKEN_REGISTRY.get(token)
     if not isinstance(rec, dict):
@@ -452,6 +488,7 @@ def _approve_underwriting_and_notify(*, uw_id: str, approved_by: str, automated:
 
     # Create bill + 48h billing link (for first premium)
     billing_link = None
+    nft = None
     if policy and isinstance(policy.get("annual_premium"), (int, float)):
         customer_id = policy.get("customer_id")
         cust = CUSTOMERS.get(customer_id) if customer_id else None
@@ -464,6 +501,14 @@ def _approve_underwriting_and_notify(*, uw_id: str, approved_by: str, automated:
                 amount=float(policy["annual_premium"]),
                 hours_valid=48,
             )
+            # Issue policy NFT ledger token (architecture placeholder)
+            try:
+                nft = issue_policy_nft_token(policy_id=policy["id"], customer_id=customer_id)
+                # attach to policy for UI visibility
+                policy["nft_token"] = nft.get("token")
+                policy["nft_status"] = "issued"
+            except Exception:
+                nft = None
             notify_customer(
                 customer_id=customer_id,
                 email=cust.get("email"),
@@ -472,7 +517,7 @@ def _approve_underwriting_and_notify(*, uw_id: str, approved_by: str, automated:
                 link=billing_link.get("url"),
                 kind="billing",
             )
-    return {"application": app, "policy": policy, "billing_link": billing_link}
+    return {"application": app, "policy": policy, "billing_link": billing_link, "policy_nft": nft}
 
 
 def _reject_underwriting_and_notify(*, uw_id: str, rejected_by: str, reason: str) -> Dict[str, Any] | None:
@@ -503,9 +548,15 @@ def _reject_underwriting_and_notify(*, uw_id: str, rejected_by: str, reason: str
         )
     return {"application": app}
 
-def check_rate_limit(client_ip: str) -> bool:
-    """Check if client has exceeded rate limit"""
+def check_rate_limit(client_ip: str, *, role: str | None = None) -> bool:
+    """Check if client has exceeded rate limit (higher limits for authenticated users)."""
     now = datetime.now().timestamp()
+    role_l = str(role or '').lower()
+    limit = MAX_REQUESTS_PER_MINUTE
+    if role_l == 'customer':
+        limit = max(limit, 240)
+    elif role_l in ('admin', 'underwriter', 'accountant', 'claims', 'claims_adjuster'):
+        limit = max(limit, 600)
     
     if client_ip in RATE_LIMIT:
         limit_data = RATE_LIMIT[client_ip]
@@ -513,7 +564,7 @@ def check_rate_limit(client_ip: str) -> bool:
         if now > limit_data['reset_time']:
             RATE_LIMIT[client_ip] = {'count': 1, 'reset_time': now + 60}
             return True
-        elif limit_data['count'] < MAX_REQUESTS_PER_MINUTE:
+        elif limit_data['count'] < limit:
             limit_data['count'] += 1
             return True
         else:
@@ -1380,8 +1431,22 @@ class PortalHandler(BaseHTTPRequestHandler):
             }).encode('utf-8'))
             return
         
-        # Rate limiting
-        if not check_rate_limit(client_ip):
+        # Session validation (needed for role-aware rate limits)
+        auth_header = self.headers.get('Authorization', '')
+        token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+        session = validate_session(token) if token else None
+        # Derive role (best-effort)
+        role_for_limit = None
+        try:
+            if session and session.get('username'):
+                u = USERS.get(session.get('username'))
+                if isinstance(u, dict):
+                    role_for_limit = u.get('role')
+        except Exception:
+            role_for_limit = None
+
+        # Rate limiting (API only; never block static assets/pages)
+        if path.startswith('/api/') and (not check_rate_limit(client_ip, role=role_for_limit)):
             log_malicious_attempt(client_ip, 'Rate Limit Exceeded', {'endpoint': self.path})
             self.send_response(429)
             self.send_header('Content-Type', 'application/json')
@@ -1410,10 +1475,6 @@ class PortalHandler(BaseHTTPRequestHandler):
             self.wfile.write(json.dumps({'valid': bool(email) and validate_email(email)}).encode('utf-8'))
             return
 
-        # Session validation
-        auth_header = self.headers.get('Authorization', '')
-        token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
-        session = validate_session(token) if token else None
         is_authenticated = session is not None
         
         # Security monitoring endpoint (Admin only)
@@ -2803,8 +2864,20 @@ class PortalHandler(BaseHTTPRequestHandler):
             }).encode('utf-8'))
             return
         
-        # Rate limiting
-        if not check_rate_limit(client_ip):
+        # Rate limiting (role-aware when authenticated; never block non-API posts)
+        auth_header = self.headers.get('Authorization', '')
+        token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+        session = validate_session(token) if token else None
+        role_for_limit = None
+        try:
+            if session and session.get('username'):
+                u = USERS.get(session.get('username'))
+                if isinstance(u, dict):
+                    role_for_limit = u.get('role')
+        except Exception:
+            role_for_limit = None
+
+        if path.startswith('/api/') and (not check_rate_limit(client_ip, role=role_for_limit)):
             log_malicious_attempt(client_ip, 'Rate Limit Exceeded (POST)', {'endpoint': self.path})
             self.send_response(429)
             self.send_header('Content-Type', 'application/json')
@@ -2837,9 +2910,8 @@ class PortalHandler(BaseHTTPRequestHandler):
         body = self.rfile.read(length).decode('utf-8') if length else ''
 
         # Session validation (used by many POST endpoints)
-        auth_header = self.headers.get('Authorization', '')
-        token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
-        session = validate_session(token) if token else None
+        # (already validated above for rate limiting; keep variable name stable)
+        session = session
         
         # Demo login endpoint with secure password verification
         if path == '/api/login':
@@ -3759,6 +3831,10 @@ class PortalHandler(BaseHTTPRequestHandler):
         # Approve Underwriting Endpoint
         if path == '/api/underwriting/approve':
             try:
+                if not require_role(session, ['admin', 'underwriter']):
+                    self._set_json_headers(403)
+                    self.wfile.write(json.dumps({'error': 'Unauthorized'}).encode('utf-8'))
+                    return
                 data = json.loads(body)
                 uw_id = data.get('id')
                 app = UNDERWRITING_APPLICATIONS.get(uw_id)

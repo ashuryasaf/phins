@@ -1,7 +1,8 @@
 // Admin dashboard: real data only (no fake seeded rows)
 
 function getToken() {
-  return localStorage.getItem('phins_token') || localStorage.getItem('phins_admin_token');
+  // Prefer the admin/staff token if present (avoids "admin sees customer view" when both exist).
+  return localStorage.getItem('phins_admin_token') || localStorage.getItem('phins_token');
 }
 
 function getAuthHeaders() {

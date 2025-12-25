@@ -20,11 +20,22 @@ document.addEventListener('DOMContentLoaded', function () {
           msg.textContent = 'Login successful! Redirecting...';
           msg.style.color = '#28a745';
           
-          // Store token and username
-          localStorage.setItem('phins_token', data.token);
+          // Store token(s) and identity
+          const role = String(data.role || '').toLowerCase();
+          // Clear any previous tokens to avoid cross-role confusion in the same browser
+          localStorage.removeItem('phins_token');
+          localStorage.removeItem('phins_admin_token');
+          localStorage.setItem('phins_role', role);
+          localStorage.setItem('phins_username', username);
           sessionStorage.setItem('username', username);
-          if (data.customer_id) {
-            localStorage.setItem('phins_customer_id', data.customer_id);
+          if (data.customer_id) localStorage.setItem('phins_customer_id', data.customer_id);
+
+          // Separate customer token from staff/admin token
+          const isStaff = ['admin', 'underwriter', 'claims', 'claims_adjuster', 'accountant'].includes(role);
+          if (isStaff) {
+            localStorage.setItem('phins_admin_token', data.token);
+          } else {
+            localStorage.setItem('phins_token', data.token);
           }
           
           // Redirect based on user role
