@@ -110,6 +110,7 @@ async function loadPipeline() {
       const savingsPct = (p && p.savings_percentage) ?? (pricing && pricing.savings_percentage_percent);
       const healthScore = (p && p.health_condition_score) ?? (pricing && pricing.health_condition_score);
       const healthLoad = (pricing && pricing.health_risk_loading_percent) ?? ((p && p.health_risk_loading_factor) ? Number(p.health_risk_loading_factor) * 100 : 0);
+      const projId = `uw-proj-${String(id).replace(/[^a-zA-Z0-9_-]/g, '')}`;
 
       if (out) {
         out.innerHTML = `
@@ -129,6 +130,10 @@ async function loadPipeline() {
               <div style="color:var(--muted); margin-top:6px">Health score: ${healthScore ?? '-'} (risk loading: ${Number(healthLoad || 0).toFixed(0)}%)</div>
             </div>
           </div>
+          <div class="card" style="margin-top:12px">
+            <div style="font-weight:900">Savings projection (benchmark)</div>
+            <div id="${projId}" style="color:var(--muted); margin-top:6px">Loading…</div>
+          </div>
           <details style="margin-top:10px">
             <summary style="cursor:pointer; font-weight:800">Full application form (stored)</summary>
             <pre style="white-space:pre-wrap; margin-top:10px; background:var(--bg); padding:12px; border-radius:10px; border:1px solid var(--border)">${esc(JSON.stringify(form || {}, null, 2))}</pre>
@@ -139,6 +144,51 @@ async function loadPipeline() {
           </details>
         `;
       }
+
+      // Fetch projection using the same pricing inputs (admin-authenticated)
+      try {
+        const age = (function(dob) {
+          try {
+            const dd = new Date(String(dob || ''));
+            if (Number.isNaN(dd.getTime())) return null;
+            const now = new Date();
+            let a = now.getFullYear() - dd.getFullYear();
+            const m = now.getMonth() - dd.getMonth();
+            if (m < 0 || (m === 0 && now.getDate() < dd.getDate())) a--;
+            return a;
+          } catch (_) { return null; }
+        })(c.dob);
+        const years = Number(p.policy_term_years || (data.notes && data.notes.policy_term_years) || 15);
+        const qs = new URLSearchParams();
+        qs.set('type', String(p.type || 'disability'));
+        qs.set('coverage_amount', String(p.coverage_amount || 100000));
+        qs.set('age', String(age || 30));
+        qs.set('jurisdiction', String(p.jurisdiction || 'US'));
+        qs.set('savings_percentage', String(p.savings_percentage ?? 25));
+        qs.set('operational_reinsurance_load', String(p.operational_reinsurance_load ?? 50));
+        qs.set('health_condition_score', String(p.health_condition_score ?? 3));
+        qs.set('years', String(Number.isFinite(years) ? years : 15));
+        const pr = await fetch(`/api/projections/savings?${qs.toString()}`, { headers: getAuthHeaders() });
+        const pj = await pr.json().catch(() => ({}));
+        const target = document.getElementById(projId);
+        if (!target) return;
+        if (!pr.ok || pj.error) {
+          target.textContent = 'Projection unavailable.';
+          return;
+        }
+        const arr = Array.isArray(pj.projection) ? pj.projection : [];
+        const monthlySav = Number(pj.monthly_savings_allocation || 0);
+        target.innerHTML = `
+          <div style="color:var(--muted)">Term: ${Number(pj.inputs?.years || years || 15)}y • Monthly savings: <strong>$${monthlySav.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</strong></div>
+          <div style="display:flex; gap:12px; flex-wrap:wrap; margin-top:10px">
+            ${arr.map(x => `<div class="card" style="padding:10px 12px">
+              <div style="font-weight:800">${x.scenario}</div>
+              <div style="color:var(--muted); font-size:12px">${Number(x.annual_return_percent||0).toFixed(0)}%/yr</div>
+              <div style="margin-top:6px; font-weight:900">$${Number(x.future_value||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</div>
+            </div>`).join('')}
+          </div>
+        `;
+      } catch (e) {}
     } catch (e) {
       if (out) out.textContent = 'Could not load details.';
     }

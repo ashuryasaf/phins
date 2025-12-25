@@ -14,6 +14,20 @@ function money(x) {
   return '$' + n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
+function calcAgeFromDob(dobStr) {
+  try {
+    const d = new Date(String(dobStr || ''));
+    if (Number.isNaN(d.getTime())) return null;
+    const now = new Date();
+    let age = now.getFullYear() - d.getFullYear();
+    const m = now.getMonth() - d.getMonth();
+    if (m < 0 || (m === 0 && now.getDate() < d.getDate())) age--;
+    return age;
+  } catch (_) {
+    return null;
+  }
+}
+
 function badge(status) {
   const s = String(status || '').toLowerCase();
   const cls = s.includes('active') || s === 'active' ? 'badge badge-active'
@@ -379,6 +393,64 @@ function renderInvestmentAllocations(data) {
   el.innerHTML = blocks;
 }
 
+async function loadSavingsProjectionForPolicy({ policy, age }) {
+  const qs = new URLSearchParams();
+  qs.set('type', String(policy.type || 'disability'));
+  qs.set('coverage_amount', String(policy.coverage_amount || 100000));
+  qs.set('age', String(age || 30));
+  qs.set('jurisdiction', String(policy.jurisdiction || 'US'));
+  qs.set('savings_percentage', String(policy.savings_percentage ?? 25));
+  qs.set('operational_reinsurance_load', String(policy.operational_reinsurance_load ?? 50));
+  qs.set('health_condition_score', String(policy.health_condition_score ?? 3));
+  qs.set('years', String(policy.policy_term_years ?? 15));
+  const resp = await fetch(`/api/projections/savings?${qs.toString()}`, { headers: getAuthHeaders() });
+  return resp.json();
+}
+
+function renderSavingsProjections({ profile, policies }) {
+  const el = document.getElementById('savings-projections');
+  if (!el) return;
+  const active = (policies || []).filter(p => String(p.status || '').toLowerCase() === 'active');
+  if (!active.length) {
+    el.innerHTML = '<span style="color:var(--muted)">No active policies yet.</span>';
+    return;
+  }
+  const age = calcAgeFromDob(profile?.dob) || 30;
+  el.textContent = 'Calculating…';
+  Promise.all(active.slice(0, 20).map(p => loadSavingsProjectionForPolicy({ policy: p, age }).then(r => ({ policy: p, proj: r })).catch(() => ({ policy: p, proj: null }))))
+    .then((rows) => {
+      const blocks = rows.map(({ policy, proj }) => {
+        if (!proj || proj.error) {
+          return `<div class="card" style="margin-bottom:12px"><div style="font-weight:900">Policy ${policy.id}</div><div style="color:var(--muted); margin-top:6px">Projection unavailable.</div></div>`;
+        }
+        const p = Array.isArray(proj.projection) ? proj.projection : [];
+        const monthlySav = Number(proj.monthly_savings_allocation || 0);
+        const years = Number(proj.inputs?.years || policy.policy_term_years || 15);
+        return `
+          <div class="card" style="margin-bottom:12px">
+            <div style="display:flex; justify-content:space-between; flex-wrap:wrap; gap:10px">
+              <div style="font-weight:900">Policy ${policy.id}</div>
+              <div style="color:var(--muted)">Term: ${years}y • Monthly savings: <strong>${money(monthlySav)}</strong></div>
+            </div>
+            <div style="display:flex; gap:12px; flex-wrap:wrap; margin-top:10px">
+              ${p.map(x => `
+                <div class="card" style="padding:10px 12px">
+                  <div style="font-weight:800">${x.scenario}</div>
+                  <div style="color:var(--muted); font-size:12px">${Number(x.annual_return_percent||0).toFixed(0)}%/yr</div>
+                  <div style="margin-top:6px; font-weight:900">$${Number(x.future_value||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</div>
+                </div>
+              `).join('')}
+            </div>
+          </div>
+        `;
+      }).join('');
+      el.innerHTML = blocks;
+    })
+    .catch(() => {
+      el.textContent = 'Projection unavailable.';
+    });
+}
+
 // Language selector (kept compatible with existing UI)
 window.changeLanguage = function changeLanguage(lang) {
   localStorage.setItem('phins_language', lang);
@@ -436,6 +508,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     renderInvestmentAllocations(invAllocs);
     updateTopStats(policies, claims, statement, market);
     setupClaimModal(profile, policies);
+    renderSavingsProjections({ profile, policies });
 
     // Market charts (adjustable, best-effort realtime)
     try {

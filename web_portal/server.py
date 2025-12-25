@@ -1447,6 +1447,7 @@ class PortalHandler(BaseHTTPRequestHandler):
                 'customer_id': customer_id,
                 'email': cust.get('email') if isinstance(cust, dict) else None,
                 'phone': cust.get('phone') if isinstance(cust, dict) else None,
+                'dob': cust.get('dob') if isinstance(cust, dict) else None,
             }).encode('utf-8'))
             return
 
