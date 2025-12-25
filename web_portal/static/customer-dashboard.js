@@ -99,6 +99,13 @@ function renderApplications(apps) {
     tbody.innerHTML = '<tr><td colspan="6" style="color:var(--muted)">No applications in pipeline.</td></tr>';
     return;
   }
+  let focusId = null;
+  try {
+    const u = new URL(window.location.href);
+    focusId = u.searchParams.get('focus_application_id');
+  } catch (_) {
+    focusId = null;
+  }
   const rows = apps
     .sort((a, b) => String(b.submitted_date || '').localeCompare(String(a.submitted_date || '')))
     .slice(0, 50)
@@ -107,8 +114,9 @@ function renderApplications(apps) {
       const action = canEdit && a.id
         ? `<a class="link" href="/quote.html?application_id=${encodeURIComponent(a.id)}">Edit</a>`
         : '<span style="color:var(--muted)">—</span>';
+      const hl = (focusId && a.id && String(a.id) === String(focusId)) ? ' style="background:rgba(76,175,80,0.10)"' : '';
       return `
-        <tr>
+        <tr${hl}>
           <td>${a.id || '-'}</td>
           <td>${a.policy_id || '-'}</td>
           <td>${badge(a.status || 'pending')}</td>

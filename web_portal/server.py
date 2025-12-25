@@ -4627,7 +4627,7 @@ class PortalHandler(BaseHTTPRequestHandler):
             fields, uploaded_files = self._parse_multipart_data_with_files(form_data, boundary.encode())  # type: ignore
             
             # Validate critical fields for injection / malicious content
-            critical_fields = ['firstName', 'lastName', 'email', 'phone', 'address', 'city', 'occupation', 'nationalId']
+            critical_fields = ['firstName', 'lastName', 'email', 'phone', 'address', 'city', 'occupation', 'nationalId', 'familyHistory']
             for field_name in critical_fields:
                 field_value = fields.get(field_name, '')
                 if field_value:
@@ -4636,6 +4636,12 @@ class PortalHandler(BaseHTTPRequestHandler):
                         self._set_json_headers(400)
                         self.wfile.write(json.dumps({'error': f'Invalid input in {field_name}: {error}'}).encode('utf-8'))
                         return
+
+            # Required underwriting field: family history (insurance-grade decisioning)
+            if not (fields.get('familyHistory') or '').strip():
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'Family history is required'}).encode('utf-8'))
+                return
             
             # Extract primary identity fields
             email = (fields.get('email', '') or '').strip().lower()

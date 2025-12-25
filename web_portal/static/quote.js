@@ -22,7 +22,8 @@ const requiredFields = [
   'height', 'weight', 'smoking', 'preExisting', 'maritalStatus',
   'occupation', 'incomeRange', 'exercise', 'coverageAmount',
   'policyTerm', 'truthDeclaration', 'privacyConsent', 'termsAccept', 'signature',
-  'jurisdiction', 'savingsPercentage'
+  'jurisdiction', 'savingsPercentage',
+  'familyHistory'
 ];
 
 function getToken() {
@@ -387,6 +388,8 @@ function setupFormValidation() {
     input.addEventListener('blur', function() {
       validateField(this);
       updateProgress();
+      // autosave on blur (quiet)
+      scheduleDraftAutoSave();
     });
     
     input.addEventListener('input', function() {
@@ -394,6 +397,7 @@ function setupFormValidation() {
         validateField(this);
       }
       updateProgress();
+      scheduleDraftAutoSave();
     });
   });
   
@@ -1086,7 +1090,9 @@ async function handleSubmit() {
       
       // Redirect after 3 seconds
       setTimeout(() => {
-        window.location.href = '/dashboard.html';
+        const appId = result.application_id || result.id || '';
+        const url = appId ? `/dashboard.html?focus_application_id=${encodeURIComponent(appId)}` : '/dashboard.html';
+        window.location.href = url;
       }, 3000);
     } else {
       showError(result.message || 'Submission failed. Please try again.');
@@ -1100,8 +1106,11 @@ async function handleSubmit() {
   }
 }
 
-// Save draft to localStorage
-function saveDraft() {
+let __draftSaveTimer = null;
+
+// Save draft to localStorage (files/media are not persisted in localStorage)
+function saveDraft(opts = {}) {
+  const silent = !!opts.silent;
   const form = document.getElementById('quoteForm');
   const formData = new FormData(form);
   const data = {};
@@ -1109,11 +1118,20 @@ function saveDraft() {
   for (let [key, value] of formData.entries()) {
     // Never store passwords in drafts/localStorage
     if (key === 'accountPassword' || key === 'accountPasswordConfirm') continue;
+    // Never store file blobs in drafts/localStorage
+    if (value && typeof value === 'object' && ('name' in value) && ('size' in value)) continue;
     data[key] = value;
   }
   
   localStorage.setItem('quoteDraft', JSON.stringify(data));
-  showSuccess('Draft saved successfully!');
+  if (!silent) showSuccess('Draft saved (files/media are not saved in drafts).');
+}
+
+function scheduleDraftAutoSave() {
+  if (__draftSaveTimer) clearTimeout(__draftSaveTimer);
+  __draftSaveTimer = setTimeout(() => {
+    try { saveDraft({ silent: true }); } catch (_) {}
+  }, 600);
 }
 
 // Load draft from localStorage
