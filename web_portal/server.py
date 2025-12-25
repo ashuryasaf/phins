@@ -1151,6 +1151,43 @@ def build_customer_statement_from_transactions(customer_id: str) -> Dict[str, An
 
 
 class PortalHandler(BaseHTTPRequestHandler):
+    def _get_client_ip(self) -> str:
+        """
+        Determine the real client IP when running behind a proxy (Railway/Render/etc).
+
+        Why: on PaaS, `self.client_address[0]` is often the *shared reverse proxy* IP.
+        If that shared proxy IP gets rate-limited/blocked, the entire site becomes inaccessible.
+        """
+        # Allow disabling proxy trust explicitly.
+        trust_proxy = os.environ.get("TRUST_PROXY", "").lower() not in ("0", "false", "no")
+        if trust_proxy:
+            xff = (self.headers.get("X-Forwarded-For") or "").strip()
+            if xff:
+                # XFF may be a comma-separated list: client, proxy1, proxy2...
+                parts = [p.strip() for p in xff.split(",") if p.strip()]
+                if parts:
+                    return parts[0]
+            xrip = (self.headers.get("X-Real-IP") or "").strip()
+            if xrip:
+                return xrip
+        return self.client_address[0]
+
+    def _maybe_set_app_base_url(self) -> None:
+        """
+        If APP_BASE_URL isn't configured, derive it from headers.
+        This makes email links work correctly on hosted deployments.
+        """
+        global APP_BASE_URL
+        if APP_BASE_URL:
+            return
+        host = (self.headers.get("X-Forwarded-Host") or self.headers.get("Host") or "").strip()
+        if not host:
+            return
+        proto = (self.headers.get("X-Forwarded-Proto") or "http").strip()
+        if proto not in ("http", "https"):
+            proto = "https"
+        APP_BASE_URL = f"{proto}://{host}".rstrip("/")
+
     def _set_json_headers(self, status: int = 200) -> None:
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
@@ -1187,9 +1224,12 @@ class PortalHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         # Periodic cleanup of stale data
         cleanup_stale_data()
+
+        # Ensure absolute URLs are available for notifications/emails
+        self._maybe_set_app_base_url()
         
         # Security checks
-        client_ip = self.client_address[0]
+        client_ip = self._get_client_ip()
         
         # Check if IP is blocked
         is_blocked, block_reason = is_ip_blocked(client_ip)
@@ -2086,9 +2126,12 @@ class PortalHandler(BaseHTTPRequestHandler):
     def do_POST(self):
         # Periodic cleanup of stale data
         cleanup_stale_data()
+
+        # Ensure absolute URLs are available for notifications/emails
+        self._maybe_set_app_base_url()
         
         # Security checks
-        client_ip = self.client_address[0]
+        client_ip = self._get_client_ip()
         
         # Check if IP is blocked
         is_blocked, block_reason = is_ip_blocked(client_ip)
@@ -2145,7 +2188,7 @@ class PortalHandler(BaseHTTPRequestHandler):
         
         # Demo login endpoint with secure password verification
         if path == '/api/login':
-            client_ip = self.client_address[0]
+            client_ip = self._get_client_ip()
             
             # Check if IP is locked out
             if not check_login_lockout(client_ip):
@@ -3605,7 +3648,7 @@ class PortalHandler(BaseHTTPRequestHandler):
             for field_name in critical_fields:
                 field_value = fields.get(field_name, '')
                 if field_value:
-                    is_valid, error = validate_input_security(field_value, self.client_address[0], field_name)
+                    is_valid, error = validate_input_security(field_value, self._get_client_ip(), field_name)
                     if not is_valid:
                         self._set_json_headers(400)
                         self.wfile.write(json.dumps({'error': f'Invalid input in {field_name}: {error}'}).encode('utf-8'))
