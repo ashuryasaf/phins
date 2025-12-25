@@ -233,6 +233,8 @@ async function updatePremiumPreview() {
   const health = Number(document.getElementById('healthCondition')?.value || 3);
   const savings = Number(document.getElementById('savingsPercentage')?.value || 25);
   const jurisdiction = String(document.getElementById('jurisdiction')?.value || 'US');
+  const termRaw = String(document.getElementById('policyTerm')?.value || '15');
+  const years = termRaw.toLowerCase() === 'lifetime' ? 30 : Number(termRaw || 15);
 
   if (!cov || !age || age < 18) {
     out.textContent = 'Enter DOB and coverage amount to calculate.';
@@ -255,14 +257,45 @@ async function updatePremiumPreview() {
     const monthly = Number(data.monthly || 0);
     const mRisk = Number(b.monthly_risk_allocation || 0);
     const mSav = Number(b.monthly_savings_allocation || 0);
+    const riskRate = Number(b.annual_risk_rate_percent || 0);
     const loadPct = Number(b.health_risk_loading_percent || 0);
     const loadAmt = Number(b.monthly_risk_loading_amount || 0);
+
+    // Projection of savings over the selected term (insurance benchmark scenarios)
+    let projectionHtml = '';
+    try {
+      const qp = new URLSearchParams();
+      qp.set('type', 'disability');
+      qp.set('coverage_amount', String(cov));
+      qp.set('age', String(age));
+      qp.set('jurisdiction', jurisdiction);
+      qp.set('savings_percentage', String(savings));
+      qp.set('health_condition_score', String(health));
+      qp.set('years', String(Number.isFinite(years) ? years : 15));
+      const pr = await fetch(`/api/projections/savings?${qp.toString()}`, { headers: (function(){ const t=getToken(); return t?{Authorization:`Bearer ${t}`}:{}})() });
+      const pj = await pr.json();
+      if (pr.ok) {
+        const arr = Array.isArray(pj.projection) ? pj.projection : [];
+        projectionHtml = `
+          <div style="margin-top:10px; padding-top:10px; border-top:1px solid var(--border)">
+            <div style="font-weight:800">Savings projection (${Number.isFinite(years) ? years : 15} years)</div>
+            <div style="display:flex; gap:12px; flex-wrap:wrap; margin-top:6px">
+              ${arr.map(x => `<div class="card" style="padding:10px 12px">
+                <div style="font-weight:800">${x.scenario}</div>
+                <div style="color:var(--muted); font-size:12px">${Number(x.annual_return_percent||0).toFixed(0)}%/yr</div>
+                <div style="margin-top:6px; font-weight:900">$${Number(x.future_value||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</div>
+              </div>`).join('')}
+            </div>
+          </div>
+        `;
+      }
+    } catch (e) {}
 
     out.innerHTML = `
       <div style="display:flex; gap:14px; flex-wrap:wrap; align-items:flex-end">
         <div style="flex:1; min-width:220px">
           <div style="font-size:28px; font-weight:900; color:var(--brand)">$${monthly.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / mo</div>
-          <div style="color:var(--muted); margin-top:4px">Coverage: $${Number(cov).toLocaleString()} • Age: ${age} • ${jurisdiction}</div>
+          <div style="color:var(--muted); margin-top:4px">Coverage: $${Number(cov).toLocaleString()} • Age: ${age} • ${jurisdiction} • Actuarial ADL risk: ${riskRate.toFixed(2)}%/yr</div>
         </div>
         <div style="min-width:220px">
           <div><strong>Risk cover:</strong> $${mRisk.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / mo</div>
@@ -270,6 +303,7 @@ async function updatePremiumPreview() {
           <div style="color:var(--muted); font-size:12px; margin-top:4px">Health loading: ${loadPct.toFixed(0)}% (+$${loadAmt.toFixed(2)}/mo) applied to risk cover</div>
         </div>
       </div>
+      ${projectionHtml}
     `;
   } catch (e) {
     out.textContent = 'Pricing unavailable right now.';

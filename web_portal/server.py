@@ -1191,6 +1191,29 @@ def _default_investment_allocations() -> list[Dict[str, Any]]:
     ]
 
 
+def _future_value_monthly_contributions(*, monthly_contribution: float, years: int, annual_return: float) -> float:
+    """
+    Future value of monthly contributions with monthly compounding.
+    annual_return is a fraction (0.05 = 5%).
+    """
+    pmt = float(monthly_contribution or 0.0)
+    if pmt <= 0:
+        return 0.0
+    y = max(0, int(years))
+    n = y * 12
+    r = float(annual_return or 0.0)
+    if n <= 0:
+        return 0.0
+    if r <= 0:
+        return round(pmt * n, 2)
+    m = r / 12.0
+    try:
+        fv = pmt * (((1.0 + m) ** n - 1.0) / m)
+    except Exception:
+        fv = pmt * n
+    return round(float(fv), 2)
+
+
 class PortalHandler(BaseHTTPRequestHandler):
     def _get_client_ip(self) -> str:
         """
@@ -2273,6 +2296,75 @@ class PortalHandler(BaseHTTPRequestHandler):
                 self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
             return
 
+        # Savings projection endpoint (insurance-grade: based on premium->savings allocation, no fake balances)
+        if path == '/api/projections/savings':
+            if not session:
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Unauthorized'}).encode('utf-8'))
+                return
+            try:
+                age = int(qs.get('age', ['35'])[0])
+                years = int(qs.get('years', ['15'])[0])
+                years = max(1, min(60, years))
+                policy_type = qs.get('type', ['disability'])[0]
+                coverage_amount = float(qs.get('coverage_amount', ['100000'])[0])
+                jurisdiction = qs.get('jurisdiction', [PHI_PRODUCT_CONFIG.get('default_jurisdiction', 'US')])[0]
+                savings_percentage = qs.get('savings_percentage', [PHI_PRODUCT_CONFIG.get('default_savings_percentage', 25)])[0]
+                operational_reinsurance_load = qs.get('operational_reinsurance_load', [PHI_PRODUCT_CONFIG.get('default_operational_reinsurance_load', 50)])[0]
+                health_condition_score = qs.get('health_condition_score', ['3'])[0]
+
+                from services.pricing_service import price_policy
+                priced = price_policy({
+                    'type': policy_type,
+                    'coverage_amount': coverage_amount,
+                    'age': age,
+                    'jurisdiction': jurisdiction,
+                    'savings_percentage': savings_percentage,
+                    'operational_reinsurance_load': operational_reinsurance_load,
+                })
+                priced = _apply_health_risk_loading(priced, health_condition_score=health_condition_score)
+                b = priced.get('breakdown', {}) if isinstance(priced, dict) else {}
+                monthly_savings = float(b.get('monthly_savings_allocation') or 0.0)
+                monthly_total = float(b.get('monthly_total_premium') or priced.get('monthly') or 0.0)
+
+                # Scenarios (insurance benchmark): conservative/base/growth
+                scenarios = [
+                    {'name': 'conservative', 'annual_return': 0.02},
+                    {'name': 'base', 'annual_return': 0.05},
+                    {'name': 'growth', 'annual_return': 0.08},
+                ]
+                proj = []
+                for s in scenarios:
+                    r = float(s['annual_return'])
+                    proj.append({
+                        'scenario': s['name'],
+                        'annual_return': r,
+                        'annual_return_percent': r * 100.0,
+                        'future_value': _future_value_monthly_contributions(monthly_contribution=monthly_savings, years=years, annual_return=r),
+                    })
+
+                self._set_json_headers()
+                self.wfile.write(json.dumps({
+                    'inputs': {
+                        'age': age,
+                        'years': years,
+                        'type': policy_type,
+                        'coverage_amount': coverage_amount,
+                        'jurisdiction': 'UK' if str(jurisdiction).upper() in ('UK', 'GB', 'GBR') else 'US',
+                        'savings_percentage': savings_percentage,
+                        'operational_reinsurance_load': operational_reinsurance_load,
+                        'health_condition_score': health_condition_score,
+                    },
+                    'pricing': priced,
+                    'monthly_total_premium': round(monthly_total, 2),
+                    'monthly_savings_allocation': round(monthly_savings, 2),
+                    'projection': proj,
+                }).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+
         # Disclaimers endpoint
         if path.startswith('/api/disclaimers'):
             # Parameters: ?action=buy_contract|claim_insurance|invest_savings or ?type=BUY_CONTRACT|CLAIM_INSURANCE|INVEST_SAVINGS
@@ -3136,7 +3228,8 @@ class PortalHandler(BaseHTTPRequestHandler):
                         'jurisdiction': data.get('jurisdiction') or data.get('country'),
                         'savings_percentage': data.get('savings_percentage'),
                         'operational_reinsurance_load': data.get('operational_reinsurance_load'),
-                    }
+                    },
+                'policy_term_years': data.get('policy_term_years') or data.get('term_years') or data.get('years'),
                 }
                 UNDERWRITING_APPLICATIONS[uw_id] = {
                     'id': uw_id,
@@ -3174,11 +3267,12 @@ class PortalHandler(BaseHTTPRequestHandler):
                 policy = {
                     'id': policy_id,
                     'customer_id': customer_id,
-                    'type': data.get('type', 'life'),
+                    'type': 'disability' if str(data.get('type', '')).lower() in ('disability', 'phi', 'phi_disability', 'permanent_disability') else data.get('type', 'life'),
                     'coverage_amount': float(data.get('coverage_amount', 100000)),
                     'annual_premium': float(premium_data['annual']),
                     'monthly_premium': float(premium_data['monthly']),
                     'quarterly_premium': float(premium_data.get('quarterly', 0.0)),
+                    'policy_term_years': data.get('policy_term_years') or data.get('term_years') or data.get('years'),
                     'status': 'pending_underwriting',
                     'underwriting_id': uw_id,
                     'risk_score': data.get('risk_score', 'medium'),
@@ -4133,6 +4227,17 @@ class PortalHandler(BaseHTTPRequestHandler):
                 coverage_amount = 100000
             policy_type = 'disability'
 
+            # Term years (for projections; stored for underwriting decisioning)
+            policy_term_raw = (fields.get('policyTerm', '') or '').strip()
+            policy_term_years = None
+            try:
+                if policy_term_raw and policy_term_raw.lower() != 'lifetime':
+                    policy_term_years = int(float(policy_term_raw))
+                elif policy_term_raw.lower() == 'lifetime':
+                    policy_term_years = 30
+            except Exception:
+                policy_term_years = None
+
             # Savings preference and jurisdiction (important for pricing + allocations)
             savings_percentage = fields.get('savingsPercentage', fields.get('savings_percentage', PHI_PRODUCT_CONFIG.get('default_savings_percentage', 25)))
             jurisdiction = (fields.get('jurisdiction') or fields.get('country') or PHI_PRODUCT_CONFIG.get('default_jurisdiction', 'US'))
@@ -4167,6 +4272,7 @@ class PortalHandler(BaseHTTPRequestHandler):
                 'source': 'quote',
                 'product': {'name': 'phins_permanent_phi_disability', 'adl_trigger_min': 3},
                 'form': fields,
+                'policy_term_years': policy_term_years,
             }
             UNDERWRITING_APPLICATIONS[uw_id] = {
                 'id': uw_id,
@@ -4221,6 +4327,7 @@ class PortalHandler(BaseHTTPRequestHandler):
                 'operational_reinsurance_load': operational_reinsurance_load,
                 'health_condition_score': health_condition_score,
                 'health_risk_loading_factor': _health_risk_loading_factor(health_condition_score),
+                'policy_term_years': policy_term_years,
                 'status': 'pending_underwriting',
                 'underwriting_id': uw_id,
                 'risk_score': risk_score,

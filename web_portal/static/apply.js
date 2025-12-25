@@ -34,6 +34,12 @@ function setupEventListeners() {
             el.addEventListener('change', () => updateCoverageDisplay());
         }
     });
+
+    // Term triggers projection refresh
+    const term = document.getElementById('policy-term-years');
+    if (term) {
+        term.addEventListener('change', () => updateCoverageDisplay());
+    }
     
     // Quick amount buttons
     document.querySelectorAll('.quick-amount').forEach(btn => {
@@ -146,12 +152,14 @@ function calculatePremium(coverageAmount) {
         const jurisdiction = document.getElementById('phi-jurisdiction')?.value || 'US';
         const savingsPercentage = document.getElementById('phi-savings-percentage')?.value || '25';
         const operationalLoad = document.getElementById('phi-operational-load')?.value || '50';
+        const years = document.getElementById('policy-term-years')?.value || '15';
+        const healthScore = String(healthConditionScoreFromRisk() || 3);
 
         // Debounce to avoid spamming API while typing
         if (_pricingEstimateTimer) clearTimeout(_pricingEstimateTimer);
         _pricingEstimateTimer = setTimeout(async () => {
             try {
-                const url = `/api/pricing/estimate?type=disability&coverage_amount=${encodeURIComponent(coverageAmount)}&age=${encodeURIComponent(age)}&jurisdiction=${encodeURIComponent(jurisdiction)}&savings_percentage=${encodeURIComponent(savingsPercentage)}&operational_reinsurance_load=${encodeURIComponent(operationalLoad)}`;
+                const url = `/api/pricing/estimate?type=disability&coverage_amount=${encodeURIComponent(coverageAmount)}&age=${encodeURIComponent(age)}&jurisdiction=${encodeURIComponent(jurisdiction)}&savings_percentage=${encodeURIComponent(savingsPercentage)}&operational_reinsurance_load=${encodeURIComponent(operationalLoad)}&health_condition_score=${encodeURIComponent(healthScore)}`;
                 const priced = await fetch(url).then(r => r.json());
                 const annualPremium = Number(priced.annual || 0);
                 const monthlyPremium = Number(priced.monthly || 0);
@@ -165,6 +173,21 @@ function calculatePremium(coverageAmount) {
                     new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(annualPremium);
 
                 formData.premiums = { monthly: monthlyPremium, quarterly: quarterlyPremium, annual: annualPremium, breakdown: priced.breakdown };
+
+                // Best-effort projection (saved in formData for review/admin; requires login to call API)
+                try {
+                    const q = new URLSearchParams();
+                    q.set('type', 'disability');
+                    q.set('coverage_amount', String(coverageAmount));
+                    q.set('age', String(age));
+                    q.set('jurisdiction', String(jurisdiction));
+                    q.set('savings_percentage', String(savingsPercentage));
+                    q.set('operational_reinsurance_load', String(operationalLoad));
+                    q.set('health_condition_score', String(healthScore));
+                    q.set('years', String(years));
+                    const proj = await fetch(`/api/projections/savings?${q.toString()}`, { headers: {} }).then(r => r.json());
+                    formData.projection = proj;
+                } catch (e) {}
             } catch (e) {
                 console.error('Pricing estimate failed:', e);
             }
@@ -189,6 +212,19 @@ function calculatePremium(coverageAmount) {
         new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(annualPremium);
 
     formData.premiums = { monthly: monthlyPremium, quarterly: quarterlyPremium, annual: annualPremium };
+}
+
+function healthConditionScoreFromRisk() {
+    // Map our step-3 riskPoints proxy into a 1-10 health condition score
+    try {
+        const r = calculateRiskScore();
+        if (r === 'low') return 3;
+        if (r === 'medium') return 5;
+        if (r === 'high') return 8;
+        return 10;
+    } catch (e) {
+        return 3;
+    }
 }
 
 function calculateAge(dobString) {
@@ -522,6 +558,10 @@ function populateReview() {
             <strong>Coverage Amount</strong>
             <span>${new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0 }).format(formData.coverage.coverageAmount)}</span>
         </div>
+        <div class="review-item">
+            <strong>Term (years)</strong>
+            <span>${document.getElementById('policy-term-years')?.value || '15'}</span>
+        </div>
     `;
     document.getElementById('review-coverage').innerHTML = coverageHtml;
     
@@ -589,6 +629,8 @@ async function handleSubmit(e) {
         jurisdiction: document.getElementById('phi-jurisdiction')?.value || 'US',
         savings_percentage: parseFloat(document.getElementById('phi-savings-percentage')?.value || '25'),
         operational_reinsurance_load: parseFloat(document.getElementById('phi-operational-load')?.value || '50'),
+        policy_term_years: parseInt(document.getElementById('policy-term-years')?.value || '15'),
+        health_condition_score: healthConditionScoreFromRisk(),
         questionnaire: {
             smoke: formData.health.tobacco,
             medical_conditions: formData.health.medicalConditions,
