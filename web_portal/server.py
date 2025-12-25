@@ -2255,6 +2255,30 @@ class PortalHandler(BaseHTTPRequestHandler):
                 quotes = svc.get_crypto_quotes([s.strip() for s in symbols], vs_currency=vs)
                 for q in quotes:
                     _series_append("crypto", q.symbol, q.price, currency=vs)
+                # Persist ticks so charts retain history across restarts
+                if USE_DATABASE and database_enabled:
+                    try:
+                        from database.manager import DatabaseManager
+                        with DatabaseManager() as db:
+                            for q in quotes:
+                                try:
+                                    latest = db.market_ticks.latest_for_symbol("crypto", q.symbol, currency=str(vs).upper(), limit=1)
+                                    if latest:
+                                        last = latest[0]
+                                        last_ts = getattr(last, "created_date", None)
+                                        if last_ts and (datetime.utcnow() - last_ts).total_seconds() < 25 and float(getattr(last, "price", 0.0)) == float(q.price):
+                                            continue
+                                    db.market_ticks.create(
+                                        kind="crypto",
+                                        symbol=q.symbol,
+                                        price=float(q.price),
+                                        currency=str(vs).upper(),
+                                        source=str(getattr(q, "source", "live")),
+                                    )
+                                except Exception:
+                                    continue
+                    except Exception:
+                        pass
                 payload = {"items": [q.to_dict() for q in quotes], "ts": datetime.utcnow().isoformat()}
             except Exception as e:
                 payload = {'items': [], 'error': str(e)}
@@ -2271,6 +2295,30 @@ class PortalHandler(BaseHTTPRequestHandler):
                 quotes = svc.get_index_quotes([s.strip() for s in symbols], currency=currency)
                 for q in quotes:
                     _series_append("index", q.symbol, q.price, currency=currency)
+                # Persist ticks so charts retain history across restarts
+                if USE_DATABASE and database_enabled:
+                    try:
+                        from database.manager import DatabaseManager
+                        with DatabaseManager() as db:
+                            for q in quotes:
+                                try:
+                                    latest = db.market_ticks.latest_for_symbol("index", q.symbol, currency=str(currency).upper(), limit=1)
+                                    if latest:
+                                        last = latest[0]
+                                        last_ts = getattr(last, "created_date", None)
+                                        if last_ts and (datetime.utcnow() - last_ts).total_seconds() < 25 and float(getattr(last, "price", 0.0)) == float(q.price):
+                                            continue
+                                    db.market_ticks.create(
+                                        kind="index",
+                                        symbol=q.symbol,
+                                        price=float(q.price),
+                                        currency=str(currency).upper(),
+                                        source=str(getattr(q, "source", "live")),
+                                    )
+                                except Exception:
+                                    continue
+                    except Exception:
+                        pass
                 payload = {"items": [q.to_dict() for q in quotes], "ts": datetime.utcnow().isoformat()}
             except Exception as e:
                 payload = {'items': [], 'error': str(e)}
@@ -2831,6 +2879,35 @@ class PortalHandler(BaseHTTPRequestHandler):
                     
                     # Store session
                     customer_id = user.get('customer_id')
+                    # Best-effort: resolve customer_id via customers table for customer accounts
+                    try:
+                        if not customer_id and user.get('email'):
+                            uemail = str(user.get('email') or '').strip().lower()
+                            if uemail:
+                                for c in CUSTOMERS.values():
+                                    if isinstance(c, dict) and str(c.get('email') or '').lower() == uemail:
+                                        customer_id = c.get('id') or customer_id
+                                        break
+                    except Exception:
+                        pass
+
+                    # Backfill any historical submissions created before account linkage
+                    try:
+                        uemail = str(user.get('email') or username or '').strip().lower()
+                        if customer_id and uemail:
+                            for sid, rec in list(FORM_SUBMISSIONS.items()):
+                                if not isinstance(rec, dict):
+                                    continue
+                                if rec.get('customer_id'):
+                                    continue
+                                if str(rec.get('email') or '').lower() != uemail:
+                                    continue
+                                updated = dict(rec)
+                                updated['customer_id'] = customer_id
+                                FORM_SUBMISSIONS[sid] = updated
+                    except Exception:
+                        pass
+
                     sess_record: Dict[str, Any] = {
                         'username': username,
                         'expires': expires.isoformat(),
@@ -2927,6 +3004,21 @@ class PortalHandler(BaseHTTPRequestHandler):
                     'dob': dob,
                     'created_date': created_date or datetime.now().isoformat()
                 }
+
+                # Backfill any existing submissions for this email so the customer/admin can see full history.
+                try:
+                    for sid, rec in list(FORM_SUBMISSIONS.items()):
+                        if not isinstance(rec, dict):
+                            continue
+                        if rec.get('customer_id'):
+                            continue
+                        if str(rec.get('email') or '').lower() != email:
+                            continue
+                        updated = dict(rec)
+                        updated['customer_id'] = customer_id
+                        FORM_SUBMISSIONS[sid] = updated
+                except Exception:
+                    pass
 
                 # Store submission for admin/customer support
                 try:
@@ -4257,12 +4349,6 @@ class PortalHandler(BaseHTTPRequestHandler):
                 self.wfile.write(json.dumps({'error': 'Valid email is required'}).encode('utf-8'))
                 return
 
-            # Store quote form submission for support/audit
-            try:
-                store_form_submission(source='quote', customer_id=None, email=email, payload=fields)  # customer_id set after we resolve/create customer
-            except Exception:
-                pass
-
             # If the user is logged in, bind the quote to their customer_id (and prevent cross-account submissions).
             authed_customer_id = None
             try:
@@ -4416,6 +4502,12 @@ class PortalHandler(BaseHTTPRequestHandler):
             customer_id = customer_id or generate_customer_id()
             policy_id = generate_policy_id()
             uw_id = f"UW-{datetime.now().strftime('%Y%m%d')}-{random.randint(1000, 9999)}"
+
+            # Store quote form submission for support/audit (now linked to a resolved customer_id)
+            try:
+                store_form_submission(source='quote', customer_id=customer_id, email=email, payload=fields)
+            except Exception:
+                pass
             
             # Create customer record
             first = (fields.get('firstName', '') or '').strip()

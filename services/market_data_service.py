@@ -353,6 +353,19 @@ class MarketDataService:
 
         out: List[MarketQuote] = []
         now = datetime.utcnow().isoformat()
+        # Stooq does not provide easy multi-currency quoting for indexes via this endpoint.
+        # We treat a small set of common indexes as priced in their "native" currency and
+        # convert to the requested currency using FX rates.
+        native_currency = {
+            "SPX": "USD",
+            "SP500": "USD",
+            "NASDAQ": "USD",
+            "NDX": "USD",
+            "DOW": "USD",
+            "DJI": "USD",
+            "FTSE": "GBP",
+            "FTSE100": "GBP",
+        }
         try:
             for sym in symbols:
                 st = stooq_map.get(sym, "")
@@ -367,14 +380,22 @@ class MarketDataService:
                 parts = lines[1].split(",")
                 if len(parts) < 7:
                     continue
-                close = float(parts[6])
+                close_native = float(parts[6])
+                sym_native_cur = native_currency.get(sym, "USD")
+                px = close_native
+                if currency and sym_native_cur and currency != sym_native_cur:
+                    try:
+                        fx = float(self.get_fx_quote(sym_native_cur, currency).price or 1.0)
+                        px = close_native * fx
+                    except Exception:
+                        px = close_native
                 out.append(
                     MarketQuote(
                         symbol=sym,
                         name=sym,
                         kind="index",
                         currency=currency,
-                        price=round(close, 4),
+                        price=round(float(px), 4),
                         change_24h=0.0,
                         updated_at=now,
                         source="live",
@@ -420,12 +441,39 @@ class MarketDataService:
             return cached
 
         now = datetime.utcnow().isoformat()
-        # No external source by default; provide stable-ish fallback.
+        # Best-effort live FX (no API key).
+        try:
+            data = _http_get_json(f"https://open.er-api.com/v6/latest/{urllib.parse.quote(base)}")
+            if isinstance(data, dict) and data.get("result") == "success":
+                rates = data.get("rates")
+                if isinstance(rates, dict) and quote in rates:
+                    price = float(rates[quote])
+                    q_live = MarketQuote(
+                        symbol=f"{base}/{quote}",
+                        name=f"{base}/{quote}",
+                        kind="fx",
+                        currency=quote,
+                        price=price,
+                        change_24h=0.0,
+                        updated_at=now,
+                        source="live",
+                    )
+                    return self._cache_set(key, q_live)
+        except Exception:
+            pass
+
+        # Fallback: stable-ish, conservative defaults.
         fallback_fx = {
             ("USD", "GBP"): 0.79,
             ("GBP", "USD"): 1.27,
             ("USD", "EUR"): 0.92,
             ("EUR", "USD"): 1.09,
+            ("USD", "ILS"): 3.70,
+            ("ILS", "USD"): 0.27,
+            ("EUR", "ILS"): 4.05,
+            ("ILS", "EUR"): 0.25,
+            ("GBP", "ILS"): 4.70,
+            ("ILS", "GBP"): 0.21,
         }
         price = float(fallback_fx.get((base, quote), 1.0))
         q = MarketQuote(symbol=f"{base}/{quote}", name=f"{base}/{quote}", kind="fx", currency=quote, price=price, change_24h=0.0, updated_at=now, source="fallback")

@@ -459,7 +459,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (!resp.ok || !data.success) throw new Error(data.error || 'Push failed');
         if (msg) msg.textContent = `Pushed ${symbol}.`;
         // refresh charts immediately
-        const refreshBtn = document.querySelector('#market-controls [data-role="refresh"]');
+        const refreshBtn = document.querySelector('#admin-market [data-role="refresh"]');
         if (refreshBtn) refreshBtn.click();
         setTimeout(() => { if (msg) msg.textContent = ''; }, 2000);
       } catch (e) {
@@ -560,8 +560,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Market charts (indexes + currencies) for admin
   try {
-    if (typeof renderMarketCharts === 'function' && document.getElementById('market-controls')) {
-      await renderMarketCharts('market-controls', { storeKeyCrypto: 'phins_admin_crypto', storeKeyIndex: 'phins_admin_index', intervalSeconds: 30 });
+    if (typeof renderMarketCharts === 'function' && document.getElementById('admin-market')) {
+      await renderMarketCharts('admin-market', { storeKeyCrypto: 'phins_admin_crypto', storeKeyIndex: 'phins_admin_index', intervalSeconds: 30 });
     }
   } catch (e) {}
 });
