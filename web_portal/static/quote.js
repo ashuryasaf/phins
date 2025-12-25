@@ -1106,6 +1106,77 @@ async function handleSubmit() {
   }
 }
 
+// Save as Draft (server-side; stored in customer pipeline)
+async function saveDraftServer() {
+  const form = document.getElementById('quoteForm');
+  if (!form) return;
+  const t = getToken();
+  if (!t) {
+    showError('Please save your account (Next) before saving a draft.');
+    return;
+  }
+
+  // Also keep a local draft snapshot (without files)
+  try { saveDraft({ silent: true }); } catch (_) {}
+
+  const fd = new FormData(form);
+  fd.delete('accountPassword');
+  fd.delete('accountPasswordConfirm');
+  fd.set('save_as_draft', '1');
+
+  // Preserve existing application_id if present (update in-place)
+  try {
+    const u = new URL(window.location.href);
+    const appId = u.searchParams.get('application_id') || u.searchParams.get('id');
+    if (appId) fd.set('application_id', appId);
+  } catch (_) {}
+
+  // Attach captured media/files so drafts keep evidence too
+  if (photoBlob) fd.append('photo', photoBlob, 'verification-photo.jpg');
+  if (videoBlob) fd.append('video', videoBlob, 'verification-video.webm');
+  if (audioBlob) fd.append('audio', audioBlob, 'verification-audio.webm');
+  try {
+    uploadedMediaFiles.forEach((x, idx) => {
+      if (!x || !x.file) return;
+      fd.append('media_files', x.file, x.file.name || `media_${idx}`);
+    });
+  } catch (_) {}
+
+  const submitBtn = document.getElementById('submitBtn');
+  const oldText = submitBtn ? submitBtn.textContent : null;
+  if (submitBtn) {
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Saving draft…';
+  }
+
+  try {
+    const resp = await fetch('/api/submit-quote', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${t}` },
+      body: fd,
+    });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok || !data.success) throw new Error(data.error || data.message || 'Draft save failed');
+
+    const appId = data.application_id || data.id;
+    if (appId) {
+      try {
+        const u = new URL(window.location.href);
+        u.searchParams.set('application_id', String(appId));
+        window.history.replaceState({}, '', u.toString());
+      } catch (_) {}
+    }
+    showSuccess('Draft saved to your account pipeline.');
+  } catch (e) {
+    showError(String(e && e.message ? e.message : 'Draft save failed'));
+  } finally {
+    if (submitBtn) {
+      submitBtn.disabled = false;
+      submitBtn.textContent = oldText || 'Submit Quote Request';
+    }
+  }
+}
+
 let __draftSaveTimer = null;
 
 // Save draft to localStorage (files/media are not persisted in localStorage)

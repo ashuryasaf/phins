@@ -110,9 +110,10 @@ function renderApplications(apps) {
     .sort((a, b) => String(b.submitted_date || '').localeCompare(String(a.submitted_date || '')))
     .slice(0, 50)
     .map(a => {
-      const canEdit = String(a.status || '').toLowerCase() === 'pending';
+      const st = String(a.status || '').toLowerCase();
+      const canEdit = st === 'pending' || st === 'draft';
       const action = canEdit && a.id
-        ? `<a class="link" href="/quote.html?application_id=${encodeURIComponent(a.id)}">Edit</a>`
+        ? `<a class="link" href="/quote.html?application_id=${encodeURIComponent(a.id)}">${st === 'draft' ? 'Continue' : 'Edit'}</a>`
         : '<span style="color:var(--muted)">—</span>';
       const hl = (focusId && a.id && String(a.id) === String(focusId)) ? ' style="background:rgba(76,175,80,0.10)"' : '';
       return `

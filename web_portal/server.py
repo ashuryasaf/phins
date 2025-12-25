@@ -4643,6 +4643,7 @@ class PortalHandler(BaseHTTPRequestHandler):
             
             # Parse multipart form data (fields + files)
             fields, uploaded_files = self._parse_multipart_data_with_files(form_data, boundary.encode())  # type: ignore
+            is_draft = str(fields.get("save_as_draft") or fields.get("draft") or "").strip().lower() in ("1", "true", "yes", "on")
             
             # Validate critical fields for injection / malicious content
             critical_fields = ['firstName', 'lastName', 'email', 'phone', 'address', 'city', 'occupation', 'nationalId', 'familyHistory']
@@ -4656,10 +4657,12 @@ class PortalHandler(BaseHTTPRequestHandler):
                         return
 
             # Required underwriting field: family history (insurance-grade decisioning)
-            if not (fields.get('familyHistory') or '').strip():
-                self._set_json_headers(400)
-                self.wfile.write(json.dumps({'error': 'Family history is required'}).encode('utf-8'))
-                return
+            # Drafts are allowed to be incomplete; enforce only on final submit.
+            if not is_draft:
+                if not (fields.get('familyHistory') or '').strip():
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'Family history is required'}).encode('utf-8'))
+                    return
             
             # Extract primary identity fields
             email = (fields.get('email', '') or '').strip().lower()
@@ -4667,6 +4670,17 @@ class PortalHandler(BaseHTTPRequestHandler):
                 self._set_json_headers(400)
                 self.wfile.write(json.dumps({'error': 'Valid email is required'}).encode('utf-8'))
                 return
+
+            # Drafts must be stored under the authenticated customer account.
+            # (Insurance-grade audit: drafts still belong to a user and must be recoverable.)
+            if is_draft:
+                auth_header = self.headers.get('Authorization', '')
+                token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+                sess = validate_session(token) if token else None
+                if not (sess and sess.get('customer_id')):
+                    self._set_json_headers(401)
+                    self.wfile.write(json.dumps({'error': 'Login required to save a draft'}).encode('utf-8'))
+                    return
 
             # If the user is logged in, bind the quote to their customer_id (and prevent cross-account submissions).
             authed_customer_id = None
@@ -4685,7 +4699,7 @@ class PortalHandler(BaseHTTPRequestHandler):
             except Exception:
                 authed_customer_id = None
 
-            # If this is an edit of an existing pending application, update it in-place.
+            # If this is an edit of an existing draft/pending application, update it in-place.
             application_id_in = (fields.get('application_id') or fields.get('applicationId') or '').strip()
             if application_id_in:
                 if not authed_customer_id:
@@ -4701,10 +4715,16 @@ class PortalHandler(BaseHTTPRequestHandler):
                     self._set_json_headers(403)
                     self.wfile.write(json.dumps({'error': 'Forbidden'}).encode('utf-8'))
                     return
-                if str(app.get('status') or '').lower() != 'pending':
+                if str(app.get('status') or '').lower() not in ('pending', 'draft'):
                     self._set_json_headers(400)
-                    self.wfile.write(json.dumps({'error': 'Only pending applications can be edited'}).encode('utf-8'))
+                    self.wfile.write(json.dumps({'error': 'Only draft or pending applications can be edited'}).encode('utf-8'))
                     return
+                # If final submit (not draft), enforce required underwriting fields
+                if not is_draft:
+                    if not (fields.get('familyHistory') or '').strip():
+                        self._set_json_headers(400)
+                        self.wfile.write(json.dumps({'error': 'Family history is required'}).encode('utf-8'))
+                        return
                 policy_id_existing = app.get('policy_id')
                 policy = POLICIES.get(policy_id_existing) if policy_id_existing else None
                 if not isinstance(policy, dict):
@@ -4794,6 +4814,15 @@ class PortalHandler(BaseHTTPRequestHandler):
                         except Exception:
                             n['attachments'] = new_attachments or []
                         app['notes'] = json.dumps(n)
+                    # Promote draft -> pending when submitting
+                    if (not is_draft) and str(app.get('status') or '').lower() == 'draft':
+                        app['status'] = 'pending'
+                        try:
+                            policy['status'] = 'pending_underwriting'
+                            policy['uw_status'] = 'pending'
+                            POLICIES[policy_id_existing] = policy
+                        except Exception:
+                            pass
                     app['submitted_date'] = datetime.utcnow().isoformat()
                     UNDERWRITING_APPLICATIONS[application_id_in] = app
 
@@ -4809,7 +4838,7 @@ class PortalHandler(BaseHTTPRequestHandler):
                         'application_id': application_id_in,
                         'customer_id': authed_customer_id,
                         'policy_id': policy_id_existing,
-                        'message': 'Application updated successfully.',
+                        'message': 'Draft saved successfully.' if is_draft else 'Application submitted successfully.',
                         'estimated_premium': {'annual': priced.get('annual'), 'monthly': priced.get('monthly'), 'quarterly': priced.get('quarterly'), 'breakdown': priced.get('breakdown', {})},
                         'attachments': (n.get('attachments') if isinstance(n, dict) else []),
                     }).encode('utf-8'))
@@ -4918,9 +4947,16 @@ class PortalHandler(BaseHTTPRequestHandler):
             if health_condition_score >= 7:
                 medical_exam_required = True
             
+            # Final submissions must include required underwriting fields
+            if not is_draft:
+                if not (fields.get('familyHistory') or '').strip():
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'Family history is required'}).encode('utf-8'))
+                    return
+
             # Create underwriting application
             uw_notes = {
-                'source': 'quote',
+                'source': 'quote_draft' if is_draft else 'quote',
                 'product': {'name': 'phins_permanent_phi_disability', 'adl_trigger_min': 3},
                 'form': fields,
                 'policy_term_years': policy_term_years,
@@ -4934,7 +4970,7 @@ class PortalHandler(BaseHTTPRequestHandler):
                 'id': uw_id,
                 'policy_id': policy_id,
                 'customer_id': customer_id,
-                'status': 'pending',
+                'status': 'draft' if is_draft else 'pending',
                 'risk_assessment': risk_score,
                 'medical_exam_required': medical_exam_required,
                 'submitted_date': datetime.now().isoformat(),
@@ -4984,7 +5020,7 @@ class PortalHandler(BaseHTTPRequestHandler):
                 'health_condition_score': health_condition_score,
                 'health_risk_loading_factor': _health_risk_loading_factor(health_condition_score),
                 'policy_term_years': policy_term_years,
-                'status': 'pending_underwriting',
+                'status': 'draft' if is_draft else 'pending_underwriting',
                 'underwriting_id': uw_id,
                 'risk_score': risk_score,
                 'start_date': datetime.now().isoformat(),
@@ -5011,7 +5047,7 @@ class PortalHandler(BaseHTTPRequestHandler):
             print(f"✅ Application submitted: {uw_id} for customer {customer_id}")
             print(f"   Customer: {customer_name} ({email})")
             print(f"   Policy: {policy_type.title()} - ${coverage_amount:,}")
-            print(f"   Risk: {risk_score}, Status: pending")
+            print(f"   Risk: {risk_score}, Status: {'draft' if is_draft else 'pending'}")
 
             # Autonomous underwriting for low-risk / young applicants (quote flow)
             auto = False
@@ -5033,7 +5069,7 @@ class PortalHandler(BaseHTTPRequestHandler):
                 'application_id': uw_id,
                 'customer_id': customer_id,
                 'policy_id': policy_id,
-                'message': 'Quote request submitted. You can register/login with the same email to track your application.',
+                'message': ('Draft saved to your account.' if is_draft else 'Quote request submitted. You can register/login with the same email to track your application.'),
                 'estimated_premium': premium_data,
                 'attachments': (uw_notes.get('attachments') if isinstance(uw_notes, dict) else []),
                 'autonomous': {'auto_approved': auto, 'config': UNDERWRITING_AUTOMATION_CONFIG},
@@ -5043,7 +5079,7 @@ class PortalHandler(BaseHTTPRequestHandler):
                     'policy_type': policy_type,
                     'coverage_amount': coverage_amount,
                     'risk_assessment': risk_score,
-                    'status': 'pending'
+                    'status': ('draft' if is_draft else 'pending')
                 }
             }
             self.wfile.write(json.dumps(response).encode('utf-8'))
