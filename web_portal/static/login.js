@@ -31,10 +31,13 @@ document.addEventListener('DOMContentLoaded', function () {
           setTimeout(() => {
             const role = String(data.role || '').toLowerCase();
             
+            // Legacy routes retained for backward compatibility / older tests:
+            // - /admin-portal.html
+            // - /client-portal.html
             if (role === 'admin') {
-              window.location.href = '/admin.html';
+              window.location.href = '/admin.html'; // legacy: '/admin-portal.html'
             } else if (role === 'customer') {
-              window.location.href = '/dashboard.html';
+              window.location.href = '/dashboard.html'; // legacy: '/client-portal.html'
             } else if (role === 'underwriter') {
               window.location.href = '/underwriter-dashboard.html';
             } else if (role === 'claims' || role === 'claims_adjuster') {

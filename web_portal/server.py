@@ -2940,6 +2940,7 @@ class PortalHandler(BaseHTTPRequestHandler):
                         'token': token,
                         'role': user['role'],
                         'name': user['name'],
+                        'username': username,
                         'customer_id': customer_id,
                         'expires': expires.isoformat()
                     }).encode('utf-8'))

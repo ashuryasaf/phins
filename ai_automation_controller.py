@@ -475,8 +475,6 @@ def get_automation_controller() -> AIAutomationController:
     return _controller_instance
 
 
-# Export public interface
-__all__ = [
 # =========================================================================
 # BACKWARD COMPATIBILITY - Function-based API
 # =========================================================================
@@ -684,15 +682,14 @@ def detect_fraud(data: Dict[str, Any]) -> Dict[str, Any]:
 # Export public interface
 __all__ = [
     # New class-based API
-    'AIAutomationController',
-    'AutomationDecision',
-    'FraudRisk',
-    'AutomationMetrics',
-    'get_automation_controller'
-    'get_automation_controller',
+    "AIAutomationController",
+    "AutomationDecision",
+    "FraudRisk",
+    "AutomationMetrics",
+    "get_automation_controller",
     # Backward compatible function-based API
-    'auto_quote',
-    'auto_underwrite',
-    'auto_process_claim',
-    'detect_fraud'
+    "auto_quote",
+    "auto_underwrite",
+    "auto_process_claim",
+    "detect_fraud",
 ]
