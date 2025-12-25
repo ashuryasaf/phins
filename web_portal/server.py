@@ -24,6 +24,7 @@ import smtplib
 from email.message import EmailMessage
 from typing import Dict, Any
 from pathlib import Path
+from io import BytesIO
 
 # Import billing engine
 try:
@@ -367,6 +368,99 @@ def issue_policy_nft_token(*, policy_id: str, customer_id: str) -> Dict[str, Any
     return {"token": token, "meta": meta}
 
 
+def _create_policy_terms_pdf_bytes(*, policy: Dict[str, Any], customer: Dict[str, Any], nft_token: str | None, billing_expires: str | None) -> bytes:
+    """
+    Generate a simple policy-terms PDF (insurance audit artifact).
+    Uses ReportLab; if unavailable, returns empty bytes.
+    """
+    try:
+        from reportlab.lib.pagesizes import letter
+        from reportlab.pdfgen import canvas
+    except Exception:
+        return b""
+
+    bio = BytesIO()
+    c = canvas.Canvas(bio, pagesize=letter)
+    width, height = letter
+
+    def line(y, txt, size=11):
+        c.setFont("Helvetica", size)
+        c.drawString(54, y, txt)
+
+    y = height - 60
+    line(y, "PHINS.ai — Policy Terms & Summary", 16); y -= 22
+    line(y, f"Generated: {datetime.utcnow().isoformat()}"); y -= 16
+    line(y, f"Customer: {customer.get('name','-')}  |  Email: {customer.get('email','-')}"); y -= 16
+    line(y, f"Policy ID: {policy.get('id','-')}  |  Type: {policy.get('type','-')}  |  Status: {policy.get('status','-')}"); y -= 16
+    line(y, f"Coverage: ${float(policy.get('coverage_amount') or 0):,.0f}"); y -= 16
+    line(y, f"Premium: ${float(policy.get('annual_premium') or 0):,.2f}/yr  (${float(policy.get('monthly_premium') or 0):,.2f}/mo)"); y -= 16
+    line(y, f"Jurisdiction: {policy.get('jurisdiction','US')}  |  Savings %: {policy.get('savings_percentage','-')}"); y -= 16
+    if nft_token:
+        line(y, f"NFT Policy Ledger Token: {nft_token}"); y -= 16
+    if billing_expires:
+        line(y, f"Acceptance + first payment deadline: {billing_expires}"); y -= 16
+
+    y -= 10
+    line(y, "Key terms (summary):", 12); y -= 16
+    c.setFont("Helvetica", 10)
+    terms = [
+        "- This document is an electronically generated record for underwriting and compliance.",
+        "- Coverage activates upon underwriting approval and successful payment within the billing window.",
+        "- Health risk loading applies ONLY to the risk cover portion, per PHINS underwriting rules.",
+        "- All actions are logged to an internal ledger (audit log + token registry).",
+    ]
+    for t in terms:
+        c.drawString(60, y, t); y -= 14
+        if y < 80:
+            c.showPage()
+            y = height - 60
+    c.showPage()
+    c.save()
+    return bio.getvalue()
+
+
+def _wallet_add_txn(*, customer_id: str, amount: float, kind: str, ref: str | None = None) -> Dict[str, Any]:
+    """Store an internal wallet transaction as a durable ledger token."""
+    token = f"WAL-{uuid.uuid4().hex}"
+    meta = {
+        "customer_id": customer_id,
+        "amount": float(amount),
+        "kind": str(kind),
+        "ref": str(ref or ""),
+        "created_date": datetime.utcnow().isoformat(),
+    }
+    TOKEN_REGISTRY[token] = {
+        "token": token,
+        "kind": "wallet_txn",
+        "status": "posted",
+        "meta": json.dumps(meta),
+        "created_date": datetime.now().isoformat(),
+        "expires": None,
+    }
+    return {"token": token, **meta}
+
+
+def _wallet_balance(customer_id: str) -> float:
+    try:
+        total = 0.0
+        for r in TOKEN_REGISTRY.values():
+            if not isinstance(r, dict):
+                continue
+            if r.get("kind") != "wallet_txn" or r.get("status") != "posted":
+                continue
+            try:
+                meta_raw = r.get("meta") or r.get("metadata") or "{}"
+                meta = json.loads(meta_raw) if isinstance(meta_raw, str) else dict(meta_raw)
+            except Exception:
+                meta = {}
+            if str(meta.get("customer_id") or "") != str(customer_id or ""):
+                continue
+            total += float(meta.get("amount") or 0.0)
+        return round(total, 2)
+    except Exception:
+        return 0.0
+
+
 def resolve_billing_link(token: str) -> Dict[str, Any] | None:
     rec = TOKEN_REGISTRY.get(token)
     if not isinstance(rec, dict):
@@ -568,6 +662,7 @@ def _approve_underwriting_and_notify(*, uw_id: str, approved_by: str, automated:
     # Create bill + 48h billing link (for first premium)
     billing_link = None
     nft = None
+    terms_doc = None
     if policy and isinstance(policy.get("annual_premium"), (int, float)):
         customer_id = policy.get("customer_id")
         cust = CUSTOMERS.get(customer_id) if customer_id else None
@@ -588,15 +683,43 @@ def _approve_underwriting_and_notify(*, uw_id: str, approved_by: str, automated:
                 policy["nft_status"] = "issued"
             except Exception:
                 nft = None
+            # Generate policy terms PDF and store as a downloadable media asset
+            try:
+                pdf_bytes = _create_policy_terms_pdf_bytes(
+                    policy=policy,
+                    customer=cust,
+                    nft_token=(policy.get("nft_token") if isinstance(policy, dict) else None),
+                    billing_expires=(billing_link.get("expires") if isinstance(billing_link, dict) else None),
+                )
+                if pdf_bytes:
+                    docs = _persist_media_assets(
+                        customer_id=customer_id,
+                        uw_id=str(uw_id),
+                        policy_id=str(policy.get("id")),
+                        files=[{"field": "policy_terms_pdf", "filename": f"{policy.get('id','policy')}_terms.pdf", "content_type": "application/pdf", "data": pdf_bytes}],
+                    )
+                    terms_doc = docs[0] if docs else None
+                    if isinstance(terms_doc, dict):
+                        policy["policy_terms_token"] = terms_doc.get("token")
+                        policy["policy_terms_url"] = terms_doc.get("download_url")
+            except Exception:
+                terms_doc = None
             notify_customer(
                 customer_id=customer_id,
                 email=cust.get("email"),
                 subject="Your PHINS.ai application was approved",
-                message="Your application has been approved. Please complete payment within 48 hours to activate billing.",
+                message=(
+                    "Your application has been approved.\n\n"
+                    "Action required within 48 hours:\n"
+                    "1) Review policy terms (PDF)\n"
+                    "2) Accept terms + complete payment to activate billing.\n\n"
+                    f"Policy NFT ledger token: {policy.get('nft_token') if isinstance(policy, dict) else ''}\n"
+                    + (f"Policy terms PDF: {terms_doc.get('download_url')}\n" if isinstance(terms_doc, dict) and terms_doc.get("download_url") else "")
+                ),
                 link=billing_link.get("url"),
                 kind="billing",
             )
-    return {"application": app, "policy": policy, "billing_link": billing_link, "policy_nft": nft}
+    return {"application": app, "policy": policy, "billing_link": billing_link, "policy_nft": nft, "policy_terms": terms_doc}
 
 
 def _reject_underwriting_and_notify(*, uw_id: str, rejected_by: str, reason: str) -> Dict[str, Any] | None:
@@ -2314,8 +2437,17 @@ class PortalHandler(BaseHTTPRequestHandler):
             meta = resolved.get('meta') or {}
             bill_id = meta.get('bill_id')
             bill = BILLING.get(bill_id) if bill_id else None
+            # Enrich with policy doc + NFT token for a visible, auditable process.
+            policy = POLICIES.get(meta.get('policy_id')) if meta.get('policy_id') else None
+            extra = {}
+            if isinstance(policy, dict):
+                extra = {
+                    "policy_id": policy.get("id"),
+                    "nft_token": policy.get("nft_token"),
+                    "policy_terms_url": policy.get("policy_terms_url"),
+                }
             self._set_json_headers()
-            self.wfile.write(json.dumps({'valid': True, 'expires': resolved.get('expires'), 'bill': bill, 'meta': meta}).encode('utf-8'))
+            self.wfile.write(json.dumps({'valid': True, 'expires': resolved.get('expires'), 'bill': bill, 'meta': {**meta, **extra}}).encode('utf-8'))
             return
         
         # Customers Endpoint
@@ -4594,6 +4726,26 @@ class PortalHandler(BaseHTTPRequestHandler):
                 # Revoke token
                 TOKEN_REGISTRY[token] = {**(TOKEN_REGISTRY.get(token) or {}), 'token': token, 'kind': 'billing_link', 'status': 'revoked'}
 
+                # Record "terms accepted" as part of the 48h completion (ledger action)
+                try:
+                    accept_tok = f"ACC-{uuid.uuid4().hex}"
+                    TOKEN_REGISTRY[accept_tok] = {
+                        "token": accept_tok,
+                        "kind": "policy_terms_accept",
+                        "status": "accepted",
+                        "meta": json.dumps({
+                            "billing_token": token,
+                            "bill_id": bill_id,
+                            "policy_id": meta.get("policy_id"),
+                            "customer_id": meta.get("customer_id"),
+                            "accepted_at": datetime.utcnow().isoformat(),
+                        }),
+                        "created_date": datetime.now().isoformat(),
+                        "expires": None,
+                    }
+                except Exception:
+                    pass
+
                 # Store billing payment submission + notify customer
                 try:
                     customer_id = meta.get('customer_id')
@@ -5083,6 +5235,41 @@ class PortalHandler(BaseHTTPRequestHandler):
                 }
             }
             self.wfile.write(json.dumps(response).encode('utf-8'))
+
+            # Log + create an in-app tracker message so the applicant can return before underwriting decision
+            try:
+                actor = None
+                try:
+                    auth_header = self.headers.get('Authorization', '')
+                    token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+                    sess = validate_session(token) if token else None
+                    actor = (sess.get('username') if isinstance(sess, dict) else None) or email
+                except Exception:
+                    actor = email
+                if audit:
+                    try:
+                        audit.log(actor or 'customer', 'submit' if not is_draft else 'draft', 'underwriting', uw_id, {
+                            'policy_id': policy_id,
+                            'customer_id': customer_id,
+                            'status': ('draft' if is_draft else 'pending'),
+                        })
+                    except Exception:
+                        pass
+                try:
+                    notify_customer(
+                        customer_id=customer_id,
+                        email=email,
+                        subject=('Draft saved' if is_draft else 'Application received'),
+                        message=('Your draft is saved. You can continue and submit it from your pipeline.'
+                                 if is_draft else
+                                 'Your application was received and is now in underwriting. You can track status in your pipeline.'),
+                        link=f"/dashboard.html?focus_application_id={urlparse.quote(uw_id)}",
+                        kind="underwriting",
+                    )
+                except Exception:
+                    pass
+            except Exception:
+                pass
             
         except Exception as e:
             self._set_json_headers(500)

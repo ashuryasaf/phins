@@ -33,6 +33,8 @@ async function pay(token) {
 document.addEventListener('DOMContentLoaded', async () => {
   const token = qs('token');
   const billBlock = document.getElementById('bill-block');
+  const termsBlock = document.getElementById('terms-block');
+  const accept = document.getElementById('accept-terms');
   const btn = document.getElementById('pay-btn');
   const msg = document.getElementById('msg');
 
@@ -50,20 +52,36 @@ document.addEventListener('DOMContentLoaded', async () => {
   const bill = loaded.data.bill || {};
   const amount = bill.amount ?? bill.amount_due ?? 0;
   const status = bill.status || 'outstanding';
+  const meta = loaded.data.meta || {};
+  const nft = meta.nft_token || '';
+  const termsUrl = meta.policy_terms_url || '';
   billBlock.innerHTML = `
     <div><strong>Bill</strong>: ${bill.id || bill.bill_id || '-'}</div>
     <div><strong>Status</strong>: ${status}</div>
     <div><strong>Amount due</strong>: ${money(amount)}</div>
   `;
 
-  btn.disabled = status === 'paid';
+  if (termsBlock) {
+    const tLink = termsUrl ? `<a class="link" href="${termsUrl}" target="_blank" rel="noopener">Download policy terms (PDF)</a>` : '<span>Policy terms PDF not available yet.</span>';
+    termsBlock.innerHTML = `
+      <div>${tLink}</div>
+      ${nft ? `<div style="margin-top:6px">NFT policy ledger token: <strong>${String(nft)}</strong></div>` : ''}
+    `;
+  }
+
+  function refreshEnabled() {
+    const accepted = !!(accept && accept.checked);
+    btn.disabled = (status === 'paid') || !accepted;
+  }
+  if (accept) accept.addEventListener('change', refreshEnabled);
+  refreshEnabled();
   btn.addEventListener('click', async () => {
     btn.disabled = true;
     msg.textContent = 'Processing payment…';
     const res = await pay(token);
     if (!res.ok) {
       msg.textContent = res.error;
-      btn.disabled = false;
+      refreshEnabled();
       return;
     }
     msg.textContent = 'Payment completed. Thank you!';
