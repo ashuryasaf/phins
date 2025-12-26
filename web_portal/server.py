@@ -347,11 +347,16 @@ def create_bill(*, policy_id: str, customer_id: str, amount: float, due_days: in
     return bill
 
 
-def create_billing_link(*, bill_id: str, policy_id: str, customer_id: str, amount: float, hours_valid: int = 48) -> Dict[str, Any]:
-    """Create a 48h billing link token stored in TokenRegistry (DB-backed when enabled)."""
+def create_billing_link(*, bill_id: str, policy_id: str, customer_id: str, amount: float, hours_valid: int = 0) -> Dict[str, Any]:
+    """Create a billing link token stored in TokenRegistry (DB-backed when enabled)."""
     token = f"bl_{secrets.token_urlsafe(24)}"
     now = datetime.now()
-    expires_at = now + timedelta(hours=int(hours_valid))
+    expires_at = None
+    try:
+        if int(hours_valid) > 0:
+            expires_at = now + timedelta(hours=int(hours_valid))
+    except Exception:
+        expires_at = None
     meta = {
         "bill_id": bill_id,
         "policy_id": policy_id,
@@ -365,10 +370,10 @@ def create_billing_link(*, bill_id: str, policy_id: str, customer_id: str, amoun
         "status": "active",
         "meta": json.dumps(meta),
         "created_date": now.isoformat(),
-        "expires": expires_at.isoformat(),
+        "expires": expires_at.isoformat() if expires_at else None,
     }
     link = f"{APP_BASE_URL}/billing-link.html?token={token}" if APP_BASE_URL else f"/billing-link.html?token={token}"
-    return {"token": token, "expires": expires_at.isoformat(), "url": link}
+    return {"token": token, "expires": (expires_at.isoformat() if expires_at else None), "url": link}
 
 
 def issue_policy_nft_token(*, policy_id: str, customer_id: str, issuance_id: str) -> Dict[str, Any]:
@@ -428,7 +433,7 @@ def _get_policy_terms_template_lines() -> list[str]:
     """
     default_lines = [
         "- This document is an electronically generated record for underwriting and compliance.",
-        "- Coverage activates upon underwriting approval AND successful payment within the billing window.",
+        "- Coverage activates upon underwriting approval (policy issuance).",
         "- Health risk loading applies ONLY to the risk cover portion, per PHINS underwriting rules.",
         "- All actions are logged to an internal ledger (audit log + token registry).",
     ]
@@ -546,7 +551,7 @@ def _create_policy_terms_csv_bytes(
     if nft_token:
         w.writerow(["policy_nft_token", nft_token])
     if billing_expires:
-        w.writerow(["billing_deadline", billing_expires])
+        w.writerow(["first_premium_due_date", billing_expires])
 
     form_hash = _sha256_hex(_stable_json_bytes(form_snapshot))
     pricing_hash = _sha256_hex(_stable_json_bytes(pricing_snapshot))
@@ -745,7 +750,7 @@ def _create_policy_terms_pdf_bytes(
     if nft_token:
         line(y, f"NFT Policy Ledger Token: {nft_token}"); y -= 16
     if billing_expires:
-        line(y, f"Acceptance + first payment deadline: {billing_expires}"); y -= 16
+        line(y, f"First premium due date: {billing_expires}"); y -= 16
 
     y -= 10
     line(y, "Key terms (summary):", 12); y -= 16
@@ -1026,7 +1031,7 @@ def _recent_billing_attempts(*, billing_token: str, window_minutes: int = 10) ->
 
 def _assess_billing_fraud_risk(*, billing_token: str, bill: Dict[str, Any], policy: Dict[str, Any] | None, customer: Dict[str, Any] | None, billing_details: Dict[str, Any], client_ip: str, user_agent: str) -> Dict[str, Any]:
     """
-    Lightweight fraud/validation scoring for the 48h billing window.
+    Lightweight fraud/validation scoring for billing actions.
     This is intentionally simple (rule-based) but ledgered for later BI/AI.
     """
     score = 0
@@ -1078,7 +1083,7 @@ def _assess_billing_fraud_risk(*, billing_token: str, bill: Dict[str, Any], poli
         reasons.append("invalid_bill_amount_parse")
 
     if policy and isinstance(policy, dict):
-        if str(policy.get("status") or "").lower() not in ("billing_pending", "active"):
+        if str(policy.get("status") or "").lower() not in ("active", "in_force"):
             score += 25
             reasons.append("unexpected_policy_status")
     else:
@@ -1096,6 +1101,106 @@ def _assess_billing_fraud_risk(*, billing_token: str, bill: Dict[str, Any], poli
     score = max(0, min(100, score))
     severity = "low" if score < 35 else ("medium" if score < 70 else "high")
     return {"score": score, "severity": severity, "reasons": reasons, "attempts_10m": attempts}
+
+
+def _extract_application_billing_profile(fields: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Extract a non-sensitive billing profile from application fields.
+    IMPORTANT: Never accept/store full PAN/card numbers; only store last4 + network.
+    """
+    method = (fields.get("paymentMethod") or fields.get("payment_method") or fields.get("billing_payment_method") or "").strip().lower()
+    # canonicalize
+    if method in ("credit_card", "credit", "card"):
+        method = "credit_card"
+    elif method in ("applepay", "apple_pay"):
+        method = "apple_pay"
+    elif method in ("paypal",):
+        method = "paypal"
+    elif method in ("crypto", "wallet"):
+        method = "crypto"
+
+    details = {
+        "payer_name": (fields.get("payerName") or fields.get("payer_name") or "").strip(),
+        "billing_country": (fields.get("billingCountry") or fields.get("billing_country") or fields.get("country") or "").strip().upper(),
+        "billing_postal": (fields.get("billingPostal") or fields.get("billing_postal") or fields.get("postalCode") or "").strip(),
+        "payment_method": method,
+        # card (non-sensitive subset)
+        "card_network": (fields.get("cardNetwork") or fields.get("card_network") or "").strip().lower(),
+        "card_last4": (fields.get("cardLast4") or fields.get("card_last4") or "").strip(),
+        # paypal
+        "paypal_email": (fields.get("paypalEmail") or fields.get("paypal_email") or "").strip().lower(),
+        # crypto
+        "crypto_network": (fields.get("cryptoNetwork") or fields.get("crypto_network") or "").strip().lower(),
+        "crypto_wallet": (fields.get("cryptoWallet") or fields.get("crypto_wallet") or "").strip(),
+    }
+    return {"method": method, "details": details}
+
+
+def _validate_application_billing_profile(*, profile: Dict[str, Any], is_draft: bool, client_ip: str, user_agent: str) -> tuple[bool, str | None, Dict[str, Any]]:
+    """
+    Validate billing profile captured at application time (quote last step).
+    This is a pre-underwriting billing setup step (method on file), NOT a payment capture.
+    """
+    method = str((profile or {}).get("method") or "").strip().lower()
+    d = (profile or {}).get("details") if isinstance((profile or {}).get("details"), dict) else {}
+    details: Dict[str, Any] = dict(d)
+
+    if is_draft and not method:
+        return True, None, {"score": 0, "severity": "low", "reasons": ["draft_no_billing_method"]}
+
+    allowed = ("credit_card", "apple_pay", "paypal", "crypto")
+    if method not in allowed:
+        return False, "Payment method is required (credit card, Apple Pay, PayPal, or crypto).", {"score": 60, "severity": "high", "reasons": ["missing_or_unknown_method"]}
+
+    # Minimal identity for anti-fraud traceability (no PII beyond what’s already in the application)
+    payer = str(details.get("payer_name") or "").strip()
+    country = str(details.get("billing_country") or "").strip().upper()
+    postal = str(details.get("billing_postal") or "").strip()
+    if not payer or len(payer) < 3:
+        return False, "Billing payer name is required.", {"score": 50, "severity": "high", "reasons": ["missing_payer_name"]}
+    if not country or len(country) < 2:
+        return False, "Billing country is required.", {"score": 40, "severity": "medium", "reasons": ["missing_country"]}
+    if not postal:
+        return False, "Billing postal code is required.", {"score": 25, "severity": "medium", "reasons": ["missing_postal"]}
+
+    reasons: list[str] = []
+    score = 0
+
+    if method == "credit_card":
+        network = str(details.get("card_network") or "").strip().lower()
+        last4 = str(details.get("card_last4") or "").strip()
+        if network not in ("visa", "mastercard", "amex", "discover", "diners", "jcb", "unionpay"):
+            return False, "Card network is required (Visa/Mastercard/Amex/etc).", {"score": 50, "severity": "high", "reasons": ["missing_or_unknown_card_network"]}
+        if not last4.isdigit() or len(last4) != 4:
+            return False, "Card last 4 digits are required.", {"score": 50, "severity": "high", "reasons": ["invalid_card_last4"]}
+    elif method == "paypal":
+        pe = str(details.get("paypal_email") or "").strip().lower()
+        if not pe or not validate_email(pe):
+            return False, "Valid PayPal email is required.", {"score": 45, "severity": "high", "reasons": ["invalid_paypal_email"]}
+    elif method == "crypto":
+        cn = str(details.get("crypto_network") or "").strip().lower()
+        cw = str(details.get("crypto_wallet") or "").strip()
+        if cn not in ("btc", "bitcoin", "eth", "ethereum", "usdt", "usdc", "sol", "solana", "matic", "polygon"):
+            score += 15
+            reasons.append("uncommon_crypto_network")
+        if not cw or len(cw) < 12:
+            return False, "Crypto wallet address is required.", {"score": 50, "severity": "high", "reasons": ["invalid_crypto_wallet"]}
+    elif method == "apple_pay":
+        # Apple Pay typically tokenizes cards; we only keep payer + billing location.
+        pass
+
+    # Additional soft signals (never block on these alone)
+    if not client_ip:
+        score += 5
+        reasons.append("missing_ip")
+    if not user_agent:
+        score += 5
+        reasons.append("missing_user_agent")
+
+    score = max(0, min(100, score))
+    severity = "low" if score < 35 else ("medium" if score < 70 else "high")
+    risk = {"score": score, "severity": severity, "reasons": reasons, "collected_at": datetime.utcnow().isoformat()}
+    return True, None, risk
 
 
 def _find_customer_id_by_email(email: str) -> str | None:
@@ -1189,16 +1294,13 @@ def _build_policy_timeline(policy: Dict[str, Any], app: Dict[str, Any] | None = 
     claims = [e for e in events if e.get("kind") == "claim_filed"]
     first_claim_ts = str((claims[0].get("timestamp") if claims else "") or "")
 
-    expires = str(policy.get("billing_link_expires") or "")
     status = str(policy.get("status") or "").lower()
 
     # Determine current stage (simple state machine)
     stage = "pending"
     if status in ("pending_underwriting", "pending"):
         stage = "pending"
-    elif status in ("billing_pending", "billing_review"):
-        stage = "billing_pending"
-    elif status in ("active", "in_force"):
+    elif status in ("active", "in_force", "billing_review"):
         stage = "claims" if claims else "active"
     elif status in ("rejected",):
         stage = "rejected"
@@ -1219,7 +1321,6 @@ def _build_policy_timeline(policy: Dict[str, Any], app: Dict[str, Any] | None = 
     steps = [
         _mk("pending", "pending", pending_ts or None),
         _mk("approved", "approved", approved_ts or None, {"issuance_id": policy.get("issuance_id"), "nft_token": policy.get("nft_token")}),
-        _mk("billing_pending", "billing_pending (48h)", approved_ts or None, {"expires": expires or None, "billing_link_url": policy.get("billing_link_url")}),
         _mk("active", "active", paid_ts or None),
         _mk("claims", "claims", first_claim_ts or None, {"claims_count": len(claims)}),
     ]
@@ -1462,17 +1563,18 @@ def _approve_underwriting_and_notify(*, uw_id: str, approved_by: str, automated:
 
     # Update policy
     if policy:
-        # Underwriting approved, but policy becomes "active/in-force" only after first payment.
-        policy["status"] = "billing_pending"
+        # Underwriting approved => issue policy and activate it (billing is configured at application time).
+        policy["status"] = "active"
         policy["approval_date"] = datetime.now().isoformat()
+        policy["activated_date"] = policy.get("approval_date")
         policy["uw_status"] = "approved"
-        policy["billing_status"] = "payment_required"
+        policy["billing_status"] = "method_on_file"
         # Stable issuance id (unique per approval/issuance)
         issuance_id = f"ISS-{uuid.uuid4().hex[:12]}"
         policy["issuance_id"] = issuance_id
         policy["issued_date"] = datetime.utcnow().isoformat()
 
-    # Create bill + 48h billing link (for first premium)
+    # Create bill (first premium is due on standard terms)
     billing_link = None
     nft = None
     terms_doc = None
@@ -1483,19 +1585,10 @@ def _approve_underwriting_and_notify(*, uw_id: str, approved_by: str, automated:
         cust = CUSTOMERS.get(customer_id) if customer_id else None
         if isinstance(cust, dict):
             conditions_pdf = _get_latest_policy_conditions_pdf()
-            bill = create_bill(policy_id=policy["id"], customer_id=customer_id, amount=float(policy["annual_premium"]), due_days=2)
-            billing_link = create_billing_link(
-                bill_id=bill["id"],
-                policy_id=policy["id"],
-                customer_id=customer_id,
-                amount=float(policy["annual_premium"]),
-                hours_valid=48,
-            )
+            bill = create_bill(policy_id=policy["id"], customer_id=customer_id, amount=float(policy["annual_premium"]), due_days=30)
             try:
                 policy["bill_id"] = bill.get("id")
-                policy["billing_link_token"] = billing_link.get("token") if isinstance(billing_link, dict) else None
-                policy["billing_link_url"] = billing_link.get("url") if isinstance(billing_link, dict) else None
-                policy["billing_link_expires"] = billing_link.get("expires") if isinstance(billing_link, dict) else None
+                policy["billing_due_date"] = bill.get("due_date")
                 if conditions_pdf:
                     policy["conditions_pdf_url"] = conditions_pdf.get("download_url")
                     policy["conditions_pdf_sha256"] = conditions_pdf.get("sha256")
@@ -1532,7 +1625,7 @@ def _approve_underwriting_and_notify(*, uw_id: str, approved_by: str, automated:
                     policy=policy,
                     customer=cust,
                     nft_token=(policy.get("nft_token") if isinstance(policy, dict) else None),
-                    billing_expires=(billing_link.get("expires") if isinstance(billing_link, dict) else None),
+                    billing_expires=(bill.get("due_date") if isinstance(bill, dict) else None),
                     uw_id=str(uw_id),
                     terms_lines=terms_lines,
                     form_snapshot=form_snapshot,
@@ -1581,7 +1674,7 @@ def _approve_underwriting_and_notify(*, uw_id: str, approved_by: str, automated:
                     customer=cust,
                     uw_id=str(uw_id),
                     nft_token=(policy.get("nft_token") if isinstance(policy, dict) else None),
-                    billing_expires=(billing_link.get("expires") if isinstance(billing_link, dict) else None),
+                    billing_expires=(bill.get("due_date") if isinstance(bill, dict) else None),
                     terms_lines=terms_lines,
                     form_snapshot=form_snapshot,
                     pricing_snapshot=pricing_snapshot,
@@ -1614,7 +1707,8 @@ def _approve_underwriting_and_notify(*, uw_id: str, approved_by: str, automated:
                             "underwriting_id": str(uw_id),
                             "issuance_id": str(policy.get("issuance_id") or ""),
                             "bill_id": bill.get("id"),
-                            "billing_link_token": billing_link.get("token") if isinstance(billing_link, dict) else None,
+                            "billing_due_date": bill.get("due_date"),
+                            "billing_method": (policy.get("billing_method") or (policy.get("billing_profile") or {}).get("method")),
                             "policy_terms_pdf_sha256": policy.get("policy_terms_pdf_sha256"),
                             "policy_terms_csv_sha256": policy.get("policy_terms_csv_sha256"),
                             "policy_package_pdf_sha256": policy.get("policy_package_pdf_sha256"),
@@ -1686,7 +1780,8 @@ def _approve_underwriting_and_notify(*, uw_id: str, approved_by: str, automated:
                             "customer_id": str(customer_id),
                             "nft_token": str(policy.get("nft_token") or ""),
                             "bill_id": str(bill.get("id") or ""),
-                            "billing_link_token": str(billing_link.get("token") if isinstance(billing_link, dict) else ""),
+                            "billing_due_date": str(bill.get("due_date") or ""),
+                            "billing_method": str(policy.get("billing_method") or (policy.get("billing_profile") or {}).get("method") or ""),
                             "policy_terms_pdf_token": str(policy.get("policy_terms_token") or ""),
                             "policy_package_pdf_token": str(policy.get("policy_package_token") or ""),
                             "policy_terms_csv_token": str(policy.get("policy_terms_csv_token") or ""),
@@ -1714,16 +1809,15 @@ def _approve_underwriting_and_notify(*, uw_id: str, approved_by: str, automated:
                 subject="Your PHINS.ai application was approved",
                 message=(
                     "Your application has been approved.\n\n"
-                    "Action required within 48 hours:\n"
-                    "1) Review policy terms (PDF)\n"
-                    "1b) (Optional) Download full policy package (policy + master conditions)\n"
-                    "2) Accept terms + complete payment to activate billing.\n\n"
+                    "Next steps:\n"
+                    "1) Review your issued policy terms (PDF)\n"
+                    "2) Premium billing will follow your selected payment method preference from the application.\n\n"
                     f"Policy NFT ledger token: {policy.get('nft_token') if isinstance(policy, dict) else ''}\n"
                     + (f"Policy terms PDF: {terms_doc.get('download_url')}\n" if isinstance(terms_doc, dict) and terms_doc.get("download_url") else "")
                     + (f"Full policy package PDF: {package_doc.get('download_url')}\n" if isinstance(package_doc, dict) and package_doc.get("download_url") else "")
                     + (f"Policy terms CSV: {terms_csv_doc.get('download_url')}\n" if isinstance(terms_csv_doc, dict) and terms_csv_doc.get("download_url") else "")
+                    + (f"First premium due date: {bill.get('due_date')}\n" if isinstance(bill, dict) and bill.get("due_date") else "")
                 ),
-                link=billing_link.get("url"),
                 kind="billing",
             )
     return {"application": app, "policy": policy, "billing_link": billing_link, "policy_nft": nft, "policy_terms": terms_doc, "policy_terms_csv": terms_csv_doc, "policy_package": package_doc}
@@ -3563,7 +3657,7 @@ class PortalHandler(BaseHTTPRequestHandler):
                 self.wfile.write(json.dumps({'error': 'Invalid request', 'details': str(e)}).encode('utf-8'))
             return
 
-        # Billing link resolve (48h token)
+        # Billing link resolve (legacy tokenized payment flow)
         if path == '/api/billing/link':
             token_q = qs.get('token', [None])[0]
             if not token_q:
@@ -6220,8 +6314,8 @@ class PortalHandler(BaseHTTPRequestHandler):
                 self.wfile.write(json.dumps({'error': 'Invalid request', 'details': str(e)}).encode('utf-8'))
             return
 
-        # Pay via billing link token (no login required; token is secret and expires in 48h)
-        # Accept policy terms via billing link token (no login required; token is secret and expires in 48h)
+        # Pay via billing link token (no login required; token is secret; may expire if configured)
+        # Accept policy terms via billing link token (no login required; token is secret; may expire if configured)
         if path == '/api/billing/link/accept':
             try:
                 data = json.loads(body) if body else {}
@@ -6523,6 +6617,20 @@ class PortalHandler(BaseHTTPRequestHandler):
             # Parse multipart form data (fields + files)
             fields, uploaded_files = self._parse_multipart_data_with_files(form_data, boundary.encode())  # type: ignore
             is_draft = str(fields.get("save_as_draft") or fields.get("draft") or "").strip().lower() in ("1", "true", "yes", "on")
+
+            # Billing profile (payment method) is captured at the *end* of the application.
+            # We validate and store it for billing setup (not for charging).
+            billing_profile = _extract_application_billing_profile(fields)
+            ok_bill, bill_err, bill_risk = _validate_application_billing_profile(
+                profile=billing_profile,
+                is_draft=is_draft,
+                client_ip=self._get_client_ip(),
+                user_agent=str(self.headers.get("User-Agent") or ""),
+            )
+            if not ok_bill:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({"error": bill_err or "Invalid billing method"}).encode("utf-8"))
+                return
             
             # Validate critical fields for injection / malicious content
             critical_fields = ['firstName', 'lastName', 'email', 'phone', 'address', 'city', 'occupation', 'nationalId', 'familyHistory']
@@ -6681,6 +6789,8 @@ class PortalHandler(BaseHTTPRequestHandler):
                     if isinstance(n, dict):
                         n['source'] = 'quote_edit'
                         n['form'] = fields
+                        n['billing_profile'] = billing_profile
+                        n['billing_risk'] = bill_risk
                         n['pricing'] = priced.get('breakdown', {})
                         # Persist new uploads (if any) and attach to application notes
                         try:
@@ -6699,6 +6809,9 @@ class PortalHandler(BaseHTTPRequestHandler):
                         try:
                             policy['status'] = 'pending_underwriting'
                             policy['uw_status'] = 'pending'
+                            policy['billing_profile'] = billing_profile
+                            policy['billing_risk'] = bill_risk
+                            policy['billing_method'] = billing_profile.get("method")
                             POLICIES[policy_id_existing] = policy
                         except Exception:
                             pass
@@ -6720,6 +6833,8 @@ class PortalHandler(BaseHTTPRequestHandler):
                         'message': 'Draft saved successfully.' if is_draft else 'Application submitted successfully.',
                         'estimated_premium': {'annual': priced.get('annual'), 'monthly': priced.get('monthly'), 'quarterly': priced.get('quarterly'), 'breakdown': priced.get('breakdown', {})},
                         'attachments': (n.get('attachments') if isinstance(n, dict) else []),
+                        'billing_profile': billing_profile,
+                        'billing_risk': bill_risk,
                     }).encode('utf-8'))
                     return
                 except Exception as e:
@@ -6839,6 +6954,8 @@ class PortalHandler(BaseHTTPRequestHandler):
                 'product': {'name': 'phins_permanent_phi_disability', 'adl_trigger_min': 3},
                 'form': fields,
                 'policy_term_years': policy_term_years,
+                'billing_profile': billing_profile,
+                'billing_risk': bill_risk,
             }
             # Persist uploads and attach to underwriting notes
             try:
@@ -6902,6 +7019,9 @@ class PortalHandler(BaseHTTPRequestHandler):
                 'status': 'draft' if is_draft else 'pending_underwriting',
                 'underwriting_id': uw_id,
                 'risk_score': risk_score,
+                'billing_method': billing_profile.get("method"),
+                'billing_profile': billing_profile,
+                'billing_risk': bill_risk,
                 'start_date': datetime.now().isoformat(),
                 'end_date': (datetime.now() + timedelta(days=365)).isoformat(),
                 'created_date': datetime.now().isoformat()

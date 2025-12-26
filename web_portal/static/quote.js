@@ -23,7 +23,9 @@ const requiredFields = [
   'occupation', 'incomeRange', 'exercise', 'coverageAmount',
   'policyTerm', 'truthDeclaration', 'privacyConsent', 'termsAccept', 'signature',
   'jurisdiction', 'savingsPercentage',
-  'familyHistory'
+  'familyHistory',
+  // Billing method on file (captured at the end of the application)
+  'paymentMethod', 'payerName', 'billingCountry', 'billingPostal'
 ];
 
 function getToken() {
@@ -462,6 +464,45 @@ function setupConditionalFields() {
     }
     updatePremiumPreview();
   });
+
+  // Billing method blocks (end of application)
+  const pm = document.getElementById('paymentMethod');
+  const cardBlock = document.getElementById('billingCardBlock');
+  const ppBlock = document.getElementById('billingPaypalBlock');
+  const cBlock = document.getElementById('billingCryptoBlock');
+  const cardNetwork = document.getElementById('cardNetwork');
+  const cardLast4 = document.getElementById('cardLast4');
+  const paypalEmail = document.getElementById('paypalEmail');
+  const cryptoNetwork = document.getElementById('cryptoNetwork');
+  const cryptoWallet = document.getElementById('cryptoWallet');
+
+  function setReq(el, on) {
+    if (!el) return;
+    el.required = !!on;
+    if (!on) {
+      el.classList.remove('invalid');
+      const err = document.getElementById(`${el.id}-error`);
+      if (err) { err.textContent = ''; err.style.display = 'none'; }
+    }
+  }
+
+  function updateBillingBlocks() {
+    const v = String((pm && pm.value) || '').toLowerCase();
+    if (cardBlock) cardBlock.style.display = (v === 'credit_card' || v === 'card') ? 'block' : 'none';
+    if (ppBlock) ppBlock.style.display = (v === 'paypal') ? 'block' : 'none';
+    if (cBlock) cBlock.style.display = (v === 'crypto') ? 'block' : 'none';
+
+    setReq(cardNetwork, (v === 'credit_card' || v === 'card'));
+    setReq(cardLast4, (v === 'credit_card' || v === 'card'));
+    setReq(paypalEmail, v === 'paypal');
+    setReq(cryptoNetwork, v === 'crypto');
+    setReq(cryptoWallet, v === 'crypto');
+  }
+
+  if (pm) {
+    pm.addEventListener('change', updateBillingBlocks);
+    updateBillingBlocks();
+  }
 }
 
 // Setup health condition slider

@@ -166,7 +166,8 @@ async function loadPipeline() {
       const lines = [
         `Policy created: ${p.id || '-'}`,
         `Status: ${p.status || '-'}`,
-        p.billing_link_url ? `Billing link (48h): ${p.billing_link_url}` : null,
+        p.billing_due_date ? `First premium due date: ${p.billing_due_date}` : null,
+        (p.billing_method || (p.billing_profile && p.billing_profile.method)) ? `Billing method: ${p.billing_method || (p.billing_profile && p.billing_profile.method)}` : null,
         p.nft_token ? `NFT token: ${p.nft_token}` : null,
         p.policy_terms_url ? `Policy PDF: ${p.policy_terms_url}` : null,
         p.policy_terms_csv_url ? `Policy CSV: ${p.policy_terms_csv_url}` : null,
@@ -332,13 +333,12 @@ async function loadPipeline() {
   window.__uwView = view;
 }
 
-function _fmtDeadline(iso) {
+function _fmtDue(iso) {
   try {
     if (!iso) return '-';
     const d = new Date(String(iso));
     if (Number.isNaN(d.getTime())) return '-';
-    const hrs = Math.max(0, (d.getTime() - Date.now()) / 36e5);
-    return `${d.toLocaleString()} (${hrs.toFixed(1)}h left)`;
+    return d.toLocaleString();
   } catch (_) {
     return '-';
   }
@@ -351,34 +351,38 @@ async function loadBillingPendingPolicies() {
     const resp = await fetch('/api/policies?page=1&page_size=500', { headers: getAuthHeaders() });
     const data = await resp.json().catch(() => ({}));
     const items = Array.isArray(data.items) ? data.items : [];
-    const pending = items.filter(p => String(p.status || '').toLowerCase() === 'billing_pending');
-    if (!pending.length) {
-      tbody.innerHTML = '<tr><td colspan="6" style="color:var(--muted)">No billing-pending policies right now.</td></tr>';
+    const issued = items.filter(p => {
+      const st = String(p.status || '').toLowerCase();
+      return (st === 'active' || st === 'in_force') && (p.bill_id || p.billing_due_date);
+    });
+    if (!issued.length) {
+      tbody.innerHTML = '<tr><td colspan="7" style="color:var(--muted)">No issued policies with premium due date.</td></tr>';
       return;
     }
-    tbody.innerHTML = pending
-      .sort((a, b) => String(a.billing_link_expires || '').localeCompare(String(b.billing_link_expires || '')))
+    tbody.innerHTML = issued
+      .sort((a, b) => String(a.billing_due_date || '').localeCompare(String(b.billing_due_date || '')))
       .slice(0, 100)
       .map(p => {
         const artifacts = [
-          p.billing_link_url ? `<a class="link" href="${p.billing_link_url}" target="_blank">Billing link</a>` : null,
           p.policy_terms_url ? `<a class="link" href="${p.policy_terms_url}" target="_blank">Terms PDF</a>` : null,
           p.policy_package_url ? `<a class="link" href="${p.policy_package_url}" target="_blank">Package PDF</a>` : null,
           p.policy_terms_csv_url ? `<a class="link" href="${p.policy_terms_csv_url}" target="_blank">Terms CSV</a>` : null,
         ].filter(Boolean).join(' • ');
+        const method = (p.billing_method || (p.billing_profile && p.billing_profile.method) || '-');
         return `
           <tr>
             <td>${p.id || '-'}</td>
             <td>${p.customer_id || '-'}</td>
-            <td>${badge(p.status || 'billing_pending')}</td>
-            <td>${_fmtDeadline(p.billing_link_expires)}</td>
+            <td>${badge(p.status || 'active')}</td>
+            <td>${_fmtDue(p.billing_due_date || '')}</td>
+            <td>${String(method || '-')}</td>
             <td>${p.nft_token ? `<span style="font-family:monospace">${p.nft_token}</span>` : '-'}</td>
             <td>${artifacts || '<span style="color:var(--muted)">—</span>'}</td>
           </tr>
         `;
       }).join('');
   } catch (e) {
-    tbody.innerHTML = '<tr><td colspan="6" style="color:var(--muted)">Unable to load policies.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="7" style="color:var(--muted)">Unable to load policies.</td></tr>';
   }
 }
 

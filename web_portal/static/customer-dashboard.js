@@ -177,7 +177,7 @@ async function loadMarketSnapshot() {
 
 function renderApplications(apps) {
   const tbody = document.getElementById('applications-table');
-  // Once approved, billing is tracked under "My Policies" (billing_pending).
+  // Once approved, the policy is issued and becomes active under "My Policies".
   const filtered = (apps || []).filter(a => !['approved'].includes(String(a.status || '').toLowerCase()));
   if (!filtered.length) {
     tbody.innerHTML = '<tr><td colspan="6" style="color:var(--muted)">No applications in pipeline.</td></tr>';
@@ -255,11 +255,7 @@ function renderPolicies(policies) {
       const monthly = p.monthly_premium ?? (p.annual_premium ? Number(p.annual_premium) / 12 : 0);
       const st = String(status || '').toLowerCase();
       let actions = `<span style="color:var(--muted)">${jurisdiction}</span>`;
-      if (st === 'billing_pending' && p.billing_link_url) {
-        const hrs = hoursLeft(p.billing_link_expires);
-        const left = (hrs === null) ? '' : ` • ${(hrs).toFixed(1)}h left`;
-        actions = `<a class="link" href="${p.billing_link_url}">Complete billing (48h)</a><span style="color:var(--muted)">${left}</span>`;
-      } else if (p.policy_terms_url) {
+      if (p.policy_terms_url) {
         actions = `<a class="link" href="${p.policy_terms_url}" target="_blank">Policy terms (PDF)</a>`;
         if (p.policy_package_url) {
           actions += ` • <a class="link" href="${p.policy_package_url}" target="_blank">Full package (PDF)</a>`;
@@ -271,7 +267,7 @@ function renderPolicies(policies) {
         actions += ` <button class="btn-small" style="margin-left:8px" onclick="window.__dlProj('${String(p.id).replace(/'/g,'')}', 'csv')">Projection CSV</button>`;
       }
       // Modular allocation: allow changing savings% (affects future risk/savings split).
-      if (['active','billing_pending','billing_review'].includes(st)) {
+      if (['active','in_force','billing_review'].includes(st)) {
         actions += ` <button class="btn-small" style="margin-left:8px" onclick="window.__updateAllocation('${String(p.id).replace(/'/g,'')}')">Adjust savings %</button>`;
       }
       return `
@@ -680,7 +676,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         balEl.textContent = money(wallet.balance);
       }
       if (sel) {
-        const eligible = (policies || []).filter(p => ['active', 'billing_pending', 'billing_review'].includes(String(p.status || '').toLowerCase()));
+        const eligible = (policies || []).filter(p => ['active', 'in_force', 'billing_review'].includes(String(p.status || '').toLowerCase()));
         sel.innerHTML = eligible.length
           ? eligible.map(p => `<option value="${p.id}">${p.id} — ${String(p.type || '').toUpperCase()} (${String(p.status || '')})</option>`).join('')
           : `<option value="">No eligible policies</option>`;

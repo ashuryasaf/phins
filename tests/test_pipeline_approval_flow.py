@@ -1,4 +1,3 @@
-import base64
 import json
 import os
 import threading
@@ -135,8 +134,7 @@ def _make_valid_pdf_bytes(text: str) -> bytes:
 def test_pipeline_approve_to_policy_to_billing_to_claims():
     """
     Pipeline test:
-      submit application -> admin approve -> policy artifacts + billing link + notification
-      accept terms -> pay -> policy becomes active
+      submit application (includes billing method on file) -> admin approve -> policy artifacts + billing setup + notification
       file claim -> claim ties to issuance + nft token
     """
     _reset_in_memory_state()
@@ -179,19 +177,41 @@ def test_pipeline_approve_to_policy_to_billing_to_claims():
         # Submit quote (multipart).
         fields = {
             "email": email,
-            "password": "As11as11@",
-            "name": "Pipeline Tester",
             "firstName": "Pipeline",
             "lastName": "Tester",
+            "dob": "1990-01-01",
+            "gender": "Male",
             "phone": "+15550000001",
-            "coverage_amount": "100000",
-            "age": "35",
-            "policy_type": "disability",
+            "address": "1 Test Street",
+            "city": "Testville",
+            "postalCode": "10001",
+            "occupation": "Engineer",
+            "nationalId": "A1234567",
+            "healthCondition": "4",
+            "height": "180",
+            "weight": "80",
+            "smoking": "NonSmoker",
+            "preExisting": "no",
+            "maritalStatus": "Single",
+            "incomeRange": "50000-100000",
+            "exercise": "3-4",
+            "coverageAmount": "100000",
+            "policyTerm": "15",
             "jurisdiction": "US",
-            "health_condition_score": "4",
-            "savings_percentage": "50",
-            "operational_reinsurance_load": "50",
+            "savingsPercentage": "50",
+            "operationalReinsuranceLoad": "50",
             "familyHistory": "none",
+            "truthDeclaration": "on",
+            "privacyConsent": "on",
+            "termsAccept": "on",
+            "signature": "Pipeline Tester",
+            # Billing method on file (validated at submission time)
+            "paymentMethod": "credit_card",
+            "payerName": "Pipeline Tester",
+            "billingCountry": "US",
+            "billingPostal": "10001",
+            "cardNetwork": "visa",
+            "cardLast4": "4242",
         }
         submit = requests.post(
             base + "/api/submit-quote",
@@ -219,10 +239,12 @@ def test_pipeline_approve_to_policy_to_billing_to_claims():
 
         # Policy + artifacts created.
         assert p.get("id") == policy_id
-        assert str(p.get("status")).lower() in ("billing_pending", "billing_review")
+        assert str(p.get("status")).lower() in ("active", "in_force", "billing_review")
         assert p.get("issuance_id")
         assert p.get("nft_token")
-        assert p.get("billing_link_url")
+        assert p.get("bill_id")
+        assert p.get("billing_due_date")
+        assert (p.get("billing_method") or (p.get("billing_profile") or {}).get("method"))
         assert p.get("policy_terms_url")
         assert p.get("policy_package_url")  # requires master conditions pdf
         assert p.get("policy_terms_csv_url")
@@ -238,72 +260,15 @@ def test_pipeline_approve_to_policy_to_billing_to_claims():
         assert notifs.status_code == 200, notifs.text
         nj = notifs.json()
         items = nj.get("items") or []
-        assert any((n.get("kind") == "billing" and p.get("billing_link_url") in (n.get("link") or "")) for n in items)
+        assert any((n.get("kind") == "billing" and "approved" in str(n.get("subject") or "").lower()) for n in items)
 
         # SMS webhook should have been called for the approval notification.
         assert cap.event.wait(timeout=5.0), "Expected SMS webhook call, but none received"
         sms_payload = cap.last() or {}
         assert sms_payload.get("to") == "+15550000001"
         assert "PHINS.ai" in (sms_payload.get("message") or "") or "PHINS" in (sms_payload.get("message") or "")
-        # Include the billing link in the SMS payload (best-effort)
-        assert "billing-link.html" in (sms_payload.get("message") or "")
-
-        # Billing link resolve
-        # Extract token from billing_link_url like /billing-link.html?token=...
-        token = p["billing_link_url"].split("token=", 1)[-1]
-        bill = requests.get(base + f"/api/billing/link?token={token}", timeout=10)
-        assert bill.status_code == 200, bill.text
-        bj = bill.json()
-        assert bj.get("valid") is True
-
-        # Accept terms (signature)
-        # 1x1 transparent png
-        png = base64.b64encode(
-            b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x06\x00\x00\x00\x1f\x15\xc4\x89"
-            b"\x00\x00\x00\nIDATx\x9cc`\x00\x00\x00\x02\x00\x01\xe2!\xbc3\x00\x00\x00\x00IEND\xaeB`\x82"
-        ).decode("ascii")
-        sig = requests.post(
-            base + "/api/billing/link/accept",
-            json={"token": token, "signer_name": "Pipeline Tester", "signature_data_url": f"data:image/png;base64,{png}"},
-            headers={"Content-Type": "application/json"},
-            timeout=15,
-        )
-        assert sig.status_code == 200, sig.text
-        assert sig.json().get("success") is True
-
-        # Pay now (provide billing details so validation stays low-risk)
-        pay = requests.post(
-            base + "/api/billing/link/pay",
-            json={
-                "token": token,
-                "billing_details": {
-                    "payer_name": "Pipeline Tester",
-                    "billing_country": "US",
-                    "billing_postal": "10001",
-                    "payment_method": "card",
-                    "card_last4": "4242",
-                    "card_network": "visa",
-                    "signer_name": "Pipeline Tester",
-                },
-            },
-            headers={"Content-Type": "application/json"},
-            timeout=20,
-        )
-        assert pay.status_code in (200, 202), pay.text
-
-        # If it went to review, approve review as admin to activate.
-        if pay.status_code == 202:
-            # Find bill_id via resolve
-            bill2 = requests.get(base + f"/api/billing/link?token={token}", timeout=10).json()
-            bill_id = (bill2.get("bill") or {}).get("id")
-            assert bill_id
-            rv = requests.post(
-                base + "/api/admin/billing/review/approve",
-                json={"bill_id": bill_id},
-                headers={"Authorization": f"Bearer {admin_token}", "Content-Type": "application/json"},
-                timeout=20,
-            )
-            assert rv.status_code == 200, rv.text
+        # Include policy artifact links in SMS payload (best-effort)
+        assert "Policy terms" in (sms_payload.get("message") or "") or "policy" in (sms_payload.get("message") or "").lower()
 
         # Policy should be active now.
         pols = requests.get(
@@ -316,7 +281,7 @@ def test_pipeline_approve_to_policy_to_billing_to_claims():
         items = pj.get("items") or []
         pol = next((x for x in items if x.get("id") == policy_id), None)
         assert pol is not None
-        assert str(pol.get("status")).lower() in ("active", "in_force")
+        assert str(pol.get("status")).lower() in ("active", "in_force", "billing_review")
 
         # File claim (customer). Must bind to issuance + nft token.
         cl = requests.post(

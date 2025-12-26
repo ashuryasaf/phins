@@ -1,0 +1,34 @@
+PHINS.ai Savings Projection Export (Compliance)
+contact,support@phins.ai
+generated_utc,2025-12-26T23:53:18.477043
+
+application_id,UW-20251226-6675
+policy_id,POL-20251226-7354
+issuance_id,ISS-65815ee6c306
+issued_date,2025-12-26T23:53:18.437514
+nft_token,NFT-POL-20251226-7354-ISS-65815ee6c306
+
+customer_id,CUST-46300
+customer_name,Pipeline Tester
+customer_email,pipeline.tester@example.com
+customer_phone,+15550000001
+
+underwriting_status,approved
+risk_assessment,high
+decision_date,2025-12-26T23:53:18.437484
+approved_by,admin
+
+age,35,years,15
+coverage_amount,100000.0
+jurisdiction,US
+savings_percentage,50
+health_condition_score,4
+monthly_total_premium,241.88
+monthly_savings_allocation,112.5
+
+scenario,annual_return_percent,future_value
+conservative,2.0,23592.72
+base,5.0,30070.01
+growth,8.0,38929.3
+
+Disclaimer,Projections are estimates and not guarantees. Governed by master insurance conditions and endorsements.
