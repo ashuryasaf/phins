@@ -1,0 +1,23 @@
+field,value
+generated_utc,2025-12-26T00:07:51.112114
+underwriting_id,UW-20251226-3167
+policy_id,POL-20251226-4050
+policy_status,billing_pending
+policy_type,disability
+jurisdiction,US
+coverage_amount,100000
+annual_premium,2700.0
+monthly_premium,225.0
+savings_percentage,50
+customer_id,CUST-70886
+customer_name,testbuyer5@example.com
+customer_email,testbuyer5@example.com
+policy_nft_token,NFT-POL-20251226-4050
+billing_deadline,2025-12-28T00:07:51.080116
+application_snapshot_sha256,64b3635903ae637796c6285b800003310236d837b65f10bac36283b2ad7e7e0c
+pricing_snapshot_sha256,1e7ad30f3dd9158565c79ece7aa672b4f3bdfed76d08d78aaeafda0492dc6101
+terms_version,template
+term_1,- This document is an electronically generated record for underwriting and compliance.
+term_2,- Coverage activates upon underwriting approval AND successful payment within the billing window.
+term_3,"- Health risk loading applies ONLY to the risk cover portion, per PHINS underwriting rules."
+term_4,- All actions are logged to an internal ledger (audit log + token registry).

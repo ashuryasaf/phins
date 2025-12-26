@@ -298,6 +298,7 @@ async function loadBillingPendingPolicies() {
         const artifacts = [
           p.billing_link_url ? `<a class="link" href="${p.billing_link_url}" target="_blank">Billing link</a>` : null,
           p.policy_terms_url ? `<a class="link" href="${p.policy_terms_url}" target="_blank">Terms PDF</a>` : null,
+          p.policy_package_url ? `<a class="link" href="${p.policy_package_url}" target="_blank">Package PDF</a>` : null,
           p.policy_terms_csv_url ? `<a class="link" href="${p.policy_terms_csv_url}" target="_blank">Terms CSV</a>` : null,
         ].filter(Boolean).join(' • ');
         return `

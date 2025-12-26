@@ -1,6 +1,7 @@
 # Production/runtime dependencies (keep this lean for Railway/Nixpacks)
 requests>=2.0
 reportlab>=4.0
+pypdf>=6.5.0
 sqlalchemy>=2.0.0
 psycopg2-binary>=2.9.0  # PostgreSQL adapter
 alembic>=1.12.0  # Database migrations

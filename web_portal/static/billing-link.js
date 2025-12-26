@@ -82,6 +82,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   const meta = loaded.data.meta || {};
   const nft = meta.nft_token || '';
   const termsUrl = meta.policy_terms_url || '';
+  const pkgUrl = meta.policy_package_url || '';
+  const condUrl = meta.master_conditions_url || '';
   let acceptedServer = !!meta.terms_accepted;
   billBlock.innerHTML = `
     <div><strong>Bill</strong>: ${bill.id || bill.bill_id || '-'}</div>
@@ -93,6 +95,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     const tLink = termsUrl ? `<a class="link" href="${termsUrl}" target="_blank" rel="noopener">Download policy terms (PDF)</a>` : '<span>Policy terms PDF not available yet.</span>';
     termsBlock.innerHTML = `
       <div>${tLink}</div>
+      ${pkgUrl ? `<div style="margin-top:6px"><a class="link" href="${pkgUrl}" target="_blank" rel="noopener">Download full policy package (policy + conditions)</a></div>` : ''}
+      ${condUrl ? `<div style="margin-top:6px"><a class="link" href="${condUrl}" target="_blank" rel="noopener">Download master insurance conditions (PDF)</a></div>` : ''}
       ${nft ? `<div style="margin-top:6px">NFT policy ledger token: <strong>${String(nft)}</strong></div>` : ''}
     `;
   }

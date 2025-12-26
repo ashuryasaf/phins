@@ -1064,6 +1064,46 @@ def _persist_media_assets(*, customer_id: str, uw_id: str, policy_id: str | None
     return out
 
 
+def _read_media_asset_bytes(token: str) -> bytes:
+    """Best-effort read of a stored media asset by token (local storage)."""
+    try:
+        rec = TOKEN_REGISTRY.get(token)
+        if not isinstance(rec, dict) or rec.get("kind") != "media_asset" or rec.get("status") != "active":
+            return b""
+        meta_raw = rec.get("meta") or "{}"
+        meta = json.loads(meta_raw) if isinstance(meta_raw, str) else (meta_raw or {})
+        p = str(meta.get("path") or "")
+        if not p:
+            return b""
+        return Path(p).read_bytes()
+    except Exception:
+        return b""
+
+
+def _concat_pdf_bytes(*, first_pdf: bytes, second_pdf: bytes) -> bytes:
+    """
+    Concatenate two PDFs (client-specific policy PDF + master conditions PDF).
+    Requires pypdf. Returns empty bytes if merge fails.
+    """
+    if not first_pdf or not second_pdf:
+        return b""
+    try:
+        from pypdf import PdfReader, PdfWriter  # type: ignore
+        import io
+        r1 = PdfReader(io.BytesIO(first_pdf))
+        r2 = PdfReader(io.BytesIO(second_pdf))
+        w = PdfWriter()
+        for p in r1.pages:
+            w.add_page(p)
+        for p in r2.pages:
+            w.add_page(p)
+        out = io.BytesIO()
+        w.write(out)
+        return out.getvalue()
+    except Exception:
+        return b""
+
+
 def _should_auto_approve(*, policy: Dict[str, Any], app: Dict[str, Any], customer: Dict[str, Any]) -> bool:
     """Autonomous underwriting rule for low-risk, younger applicants."""
     cfg = UNDERWRITING_AUTOMATION_CONFIG
@@ -1160,6 +1200,7 @@ def _approve_underwriting_and_notify(*, uw_id: str, approved_by: str, automated:
     nft = None
     terms_doc = None
     terms_csv_doc = None
+    package_doc = None
     if policy and isinstance(policy.get("annual_premium"), (int, float)):
         customer_id = policy.get("customer_id")
         cust = CUSTOMERS.get(customer_id) if customer_id else None
@@ -1235,6 +1276,26 @@ def _approve_underwriting_and_notify(*, uw_id: str, approved_by: str, automated:
                         # include immutable hash for audits
                         policy["policy_terms_pdf_sha256"] = _sha256_hex(pdf_bytes)
 
+                # Generate combined policy package PDF (policy terms + master conditions) per client
+                try:
+                    if conditions_pdf and isinstance(conditions_pdf, dict) and conditions_pdf.get("media_token"):
+                        cond_bytes = _read_media_asset_bytes(str(conditions_pdf.get("media_token")))
+                        pkg_bytes = _concat_pdf_bytes(first_pdf=pdf_bytes, second_pdf=cond_bytes)
+                        if pkg_bytes:
+                            docs_pkg = _persist_media_assets(
+                                customer_id=customer_id,
+                                uw_id=str(uw_id),
+                                policy_id=str(policy.get("id")),
+                                files=[{"field": "policy_package_pdf", "filename": f"{policy.get('id','policy')}_package.pdf", "content_type": "application/pdf", "data": pkg_bytes}],
+                            )
+                            package_doc = docs_pkg[0] if docs_pkg else None
+                            if isinstance(package_doc, dict):
+                                policy["policy_package_token"] = package_doc.get("token")
+                                policy["policy_package_url"] = package_doc.get("download_url")
+                                policy["policy_package_pdf_sha256"] = _sha256_hex(pkg_bytes)
+                except Exception:
+                    package_doc = None
+
                 # Also generate a CSV export for underwriting/compliance files
                 csv_bytes = _create_policy_terms_csv_bytes(
                     policy=policy,
@@ -1276,6 +1337,7 @@ def _approve_underwriting_and_notify(*, uw_id: str, approved_by: str, automated:
                             "billing_link_token": billing_link.get("token") if isinstance(billing_link, dict) else None,
                             "policy_terms_pdf_sha256": policy.get("policy_terms_pdf_sha256"),
                             "policy_terms_csv_sha256": policy.get("policy_terms_csv_sha256"),
+                            "policy_package_pdf_sha256": policy.get("policy_package_pdf_sha256"),
                             "application_snapshot_sha256": _sha256_hex(_stable_json_bytes(form_snapshot)),
                             "pricing_snapshot_sha256": _sha256_hex(_stable_json_bytes(pricing_snapshot)),
                             "master_conditions_sha256": (conditions_pdf.get("sha256") if isinstance(conditions_pdf, dict) else None),
@@ -1294,15 +1356,17 @@ def _approve_underwriting_and_notify(*, uw_id: str, approved_by: str, automated:
                     "Your application has been approved.\n\n"
                     "Action required within 48 hours:\n"
                     "1) Review policy terms (PDF)\n"
+                    "1b) (Optional) Download full policy package (policy + master conditions)\n"
                     "2) Accept terms + complete payment to activate billing.\n\n"
                     f"Policy NFT ledger token: {policy.get('nft_token') if isinstance(policy, dict) else ''}\n"
                     + (f"Policy terms PDF: {terms_doc.get('download_url')}\n" if isinstance(terms_doc, dict) and terms_doc.get("download_url") else "")
+                    + (f"Full policy package PDF: {package_doc.get('download_url')}\n" if isinstance(package_doc, dict) and package_doc.get("download_url") else "")
                     + (f"Policy terms CSV: {terms_csv_doc.get('download_url')}\n" if isinstance(terms_csv_doc, dict) and terms_csv_doc.get("download_url") else "")
                 ),
                 link=billing_link.get("url"),
                 kind="billing",
             )
-    return {"application": app, "policy": policy, "billing_link": billing_link, "policy_nft": nft, "policy_terms": terms_doc, "policy_terms_csv": terms_csv_doc}
+    return {"application": app, "policy": policy, "billing_link": billing_link, "policy_nft": nft, "policy_terms": terms_doc, "policy_terms_csv": terms_csv_doc, "policy_package": package_doc}
 
 
 def _reject_underwriting_and_notify(*, uw_id: str, rejected_by: str, reason: str) -> Dict[str, Any] | None:
@@ -3121,6 +3185,7 @@ class PortalHandler(BaseHTTPRequestHandler):
                     "policy_id": policy.get("id"),
                     "nft_token": policy.get("nft_token"),
                     "policy_terms_url": policy.get("policy_terms_url"),
+                    "policy_package_url": policy.get("policy_package_url"),
                     "terms_accepted": _has_terms_acceptance_for_billing_token(token_q),
                     "master_conditions_url": (cond.get("download_url") if isinstance(cond, dict) else None),
                     "master_conditions_sha256": (cond.get("sha256") if isinstance(cond, dict) else None),

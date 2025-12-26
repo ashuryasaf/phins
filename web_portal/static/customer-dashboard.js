@@ -207,6 +207,9 @@ function renderPolicies(policies) {
         actions = `<a class="link" href="${p.billing_link_url}">Complete billing (48h)</a><span style="color:var(--muted)">${left}</span>`;
       } else if (p.policy_terms_url) {
         actions = `<a class="link" href="${p.policy_terms_url}" target="_blank">Policy terms (PDF)</a>`;
+        if (p.policy_package_url) {
+          actions += ` • <a class="link" href="${p.policy_package_url}" target="_blank">Full package (PDF)</a>`;
+        }
       }
       // Modular allocation: allow changing savings% (affects future risk/savings split).
       if (['active','billing_pending','billing_review'].includes(st)) {
