@@ -370,16 +370,18 @@ def create_billing_link(*, bill_id: str, policy_id: str, customer_id: str, amoun
     return {"token": token, "expires": expires_at.isoformat(), "url": link}
 
 
-def issue_policy_nft_token(*, policy_id: str, customer_id: str) -> Dict[str, Any]:
+def issue_policy_nft_token(*, policy_id: str, customer_id: str, issuance_id: str) -> Dict[str, Any]:
     """
     Issue a *policy ledger token* (NFT architecture placeholder).
     This does not mint on-chain inside this demo server; it creates a durable record
     that can later be reconciled with an on-chain mint/tx.
     """
-    token = f"NFT-{policy_id}"
+    # Unique per issuance (not just per policy id).
+    token = f"NFT-{policy_id}-{issuance_id}"
     meta = {
         "policy_id": policy_id,
         "customer_id": customer_id,
+        "issuance_id": issuance_id,
         "standard": "ERC-721",
         "chain": (os.environ.get("POLICY_NFT_CHAIN") or "ethereum-l2").strip() or "ethereum-l2",
         "contract_address": (os.environ.get("POLICY_NFT_CONTRACT") or "").strip(),
@@ -387,6 +389,8 @@ def issue_policy_nft_token(*, policy_id: str, customer_id: str) -> Dict[str, Any
         "tx_hash": "",
         "minted": False,
         "issued_at": datetime.utcnow().isoformat(),
+        # portability
+        "owner_customer_id": customer_id,
     }
     TOKEN_REGISTRY[token] = {
         "token": token,
@@ -1194,6 +1198,10 @@ def _approve_underwriting_and_notify(*, uw_id: str, approved_by: str, automated:
         policy["approval_date"] = datetime.now().isoformat()
         policy["uw_status"] = "approved"
         policy["billing_status"] = "payment_required"
+        # Stable issuance id (unique per approval/issuance)
+        issuance_id = f"ISS-{uuid.uuid4().hex[:12]}"
+        policy["issuance_id"] = issuance_id
+        policy["issued_date"] = datetime.utcnow().isoformat()
 
     # Create bill + 48h billing link (for first premium)
     billing_link = None
@@ -1226,7 +1234,9 @@ def _approve_underwriting_and_notify(*, uw_id: str, approved_by: str, automated:
                 pass
             # Issue policy NFT ledger token (architecture placeholder)
             try:
-                nft = issue_policy_nft_token(policy_id=policy["id"], customer_id=customer_id)
+                issuance_id = str(policy.get("issuance_id") or f"ISS-{uuid.uuid4().hex[:12]}")
+                policy["issuance_id"] = issuance_id
+                nft = issue_policy_nft_token(policy_id=policy["id"], customer_id=customer_id, issuance_id=issuance_id)
                 # attach to policy for UI visibility
                 policy["nft_token"] = nft.get("token")
                 policy["nft_status"] = "issued"
@@ -1333,6 +1343,7 @@ def _approve_underwriting_and_notify(*, uw_id: str, approved_by: str, automated:
                             meta_obj = {}
                         meta_obj.update({
                             "underwriting_id": str(uw_id),
+                            "issuance_id": str(policy.get("issuance_id") or ""),
                             "bill_id": bill.get("id"),
                             "billing_link_token": billing_link.get("token") if isinstance(billing_link, dict) else None,
                             "policy_terms_pdf_sha256": policy.get("policy_terms_pdf_sha256"),
@@ -1343,6 +1354,38 @@ def _approve_underwriting_and_notify(*, uw_id: str, approved_by: str, automated:
                             "master_conditions_sha256": (conditions_pdf.get("sha256") if isinstance(conditions_pdf, dict) else None),
                         })
                         TOKEN_REGISTRY[nft_tok] = {**rec, "meta": json.dumps(meta_obj)}
+                except Exception:
+                    pass
+
+                # Issuance ledger record (single source of truth for BI/AI)
+                try:
+                    itok = f"ISSUE-{uuid.uuid4().hex}"
+                    TOKEN_REGISTRY[itok] = {
+                        "token": itok,
+                        "kind": "policy_issuance",
+                        "status": "issued",
+                        "meta": json.dumps({
+                            "issuance_id": str(policy.get("issuance_id") or ""),
+                            "underwriting_id": str(uw_id),
+                            "policy_id": str(policy.get("id") or ""),
+                            "customer_id": str(customer_id),
+                            "nft_token": str(policy.get("nft_token") or ""),
+                            "bill_id": str(bill.get("id") or ""),
+                            "billing_link_token": str(billing_link.get("token") if isinstance(billing_link, dict) else ""),
+                            "policy_terms_pdf_token": str(policy.get("policy_terms_token") or ""),
+                            "policy_package_pdf_token": str(policy.get("policy_package_token") or ""),
+                            "policy_terms_csv_token": str(policy.get("policy_terms_csv_token") or ""),
+                            "application_snapshot_sha256": _sha256_hex(_stable_json_bytes(form_snapshot)),
+                            "pricing_snapshot_sha256": _sha256_hex(_stable_json_bytes(pricing_snapshot)),
+                            "policy_terms_pdf_sha256": str(policy.get("policy_terms_pdf_sha256") or ""),
+                            "policy_package_pdf_sha256": str(policy.get("policy_package_pdf_sha256") or ""),
+                            "master_conditions_sha256": (conditions_pdf.get("sha256") if isinstance(conditions_pdf, dict) else None),
+                            "issued_at": datetime.utcnow().isoformat(),
+                        }, default=str),
+                        "created_date": datetime.now().isoformat(),
+                        "expires": None,
+                    }
+                    policy["issuance_ledger_token"] = itok
                 except Exception:
                     pass
             except Exception:
@@ -5431,13 +5474,46 @@ class PortalHandler(BaseHTTPRequestHandler):
         # Create Claim Endpoint
         if path == '/api/claims/create':
             try:
+                if not session:
+                    self._set_json_headers(401)
+                    self.wfile.write(json.dumps({'error': 'Unauthorized'}).encode('utf-8'))
+                    return
                 data = json.loads(body)
+                role = USERS.get(session.get('username') if session else '', {}).get('role') if session else None
+                # Customers can only file for themselves; staff can file on behalf of customers.
+                if str(role or '').lower() == 'customer':
+                    data['customer_id'] = session.get('customer_id')
+                elif not require_role(session, ['admin', 'claims', 'claims_adjuster', 'underwriter', 'accountant']):
+                    self._set_json_headers(403)
+                    self.wfile.write(json.dumps({'error': 'Forbidden'}).encode('utf-8'))
+                    return
+
+                # Validate policy ownership + status (claims only against active/in-force policies)
+                policy_id = data.get('policy_id')
+                pol = POLICIES.get(policy_id) if policy_id else None
+                if not isinstance(pol, dict):
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'Invalid policy_id'}).encode('utf-8'))
+                    return
+                customer_id = data.get('customer_id')
+                if str(pol.get('customer_id') or '') != str(customer_id or ''):
+                    self._set_json_headers(403)
+                    self.wfile.write(json.dumps({'error': 'Policy does not belong to customer'}).encode('utf-8'))
+                    return
+                if str(pol.get('status') or '').lower() != 'active':
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'Policy is not active yet (claims allowed only after activation)'}).encode('utf-8'))
+                    return
+
                 claim_id = generate_claim_id()
                 
                 claim = {
                     'id': claim_id,
-                    'policy_id': data.get('policy_id'),
-                    'customer_id': data.get('customer_id'),
+                    'policy_id': policy_id,
+                    'customer_id': customer_id,
+                    # tie to issuance + NFT for long-lived audit/BI
+                    'issuance_id': pol.get('issuance_id'),
+                    'nft_token': pol.get('nft_token'),
                     'type': data.get('type', 'general'),
                     'description': data.get('description', ''),
                     'claimed_amount': float(data.get('claimed_amount', 0)),
@@ -5447,6 +5523,29 @@ class PortalHandler(BaseHTTPRequestHandler):
                 }
                 
                 CLAIMS[claim_id] = claim
+                # Ledger record for BI/AI + audit
+                try:
+                    ctoken = f"CLMLED-{uuid.uuid4().hex}"
+                    TOKEN_REGISTRY[ctoken] = {
+                        "token": ctoken,
+                        "kind": "claim_filed",
+                        "status": "pending",
+                        "meta": json.dumps({
+                            "claim_id": claim_id,
+                            "policy_id": policy_id,
+                            "customer_id": customer_id,
+                            "issuance_id": pol.get('issuance_id'),
+                            "nft_token": pol.get('nft_token'),
+                            "claimed_amount": claim.get('claimed_amount'),
+                            "type": claim.get('type'),
+                            "filed_at": datetime.utcnow().isoformat(),
+                        }, default=str),
+                        "created_date": datetime.now().isoformat(),
+                        "expires": None,
+                    }
+                    claim["ledger_token"] = ctoken
+                except Exception:
+                    pass
                 # Store claim submission + notify customer
                 try:
                     cust = CUSTOMERS.get(claim.get('customer_id')) if claim.get('customer_id') else None
@@ -5455,6 +5554,7 @@ class PortalHandler(BaseHTTPRequestHandler):
                         notify_customer(
                             customer_id=claim.get('customer_id'),
                             email=cust.get('email'),
+                            phone=cust.get('phone'),
                             subject="Claim received",
                             message=f"Your claim {claim_id} has been received and is pending review.",
                             kind="claims",
