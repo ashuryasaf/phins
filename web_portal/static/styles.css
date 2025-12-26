@@ -917,51 +917,125 @@ body{
 }
 
 /* Mobile Responsive */
-@media (max-width:768px){
-  .topbar .container{
-    flex-direction:column;
-    align-items:flex-start;
+@media (max-width: 768px) {
+  .container {
+    padding: 12px;
   }
   
-  .nav{
-    margin-top:12px;
-    flex-wrap:wrap;
+  .topbar {
+    padding: 12px 0;
   }
   
-  .hero-content h1{
-    font-size:1.8rem;
+  .topbar .container {
+    flex-direction: column;
+    align-items: center;
   }
   
-  .hero-subtitle{
-    font-size:1rem;
+  .brand {
+    margin-bottom: 16px;
+    width: 100%;
+    justify-content: center;
   }
   
-  .section{
-    padding:40px 0;
+  .nav {
+    flex-direction: column;
+    width: 100%;
+    gap: 8px;
+    margin-top: 0;
   }
   
-  .section-title{
-    font-size:1.6rem;
-    margin-bottom:32px;
+  .nav a {
+    display: block;
+    width: 100%;
+    text-align: center;
+    padding: 10px;
+    background: rgba(255,255,255,0.1);
+    border-radius: 6px;
   }
   
-  .product-grid{
-    grid-template-columns:1fr;
+  .nav a:hover {
+    background: rgba(255,255,255,0.2);
   }
   
-  .about-content{
-    grid-template-columns:1fr;
+  .language-selector {
+    width: 100%;
+    text-align: center;
+    text-align-last: center;
+    margin-top: 8px;
   }
   
-  .stats-grid{
-    grid-template-columns:1fr;
+  .btn-login {
+    width: 100%;
+    text-align: center;
+    justify-content: center;
+    margin-top: 8px;
+  }
+
+  .hero {
+    padding: 40px 0;
   }
   
-  .contact-grid{
-    grid-template-columns:1fr;
+  .hero-content h1 {
+    font-size: 1.8rem;
+    line-height: 1.3;
   }
   
-  .footer-content{
-    grid-template-columns:1fr;
+  .hero-subtitle {
+    font-size: 1rem;
+    margin-bottom: 24px;
+  }
+  
+  .hero-actions {
+    flex-direction: column;
+    gap: 12px;
+  }
+  
+  .hero-actions .btn {
+    width: 100%;
+  }
+  
+  .section {
+    padding: 40px 0;
+  }
+  
+  .section-title {
+    font-size: 1.6rem;
+    margin-bottom: 32px;
+  }
+  
+  /* Stack grids on mobile */
+  .product-grid,
+  .about-content,
+  .stats-grid,
+  .contact-grid,
+  .footer-content,
+  .dashboard-stats,
+  .dashboard-actions,
+  .summary-grid,
+  .billing-grid,
+  .portfolio-summary {
+    grid-template-columns: 1fr;
+  }
+  
+  .underwriting-grid {
+    grid-template-columns: 1fr;
+  }
+  
+  /* Adjust tables for mobile */
+  .table-card {
+    padding: 12px;
+    overflow-x: auto;
+  }
+  
+  .data-table th,
+  .data-table td {
+    padding: 8px;
+    font-size: 0.85rem;
+  }
+  
+  /* Form adjustments */
+  .form-row {
+    flex-direction: column;
+    gap: 0;
   }
 }

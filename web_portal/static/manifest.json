@@ -1,0 +1,16 @@
+{
+  "name": "PHINS Insurance",
+  "short_name": "PHINS",
+  "start_url": "/index.html",
+  "display": "standalone",
+  "background_color": "#f6f9fc",
+  "theme_color": "#0b6cff",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "/assets/phins-ai-logo.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ]
+}
