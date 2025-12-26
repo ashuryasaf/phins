@@ -7135,7 +7135,9 @@ def run_server(port: int = PORT) -> None:
         from db.run_migrations import run_if_configured as _run_phins_migrations
         _run_phins_migrations()
     except Exception as e:
-        strict = (os.environ.get("PHINS_MIGRATIONS_STRICT", "") or "").strip().lower() not in ("0", "false", "no")
+        # Default: do NOT fail the whole deploy if migrations cannot run (Railway DB perms/availability can vary).
+        # Opt-in strictness via PHINS_MIGRATIONS_STRICT=true.
+        strict = (os.environ.get("PHINS_MIGRATIONS_STRICT", "") or "").strip().lower() in ("1", "true", "yes")
         msg = f"❌ PHINS migrations failed: {e}"
         if strict and (os.environ.get("DATABASE_URL") or os.environ.get("SQLALCHEMY_DATABASE_URL")):
             raise RuntimeError(msg) from e
