@@ -1,6 +1,14 @@
 # Dockerfile for PHINS Web Portal
 FROM python:3.11-slim
 
+# System deps for svglib -> rlpycairo -> pycairo build
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        build-essential \
+        pkg-config \
+        libcairo2-dev \
+    && rm -rf /var/lib/apt/lists/*
+
 # Set working directory
 WORKDIR /app
 
