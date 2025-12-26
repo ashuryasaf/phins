@@ -7128,6 +7128,18 @@ class PortalHandler(BaseHTTPRequestHandler):
 
 
 def run_server(port: int = PORT) -> None:
+    # PHINS schema migrations (raw SQL, Railway-safe).
+    # These are additive and safe to run on every startup when DATABASE_URL is present.
+    try:
+        from db.run_migrations import run_if_configured as _run_phins_migrations
+        _run_phins_migrations()
+    except Exception as e:
+        strict = (os.environ.get("PHINS_MIGRATIONS_STRICT", "") or "").strip().lower() not in ("0", "false", "no")
+        msg = f"❌ PHINS migrations failed: {e}"
+        if strict and (os.environ.get("DATABASE_URL") or os.environ.get("SQLALCHEMY_DATABASE_URL")):
+            raise RuntimeError(msg) from e
+        print(msg)
+
     # Initialize database if enabled
     if USE_DATABASE and database_enabled:
         print("📊 Initializing database...")
