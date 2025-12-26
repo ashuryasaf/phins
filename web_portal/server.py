@@ -1109,6 +1109,141 @@ def _find_customer_id_by_email(email: str) -> str | None:
     return None
 
 
+def _parse_meta(rec: Dict[str, Any]) -> Dict[str, Any]:
+    try:
+        raw = rec.get("meta") or rec.get("metadata") or "{}"
+        return json.loads(raw) if isinstance(raw, str) else (raw or {})
+    except Exception:
+        return {}
+
+
+def _collect_policy_ledger_events(policy_id: str) -> list[Dict[str, Any]]:
+    """
+    Collect immutable ledger events for a policy from TOKEN_REGISTRY.
+    Returns sorted list by timestamp.
+    """
+    out: list[Dict[str, Any]] = []
+    pid = str(policy_id or "")
+    if not pid:
+        return out
+    kinds = {
+        "policy_issuance",
+        "policy_terms_accept",
+        "billing_payment",
+        "billing_review_approved",
+        "claim_filed",
+        "policy_transfer",
+    }
+    for tok, rec in TOKEN_REGISTRY.items():
+        if not isinstance(rec, dict):
+            continue
+        k = rec.get("kind")
+        if k not in kinds:
+            continue
+        meta = _parse_meta(rec)
+        if str(meta.get("policy_id") or "") != pid:
+            continue
+        # best-effort timestamp extraction per kind
+        ts = (
+            meta.get("issued_at")
+            or meta.get("accepted_at")
+            or meta.get("paid_at")
+            or meta.get("filed_at")
+            or meta.get("at")
+            or rec.get("created_date")
+        )
+        out.append({
+            "token": tok,
+            "kind": k,
+            "status": rec.get("status"),
+            "timestamp": ts,
+            "meta": meta,
+        })
+    # sort by timestamp (ISO strings)
+    out.sort(key=lambda e: str(e.get("timestamp") or ""))
+    return out
+
+
+def _build_policy_timeline(policy: Dict[str, Any], app: Dict[str, Any] | None = None) -> Dict[str, Any]:
+    """
+    Build a single policy timeline sourced from ledger + core records.
+    """
+    pid = str(policy.get("id") or "")
+    events = _collect_policy_ledger_events(pid)
+
+    def _first_ts(kind: str, key: str) -> str | None:
+        for e in events:
+            if e.get("kind") == kind:
+                m = e.get("meta") or {}
+                v = m.get(key) or e.get("timestamp")
+                if v:
+                    return str(v)
+        return None
+
+    pending_ts = str(policy.get("created_date") or (app.get("submitted_date") if isinstance(app, dict) else "") or "")
+    issued_ts = _first_ts("policy_issuance", "issued_at") or str(policy.get("issued_date") or policy.get("approval_date") or "")
+    approved_ts = str(policy.get("approval_date") or (app.get("decision_date") if isinstance(app, dict) else "") or issued_ts or "")
+    accept_ts = _first_ts("policy_terms_accept", "accepted_at")
+    paid_ts = _first_ts("billing_payment", "paid_at") or str(policy.get("activated_date") or "")
+    claims = [e for e in events if e.get("kind") == "claim_filed"]
+    first_claim_ts = str((claims[0].get("timestamp") if claims else "") or "")
+
+    expires = str(policy.get("billing_link_expires") or "")
+    status = str(policy.get("status") or "").lower()
+
+    # Determine current stage (simple state machine)
+    stage = "pending"
+    if status in ("pending_underwriting", "pending"):
+        stage = "pending"
+    elif status in ("billing_pending", "billing_review"):
+        stage = "billing_pending"
+    elif status in ("active", "in_force"):
+        stage = "claims" if claims else "active"
+    elif status in ("rejected",):
+        stage = "rejected"
+
+    def _mk(key: str, label: str, ts: str | None, extra: Dict[str, Any] | None = None) -> Dict[str, Any]:
+        used = [e["token"] for e in events if e.get("kind") in (
+            "policy_issuance" if key == "approved" else
+            "policy_terms_accept" if key == "terms_accepted" else
+            "billing_payment" if key == "active" else
+            "claim_filed" if key == "claims" else
+            ""
+        )]
+        obj = {"key": key, "label": label, "timestamp": ts or None, "ledger_tokens": used}
+        if extra:
+            obj.update(extra)
+        return obj
+
+    steps = [
+        _mk("pending", "pending", pending_ts or None),
+        _mk("approved", "approved", approved_ts or None, {"issuance_id": policy.get("issuance_id"), "nft_token": policy.get("nft_token")}),
+        _mk("billing_pending", "billing_pending (48h)", approved_ts or None, {"expires": expires or None, "billing_link_url": policy.get("billing_link_url")}),
+        _mk("active", "active", paid_ts or None),
+        _mk("claims", "claims", first_claim_ts or None, {"claims_count": len(claims)}),
+    ]
+
+    # mark status per step
+    for s in steps:
+        k = s["key"]
+        if stage == "rejected":
+            s["state"] = "rejected"
+        elif k == stage:
+            s["state"] = "current"
+        else:
+            # done if step timestamp exists and it's before current stage
+            s["state"] = "done" if s.get("timestamp") else "pending"
+
+    return {
+        "policy_id": pid,
+        "customer_id": policy.get("customer_id"),
+        "status": policy.get("status"),
+        "stage": stage,
+        "steps": steps,
+        "events": events,
+    }
+
+
 def store_form_submission(*, source: str, customer_id: str | None, email: str | None, payload: Dict[str, Any]) -> Dict[str, Any]:
     """Persist a form submission (DB-backed when enabled)."""
     sid = f"SUB-{datetime.now().strftime('%Y%m%d')}-{random.randint(100000, 999999)}"
@@ -3151,6 +3286,48 @@ class PortalHandler(BaseHTTPRequestHandler):
                 }
                 self._set_json_headers()
                 self.wfile.write(json.dumps(payload).encode('utf-8'))
+            return
+
+        # Pipeline timelines (ledger-sourced) for BI/AI
+        if path == '/api/pipeline/timelines':
+            if not session:
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Unauthorized'}).encode('utf-8'))
+                return
+            role = USERS.get(session.get('username') if session else '', {}).get('role') if session else None
+            role_l = str(role or '').lower()
+            customer_scope = session.get('customer_id') if (session and role_l == 'customer') else None
+            if role_l != 'customer' and not require_role(session, ['admin', 'underwriter', 'accountant', 'claims']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Forbidden'}).encode('utf-8'))
+                return
+
+            items = list(POLICIES.values())
+            if customer_scope:
+                items = [p for p in items if isinstance(p, dict) and p.get('customer_id') == customer_scope]
+            # Keep consistent ordering: newest first
+            items = [p for p in items if isinstance(p, dict)]
+            items.sort(key=lambda p: str(p.get('created_date') or ''), reverse=True)
+            items = items[:200]
+
+            # build lookup for underwriting apps by policy_id
+            uw_by_policy: Dict[str, Dict[str, Any]] = {}
+            try:
+                for a in UNDERWRITING_APPLICATIONS.values():
+                    if not isinstance(a, dict):
+                        continue
+                    pid = a.get('policy_id')
+                    if pid:
+                        uw_by_policy[str(pid)] = a
+            except Exception:
+                uw_by_policy = {}
+
+            out = []
+            for p in items:
+                pid = str(p.get('id') or '')
+                out.append(_build_policy_timeline(p, app=uw_by_policy.get(pid)))
+            self._set_json_headers()
+            self.wfile.write(json.dumps({'items': out, 'total': len(out), 'ts': datetime.utcnow().isoformat()}).encode('utf-8'))
             return
         
         # Claims Management Endpoints

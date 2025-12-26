@@ -114,6 +114,43 @@ async function loadInvestmentAllocations() {
   return resp.json();
 }
 
+async function loadPolicyTimelines() {
+  const resp = await fetch('/api/pipeline/timelines', { headers: getAuthHeaders() });
+  return resp.json();
+}
+
+function renderPolicyTimelines(data) {
+  const el = document.getElementById('policy-timelines');
+  if (!el) return;
+  const items = Array.isArray(data.items) ? data.items : [];
+  if (!items.length) {
+    el.innerHTML = '<span style="color:var(--muted)">No policies yet.</span>';
+    return;
+  }
+  function pill(step) {
+    const st = String(step.state || 'pending');
+    const bg = st === 'done' ? 'rgba(76,175,80,0.15)'
+      : (st === 'current' ? 'rgba(255,193,7,0.20)' : 'rgba(0,0,0,0.05)');
+    const bd = st === 'done' ? 'rgba(76,175,80,0.35)'
+      : (st === 'current' ? 'rgba(255,193,7,0.45)' : 'rgba(0,0,0,0.12)');
+    const ts = step.timestamp ? new Date(step.timestamp).toLocaleString() : '';
+    const sub = ts ? `<div style="font-size:11px; color:var(--muted); margin-top:2px">${ts}</div>` : '';
+    return `<div style="padding:8px 10px; border:1px solid ${bd}; border-radius:12px; background:${bg}; min-width:150px">
+      <div style="font-weight:800">${step.label}</div>${sub}
+    </div>`;
+  }
+  const blocks = items.slice(0, 50).map(t => {
+    const steps = Array.isArray(t.steps) ? t.steps : [];
+    const header = `<div style="display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap">
+      <div><strong>${t.policy_id}</strong> <span style="color:var(--muted)">(${String(t.status || '-')})</span></div>
+      <div style="color:var(--muted); font-size:12px">${t.stage ? `Stage: ${t.stage}` : ''}</div>
+    </div>`;
+    const row = `<div style="display:flex; gap:10px; flex-wrap:wrap; margin-top:10px">${steps.map(pill).join('')}</div>`;
+    return `<div style="padding:12px 0; border-bottom:1px solid var(--border)">${header}${row}</div>`;
+  }).join('');
+  el.innerHTML = blocks;
+}
+
 async function loadWalletBalance() {
   const resp = await fetch('/api/wallet/balance', { headers: getAuthHeaders() });
   return resp.json();
@@ -609,7 +646,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const username = sessionStorage.getItem('username') || profile.username || 'Customer';
     document.getElementById('username').textContent = username;
 
-    const [policies, claims, apps, statement, market, notifs, invAllocs, wallet] = await Promise.all([
+    const [policies, claims, apps, statement, market, notifs, invAllocs, wallet, timelines] = await Promise.all([
       loadPolicies(),
       loadClaims(),
       loadApplications(),
@@ -618,6 +655,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       loadNotifications(),
       loadInvestmentAllocations(),
       loadWalletBalance(),
+      loadPolicyTimelines(),
     ]);
 
     renderApplications(apps);
@@ -629,6 +667,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     updateTopStats(policies, claims, statement, market);
     setupClaimModal(profile, policies);
     renderSavingsProjections({ profile, policies });
+    renderPolicyTimelines(timelines || {});
 
     // Deposit / invest UI
     try {
