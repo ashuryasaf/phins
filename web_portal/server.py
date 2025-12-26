@@ -3097,80 +3097,6 @@ class PortalHandler(BaseHTTPRequestHandler):
                 self.wfile.write(json.dumps({'error': 'Invalid request', 'details': str(e)}).encode('utf-8'))
             return
 
-        # Admin: upload master insurance conditions PDF (stored as media asset + ledger)
-        if path == '/api/admin/policy-terms/conditions/upload':
-            if not require_role(session, ['admin']):
-                self._set_json_headers(403)
-                self.wfile.write(json.dumps({'error': 'Unauthorized. Admin access required.'}).encode('utf-8'))
-                return
-            try:
-                content_type = (self.headers.get('Content-Type') or '')
-                if 'multipart/form-data' not in content_type:
-                    self._set_json_headers(400)
-                    self.wfile.write(json.dumps({'error': 'multipart/form-data required'}).encode('utf-8'))
-                    return
-                boundary = content_type.split('boundary=')[-1].strip()
-                if not boundary:
-                    self._set_json_headers(400)
-                    self.wfile.write(json.dumps({'error': 'Missing boundary'}).encode('utf-8'))
-                    return
-                # body bytes already read above as `body`
-                fields, uploaded_files = self._parse_multipart_data_with_files(body, boundary.encode())
-                # pick first PDF file
-                f0 = None
-                for f in uploaded_files:
-                    ct = str(f.get('content_type') or '').lower()
-                    name = str(f.get('filename') or '')
-                    if ct == 'application/pdf' or name.lower().endswith('.pdf'):
-                        f0 = f
-                        break
-                if not f0:
-                    self._set_json_headers(400)
-                    self.wfile.write(json.dumps({'error': 'PDF file is required'}).encode('utf-8'))
-                    return
-                raw = f0.get('data') or b''
-                if not isinstance(raw, (bytes, bytearray)) or len(raw) <= 0:
-                    self._set_json_headers(400)
-                    self.wfile.write(json.dumps({'error': 'Empty file'}).encode('utf-8'))
-                    return
-                sha = _sha256_hex(bytes(raw))
-                saved = _persist_media_assets(
-                    customer_id="global",
-                    uw_id="policy_terms",
-                    policy_id=None,
-                    files=[{
-                        "field": "policy_conditions_pdf",
-                        "filename": str(f0.get('filename') or 'policy_conditions.pdf'),
-                        "content_type": "application/pdf",
-                        "data": bytes(raw),
-                    }],
-                )
-                doc = saved[0] if saved else None
-                if not isinstance(doc, dict) or not doc.get('token'):
-                    self._set_json_headers(500)
-                    self.wfile.write(json.dumps({'error': 'Failed to store file'}).encode('utf-8'))
-                    return
-                tok = f"COND-{uuid.uuid4().hex[:12]}"
-                TOKEN_REGISTRY[tok] = {
-                    "token": tok,
-                    "kind": "policy_conditions_pdf_template",
-                    "status": "active",
-                    "meta": json.dumps({
-                        "media_token": doc.get("token"),
-                        "sha256": sha,
-                        "filename": doc.get("filename"),
-                        "uploaded_at": datetime.utcnow().isoformat(),
-                    }),
-                    "created_date": datetime.now().isoformat(),
-                    "expires": None,
-                }
-                self._set_json_headers(200)
-                self.wfile.write(json.dumps({'success': True, 'template_token': tok, 'document': doc, 'sha256': sha}).encode('utf-8'))
-            except Exception as e:
-                self._set_json_headers(400)
-                self.wfile.write(json.dumps({'error': 'Invalid request', 'details': str(e)}).encode('utf-8'))
-            return
-
         # Billing link resolve (48h token)
         if path == '/api/billing/link':
             token_q = qs.get('token', [None])[0]
@@ -3951,6 +3877,80 @@ class PortalHandler(BaseHTTPRequestHandler):
             self.wfile.write(json.dumps({'error': 'Request too large'}).encode('utf-8'))
             return
         
+        # Handle multipart form data endpoints that must read raw bytes (do NOT decode).
+        # IMPORTANT: do this BEFORE the generic JSON body decode below.
+        if path == '/api/admin/policy-terms/conditions/upload':
+            if not require_role(session, ['admin']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Unauthorized. Admin access required.'}).encode('utf-8'))
+                return
+            try:
+                content_type = (self.headers.get('Content-Type') or '')
+                if 'multipart/form-data' not in content_type:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'multipart/form-data required'}).encode('utf-8'))
+                    return
+                boundary = content_type.split('boundary=')[-1].strip()
+                if not boundary:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'Missing boundary'}).encode('utf-8'))
+                    return
+                raw_body = self.rfile.read(content_length) if content_length else b""
+                fields, uploaded_files = self._parse_multipart_data_with_files(raw_body, boundary.encode())
+                f0 = None
+                for f in uploaded_files:
+                    ct = str(f.get('content_type') or '').lower()
+                    name = str(f.get('filename') or '')
+                    if ct == 'application/pdf' or name.lower().endswith('.pdf'):
+                        f0 = f
+                        break
+                if not f0:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'PDF file is required'}).encode('utf-8'))
+                    return
+                raw = f0.get('data') or b''
+                if not isinstance(raw, (bytes, bytearray)) or len(raw) <= 0:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'Empty file'}).encode('utf-8'))
+                    return
+                sha = _sha256_hex(bytes(raw))
+                saved = _persist_media_assets(
+                    customer_id="global",
+                    uw_id="policy_terms",
+                    policy_id=None,
+                    files=[{
+                        "field": "policy_conditions_pdf",
+                        "filename": str(f0.get('filename') or 'policy_conditions.pdf'),
+                        "content_type": "application/pdf",
+                        "data": bytes(raw),
+                    }],
+                )
+                doc = saved[0] if saved else None
+                if not isinstance(doc, dict) or not doc.get('token'):
+                    self._set_json_headers(500)
+                    self.wfile.write(json.dumps({'error': 'Failed to store file'}).encode('utf-8'))
+                    return
+                tok = f"COND-{uuid.uuid4().hex[:12]}"
+                TOKEN_REGISTRY[tok] = {
+                    "token": tok,
+                    "kind": "policy_conditions_pdf_template",
+                    "status": "active",
+                    "meta": json.dumps({
+                        "media_token": doc.get("token"),
+                        "sha256": sha,
+                        "filename": doc.get("filename"),
+                        "uploaded_at": datetime.utcnow().isoformat(),
+                    }),
+                    "created_date": datetime.now().isoformat(),
+                    "expires": None,
+                }
+                self._set_json_headers(200)
+                self.wfile.write(json.dumps({'success': True, 'template_token': tok, 'document': doc, 'sha256': sha}).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'Invalid request', 'details': str(e)}).encode('utf-8'))
+            return
+
         # Handle multipart form data for quote submission
         if path == '/api/submit-quote':
             self.handle_quote_submission()
