@@ -1,8 +1,10 @@
 import base64
 import json
+import os
 import threading
 import time
 from http.server import HTTPServer
+from http.server import BaseHTTPRequestHandler
 
 import requests
 
@@ -19,6 +21,61 @@ class ServerThread(threading.Thread):
 
     def stop(self):
         self.httpd.shutdown()
+
+
+class _WebhookCapture:
+    def __init__(self):
+        self.lock = threading.Lock()
+        self.requests: list[dict] = []
+        self.event = threading.Event()
+
+    def add(self, payload: dict):
+        with self.lock:
+            self.requests.append(payload)
+        self.event.set()
+
+    def last(self) -> dict | None:
+        with self.lock:
+            return self.requests[-1] if self.requests else None
+
+
+class _WebhookServerThread(threading.Thread):
+    def __init__(self, httpd: HTTPServer):
+        super().__init__(daemon=True)
+        self.httpd = httpd
+
+    def run(self):
+        self.httpd.serve_forever()
+
+    def stop(self):
+        self.httpd.shutdown()
+
+
+def _start_sms_webhook(cap: _WebhookCapture) -> tuple[_WebhookServerThread, str]:
+    class Handler(BaseHTTPRequestHandler):
+        def do_POST(self):  # noqa: N802
+            try:
+                n = int(self.headers.get("Content-Length", "0") or "0")
+            except Exception:
+                n = 0
+            raw = self.rfile.read(n) if n else b""
+            try:
+                payload = json.loads(raw.decode("utf-8"))
+            except Exception:
+                payload = {"_raw": raw.decode("utf-8", errors="replace")}
+            cap.add(payload)
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(b'{"ok":true}')
+
+        def log_message(self, fmt, *args):  # silence noisy logs
+            return
+
+    httpd = HTTPServer(("127.0.0.1", 0), Handler)  # bind ephemeral port
+    port = httpd.server_address[1]
+    t = _WebhookServerThread(httpd)
+    return t, f"http://127.0.0.1:{port}/sms"
 
 
 def _reset_in_memory_state():
@@ -91,6 +148,12 @@ def test_pipeline_approve_to_policy_to_billing_to_claims():
     base = f"http://127.0.0.1:{port}"
 
     try:
+        # Stand up local SMS webhook capture and point platform at it.
+        cap = _WebhookCapture()
+        sms_srv, sms_url = _start_sms_webhook(cap)
+        sms_srv.start()
+        os.environ["SMS_WEBHOOK_URL"] = sms_url
+
         # Admin login + upload master conditions PDF (required for package PDF).
         admin_token = _login(base, "admin", "As11as11@")
         cond_pdf = _make_valid_pdf_bytes("MASTER CONDITIONS (TEST)")
@@ -106,7 +169,7 @@ def test_pipeline_approve_to_policy_to_billing_to_claims():
         email = "pipeline.tester@example.com"
         reg = requests.post(
             base + "/api/register",
-            json={"email": email, "password": "As11as11@", "name": "Pipeline Tester"},
+            json={"email": email, "password": "As11as11@", "name": "Pipeline Tester", "phone": "+15550000001"},
             headers={"Content-Type": "application/json"},
             timeout=10,
         )
@@ -118,6 +181,9 @@ def test_pipeline_approve_to_policy_to_billing_to_claims():
             "email": email,
             "password": "As11as11@",
             "name": "Pipeline Tester",
+            "firstName": "Pipeline",
+            "lastName": "Tester",
+            "phone": "+15550000001",
             "coverage_amount": "100000",
             "age": "35",
             "policy_type": "disability",
@@ -173,6 +239,14 @@ def test_pipeline_approve_to_policy_to_billing_to_claims():
         nj = notifs.json()
         items = nj.get("items") or []
         assert any((n.get("kind") == "billing" and p.get("billing_link_url") in (n.get("link") or "")) for n in items)
+
+        # SMS webhook should have been called for the approval notification.
+        assert cap.event.wait(timeout=5.0), "Expected SMS webhook call, but none received"
+        sms_payload = cap.last() or {}
+        assert sms_payload.get("to") == "+15550000001"
+        assert "PHINS.ai" in (sms_payload.get("message") or "") or "PHINS" in (sms_payload.get("message") or "")
+        # Include the billing link in the SMS payload (best-effort)
+        assert "billing-link.html" in (sms_payload.get("message") or "")
 
         # Billing link resolve
         # Extract token from billing_link_url like /billing-link.html?token=...
@@ -257,5 +331,10 @@ def test_pipeline_approve_to_policy_to_billing_to_claims():
         assert cj.get("issuance_id") == pol.get("issuance_id")
         assert cj.get("nft_token") == pol.get("nft_token")
     finally:
+        try:
+            sms_srv.stop()
+        except Exception:
+            pass
+        os.environ.pop("SMS_WEBHOOK_URL", None)
         srv.stop()
 

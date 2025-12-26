@@ -301,6 +301,7 @@ def notify_customer(
     # SMS is optional (webhook-driven). Provide `SMS_WEBHOOK_URL` to enable.
     # We keep this best-effort and non-blocking for UX.
     try:
+        import urllib.request
         sms_url = (os.environ.get("SMS_WEBHOOK_URL") or "").strip()
         if not sms_url:
             return
