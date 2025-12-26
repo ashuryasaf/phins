@@ -9,6 +9,23 @@ function getAuthHeaders() {
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
+async function downloadWithAuth(url, filename) {
+  const resp = await fetch(url, { headers: getAuthHeaders() });
+  if (!resp.ok) {
+    const j = await resp.json().catch(() => ({}));
+    throw new Error(j.error || 'Download failed');
+  }
+  const blob = await resp.blob();
+  const objUrl = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = objUrl;
+  a.download = filename || 'download';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(objUrl), 1500);
+}
+
 function money(x) {
   const n = Number(x || 0);
   return '$' + n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -211,6 +228,11 @@ function renderPolicies(policies) {
           actions += ` • <a class="link" href="${p.policy_package_url}" target="_blank">Full package (PDF)</a>`;
         }
       }
+      // Stored projection exports (download via authenticated fetch)
+      if (p.projection_pdf_token || p.projection_csv_token) {
+        actions += ` <button class="btn-small" style="margin-left:8px" onclick="window.__dlProj('${String(p.id).replace(/'/g,'')}', 'pdf')">Projection PDF</button>`;
+        actions += ` <button class="btn-small" style="margin-left:8px" onclick="window.__dlProj('${String(p.id).replace(/'/g,'')}', 'csv')">Projection CSV</button>`;
+      }
       // Modular allocation: allow changing savings% (affects future risk/savings split).
       if (['active','billing_pending','billing_review'].includes(st)) {
         actions += ` <button class="btn-small" style="margin-left:8px" onclick="window.__updateAllocation('${String(p.id).replace(/'/g,'')}')">Adjust savings %</button>`;
@@ -229,6 +251,22 @@ function renderPolicies(policies) {
     });
   tbody.innerHTML = rows.join('');
 }
+
+window.__dlProj = async function __dlProj(policyId, fmt) {
+  try {
+    const pols = await loadPolicies();
+    const p = (pols || []).find(x => String(x.id) === String(policyId));
+    if (!p) { alert('Policy not found'); return; }
+    const f = String(fmt || 'pdf').toLowerCase();
+    const tok = f === 'csv' ? p.projection_csv_token : p.projection_pdf_token;
+    if (!tok) { alert('Projection not available yet.'); return; }
+    const url = `/api/media/download?token=${encodeURIComponent(tok)}`;
+    const name = `${String(p.id || 'policy')}_projection.${f === 'csv' ? 'csv' : 'pdf'}`;
+    await downloadWithAuth(url, name);
+  } catch (e) {
+    alert('Download failed.');
+  }
+};
 
 window.__updateAllocation = async function __updateAllocation(policyId) {
   const pct = prompt('New savings percentage (0-99):');

@@ -568,6 +568,139 @@ def _create_policy_terms_csv_bytes(
     return bio.getvalue()
 
 
+def _create_projection_csv_bytes(*, app_id: str, policy: Dict[str, Any], customer: Dict[str, Any] | None, underwriting_app: Dict[str, Any] | None, projection_payload: Dict[str, Any]) -> bytes:
+    try:
+        import csv
+        from io import StringIO
+    except Exception:
+        return b""
+    buf = StringIO()
+    w = csv.writer(buf)
+    w.writerow(["PHINS.ai Savings Projection Export (Compliance)"])
+    w.writerow(["contact", "support@phins.ai"])
+    w.writerow(["generated_utc", datetime.utcnow().isoformat()])
+    w.writerow([])
+    w.writerow(["application_id", app_id])
+    w.writerow(["policy_id", policy.get('id')])
+    w.writerow(["issuance_id", policy.get('issuance_id')])
+    w.writerow(["issued_date", policy.get('issued_date') or policy.get('approval_date')])
+    w.writerow(["nft_token", policy.get('nft_token')])
+    w.writerow([])
+    if isinstance(customer, dict):
+        w.writerow(["customer_id", policy.get('customer_id')])
+        w.writerow(["customer_name", customer.get('name')])
+        w.writerow(["customer_email", customer.get('email')])
+        w.writerow(["customer_phone", customer.get('phone')])
+    w.writerow([])
+    if isinstance(underwriting_app, dict):
+        w.writerow(["underwriting_status", underwriting_app.get('status')])
+        w.writerow(["risk_assessment", underwriting_app.get('risk_assessment')])
+        w.writerow(["decision_date", underwriting_app.get('decision_date')])
+        w.writerow(["approved_by", underwriting_app.get('approved_by')])
+    w.writerow([])
+    inp = projection_payload.get('inputs') or {}
+    w.writerow(["age", inp.get('age'), "years", inp.get('years')])
+    w.writerow(["coverage_amount", inp.get('coverage_amount')])
+    w.writerow(["jurisdiction", inp.get('jurisdiction')])
+    w.writerow(["savings_percentage", inp.get('savings_percentage')])
+    w.writerow(["health_condition_score", inp.get('health_condition_score')])
+    w.writerow(["monthly_total_premium", projection_payload.get('monthly_total_premium')])
+    w.writerow(["monthly_savings_allocation", projection_payload.get('monthly_savings_allocation')])
+    w.writerow([])
+    w.writerow(["scenario", "annual_return_percent", "future_value"])
+    for r in projection_payload.get('projection') or []:
+        w.writerow([r.get('scenario'), r.get('annual_return_percent'), r.get('future_value')])
+    w.writerow([])
+    w.writerow(["Disclaimer", "Projections are estimates and not guarantees. Governed by master insurance conditions and endorsements."])
+    return buf.getvalue().encode("utf-8")
+
+
+def _create_projection_pdf_bytes(*, app_id: str, policy: Dict[str, Any], customer: Dict[str, Any] | None, underwriting_app: Dict[str, Any] | None, projection_payload: Dict[str, Any]) -> bytes:
+    try:
+        from reportlab.lib.pagesizes import letter
+        from reportlab.pdfgen import canvas
+    except Exception:
+        return b""
+    bio = BytesIO()
+    c = canvas.Canvas(bio, pagesize=letter)
+    width, height = letter
+    y = height - 54
+
+    # Logo (best-effort; SVG via svglib)
+    try:
+        logo_path = Path(ROOT) / "assets" / "phins-ai-logo.svg"
+        if logo_path.is_file():
+            from svglib.svglib import svg2rlg  # type: ignore
+            from reportlab.graphics import renderPDF  # type: ignore
+            drawing = svg2rlg(str(logo_path))
+            if drawing:
+                # scale to fit header
+                scale = 52.0 / float(drawing.height or 1.0)
+                drawing.scale(scale, scale)
+                renderPDF.draw(drawing, c, 50, height - 88)
+    except Exception:
+        pass
+
+    def line(txt: str, size: int = 10, bold: bool = False):
+        nonlocal y
+        c.setFont("Helvetica-Bold" if bold else "Helvetica", size)
+        c.drawString(50, y, str(txt)[:140])
+        y -= 14
+        if y < 60:
+            c.showPage()
+            y = height - 54
+
+    line("PHINS.ai — Savings Projection Export (Regulated Policy Attachment)", 13, True)
+    line("Contact: support@phins.ai", 9)
+    line(f"Generated (UTC): {datetime.utcnow().isoformat()}", 9)
+    y -= 6
+
+    line(f"Application ID: {app_id}", 10, True)
+    line(f"Policy ID: {policy.get('id')}", 10)
+    line(f"Issuance ID: {policy.get('issuance_id')}", 10)
+    line(f"Issued date: {policy.get('issued_date') or policy.get('approval_date')}", 10)
+    line(f"NFT token: {policy.get('nft_token')}", 10)
+    y -= 6
+
+    if isinstance(customer, dict):
+        line("Policyholder", 11, True)
+        line(f"Name: {customer.get('name') or '-'}", 10)
+        line(f"Email: {customer.get('email') or '-'}", 10)
+        line(f"Phone: {customer.get('phone') or '-'}", 10)
+        if customer.get('address'):
+            line(f"Address: {str(customer.get('address'))}", 9)
+        y -= 6
+
+    if isinstance(underwriting_app, dict):
+        line("Underwriting", 11, True)
+        line(f"Decision: {underwriting_app.get('status')}", 10)
+        line(f"Risk assessment: {underwriting_app.get('risk_assessment')}", 10)
+        line(f"Decision date: {underwriting_app.get('decision_date')}", 10)
+        y -= 6
+
+    inp = projection_payload.get('inputs') or {}
+    line("Policy & Cash Flow", 11, True)
+    line(f"Coverage: ${float(inp.get('coverage_amount') or 0):,.2f}", 10)
+    line(f"Jurisdiction: {inp.get('jurisdiction')}", 10)
+    line(f"Age: {inp.get('age')}   Term: {inp.get('years')} years", 10)
+    line(f"Savings %: {inp.get('savings_percentage')}   Health score: {inp.get('health_condition_score')}", 10)
+    line(f"Monthly total premium: ${float(projection_payload.get('monthly_total_premium') or 0):,.2f}", 10)
+    line(f"Monthly savings allocation: ${float(projection_payload.get('monthly_savings_allocation') or 0):,.2f}", 10)
+    y -= 6
+
+    line("Projection scenarios (benchmark)", 11, True)
+    for r in projection_payload.get('projection') or []:
+        line(f"- {r.get('scenario')}: {float(r.get('annual_return_percent') or 0):.0f}%/yr  FV=${float(r.get('future_value') or 0):,.2f}", 10)
+
+    y -= 8
+    line("Disclaimer", 11, True)
+    line("Projections are estimates and not guarantees. Governed by master insurance conditions and endorsements.", 9)
+    line("All key actions are recorded in the PHINS.ai ledger (NFT + audit logs).", 9)
+
+    c.showPage()
+    c.save()
+    return bio.getvalue()
+
 def _create_policy_terms_pdf_bytes(
     *,
     policy: Dict[str, Any],
@@ -1357,6 +1490,52 @@ def _approve_underwriting_and_notify(*, uw_id: str, approved_by: str, automated:
                 except Exception:
                     pass
 
+                # Savings projection exports (CSV/PDF) – generated on issuance and stored in client account
+                try:
+                    # Age derived from customer DOB (preferred) else fallback to 30
+                    age = 30
+                    try:
+                        if isinstance(cust, dict) and cust.get('dob'):
+                            a = _calc_age_from_dob(str(cust.get('dob')))
+                            if a is not None:
+                                age = int(a)
+                    except Exception:
+                        age = 30
+                    years = int(policy.get('policy_term_years') or (notes.get('policy_term_years') if isinstance(notes, dict) else 15) or 15)
+                    years = max(1, min(60, years))
+                    proj_payload = _compute_savings_projection_payload(
+                        age=age,
+                        years=years,
+                        policy_type=str(policy.get('type') or 'disability'),
+                        coverage_amount=float(policy.get('coverage_amount') or 100000),
+                        jurisdiction=str(policy.get('jurisdiction') or 'US'),
+                        savings_percentage=policy.get('savings_percentage', 25),
+                        operational_reinsurance_load=policy.get('operational_reinsurance_load', 50),
+                        health_condition_score=policy.get('health_condition_score', 3),
+                    )
+                    proj_csv = _create_projection_csv_bytes(app_id=str(uw_id), policy=policy, customer=cust, underwriting_app=app, projection_payload=proj_payload)
+                    proj_pdf = _create_projection_pdf_bytes(app_id=str(uw_id), policy=policy, customer=cust, underwriting_app=app, projection_payload=proj_payload)
+                    files_to_save = []
+                    if proj_csv:
+                        files_to_save.append({"field": "projection_csv", "filename": f"{policy.get('id','policy')}_projection.csv", "content_type": "text/csv", "data": proj_csv})
+                    if proj_pdf:
+                        files_to_save.append({"field": "projection_pdf", "filename": f"{policy.get('id','policy')}_projection.pdf", "content_type": "application/pdf", "data": proj_pdf})
+                    if files_to_save:
+                        saved_proj = _persist_media_assets(customer_id=customer_id, uw_id=str(uw_id), policy_id=str(policy.get("id")), files=files_to_save)
+                        for doc in saved_proj:
+                            if not isinstance(doc, dict):
+                                continue
+                            if doc.get("field") == "projection_csv":
+                                policy["projection_csv_token"] = doc.get("token")
+                                policy["projection_csv_url"] = doc.get("download_url")
+                                policy["projection_csv_sha256"] = _sha256_hex(proj_csv)
+                            if doc.get("field") == "projection_pdf":
+                                policy["projection_pdf_token"] = doc.get("token")
+                                policy["projection_pdf_url"] = doc.get("download_url")
+                                policy["projection_pdf_sha256"] = _sha256_hex(proj_pdf)
+                except Exception:
+                    pass
+
                 # Issuance ledger record (single source of truth for BI/AI)
                 try:
                     itok = f"ISSUE-{uuid.uuid4().hex}"
@@ -1380,6 +1559,8 @@ def _approve_underwriting_and_notify(*, uw_id: str, approved_by: str, automated:
                             "policy_terms_pdf_sha256": str(policy.get("policy_terms_pdf_sha256") or ""),
                             "policy_package_pdf_sha256": str(policy.get("policy_package_pdf_sha256") or ""),
                             "master_conditions_sha256": (conditions_pdf.get("sha256") if isinstance(conditions_pdf, dict) else None),
+                            "projection_pdf_sha256": str(policy.get("projection_pdf_sha256") or ""),
+                            "projection_csv_sha256": str(policy.get("projection_csv_sha256") or ""),
                             "issued_at": datetime.utcnow().isoformat(),
                         }, default=str),
                         "created_date": datetime.now().isoformat(),
@@ -3716,29 +3897,32 @@ class PortalHandler(BaseHTTPRequestHandler):
                 self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
                 return
 
+            # If already generated and stored on the policy, return those bytes (still through this endpoint).
+            try:
+                if fmt == 'csv' and policy.get('projection_csv_token'):
+                    raw = _read_media_asset_bytes(str(policy.get('projection_csv_token')))
+                    if raw:
+                        self.send_response(200)
+                        self.send_header('Content-Type', 'text/csv; charset=utf-8')
+                        self.send_header('Content-Disposition', f'attachment; filename="phins_projection_{app_id}.csv"')
+                        self.end_headers()
+                        self.wfile.write(raw)
+                        return
+                if fmt == 'pdf' and policy.get('projection_pdf_token'):
+                    raw = _read_media_asset_bytes(str(policy.get('projection_pdf_token')))
+                    if raw:
+                        self.send_response(200)
+                        self.send_header('Content-Type', 'application/pdf')
+                        self.send_header('Content-Disposition', f'attachment; filename="phins_projection_{app_id}.pdf"')
+                        self.end_headers()
+                        self.wfile.write(raw)
+                        return
+            except Exception:
+                pass
+
             file_base = f"phins_projection_{app_id}"
             if fmt == 'csv':
-                import csv
-                from io import StringIO
-                buf = StringIO()
-                w = csv.writer(buf)
-                w.writerow(["PHINS.ai Savings Projection Export"])
-                w.writerow(["application_id", app_id])
-                w.writerow(["policy_id", policy.get('id')])
-                w.writerow(["customer_id", policy.get('customer_id')])
-                w.writerow(["customer_email", (customer.get('email') if isinstance(customer, dict) else '')])
-                w.writerow([])
-                w.writerow(["age", payload['inputs']['age'], "years", payload['inputs']['years']])
-                w.writerow(["coverage_amount", payload['inputs']['coverage_amount']])
-                w.writerow(["jurisdiction", payload['inputs']['jurisdiction']])
-                w.writerow(["savings_percentage", payload['inputs']['savings_percentage']])
-                w.writerow(["monthly_total_premium", payload.get('monthly_total_premium')])
-                w.writerow(["monthly_savings_allocation", payload.get('monthly_savings_allocation')])
-                w.writerow([])
-                w.writerow(["scenario", "annual_return_percent", "future_value"])
-                for r in payload.get('projection') or []:
-                    w.writerow([r.get('scenario'), r.get('annual_return_percent'), r.get('future_value')])
-                raw = buf.getvalue().encode('utf-8')
+                raw = _create_projection_csv_bytes(app_id=app_id, policy=policy, customer=(customer if isinstance(customer, dict) else None), underwriting_app=app, projection_payload=payload)
                 self.send_response(200)
                 self.send_header('Content-Type', 'text/csv; charset=utf-8')
                 self.send_header('Content-Disposition', f'attachment; filename="{file_base}.csv"')
@@ -3747,42 +3931,8 @@ class PortalHandler(BaseHTTPRequestHandler):
                 return
 
             if fmt == 'pdf':
-                # Generate a simple compliance PDF (ReportLab).
                 try:
-                    from io import BytesIO
-                    from reportlab.lib.pagesizes import letter
-                    from reportlab.pdfgen import canvas
-                    bio = BytesIO()
-                    c = canvas.Canvas(bio, pagesize=letter)
-                    width, height = letter
-                    y = height - 50
-                    def line(txt: str):
-                        nonlocal y
-                        c.drawString(50, y, txt[:120])
-                        y -= 14
-                        if y < 60:
-                            c.showPage()
-                            y = height - 50
-                    line("PHINS.ai — Savings Projection Export (Compliance)")
-                    line(f"Application ID: {app_id}")
-                    line(f"Policy ID: {policy.get('id')}")
-                    line(f"Customer ID: {policy.get('customer_id')}")
-                    if isinstance(customer, dict):
-                        line(f"Customer Email: {customer.get('email') or ''}")
-                    line("")
-                    line(f"Age: {payload['inputs']['age']}   Term (years): {payload['inputs']['years']}")
-                    line(f"Coverage: ${float(payload['inputs']['coverage_amount']):,.2f}")
-                    line(f"Jurisdiction: {payload['inputs']['jurisdiction']}")
-                    line(f"Savings %: {payload['inputs']['savings_percentage']}")
-                    line(f"Monthly total premium: ${float(payload.get('monthly_total_premium') or 0):,.2f}")
-                    line(f"Monthly savings allocation: ${float(payload.get('monthly_savings_allocation') or 0):,.2f}")
-                    line("")
-                    line("Scenarios:")
-                    for r in payload.get('projection') or []:
-                        line(f" - {r.get('scenario')}: {float(r.get('annual_return_percent') or 0):.0f}%/yr  FV=${float(r.get('future_value') or 0):,.2f}")
-                    c.showPage()
-                    c.save()
-                    pdf_bytes = bio.getvalue()
+                    pdf_bytes = _create_projection_pdf_bytes(app_id=app_id, policy=policy, customer=(customer if isinstance(customer, dict) else None), underwriting_app=app, projection_payload=payload)
                     self.send_response(200)
                     self.send_header('Content-Type', 'application/pdf')
                     self.send_header('Content-Disposition', f'attachment; filename="{file_base}.pdf"')

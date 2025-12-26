@@ -26,6 +26,32 @@ function esc(s) {
     .replace(/'/g, '&#039;');
 }
 
+window.__exportUwProjection = async function __exportUwProjection(appId, fmt) {
+  try {
+    const f = String(fmt || 'csv').toLowerCase();
+    const resp = await fetch(`/api/admin/underwriting/projection/export?id=${encodeURIComponent(appId)}&format=${encodeURIComponent(f)}`, {
+      headers: { ...getAuthHeaders() },
+    });
+    if (!resp.ok) {
+      const j = await resp.json().catch(() => ({}));
+      alert(j.error || 'Export failed');
+      return;
+    }
+    const blob = await resp.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    const base = `phins_projection_${String(appId).replace(/[^a-zA-Z0-9_-]/g,'')}`;
+    a.download = `${base}.${f === 'pdf' ? 'pdf' : 'csv'}`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1500);
+  } catch (e) {
+    alert('Export failed.');
+  }
+};
+
 async function requireAdmin() {
   const token = getToken();
   if (!token) {
@@ -112,6 +138,8 @@ async function loadPipeline() {
     } catch (_) {}
     await loadPipeline();
     await loadBillingPendingPolicies();
+    // Immediately open details so projections + exports are visible post-approval.
+    try { await view(id); } catch (_) {}
   }
 
   async function reject(id) {
@@ -163,8 +191,8 @@ async function loadPipeline() {
           <div class="card" style="margin-top:12px">
             <div style="font-weight:900">Savings projection (benchmark)</div>
             <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-top:8px">
-              <a class="btn-small" href="/api/admin/underwriting/projection/export?id=${encodeURIComponent(id)}&format=csv" target="_blank">Export CSV</a>
-              <a class="btn-small" href="/api/admin/underwriting/projection/export?id=${encodeURIComponent(id)}&format=pdf" target="_blank">Export PDF</a>
+              <button class="btn-small" onclick="window.__exportUwProjection('${esc(String(id))}','csv')">Export CSV</button>
+              <button class="btn-small" onclick="window.__exportUwProjection('${esc(String(id))}','pdf')">Export PDF</button>
               <div id="${projId}" style="color:var(--muted); margin-left:auto">Loading…</div>
             </div>
           </div>
