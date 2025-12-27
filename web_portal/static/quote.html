@@ -518,8 +518,11 @@
 
         <div class="form-group">
           <label>Family history <span class="required">*</span></label>
-          <textarea id="familyHistory" name="familyHistory" rows="3" maxlength="2000" required placeholder="e.g., heart disease, diabetes, cancer, neurological conditions, age at diagnosis, relation"></textarea>
-          <div class="error" id="familyHistory-error"></div>
+          <div class="radio-group">
+            <label><input type="radio" name="familyHistoryAnswer" value="no" required> No</label>
+            <label><input type="radio" name="familyHistoryAnswer" value="yes"> Yes</label>
+          </div>
+          <div class="error" id="familyHistoryAnswer-error"></div>
         </div>
 
         <div class="form-group" id="conditionsDetailsGroup" style="display: none;">
@@ -529,29 +532,39 @@
         </div>
 
         <div class="form-group">
-          <label>Are you currently taking any medications?</label>
+          <label>Are you currently taking any medications? <span class="required">*</span></label>
           <div class="radio-group">
-            <label><input type="radio" name="medications" value="no"> No</label>
+            <label><input type="radio" name="medications" value="no" required> No</label>
             <label><input type="radio" name="medications" value="yes"> Yes</label>
           </div>
+          <div class="error" id="medications-error"></div>
         </div>
 
         <div class="form-group" id="medicationsDetailsGroup" style="display: none;">
-          <label>Please list your medications</label>
+          <label>Please list your medications <span class="required">*</span></label>
           <textarea id="medicationsDetails" name="medicationsDetails" rows="3" placeholder="List medications and dosages..."></textarea>
+          <div class="error" id="medicationsDetails-error"></div>
         </div>
 
         <div class="form-group">
-          <label>Have you had any surgeries in the past 5 years?</label>
+          <label>Have you had any surgeries in the past 5 years? <span class="required">*</span></label>
           <div class="radio-group">
-            <label><input type="radio" name="surgeries" value="no"> No</label>
+            <label><input type="radio" name="surgeries" value="no" required> No</label>
             <label><input type="radio" name="surgeries" value="yes"> Yes</label>
           </div>
+          <div class="error" id="surgeries-error"></div>
         </div>
 
         <div class="form-group" id="surgeriesDetailsGroup" style="display: none;">
-          <label>Please describe your surgeries</label>
+          <label>Please describe your surgeries <span class="required">*</span></label>
           <textarea id="surgeriesDetails" name="surgeriesDetails" rows="3" placeholder="Describe surgeries and dates..."></textarea>
+          <div class="error" id="surgeriesDetails-error"></div>
+        </div>
+
+        <div class="form-group" id="familyHistoryDetailsGroup" style="display:none;">
+          <label>Please describe family history <span class="required">*</span></label>
+          <textarea id="familyHistoryDetails" name="familyHistoryDetails" rows="3" maxlength="2000" placeholder="e.g., heart disease, diabetes, cancer, neurological conditions, age at diagnosis, relation"></textarea>
+          <div class="error" id="familyHistoryDetails-error"></div>
         </div>
       </div>
 
