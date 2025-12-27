@@ -492,7 +492,6 @@ function setupConditionalFields() {
     if (ppBlock) ppBlock.style.display = (v === 'paypal') ? 'block' : 'none';
     if (cBlock) cBlock.style.display = (v === 'crypto') ? 'block' : 'none';
 
-    setReq(cardNetwork, (v === 'credit_card' || v === 'card'));
     setReq(cardLast4, (v === 'credit_card' || v === 'card'));
     setReq(paypalEmail, v === 'paypal');
     setReq(cryptoNetwork, v === 'crypto');

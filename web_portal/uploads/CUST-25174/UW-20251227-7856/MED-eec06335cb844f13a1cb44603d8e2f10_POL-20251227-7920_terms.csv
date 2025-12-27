@@ -1,0 +1,23 @@
+field,value
+generated_utc,2025-12-27T00:06:25.675408
+underwriting_id,UW-20251227-7856
+policy_id,POL-20251227-7920
+policy_status,active
+policy_type,disability
+jurisdiction,US
+coverage_amount,100000
+annual_premium,2902.5
+monthly_premium,241.88
+savings_percentage,50
+customer_id,CUST-25174
+customer_name,Pipeline Tester
+customer_email,pipeline.tester@example.com
+policy_nft_token,NFT-POL-20251227-7920-ISS-96f0f3e2ab5c
+first_premium_due_date,2026-01-26T00:06:25.639833
+application_snapshot_sha256,3b04807d15f03c5f7452e3450e375c8db4cf58c49dac6b14e5045a05dbf485d0
+pricing_snapshot_sha256,425cc0f1b8a65e15c3494bb1619e1e36f8544fba60f470c94746fcbb8347f5b4
+terms_version,template
+term_1,- This document is an electronically generated record for underwriting and compliance.
+term_2,- Coverage activates upon underwriting approval (policy issuance).
+term_3,"- Health risk loading applies ONLY to the risk cover portion, per PHINS underwriting rules."
+term_4,- All actions are logged to an internal ledger (audit log + token registry).

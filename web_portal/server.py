@@ -1169,8 +1169,10 @@ def _validate_application_billing_profile(*, profile: Dict[str, Any], is_draft: 
     if method == "credit_card":
         network = str(details.get("card_network") or "").strip().lower()
         last4 = str(details.get("card_last4") or "").strip()
-        if network not in ("visa", "mastercard", "amex", "discover", "diners", "jcb", "unionpay"):
-            return False, "Card network is required (Visa/Mastercard/Amex/etc).", {"score": 50, "severity": "high", "reasons": ["missing_or_unknown_card_network"]}
+        # Network is helpful but optional (avoid blocking the funnel); score it instead.
+        if network and network not in ("visa", "mastercard", "amex", "discover", "diners", "jcb", "unionpay"):
+            score += 10
+            reasons.append("unknown_card_network")
         if not last4.isdigit() or len(last4) != 4:
             return False, "Card last 4 digits are required.", {"score": 50, "severity": "high", "reasons": ["invalid_card_last4"]}
     elif method == "paypal":
