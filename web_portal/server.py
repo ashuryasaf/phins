@@ -906,6 +906,126 @@ class PortalHandler(BaseHTTPRequestHandler):
             self._set_json_headers()
             self.wfile.write(json.dumps(get_bi_data_accounting()).encode('utf-8'))
             return
+        
+        # Financial Reporting Endpoints
+        if path == '/api/financial/portfolio-report':
+            if not require_role(session, ['admin', 'accountant']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Unauthorized'}).encode('utf-8'))
+                return
+            try:
+                from services.financial_reporting_service import FinancialReportingService
+                svc = FinancialReportingService(POLICIES, CLAIMS, BILLING, CUSTOMERS, UNDERWRITING_APPLICATIONS)
+                report = svc.generate_portfolio_report()
+                self._set_json_headers()
+                self.wfile.write(json.dumps(report).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+        
+        if path == '/api/financial/forecast':
+            if not require_role(session, ['admin', 'accountant']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Unauthorized'}).encode('utf-8'))
+                return
+            try:
+                years = int(qs.get('years', [25])[0])
+                from services.financial_reporting_service import FinancialReportingService
+                svc = FinancialReportingService(POLICIES, CLAIMS, BILLING, CUSTOMERS, UNDERWRITING_APPLICATIONS)
+                report = svc.generate_forecast_report(years=years)
+                self._set_json_headers()
+                self.wfile.write(json.dumps(report).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+        
+        if path == '/api/financial/customer-projection':
+            if not require_role(session, ['admin', 'accountant', 'underwriter', 'customer']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Unauthorized'}).encode('utf-8'))
+                return
+            try:
+                # Get parameters from query string with defaults
+                coverage = float(qs.get('coverage', [250000])[0])
+                savings_pct = float(qs.get('savings_pct', [0.50])[0])
+                adl_level = int(qs.get('adl_level', [5])[0])
+                term_years = int(qs.get('term_years', [25])[0])
+                age = int(qs.get('age', [35])[0])
+                customer_id = qs.get('customer_id', [None])[0]
+                
+                from services.financial_reporting_service import FinancialReportingService
+                svc = FinancialReportingService(POLICIES, CLAIMS, BILLING, CUSTOMERS, UNDERWRITING_APPLICATIONS)
+                report = svc.generate_customer_projection(
+                    customer_id=customer_id,
+                    coverage=coverage,
+                    savings_pct=savings_pct,
+                    adl_level=adl_level,
+                    term_years=term_years,
+                    age=age
+                )
+                self._set_json_headers()
+                self.wfile.write(json.dumps(report).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+        
+        if path == '/api/financial/data-integrity':
+            if not require_role(session, ['admin', 'accountant']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Unauthorized'}).encode('utf-8'))
+                return
+            try:
+                from services.financial_reporting_service import FinancialReportingService
+                svc = FinancialReportingService(POLICIES, CLAIMS, BILLING, CUSTOMERS, UNDERWRITING_APPLICATIONS)
+                report = svc.validate_data_integrity()
+                self._set_json_headers()
+                self.wfile.write(json.dumps(report).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+        
+        if path == '/api/financial/dashboard-summary':
+            if not require_role(session, ['admin', 'accountant', 'underwriter', 'claims', 'customer']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Unauthorized'}).encode('utf-8'))
+                return
+            try:
+                dashboard_type = qs.get('type', ['accountant'])[0]
+                from services.financial_reporting_service import FinancialReportingService
+                svc = FinancialReportingService(POLICIES, CLAIMS, BILLING, CUSTOMERS, UNDERWRITING_APPLICATIONS)
+                report = svc.get_dashboard_summary(dashboard_type)
+                self._set_json_headers()
+                self.wfile.write(json.dumps(report).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+        
+        if path == '/api/financial/premium-calculator':
+            if not require_role(session, ['admin', 'accountant', 'underwriter', 'customer']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Unauthorized'}).encode('utf-8'))
+                return
+            try:
+                coverage = float(qs.get('coverage', [250000])[0])
+                age = int(qs.get('age', [35])[0])
+                adl_level = int(qs.get('adl_level', [5])[0])
+                savings_pct = float(qs.get('savings_pct', [0.50])[0])
+                term_years = int(qs.get('term_years', [25])[0])
+                
+                from services.financial_reporting_service import FinancialReportingService
+                svc = FinancialReportingService(POLICIES, CLAIMS, BILLING, CUSTOMERS, UNDERWRITING_APPLICATIONS)
+                premium = svc.calculate_premium(coverage, age, adl_level, savings_pct, term_years)
+                self._set_json_headers()
+                self.wfile.write(json.dumps(premium).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
 
         # Platform Metrics Endpoint (for dashboards)
         if path == '/api/metrics':
