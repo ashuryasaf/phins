@@ -418,7 +418,10 @@ class TokenRegistry(Base):
     contract_address = Column(String(200), nullable=True)  # for tokens/NFTs (optional)
     decimals = Column(Integer, nullable=True)
     enabled = Column(Boolean, default=True, nullable=False, index=True)
-    metadata = Column(Text, nullable=True)  # JSON string
+    # NOTE: "metadata" is a reserved attribute name in SQLAlchemy's Declarative API.
+    # Keep the DB column name as "metadata" for compatibility, but map it to a safe
+    # Python attribute name.
+    metadata_json = Column("metadata", Text, nullable=True)  # JSON string
     classification = Column(String(50), default=DataClassification.INTERNAL.value, nullable=False, index=True)
     created_by = Column(String(100), index=True)
     created_date = Column(DateTime, default=datetime.utcnow, nullable=False)
@@ -433,7 +436,7 @@ class TokenRegistry(Base):
             "contract_address": self.contract_address,
             "decimals": self.decimals,
             "enabled": self.enabled,
-            "metadata": self.metadata,
+            "metadata": self.metadata_json,
             "classification": self.classification,
             "created_by": self.created_by,
             "created_date": self.created_date.isoformat() if self.created_date else None,

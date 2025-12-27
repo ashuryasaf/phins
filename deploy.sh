@@ -28,7 +28,7 @@ case $choice in
     read -p "Press Enter to open Railway in browser..."
     $BROWSER "https://railway.app/new" 2>/dev/null || echo "Please visit: https://railway.app/new"
     ;;
-  3)
+  2)
     echo ""
     echo "🐳 Docker Deployment"
     echo "-------------------"
