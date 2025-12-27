@@ -34,7 +34,8 @@ document.addEventListener('DOMContentLoaded', function () {
             if (role === 'admin') {
               window.location.href = '/admin-portal.html';
             } else if (role === 'customer') {
-              window.location.href = '/dashboard.html';
+              // Primary customer portal page
+              window.location.href = '/client-portal.html';
             } else if (role === 'underwriter') {
               window.location.href = '/underwriter-dashboard.html';
             } else if (role === 'claims' || role === 'claims_adjuster') {

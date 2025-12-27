@@ -65,28 +65,44 @@ def seed_default_users(session=None):
         ]
         
         for user_data in default_users:
-            # Check if user already exists
+            # Hash password (always reset to known defaults)
+            password_hash = hash_password(user_data['password'])
+
             existing_user = user_repo.get_by_username(user_data['username'])
             if existing_user:
-                logger.info(f"User '{user_data['username']}' already exists, skipping...")
-                continue
-            
-            # Hash password
-            password_hash = hash_password(user_data['password'])
-            
-            # Create user
-            user_repo.create(
-                username=user_data['username'],
-                password_hash=password_hash['hash'],
-                password_salt=password_hash['salt'],
-                role=user_data['role'],
-                name=user_data['name'],
-                email=user_data['email'],
-                active=True
-            )
-            logger.info(f"Created user: {user_data['username']} (Role: {user_data['role']})")
+                # Update existing user to the default credential set.
+                user_repo.update(
+                    user_data['username'],
+                    password_hash=password_hash['hash'],
+                    password_salt=password_hash['salt'],
+                    role=user_data['role'],
+                    name=user_data['name'],
+                    email=user_data['email'],
+                    active=True
+                )
+                logger.info(f"Updated user: {user_data['username']} (Role: {user_data['role']})")
+            else:
+                user_repo.create(
+                    username=user_data['username'],
+                    password_hash=password_hash['hash'],
+                    password_salt=password_hash['salt'],
+                    role=user_data['role'],
+                    name=user_data['name'],
+                    email=user_data['email'],
+                    active=True
+                )
+                logger.info(f"Created user: {user_data['username']} (Role: {user_data['role']})")
         
         logger.info("Default users seeded successfully")
+
+        # If the lightweight portal server is running in-memory (common in tests),
+        # ensure its demo credentials are also reset to the defaults.
+        try:  # pragma: no cover
+            import web_portal.server as portal
+            if hasattr(portal, "reset_demo_users"):
+                portal.reset_demo_users()
+        except Exception:
+            pass
         
     except Exception as e:
         logger.error(f"Error seeding users: {e}")
