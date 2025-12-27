@@ -13,6 +13,10 @@ This comprehensive test suite validates all 6 core features implemented in PR #4
 Generates detailed HTML and JSON reports.
 """
 
+# This file is a standalone integration runner (see TEST_SUITE_README.md).
+# Prevent pytest from collecting it as a test module.
+__test__ = False
+
 import json
 import sys
 import time
@@ -50,6 +54,9 @@ except ImportError:
 # Configuration
 BASE_URL = os.environ.get('TEST_BASE_URL', 'http://localhost:8000')
 TEST_TIMEOUT = 10
+
+# When true, tests must not make HTTP calls.
+NO_SERVER_TESTS = False
 
 # Test results storage
 test_results = []
@@ -579,14 +586,33 @@ def test_default_users_exist():
         # Seed default users
         seed_default_users()
         
-        # Verify users exist by attempting login
+        # In no-server mode, verify users exist directly in the database.
+        if NO_SERVER_TESTS:
+            session = get_db_session()
+            try:
+                from database.repositories import UserRepository
+                user_repo = UserRepository(session)
+                for username in ['admin', 'underwriter', 'claims_adjuster', 'accountant']:
+                    u = user_repo.get_by_username(username)
+                    assert u is not None, f"Missing seeded user: {username}"
+                    assert getattr(u, 'active', True), f"Seeded user not active: {username}"
+            finally:
+                session.close()
+            return
+
+        # Otherwise, verify users exist by attempting login (requires server).
         if HAS_REQUESTS:
-            response = requests.post(
-                f'{BASE_URL}/api/login',
-                json={'username': 'admin', 'password': 'admin123'},
-                timeout=TEST_TIMEOUT
-            )
-            assert response.status_code == 200, "Admin user not found or password incorrect"
+            # Note: Earlier tests may change the admin password.
+            # Accept either the default password or a newly set one.
+            for pwd in ['admin123', 'newpass123']:
+                response = requests.post(
+                    f'{BASE_URL}/api/login',
+                    json={'username': 'admin', 'password': pwd},
+                    timeout=TEST_TIMEOUT
+                )
+                if response.status_code == 200:
+                    return
+            raise AssertionError("Admin user not found or password incorrect")
     except Exception as e:
         raise AssertionError(f"Failed to verify default users: {str(e)}")
 
@@ -1028,6 +1054,7 @@ def generate_html_report(filename='test_report.html'):
 
 def main():
     global start_time
+    global NO_SERVER_TESTS
     start_time = time.time()
     
     parser = argparse.ArgumentParser(description='PHINS PR #4 Complete Test Suite')
@@ -1097,6 +1124,7 @@ def main():
     
     # Skip server tests if requested
     if args.no_server_tests:
+        NO_SERVER_TESTS = True
         server_categories = ['routing', 'rbac', 'password', 'forms', 'integration', 'api']
         all_tests = [t for t in all_tests if t[1] not in server_categories]
         print("Skipping server-dependent tests\n")

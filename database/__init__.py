@@ -10,6 +10,7 @@ from sqlalchemy.orm import sessionmaker, scoped_session, Session
 from sqlalchemy.pool import Pool
 from typing import Optional
 import logging
+import os
 
 from .config import DatabaseConfig
 from .models import Base
@@ -89,6 +90,22 @@ def init_database(drop_existing: bool = False):
     Args:
         drop_existing: If True, drop all existing tables before creating (USE WITH CAUTION)
     """
+    # In pytest runs, ensure the SQLite test database starts clean.
+    # Tests set USE_SQLITE=1 and SQLITE_PATH=/tmp/test_phins_pytest.db.
+    if os.environ.get("PYTEST_CURRENT_TEST") and DatabaseConfig.is_sqlite():
+        sqlite_path = os.environ.get("SQLITE_PATH")
+        if sqlite_path and "test_phins_pytest" in sqlite_path:
+            try:
+                close_database()
+            except Exception:
+                pass
+            try:
+                if os.path.exists(sqlite_path):
+                    os.remove(sqlite_path)
+            except Exception:
+                # Best-effort cleanup; schema creation below will still run.
+                pass
+
     engine = get_engine()
     
     if drop_existing:

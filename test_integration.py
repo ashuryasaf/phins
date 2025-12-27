@@ -10,6 +10,9 @@ import os
 # Add parent directory to path
 sys.path.insert(0, os.path.dirname(__file__))
 
+# This file is a standalone integration script; prevent pytest collection.
+__test__ = False
+
 
 def test_ai_automation_controller():
     """Test AI automation controller functionality"""

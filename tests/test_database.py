@@ -7,7 +7,7 @@ Tests the database layer, repositories, and integration with the server.
 import os
 import sys
 import pytest
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 # Set up path
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
@@ -256,7 +256,7 @@ def test_database_dict_interface():
         'id': 'TEST-CUST-400',
         'name': 'Dict Test',
         'email': 'dict@test.com',
-        'created_date': datetime.utcnow().isoformat()
+        'created_date': datetime.now(timezone.utc).isoformat()
     }
     
     # Get item

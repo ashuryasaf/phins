@@ -1,7 +1,7 @@
 """Session Repository"""
 
 from typing import Optional, List
-from datetime import datetime
+from datetime import datetime, timezone
 from sqlalchemy.orm import Session as DBSession
 from database.models import Session
 from .base import BaseRepository
@@ -37,7 +37,7 @@ class SessionRepository(BaseRepository[Session]):
         DatabaseManager's session_scope() context manager.
         """
         try:
-            now = datetime.utcnow()
+            now = datetime.now(timezone.utc)
             count = self.session.query(Session).filter(Session.expires < now).delete()
             self.session.commit()
             return count
@@ -49,7 +49,7 @@ class SessionRepository(BaseRepository[Session]):
     def get_active_sessions(self, username: Optional[str] = None) -> List[Session]:
         """Get all active (non-expired) sessions, optionally filtered by username"""
         try:
-            now = datetime.utcnow()
+            now = datetime.now(timezone.utc)
             query = self.session.query(Session).filter(Session.expires > now)
             if username:
                 query = query.filter(Session.username == username)

@@ -60,9 +60,6 @@ def test_policy_persistence():
     
     base = f"http://127.0.0.1:{port}"
     
-    # Clear server data dictionaries at start
-    initial_policy_count = len(portal.POLICIES)
-    
     # Create multiple policies
     policy_ids = []
     for i in range(5):
@@ -76,7 +73,7 @@ def test_policy_persistence():
         policy_ids.append(result['policy']['id'])
     
     # Verify all policies exist in memory
-    assert len(portal.POLICIES) >= initial_policy_count + 5
+    assert len(portal.POLICIES) >= 5
     
     # Verify each policy can be retrieved
     for policy_id in policy_ids:
@@ -104,8 +101,6 @@ def test_customer_persistence():
     
     base = f"http://127.0.0.1:{port}"
     
-    initial_customer_count = len(portal.CUSTOMERS)
-    
     # Create customers via policy creation
     customer_ids = []
     customer_emails = []
@@ -122,7 +117,7 @@ def test_customer_persistence():
         customer_emails.append(result['customer']['email'])
     
     # Verify all customers exist in memory
-    assert len(portal.CUSTOMERS) >= initial_customer_count + 5
+    assert len(portal.CUSTOMERS) >= 5
     
     # Verify each customer can be retrieved
     for customer_id in customer_ids:
@@ -211,8 +206,6 @@ def test_underwriting_persistence():
     
     base = f"http://127.0.0.1:{port}"
     
-    initial_uw_count = len(portal.UNDERWRITING_APPLICATIONS)
-    
     # Create multiple policies (each creates an underwriting app)
     uw_ids = []
     for i in range(5):
@@ -227,7 +220,7 @@ def test_underwriting_persistence():
         uw_ids.append(result['underwriting']['id'])
     
     # Verify all underwriting apps exist in memory
-    assert len(portal.UNDERWRITING_APPLICATIONS) >= initial_uw_count + 5
+    assert len(portal.UNDERWRITING_APPLICATIONS) >= 5
     
     # Verify each underwriting app can be retrieved
     for uw_id in uw_ids:

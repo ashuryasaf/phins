@@ -11,7 +11,7 @@ document.addEventListener('DOMContentLoaded', () => {
     setupEventListeners();
 });
 
-function checkAuth() {
+async function checkAuth() {
     // Check admin-portal specific token
     let token = localStorage.getItem('phins_admin_token');
     let userData = localStorage.getItem('phins_admin_user');
@@ -20,11 +20,25 @@ function checkAuth() {
     if (!token) {
         token = localStorage.getItem('phins_token');
         const username = sessionStorage.getItem('username');
-        
-        if (token && username) {
-            // User is authenticated in main system, auto-login to admin portal
+
+        if (token) {
+            // User is authenticated in main system, auto-login to admin portal.
+            // Prefer username from sessionStorage, but fall back to API profile if absent.
             authToken = token;
-            currentUser = {name: username, role: 'admin'};
+
+            let name = username;
+            let role = 'admin';
+            if (!name) {
+                try {
+                    const prof = await fetch(`${API_BASE}/api/profile`, {headers: {'Authorization': `Bearer ${token}`} }).then(r => r.json());
+                    name = prof?.name || prof?.username || prof?.email || 'Admin';
+                    role = String(prof?.role || 'admin').toLowerCase();
+                } catch {
+                    name = 'Admin';
+                }
+            }
+
+            currentUser = {name, role};
             localStorage.setItem('phins_admin_token', authToken);
             localStorage.setItem('phins_admin_user', JSON.stringify(currentUser));
             showDashboard();
@@ -32,13 +46,27 @@ function checkAuth() {
         }
     }
     
-    if (token && userData) {
+    if (token) {
         authToken = token;
-        currentUser = JSON.parse(userData);
-        showDashboard();
-    } else {
-        showLogin();
+        if (userData) {
+            currentUser = JSON.parse(userData);
+            showDashboard();
+            return;
+        }
+
+        // Token exists but user data missing: attempt to hydrate from profile.
+        try {
+            const prof = await fetch(`${API_BASE}/api/profile`, {headers: getAuthHeaders()}).then(r => r.json());
+            currentUser = {name: prof?.name || prof?.username || prof?.email || 'Admin', role: String(prof?.role || 'admin').toLowerCase()};
+            localStorage.setItem('phins_admin_user', JSON.stringify(currentUser));
+            showDashboard();
+            return;
+        } catch {
+            // Fall through to login screen if we can't hydrate identity.
+        }
     }
+
+    showLogin();
 }
 
 function showLogin() {
