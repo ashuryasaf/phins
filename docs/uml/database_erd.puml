@@ -1,0 +1,195 @@
+@startuml
+title PHINS Platform — DBA ERD Sketch (Current SQLAlchemy Models)
+
+hide circle
+skinparam shadowing false
+skinparam linetype ortho
+skinparam dpi 140
+
+legend left
+  Notes:
+  - Some relationships exist in application logic but are not enforced by FK constraints
+    (e.g., underwriting_applications.policy_id, bills.policy_id, sessions.username).
+  - Only core enforced FKs in current schema:
+    policies.customer_id -> customers.id
+    claims.policy_id -> policies.id
+    claims.customer_id -> customers.id
+endlegend
+
+entity "customers" as customers {
+  *id : varchar(50) <<PK>>
+  --
+  email : varchar(254) <<UQ>>
+  name : varchar(200)
+  first_name : varchar(100)
+  last_name : varchar(100)
+  phone : varchar(20)
+  dob : varchar(20)
+  age : int
+  gender : varchar(20)
+  address : text
+  city : varchar(100)
+  state : varchar(100)
+  zip : varchar(20)
+  occupation : varchar(100)
+  created_date : datetime
+  updated_date : datetime
+}
+
+entity "policies" as policies {
+  *id : varchar(50) <<PK>>
+  --
+  customer_id : varchar(50) <<FK>>
+  type : varchar(50)
+  coverage_amount : float
+  annual_premium : float
+  monthly_premium : float
+  quarterly_premium : float
+  status : varchar(50)
+  underwriting_id : varchar(50)
+  risk_score : varchar(20)
+  uw_status : varchar(50)
+  start_date : datetime
+  end_date : datetime
+  approval_date : datetime
+  created_date : datetime
+  updated_date : datetime
+}
+
+entity "claims" as claims {
+  *id : varchar(50) <<PK>>
+  --
+  policy_id : varchar(50) <<FK>>
+  customer_id : varchar(50) <<FK>>
+  type : varchar(50)
+  description : text
+  claimed_amount : float
+  approved_amount : float
+  status : varchar(50)
+  filed_date : datetime
+  approval_date : datetime
+  payment_date : datetime
+  rejection_reason : text
+  created_date : datetime
+  updated_date : datetime
+}
+
+entity "underwriting_applications" as underwriting_applications {
+  *id : varchar(50) <<PK>>
+  --
+  policy_id : varchar(50) <<(app link)>>
+  customer_id : varchar(50) <<(app link)>>
+  status : varchar(50)
+  risk_assessment : varchar(20)
+  medical_exam_required : boolean
+  additional_documents_required : boolean
+  notes : text
+  submitted_date : datetime
+  decision_date : datetime
+  decided_by : varchar(100)
+  created_date : datetime
+  updated_date : datetime
+}
+
+entity "bills" as bills {
+  *id : varchar(50) <<PK>>
+  --
+  policy_id : varchar(50) <<(app link)>>
+  customer_id : varchar(50) <<(app link)>>
+  amount : float
+  amount_paid : float
+  status : varchar(50)
+  due_date : datetime
+  paid_date : datetime
+  payment_method : varchar(50)
+  transaction_id : varchar(100)
+  late_fee : float
+  created_date : datetime
+  updated_date : datetime
+}
+
+entity "users" as users {
+  *username : varchar(100) <<PK>>
+  --
+  password_hash : varchar(255)
+  password_salt : varchar(255)
+  role : varchar(50)
+  name : varchar(200)
+  email : varchar(254)
+  active : boolean
+  created_date : datetime
+  last_login : datetime
+}
+
+entity "sessions" as sessions {
+  *token : varchar(100) <<PK>>
+  --
+  username : varchar(100) <<(app link)>>
+  customer_id : varchar(50) <<(app link)>>
+  ip_address : varchar(45)
+  expires : datetime
+  created_date : datetime
+}
+
+entity "audit_logs" as audit_logs {
+  *id : int <<PK>>
+  --
+  timestamp : datetime
+  username : varchar(100) <<(app link)>>
+  customer_id : varchar(50) <<(app link)>>
+  action : varchar(100)
+  entity_type : varchar(50)
+  entity_id : varchar(50)
+  details : text
+  ip_address : varchar(45)
+  success : boolean
+}
+
+entity "actuarial_tables" as actuarial_tables {
+  *id : varchar(50) <<PK>>
+  --
+  name : varchar(200)
+  table_type : varchar(100)
+  version : varchar(50)
+  effective_date : datetime
+  payload : text  <<encrypted VaultBlob JSON>>
+  classification : varchar(50)
+  created_by : varchar(100)
+  created_date : datetime
+}
+
+entity "token_registry" as token_registry {
+  *id : varchar(50) <<PK>>
+  --
+  symbol : varchar(50)
+  name : varchar(200)
+  asset_type : varchar(50)
+  chain : varchar(50)
+  contract_address : varchar(200)
+  decimals : int
+  enabled : boolean
+  metadata : text
+  classification : varchar(50)
+  created_by : varchar(100)
+  created_date : datetime
+}
+
+' Enforced FKs
+customers ||--o{ policies : customer_id
+policies  ||--o{ claims   : policy_id
+customers ||--o{ claims   : customer_id
+
+' Application-level links (not enforced)
+customers ||..o{ underwriting_applications : customer_id (app)
+policies  ||..o{ underwriting_applications : policy_id (app)
+customers ||..o{ bills : customer_id (app)
+policies  ||..o{ bills : policy_id (app)
+
+users ||..o{ sessions : username (app)
+customers ||..o{ sessions : customer_id (app)
+
+users ||..o{ audit_logs : username (app)
+customers ||..o{ audit_logs : customer_id (app)
+
+@enduml
+
