@@ -53,7 +53,15 @@ class BillStatus(str, enum.Enum):
 
 
 class Customer(Base):
-    """Customer master table"""
+    """
+    Customer master table (unified entity for policyholders)
+    
+    ARCHITECTURE NOTE:
+    - Customers are policyholders who interact via the client portal
+    - Users (separate table) are internal staff (admin, underwriter, claims, accountant)
+    - Customer includes auth fields for direct portal authentication
+    - This eliminates the need for dual Customer+User records for policyholders
+    """
     __tablename__ = 'customers'
     
     id = Column(String(50), primary_key=True)
@@ -70,6 +78,14 @@ class Customer(Base):
     state = Column(String(100))
     zip = Column(String(20))
     occupation = Column(String(100))
+    
+    # Authentication fields (unified - no separate User record needed for customers)
+    password_hash = Column(String(255), nullable=True)  # Nullable for legacy/migration
+    password_salt = Column(String(255), nullable=True)
+    portal_active = Column(Boolean, default=True)  # Can login to customer portal
+    last_login = Column(DateTime, nullable=True)
+    
+    # Timestamps
     created_date = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_date = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
@@ -77,9 +93,9 @@ class Customer(Base):
     policies = relationship("Policy", back_populates="customer", cascade="all, delete-orphan")
     claims = relationship("Claim", back_populates="customer", cascade="all, delete-orphan")
     
-    def to_dict(self):
+    def to_dict(self, include_auth: bool = False):
         """Convert model to dictionary"""
-        return {
+        data = {
             'id': self.id,
             'name': self.name,
             'first_name': self.first_name,
@@ -94,9 +110,20 @@ class Customer(Base):
             'state': self.state,
             'zip': self.zip,
             'occupation': self.occupation,
+            'portal_active': self.portal_active,
+            'last_login': self.last_login.isoformat() if self.last_login else None,
             'created_date': self.created_date.isoformat() if self.created_date else None,
             'updated_date': self.updated_date.isoformat() if self.updated_date else None
         }
+        # Only include auth fields if explicitly requested (internal use)
+        if include_auth:
+            data['password_hash'] = self.password_hash
+            data['password_salt'] = self.password_salt
+        return data
+    
+    def has_portal_access(self) -> bool:
+        """Check if customer has portal login configured"""
+        return bool(self.password_hash and self.password_salt and self.portal_active)
 
 
 class Policy(Base):
@@ -266,18 +293,37 @@ class Bill(Base):
 
 
 class User(Base):
-    """User accounts table (for staff/admin access)"""
+    """
+    User accounts table (INTERNAL STAFF ONLY)
+    
+    ARCHITECTURE NOTE:
+    - Users are INTERNAL STAFF: admin, underwriter, claims_adjuster, accountant
+    - Customers (policyholders) use the Customer table with embedded auth
+    - This separation ensures clean role boundaries:
+      * Staff → User table → Admin portal
+      * Customers → Customer table → Client portal
+    
+    VALID ROLES:
+    - admin: Full system access
+    - underwriter: Review/approve applications
+    - claims_adjuster: Process claims
+    - accountant: Billing and payments
+    """
     __tablename__ = 'users'
     
     username = Column(String(100), primary_key=True)
     password_hash = Column(String(255), nullable=False)
     password_salt = Column(String(255), nullable=False)
-    role = Column(String(50), nullable=False)  # admin, underwriter, claims, accountant, etc.
+    role = Column(String(50), nullable=False)  # admin, underwriter, claims_adjuster, accountant
     name = Column(String(200))
     email = Column(String(254))
     active = Column(Boolean, default=True)
     created_date = Column(DateTime, default=datetime.utcnow, nullable=False)
     last_login = Column(DateTime)
+    
+    # Staff-specific fields
+    department = Column(String(100), nullable=True)
+    employee_id = Column(String(50), nullable=True)
     
     def to_dict(self):
         """Convert model to dictionary (without sensitive fields)"""
@@ -287,9 +333,15 @@ class User(Base):
             'name': self.name,
             'email': self.email,
             'active': self.active,
+            'department': self.department,
+            'employee_id': self.employee_id,
             'created_date': self.created_date.isoformat() if self.created_date else None,
             'last_login': self.last_login.isoformat() if self.last_login else None
         }
+    
+    def is_staff(self) -> bool:
+        """Check if user is internal staff"""
+        return self.role in ('admin', 'underwriter', 'claims_adjuster', 'accountant')
 
 
 class Session(Base):
@@ -418,7 +470,7 @@ class TokenRegistry(Base):
     contract_address = Column(String(200), nullable=True)  # for tokens/NFTs (optional)
     decimals = Column(Integer, nullable=True)
     enabled = Column(Boolean, default=True, nullable=False, index=True)
-    metadata = Column(Text, nullable=True)  # JSON string
+    token_metadata = Column(Text, nullable=True)  # JSON string (renamed from 'metadata' - reserved in SQLAlchemy)
     classification = Column(String(50), default=DataClassification.INTERNAL.value, nullable=False, index=True)
     created_by = Column(String(100), index=True)
     created_date = Column(DateTime, default=datetime.utcnow, nullable=False)
@@ -433,7 +485,7 @@ class TokenRegistry(Base):
             "contract_address": self.contract_address,
             "decimals": self.decimals,
             "enabled": self.enabled,
-            "metadata": self.metadata,
+            "token_metadata": self.token_metadata,
             "classification": self.classification,
             "created_by": self.created_by,
             "created_date": self.created_date.isoformat() if self.created_date else None,

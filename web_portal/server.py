@@ -34,8 +34,9 @@ except ImportError:
     billing_enabled = False
     print("Warning: Billing engine not available. Payment features disabled.")
 
-# Database support (optional, falls back to in-memory)
-USE_DATABASE = os.environ.get('USE_DATABASE', '').lower() in ('true', '1', 'yes')
+# Database support - ENABLED BY DEFAULT for data persistence
+# Set USE_DATABASE=false to use volatile in-memory storage (not recommended)
+USE_DATABASE = os.environ.get('USE_DATABASE', 'true').lower() not in ('false', '0', 'no')
 database_enabled = False
 
 if USE_DATABASE:
@@ -51,11 +52,14 @@ if USE_DATABASE:
         from database.data_access import USERS_DB as DB_USERS
         
         database_enabled = True
-        print("✓ Database support enabled")
+        print("✓ Database persistence enabled (data will survive restarts)")
     except ImportError as e:
         print(f"Warning: Database support not available: {e}")
-        print("         Falling back to in-memory storage")
+        print("         Falling back to in-memory storage (DATA WILL BE LOST ON RESTART)")
         USE_DATABASE = False
+else:
+    print("⚠️  WARNING: Running in volatile in-memory mode (USE_DATABASE=false)")
+    print("   Data will be LOST when server restarts. Set USE_DATABASE=true for persistence.")
 
 PORT = 8000
 ROOT = os.path.join(os.path.dirname(__file__), "static")
@@ -82,6 +86,31 @@ try:
     audit = AuditService()
 except Exception:
     audit = None
+
+# Pipeline service for automatic workflow progression
+pipeline_service = None
+try:
+    from services.pipeline_service import PipelineService
+    pipeline_enabled = True
+except ImportError:
+    pipeline_enabled = False
+    print("Warning: Pipeline service not available")
+
+# Initialize pipeline service with data stores
+def _init_pipeline():
+    global pipeline_service
+    if pipeline_enabled and pipeline_service is None:
+        pipeline_service = PipelineService(
+            customers=CUSTOMERS,
+            policies=POLICIES,
+            underwriting=UNDERWRITING_APPLICATIONS,
+            billing=BILLING,
+            claims=CLAIMS,
+            audit_service=audit
+        )
+        print("✓ Pipeline service initialized (auto-workflow enabled)")
+
+_init_pipeline()
 
 # Optional: admin datasets (actuarial tables) and market data (crypto/index)
 try:
