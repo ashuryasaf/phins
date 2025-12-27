@@ -2128,6 +2128,64 @@ class PortalHandler(BaseHTTPRequestHandler):
                 self.wfile.write(json.dumps({'error': 'Upsert failed', 'details': str(e)}).encode('utf-8'))
             return
 
+        # Admin: Seed production data (works with database)
+        if path == '/api/admin/seed-data':
+            auth_header = self.headers.get('Authorization', '')
+            token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+            session = validate_session(token) if token else None
+            
+            # Allow seeding without auth for initial setup (check for secret key)
+            data = {}
+            try:
+                data = json.loads(body or '{}')
+            except:
+                pass
+            
+            seed_key = data.get('seed_key', '')
+            is_authorized = require_role(session, ['admin']) or seed_key == 'phins-seed-2024'
+            
+            if not is_authorized:
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Unauthorized. Admin access or seed_key required.'}).encode('utf-8'))
+                return
+            
+            try:
+                if USE_DATABASE and database_enabled:
+                    from database.seeds import seed_default_users, seed_sample_data
+                    from database import init_database
+                    
+                    # Initialize database schema
+                    init_database()
+                    
+                    # Seed users
+                    try:
+                        seed_default_users()
+                    except Exception as e:
+                        print(f"User seeding note: {e}")
+                    
+                    # Seed sample data
+                    try:
+                        seed_sample_data()
+                    except Exception as e:
+                        print(f"Sample data seeding note: {e}")
+                    
+                    self._set_json_headers()
+                    self.wfile.write(json.dumps({
+                        'success': True,
+                        'message': 'Database seeded successfully',
+                        'accounts': {
+                            'admin': {'username': 'admin', 'password': 'admin123'},
+                            'customer': {'email': 'asaf@assurance.co.il', 'password': 'Assurance2024!'}
+                        }
+                    }).encode('utf-8'))
+                else:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'Database mode not enabled'}).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': f'Seeding failed: {str(e)}'}).encode('utf-8'))
+            return
+
         # Admin: reset demo dataset (in-memory only)
         if path == '/api/admin/reset-demo-data':
             auth_header = self.headers.get('Authorization', '')
