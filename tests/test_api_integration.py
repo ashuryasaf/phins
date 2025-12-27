@@ -42,8 +42,11 @@ def _get(url, token=None):
     if token:
         headers['Authorization'] = f'Bearer {token}'
     req = Request(url, headers=headers)
-    with urlopen(req) as resp:
-        return resp.read().decode('utf-8'), resp.status
+    try:
+        with urlopen(req) as resp:
+            return resp.read().decode('utf-8'), resp.status
+    except HTTPError as e:
+        return e.read().decode('utf-8'), e.code
 
 
 def _post(url, payload, token=None):
@@ -53,8 +56,11 @@ def _post(url, payload, token=None):
     if token:
         headers['Authorization'] = f'Bearer {token}'
     req = Request(url, data=data, headers=headers)
-    with urlopen(req) as resp:
-        return resp.read().decode('utf-8'), resp.status
+    try:
+        with urlopen(req) as resp:
+            return resp.read().decode('utf-8'), resp.status
+    except HTTPError as e:
+        return e.read().decode('utf-8'), e.code
 
 
 def test_login_endpoint():
@@ -106,14 +112,11 @@ def test_login_endpoint():
     assert data['role'] == 'accountant'
     
     # Test invalid credentials
-    try:
-        _post(base + "/api/login", {
-            "username": "admin",
-            "password": "wrongpassword"
-        })
-        assert False, "Should fail with wrong password"
-    except HTTPError as e:
-        assert e.code == 401
+    _, status = _post(base + "/api/login", {
+        "username": "admin",
+        "password": "wrongpassword"
+    })
+    assert status == 401
     
     srv.stop()
 
@@ -142,25 +145,19 @@ def test_register_endpoint():
     assert data['email'] == "newcustomer@example.com"
     
     # Test duplicate registration
-    try:
-        _post(base + "/api/register", {
-            "name": "New Customer 2",
-            "email": "newcustomer@example.com",
-            "password": "secure123456",
-            "phone": "555-8888"
-        })
-        assert False, "Should fail with duplicate email"
-    except HTTPError as e:
-        assert e.code == 409
+    _, status = _post(base + "/api/register", {
+        "name": "New Customer 2",
+        "email": "newcustomer@example.com",
+        "password": "secure123456",
+        "phone": "555-8888"
+    })
+    assert status == 409
     
     # Test missing required fields
-    try:
-        _post(base + "/api/register", {
-            "name": "Incomplete User"
-        })
-        assert False, "Should fail with missing fields"
-    except HTTPError as e:
-        assert e.code == 400
+    _, status = _post(base + "/api/register", {
+        "name": "Incomplete User"
+    })
+    assert status == 400
     
     srv.stop()
 
@@ -190,11 +187,8 @@ def test_profile_endpoint():
     assert data['name'] == 'Admin User'
     
     # Test unauthorized access
-    try:
-        _get(base + "/api/profile")
-        assert False, "Should fail without token"
-    except HTTPError as e:
-        assert e.code == 401
+    _, status = _get(base + "/api/profile")
+    assert status == 401
     
     srv.stop()
 
@@ -228,26 +222,20 @@ def test_policies_create_endpoint():
     assert data['policy']['coverage_amount'] == 250000
     
     # Test missing customer name
-    try:
-        _post(base + "/api/policies/create", {
-            "customer_email": "test2@example.com",
-            "type": "health",
-            "coverage_amount": 100000
-        })
-        assert False, "Should fail without customer name"
-    except HTTPError as e:
-        assert e.code == 400
+    _, status = _post(base + "/api/policies/create", {
+        "customer_email": "test2@example.com",
+        "type": "health",
+        "coverage_amount": 100000
+    })
+    assert status == 400
     
     # Test invalid coverage amount
-    try:
-        _post(base + "/api/policies/create", {
-            "customer_name": "Test",
-            "customer_email": "test3@example.com",
-            "coverage_amount": 999999999999  # Too large
-        })
-        assert False, "Should fail with invalid amount"
-    except HTTPError as e:
-        assert e.code == 400
+    _, status = _post(base + "/api/policies/create", {
+        "customer_name": "Test",
+        "customer_email": "test3@example.com",
+        "coverage_amount": 999999999999  # Too large
+    })
+    assert status == 400
     
     srv.stop()
 
@@ -834,11 +822,8 @@ def test_audit_endpoint():
     assert 'total' in data
     
     # Test unauthorized access
-    try:
-        _get(base + "/api/audit")
-        assert False, "Should require authentication"
-    except HTTPError as e:
-        assert e.code == 401
+    _, status = _get(base + "/api/audit")
+    assert status == 401
     
     srv.stop()
 

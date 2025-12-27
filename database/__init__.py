@@ -10,6 +10,7 @@ from sqlalchemy.orm import sessionmaker, scoped_session, Session
 from sqlalchemy.pool import Pool
 from typing import Optional
 import logging
+import os
 
 from .config import DatabaseConfig
 from .models import Base
@@ -89,6 +90,10 @@ def init_database(drop_existing: bool = False):
     Args:
         drop_existing: If True, drop all existing tables before creating (USE WITH CAUTION)
     """
+    # In test runs we want deterministic behavior (no state leaking between tests)
+    # even when using a file-backed SQLite DB.
+    if os.environ.get("PYTEST_CURRENT_TEST") and not drop_existing:
+        drop_existing = True
     engine = get_engine()
     
     if drop_existing:

@@ -20,6 +20,7 @@ import argparse
 from datetime import datetime
 from typing import Dict, Any, List, Tuple
 import os
+import socket
 
 # Handle optional dependencies gracefully
 try:
@@ -50,6 +51,55 @@ except ImportError:
 # Configuration
 BASE_URL = os.environ.get('TEST_BASE_URL', 'http://localhost:8000')
 TEST_TIMEOUT = 10
+
+# If we're running under pytest, start the portal server automatically
+# so these tests don't require an external process.
+try:  # pragma: no cover - only executed in test harness
+    import pytest  # type: ignore
+    import threading
+    from http.server import HTTPServer
+    import web_portal.server as portal
+
+    class _ServerThread(threading.Thread):
+        def __init__(self, port: int):
+            super().__init__(daemon=True)
+            self.port = port
+            self.httpd = HTTPServer(('127.0.0.1', port), portal.PortalHandler)
+
+        def run(self):
+            self.httpd.serve_forever()
+
+        def stop(self):
+            self.httpd.shutdown()
+
+    def _port_open(host: str, port: int) -> bool:
+        try:
+            with socket.create_connection((host, port), timeout=0.2):
+                return True
+        except OSError:
+            return False
+
+    @pytest.fixture(scope="session", autouse=True)
+    def _ensure_portal_server():
+        # Respect external server if already running
+        if not BASE_URL.startswith("http://localhost:8000") and not BASE_URL.startswith("http://127.0.0.1:8000"):
+            yield
+            return
+
+        if _port_open("127.0.0.1", 8000):
+            yield
+            return
+
+        srv = _ServerThread(8000)
+        srv.start()
+        time.sleep(0.25)
+        try:
+            yield
+        finally:
+            srv.stop()
+except Exception:
+    # No pytest or server import available; tests will behave as before.
+    pass
 
 # Test results storage
 test_results = []
