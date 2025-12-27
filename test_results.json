@@ -1,11 +1,128 @@
 {
-  "timestamp": "2025-12-16T21:57:27.021910",
-  "total_tests": 5,
-  "passed": 5,
+  "timestamp": "2025-12-27T11:18:07.302790",
+  "total_tests": 27,
+  "passed": 27,
   "failed": 0,
   "skipped": 0,
-  "execution_time": "0.00s",
+  "execution_time": "0.29s",
   "tests": [
+    {
+      "name": "Landing Page Loads",
+      "category": "routing",
+      "status": "passed",
+      "message": "",
+      "error": "",
+      "execution_time": "0.003s",
+      "timestamp": "2025-12-27T11:18:07.011534"
+    },
+    {
+      "name": "Login Page Routing",
+      "category": "routing",
+      "status": "passed",
+      "message": "",
+      "error": "",
+      "execution_time": "0.001s",
+      "timestamp": "2025-12-27T11:18:07.013047"
+    },
+    {
+      "name": "Admin Login",
+      "category": "rbac",
+      "status": "passed",
+      "message": "",
+      "error": "",
+      "execution_time": "0.023s",
+      "timestamp": "2025-12-27T11:18:07.036183"
+    },
+    {
+      "name": "Underwriter Login",
+      "category": "rbac",
+      "status": "passed",
+      "message": "",
+      "error": "",
+      "execution_time": "0.023s",
+      "timestamp": "2025-12-27T11:18:07.059227"
+    },
+    {
+      "name": "Accountant Login",
+      "category": "rbac",
+      "status": "passed",
+      "message": "",
+      "error": "",
+      "execution_time": "0.023s",
+      "timestamp": "2025-12-27T11:18:07.082326"
+    },
+    {
+      "name": "Claims Adjuster Login",
+      "category": "rbac",
+      "status": "passed",
+      "message": "",
+      "error": "",
+      "execution_time": "0.023s",
+      "timestamp": "2025-12-27T11:18:07.105330"
+    },
+    {
+      "name": "RBAC Enforcement",
+      "category": "rbac",
+      "status": "passed",
+      "message": "",
+      "error": "",
+      "execution_time": "0.001s",
+      "timestamp": "2025-12-27T11:18:07.106754"
+    },
+    {
+      "name": "Password Change",
+      "category": "password",
+      "status": "passed",
+      "message": "",
+      "error": "",
+      "execution_time": "0.069s",
+      "timestamp": "2025-12-27T11:18:07.175326"
+    },
+    {
+      "name": "Password Reset Request",
+      "category": "password",
+      "status": "passed",
+      "message": "",
+      "error": "",
+      "execution_time": "0.001s",
+      "timestamp": "2025-12-27T11:18:07.176547"
+    },
+    {
+      "name": "Password Validation",
+      "category": "password",
+      "status": "passed",
+      "message": "",
+      "error": "",
+      "execution_time": "0.001s",
+      "timestamp": "2025-12-27T11:18:07.177875"
+    },
+    {
+      "name": "Quote Submission",
+      "category": "forms",
+      "status": "passed",
+      "message": "",
+      "error": "",
+      "execution_time": "0.001s",
+      "timestamp": "2025-12-27T11:18:07.179205"
+    },
+    {
+      "name": "Policy Application",
+      "category": "forms",
+      "status": "passed",
+      "message": "",
+      "error": "",
+      "execution_time": "0.010s",
+      "timestamp": "2025-12-27T11:18:07.189110"
+    },
+    {
+      "name": "Form Validation",
+      "category": "forms",
+      "status": "passed",
+      "message": "",
+      "error": "",
+      "execution_time": "0.001s",
+      "timestamp": "2025-12-27T11:18:07.190525"
+    },
     {
       "name": "Auto Quote Generation",
       "category": "ai",
@@ -13,7 +130,7 @@
       "message": "",
       "error": "",
       "execution_time": "0.000s",
-      "timestamp": "2025-12-16T21:57:27.021820"
+      "timestamp": "2025-12-27T11:18:07.190611"
     },
     {
       "name": "Auto Underwriting - Low Risk",
@@ -22,7 +139,7 @@
       "message": "",
       "error": "",
       "execution_time": "0.000s",
-      "timestamp": "2025-12-16T21:57:27.021844"
+      "timestamp": "2025-12-27T11:18:07.190644"
     },
     {
       "name": "Auto Underwriting - High Risk",
@@ -31,7 +148,7 @@
       "message": "",
       "error": "",
       "execution_time": "0.000s",
-      "timestamp": "2025-12-16T21:57:27.021861"
+      "timestamp": "2025-12-27T11:18:07.190657"
     },
     {
       "name": "Smart Claims Processing",
@@ -40,7 +157,7 @@
       "message": "",
       "error": "",
       "execution_time": "0.000s",
-      "timestamp": "2025-12-16T21:57:27.021879"
+      "timestamp": "2025-12-27T11:18:07.190675"
     },
     {
       "name": "Fraud Detection",
@@ -49,7 +166,88 @@
       "message": "",
       "error": "",
       "execution_time": "0.000s",
-      "timestamp": "2025-12-16T21:57:27.021889"
+      "timestamp": "2025-12-27T11:18:07.190684"
+    },
+    {
+      "name": "Database Initialization",
+      "category": "database",
+      "status": "passed",
+      "message": "",
+      "error": "",
+      "execution_time": "0.009s",
+      "timestamp": "2025-12-27T11:18:07.199615"
+    },
+    {
+      "name": "Default Users Exist",
+      "category": "database",
+      "status": "passed",
+      "message": "",
+      "error": "",
+      "execution_time": "0.072s",
+      "timestamp": "2025-12-27T11:18:07.271996"
+    },
+    {
+      "name": "Data Consistency",
+      "category": "database",
+      "status": "passed",
+      "message": "",
+      "error": "",
+      "execution_time": "0.000s",
+      "timestamp": "2025-12-27T11:18:07.272190"
+    },
+    {
+      "name": "Quote to Policy Journey",
+      "category": "integration",
+      "status": "passed",
+      "message": "",
+      "error": "",
+      "execution_time": "0.001s",
+      "timestamp": "2025-12-27T11:18:07.273670"
+    },
+    {
+      "name": "Claims Journey",
+      "category": "integration",
+      "status": "passed",
+      "message": "",
+      "error": "",
+      "execution_time": "0.001s",
+      "timestamp": "2025-12-27T11:18:07.274998"
+    },
+    {
+      "name": "Session Management",
+      "category": "integration",
+      "status": "passed",
+      "message": "",
+      "error": "",
+      "execution_time": "0.023s",
+      "timestamp": "2025-12-27T11:18:07.297788"
+    },
+    {
+      "name": "Authentication Endpoints",
+      "category": "api",
+      "status": "passed",
+      "message": "",
+      "error": "",
+      "execution_time": "0.002s",
+      "timestamp": "2025-12-27T11:18:07.300069"
+    },
+    {
+      "name": "Quote Endpoints",
+      "category": "api",
+      "status": "passed",
+      "message": "",
+      "error": "",
+      "execution_time": "0.001s",
+      "timestamp": "2025-12-27T11:18:07.301393"
+    },
+    {
+      "name": "Application Endpoints",
+      "category": "api",
+      "status": "passed",
+      "message": "",
+      "error": "",
+      "execution_time": "0.001s",
+      "timestamp": "2025-12-27T11:18:07.302757"
     }
   ]
 }

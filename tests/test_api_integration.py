@@ -42,8 +42,14 @@ def _get(url, token=None):
     if token:
         headers['Authorization'] = f'Bearer {token}'
     req = Request(url, headers=headers)
-    with urlopen(req) as resp:
-        return resp.read().decode('utf-8'), resp.status
+    try:
+        with urlopen(req) as resp:
+            return resp.read().decode('utf-8'), resp.status
+    except HTTPError as e:
+        # Allow callers to assert on 404 without needing try/except.
+        if e.code == 404:
+            return e.read().decode('utf-8'), e.code
+        raise
 
 
 def _post(url, payload, token=None):
