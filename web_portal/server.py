@@ -57,7 +57,10 @@ if USE_DATABASE:
         print("         Falling back to in-memory storage")
         USE_DATABASE = False
 
-PORT = 8000
+try:
+    PORT = int(os.environ.get('PORT', '8000'))
+except Exception:
+    PORT = 8000
 ROOT = os.path.join(os.path.dirname(__file__), "static")
 
 # Storage - either database-backed or in-memory
@@ -477,38 +480,83 @@ def validate_amount(amount: Any) -> bool:
 
 # Store hashed passwords
 if USE_DATABASE and database_enabled:
-    # Users are stored in database, but we need a helper to check them
-    # We'll create a wrapper that checks the database
-    class UserDictWrapper:
-        """Wrapper to make database users work like a dict"""
+    class UserStore:
+        """
+        DB-backed dict-like user store.
+
+        - Supports read for authentication (needs password_hash/salt).
+        - Supports write for registration/provisioning/password reset.
+        - Derives customer_id from the customer table (email -> customer.id),
+          so we don't need a customer_id column on the users table.
+        """
+
+        def _lookup_customer_id(self, db, username: str) -> str | None:
+            try:
+                cust = db.customers.get_by_email(username)
+                return cust.id if cust else None
+            except Exception:
+                return None
+
         def get(self, username: str, default=None):
             try:
                 from database.manager import DatabaseManager
                 with DatabaseManager() as db:
                     user = db.users.get_by_username(username)
-                    if user:
-                        return {
-                            'hash': user.password_hash,
-                            'salt': user.password_salt,
-                            'role': user.role,
-                            'name': user.name
-                        }
-            except ImportError as e:
-                print(f"Warning: Database module not available: {e}")
+                    if not user:
+                        return default
+                    customer_id = None
+                    if (user.role or "").lower() == "customer":
+                        customer_id = self._lookup_customer_id(db, username)
+                    return {
+                        'hash': user.password_hash,
+                        'salt': user.password_salt,
+                        'role': user.role,
+                        'name': user.name,
+                        'customer_id': customer_id,
+                    }
             except Exception as e:
                 print(f"Warning: Error fetching user from database: {e}")
-            return default
-        
+                return default
+
         def __getitem__(self, username: str):
             result = self.get(username)
             if result is None:
                 raise KeyError(username)
             return result
-        
+
         def __contains__(self, username: str):
             return self.get(username) is not None
-    
-    USERS = UserDictWrapper()
+
+        def __setitem__(self, username: str, value: Dict[str, Any]):
+            # Expected shape: {'hash','salt','role','name', ...}
+            try:
+                from database.manager import DatabaseManager
+                with DatabaseManager() as db:
+                    existing = db.users.get_by_username(username)
+                    if existing:
+                        db.users.update(
+                            username,
+                            password_hash=value.get('hash', existing.password_hash),
+                            password_salt=value.get('salt', existing.password_salt),
+                            role=value.get('role', existing.role),
+                            name=value.get('name', existing.name),
+                            email=value.get('email', existing.email),
+                            active=value.get('active', existing.active),
+                        )
+                    else:
+                        db.users.create(
+                            username=username,
+                            password_hash=value.get('hash', ''),
+                            password_salt=value.get('salt', ''),
+                            role=value.get('role', 'customer'),
+                            name=value.get('name'),
+                            email=value.get('email', username),
+                            active=value.get('active', True),
+                        )
+            except Exception as e:
+                raise RuntimeError(f"DB user upsert failed: {e}")
+
+    USERS = UserStore()
 else:
     USERS: Dict[str, Dict[str, Any]] = {
         'admin': {**hash_password('admin123'), 'role': 'admin', 'name': 'Admin User'},
@@ -1490,12 +1538,13 @@ class PortalHandler(BaseHTTPRequestHandler):
                     
                     # Store session
                     with STATE_LOCK:
+                        # In DB mode, normalize keys to match schema (token, ip_address, created_date).
                         SESSIONS[token] = {
                             'username': username,
                             'expires': expires.isoformat(),
                             'customer_id': user.get('customer_id'),
-                            'ip': client_ip,
-                            'created_at': datetime.now().isoformat()
+                            'ip_address': client_ip,
+                            'created_date': datetime.now().isoformat()
                         }
                     
                     self._set_json_headers()
@@ -2043,7 +2092,7 @@ class PortalHandler(BaseHTTPRequestHandler):
                             existing.contract_address = contract_address
                             existing.decimals = int(decimals) if decimals is not None else None
                             existing.enabled = enabled
-                            existing.metadata = meta_json
+                            existing.metadata_json = meta_json
                         else:
                             row = TokenRegistry(
                                 id=entry_id,
@@ -2054,7 +2103,7 @@ class PortalHandler(BaseHTTPRequestHandler):
                                 contract_address=contract_address,
                                 decimals=int(decimals) if decimals is not None else None,
                                 enabled=enabled,
-                                metadata=meta_json,
+                                metadata_json=meta_json,
                                 classification="internal",
                                 created_by=actor,
                             )
@@ -2203,6 +2252,9 @@ class PortalHandler(BaseHTTPRequestHandler):
                 
                 # Create customer if new
                 if customer_id not in CUSTOMERS:
+                    # Ensure DB-compatible email (required + unique in DB schema).
+                    if not customer_email:
+                        customer_email = f"{customer_id.lower()}@example.com"
                     CUSTOMERS[customer_id] = {
                         'id': customer_id,
                         'name': customer_name,
@@ -2232,9 +2284,10 @@ class PortalHandler(BaseHTTPRequestHandler):
                     'policy_id': policy_id,
                     'customer_id': customer_id,
                     'status': 'pending',
-                    'questionnaire_responses': data.get('questionnaire', {}),
                     'risk_assessment': data.get('risk_score', 'medium'),
                     'medical_exam_required': data.get('medical_exam_required', False),
+                    # Persist non-schema details in notes (DB safe)
+                    'notes': json.dumps({'questionnaire_responses': data.get('questionnaire', {})}),
                     'submitted_date': datetime.now().isoformat()
                 }
                 
@@ -2296,10 +2349,13 @@ class PortalHandler(BaseHTTPRequestHandler):
                     return
                 # Upsert minimal customer record if needed
                 if customer_id not in CUSTOMERS:
+                    customer_email = (data.get('customer_email') or '').strip()
+                    if not customer_email:
+                        customer_email = f"{customer_id.lower()}@example.com"
                     CUSTOMERS[customer_id] = {
                         'id': customer_id,
                         'name': data.get('customer_name') or customer_id,
-                        'email': data.get('customer_email', ''),
+                        'email': customer_email,
                         'created_date': datetime.now().isoformat()
                     }
                 # Generate IDs
@@ -2364,9 +2420,14 @@ class PortalHandler(BaseHTTPRequestHandler):
                     
                     # Update policy status
                     policy_id = app.get('policy_id')
-                    if policy_id and policy_id in POLICIES:
-                        POLICIES[policy_id]['status'] = 'active'
-                        POLICIES[policy_id]['approval_date'] = datetime.now().isoformat()
+                    if policy_id:
+                        policy = POLICIES.get(policy_id)
+                        if policy:
+                            policy['status'] = 'active'
+                            policy['approval_date'] = datetime.now().isoformat()
+                            POLICIES[policy_id] = policy
+                    # Persist underwriting update in DB mode (DB dict returns copies)
+                    UNDERWRITING_APPLICATIONS[uw_id] = app
                     if audit:
                         actor = data.get('approved_by', 'admin')
                         try:
@@ -2398,8 +2459,13 @@ class PortalHandler(BaseHTTPRequestHandler):
                     
                     # Update policy status
                     policy_id = app.get('policy_id')
-                    if policy_id and policy_id in POLICIES:
-                        POLICIES[policy_id]['status'] = 'rejected'
+                    if policy_id:
+                        policy = POLICIES.get(policy_id)
+                        if policy:
+                            policy['status'] = 'rejected'
+                            POLICIES[policy_id] = policy
+                    # Persist underwriting update in DB mode
+                    UNDERWRITING_APPLICATIONS[uw_id] = app
                     if audit:
                         actor = data.get('rejected_by', 'admin')
                         try:
@@ -2790,10 +2856,16 @@ class PortalHandler(BaseHTTPRequestHandler):
                     self.wfile.write(json.dumps({'error': 'policy_id and valid amount_due required'}).encode('utf-8'))
                     return
                 bill_id = f"BILL-{datetime.now().strftime('%Y%m%d')}-{random.randint(1000,9999)}"
+                # DB mode expects id/amount/customer_id; keep legacy keys for API response.
+                policy = POLICIES.get(policy_id) or {}
+                customer_id = policy.get('customer_id')
                 bill = {
                     'bill_id': bill_id,
+                    'id': bill_id,
                     'policy_id': policy_id,
+                    'customer_id': customer_id,
                     'amount_due': amount_due,
+                    'amount': amount_due,
                     'amount_paid': 0.0,
                     'status': 'outstanding',
                     'created_date': datetime.now().isoformat(),
@@ -2827,11 +2899,16 @@ class PortalHandler(BaseHTTPRequestHandler):
                     self.wfile.write(json.dumps({'error': 'Invalid amount'}).encode('utf-8'))
                     return
                 bill['amount_paid'] = bill.get('amount_paid', 0.0) + amount
-                if bill['amount_paid'] >= bill['amount_due']:
+                amount_due = float(bill.get('amount_due', bill.get('amount', 0.0)) or 0.0)
+                bill['amount_due'] = amount_due
+                bill['amount'] = amount_due
+                if bill['amount_paid'] >= amount_due:
                     bill['status'] = 'paid'
                     bill['paid_date'] = datetime.now().isoformat()
                 else:
                     bill['status'] = 'partial'
+                # Persist update in DB mode
+                BILLING[bill_id] = bill
                 if audit:
                     try:
                         audit.log('system', 'update', 'bill', bill_id, {'paid': amount, 'status': bill['status']})

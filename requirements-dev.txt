@@ -1,0 +1,7 @@
+pytest>=8.0.0
+moto>=5.0.0
+mypy>=1.0
+types-reportlab>=0.0.1
+# Optional: convert PDF pages to images for visual diffing (requires poppler on the system)
+pdf2image>=1.16
+

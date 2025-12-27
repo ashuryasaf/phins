@@ -46,6 +46,62 @@ def convert_datetime_strings(data: Dict[str, Any]) -> Dict[str, Any]:
     return result
 
 
+def _normalize_payload_for_repo(repository_name: str, value: Dict[str, Any], key: str) -> Dict[str, Any]:
+    """
+    Normalize common legacy/in-memory keys into DB schema keys.
+
+    The web server uses some legacy field names (e.g. bill_id/amount_due, ip/created_at),
+    so we translate them here to keep DB mode backward compatible.
+    """
+    v = dict(value)
+
+    if repository_name == "billing":
+        # Server uses bill_id/amount_due; DB model uses id/amount.
+        if "bill_id" in v and "id" not in v:
+            v["id"] = v["bill_id"]
+        if "amount_due" in v and "amount" not in v:
+            v["amount"] = v["amount_due"]
+        # Some flows use "bill_id" only in the key.
+        if "id" not in v:
+            v["id"] = key
+
+    if repository_name == "sessions":
+        # Server uses ip/created_at; DB model uses ip_address/created_date.
+        if "ip" in v and "ip_address" not in v:
+            v["ip_address"] = v["ip"]
+        if "created_at" in v and "created_date" not in v:
+            v["created_date"] = v["created_at"]
+
+    if repository_name == "users":
+        # Server stores hash/salt; DB model uses password_hash/password_salt.
+        if "hash" in v and "password_hash" not in v:
+            v["password_hash"] = v["hash"]
+        if "salt" in v and "password_salt" not in v:
+            v["password_salt"] = v["salt"]
+        if "email" not in v:
+            # Often username is an email in the portal.
+            v["email"] = key
+
+    if repository_name == "underwriting":
+        # Alternate naming used by older service code.
+        if "risk_level" in v and "risk_assessment" not in v:
+            v["risk_assessment"] = v["risk_level"]
+        if "requires_medical" in v and "medical_exam_required" not in v:
+            v["medical_exam_required"] = v["requires_medical"]
+
+    return v
+
+
+def _filter_to_model_fields(model_class: Any, value: Dict[str, Any]) -> Dict[str, Any]:
+    """Drop keys that are not columns on the SQLAlchemy model."""
+    try:
+        allowed = set(model_class.__table__.columns.keys())
+        return {k: v for k, v in value.items() if k in allowed}
+    except Exception:
+        # If introspection fails, do not filter (best-effort).
+        return value
+
+
 class DatabaseDict:
     """
     Dictionary-like wrapper around database repository.
@@ -89,11 +145,14 @@ class DatabaseDict:
     
     def __setitem__(self, key: str, value: Dict[str, Any]):
         """Set item by key (create or update)"""
-        # Convert datetime strings to datetime objects
+        # Normalize legacy keys then convert datetime strings to datetime objects
+        value = _normalize_payload_for_repo(self.repository_name, value, key)
         value = convert_datetime_strings(value)
         
         with DatabaseManager() as db:
             repo = self._get_repository(db)
+            # Filter payload to model columns to avoid invalid keyword errors
+            value = _filter_to_model_fields(repo.model_class, value)
             existing = repo.get_by_id(key)
             if existing:
                 # Update existing

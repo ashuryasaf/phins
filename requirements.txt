@@ -1,16 +1,17 @@
-reportlab>=4.0
-# Optional typing stubs for ReportLab (may or may not exist on PyPI)
-# install if available to silence mypy missing-stub errors
-types-reportlab>=0.0.1
-pytest>=7.0
-mypy>=1.0
-requests>=2.0
-# Optional: convert PDF pages to images for visual diffing (requires poppler on the system)
-pdf2image>=1.16
-boto3>=1.20
-moto>=4.0
-# Database support
-sqlalchemy>=2.0.0
-psycopg2-binary>=2.9.0  # PostgreSQL adapter
-alembic>=1.12.0  # Database migrations
+# Runtime dependencies for PHINS
+
+# Database persistence (SQLite + PostgreSQL)
+SQLAlchemy>=2.0.0
+psycopg[binary]>=3.2.0
+
+# HTTP client (market data service, uploads)
+requests>=2.31.0
+
+# PDF generation utilities
+reportlab>=4.0.0
+
+# S3 uploads (CI tooling / optional)
+boto3>=1.34.0
+
+# Encryption utilities (optional but recommended)
 cryptography>=45.0.0
