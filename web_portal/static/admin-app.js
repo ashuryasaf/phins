@@ -335,11 +335,22 @@ async function approveUnderwriting(id) {
         });
         
         if (response.ok) {
-            alert('Application approved successfully!');
+            const data = await response.json();
+            let message = '✅ Application approved successfully!\n\n';
+            message += `Policy Status: ${data.policy_status || 'active'}\n`;
+            if (data.bill_id) {
+                message += `📋 Billing Record Created: ${data.bill_id}\n`;
+                message += '\nThe customer can now view their bill in the billing portal.';
+            }
+            alert(message);
             loadUnderwritingData();
+            loadDashboardData(); // Refresh dashboard stats
+        } else {
+            const err = await response.json();
+            alert('Error: ' + (err.error || 'Failed to approve application'));
         }
     } catch (error) {
-        alert('Error approving application');
+        alert('Error approving application: ' + error.message);
     }
 }
 

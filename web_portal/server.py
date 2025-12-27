@@ -1205,6 +1205,11 @@ class PortalHandler(BaseHTTPRequestHandler):
 
             policies = [p for p in POLICIES.values() if p.get('customer_id') == customer_id]
             uw_apps = [u for u in UNDERWRITING_APPLICATIONS.values() if u.get('customer_id') == customer_id]
+            
+            # Get billing for this customer's policies
+            policy_ids = {p.get('id') for p in policies}
+            bills = [b for b in BILLING.values() 
+                     if b.get('customer_id') == customer_id or b.get('policy_id') in policy_ids]
 
             # Determine overall application status (simple heuristic)
             overall = 'no_application'
@@ -1216,6 +1221,10 @@ class PortalHandler(BaseHTTPRequestHandler):
                     linked = next((p for p in policies if p.get('underwriting_id') == most_recent.get('id')), None)
                     if linked and linked.get('status') == 'active':
                         overall = 'active_policy'
+            
+            # Calculate billing summary
+            outstanding_bills = [b for b in bills if b.get('status') == 'outstanding']
+            total_outstanding = sum(b.get('amount', 0) or b.get('amount_due', 0) for b in outstanding_bills)
 
             payload = {
                 'customer': {
@@ -1225,7 +1234,13 @@ class PortalHandler(BaseHTTPRequestHandler):
                 },
                 'overall_status': overall,
                 'policies': policies,
-                'underwriting_applications': uw_apps
+                'underwriting_applications': uw_apps,
+                'billing': bills,
+                'billing_summary': {
+                    'total_outstanding': round(total_outstanding, 2),
+                    'outstanding_count': len(outstanding_bills),
+                    'next_due': min((b.get('due_date') for b in outstanding_bills), default=None)
+                }
             }
 
             self._set_json_headers()
@@ -2449,20 +2464,65 @@ class PortalHandler(BaseHTTPRequestHandler):
                     app['decision_date'] = datetime.now().isoformat()
                     app['approved_by'] = data.get('approved_by', 'admin')
                     
-                    # Update policy status
+                    # Update policy status to ACTIVE
                     policy_id = app.get('policy_id')
+                    customer_id = app.get('customer_id')
+                    bill_id = None
+                    
                     if policy_id and policy_id in POLICIES:
-                        POLICIES[policy_id]['status'] = 'active'
-                        POLICIES[policy_id]['approval_date'] = datetime.now().isoformat()
+                        policy = POLICIES[policy_id]
+                        policy['status'] = 'active'
+                        policy['approval_date'] = datetime.now().isoformat()
+                        
+                        # Auto-generate billing record for active policy
+                        bill_id = f"BILL-{datetime.now().strftime('%Y%m%d%H%M%S')}-{random.randint(1000,9999)}"
+                        monthly_premium = policy.get('monthly_premium', 0) or policy.get('annual_premium', 0) / 12
+                        
+                        bill = {
+                            'id': bill_id,
+                            'bill_id': bill_id,
+                            'policy_id': policy_id,
+                            'customer_id': customer_id or policy.get('customer_id'),
+                            'amount': round(float(monthly_premium), 2),
+                            'amount_due': round(float(monthly_premium), 2),
+                            'amount_paid': 0.0,
+                            'status': 'outstanding',
+                            'due_date': (datetime.now() + timedelta(days=30)).isoformat(),
+                            'created_date': datetime.now().isoformat(),
+                            'updated_date': datetime.now().isoformat(),
+                            'description': f"Initial premium for policy {policy_id}"
+                        }
+                        BILLING[bill_id] = bill
+                        
+                        if audit:
+                            try:
+                                audit.log('system', 'create', 'bill', bill_id, {
+                                    'policy_id': policy_id,
+                                    'amount': bill['amount'],
+                                    'trigger': 'policy_approval'
+                                })
+                            except Exception:
+                                pass
+                    
                     if audit:
                         actor = data.get('approved_by', 'admin')
                         try:
-                            audit.log(actor, 'approve', 'underwriting', uw_id, {'policy_id': policy_id})
+                            audit.log(actor, 'approve', 'underwriting', uw_id, {
+                                'policy_id': policy_id,
+                                'bill_id': bill_id,
+                                'policy_status': 'active'
+                            })
                         except Exception:
                             pass
                     
                     self._set_json_headers()
-                    self.wfile.write(json.dumps({'success': True, 'application': app}).encode('utf-8'))
+                    self.wfile.write(json.dumps({
+                        'success': True,
+                        'application': app,
+                        'policy_status': 'active',
+                        'bill_id': bill_id,
+                        'message': 'Policy approved and activated. Initial billing generated.'
+                    }).encode('utf-8'))
                 else:
                     self._set_json_headers(404)
                     self.wfile.write(json.dumps({'error': 'Application not found'}).encode('utf-8'))
