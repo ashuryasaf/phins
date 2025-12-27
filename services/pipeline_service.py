@@ -320,16 +320,23 @@ class PipelineService:
         now = datetime.now()
         bill_id = self._generate_id('BILL')
         
+        # Get premium - handle both dict and object access
+        if isinstance(policy, dict):
+            monthly_premium = policy.get('monthly_premium', 0)
+            customer_id = policy.get('customer_id')
+        else:
+            monthly_premium = getattr(policy, 'monthly_premium', 0)
+            customer_id = getattr(policy, 'customer_id', None)
+        
         bill = {
             'id': bill_id,
             'policy_id': policy_id,
-            'customer_id': policy.get('customer_id'),
-            'amount': policy.get('monthly_premium', 0),
+            'customer_id': customer_id,
+            'amount': float(monthly_premium) if monthly_premium else 0.0,
             'amount_paid': 0.0,
             'status': 'outstanding',
             'due_date': (now + timedelta(days=30)).isoformat(),
-            'billing_period_start': now.isoformat(),
-            'billing_period_end': (now + timedelta(days=30)).isoformat(),
+            'late_fee': 0.0,
             'created_date': now.isoformat(),
             'updated_date': now.isoformat()
         }
