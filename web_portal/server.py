@@ -3119,9 +3119,17 @@ def run_server(port: int = PORT) -> None:
             # Seed default users
             try:
                 seed_default_users()
-                print("✓ Default users seeded")
+                print("✓ Default admin users seeded")
             except Exception as e:
                 print(f"Note: User seeding skipped (may already exist): {e}")
+            
+            # Seed sample customer data (test accounts)
+            try:
+                from database.seeds import seed_sample_data
+                seed_sample_data()
+                print("✓ Sample customer data seeded (asaf@assurance.co.il, etc.)")
+            except Exception as e:
+                print(f"Note: Sample data seeding skipped (may already exist): {e}")
         except Exception as e:
             print(f"❌ Database initialization failed: {e}")
             print("   Server will continue with in-memory storage")

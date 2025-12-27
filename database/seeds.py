@@ -99,60 +99,190 @@ def seed_default_users(session=None):
 
 
 def seed_sample_data(session=None):
-    """Create sample customers, policies, etc. for testing"""
+    """Create sample customers, policies, underwriting, and billing for demo/testing"""
     should_close = False
     if session is None:
         session = get_db_session()
         should_close = True
     
     try:
-        from database.repositories import CustomerRepository, PolicyRepository
+        from database.repositories import (
+            CustomerRepository, PolicyRepository, 
+            UnderwritingRepository, BillingRepository
+        )
         from datetime import timedelta
         
         customer_repo = CustomerRepository(session)
         policy_repo = PolicyRepository(session)
+        underwriting_repo = UnderwritingRepository(session)
+        billing_repo = BillingRepository(session)
         
-        # Sample customer
-        sample_customer = customer_repo.find_one_by(email='demo@example.com')
-        if not sample_customer:
-            sample_customer = customer_repo.create(
-                id='CUST-10001',
-                name='John Demo',
-                first_name='John',
-                last_name='Demo',
-                email='demo@example.com',
-                phone='+1-555-0100',
-                dob='1985-06-15',
-                age=38,
+        now = datetime.utcnow()
+        
+        # =================================================================
+        # PRIMARY TEST ACCOUNT: asaf@assurance.co.il
+        # =================================================================
+        primary_customer = customer_repo.find_one_by(email='asaf@assurance.co.il')
+        if not primary_customer:
+            pwd = hash_password('Assurance2024!')
+            primary_customer = customer_repo.create(
+                id='CUST-ASAF-001',
+                name='Asaf Assurance',
+                first_name='Asaf',
+                last_name='Assurance',
+                email='asaf@assurance.co.il',
+                phone='+972-50-1234567',
+                dob='1985-03-15',
+                age=39,
                 gender='male',
-                address='123 Main St',
-                city='San Francisco',
-                state='CA',
-                zip='94102',
-                occupation='Software Engineer'
+                address='123 Insurance Blvd',
+                city='Tel Aviv',
+                state='Israel',
+                zip='6100001',
+                occupation='Business Owner',
+                password_hash=pwd['hash'],
+                password_salt=pwd['salt'],
+                portal_active=True
             )
-            logger.info(f"Created sample customer: {sample_customer.id}")
+            logger.info(f"Created primary customer: {primary_customer.email}")
             
-            # Sample policy for demo customer
-            start_date = datetime.utcnow()
-            end_date = start_date + timedelta(days=365)
+            # Create policies for primary customer
+            policies_data = [
+                {
+                    'id': 'POL-ASAF-LIFE-001',
+                    'type': 'life',
+                    'coverage_amount': 1000000.0,
+                    'annual_premium': 12000.0,
+                    'monthly_premium': 1000.0,
+                    'status': 'active',
+                    'risk_score': 'low'
+                },
+                {
+                    'id': 'POL-ASAF-HEALTH-001',
+                    'type': 'health',
+                    'coverage_amount': 500000.0,
+                    'annual_premium': 6000.0,
+                    'monthly_premium': 500.0,
+                    'status': 'active',
+                    'risk_score': 'medium'
+                },
+                {
+                    'id': 'POL-ASAF-AUTO-001',
+                    'type': 'auto',
+                    'coverage_amount': 100000.0,
+                    'annual_premium': 2400.0,
+                    'monthly_premium': 200.0,
+                    'status': 'active',
+                    'risk_score': 'low'
+                }
+            ]
             
-            sample_policy = policy_repo.create(
-                id='POL-20231215-1001',
-                customer_id=sample_customer.id,
-                type='life',
-                coverage_amount=500000.0,
-                annual_premium=1200.0,
-                monthly_premium=100.0,
-                status='active',
-                risk_score='low',
-                start_date=start_date,
-                end_date=end_date,
-                uw_status='approved'
-            )
-            logger.info(f"Created sample policy: {sample_policy.id}")
+            for pol_data in policies_data:
+                policy = policy_repo.create(
+                    id=pol_data['id'],
+                    customer_id=primary_customer.id,
+                    type=pol_data['type'],
+                    coverage_amount=pol_data['coverage_amount'],
+                    annual_premium=pol_data['annual_premium'],
+                    monthly_premium=pol_data['monthly_premium'],
+                    status=pol_data['status'],
+                    risk_score=pol_data['risk_score'],
+                    start_date=now,
+                    end_date=now + timedelta(days=365),
+                    approval_date=now
+                )
+                logger.info(f"Created policy: {policy.id}")
+                
+                # Create bill for active policy
+                if pol_data['status'] == 'active':
+                    bill = billing_repo.create(
+                        id=f"BILL-{pol_data['id'].replace('POL-', '')}",
+                        policy_id=policy.id,
+                        customer_id=primary_customer.id,
+                        amount=pol_data['monthly_premium'],
+                        amount_paid=0.0,
+                        status='outstanding',
+                        due_date=now + timedelta(days=30)
+                    )
+                    logger.info(f"Created bill: {bill.id}")
         else:
-            logger.info("Sample customer already exists, skipping...")
+            logger.info(f"Primary customer {primary_customer.email} already exists, skipping...")
+        
+        # =================================================================
+        # ADDITIONAL TEST CUSTOMERS WITH PENDING UNDERWRITING
+        # =================================================================
+        additional_customers = [
+            {
+                'id': 'CUST-TEST-100',
+                'name': 'Sarah Cohen',
+                'email': 'sarah.cohen@test.com',
+                'policy_type': 'life',
+                'coverage': 750000
+            },
+            {
+                'id': 'CUST-TEST-101',
+                'name': 'David Levy',
+                'email': 'david.levy@test.com',
+                'policy_type': 'health',
+                'coverage': 300000
+            },
+            {
+                'id': 'CUST-TEST-102',
+                'name': 'Rachel Green',
+                'email': 'rachel.green@test.com',
+                'policy_type': 'property',
+                'coverage': 500000
+            }
+        ]
+        
+        for cust_data in additional_customers:
+            existing = customer_repo.find_one_by(email=cust_data['email'])
+            if existing:
+                logger.info(f"Customer {cust_data['email']} already exists, skipping...")
+                continue
+            
+            pwd = hash_password('Test123!')
+            customer = customer_repo.create(
+                id=cust_data['id'],
+                name=cust_data['name'],
+                email=cust_data['email'],
+                phone=f"+1-555-{hash(cust_data['email']) % 10000:04d}",
+                password_hash=pwd['hash'],
+                password_salt=pwd['salt'],
+                portal_active=True
+            )
+            logger.info(f"Created customer: {customer.email}")
+            
+            # Create pending policy
+            pol_id = f"POL-{cust_data['id'].replace('CUST-', '')}"
+            uw_id = f"UW-{cust_data['id'].replace('CUST-', '')}"
+            
+            policy = policy_repo.create(
+                id=pol_id,
+                customer_id=customer.id,
+                type=cust_data['policy_type'],
+                coverage_amount=cust_data['coverage'],
+                annual_premium=cust_data['coverage'] * 0.012,
+                monthly_premium=cust_data['coverage'] * 0.001,
+                status='pending_underwriting',
+                risk_score='medium',
+                underwriting_id=uw_id,
+                start_date=now,
+                end_date=now + timedelta(days=365)
+            )
+            logger.info(f"Created pending policy: {policy.id}")
+            
+            # Create underwriting application
+            uw_app = underwriting_repo.create(
+                id=uw_id,
+                policy_id=pol_id,
+                customer_id=customer.id,
+                status='pending',
+                risk_assessment='medium',
+                medical_exam_required=False,
+                submitted_date=now
+            )
+            logger.info(f"Created underwriting application: {uw_app.id}")
         
         logger.info("Sample data seeded successfully")
         
