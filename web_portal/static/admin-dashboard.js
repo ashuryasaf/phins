@@ -1,5 +1,7 @@
 // Admin dashboard: real data only (no fake seeded rows)
 
+let currentProfile = null;
+
 function getToken() {
   return localStorage.getItem('phins_token') || localStorage.getItem('phins_admin_token');
 }
@@ -8,6 +10,42 @@ function getAuthHeaders() {
   const token = getToken();
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
+
+async function getProfile() {
+  if (currentProfile) return currentProfile;
+  const token = getToken();
+  if (!token) return null;
+  try {
+    const prof = await fetch('/api/profile', { headers: getAuthHeaders() }).then(r => r.json());
+    currentProfile = prof || null;
+    return currentProfile;
+  } catch {
+    return null;
+  }
+}
+
+// Pre-authenticate admin portal before redirecting there.
+// This restores the behavior described in ADMIN_PORTAL_FIX.md.
+window.openCreatePolicy = async function openCreatePolicy() {
+  const token = getToken();
+  if (!token) {
+    window.location.href = '/login.html';
+    return;
+  }
+
+  const prof = await getProfile();
+  const name = (prof && (prof.name || prof.username || prof.email)) || sessionStorage.getItem('username') || 'Admin';
+  const role = (prof && prof.role) ? String(prof.role).toLowerCase() : 'admin';
+
+  // Transfer authentication + identity for the admin portal.
+  localStorage.setItem('phins_admin_token', token);
+  localStorage.setItem('phins_admin_user', JSON.stringify({ name, role }));
+
+  // Signal intent so admin portal auto-opens "Create Policy".
+  localStorage.setItem('phins_redirect_source', 'admin-dashboard');
+
+  window.location.href = '/admin-portal.html';
+};
 
 function badge(status) {
   const s = String(status || '').toLowerCase();
@@ -23,6 +61,7 @@ async function requireAdmin() {
     return null;
   }
   const prof = await fetch('/api/profile', { headers: getAuthHeaders() }).then(r => r.json());
+  currentProfile = prof || null;
   if (!prof || !['admin'].includes(String(prof.role || '').toLowerCase())) {
     alert('Admin access required.');
     window.location.href = '/login.html';

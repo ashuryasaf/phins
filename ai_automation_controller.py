@@ -475,8 +475,6 @@ def get_automation_controller() -> AIAutomationController:
     return _controller_instance
 
 
-# Export public interface
-__all__ = [
 # =========================================================================
 # BACKWARD COMPATIBILITY - Function-based API
 # =========================================================================
@@ -688,7 +686,6 @@ __all__ = [
     'AutomationDecision',
     'FraudRisk',
     'AutomationMetrics',
-    'get_automation_controller'
     'get_automation_controller',
     # Backward compatible function-based API
     'auto_quote',
