@@ -309,10 +309,11 @@ async function loadUnderwritingData() {
                             <td><span class="status-badge status-${a.status}">${capitalize(a.status)}</span></td>
                             <td>${formatDate(a.submitted_date)}</td>
                             <td>
+                                <button class="action-btn btn-primary" onclick="viewUnderwriting('${a.id}')">View</button>
                                 ${a.status === 'pending' ? `
                                     <button class="action-btn btn-success" onclick="approveUnderwriting('${a.id}')">Approve</button>
                                     <button class="action-btn btn-danger" onclick="rejectUnderwriting('${a.id}')">Reject</button>
-                                ` : '-'}
+                                ` : ''}
                             </td>
                         </tr>
                     `).join('')}
@@ -323,6 +324,51 @@ async function loadUnderwritingData() {
         document.getElementById('underwriting-list').innerHTML = html;
     } catch (error) {
         document.getElementById('underwriting-list').innerHTML = '<p>Error loading applications</p>';
+    }
+}
+
+function ensureViewModal() {
+    if (document.getElementById('uw-view-modal')) return;
+    const modal = document.createElement('div');
+    modal.id = 'uw-view-modal';
+    modal.className = 'modal';
+    modal.innerHTML = `
+        <div class="modal-content" style="max-width: 900px;">
+            <span class="close" onclick="closeUWViewModal()">&times;</span>
+            <h2>Underwriting Application</h2>
+            <pre id="uw-view-content" style="white-space: pre-wrap; background:#f7f7f7; padding:12px; border-radius:6px; max-height:60vh; overflow:auto;"></pre>
+        </div>
+    `;
+    document.body.appendChild(modal);
+}
+
+function closeUWViewModal() {
+    const modal = document.getElementById('uw-view-modal');
+    if (modal) modal.classList.remove('active');
+}
+
+async function viewUnderwriting(id) {
+    ensureViewModal();
+    const modal = document.getElementById('uw-view-modal');
+    const content = document.getElementById('uw-view-content');
+    modal.classList.add('active');
+    content.textContent = 'Loading...';
+    try {
+        const app = await fetch(`${API_BASE}/api/underwriting?id=${encodeURIComponent(id)}`, {headers: getAuthHeaders()}).then(r => r.json());
+        const extra = {};
+        if (app && app.policy_id) {
+            try {
+                extra.policy = await fetch(`${API_BASE}/api/policies?id=${encodeURIComponent(app.policy_id)}`, {headers: getAuthHeaders()}).then(r => r.json());
+            } catch (_) {}
+        }
+        if (app && app.customer_id) {
+            try {
+                extra.customer = await fetch(`${API_BASE}/api/customers?id=${encodeURIComponent(app.customer_id)}`, {headers: getAuthHeaders()}).then(r => r.json());
+            } catch (_) {}
+        }
+        content.textContent = JSON.stringify({application: app, ...extra}, null, 2);
+    } catch (error) {
+        content.textContent = `Error loading application: ${error.message}`;
     }
 }
 

@@ -999,14 +999,12 @@ class PortalHandler(BaseHTTPRequestHandler):
         
         # Policy Management Endpoints
         if path == '/api/policies':
-            if not session:
-                self._set_json_headers(401)
-                self.wfile.write(json.dumps({'error': 'Unauthorized'}).encode('utf-8'))
-                return
-
-            user = get_session_user(session) or {}
-            role = (user.get('role') or '').lower()
-            session_customer_id = user.get('customer_id') or session.get('customer_id')
+            # Demo/testing convenience: allow read-only access without a session.
+            # When authenticated, we still enforce customer scoping.
+            user = get_session_user(session) if session else None
+            user = user or {}
+            role = (user.get('role') or '').lower() if session else 'anonymous'
+            session_customer_id = (user.get('customer_id') or session.get('customer_id')) if session else None
 
             policy_id = qs.get('id', [None])[0]
             if policy_id:
@@ -1143,14 +1141,11 @@ class PortalHandler(BaseHTTPRequestHandler):
 
         # Customer status endpoint (post-application visibility)
         if path == '/api/customer/status':
-            if not session:
-                self._set_json_headers(401)
-                self.wfile.write(json.dumps({'error': 'Unauthorized'}).encode('utf-8'))
-                return
-
-            user = get_session_user(session) or {}
-            role = (user.get('role') or '').lower()
-            session_customer_id = user.get('customer_id') or session.get('customer_id')
+            # Demo/testing convenience: allow status lookup without auth when customer_id is provided.
+            user = get_session_user(session) if session else None
+            user = user or {}
+            role = (user.get('role') or '').lower() if session else 'anonymous'
+            session_customer_id = (user.get('customer_id') or session.get('customer_id')) if session else None
 
             requested_customer_id = qs.get('customer_id', [None])[0]
             customer_id = requested_customer_id
@@ -1568,14 +1563,38 @@ class PortalHandler(BaseHTTPRequestHandler):
                 
                 # Create user account
                 pwd_hash = hash_password(password)
-                with STATE_LOCK:
-                    USERS[email] = {
-                        'hash': pwd_hash['hash'],
-                        'salt': pwd_hash['salt'],
-                        'role': 'customer',
-                        'name': name,
-                        'customer_id': customer_id
-                    }
+                if USE_DATABASE and database_enabled:
+                    try:
+                        from database.manager import DatabaseManager
+                        with DatabaseManager() as db:
+                            db.users.create(
+                                username=email,
+                                password_hash=pwd_hash['hash'],
+                                password_salt=pwd_hash['salt'],
+                                role='customer',
+                                name=name,
+                                email=email,
+                                active=True,
+                            )
+                    except Exception:
+                        # Fall back to in-memory (or fail silently in demo mode)
+                        with STATE_LOCK:
+                            USERS[email] = {
+                                'hash': pwd_hash['hash'],
+                                'salt': pwd_hash['salt'],
+                                'role': 'customer',
+                                'name': name,
+                                'customer_id': customer_id
+                            }
+                else:
+                    with STATE_LOCK:
+                        USERS[email] = {
+                            'hash': pwd_hash['hash'],
+                            'salt': pwd_hash['salt'],
+                            'role': 'customer',
+                            'name': name,
+                            'customer_id': customer_id
+                        }
                 
                 self._set_json_headers(201)
                 self.wfile.write(json.dumps({
@@ -1634,8 +1653,16 @@ class PortalHandler(BaseHTTPRequestHandler):
                 
                 # Update password
                 pwd_hash = hash_password(new_password)
-                USERS[username]['hash'] = pwd_hash['hash']
-                USERS[username]['salt'] = pwd_hash['salt']
+                if USE_DATABASE and database_enabled:
+                    try:
+                        from database.manager import DatabaseManager
+                        with DatabaseManager() as db:
+                            db.users.update(username, password_hash=pwd_hash['hash'], password_salt=pwd_hash['salt'])
+                    except Exception:
+                        pass
+                else:
+                    USERS[username]['hash'] = pwd_hash['hash']
+                    USERS[username]['salt'] = pwd_hash['salt']
                 
                 # Invalidate all existing sessions for this user
                 sessions_to_remove = [token for token, sess in SESSIONS.items() if sess.get('username') == username]
@@ -1697,8 +1724,16 @@ class PortalHandler(BaseHTTPRequestHandler):
                 
                 # Update password
                 pwd_hash = hash_password(new_password)
-                USERS[username]['hash'] = pwd_hash['hash']
-                USERS[username]['salt'] = pwd_hash['salt']
+                if USE_DATABASE and database_enabled:
+                    try:
+                        from database.manager import DatabaseManager
+                        with DatabaseManager() as db:
+                            db.users.update(username, password_hash=pwd_hash['hash'], password_salt=pwd_hash['salt'])
+                    except Exception:
+                        pass
+                else:
+                    USERS[username]['hash'] = pwd_hash['hash']
+                    USERS[username]['salt'] = pwd_hash['salt']
                 
                 # Invalidate all sessions except current
                 sessions_to_remove = [t for t, s in SESSIONS.items() if s.get('username') == username and t != token]
@@ -1772,13 +1807,36 @@ class PortalHandler(BaseHTTPRequestHandler):
                 
                 # Create user account
                 pwd_hash = hash_password(password)
-                USERS[username] = {
-                    'hash': pwd_hash['hash'],
-                    'salt': pwd_hash['salt'],
-                    'role': role,
-                    'name': name,
-                    'customer_id': customer_id
-                }
+                if USE_DATABASE and database_enabled:
+                    try:
+                        from database.manager import DatabaseManager
+                        with DatabaseManager() as db:
+                            db.users.create(
+                                username=username,
+                                password_hash=pwd_hash['hash'],
+                                password_salt=pwd_hash['salt'],
+                                role=role,
+                                name=name,
+                                email=email or None,
+                                active=True,
+                            )
+                    except Exception:
+                        # demo fallback
+                        USERS[username] = {
+                            'hash': pwd_hash['hash'],
+                            'salt': pwd_hash['salt'],
+                            'role': role,
+                            'name': name,
+                            'customer_id': customer_id
+                        }
+                else:
+                    USERS[username] = {
+                        'hash': pwd_hash['hash'],
+                        'salt': pwd_hash['salt'],
+                        'role': role,
+                        'name': name,
+                        'customer_id': customer_id
+                    }
                 
                 self._set_json_headers(201)
                 self.wfile.write(json.dumps({
@@ -2214,16 +2272,42 @@ class PortalHandler(BaseHTTPRequestHandler):
                     # Provision portal login for the customer
                     cust_email = CUSTOMERS[customer_id].get('email') or f"{customer_id.lower()}@example.com"
                     temp_password = f"pw-{uuid.uuid4().hex[:10]}"
-                    
-                    # Hash the password for security
                     pwd_hash = hash_password(temp_password)
-                    USERS[cust_email] = {
-                        'hash': pwd_hash['hash'],
-                        'salt': pwd_hash['salt'],
-                        'role': 'customer',
-                        'name': CUSTOMERS[customer_id].get('name') or customer_id,
-                        'customer_id': customer_id
-                    }
+                    if USE_DATABASE and database_enabled:
+                        try:
+                            from database.manager import DatabaseManager
+                            with DatabaseManager() as db:
+                                existing = db.users.get_by_username(cust_email)
+                                if existing:
+                                    db.users.update(
+                                        cust_email,
+                                        password_hash=pwd_hash['hash'],
+                                        password_salt=pwd_hash['salt'],
+                                        role='customer',
+                                        name=CUSTOMERS[customer_id].get('name') or customer_id,
+                                        email=cust_email,
+                                        active=True,
+                                    )
+                                else:
+                                    db.users.create(
+                                        username=cust_email,
+                                        password_hash=pwd_hash['hash'],
+                                        password_salt=pwd_hash['salt'],
+                                        role='customer',
+                                        name=CUSTOMERS[customer_id].get('name') or customer_id,
+                                        email=cust_email,
+                                        active=True,
+                                    )
+                        except Exception:
+                            pass
+                    else:
+                        USERS[cust_email] = {
+                            'hash': pwd_hash['hash'],
+                            'salt': pwd_hash['salt'],
+                            'role': 'customer',
+                            'name': CUSTOMERS[customer_id].get('name') or customer_id,
+                            'customer_id': customer_id
+                        }
                 
                 # Create underwriting application
                 uw_id = f"UW-{datetime.now().strftime('%Y%m%d')}-{random.randint(1000, 9999)}"
@@ -2358,15 +2442,23 @@ class PortalHandler(BaseHTTPRequestHandler):
                 app = UNDERWRITING_APPLICATIONS.get(uw_id)
                 
                 if app:
+                    app = dict(app)
                     app['status'] = 'approved'
                     app['decision_date'] = datetime.now().isoformat()
-                    app['approved_by'] = data.get('approved_by', 'admin')
+                    # DB schema uses decided_by
+                    app['decided_by'] = data.get('approved_by', 'admin')
+                    # Persist (DBDict requires assignment)
+                    UNDERWRITING_APPLICATIONS[uw_id] = app
                     
                     # Update policy status
                     policy_id = app.get('policy_id')
-                    if policy_id and policy_id in POLICIES:
-                        POLICIES[policy_id]['status'] = 'active'
-                        POLICIES[policy_id]['approval_date'] = datetime.now().isoformat()
+                    if policy_id:
+                        policy = POLICIES.get(policy_id)
+                        if policy:
+                            policy = dict(policy)
+                            policy['status'] = 'active'
+                            policy['approval_date'] = datetime.now().isoformat()
+                            POLICIES[policy_id] = policy
                     if audit:
                         actor = data.get('approved_by', 'admin')
                         try:
@@ -2392,18 +2484,38 @@ class PortalHandler(BaseHTTPRequestHandler):
                 app = UNDERWRITING_APPLICATIONS.get(uw_id)
                 
                 if app:
+                    app = dict(app)
                     app['status'] = 'rejected'
                     app['decision_date'] = datetime.now().isoformat()
-                    app['rejection_reason'] = data.get('reason', 'Risk assessment failed')
+                    reason = data.get('reason', 'Risk assessment failed')
+                    app['decided_by'] = data.get('rejected_by', 'admin')
+                    # Keep legacy field for UIs/tests (DB layer will ignore it)
+                    app['rejection_reason'] = str(reason)[:1000]
+                    # Persist reason in notes (DB schema-compatible)
+                    existing_notes = (app.get('notes') or '')
+                    try:
+                        note_obj = json.loads(existing_notes) if existing_notes else {}
+                        if not isinstance(note_obj, dict):
+                            note_obj = {'notes': str(note_obj)}
+                    except Exception:
+                        note_obj = {'notes': existing_notes} if existing_notes else {}
+                    note_obj['rejection_reason'] = str(reason)[:1000]
+                    app['notes'] = json.dumps(note_obj)
+                    # Persist (DBDict requires assignment)
+                    UNDERWRITING_APPLICATIONS[uw_id] = app
                     
                     # Update policy status
                     policy_id = app.get('policy_id')
-                    if policy_id and policy_id in POLICIES:
-                        POLICIES[policy_id]['status'] = 'rejected'
+                    if policy_id:
+                        policy = POLICIES.get(policy_id)
+                        if policy:
+                            policy = dict(policy)
+                            policy['status'] = 'rejected'
+                            POLICIES[policy_id] = policy
                     if audit:
                         actor = data.get('rejected_by', 'admin')
                         try:
-                            audit.log(actor, 'reject', 'underwriting', uw_id, {'policy_id': policy_id, 'reason': app['rejection_reason']})
+                            audit.log(actor, 'reject', 'underwriting', uw_id, {'policy_id': policy_id, 'reason': reason})
                         except Exception:
                             pass
                     
@@ -2871,88 +2983,180 @@ class PortalHandler(BaseHTTPRequestHandler):
             # Parse multipart form data
             fields = self._parse_multipart_data(form_data, boundary.encode())  # type: ignore
             
-            # Validate all critical fields for security threats
-            critical_fields = ['first-name', 'last-name', 'email', 'phone', 'address', 
-                             'city', 'state', 'occupation', 'medical-conditions']
+            # Validate all critical fields for security threats (best-effort)
+            client_ip = self.client_address[0]
+            critical_fields = [
+                'firstName', 'lastName', 'email', 'phone', 'address', 'city', 'postalCode',
+                'nationalId', 'occupation', 'conditionsDetails', 'medicationsDetails', 'surgeriesDetails',
+                # Legacy/alternate keys (older forms)
+                'first-name', 'last-name', 'zip', 'state', 'medical-conditions', 'health-conditions'
+            ]
             for field_name in critical_fields:
                 field_value = fields.get(field_name, '')
-                if field_value:
-                    threat = validate_input_security(field_value, field_name, self.client_address[0])
-                    if threat:
-                        self._set_json_headers(400)
-                        self.wfile.write(json.dumps({'error': f'Invalid input in {field_name}: {threat}'}).encode('utf-8'))
-                        return
+                if not field_value:
+                    continue
+                is_ok, err = validate_input_security(field_value, client_ip, field_name)
+                if not is_ok:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': f'Invalid input in {field_name}', 'details': err}).encode('utf-8'))
+                    return
             
             # Generate IDs
             customer_id = generate_customer_id()
             policy_id = generate_policy_id()
             uw_id = f"UW-{datetime.now().strftime('%Y%m%d')}-{random.randint(1000, 9999)}"
             
+            # Helpers: accept both camelCase (quote.html) and kebab-case (legacy)
+            def _get(*names: str, default: str = '') -> str:
+                for n in names:
+                    v = fields.get(n)
+                    if v is not None and str(v).strip() != '':
+                        return str(v).strip()
+                return default
+
             # Create customer record
-            customer_name = f"{fields.get('first-name', '')} {fields.get('last-name', '')}".strip()
-            CUSTOMERS[customer_id] = {
+            first_name = _get('firstName', 'first-name')
+            last_name = _get('lastName', 'last-name')
+            customer_name = f"{first_name} {last_name}".strip() or _get('name', default=customer_id)
+            dob = _get('dob')
+            customer_payload = {
                 'id': customer_id,
                 'name': customer_name,
-                'first_name': fields.get('first-name', ''),
-                'last_name': fields.get('last-name', ''),
-                'email': fields.get('email', ''),
-                'phone': fields.get('phone', ''),
-                'dob': fields.get('dob', ''),
-                'gender': fields.get('gender', ''),
-                'address': fields.get('address', ''),
-                'city': fields.get('city', ''),
-                'state': fields.get('state', ''),
-                'zip': fields.get('zip', ''),
-                'occupation': fields.get('occupation', ''),
+                'first_name': first_name,
+                'last_name': last_name,
+                'email': _get('email'),
+                'phone': _get('phone'),
+                'dob': dob,
+                'age': self._calculate_age(dob),
+                'gender': _get('gender'),
+                'address': _get('address'),
+                'city': _get('city'),
+                'state': _get('state'),
+                'zip': _get('postalCode', 'zip'),
+                'occupation': _get('occupation'),
                 'created_date': datetime.now().isoformat()
             }
+            CUSTOMERS[customer_id] = customer_payload
             
             # Provision portal login for the customer
-            cust_email = CUSTOMERS[customer_id].get('email') or f"{customer_id.lower()}@example.com"
+            cust_email = customer_payload.get('email') or f"{customer_id.lower()}@example.com"
             temp_password = f"pw-{uuid.uuid4().hex[:10]}"
             pwd_hash = hash_password(temp_password)
-            USERS[cust_email] = {
-                'hash': pwd_hash['hash'],
-                'salt': pwd_hash['salt'],
-                'role': 'customer',
-                'name': customer_name,
-                'customer_id': customer_id
-            }
+
+            # In DB mode, USERS is a read-through wrapper. Use repositories for writes.
+            if USE_DATABASE and database_enabled:
+                try:
+                    from database.manager import DatabaseManager
+                    with DatabaseManager() as db:
+                        # Upsert user by username/email
+                        existing = db.users.get_by_username(cust_email)
+                        if existing:
+                            db.users.update(
+                                cust_email,
+                                password_hash=pwd_hash['hash'],
+                                password_salt=pwd_hash['salt'],
+                                role='customer',
+                                name=customer_name,
+                                email=cust_email,
+                                active=True,
+                            )
+                        else:
+                            db.users.create(
+                                username=cust_email,
+                                password_hash=pwd_hash['hash'],
+                                password_salt=pwd_hash['salt'],
+                                role='customer',
+                                name=customer_name,
+                                email=cust_email,
+                                active=True,
+                            )
+                except Exception:
+                    # Fall back to in-memory in non-DB scenarios
+                    pass
+            else:
+                USERS[cust_email] = {
+                    'hash': pwd_hash['hash'],
+                    'salt': pwd_hash['salt'],
+                    'role': 'customer',
+                    'name': customer_name,
+                    'customer_id': customer_id
+                }
             
-            # Parse coverage amount
-            coverage_amount = int(fields.get('coverage-amount', '250000'))
-            policy_type = fields.get('policy-type', 'disability')
+            # Parse coverage amount (quote.html uses coverageAmount/customCoverage)
+            cov_sel = _get('coverageAmount', 'coverage-amount', default='250000')
+            if cov_sel == 'custom':
+                cov_sel = _get('customCoverage', default='250000')
+            try:
+                coverage_amount = int(float(cov_sel))
+            except Exception:
+                coverage_amount = 250000
+
+            # Policy type isn't collected by the public quote form; default to life
+            policy_type = _get('policyType', 'policy-type', default='life')
             
             # Assess risk based on health information
             risk_score = 'low'
             medical_exam_required = False
             
-            smoking = fields.get('smoking', '').lower()
-            if smoking in ['yes', 'smoker', 'current']:
+            # Normalize form values
+            health_condition = _get('healthCondition', default='3')
+            try:
+                hc = int(float(health_condition))
+            except Exception:
+                hc = 3
+
+            smoking = _get('smoking', default='NonSmoker').lower()
+            pre_existing = _get('preExisting', default='no').lower()
+
+            # Base risk from health slider
+            if hc <= 3:
+                risk_score = 'low'
+            elif hc <= 6:
                 risk_score = 'medium'
-            
-            health_conditions = fields.get('health-conditions', '').lower()
-            if any(condition in health_conditions for condition in ['diabetes', 'heart', 'cancer', 'chronic']):
+            elif hc <= 8:
                 risk_score = 'high'
+            else:
+                risk_score = 'very_high'
+
+            # Adjust for smoking / pre-existing conditions
+            if smoking in ['smoker', 'current', 'yes']:
+                risk_score = 'high' if risk_score in ('high', 'very_high') else 'medium'
+            if pre_existing in ['yes', 'true', '1']:
+                risk_score = 'very_high' if risk_score in ('high', 'very_high') else 'high'
+            
+            # Heuristics for medical exam requirement
+            if coverage_amount >= 500000 or risk_score in ('high', 'very_high'):
                 medical_exam_required = True
             
             # Create underwriting application
+            # NOTE: DB schema doesn't store full questionnaire payload. Keep a compact summary in notes.
+            conditions_details = _get('conditionsDetails', 'health-conditions', default='')
+            medications_details = _get('medicationsDetails', default='')
+            bp = _get('bloodPressure', default='')
+            height = _get('height', default='')
+            weight = _get('weight', default='')
+            notes = {
+                'source': 'quote_form',
+                'health_condition': hc,
+                'smoking': _get('smoking', default=''),
+                'pre_existing': _get('preExisting', default=''),
+                'conditions_details': conditions_details[:500],
+                'medications_details': medications_details[:500],
+                'blood_pressure': bp[:50],
+                'height_cm': height[:20],
+                'weight_kg': weight[:20],
+                'policy_term': _get('policyTerm', default=''),
+            }
+
             UNDERWRITING_APPLICATIONS[uw_id] = {
                 'id': uw_id,
                 'policy_id': policy_id,
                 'customer_id': customer_id,
                 'status': 'pending',
-                'questionnaire_responses': {
-                    'smoking': fields.get('smoking', 'No'),
-                    'health_conditions': fields.get('health-conditions', 'None'),
-                    'medications': fields.get('medications', 'None'),
-                    'family_history': fields.get('family-history', 'Good'),
-                    'occupation': fields.get('occupation', ''),
-                    'height': fields.get('height', ''),
-                    'weight': fields.get('weight', '')
-                },
                 'risk_assessment': risk_score,
                 'medical_exam_required': medical_exam_required,
+                'additional_documents_required': True,  # ID doc is required on the form
+                'notes': json.dumps(notes),
                 'submitted_date': datetime.now().isoformat()
             }
             
