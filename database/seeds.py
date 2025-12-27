@@ -6,7 +6,7 @@ Populates the database with default users and sample data.
 
 import hashlib
 import secrets
-from datetime import datetime
+from datetime import datetime, timezone
 import logging
 
 from database import get_db_session, init_database
@@ -134,7 +134,7 @@ def seed_sample_data(session=None):
             logger.info(f"Created sample customer: {sample_customer.id}")
             
             # Sample policy for demo customer
-            start_date = datetime.utcnow()
+            start_date = datetime.now(timezone.utc)
             end_date = start_date + timedelta(days=365)
             
             sample_policy = policy_repo.create(

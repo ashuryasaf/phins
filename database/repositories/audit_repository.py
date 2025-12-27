@@ -1,7 +1,7 @@
 """Audit Repository"""
 
 from typing import Optional, List
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from sqlalchemy.orm import Session
 from database.models import AuditLog
 from .base import BaseRepository
@@ -43,7 +43,7 @@ class AuditRepository(BaseRepository[AuditLog]):
     def get_recent_logs(self, hours: int = 24, limit: int = 1000) -> List[AuditLog]:
         """Get recent audit logs"""
         try:
-            since = datetime.utcnow() - timedelta(hours=hours)
+            since = datetime.now(timezone.utc) - timedelta(hours=hours)
             return self.session.query(AuditLog).filter(
                 AuditLog.timestamp >= since
             ).order_by(AuditLog.timestamp.desc()).limit(limit).all()

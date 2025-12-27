@@ -73,7 +73,8 @@ class BaseRepository(Generic[T]):
             Model instance or None if not found
         """
         try:
-            return self.session.query(self.model_class).get(id_value)
+            # SQLAlchemy 2.x: prefer Session.get over Query.get (legacy).
+            return self.session.get(self.model_class, id_value)
         except SQLAlchemyError as e:
             logger.error(f"Error fetching {self.model_class.__name__} by id {id_value}: {e}")
             return None

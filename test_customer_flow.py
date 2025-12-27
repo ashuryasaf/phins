@@ -9,6 +9,9 @@ from datetime import datetime
 # Add parent directory to path
 sys.path.insert(0, '/workspaces/phins')
 
+# This file is a debug script; don't let pytest treat it as a test module.
+__test__ = False
+
 def test_customer_validation():
     """Test customer validation data structure"""
     print("=" * 60)
@@ -56,7 +59,11 @@ def test_customer_validation():
     print(f"  Health risk score: {summary['health_risk_score']:.2f}")
     print(f"  Requires medical review: {summary['requires_medical_review']}")
     
-    return customer, summary
+    assert customer is not None
+    assert isinstance(summary, dict)
+    assert 'health_risk_score' in summary
+    assert 'requires_medical_review' in summary
+    return None
 
 
 def test_underwriting_application():
@@ -122,7 +129,9 @@ def test_server_storage():
                        if u.get('status') == 'pending')
     print(f"  Pending applications: {pending_count}")
     
-    return customer_id, uw_id
+    assert customer_id in server.CUSTOMERS
+    assert uw_id in server.UNDERWRITING_APPLICATIONS
+    return None
 
 
 def test_data_retrieval():

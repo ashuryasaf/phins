@@ -11,6 +11,9 @@ from datetime import datetime
 
 BASE_URL = 'http://localhost:8000'
 
+# This file is a manual security script; don't let pytest collect it.
+__test__ = False
+
 def test_sql_injection():
     """Test SQL injection detection"""
     print("\n=== Testing SQL Injection Detection ===")
@@ -39,7 +42,8 @@ def test_sql_injection():
             print(f"✗ Error testing: {str(e)}")
     
     print(f"\nBlocked {blocked_count}/{len(malicious_inputs)} SQL injection attempts")
-    return blocked_count == len(malicious_inputs)
+    assert blocked_count == len(malicious_inputs)
+    return None
 
 def test_xss_attacks():
     """Test XSS attack detection"""
@@ -69,7 +73,8 @@ def test_xss_attacks():
             print(f"✗ Error: {str(e)}")
     
     print(f"\nBlocked {blocked_count}/{len(xss_payloads)} XSS attempts")
-    return blocked_count == len(xss_payloads)
+    assert blocked_count == len(xss_payloads)
+    return None
 
 def test_path_traversal():
     """Test path traversal detection"""
@@ -96,7 +101,8 @@ def test_path_traversal():
             print(f"✗ Error: {str(e)}")
     
     print(f"\nBlocked {blocked_count}/{len(traversal_attempts)} path traversal attempts")
-    return blocked_count == len(traversal_attempts)
+    assert blocked_count == len(traversal_attempts)
+    return None
 
 def test_rate_limiting():
     """Test rate limiting functionality"""
@@ -121,7 +127,8 @@ def test_rate_limiting():
     
     success = blocked > 0
     print(f"\n{'✓' if success else '✗'} Rate limiting: {requests_made} requests made, {blocked} blocked")
-    return success
+    assert success
+    return None
 
 def test_command_injection():
     """Test command injection detection"""
@@ -151,7 +158,8 @@ def test_command_injection():
             print(f"✗ Error: {str(e)}")
     
     print(f"\nBlocked {blocked_count}/{len(command_payloads)} command injection attempts")
-    return blocked_count == len(command_payloads)
+    assert blocked_count == len(command_payloads)
+    return None
 
 def test_request_size_limit():
     """Test oversized request blocking"""
@@ -167,13 +175,13 @@ def test_request_size_limit():
         )
         if response.status_code in [413, 400]:
             print("✓ Successfully blocked oversized request (15MB)")
-            return True
+            return None
         else:
             print(f"✗ Failed to block large request: {response.status_code}")
-            return False
+            raise AssertionError(f"Failed to block large request: {response.status_code}")
     except Exception as e:
         print(f"✗ Error testing size limit: {str(e)}")
-        return False
+        raise
 
 def test_authentication_bypass():
     """Test authentication bypass attempts"""
@@ -203,7 +211,8 @@ def test_authentication_bypass():
             print(f"✗ Error: {str(e)}")
     
     print(f"\nBlocked {blocked_count}/{len(bypass_attempts)} bypass attempts")
-    return blocked_count == len(bypass_attempts)
+    assert blocked_count == len(bypass_attempts)
+    return None
 
 def check_security_endpoint():
     """Test security monitoring endpoint"""
@@ -219,10 +228,11 @@ def check_security_endpoint():
         
         # Note: Full test requires admin credentials
         print("ℹ Full endpoint test requires admin login")
-        return True
+        assert True
+        return None
     except Exception as e:
         print(f"✗ Error: {str(e)}")
-        return False
+        raise
 
 def run_all_tests():
     """Run complete security test suite"""

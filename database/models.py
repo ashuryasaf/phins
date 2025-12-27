@@ -6,12 +6,16 @@ Supports both SQLite (development) and PostgreSQL (production).
 """
 
 from sqlalchemy import Column, String, Integer, Float, DateTime, Boolean, Text, ForeignKey, Enum as SQLEnum
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import relationship
-from datetime import datetime
+from sqlalchemy.orm import relationship, declarative_base
+from datetime import datetime, timezone
 import enum
 
 Base = declarative_base()
+
+
+def utcnow() -> datetime:
+    """Timezone-aware UTC timestamp (avoids deprecated datetime.utcnow)."""
+    return datetime.now(timezone.utc)
 
 
 class PolicyStatus(str, enum.Enum):
@@ -70,8 +74,8 @@ class Customer(Base):
     state = Column(String(100))
     zip = Column(String(20))
     occupation = Column(String(100))
-    created_date = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_date = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_date = Column(DateTime, default=utcnow, nullable=False)
+    updated_date = Column(DateTime, default=utcnow, onupdate=utcnow)
     
     # Relationships
     policies = relationship("Policy", back_populates="customer", cascade="all, delete-orphan")
@@ -116,8 +120,8 @@ class Policy(Base):
     start_date = Column(DateTime)
     end_date = Column(DateTime)
     approval_date = Column(DateTime)
-    created_date = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_date = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_date = Column(DateTime, default=utcnow, nullable=False)
+    updated_date = Column(DateTime, default=utcnow, onupdate=utcnow)
     
     # Legacy field mappings for compatibility
     uw_status = Column(String(50))  # Maps to underwriting status
@@ -160,12 +164,12 @@ class Claim(Base):
     claimed_amount = Column(Float, nullable=False)
     approved_amount = Column(Float)
     status = Column(String(50), default='pending')
-    filed_date = Column(DateTime, default=datetime.utcnow, nullable=False)
+    filed_date = Column(DateTime, default=utcnow, nullable=False)
     approval_date = Column(DateTime)
     payment_date = Column(DateTime)
     rejection_reason = Column(Text)
-    created_date = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_date = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_date = Column(DateTime, default=utcnow, nullable=False)
+    updated_date = Column(DateTime, default=utcnow, onupdate=utcnow)
     
     # Relationships
     policy = relationship("Policy", back_populates="claims")
@@ -203,11 +207,11 @@ class UnderwritingApplication(Base):
     medical_exam_required = Column(Boolean, default=False)
     additional_documents_required = Column(Boolean, default=False)
     notes = Column(Text)
-    submitted_date = Column(DateTime, default=datetime.utcnow, nullable=False)
+    submitted_date = Column(DateTime, default=utcnow, nullable=False)
     decision_date = Column(DateTime)
     decided_by = Column(String(100))  # Username of underwriter
-    created_date = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_date = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_date = Column(DateTime, default=utcnow, nullable=False)
+    updated_date = Column(DateTime, default=utcnow, onupdate=utcnow)
     
     def to_dict(self):
         """Convert model to dictionary"""
@@ -243,8 +247,8 @@ class Bill(Base):
     payment_method = Column(String(50))  # credit_card, debit_card, bank_transfer, check, etc.
     transaction_id = Column(String(100))
     late_fee = Column(Float, default=0.0)
-    created_date = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_date = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_date = Column(DateTime, default=utcnow, nullable=False)
+    updated_date = Column(DateTime, default=utcnow, onupdate=utcnow)
     
     def to_dict(self):
         """Convert model to dictionary"""
@@ -276,7 +280,7 @@ class User(Base):
     name = Column(String(200))
     email = Column(String(254))
     active = Column(Boolean, default=True)
-    created_date = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_date = Column(DateTime, default=utcnow, nullable=False)
     last_login = Column(DateTime)
     
     def to_dict(self):
@@ -301,7 +305,7 @@ class Session(Base):
     customer_id = Column(String(50), index=True)
     ip_address = Column(String(45))  # Support IPv6
     expires = Column(DateTime, nullable=False, index=True)
-    created_date = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_date = Column(DateTime, default=utcnow, nullable=False)
     
     def to_dict(self):
         """Convert model to dictionary"""
@@ -320,7 +324,7 @@ class AuditLog(Base):
     __tablename__ = 'audit_logs'
     
     id = Column(Integer, primary_key=True, autoincrement=True)
-    timestamp = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    timestamp = Column(DateTime, default=utcnow, nullable=False, index=True)
     username = Column(String(100), index=True)
     customer_id = Column(String(50), index=True)
     action = Column(String(100), nullable=False)

@@ -10,7 +10,7 @@ Goals:
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Literal, Optional, Sequence, Tuple
 import json
 import time
@@ -100,7 +100,7 @@ class MarketDataClient:
 
     def fetch(self) -> Dict[str, Any]:
         if not self._symbols:
-            return {"items": [], "ts": datetime.utcnow().isoformat()}
+            return {"items": [], "ts": datetime.now(timezone.utc).isoformat()}
         svc = MarketDataService(ttl_seconds=self._ttl_seconds)
         if self._kind == "crypto":
             quotes = svc.get_crypto_quotes(self._symbols, vs_currency=self._vs_currency)
@@ -109,7 +109,7 @@ class MarketDataClient:
         else:
             base, quote = self._symbols[0].split("/", 1)
             quotes = [svc.get_fx_quote(base, quote)]
-        return {"items": [q.to_dict() for q in quotes], "ts": datetime.utcnow().isoformat()}
+        return {"items": [q.to_dict() for q in quotes], "ts": datetime.now(timezone.utc).isoformat()}
 
 
 class MarketDataService:
@@ -175,7 +175,7 @@ class MarketDataService:
                 )
                 data = _http_get_json(url)
                 out: List[MarketQuote] = []
-                now = datetime.utcnow().isoformat()
+                now = datetime.now(timezone.utc).isoformat()
                 for sym in symbols:
                     cid = symbol_to_id.get(sym)
                     if not cid or cid not in data:
@@ -200,7 +200,7 @@ class MarketDataService:
             pass
 
         # Fallback deterministic synthetic quotes
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).isoformat()
         fallback_prices = {
             "BTC": 65000.0,
             "ETH": 3500.0,
@@ -253,7 +253,7 @@ class MarketDataService:
         }
 
         out: List[MarketQuote] = []
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).isoformat()
         try:
             for sym in symbols:
                 st = stooq_map.get(sym, "")
@@ -318,7 +318,7 @@ class MarketDataService:
         if cached is not None:
             return cached
 
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).isoformat()
         # No external source by default; provide stable-ish fallback.
         fallback_fx = {
             ("USD", "GBP"): 0.79,
