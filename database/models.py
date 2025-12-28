@@ -314,12 +314,15 @@ class User(Base):
     username = Column(String(100), primary_key=True)
     password_hash = Column(String(255), nullable=False)
     password_salt = Column(String(255), nullable=False)
-    role = Column(String(50), nullable=False)  # admin, underwriter, claims_adjuster, accountant
+    role = Column(String(50), nullable=False)  # admin, underwriter, claims_adjuster, accountant, customer
     name = Column(String(200))
     email = Column(String(254))
     active = Column(Boolean, default=True)
     created_date = Column(DateTime, default=datetime.utcnow, nullable=False)
     last_login = Column(DateTime)
+    
+    # Customer linkage (for role='customer' users)
+    customer_id = Column(String(50), nullable=True, index=True)
     
     # Staff-specific fields
     department = Column(String(100), nullable=True)

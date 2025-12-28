@@ -61,6 +61,14 @@ def seed_default_users(session=None):
                 'role': 'accountant',
                 'name': 'Bob Accountant',
                 'email': 'accountant@phins.ai'
+            },
+            # Primary customer account (links to CUST-ASAF-001 in customers table)
+            {
+                'username': 'asaf@assurance.co.il',
+                'password': 'Asaf2024!',
+                'role': 'customer',
+                'name': 'Asaf Assurance',
+                'email': 'asaf@assurance.co.il'
             }
         ]
         

@@ -531,11 +531,23 @@ if USE_DATABASE and database_enabled:
                 with DatabaseManager() as db:
                     user = db.users.get_by_username(username)
                     if user:
+                        # Get customer_id - either from user record or by looking up by email
+                        customer_id = getattr(user, 'customer_id', None)
+                        if not customer_id and user.role == 'customer':
+                            # Try to find customer by email
+                            from database.models import Customer
+                            customer = db._session.query(Customer).filter(
+                                Customer.email == username
+                            ).first()
+                            if customer:
+                                customer_id = customer.id
+                        
                         return {
                             'hash': user.password_hash,
                             'salt': user.password_salt,
                             'role': user.role,
-                            'name': user.name
+                            'name': user.name,
+                            'customer_id': customer_id
                         }
             except ImportError as e:
                 print(f"Warning: Database module not available: {e}")
