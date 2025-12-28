@@ -227,6 +227,42 @@
       </div>
     </section>
 
+    <!-- Marketplace Transactions Section -->
+    <section class="card">
+      <h2>🛒 Marketplace & Service Transactions</h2>
+      <p style="color: #666; margin-bottom: 1rem;">Health services, medical products, and NFT-verified transactions</p>
+      
+      <div class="stats-grid" style="margin-bottom: 1.5rem;">
+        <div class="stat-card" style="background: linear-gradient(135deg, #28a745 0%, #20c997 100%);">
+          <div class="stat-label">Total Volume</div>
+          <div class="stat-value" id="marketplace-volume">$0</div>
+        </div>
+        <div class="stat-card" style="background: linear-gradient(135deg, #17a2b8 0%, #138496 100%);">
+          <div class="stat-label">Insurance Covered</div>
+          <div class="stat-value" id="marketplace-insurance">$0</div>
+        </div>
+        <div class="stat-card" style="background: linear-gradient(135deg, #ffc107 0%, #e0a800 100%);">
+          <div class="stat-label">Pending Approvals</div>
+          <div class="stat-value" id="marketplace-pending">0</div>
+        </div>
+        <div class="stat-card" style="background: linear-gradient(135deg, #6f42c1 0%, #5a32a3 100%);">
+          <div class="stat-label">NFTs Issued</div>
+          <div class="stat-value" id="marketplace-nfts">0</div>
+        </div>
+      </div>
+      
+      <div class="tabs">
+        <div class="tab active" onclick="showMarketplaceTab('all')">All Transactions</div>
+        <div class="tab" onclick="showMarketplaceTab('pending')">Pending Approvals</div>
+        <div class="tab" onclick="showMarketplaceTab('services')">Services</div>
+        <div class="tab" onclick="showMarketplaceTab('products')">Products</div>
+      </div>
+      
+      <div class="transaction-list" id="marketplace-transactions">
+        <p class="muted">Loading marketplace transactions...</p>
+      </div>
+    </section>
+
     <!-- Fraud Alerts -->
     <section class="card">
       <h2>🚨 Fraud Alerts</h2>

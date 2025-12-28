@@ -1286,3 +1286,254 @@ async function refundTransaction(transactionId) {
     alert(`❌ Error: ${err.message}`);
   }
 }
+
+// ========== MARKETPLACE INTEGRATION ==========
+
+// Current marketplace filter
+let currentMarketplaceFilter = 'all';
+
+// Load marketplace statistics and transactions
+async function loadMarketplaceData() {
+  await loadMarketplaceStats();
+  await loadMarketplaceTransactions('all');
+}
+
+// Load marketplace statistics
+async function loadMarketplaceStats() {
+  try {
+    const response = await fetch('/api/marketplace/stats', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${localStorage.getItem('phins_token')}`,
+        'Content-Type': 'application/json'
+      }
+    });
+    
+    if (response.ok) {
+      const data = await response.json();
+      const stats = data.stats || {};
+      
+      // Update stats display
+      const volumeEl = document.getElementById('marketplace-volume');
+      const insuranceEl = document.getElementById('marketplace-insurance');
+      const pendingEl = document.getElementById('marketplace-pending');
+      const nftsEl = document.getElementById('marketplace-nfts');
+      
+      if (volumeEl) volumeEl.textContent = `$${(stats.total_volume || 0).toLocaleString()}`;
+      if (insuranceEl) insuranceEl.textContent = `$${(stats.insurance_covered_total || 0).toLocaleString()}`;
+      if (pendingEl) pendingEl.textContent = stats.pending_approvals || 0;
+      if (nftsEl) nftsEl.textContent = stats.total_nfts_issued || 0;
+    }
+  } catch (err) {
+    console.error('Failed to load marketplace stats:', err);
+  }
+}
+
+// Load marketplace transactions
+async function loadMarketplaceTransactions(filter = 'all') {
+  currentMarketplaceFilter = filter;
+  const container = document.getElementById('marketplace-transactions');
+  if (!container) return;
+  
+  container.innerHTML = '<p class="muted">Loading transactions...</p>';
+  
+  try {
+    let endpoint = '/api/marketplace/admin/transactions';
+    let body = { limit: 50 };
+    
+    if (filter === 'pending') {
+      endpoint = '/api/marketplace/admin/pending-approvals';
+      body = {};
+    } else if (filter === 'services') {
+      body.item_type = 'service';
+    } else if (filter === 'products') {
+      body.item_type = 'product';
+    }
+    
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${localStorage.getItem('phins_token')}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(body)
+    });
+    
+    if (response.ok) {
+      const data = await response.json();
+      
+      if (filter === 'pending') {
+        displayPendingApprovals(data.pending_approvals || []);
+      } else {
+        displayMarketplaceTransactions(data.transactions || []);
+      }
+    } else {
+      container.innerHTML = '<p class="muted">No marketplace data available</p>';
+    }
+  } catch (err) {
+    console.error('Failed to load marketplace transactions:', err);
+    container.innerHTML = '<p class="error">Failed to load transactions</p>';
+  }
+}
+
+// Display marketplace transactions
+function displayMarketplaceTransactions(transactions) {
+  const container = document.getElementById('marketplace-transactions');
+  if (!container) return;
+  
+  if (transactions.length === 0) {
+    container.innerHTML = '<p class="muted">No transactions found</p>';
+    return;
+  }
+  
+  container.innerHTML = transactions.map(txn => {
+    const statusClass = txn.status === 'completed' ? 'status-completed' :
+                       txn.status === 'approved' ? 'status-success' :
+                       txn.status === 'pending' ? 'status-pending' : 'status-failed';
+    const typeIcon = txn.item_type === 'service' ? '🩺' : '📦';
+    
+    return `
+      <div class="transaction-item">
+        <div>
+          <strong>${typeIcon} ${txn.item_name || txn.transaction_id}</strong><br>
+          <small>Customer: ${txn.customer_id}</small><br>
+          <small>Category: ${txn.category} | NFT: ${txn.nft_token_id || 'N/A'}</small><br>
+          <small>${new Date(txn.created_at).toLocaleString()}</small>
+        </div>
+        <div style="text-align: right;">
+          <strong>$${Number(txn.total_amount).toFixed(2)}</strong><br>
+          ${txn.insurance_covered > 0 ? `<small style="color: #28a745;">Insurance: $${txn.insurance_covered.toFixed(2)}</small><br>` : ''}
+          <span class="transaction-status ${statusClass}">${txn.status.toUpperCase()}</span><br>
+          ${txn.status === 'pending' || txn.status === 'pending_approval' ? `
+            <div class="action-buttons" style="margin-top: 0.5rem;">
+              <button class="btn-small" style="background:#28a745;color:#fff;" onclick="approveMarketplaceTransaction('${txn.transaction_id}')">Approve</button>
+              <button class="btn-small" style="background:#dc3545;color:#fff;" onclick="rejectMarketplaceTransaction('${txn.transaction_id}')">Reject</button>
+            </div>
+          ` : ''}
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+// Display pending approvals
+function displayPendingApprovals(approvals) {
+  const container = document.getElementById('marketplace-transactions');
+  if (!container) return;
+  
+  if (approvals.length === 0) {
+    container.innerHTML = '<p class="muted">✅ No pending approvals</p>';
+    return;
+  }
+  
+  container.innerHTML = approvals.map(item => {
+    const txn = item.transaction || {};
+    const nft = item.nft || {};
+    const typeIcon = txn.item_type === 'service' ? '🩺' : '📦';
+    
+    return `
+      <div class="transaction-item" style="background: #fff3cd;">
+        <div>
+          <strong>${typeIcon} ${txn.item_name || txn.transaction_id}</strong><br>
+          <small>Customer: ${txn.customer_id}</small><br>
+          <small>Category: ${txn.category}</small><br>
+          ${item.requires_prescription ? '<span style="color: #dc3545; font-weight: bold;">⚠️ Requires Prescription</span><br>' : ''}
+          <small>NFT: ${nft.token_id || 'N/A'}</small><br>
+          <small>${new Date(txn.created_at).toLocaleString()}</small>
+        </div>
+        <div style="text-align: right;">
+          <strong>$${Number(txn.total_amount || 0).toFixed(2)}</strong><br>
+          <span class="transaction-status status-pending">PENDING APPROVAL</span><br>
+          <div class="action-buttons" style="margin-top: 0.5rem;">
+            <button class="btn-small" style="background:#28a745;color:#fff;" onclick="approveMarketplaceTransaction('${txn.transaction_id}')">✅ Approve</button>
+            <button class="btn-small" style="background:#dc3545;color:#fff;" onclick="rejectMarketplaceTransaction('${txn.transaction_id}')">❌ Reject</button>
+          </div>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+// Approve marketplace transaction
+async function approveMarketplaceTransaction(transactionId) {
+  const notes = prompt('Enter approval notes (optional):');
+  
+  try {
+    const response = await fetch('/api/marketplace/admin/approve', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${localStorage.getItem('phins_token')}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        transaction_id: transactionId,
+        notes: notes || ''
+      })
+    });
+    
+    const result = await response.json();
+    
+    if (result.success) {
+      alert(`✅ Transaction approved!\n\nTransaction ID: ${transactionId}`);
+      loadMarketplaceData();
+    } else {
+      alert(`❌ Approval failed: ${result.error}`);
+    }
+  } catch (err) {
+    alert(`❌ Error: ${err.message}`);
+  }
+}
+
+// Reject marketplace transaction
+async function rejectMarketplaceTransaction(transactionId) {
+  const reason = prompt('Enter rejection reason:');
+  if (!reason) {
+    alert('Rejection reason is required');
+    return;
+  }
+  
+  try {
+    const response = await fetch('/api/marketplace/admin/reject', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${localStorage.getItem('phins_token')}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        transaction_id: transactionId,
+        reason: reason
+      })
+    });
+    
+    const result = await response.json();
+    
+    if (result.success) {
+      alert(`Transaction rejected.\n\nTransaction ID: ${transactionId}`);
+      loadMarketplaceData();
+    } else {
+      alert(`❌ Rejection failed: ${result.error}`);
+    }
+  } catch (err) {
+    alert(`❌ Error: ${err.message}`);
+  }
+}
+
+// Switch marketplace tabs
+function showMarketplaceTab(filter) {
+  currentMarketplaceFilter = filter;
+  
+  // Update tab styles
+  document.querySelectorAll('.tabs .tab').forEach(tab => {
+    tab.classList.remove('active');
+  });
+  event.target.classList.add('active');
+  
+  // Load data for selected filter
+  loadMarketplaceTransactions(filter);
+}
+
+// Initialize marketplace on page load
+document.addEventListener('DOMContentLoaded', () => {
+  // Load marketplace data after other initialization
+  setTimeout(loadMarketplaceData, 500);
+});

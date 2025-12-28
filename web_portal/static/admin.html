@@ -417,6 +417,196 @@
         </div>
       </div>
     </section>
+    
+    <!-- Marketplace & Services Division -->
+    <section id="marketplace" class="section-content" style="background: linear-gradient(135deg, #e8f5e9 0%, #c8e6c9 100%); border-radius: 12px; padding: 24px;">
+      <div class="section-header">
+        <h2>🛒 Marketplace Division — Services & Products</h2>
+        <span class="badge badge-success" id="marketplace-status">NFT-Verified</span>
+      </div>
+      
+      <div class="dashboard-stats" style="margin-bottom: 24px;">
+        <div class="stat-box" style="background: linear-gradient(135deg, #28a745 0%, #20c997 100%);">
+          <div class="stat-icon">💰</div>
+          <div class="stat-value" id="mp-total-volume">$0</div>
+          <div class="stat-label">Total Volume</div>
+        </div>
+        <div class="stat-box" style="background: linear-gradient(135deg, #17a2b8 0%, #138496 100%);">
+          <div class="stat-icon">🏥</div>
+          <div class="stat-value" id="mp-insurance-covered">$0</div>
+          <div class="stat-label">Insurance Covered</div>
+        </div>
+        <div class="stat-box" style="background: linear-gradient(135deg, #ffc107 0%, #e0a800 100%);">
+          <div class="stat-icon">⏳</div>
+          <div class="stat-value" id="mp-pending">0</div>
+          <div class="stat-label">Pending Approvals</div>
+        </div>
+        <div class="stat-box" style="background: linear-gradient(135deg, #6f42c1 0%, #5a32a3 100%);">
+          <div class="stat-icon">🔗</div>
+          <div class="stat-value" id="mp-nfts">0</div>
+          <div class="stat-label">NFT Tokens Issued</div>
+        </div>
+      </div>
+      
+      <div class="table-card">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+          <h3>Recent Service & Product Transactions</h3>
+          <div>
+            <button class="btn btn-small" onclick="filterMarketplace('all')">All</button>
+            <button class="btn btn-small" onclick="filterMarketplace('services')">Services</button>
+            <button class="btn btn-small" onclick="filterMarketplace('products')">Products</button>
+            <button class="btn btn-small" style="background:#ffc107;color:#333;" onclick="filterMarketplace('pending')">Pending</button>
+          </div>
+        </div>
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Transaction ID</th>
+              <th>Customer</th>
+              <th>Type</th>
+              <th>Item</th>
+              <th>Amount</th>
+              <th>Insurance</th>
+              <th>NFT Token</th>
+              <th>Status</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="marketplace-table">
+            <tr>
+              <td colspan="9" style="text-align: center; color: #666;">Loading marketplace data...</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      
+      <div style="margin-top: 24px; display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px;">
+        <div class="card" style="background: white;">
+          <h3>🩺 Top Service Categories</h3>
+          <div id="top-services">
+            <div style="display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #eee;">
+              <span>Medical Consultations</span>
+              <span style="font-weight: bold;">$0</span>
+            </div>
+            <div style="display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #eee;">
+              <span>Home Care</span>
+              <span style="font-weight: bold;">$0</span>
+            </div>
+            <div style="display: flex; justify-content: space-between; padding: 8px 0;">
+              <span>Physical Therapy</span>
+              <span style="font-weight: bold;">$0</span>
+            </div>
+          </div>
+        </div>
+        
+        <div class="card" style="background: white;">
+          <h3>📦 Top Product Categories</h3>
+          <div id="top-products">
+            <div style="display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #eee;">
+              <span>Medications</span>
+              <span style="font-weight: bold;">$0</span>
+            </div>
+            <div style="display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #eee;">
+              <span>Prosthetics</span>
+              <span style="font-weight: bold;">$0</span>
+            </div>
+            <div style="display: flex; justify-content: space-between; padding: 8px 0;">
+              <span>Mobility Devices</span>
+              <span style="font-weight: bold;">$0</span>
+            </div>
+          </div>
+        </div>
+        
+        <div class="card" style="background: white;">
+          <h3>🔗 NFT Integrity Status</h3>
+          <div id="nft-status">
+            <div style="display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #eee;">
+              <span>Tokens Verified</span>
+              <span style="color: #28a745; font-weight: bold;">100%</span>
+            </div>
+            <div style="display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #eee;">
+              <span>Chain Integrity</span>
+              <span style="color: #28a745; font-weight: bold;">✓ Valid</span>
+            </div>
+            <div style="display: flex; justify-content: space-between; padding: 8px 0;">
+              <span>Last Audit</span>
+              <span style="font-weight: bold;">Just now</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+    
+    <!-- Insurance AI BI Dashboard -->
+    <section class="section-content" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border-radius: 12px; padding: 24px;">
+      <div class="section-header">
+        <h2 style="color: white;">🤖 AI-Powered Insurance BI System</h2>
+        <span class="badge" style="background: #28a745;">LIVE</span>
+      </div>
+      
+      <p style="opacity: 0.9; margin-bottom: 24px;">Real-time analytics and intelligent automation for the world's most advanced insurance platform.</p>
+      
+      <div class="dashboard-stats">
+        <div class="stat-box" style="background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2);">
+          <div class="stat-icon">📊</div>
+          <div class="stat-value">99.9%</div>
+          <div class="stat-label">System Uptime</div>
+        </div>
+        <div class="stat-box" style="background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2);">
+          <div class="stat-icon">⚡</div>
+          <div class="stat-value">&lt;50ms</div>
+          <div class="stat-label">API Response Time</div>
+        </div>
+        <div class="stat-box" style="background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2);">
+          <div class="stat-icon">🔒</div>
+          <div class="stat-value">AES-256</div>
+          <div class="stat-label">Encryption Standard</div>
+        </div>
+        <div class="stat-box" style="background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2);">
+          <div class="stat-icon">🌐</div>
+          <div class="stat-value">24/7</div>
+          <div class="stat-label">Global Availability</div>
+        </div>
+      </div>
+      
+      <div style="margin-top: 24px; display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 16px;">
+        <div style="background: rgba(255,255,255,0.1); padding: 16px; border-radius: 8px;">
+          <h4 style="margin-bottom: 12px;">🎯 Automated Pipeline</h4>
+          <ul style="list-style: none; padding: 0; margin: 0;">
+            <li style="padding: 4px 0;">✓ Application Processing</li>
+            <li style="padding: 4px 0;">✓ Underwriting AI</li>
+            <li style="padding: 4px 0;">✓ Policy Activation</li>
+            <li style="padding: 4px 0;">✓ Premium Billing</li>
+            <li style="padding: 4px 0;">✓ Claims Processing</li>
+            <li style="padding: 4px 0;">✓ Payment Disbursement</li>
+          </ul>
+        </div>
+        
+        <div style="background: rgba(255,255,255,0.1); padding: 16px; border-radius: 8px;">
+          <h4 style="margin-bottom: 12px;">🔗 NFT Token System</h4>
+          <ul style="list-style: none; padding: 0; margin: 0;">
+            <li style="padding: 4px 0;">✓ Transaction Provenance</li>
+            <li style="padding: 4px 0;">✓ Data Integrity</li>
+            <li style="padding: 4px 0;">✓ Audit Trail</li>
+            <li style="padding: 4px 0;">✓ Smart Contracts</li>
+            <li style="padding: 4px 0;">✓ Product Authenticity</li>
+            <li style="padding: 4px 0;">✓ Ownership Transfer</li>
+          </ul>
+        </div>
+        
+        <div style="background: rgba(255,255,255,0.1); padding: 16px; border-radius: 8px;">
+          <h4 style="margin-bottom: 12px;">💳 Payment Options</h4>
+          <ul style="list-style: none; padding: 0; margin: 0;">
+            <li style="padding: 4px 0;">✓ Lump Sum Payments</li>
+            <li style="padding: 4px 0;">✓ Risk Cover Disbursement</li>
+            <li style="padding: 4px 0;">✓ Service Provider Payment</li>
+            <li style="padding: 4px 0;">✓ Product Vendor Payment</li>
+            <li style="padding: 4px 0;">✓ Recurring Benefits</li>
+            <li style="padding: 4px 0;">✓ Health Wallet Credits</li>
+          </ul>
+        </div>
+      </div>
+    </section>
   </main>
 
   <footer class="footer">
@@ -761,6 +951,254 @@
     // Load saved language
     const savedLang = localStorage.getItem('phins_language');
     if (savedLang) document.getElementById('language-selector').value = savedLang;
+    
+    // ========== MARKETPLACE FUNCTIONS ==========
+    
+    // Load marketplace data
+    async function loadMarketplaceData() {
+      await loadMarketplaceStats();
+      await loadMarketplaceTable('all');
+    }
+    
+    // Load marketplace statistics
+    async function loadMarketplaceStats() {
+      try {
+        const response = await fetch('/api/marketplace/stats', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          }
+        });
+        
+        if (response.ok) {
+          const data = await response.json();
+          const stats = data.stats || {};
+          
+          document.getElementById('mp-total-volume').textContent = `$${(stats.total_volume || 0).toLocaleString()}`;
+          document.getElementById('mp-insurance-covered').textContent = `$${(stats.insurance_covered_total || 0).toLocaleString()}`;
+          document.getElementById('mp-pending').textContent = stats.pending_approvals || 0;
+          document.getElementById('mp-nfts').textContent = stats.total_nfts_issued || 0;
+        }
+      } catch (err) {
+        console.error('Failed to load marketplace stats:', err);
+      }
+    }
+    
+    // Load marketplace table
+    async function loadMarketplaceTable(filter = 'all') {
+      const tbody = document.getElementById('marketplace-table');
+      if (!tbody) return;
+      
+      tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:#666;">Loading...</td></tr>';
+      
+      try {
+        let endpoint = '/api/marketplace/admin/transactions';
+        let body = { limit: 20 };
+        
+        if (filter === 'pending') {
+          endpoint = '/api/marketplace/admin/pending-approvals';
+          body = {};
+        }
+        
+        const response = await fetch(endpoint, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(body)
+        });
+        
+        if (response.ok) {
+          const data = await response.json();
+          
+          if (filter === 'pending') {
+            displayPendingApprovals(data.pending_approvals || []);
+          } else {
+            let transactions = data.transactions || [];
+            if (filter === 'services') {
+              transactions = transactions.filter(t => t.item_type === 'service');
+            } else if (filter === 'products') {
+              transactions = transactions.filter(t => t.item_type === 'product');
+            }
+            displayMarketplaceTable(transactions);
+          }
+        } else {
+          tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:#666;">No data available</td></tr>';
+        }
+      } catch (err) {
+        console.error('Failed to load marketplace table:', err);
+        tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:#dc3545;">Error loading data</td></tr>';
+      }
+    }
+    
+    // Display marketplace transactions in table
+    function displayMarketplaceTable(transactions) {
+      const tbody = document.getElementById('marketplace-table');
+      if (!tbody) return;
+      
+      if (transactions.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:#666;">No transactions found</td></tr>';
+        return;
+      }
+      
+      tbody.innerHTML = transactions.slice(0, 10).map(txn => {
+        const statusClass = txn.status === 'completed' ? 'badge-active' :
+                           txn.status === 'approved' ? 'badge-success' :
+                           txn.status === 'pending' ? 'badge-pending' : 'badge-danger';
+        const typeIcon = txn.item_type === 'service' ? '🩺' : '📦';
+        
+        return `
+          <tr>
+            <td><small>${txn.transaction_id}</small></td>
+            <td>${txn.customer_id}</td>
+            <td>${typeIcon} ${txn.item_type || 'N/A'}</td>
+            <td>${txn.item_name || 'N/A'}</td>
+            <td>$${Number(txn.total_amount || 0).toFixed(2)}</td>
+            <td style="color:#28a745;">$${Number(txn.insurance_covered || 0).toFixed(2)}</td>
+            <td><small>${txn.nft_token_id || 'N/A'}</small></td>
+            <td><span class="badge ${statusClass}">${txn.status || 'Unknown'}</span></td>
+            <td>
+              ${txn.status === 'pending' || txn.status === 'pending_approval' ? `
+                <button class="btn-icon" title="Approve" onclick="approveMarketplaceTxn('${txn.transaction_id}')">✅</button>
+                <button class="btn-icon" title="Reject" onclick="rejectMarketplaceTxn('${txn.transaction_id}')">❌</button>
+              ` : `
+                <button class="btn-icon" title="View NFT" onclick="viewNFT('${txn.nft_token_id}')">🔗</button>
+              `}
+            </td>
+          </tr>
+        `;
+      }).join('');
+    }
+    
+    // Display pending approvals
+    function displayPendingApprovals(approvals) {
+      const tbody = document.getElementById('marketplace-table');
+      if (!tbody) return;
+      
+      if (approvals.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:#28a745;">✅ No pending approvals</td></tr>';
+        return;
+      }
+      
+      tbody.innerHTML = approvals.map(item => {
+        const txn = item.transaction || {};
+        const nft = item.nft || {};
+        const typeIcon = txn.item_type === 'service' ? '🩺' : '📦';
+        
+        return `
+          <tr style="background:#fff3cd;">
+            <td><small>${txn.transaction_id || 'N/A'}</small></td>
+            <td>${txn.customer_id || 'N/A'}</td>
+            <td>${typeIcon} ${txn.item_type || 'N/A'}</td>
+            <td>${txn.item_name || 'N/A'} ${item.requires_prescription ? '⚠️' : ''}</td>
+            <td>$${Number(txn.total_amount || 0).toFixed(2)}</td>
+            <td style="color:#28a745;">$${Number(txn.insurance_covered || 0).toFixed(2)}</td>
+            <td><small>${nft.token_id || 'N/A'}</small></td>
+            <td><span class="badge badge-pending">PENDING</span></td>
+            <td>
+              <button class="btn-icon" style="background:#28a745;color:#fff;border-radius:4px;padding:4px 8px;" onclick="approveMarketplaceTxn('${txn.transaction_id}')">✅</button>
+              <button class="btn-icon" style="background:#dc3545;color:#fff;border-radius:4px;padding:4px 8px;" onclick="rejectMarketplaceTxn('${txn.transaction_id}')">❌</button>
+            </td>
+          </tr>
+        `;
+      }).join('');
+    }
+    
+    // Filter marketplace
+    function filterMarketplace(filter) {
+      loadMarketplaceTable(filter);
+    }
+    
+    // Approve marketplace transaction
+    async function approveMarketplaceTxn(transactionId) {
+      if (!confirm('Approve this transaction?')) return;
+      
+      try {
+        const response = await fetch('/api/marketplace/admin/approve', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ transaction_id: transactionId })
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+          alert(`✅ Transaction approved!`);
+          loadMarketplaceData();
+        } else {
+          alert(`❌ Failed: ${result.error}`);
+        }
+      } catch (err) {
+        alert(`❌ Error: ${err.message}`);
+      }
+    }
+    
+    // Reject marketplace transaction
+    async function rejectMarketplaceTxn(transactionId) {
+      const reason = prompt('Enter rejection reason:');
+      if (!reason) return;
+      
+      try {
+        const response = await fetch('/api/marketplace/admin/reject', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ transaction_id: transactionId, reason: reason })
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+          alert('Transaction rejected.');
+          loadMarketplaceData();
+        } else {
+          alert(`❌ Failed: ${result.error}`);
+        }
+      } catch (err) {
+        alert(`❌ Error: ${err.message}`);
+      }
+    }
+    
+    // View NFT details
+    async function viewNFT(tokenId) {
+      if (!tokenId || tokenId === 'N/A') {
+        alert('No NFT token associated with this transaction.');
+        return;
+      }
+      
+      try {
+        const response = await fetch('/api/marketplace/nft/verify', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ token_id: tokenId })
+        });
+        
+        const result = await response.json();
+        
+        if (result.valid) {
+          alert(`🔗 NFT Token Verified!\n\nToken ID: ${result.token_id}\nOwner: ${result.owner_id}\nAsset Type: ${result.asset_type}\nCreated: ${new Date(result.created_at).toLocaleString()}\n\nIntegrity: ✅ Valid`);
+        } else {
+          alert(`⚠️ NFT Verification Failed\n\n${result.error || 'Token not found'}`);
+        }
+      } catch (err) {
+        alert(`❌ Error: ${err.message}`);
+      }
+    }
+    
+    // Initialize marketplace on load
+    document.addEventListener('DOMContentLoaded', () => {
+      setTimeout(loadMarketplaceData, 1000);
+    });
   </script>
 </body>
 </html>

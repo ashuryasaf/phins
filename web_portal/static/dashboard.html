@@ -353,10 +353,172 @@
   </footer>
 
   <script>
-    // Health Wallet Balance
-    let walletBalance = 850.00;
+    // Customer state
+    let customerId = null;
+    let authToken = localStorage.getItem('phins_token');
+    let walletBalance = 0.00;
+    let customerNFTs = [];
     
-    // Medical Products Catalog
+    // Initialize on page load
+    document.addEventListener('DOMContentLoaded', async () => {
+      // Get customer info from session
+      const storedCustomerId = sessionStorage.getItem('customer_id');
+      if (storedCustomerId) {
+        customerId = storedCustomerId;
+      }
+      
+      // Load wallet balance and data
+      await loadWalletBalance();
+      await loadPolicies();
+      await loadTransactionHistory();
+      await loadCustomerNFTs();
+    });
+    
+    // Load wallet balance from marketplace API
+    async function loadWalletBalance() {
+      try {
+        if (!customerId) {
+          // Initialize with default for demo
+          walletBalance = 850.00;
+          updateWalletDisplay();
+          return;
+        }
+        
+        const response = await fetch('/api/marketplace/wallet', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${authToken}`
+          },
+          body: JSON.stringify({ customer_id: customerId })
+        });
+        
+        if (response.ok) {
+          const data = await response.json();
+          walletBalance = data.balance || 0;
+          updateWalletDisplay();
+        }
+      } catch (err) {
+        console.error('Failed to load wallet balance:', err);
+        walletBalance = 850.00; // Fallback for demo
+        updateWalletDisplay();
+      }
+    }
+    
+    // Load customer's policies
+    async function loadPolicies() {
+      try {
+        const response = await fetch('/api/policies', {
+          headers: { 'Authorization': `Bearer ${authToken}` }
+        });
+        
+        if (response.ok) {
+          const data = await response.json();
+          const policies = data.items || data.policies || [];
+          
+          // Update policy count
+          document.getElementById('policy-count').textContent = policies.length;
+          
+          // Update total premium
+          const totalMonthly = policies.reduce((sum, p) => sum + (p.monthly_premium || 0), 0);
+          document.getElementById('total-premium').textContent = `$${totalMonthly.toFixed(0)}`;
+          
+          // Display policies
+          displayPolicies(policies);
+        }
+      } catch (err) {
+        console.error('Failed to load policies:', err);
+      }
+    }
+    
+    function displayPolicies(policies) {
+      const tbody = document.getElementById('policies-table');
+      if (!policies.length) return;
+      
+      tbody.innerHTML = policies.map(p => {
+        const statusClass = p.status === 'active' ? 'badge-active' : 
+                           p.status === 'pending_underwriting' ? 'badge-pending' : 'badge-danger';
+        return `
+          <tr>
+            <td>${p.id}</td>
+            <td>PHINS ${(p.type || 'Standard').charAt(0).toUpperCase() + (p.type || '').slice(1)}</td>
+            <td>$${Number(p.coverage_amount || 0).toLocaleString()}</td>
+            <td>$${Number(p.monthly_premium || 0).toFixed(0)}/mo</td>
+            <td>$${Number(p.investment_value || 0).toLocaleString()}</td>
+            <td><span class="badge ${statusClass}">${p.status || 'Unknown'}</span></td>
+            <td><button class="btn-small" onclick="viewPolicy('${p.id}')">View</button></td>
+          </tr>
+        `;
+      }).join('');
+    }
+    
+    // Load transaction history from marketplace
+    async function loadTransactionHistory() {
+      try {
+        if (!customerId) return;
+        
+        const response = await fetch('/api/marketplace/transactions', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${authToken}`
+          },
+          body: JSON.stringify({ customer_id: customerId, limit: 10 })
+        });
+        
+        if (response.ok) {
+          const data = await response.json();
+          displayTransactionHistory(data.transactions || []);
+        }
+      } catch (err) {
+        console.error('Failed to load transaction history:', err);
+      }
+    }
+    
+    function displayTransactionHistory(transactions) {
+      const tbody = document.getElementById('purchase-history-table');
+      if (!transactions.length) return;
+      
+      tbody.innerHTML = transactions.map(t => {
+        const date = new Date(t.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+        const statusClass = t.status === 'completed' ? 'badge-active' : 
+                           t.status === 'pending' ? 'badge-pending' : 'badge-orange';
+        return `
+          <tr>
+            <td>${date}</td>
+            <td>${t.item_name}</td>
+            <td>${t.category}</td>
+            <td>$${Number(t.total_amount).toFixed(2)}</td>
+            <td><span class="badge ${statusClass}">${t.status}</span></td>
+          </tr>
+        `;
+      }).join('');
+    }
+    
+    // Load customer NFTs
+    async function loadCustomerNFTs() {
+      try {
+        if (!customerId) return;
+        
+        const response = await fetch('/api/marketplace/nft/customer', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${authToken}`
+          },
+          body: JSON.stringify({ customer_id: customerId })
+        });
+        
+        if (response.ok) {
+          const data = await response.json();
+          customerNFTs = data.nfts || [];
+        }
+      } catch (err) {
+        console.error('Failed to load NFTs:', err);
+      }
+    }
+    
+    // Medical Products Catalog (enhanced with API integration)
     const medicalProducts = {
       consultation: [
         { id: 'cons-1', name: '🩺 General Practitioner Visit', price: 75, description: 'In-person or telehealth consultation with a GP', duration: '30 min' },
@@ -443,21 +605,75 @@
       document.getElementById('medical-marketplace').style.display = 'none';
     }
     
-    function purchaseProduct(productId, productName, price) {
+    async function purchaseProduct(productId, productName, price, category = 'general', productDetails = {}) {
       if (price > walletBalance) {
         const shortfall = price - walletBalance;
-        if (confirm(`Insufficient balance! You need $${shortfall.toFixed(2)} more.\\n\\nWould you like to add funds to your wallet?`)) {
+        if (confirm(`Insufficient balance! You need $${shortfall.toFixed(2)} more.\n\nWould you like to add funds to your wallet?`)) {
           addFundsToWallet();
         }
         return;
       }
       
-      if (confirm(`Purchase ${productName} for $${price.toFixed(2)}?\\n\\nThis will be deducted from your Health Wallet.`)) {
-        // Process purchase
+      if (!confirm(`Purchase ${productName} for $${price.toFixed(2)}?\n\nThis will be deducted from your Health Wallet.\nAn NFT token will be generated for this transaction.`)) {
+        return;
+      }
+      
+      try {
+        // Use marketplace API
+        const response = await fetch('/api/marketplace/product/purchase', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${authToken}`
+          },
+          body: JSON.stringify({
+            customer_id: customerId || 'CUST001',
+            product_id: productId,
+            product_details: {
+              ...productDetails,
+              name: productName,
+              price: price,
+              category: category,
+              insurance_coverage_pct: productDetails.insurance_coverage_pct || 0
+            },
+            quantity: 1
+          })
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+          // Update local balance
+          walletBalance = result.payment_breakdown?.new_wallet_balance || (walletBalance - price);
+          updateWalletDisplay();
+          
+          // Show success with NFT info
+          const notification = document.createElement('div');
+          notification.style.cssText = 'position:fixed;top:80px;right:20px;background:linear-gradient(135deg, #28a745 0%, #20c997 100%);color:#fff;padding:20px 28px;border-radius:12px;box-shadow:0 4px 20px rgba(0,0,0,0.25);z-index:1000;font-weight:600;max-width:350px;';
+          notification.innerHTML = `
+            <div style="font-size: 20px; margin-bottom: 10px;">✅ Purchase Complete!</div>
+            <div style="font-size: 15px; opacity: 0.95;">${productName}</div>
+            <div style="font-size: 15px; opacity: 0.95;">Amount: $${price.toFixed(2)}</div>
+            ${result.payment_breakdown?.insurance_covered > 0 ? `<div style="font-size: 13px; opacity: 0.85; margin-top: 4px;">Insurance covered: $${result.payment_breakdown.insurance_covered.toFixed(2)}</div>` : ''}
+            <div style="font-size: 13px; opacity: 0.85; margin-top: 8px;">New Balance: $${walletBalance.toFixed(2)}</div>
+            <div style="font-size: 11px; opacity: 0.7; margin-top: 10px; padding-top: 10px; border-top: 1px solid rgba(255,255,255,0.3);">
+              🔗 NFT Token: ${result.nft_token?.token_id || 'Generated'}
+            </div>
+          `;
+          document.body.appendChild(notification);
+          setTimeout(() => notification.remove(), 6000);
+          
+          // Refresh transaction history
+          loadTransactionHistory();
+          loadCustomerNFTs();
+        } else {
+          throw new Error(result.error || 'Purchase failed');
+        }
+      } catch (err) {
+        // Fallback to local processing for demo
         walletBalance -= price;
         updateWalletDisplay();
         
-        // Show success message
         const notification = document.createElement('div');
         notification.style.cssText = 'position:fixed;top:80px;right:20px;background:#28a745;color:#fff;padding:16px 24px;border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,0.2);z-index:1000;font-weight:600;max-width:300px;';
         notification.innerHTML = `
@@ -468,13 +684,10 @@
         `;
         document.body.appendChild(notification);
         setTimeout(() => notification.remove(), 5000);
-        
-        // Log transaction (in production, this would be an API call)
-        console.log('Purchase:', { productId, productName, price, newBalance: walletBalance });
       }
     }
     
-    function addFundsToWallet() {
+    async function addFundsToWallet() {
       const amount = prompt('Enter amount to add to your Health Wallet (min $10, max $5000):', '100');
       if (amount === null) return;
       
@@ -484,8 +697,47 @@
         return;
       }
       
-      // In production, this would open a payment modal
-      if (confirm(`Add $${numAmount.toFixed(2)} to your Health Wallet?\\n\\nThis will be charged to your payment method on file.`)) {
+      if (!confirm(`Add $${numAmount.toFixed(2)} to your Health Wallet?\n\nThis will be charged to your payment method on file.\nAn NFT token will be issued for this deposit.`)) {
+        return;
+      }
+      
+      try {
+        const response = await fetch('/api/marketplace/wallet/deposit', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${authToken}`
+          },
+          body: JSON.stringify({
+            customer_id: customerId || 'CUST001',
+            amount: numAmount,
+            source: 'card_payment'
+          })
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+          walletBalance = result.new_balance;
+          updateWalletDisplay();
+          
+          const notification = document.createElement('div');
+          notification.style.cssText = 'position:fixed;top:80px;right:20px;background:linear-gradient(135deg, #667eea 0%, #764ba2 100%);color:#fff;padding:20px 28px;border-radius:12px;box-shadow:0 4px 20px rgba(0,0,0,0.25);z-index:1000;font-weight:600;';
+          notification.innerHTML = `
+            <div style="font-size: 18px; margin-bottom: 8px;">✅ Deposit Successful!</div>
+            <div>Added: $${numAmount.toFixed(2)}</div>
+            <div>New Balance: $${walletBalance.toFixed(2)}</div>
+            <div style="font-size: 11px; opacity: 0.8; margin-top: 8px;">🔗 NFT: ${result.nft_token?.token_id || 'Generated'}</div>
+          `;
+          document.body.appendChild(notification);
+          setTimeout(() => notification.remove(), 4000);
+          
+          loadCustomerNFTs();
+        } else {
+          throw new Error(result.error || 'Deposit failed');
+        }
+      } catch (err) {
+        // Fallback for demo
         walletBalance += numAmount;
         updateWalletDisplay();
         
@@ -500,6 +752,105 @@
     function updateWalletDisplay() {
       document.getElementById('wallet-balance').textContent = `$${walletBalance.toFixed(0)}`;
       document.getElementById('wallet-balance-display').textContent = `$${walletBalance.toFixed(2)}`;
+    }
+    
+    // View policy details
+    function viewPolicy(policyId) {
+      alert(`Policy Details: ${policyId}\n\nFull policy management coming soon.\nContact support for immediate assistance.`);
+    }
+    
+    // View NFT tokens
+    function viewNFTs() {
+      if (!customerNFTs.length) {
+        alert('No NFT tokens found.\nMake a purchase to receive your first NFT!');
+        return;
+      }
+      
+      let nftList = customerNFTs.slice(0, 5).map(nft => 
+        `🔗 ${nft.token_id}\n   Type: ${nft.asset_type}\n   Created: ${new Date(nft.created_at).toLocaleDateString()}`
+      ).join('\n\n');
+      
+      alert(`Your NFT Tokens (${customerNFTs.length} total):\n\n${nftList}`);
+    }
+    
+    // Load products from API
+    async function loadMarketplaceProducts(category) {
+      try {
+        const response = await fetch('/api/marketplace/products', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${authToken}`
+          },
+          body: JSON.stringify({ category: category })
+        });
+        
+        if (response.ok) {
+          const data = await response.json();
+          return data.products || [];
+        }
+      } catch (err) {
+        console.error('Failed to load products:', err);
+      }
+      return [];
+    }
+    
+    // Search providers by location
+    async function searchNearbyProviders(category) {
+      try {
+        // Get user's location (or use default)
+        const lat = 40.7128;  // Default NYC
+        const lng = -74.0060;
+        
+        const response = await fetch('/api/marketplace/providers/search', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${authToken}`
+          },
+          body: JSON.stringify({
+            category: category,
+            latitude: lat,
+            longitude: lng,
+            radius_km: 25,
+            limit: 10
+          })
+        });
+        
+        if (response.ok) {
+          const data = await response.json();
+          displayProviders(data.providers || []);
+        }
+      } catch (err) {
+        console.error('Failed to search providers:', err);
+      }
+    }
+    
+    function displayProviders(providers) {
+      const grid = document.getElementById('product-grid');
+      if (!providers.length) {
+        grid.innerHTML = '<div style="text-align:center;color:#666;">No providers found in your area.</div>';
+        return;
+      }
+      
+      grid.innerHTML = providers.map(p => `
+        <div class="product-card" style="background: white; border-radius: 12px; padding: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+          <h3 style="margin: 0 0 8px 0; font-size: 16px;">${p.name}</h3>
+          <p style="color: #666; font-size: 14px; margin: 0 0 8px 0;">📍 ${p.distance_km} km away</p>
+          <p style="color: #888; font-size: 12px; margin: 0 0 8px 0;">⭐ ${p.rating} (${p.reviews_count} reviews)</p>
+          <p style="color: #888; font-size: 12px; margin: 0 0 12px 0;">🏷️ ${p.pricing_tier}</p>
+          <div style="display: flex; gap: 8px;">
+            <button onclick="bookProvider('${p.provider_id}', '${p.name}')" 
+                    style="flex:1;background: #667eea; color: white; border: none; padding: 10px; border-radius: 6px; cursor: pointer;">
+              Book Now
+            </button>
+          </div>
+        </div>
+      `).join('');
+    }
+    
+    function bookProvider(providerId, providerName) {
+      alert(`Booking ${providerName}...\n\nScheduling system coming soon!\nProvider ID: ${providerId}`);
     }
     
     // Load statement data

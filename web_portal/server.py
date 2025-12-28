@@ -98,6 +98,17 @@ except ImportError:
     pipeline_enabled = False
     print("Warning: Pipeline service not available")
 
+# Marketplace service for services, products, and NFT tokens
+marketplace = None
+try:
+    from services.marketplace_service import get_marketplace_service, PaymentType
+    marketplace = get_marketplace_service()
+    marketplace_enabled = True
+    print("✓ Marketplace service enabled (services, products, NFT tokens)")
+except ImportError as e:
+    marketplace_enabled = False
+    print(f"Warning: Marketplace service not available: {e}")
+
 # Initialize pipeline service with data stores
 def _init_pipeline():
     global pipeline_service
@@ -4004,6 +4015,568 @@ class PortalHandler(BaseHTTPRequestHandler):
                 return
         
         # ========== END HEALTH WALLET API ==========
+        
+        # ========== MARKETPLACE API (Services, Products, NFT Tokens) ==========
+        if marketplace_enabled and marketplace:
+            
+            # Get all service/product categories
+            if path == '/api/marketplace/categories':
+                try:
+                    categories = marketplace.get_all_categories()
+                    self._set_json_headers()
+                    self.wfile.write(json.dumps({
+                        'success': True,
+                        'categories': categories
+                    }).encode('utf-8'))
+                except Exception as e:
+                    self._set_json_headers(500)
+                    self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+                return
+            
+            # Search providers by location
+            if path == '/api/marketplace/providers/search':
+                try:
+                    data = json.loads(body) if body else {}
+                    category = data.get('category', 'consultation')
+                    lat = float(data.get('latitude', 40.7128))  # Default NYC
+                    lng = float(data.get('longitude', -74.0060))
+                    radius = float(data.get('radius_km', 25.0))
+                    limit = int(data.get('limit', 20))
+                    
+                    providers = marketplace.search_providers(
+                        category=category,
+                        latitude=lat,
+                        longitude=lng,
+                        radius_km=radius,
+                        limit=limit
+                    )
+                    
+                    self._set_json_headers()
+                    self.wfile.write(json.dumps({
+                        'success': True,
+                        'providers': providers,
+                        'search_params': {
+                            'category': category,
+                            'latitude': lat,
+                            'longitude': lng,
+                            'radius_km': radius
+                        }
+                    }).encode('utf-8'))
+                except Exception as e:
+                    self._set_json_headers(500)
+                    self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+                return
+            
+            # Get products catalog
+            if path == '/api/marketplace/products':
+                try:
+                    data = json.loads(body) if body else {}
+                    category = data.get('category', 'medication')
+                    subcategory = data.get('subcategory')
+                    country = data.get('country_of_origin')
+                    
+                    products = marketplace.get_products(
+                        category=category,
+                        subcategory=subcategory,
+                        country_of_origin=country
+                    )
+                    
+                    self._set_json_headers()
+                    self.wfile.write(json.dumps({
+                        'success': True,
+                        'products': products,
+                        'total': len(products)
+                    }).encode('utf-8'))
+                except Exception as e:
+                    self._set_json_headers(500)
+                    self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+                return
+            
+            # Get customer wallet balance (using marketplace service)
+            if path == '/api/marketplace/wallet':
+                try:
+                    data = json.loads(body) if body else {}
+                    customer_id = data.get('customer_id')
+                    
+                    if not customer_id:
+                        # Try to get from session
+                        auth_header = self.headers.get('Authorization', '')
+                        token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+                        if token:
+                            session = validate_session(token)
+                            if session:
+                                customer_id = session.get('customer_id')
+                    
+                    if not customer_id:
+                        self._set_json_headers(400)
+                        self.wfile.write(json.dumps({'error': 'customer_id required'}).encode('utf-8'))
+                        return
+                    
+                    balance = marketplace.get_wallet_balance(customer_id)
+                    nfts = marketplace.get_customer_nfts(customer_id)
+                    
+                    self._set_json_headers()
+                    self.wfile.write(json.dumps({
+                        'success': True,
+                        'customer_id': customer_id,
+                        'balance': balance,
+                        'nft_count': len(nfts),
+                        'currency': 'USD'
+                    }).encode('utf-8'))
+                except Exception as e:
+                    self._set_json_headers(500)
+                    self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+                return
+            
+            # Add funds to wallet
+            if path == '/api/marketplace/wallet/deposit':
+                try:
+                    data = json.loads(body)
+                    customer_id = data.get('customer_id')
+                    amount = float(data.get('amount', 0))
+                    source = data.get('source', 'card_payment')
+                    policy_id = data.get('policy_id')
+                    
+                    if not customer_id:
+                        self._set_json_headers(400)
+                        self.wfile.write(json.dumps({'error': 'customer_id required'}).encode('utf-8'))
+                        return
+                    
+                    if amount < 10 or amount > 50000:
+                        self._set_json_headers(400)
+                        self.wfile.write(json.dumps({'error': 'Amount must be between $10 and $50,000'}).encode('utf-8'))
+                        return
+                    
+                    result = marketplace.add_funds_to_wallet(
+                        customer_id=customer_id,
+                        amount=amount,
+                        source=source,
+                        policy_id=policy_id
+                    )
+                    
+                    self._set_json_headers(200 if result['success'] else 400)
+                    self.wfile.write(json.dumps(result).encode('utf-8'))
+                except Exception as e:
+                    self._set_json_headers(500)
+                    self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+                return
+            
+            # Purchase service
+            if path == '/api/marketplace/service/purchase':
+                try:
+                    data = json.loads(body)
+                    customer_id = data.get('customer_id')
+                    provider_id = data.get('provider_id')
+                    service_type = data.get('service_type')
+                    service_details = data.get('service_details', {})
+                    policy_id = data.get('policy_id')
+                    claim_id = data.get('claim_id')
+                    scheduled_date = data.get('scheduled_date')
+                    location = data.get('location')
+                    
+                    if not customer_id or not provider_id or not service_type:
+                        self._set_json_headers(400)
+                        self.wfile.write(json.dumps({'error': 'customer_id, provider_id, and service_type required'}).encode('utf-8'))
+                        return
+                    
+                    result = marketplace.purchase_service(
+                        customer_id=customer_id,
+                        provider_id=provider_id,
+                        service_type=service_type,
+                        service_details=service_details,
+                        policy_id=policy_id,
+                        claim_id=claim_id,
+                        scheduled_date=scheduled_date,
+                        location=location
+                    )
+                    
+                    if audit and result.get('success'):
+                        try:
+                            audit.log(customer_id, 'purchase', 'service', result['transaction']['transaction_id'], {
+                                'amount': result['transaction']['total_amount'],
+                                'nft_token': result['nft_token']['token_id']
+                            })
+                        except Exception:
+                            pass
+                    
+                    self._set_json_headers(200 if result.get('success') else 400)
+                    self.wfile.write(json.dumps(result).encode('utf-8'))
+                except Exception as e:
+                    self._set_json_headers(500)
+                    self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+                return
+            
+            # Purchase product
+            if path == '/api/marketplace/product/purchase':
+                try:
+                    data = json.loads(body)
+                    customer_id = data.get('customer_id')
+                    product_id = data.get('product_id')
+                    product_details = data.get('product_details', {})
+                    quantity = int(data.get('quantity', 1))
+                    policy_id = data.get('policy_id')
+                    claim_id = data.get('claim_id')
+                    delivery_address = data.get('delivery_address')
+                    
+                    if not customer_id or not product_id:
+                        self._set_json_headers(400)
+                        self.wfile.write(json.dumps({'error': 'customer_id and product_id required'}).encode('utf-8'))
+                        return
+                    
+                    result = marketplace.purchase_product(
+                        customer_id=customer_id,
+                        product_id=product_id,
+                        product_details=product_details,
+                        quantity=quantity,
+                        policy_id=policy_id,
+                        claim_id=claim_id,
+                        delivery_address=delivery_address
+                    )
+                    
+                    if audit and result.get('success'):
+                        try:
+                            audit.log(customer_id, 'purchase', 'product', result['transaction']['transaction_id'], {
+                                'product_id': product_id,
+                                'amount': result['transaction']['total_amount'],
+                                'nft_token': result['nft_token']['token_id']
+                            })
+                        except Exception:
+                            pass
+                    
+                    self._set_json_headers(200 if result.get('success') else 400)
+                    self.wfile.write(json.dumps(result).encode('utf-8'))
+                except Exception as e:
+                    self._set_json_headers(500)
+                    self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+                return
+            
+            # Get customer transactions
+            if path == '/api/marketplace/transactions':
+                try:
+                    data = json.loads(body) if body else {}
+                    customer_id = data.get('customer_id')
+                    status = data.get('status')
+                    category = data.get('category')
+                    limit = int(data.get('limit', 50))
+                    
+                    if not customer_id:
+                        self._set_json_headers(400)
+                        self.wfile.write(json.dumps({'error': 'customer_id required'}).encode('utf-8'))
+                        return
+                    
+                    transactions = marketplace.get_customer_transactions(
+                        customer_id=customer_id,
+                        status=status,
+                        category=category,
+                        limit=limit
+                    )
+                    
+                    self._set_json_headers()
+                    self.wfile.write(json.dumps({
+                        'success': True,
+                        'transactions': transactions,
+                        'total': len(transactions)
+                    }).encode('utf-8'))
+                except Exception as e:
+                    self._set_json_headers(500)
+                    self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+                return
+            
+            # Admin: Get all transactions
+            if path == '/api/marketplace/admin/transactions':
+                try:
+                    # Verify admin
+                    auth_header = self.headers.get('Authorization', '')
+                    token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+                    session = validate_session(token) if token else None
+                    if not require_role(session, ['admin', 'accountant']):
+                        self._set_json_headers(403)
+                        self.wfile.write(json.dumps({'error': 'Admin access required'}).encode('utf-8'))
+                        return
+                    
+                    data = json.loads(body) if body else {}
+                    status = data.get('status')
+                    limit = int(data.get('limit', 100))
+                    
+                    transactions = marketplace.get_all_transactions(status=status, limit=limit)
+                    
+                    self._set_json_headers()
+                    self.wfile.write(json.dumps({
+                        'success': True,
+                        'transactions': transactions,
+                        'total': len(transactions)
+                    }).encode('utf-8'))
+                except Exception as e:
+                    self._set_json_headers(500)
+                    self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+                return
+            
+            # Admin: Get pending approvals
+            if path == '/api/marketplace/admin/pending-approvals':
+                try:
+                    auth_header = self.headers.get('Authorization', '')
+                    token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+                    session = validate_session(token) if token else None
+                    if not require_role(session, ['admin', 'underwriter']):
+                        self._set_json_headers(403)
+                        self.wfile.write(json.dumps({'error': 'Admin access required'}).encode('utf-8'))
+                        return
+                    
+                    approvals = marketplace.get_pending_approvals()
+                    
+                    self._set_json_headers()
+                    self.wfile.write(json.dumps({
+                        'success': True,
+                        'pending_approvals': approvals,
+                        'total': len(approvals)
+                    }).encode('utf-8'))
+                except Exception as e:
+                    self._set_json_headers(500)
+                    self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+                return
+            
+            # Admin: Approve transaction
+            if path == '/api/marketplace/admin/approve':
+                try:
+                    auth_header = self.headers.get('Authorization', '')
+                    token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+                    session = validate_session(token) if token else None
+                    if not require_role(session, ['admin', 'underwriter']):
+                        self._set_json_headers(403)
+                        self.wfile.write(json.dumps({'error': 'Admin access required'}).encode('utf-8'))
+                        return
+                    
+                    data = json.loads(body)
+                    transaction_id = data.get('transaction_id')
+                    approver_id = session.get('username', 'admin') if session else 'admin'
+                    notes = data.get('notes')
+                    
+                    result = marketplace.approve_transaction(
+                        transaction_id=transaction_id,
+                        approver_id=approver_id,
+                        approval_notes=notes
+                    )
+                    
+                    if audit and result.get('success'):
+                        try:
+                            audit.log(approver_id, 'approve', 'marketplace_transaction', transaction_id, {'notes': notes})
+                        except Exception:
+                            pass
+                    
+                    self._set_json_headers(200 if result.get('success') else 400)
+                    self.wfile.write(json.dumps(result).encode('utf-8'))
+                except Exception as e:
+                    self._set_json_headers(500)
+                    self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+                return
+            
+            # Admin: Reject transaction
+            if path == '/api/marketplace/admin/reject':
+                try:
+                    auth_header = self.headers.get('Authorization', '')
+                    token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+                    session = validate_session(token) if token else None
+                    if not require_role(session, ['admin', 'underwriter']):
+                        self._set_json_headers(403)
+                        self.wfile.write(json.dumps({'error': 'Admin access required'}).encode('utf-8'))
+                        return
+                    
+                    data = json.loads(body)
+                    transaction_id = data.get('transaction_id')
+                    rejector_id = session.get('username', 'admin') if session else 'admin'
+                    reason = data.get('reason', 'Rejected by admin')
+                    
+                    result = marketplace.reject_transaction(
+                        transaction_id=transaction_id,
+                        rejector_id=rejector_id,
+                        rejection_reason=reason
+                    )
+                    
+                    if audit and result.get('success'):
+                        try:
+                            audit.log(rejector_id, 'reject', 'marketplace_transaction', transaction_id, {'reason': reason})
+                        except Exception:
+                            pass
+                    
+                    self._set_json_headers(200 if result.get('success') else 400)
+                    self.wfile.write(json.dumps(result).encode('utf-8'))
+                except Exception as e:
+                    self._set_json_headers(500)
+                    self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+                return
+            
+            # NFT: Verify token authenticity
+            if path == '/api/marketplace/nft/verify':
+                try:
+                    data = json.loads(body)
+                    token_id = data.get('token_id')
+                    
+                    if not token_id:
+                        self._set_json_headers(400)
+                        self.wfile.write(json.dumps({'error': 'token_id required'}).encode('utf-8'))
+                        return
+                    
+                    result = marketplace.verify_nft_authenticity(token_id)
+                    
+                    self._set_json_headers()
+                    self.wfile.write(json.dumps(result).encode('utf-8'))
+                except Exception as e:
+                    self._set_json_headers(500)
+                    self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+                return
+            
+            # NFT: Get customer NFTs
+            if path == '/api/marketplace/nft/customer':
+                try:
+                    data = json.loads(body) if body else {}
+                    customer_id = data.get('customer_id')
+                    
+                    if not customer_id:
+                        self._set_json_headers(400)
+                        self.wfile.write(json.dumps({'error': 'customer_id required'}).encode('utf-8'))
+                        return
+                    
+                    nfts = marketplace.get_customer_nfts(customer_id)
+                    
+                    self._set_json_headers()
+                    self.wfile.write(json.dumps({
+                        'success': True,
+                        'nfts': nfts,
+                        'total': len(nfts)
+                    }).encode('utf-8'))
+                except Exception as e:
+                    self._set_json_headers(500)
+                    self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+                return
+            
+            # NFT: Get token details
+            if path == '/api/marketplace/nft/details':
+                try:
+                    data = json.loads(body) if body else {}
+                    token_id = data.get('token_id')
+                    
+                    if not token_id:
+                        self._set_json_headers(400)
+                        self.wfile.write(json.dumps({'error': 'token_id required'}).encode('utf-8'))
+                        return
+                    
+                    nft = marketplace.get_nft_token(token_id)
+                    
+                    if nft:
+                        self._set_json_headers()
+                        self.wfile.write(json.dumps({
+                            'success': True,
+                            'nft': nft
+                        }).encode('utf-8'))
+                    else:
+                        self._set_json_headers(404)
+                        self.wfile.write(json.dumps({'error': 'NFT token not found'}).encode('utf-8'))
+                except Exception as e:
+                    self._set_json_headers(500)
+                    self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+                return
+            
+            # Marketplace stats (BI dashboard)
+            if path == '/api/marketplace/stats':
+                try:
+                    auth_header = self.headers.get('Authorization', '')
+                    token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+                    session = validate_session(token) if token else None
+                    if not require_role(session, ['admin', 'accountant', 'analyst']):
+                        self._set_json_headers(403)
+                        self.wfile.write(json.dumps({'error': 'Admin access required'}).encode('utf-8'))
+                        return
+                    
+                    stats = marketplace.get_marketplace_stats()
+                    
+                    self._set_json_headers()
+                    self.wfile.write(json.dumps({
+                        'success': True,
+                        'stats': stats
+                    }).encode('utf-8'))
+                except Exception as e:
+                    self._set_json_headers(500)
+                    self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+                return
+            
+            # Process claim payment to wallet/service/product
+            if path == '/api/marketplace/claim/pay':
+                try:
+                    auth_header = self.headers.get('Authorization', '')
+                    token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+                    session = validate_session(token) if token else None
+                    if not require_role(session, ['admin', 'accountant', 'claims_adjuster']):
+                        self._set_json_headers(403)
+                        self.wfile.write(json.dumps({'error': 'Authorization required'}).encode('utf-8'))
+                        return
+                    
+                    data = json.loads(body)
+                    claim_id = data.get('claim_id')
+                    customer_id = data.get('customer_id')
+                    policy_id = data.get('policy_id')
+                    amount = float(data.get('amount', 0))
+                    payment_type_str = data.get('payment_type', 'lump_sum')
+                    destination = data.get('destination', 'wallet')
+                    
+                    # Map string to PaymentType enum
+                    payment_type_map = {
+                        'lump_sum': PaymentType.LUMP_SUM,
+                        'risk_cover': PaymentType.RISK_COVER,
+                        'service_payment': PaymentType.SERVICE_PAYMENT,
+                        'product_purchase': PaymentType.PRODUCT_PURCHASE,
+                        'recurring_benefit': PaymentType.RECURRING_BENEFIT
+                    }
+                    payment_type = payment_type_map.get(payment_type_str, PaymentType.LUMP_SUM)
+                    
+                    result = marketplace.process_claim_payment(
+                        claim_id=claim_id,
+                        customer_id=customer_id,
+                        policy_id=policy_id,
+                        approved_amount=amount,
+                        payment_type=payment_type,
+                        payment_destination=destination
+                    )
+                    
+                    if audit and result.get('success'):
+                        actor = session.get('username', 'system') if session else 'system'
+                        try:
+                            audit.log(actor, 'process_payment', 'claim', claim_id, {
+                                'amount': amount,
+                                'payment_type': payment_type_str,
+                                'destination': destination
+                            })
+                        except Exception:
+                            pass
+                    
+                    self._set_json_headers(200 if result.get('success') else 400)
+                    self.wfile.write(json.dumps(result).encode('utf-8'))
+                except Exception as e:
+                    self._set_json_headers(500)
+                    self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+                return
+            
+            # Link purchase to claim
+            if path == '/api/marketplace/claim/link-purchase':
+                try:
+                    data = json.loads(body)
+                    transaction_id = data.get('transaction_id')
+                    claim_id = data.get('claim_id')
+                    
+                    if not transaction_id or not claim_id:
+                        self._set_json_headers(400)
+                        self.wfile.write(json.dumps({'error': 'transaction_id and claim_id required'}).encode('utf-8'))
+                        return
+                    
+                    result = marketplace.link_purchase_to_claim(transaction_id, claim_id)
+                    
+                    self._set_json_headers(200 if result.get('success') else 400)
+                    self.wfile.write(json.dumps(result).encode('utf-8'))
+                except Exception as e:
+                    self._set_json_headers(500)
+                    self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+                return
+        
+        # ========== END MARKETPLACE API ==========
         
         # ========== END BILLING API ==========
         # Minimal billing endpoints (demo fallback when engine routes are not used)
