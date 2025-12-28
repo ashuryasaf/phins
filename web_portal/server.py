@@ -810,6 +810,61 @@ class PortalHandler(BaseHTTPRequestHandler):
                 }
             }, default=str).encode('utf-8'))
             return
+        
+        # Security: Clear blocked IPs (Admin only or with security key)
+        if path == '/api/security/clear-blocks':
+            # Allow with admin auth OR special security key for emergency access
+            security_key = qs.get('key', [''])[0]
+            is_authorized = require_role(session, ['admin']) or security_key == 'phins-security-2024'
+            
+            if not is_authorized:
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Unauthorized. Admin access or security key required.'}).encode('utf-8'))
+                return
+            
+            ip_to_clear = qs.get('ip', [''])[0]
+            
+            with STATE_LOCK:
+                if ip_to_clear:
+                    # Clear specific IP
+                    cleared = 0
+                    if ip_to_clear in BLOCKED_IPS:
+                        del BLOCKED_IPS[ip_to_clear]
+                        cleared += 1
+                    if ip_to_clear in FAILED_LOGINS:
+                        del FAILED_LOGINS[ip_to_clear]
+                        cleared += 1
+                    if ip_to_clear in SUSPICIOUS_PATTERNS:
+                        del SUSPICIOUS_PATTERNS[ip_to_clear]
+                        cleared += 1
+                    
+                    self._set_json_headers()
+                    self.wfile.write(json.dumps({
+                        'success': True,
+                        'message': f'Cleared {cleared} records for IP {ip_to_clear}',
+                        'ip': ip_to_clear
+                    }).encode('utf-8'))
+                else:
+                    # Clear all blocks
+                    blocked_count = len(BLOCKED_IPS)
+                    failed_count = len(FAILED_LOGINS)
+                    suspicious_count = len(SUSPICIOUS_PATTERNS)
+                    
+                    BLOCKED_IPS.clear()
+                    FAILED_LOGINS.clear()
+                    SUSPICIOUS_PATTERNS.clear()
+                    
+                    self._set_json_headers()
+                    self.wfile.write(json.dumps({
+                        'success': True,
+                        'message': 'All security blocks cleared',
+                        'cleared': {
+                            'blocked_ips': blocked_count,
+                            'failed_logins': failed_count,
+                            'suspicious_patterns': suspicious_count
+                        }
+                    }).encode('utf-8'))
+            return
 
         # Audit log endpoint (Admin only)
         if path == '/api/audit':
