@@ -1,0 +1,1776 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Savings & Investment Portfolio | PHINS</title>
+    <style>
+        :root {
+            --primary: #0066cc;
+            --primary-dark: #004d99;
+            --secondary: #00a86b;
+            --accent: #f59e0b;
+            --danger: #dc2626;
+            --success: #10b981;
+            --bg-dark: #0f172a;
+            --bg-card: #1e293b;
+            --bg-hover: #334155;
+            --text-primary: #f1f5f9;
+            --text-secondary: #94a3b8;
+            --border: #334155;
+            --gradient-primary: linear-gradient(135deg, #0066cc 0%, #0052a3 100%);
+            --gradient-success: linear-gradient(135deg, #10b981 0%, #059669 100%);
+            --gradient-crypto: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+        }
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--bg-dark);
+            color: var(--text-primary);
+            min-height: 100vh;
+            line-height: 1.6;
+        }
+        
+        /* Header */
+        .header {
+            background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+            border-bottom: 1px solid var(--border);
+            padding: 1rem 2rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+        
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+        
+        .logo-icon {
+            width: 40px;
+            height: 40px;
+            background: var(--gradient-primary);
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.5rem;
+        }
+        
+        .logo-text {
+            font-size: 1.5rem;
+            font-weight: 700;
+            background: linear-gradient(135deg, #60a5fa 0%, #34d399 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        
+        .header-nav {
+            display: flex;
+            gap: 1rem;
+        }
+        
+        .nav-btn {
+            padding: 0.5rem 1rem;
+            background: transparent;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            color: var(--text-secondary);
+            cursor: pointer;
+            transition: all 0.2s;
+            text-decoration: none;
+        }
+        
+        .nav-btn:hover {
+            background: var(--bg-hover);
+            color: var(--text-primary);
+        }
+        
+        .nav-btn.active {
+            background: var(--primary);
+            border-color: var(--primary);
+            color: white;
+        }
+        
+        /* Main Content */
+        .main-content {
+            max-width: 1600px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+        
+        /* Portfolio Summary Cards */
+        .portfolio-summary {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 1.5rem;
+            margin-bottom: 2rem;
+        }
+        
+        .summary-card {
+            background: var(--bg-card);
+            border-radius: 16px;
+            padding: 1.5rem;
+            border: 1px solid var(--border);
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        
+        .summary-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 12px 40px rgba(0, 0, 0, 0.3);
+        }
+        
+        .summary-card.highlight {
+            background: var(--gradient-primary);
+            border: none;
+        }
+        
+        .summary-card.success {
+            background: var(--gradient-success);
+            border: none;
+        }
+        
+        .card-label {
+            font-size: 0.875rem;
+            color: var(--text-secondary);
+            margin-bottom: 0.5rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        
+        .highlight .card-label,
+        .success .card-label {
+            color: rgba(255, 255, 255, 0.8);
+        }
+        
+        .card-value {
+            font-size: 2rem;
+            font-weight: 700;
+            margin-bottom: 0.25rem;
+        }
+        
+        .card-change {
+            font-size: 0.875rem;
+            display: flex;
+            align-items: center;
+            gap: 0.25rem;
+        }
+        
+        .card-change.positive {
+            color: var(--success);
+        }
+        
+        .card-change.negative {
+            color: var(--danger);
+        }
+        
+        /* Two Column Layout */
+        .dashboard-grid {
+            display: grid;
+            grid-template-columns: 2fr 1fr;
+            gap: 1.5rem;
+        }
+        
+        @media (max-width: 1200px) {
+            .dashboard-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+        
+        /* Sections */
+        .section {
+            background: var(--bg-card);
+            border-radius: 16px;
+            padding: 1.5rem;
+            border: 1px solid var(--border);
+            margin-bottom: 1.5rem;
+        }
+        
+        .section-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1.5rem;
+        }
+        
+        .section-title {
+            font-size: 1.25rem;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        
+        /* Asset Allocation Chart */
+        .allocation-chart {
+            display: flex;
+            gap: 2rem;
+            align-items: center;
+        }
+        
+        .pie-chart {
+            width: 200px;
+            height: 200px;
+            border-radius: 50%;
+            position: relative;
+            background: conic-gradient(
+                #0066cc 0deg 216deg,
+                #10b981 216deg 306deg,
+                #f59e0b 306deg 324deg,
+                #8b5cf6 324deg 342deg,
+                #ec4899 342deg 360deg
+            );
+        }
+        
+        .pie-center {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 120px;
+            height: 120px;
+            background: var(--bg-card);
+            border-radius: 50%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .allocation-legend {
+            flex: 1;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 0.75rem;
+        }
+        
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+        
+        .legend-color {
+            width: 12px;
+            height: 12px;
+            border-radius: 3px;
+        }
+        
+        .legend-color.equity { background: #0066cc; }
+        .legend-color.fixed-income { background: #10b981; }
+        .legend-color.crypto { background: #f59e0b; }
+        .legend-color.commodity { background: #8b5cf6; }
+        .legend-color.currency { background: #ec4899; }
+        .legend-color.alternative { background: #06b6d4; }
+        
+        .legend-label {
+            font-size: 0.875rem;
+            color: var(--text-secondary);
+        }
+        
+        .legend-value {
+            font-size: 0.875rem;
+            font-weight: 600;
+            margin-left: auto;
+        }
+        
+        /* Assets Table */
+        .assets-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        
+        .assets-table th {
+            text-align: left;
+            padding: 0.75rem;
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            color: var(--text-secondary);
+            border-bottom: 1px solid var(--border);
+        }
+        
+        .assets-table td {
+            padding: 1rem 0.75rem;
+            border-bottom: 1px solid var(--border);
+        }
+        
+        .assets-table tr:hover {
+            background: var(--bg-hover);
+        }
+        
+        .asset-info {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+        
+        .asset-icon {
+            width: 40px;
+            height: 40px;
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            font-size: 0.875rem;
+        }
+        
+        .asset-icon.equity { background: rgba(0, 102, 204, 0.2); color: #60a5fa; }
+        .asset-icon.crypto { background: rgba(245, 158, 11, 0.2); color: #fbbf24; }
+        .asset-icon.fixed-income { background: rgba(16, 185, 129, 0.2); color: #34d399; }
+        .asset-icon.commodity { background: rgba(139, 92, 246, 0.2); color: #a78bfa; }
+        
+        .asset-symbol {
+            font-weight: 600;
+        }
+        
+        .asset-name {
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+        }
+        
+        /* Market Ticker */
+        .market-ticker {
+            display: flex;
+            gap: 1rem;
+            overflow-x: auto;
+            padding: 0.5rem 0;
+            margin-bottom: 1rem;
+        }
+        
+        .ticker-item {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.5rem 1rem;
+            background: var(--bg-hover);
+            border-radius: 8px;
+            white-space: nowrap;
+        }
+        
+        .ticker-symbol {
+            font-weight: 600;
+        }
+        
+        .ticker-price {
+            color: var(--text-secondary);
+        }
+        
+        .ticker-change {
+            font-size: 0.75rem;
+            padding: 0.125rem 0.5rem;
+            border-radius: 4px;
+        }
+        
+        .ticker-change.positive {
+            background: rgba(16, 185, 129, 0.2);
+            color: #34d399;
+        }
+        
+        .ticker-change.negative {
+            background: rgba(220, 38, 38, 0.2);
+            color: #f87171;
+        }
+        
+        /* Projection Chart */
+        .projection-chart {
+            height: 300px;
+            background: var(--bg-hover);
+            border-radius: 12px;
+            position: relative;
+            overflow: hidden;
+            margin-bottom: 1rem;
+        }
+        
+        .chart-canvas {
+            width: 100%;
+            height: 100%;
+        }
+        
+        .projection-legend {
+            display: flex;
+            justify-content: center;
+            gap: 2rem;
+            flex-wrap: wrap;
+        }
+        
+        .proj-legend-item {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-size: 0.875rem;
+        }
+        
+        .proj-legend-line {
+            width: 24px;
+            height: 3px;
+            border-radius: 2px;
+        }
+        
+        /* Recommendations */
+        .recommendation-card {
+            background: var(--bg-hover);
+            border-radius: 12px;
+            padding: 1rem;
+            margin-bottom: 0.75rem;
+            border-left: 4px solid var(--primary);
+        }
+        
+        .recommendation-card.buy {
+            border-left-color: var(--success);
+        }
+        
+        .recommendation-card.sell {
+            border-left-color: var(--danger);
+        }
+        
+        .rec-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 0.5rem;
+        }
+        
+        .rec-action {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        
+        .action-badge {
+            padding: 0.25rem 0.5rem;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+        
+        .action-badge.buy {
+            background: rgba(16, 185, 129, 0.2);
+            color: #34d399;
+        }
+        
+        .action-badge.sell {
+            background: rgba(220, 38, 38, 0.2);
+            color: #f87171;
+        }
+        
+        .action-badge.hold {
+            background: rgba(100, 116, 139, 0.2);
+            color: #94a3b8;
+        }
+        
+        .rec-confidence {
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+        }
+        
+        .rec-reason {
+            font-size: 0.875rem;
+            color: var(--text-secondary);
+        }
+        
+        /* Risk Slider */
+        .risk-control {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+        
+        .risk-labels {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+        }
+        
+        .risk-slider {
+            -webkit-appearance: none;
+            width: 100%;
+            height: 8px;
+            border-radius: 4px;
+            background: linear-gradient(90deg, #10b981, #f59e0b, #dc2626);
+            outline: none;
+        }
+        
+        .risk-slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: white;
+            cursor: pointer;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+        }
+        
+        .current-risk {
+            text-align: center;
+            font-weight: 600;
+            font-size: 1.125rem;
+        }
+        
+        /* Investment Form */
+        .invest-form {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+        
+        .form-row {
+            display: flex;
+            gap: 1rem;
+        }
+        
+        .form-group {
+            flex: 1;
+        }
+        
+        .form-label {
+            display: block;
+            font-size: 0.875rem;
+            color: var(--text-secondary);
+            margin-bottom: 0.5rem;
+        }
+        
+        .form-input {
+            width: 100%;
+            padding: 0.75rem 1rem;
+            background: var(--bg-hover);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            color: var(--text-primary);
+            font-size: 1rem;
+        }
+        
+        .form-input:focus {
+            outline: none;
+            border-color: var(--primary);
+        }
+        
+        .form-select {
+            width: 100%;
+            padding: 0.75rem 1rem;
+            background: var(--bg-hover);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            color: var(--text-primary);
+            font-size: 1rem;
+            cursor: pointer;
+        }
+        
+        .form-select option {
+            background: var(--bg-card);
+        }
+        
+        /* Buttons */
+        .btn {
+            padding: 0.75rem 1.5rem;
+            border-radius: 8px;
+            font-size: 0.875rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            border: none;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+        }
+        
+        .btn-primary {
+            background: var(--gradient-primary);
+            color: white;
+        }
+        
+        .btn-primary:hover {
+            opacity: 0.9;
+            transform: translateY(-2px);
+        }
+        
+        .btn-success {
+            background: var(--gradient-success);
+            color: white;
+        }
+        
+        .btn-outline {
+            background: transparent;
+            border: 1px solid var(--border);
+            color: var(--text-secondary);
+        }
+        
+        .btn-outline:hover {
+            background: var(--bg-hover);
+            color: var(--text-primary);
+        }
+        
+        .btn-small {
+            padding: 0.5rem 1rem;
+            font-size: 0.75rem;
+        }
+        
+        /* Lump Sum Meter */
+        .lump-sum-display {
+            text-align: center;
+            padding: 2rem;
+        }
+        
+        .lump-sum-value {
+            font-size: 3rem;
+            font-weight: 700;
+            background: linear-gradient(135deg, #60a5fa 0%, #34d399 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 0.5rem;
+        }
+        
+        .lump-sum-label {
+            color: var(--text-secondary);
+            font-size: 0.875rem;
+        }
+        
+        .progress-ring {
+            width: 160px;
+            height: 160px;
+            margin: 0 auto 1rem;
+        }
+        
+        .progress-ring-circle {
+            fill: none;
+            stroke-width: 12;
+            stroke-linecap: round;
+            transform: rotate(-90deg);
+            transform-origin: 50% 50%;
+        }
+        
+        .progress-ring-bg {
+            stroke: var(--bg-hover);
+        }
+        
+        .progress-ring-value {
+            stroke: url(#gradient);
+            transition: stroke-dashoffset 0.5s;
+        }
+        
+        /* Transaction History */
+        .transaction-list {
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        
+        .transaction-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0.75rem 0;
+            border-bottom: 1px solid var(--border);
+        }
+        
+        .transaction-info {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+        
+        .transaction-icon {
+            width: 36px;
+            height: 36px;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1rem;
+        }
+        
+        .transaction-icon.deposit {
+            background: rgba(16, 185, 129, 0.2);
+            color: #34d399;
+        }
+        
+        .transaction-icon.invest {
+            background: rgba(0, 102, 204, 0.2);
+            color: #60a5fa;
+        }
+        
+        .transaction-icon.sell {
+            background: rgba(245, 158, 11, 0.2);
+            color: #fbbf24;
+        }
+        
+        .transaction-icon.withdraw {
+            background: rgba(220, 38, 38, 0.2);
+            color: #f87171;
+        }
+        
+        .transaction-details h4 {
+            font-size: 0.875rem;
+            font-weight: 500;
+        }
+        
+        .transaction-details span {
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+        }
+        
+        .transaction-amount {
+            font-weight: 600;
+        }
+        
+        .transaction-amount.positive {
+            color: var(--success);
+        }
+        
+        .transaction-amount.negative {
+            color: var(--danger);
+        }
+        
+        /* Monthly Due Card */
+        .monthly-due-card {
+            background: linear-gradient(135deg, #1e293b 0%, #334155 100%);
+            border-radius: 12px;
+            padding: 1.5rem;
+            text-align: center;
+        }
+        
+        .due-amount {
+            font-size: 2.5rem;
+            font-weight: 700;
+            margin-bottom: 0.5rem;
+        }
+        
+        .due-date {
+            font-size: 0.875rem;
+            color: var(--text-secondary);
+        }
+        
+        /* Responsive */
+        @media (max-width: 768px) {
+            .header {
+                padding: 1rem;
+            }
+            
+            .main-content {
+                padding: 1rem;
+            }
+            
+            .portfolio-summary {
+                grid-template-columns: 1fr;
+            }
+            
+            .allocation-chart {
+                flex-direction: column;
+            }
+            
+            .form-row {
+                flex-direction: column;
+            }
+        }
+        
+        /* Loading Animation */
+        .loading {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 2rem;
+        }
+        
+        .spinner {
+            width: 40px;
+            height: 40px;
+            border: 3px solid var(--border);
+            border-top-color: var(--primary);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        
+        /* Toast Notifications */
+        .toast-container {
+            position: fixed;
+            bottom: 2rem;
+            right: 2rem;
+            z-index: 1000;
+        }
+        
+        .toast {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 1rem 1.5rem;
+            margin-bottom: 0.5rem;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            animation: slideIn 0.3s ease;
+        }
+        
+        .toast.success {
+            border-left: 4px solid var(--success);
+        }
+        
+        .toast.error {
+            border-left: 4px solid var(--danger);
+        }
+        
+        @keyframes slideIn {
+            from { transform: translateX(100%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+    </style>
+</head>
+<body>
+    <header class="header">
+        <div class="logo">
+            <div class="logo-icon">&#128176;</div>
+            <span class="logo-text">PHINS Savings</span>
+        </div>
+        <nav class="header-nav">
+            <a href="dashboard.html" class="nav-btn">&#127968; Dashboard</a>
+            <a href="savings-portfolio.html" class="nav-btn active">&#128200; Investments</a>
+            <a href="index.html" class="nav-btn">&#128196; Policies</a>
+            <button class="nav-btn" onclick="logout()">&#128682; Logout</button>
+        </nav>
+    </header>
+
+    <main class="main-content">
+        <!-- Market Ticker -->
+        <div class="market-ticker" id="marketTicker">
+            <!-- Populated by JS -->
+        </div>
+
+        <!-- Portfolio Summary Cards -->
+        <div class="portfolio-summary">
+            <div class="summary-card highlight">
+                <div class="card-label">&#128176; Total Portfolio Value</div>
+                <div class="card-value" id="totalValue">$0.00</div>
+                <div class="card-change positive" id="totalChange">
+                    <span>&#9650;</span> +0.00% all time
+                </div>
+            </div>
+            <div class="summary-card">
+                <div class="card-label">&#128181; Cash Balance</div>
+                <div class="card-value" id="cashBalance">$0.00</div>
+                <div class="card-change" id="cashLabel">Available to invest</div>
+            </div>
+            <div class="summary-card success">
+                <div class="card-label">&#128200; Invested Assets</div>
+                <div class="card-value" id="investedValue">$0.00</div>
+                <div class="card-change" id="unrealizedGain">$0.00 unrealized</div>
+            </div>
+            <div class="summary-card">
+                <div class="card-label">&#128197; Monthly Contribution</div>
+                <div class="card-value" id="monthlyContribution">$0.00</div>
+                <div class="card-change">Auto-invested monthly</div>
+            </div>
+        </div>
+
+        <div class="dashboard-grid">
+            <div class="main-column">
+                <!-- Asset Allocation -->
+                <div class="section">
+                    <div class="section-header">
+                        <h2 class="section-title">&#128202; Asset Allocation</h2>
+                        <button class="btn btn-outline btn-small" onclick="showRebalanceModal()">Rebalance</button>
+                    </div>
+                    <div class="allocation-chart">
+                        <div class="pie-chart" id="allocationPie">
+                            <div class="pie-center">
+                                <div style="font-size: 1.5rem; font-weight: 700;" id="allocationTotal">100%</div>
+                                <div style="font-size: 0.75rem; color: var(--text-secondary);">Allocated</div>
+                            </div>
+                        </div>
+                        <div class="allocation-legend" id="allocationLegend">
+                            <!-- Populated by JS -->
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Portfolio Holdings -->
+                <div class="section">
+                    <div class="section-header">
+                        <h2 class="section-title">&#128188; Portfolio Holdings</h2>
+                        <button class="btn btn-primary btn-small" onclick="showInvestModal()">+ Buy Asset</button>
+                    </div>
+                    <table class="assets-table">
+                        <thead>
+                            <tr>
+                                <th>Asset</th>
+                                <th>Quantity</th>
+                                <th>Avg Cost</th>
+                                <th>Current Price</th>
+                                <th>Market Value</th>
+                                <th>Return</th>
+                                <th>Action</th>
+                            </tr>
+                        </thead>
+                        <tbody id="assetsTableBody">
+                            <!-- Populated by JS -->
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Savings Projections -->
+                <div class="section">
+                    <div class="section-header">
+                        <h2 class="section-title">&#128302; 25-Year Projection (Monte Carlo)</h2>
+                        <select class="form-select" style="width: auto;" id="projectionYears" onchange="updateProjections()">
+                            <option value="5">5 Years</option>
+                            <option value="10">10 Years</option>
+                            <option value="15">15 Years</option>
+                            <option value="20">20 Years</option>
+                            <option value="25" selected>25 Years</option>
+                        </select>
+                    </div>
+                    <div class="projection-chart">
+                        <canvas id="projectionChart" class="chart-canvas"></canvas>
+                    </div>
+                    <div class="projection-legend">
+                        <div class="proj-legend-item">
+                            <div class="proj-legend-line" style="background: #60a5fa;"></div>
+                            <span>Expected (50th percentile)</span>
+                        </div>
+                        <div class="proj-legend-item">
+                            <div class="proj-legend-line" style="background: rgba(16, 185, 129, 0.5);"></div>
+                            <span>Optimistic (90th)</span>
+                        </div>
+                        <div class="proj-legend-item">
+                            <div class="proj-legend-line" style="background: rgba(220, 38, 38, 0.5);"></div>
+                            <span>Conservative (10th)</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="sidebar">
+                <!-- Lump Sum Target -->
+                <div class="section">
+                    <div class="section-header">
+                        <h2 class="section-title">&#127919; Retirement Target</h2>
+                    </div>
+                    <div class="lump-sum-display">
+                        <svg class="progress-ring" viewBox="0 0 160 160">
+                            <defs>
+                                <linearGradient id="gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                                    <stop offset="0%" stop-color="#60a5fa" />
+                                    <stop offset="100%" stop-color="#34d399" />
+                                </linearGradient>
+                            </defs>
+                            <circle class="progress-ring-circle progress-ring-bg" cx="80" cy="80" r="70" />
+                            <circle class="progress-ring-circle progress-ring-value" cx="80" cy="80" r="70" 
+                                    stroke-dasharray="440" stroke-dashoffset="308" id="progressRing" />
+                        </svg>
+                        <div class="lump-sum-value" id="projectedLumpSum">$0</div>
+                        <div class="lump-sum-label">Projected at retirement</div>
+                        <div style="margin-top: 1rem; font-size: 0.875rem;">
+                            <span style="color: var(--text-secondary);">Monthly income:</span>
+                            <span style="font-weight: 600;" id="projectedMonthlyIncome">$0</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Risk Profile -->
+                <div class="section">
+                    <div class="section-header">
+                        <h2 class="section-title">&#9878;&#65039; Risk Profile</h2>
+                    </div>
+                    <div class="risk-control">
+                        <div class="risk-labels">
+                            <span>Conservative</span>
+                            <span>Moderate</span>
+                            <span>Aggressive</span>
+                        </div>
+                        <input type="range" class="risk-slider" min="1" max="5" value="3" id="riskSlider" onchange="updateRiskProfile()">
+                        <div class="current-risk" id="currentRisk">Moderate</div>
+                        <button class="btn btn-outline" onclick="applyRiskProfile()">Apply Changes</button>
+                    </div>
+                </div>
+
+                <!-- AI Recommendations -->
+                <div class="section">
+                    <div class="section-header">
+                        <h2 class="section-title">&#129302; AI Recommendations</h2>
+                    </div>
+                    <div id="recommendationsList">
+                        <!-- Populated by JS -->
+                    </div>
+                </div>
+
+                <!-- Quick Invest -->
+                <div class="section">
+                    <div class="section-header">
+                        <h2 class="section-title">&#9889; Quick Invest</h2>
+                    </div>
+                    <div class="invest-form">
+                        <div class="form-group">
+                            <label class="form-label">Asset</label>
+                            <select class="form-select" id="quickInvestAsset">
+                                <optgroup label="Equities">
+                                    <option value="SPY">SPY - S&P 500 ETF</option>
+                                    <option value="QQQ">QQQ - NASDAQ 100 ETF</option>
+                                    <option value="VTI">VTI - Total Stock Market</option>
+                                </optgroup>
+                                <optgroup label="Crypto">
+                                    <option value="BTC">BTC - Bitcoin</option>
+                                    <option value="ETH">ETH - Ethereum</option>
+                                    <option value="SOL">SOL - Solana</option>
+                                </optgroup>
+                                <optgroup label="Fixed Income">
+                                    <option value="BND">BND - Total Bond ETF</option>
+                                    <option value="TLT">TLT - 20+ Year Treasury</option>
+                                </optgroup>
+                                <optgroup label="Commodities">
+                                    <option value="GLD">GLD - Gold ETF</option>
+                                    <option value="SLV">SLV - Silver ETF</option>
+                                </optgroup>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Amount ($)</label>
+                            <input type="number" class="form-input" id="quickInvestAmount" placeholder="Enter amount" min="10">
+                        </div>
+                        <button class="btn btn-success" onclick="quickInvest()">&#128176; Invest Now</button>
+                    </div>
+                </div>
+
+                <!-- Recent Transactions -->
+                <div class="section">
+                    <div class="section-header">
+                        <h2 class="section-title">&#128203; Recent Activity</h2>
+                    </div>
+                    <div class="transaction-list" id="transactionList">
+                        <!-- Populated by JS -->
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Toast Container -->
+    <div class="toast-container" id="toastContainer"></div>
+
+    <!-- Invest Modal -->
+    <div id="investModal" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.8); z-index: 1000; align-items: center; justify-content: center;">
+        <div style="background: var(--bg-card); border-radius: 16px; padding: 2rem; max-width: 500px; width: 90%;">
+            <h2 style="margin-bottom: 1.5rem;">&#128176; Buy Asset</h2>
+            <div class="invest-form">
+                <div class="form-group">
+                    <label class="form-label">Select Asset</label>
+                    <select class="form-select" id="modalInvestAsset">
+                        <!-- Populated by JS -->
+                    </select>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label class="form-label">Amount ($)</label>
+                        <input type="number" class="form-input" id="modalInvestAmount" placeholder="0.00">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Estimated Shares</label>
+                        <input type="text" class="form-input" id="modalEstimatedShares" readonly placeholder="0.00">
+                    </div>
+                </div>
+                <div style="display: flex; gap: 1rem; margin-top: 1rem;">
+                    <button class="btn btn-success" onclick="executeInvest()" style="flex: 1;">Confirm Purchase</button>
+                    <button class="btn btn-outline" onclick="hideInvestModal()">Cancel</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Global state
+        let portfolioData = null;
+        let accountId = null;
+        let customerId = null;
+        let projectionsData = null;
+        let marketData = {};
+        
+        // Risk profile mapping
+        const riskProfiles = ['conservative', 'moderate_conservative', 'moderate', 'moderate_aggressive', 'aggressive'];
+        const riskLabels = ['Conservative', 'Moderate Conservative', 'Moderate', 'Moderate Aggressive', 'Aggressive'];
+        
+        // Initialize dashboard
+        document.addEventListener('DOMContentLoaded', async () => {
+            // Get customer ID from session
+            const session = JSON.parse(localStorage.getItem('session') || '{}');
+            customerId = session.customer_id || 'CUST-ASAF-001';
+            
+            // Load all data
+            await Promise.all([
+                loadMarketData(),
+                loadPortfolioData(),
+                loadRecommendations()
+            ]);
+            
+            // Update projections
+            updateProjections();
+            
+            // Start market data refresh
+            setInterval(loadMarketData, 30000); // Refresh every 30 seconds
+        });
+        
+        async function loadMarketData() {
+            try {
+                const response = await fetch('/api/savings/market-data');
+                const data = await response.json();
+                marketData = data.market_data || {};
+                updateMarketTicker();
+            } catch (error) {
+                console.error('Failed to load market data:', error);
+            }
+        }
+        
+        function updateMarketTicker() {
+            const ticker = document.getElementById('marketTicker');
+            const symbols = ['BTC', 'ETH', 'SPY', 'QQQ', 'GLD', '^SPX'];
+            
+            ticker.innerHTML = symbols.map(symbol => {
+                const data = marketData[symbol] || {};
+                const price = data.price || 0;
+                const change = data.change_24h || 0;
+                const isPositive = change >= 0;
+                
+                return `
+                    <div class="ticker-item">
+                        <span class="ticker-symbol">${symbol.replace('^', '')}</span>
+                        <span class="ticker-price">$${formatNumber(price)}</span>
+                        <span class="ticker-change ${isPositive ? 'positive' : 'negative'}">
+                            ${isPositive ? '&#9650;' : '&#9660;'} ${Math.abs(change).toFixed(2)}%
+                        </span>
+                    </div>
+                `;
+            }).join('');
+        }
+        
+        async function loadPortfolioData() {
+            try {
+                // First try to get existing accounts
+                let response = await fetch(`/api/savings/accounts?customer_id=${customerId}`);
+                let data = await response.json();
+                
+                if (data.accounts && data.accounts.length > 0) {
+                    accountId = data.accounts[0].account_id;
+                } else {
+                    // Create a new account if none exists
+                    response = await fetch('/api/savings/create-account', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            customer_id: customerId,
+                            policy_id: 'POL-001',
+                            monthly_contribution: 1000,
+                            savings_rate_pct: 30,
+                            risk_profile: 'moderate'
+                        })
+                    });
+                    data = await response.json();
+                    accountId = data.account_id;
+                    
+                    // Seed with initial deposit
+                    await fetch('/api/savings/deposit', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            account_id: accountId,
+                            amount: 25000,
+                            source: 'initial_deposit'
+                        })
+                    });
+                    
+                    // Make some initial investments
+                    await Promise.all([
+                        investInAsset('SPY', 10000),
+                        investInAsset('BTC', 3000),
+                        investInAsset('BND', 5000),
+                        investInAsset('ETH', 2000),
+                        investInAsset('GLD', 2000)
+                    ]);
+                }
+                
+                // Load portfolio summary
+                response = await fetch(`/api/savings/portfolio?account_id=${accountId}`);
+                portfolioData = await response.json();
+                
+                updatePortfolioDisplay();
+                loadTransactions();
+            } catch (error) {
+                console.error('Failed to load portfolio:', error);
+                showToast('Failed to load portfolio data', 'error');
+            }
+        }
+        
+        async function investInAsset(symbol, amount) {
+            try {
+                await fetch('/api/savings/invest', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        account_id: accountId,
+                        symbol: symbol,
+                        amount: amount
+                    })
+                });
+            } catch (error) {
+                console.error(`Failed to invest in ${symbol}:`, error);
+            }
+        }
+        
+        function updatePortfolioDisplay() {
+            if (!portfolioData) return;
+            
+            // Update summary cards
+            document.getElementById('totalValue').textContent = formatCurrency(portfolioData.total_account_value || 0);
+            document.getElementById('cashBalance').textContent = formatCurrency(portfolioData.cash_balance || 0);
+            document.getElementById('investedValue').textContent = formatCurrency(portfolioData.total_market_value || 0);
+            document.getElementById('monthlyContribution').textContent = formatCurrency(portfolioData.monthly_contribution || 0);
+            
+            const returnPct = portfolioData.return_pct || 0;
+            const totalChange = document.getElementById('totalChange');
+            totalChange.className = `card-change ${returnPct >= 0 ? 'positive' : 'negative'}`;
+            totalChange.innerHTML = `<span>${returnPct >= 0 ? '&#9650;' : '&#9660;'}</span> ${returnPct >= 0 ? '+' : ''}${returnPct.toFixed(2)}% all time`;
+            
+            document.getElementById('unrealizedGain').textContent = 
+                `${portfolioData.unrealized_gain >= 0 ? '+' : ''}${formatCurrency(portfolioData.unrealized_gain || 0)} unrealized`;
+            
+            // Update allocation chart
+            updateAllocationChart();
+            
+            // Update assets table
+            updateAssetsTable();
+            
+            // Update risk profile slider
+            const riskIndex = riskProfiles.indexOf(portfolioData.risk_profile);
+            if (riskIndex >= 0) {
+                document.getElementById('riskSlider').value = riskIndex + 1;
+                document.getElementById('currentRisk').textContent = riskLabels[riskIndex];
+            }
+        }
+        
+        function updateAllocationChart() {
+            const allocation = portfolioData.allocation || {};
+            const legendContainer = document.getElementById('allocationLegend');
+            const pieChart = document.getElementById('allocationPie');
+            
+            const colors = {
+                equity: '#0066cc',
+                fixed_income: '#10b981',
+                crypto: '#f59e0b',
+                commodity: '#8b5cf6',
+                currency: '#ec4899',
+                alternative: '#06b6d4'
+            };
+            
+            // Generate legend
+            let legendHTML = '';
+            let gradientParts = [];
+            let currentDeg = 0;
+            
+            for (const [assetClass, data] of Object.entries(allocation)) {
+                const pct = data.percentage || 0;
+                const value = data.value || 0;
+                const color = colors[assetClass] || '#64748b';
+                
+                if (pct > 0) {
+                    const endDeg = currentDeg + (pct * 3.6);
+                    gradientParts.push(`${color} ${currentDeg}deg ${endDeg}deg`);
+                    currentDeg = endDeg;
+                    
+                    legendHTML += `
+                        <div class="legend-item">
+                            <div class="legend-color" style="background: ${color};"></div>
+                            <span class="legend-label">${assetClass.replace('_', ' ').replace(/\b\w/g, c => c.toUpperCase())}</span>
+                            <span class="legend-value">${pct.toFixed(1)}%</span>
+                        </div>
+                    `;
+                }
+            }
+            
+            legendContainer.innerHTML = legendHTML;
+            
+            if (gradientParts.length > 0) {
+                pieChart.style.background = `conic-gradient(${gradientParts.join(', ')})`;
+            }
+        }
+        
+        function updateAssetsTable() {
+            const assets = portfolioData.assets || [];
+            const tbody = document.getElementById('assetsTableBody');
+            
+            if (assets.length === 0) {
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="7" style="text-align: center; color: var(--text-secondary); padding: 2rem;">
+                            No assets yet. Start investing to build your portfolio!
+                        </td>
+                    </tr>
+                `;
+                return;
+            }
+            
+            tbody.innerHTML = assets.map(asset => {
+                const returnPct = asset.return_pct || 0;
+                const isPositive = returnPct >= 0;
+                
+                return `
+                    <tr>
+                        <td>
+                            <div class="asset-info">
+                                <div class="asset-icon ${asset.asset_class}">${asset.symbol.substring(0, 2)}</div>
+                                <div>
+                                    <div class="asset-symbol">${asset.symbol}</div>
+                                    <div class="asset-name">${asset.name}</div>
+                                </div>
+                            </div>
+                        </td>
+                        <td>${asset.quantity.toFixed(4)}</td>
+                        <td>$${formatNumber(asset.avg_cost)}</td>
+                        <td>$${formatNumber(asset.current_price)}</td>
+                        <td>$${formatNumber(asset.market_value)}</td>
+                        <td class="${isPositive ? 'positive' : 'negative'}" style="color: ${isPositive ? 'var(--success)' : 'var(--danger)'}">
+                            ${isPositive ? '+' : ''}${returnPct.toFixed(2)}%
+                        </td>
+                        <td>
+                            <button class="btn btn-outline btn-small" onclick="sellAsset('${asset.symbol}', ${asset.quantity})">Sell</button>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+        }
+        
+        async function loadRecommendations() {
+            if (!accountId) return;
+            
+            try {
+                const response = await fetch(`/api/savings/recommendations?account_id=${accountId}`);
+                const data = await response.json();
+                
+                const container = document.getElementById('recommendationsList');
+                const recommendations = data.recommendations || [];
+                
+                if (recommendations.length === 0) {
+                    container.innerHTML = '<p style="color: var(--text-secondary); text-align: center;">No recommendations at this time</p>';
+                    return;
+                }
+                
+                container.innerHTML = recommendations.slice(0, 5).map(rec => `
+                    <div class="recommendation-card ${rec.action}">
+                        <div class="rec-header">
+                            <div class="rec-action">
+                                <span class="action-badge ${rec.action}">${rec.action}</span>
+                                <span style="font-weight: 600;">${rec.symbol}</span>
+                            </div>
+                            <span class="rec-confidence">${Math.round(rec.confidence_score * 100)}% confidence</span>
+                        </div>
+                        <p class="rec-reason">${rec.reason}</p>
+                    </div>
+                `).join('');
+            } catch (error) {
+                console.error('Failed to load recommendations:', error);
+            }
+        }
+        
+        async function loadTransactions() {
+            if (!accountId) return;
+            
+            try {
+                const response = await fetch(`/api/savings/transactions?account_id=${accountId}&limit=10`);
+                const data = await response.json();
+                
+                const container = document.getElementById('transactionList');
+                const transactions = data.transactions || [];
+                
+                if (transactions.length === 0) {
+                    container.innerHTML = '<p style="color: var(--text-secondary); text-align: center;">No transactions yet</p>';
+                    return;
+                }
+                
+                container.innerHTML = transactions.reverse().map(tx => {
+                    const isPositive = ['deposit', 'sell'].includes(tx.type);
+                    const icons = {
+                        deposit: '&#128181;',
+                        invest: '&#128200;',
+                        sell: '&#128184;',
+                        withdrawal: '&#128682;'
+                    };
+                    
+                    const amount = tx.amount || tx.proceeds || 0;
+                    const date = new Date(tx.timestamp).toLocaleDateString();
+                    
+                    return `
+                        <div class="transaction-item">
+                            <div class="transaction-info">
+                                <div class="transaction-icon ${tx.type}">${icons[tx.type] || '&#128176;'}</div>
+                                <div class="transaction-details">
+                                    <h4>${tx.type.charAt(0).toUpperCase() + tx.type.slice(1)} ${tx.symbol || ''}</h4>
+                                    <span>${date}</span>
+                                </div>
+                            </div>
+                            <div class="transaction-amount ${isPositive ? 'positive' : 'negative'}">
+                                ${isPositive ? '+' : '-'}${formatCurrency(Math.abs(amount))}
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+            } catch (error) {
+                console.error('Failed to load transactions:', error);
+            }
+        }
+        
+        async function updateProjections() {
+            if (!accountId) return;
+            
+            const years = document.getElementById('projectionYears').value;
+            
+            try {
+                const response = await fetch(`/api/savings/projections?account_id=${accountId}&years=${years}`);
+                projectionsData = await response.json();
+                
+                // Update lump sum display
+                const lumpSum = projectionsData.lump_sum_at_retirement || 0;
+                const monthlyIncome = projectionsData.monthly_income_at_retirement || 0;
+                
+                document.getElementById('projectedLumpSum').textContent = formatCurrency(lumpSum);
+                document.getElementById('projectedMonthlyIncome').textContent = formatCurrency(monthlyIncome);
+                
+                // Update progress ring (assuming $1M target)
+                const target = 1000000;
+                const progress = Math.min(lumpSum / target, 1);
+                const circumference = 2 * Math.PI * 70;
+                const offset = circumference * (1 - progress);
+                document.getElementById('progressRing').setAttribute('stroke-dashoffset', offset);
+                
+                // Draw projection chart
+                drawProjectionChart();
+            } catch (error) {
+                console.error('Failed to load projections:', error);
+            }
+        }
+        
+        function drawProjectionChart() {
+            if (!projectionsData || !projectionsData.projections) return;
+            
+            const canvas = document.getElementById('projectionChart');
+            const ctx = canvas.getContext('2d');
+            
+            // Set canvas size
+            const rect = canvas.parentElement.getBoundingClientRect();
+            canvas.width = rect.width;
+            canvas.height = rect.height;
+            
+            const proj = projectionsData.projections;
+            const years = proj.years || [];
+            const p10 = proj.percentiles['10th'] || [];
+            const p50 = proj.percentiles['50th'] || [];
+            const p90 = proj.percentiles['90th'] || [];
+            
+            if (years.length === 0) return;
+            
+            // Calculate scales
+            const maxValue = Math.max(...p90);
+            const padding = { top: 30, right: 30, bottom: 40, left: 80 };
+            const chartWidth = canvas.width - padding.left - padding.right;
+            const chartHeight = canvas.height - padding.top - padding.bottom;
+            
+            const xScale = chartWidth / (years.length - 1);
+            const yScale = chartHeight / maxValue;
+            
+            // Clear canvas
+            ctx.fillStyle = '#1e293b';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            // Draw grid lines
+            ctx.strokeStyle = '#334155';
+            ctx.lineWidth = 1;
+            
+            for (let i = 0; i <= 5; i++) {
+                const y = padding.top + (chartHeight * i / 5);
+                ctx.beginPath();
+                ctx.moveTo(padding.left, y);
+                ctx.lineTo(canvas.width - padding.right, y);
+                ctx.stroke();
+                
+                // Y-axis labels
+                ctx.fillStyle = '#94a3b8';
+                ctx.font = '12px Inter';
+                ctx.textAlign = 'right';
+                const value = maxValue * (1 - i / 5);
+                ctx.fillText('$' + formatNumber(value), padding.left - 10, y + 4);
+            }
+            
+            // X-axis labels
+            ctx.textAlign = 'center';
+            years.forEach((year, i) => {
+                if (i % 5 === 0 || i === years.length - 1) {
+                    const x = padding.left + (i * xScale);
+                    ctx.fillText('Year ' + year, x, canvas.height - 10);
+                }
+            });
+            
+            // Draw confidence band (10th to 90th percentile)
+            ctx.fillStyle = 'rgba(96, 165, 250, 0.1)';
+            ctx.beginPath();
+            ctx.moveTo(padding.left, padding.top + chartHeight - (p10[0] * yScale));
+            p10.forEach((val, i) => {
+                ctx.lineTo(padding.left + (i * xScale), padding.top + chartHeight - (val * yScale));
+            });
+            for (let i = p90.length - 1; i >= 0; i--) {
+                ctx.lineTo(padding.left + (i * xScale), padding.top + chartHeight - (p90[i] * yScale));
+            }
+            ctx.closePath();
+            ctx.fill();
+            
+            // Draw 10th percentile line
+            ctx.strokeStyle = 'rgba(220, 38, 38, 0.5)';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            p10.forEach((val, i) => {
+                const x = padding.left + (i * xScale);
+                const y = padding.top + chartHeight - (val * yScale);
+                if (i === 0) ctx.moveTo(x, y);
+                else ctx.lineTo(x, y);
+            });
+            ctx.stroke();
+            
+            // Draw 90th percentile line
+            ctx.strokeStyle = 'rgba(16, 185, 129, 0.5)';
+            ctx.beginPath();
+            p90.forEach((val, i) => {
+                const x = padding.left + (i * xScale);
+                const y = padding.top + chartHeight - (val * yScale);
+                if (i === 0) ctx.moveTo(x, y);
+                else ctx.lineTo(x, y);
+            });
+            ctx.stroke();
+            
+            // Draw 50th percentile line (expected)
+            ctx.strokeStyle = '#60a5fa';
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            p50.forEach((val, i) => {
+                const x = padding.left + (i * xScale);
+                const y = padding.top + chartHeight - (val * yScale);
+                if (i === 0) ctx.moveTo(x, y);
+                else ctx.lineTo(x, y);
+            });
+            ctx.stroke();
+        }
+        
+        function updateRiskProfile() {
+            const value = document.getElementById('riskSlider').value;
+            document.getElementById('currentRisk').textContent = riskLabels[value - 1];
+        }
+        
+        async function applyRiskProfile() {
+            const value = document.getElementById('riskSlider').value;
+            const profile = riskProfiles[value - 1];
+            
+            try {
+                const response = await fetch('/api/savings/update-risk-profile', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        account_id: accountId,
+                        risk_profile: profile
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    showToast(`Risk profile updated to ${riskLabels[value - 1]}`, 'success');
+                    await loadPortfolioData();
+                    await loadRecommendations();
+                } else {
+                    showToast(data.error || 'Failed to update risk profile', 'error');
+                }
+            } catch (error) {
+                showToast('Failed to update risk profile', 'error');
+            }
+        }
+        
+        async function quickInvest() {
+            const symbol = document.getElementById('quickInvestAsset').value;
+            const amount = parseFloat(document.getElementById('quickInvestAmount').value);
+            
+            if (!amount || amount <= 0) {
+                showToast('Please enter a valid amount', 'error');
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/savings/invest', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        account_id: accountId,
+                        symbol: symbol,
+                        amount: amount
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    showToast(`Invested $${formatNumber(amount)} in ${symbol}`, 'success');
+                    document.getElementById('quickInvestAmount').value = '';
+                    await loadPortfolioData();
+                    await loadTransactions();
+                } else {
+                    showToast(data.error || 'Investment failed', 'error');
+                }
+            } catch (error) {
+                showToast('Investment failed', 'error');
+            }
+        }
+        
+        async function sellAsset(symbol, quantity) {
+            const sellQty = prompt(`Sell ${symbol}\nCurrent quantity: ${quantity.toFixed(4)}\n\nEnter quantity to sell:`);
+            
+            if (!sellQty || parseFloat(sellQty) <= 0) {
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/savings/sell', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        account_id: accountId,
+                        symbol: symbol,
+                        quantity: parseFloat(sellQty)
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    showToast(`Sold ${sellQty} ${symbol} for ${formatCurrency(data.proceeds)}`, 'success');
+                    await loadPortfolioData();
+                    await loadTransactions();
+                } else {
+                    showToast(data.error || 'Sale failed', 'error');
+                }
+            } catch (error) {
+                showToast('Sale failed', 'error');
+            }
+        }
+        
+        function showInvestModal() {
+            const modal = document.getElementById('investModal');
+            modal.style.display = 'flex';
+            
+            // Populate asset dropdown
+            const select = document.getElementById('modalInvestAsset');
+            select.innerHTML = '';
+            
+            for (const [symbol, data] of Object.entries(marketData)) {
+                const option = document.createElement('option');
+                option.value = symbol;
+                option.textContent = `${symbol} - ${data.name} ($${formatNumber(data.price)})`;
+                select.appendChild(option);
+            }
+        }
+        
+        function hideInvestModal() {
+            document.getElementById('investModal').style.display = 'none';
+        }
+        
+        async function executeInvest() {
+            const symbol = document.getElementById('modalInvestAsset').value;
+            const amount = parseFloat(document.getElementById('modalInvestAmount').value);
+            
+            if (!amount || amount <= 0) {
+                showToast('Please enter a valid amount', 'error');
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/savings/invest', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        account_id: accountId,
+                        symbol: symbol,
+                        amount: amount
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    hideInvestModal();
+                    showToast(`Invested $${formatNumber(amount)} in ${symbol}`, 'success');
+                    await loadPortfolioData();
+                    await loadTransactions();
+                } else {
+                    showToast(data.error || 'Investment failed', 'error');
+                }
+            } catch (error) {
+                showToast('Investment failed', 'error');
+            }
+        }
+        
+        function showRebalanceModal() {
+            showToast('Rebalancing suggestions loaded in AI Recommendations', 'success');
+            loadRecommendations();
+        }
+        
+        function logout() {
+            localStorage.removeItem('session');
+            window.location.href = '/login.html';
+        }
+        
+        function showToast(message, type = 'success') {
+            const container = document.getElementById('toastContainer');
+            const toast = document.createElement('div');
+            toast.className = `toast ${type}`;
+            toast.innerHTML = `
+                <span>${type === 'success' ? '&#10003;' : '&#10007;'}</span>
+                <span>${message}</span>
+            `;
+            container.appendChild(toast);
+            
+            setTimeout(() => toast.remove(), 3000);
+        }
+        
+        function formatCurrency(value) {
+            return new Intl.NumberFormat('en-US', {
+                style: 'currency',
+                currency: 'USD',
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2
+            }).format(value);
+        }
+        
+        function formatNumber(value) {
+            if (value >= 1000000) {
+                return (value / 1000000).toFixed(2) + 'M';
+            } else if (value >= 1000) {
+                return (value / 1000).toFixed(2) + 'K';
+            }
+            return value.toFixed(2);
+        }
+        
+        // Listen for modal amount changes
+        document.getElementById('modalInvestAmount')?.addEventListener('input', function() {
+            const symbol = document.getElementById('modalInvestAsset').value;
+            const amount = parseFloat(this.value) || 0;
+            const price = marketData[symbol]?.price || 1;
+            document.getElementById('modalEstimatedShares').value = (amount / price).toFixed(4);
+        });
+    </script>
+</body>
+</html>

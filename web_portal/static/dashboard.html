@@ -40,6 +40,7 @@
       <nav class="nav">
         <a href="/dashboard.html">Dashboard</a>
         <a href="/dashboard.html#policies">My Policies</a>
+        <a href="/savings-portfolio.html" style="color: #0066cc; font-weight: 600;">📈 Investments</a>
         <a href="/dashboard.html#health-wallet" style="color: #28a745;">🏥 Health Wallet</a>
         <a href="/dashboard.html#claims">Claims</a>
         <a href="/dashboard.html#billing">Billing</a>
@@ -65,11 +66,16 @@
     </div>
 
     <!-- Quick Actions -->
-    <div class="dashboard-actions" style="margin-bottom: 32px;">
-      <a href="/apply.html" class="action-card" style="text-decoration: none; color: inherit;">
-        <div class="stat-icon">➕</div>
+    <div class="dashboard-actions" style="margin-bottom: 32px; display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px;">
+      <a href="/apply.html" class="action-card" style="text-decoration: none; color: inherit; padding: 20px; border-radius: 12px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white;">
+        <div class="stat-icon" style="font-size: 32px;">➕</div>
         <div style="font-size: 18px; font-weight: 600; margin-top: 8px;">Apply for New Policy</div>
-        <div style="color: #666; font-size: 14px;">Start your application in minutes</div>
+        <div style="color: rgba(255,255,255,0.8); font-size: 14px;">Start your application in minutes</div>
+      </a>
+      <a href="/savings-portfolio.html" class="action-card" style="text-decoration: none; color: inherit; padding: 20px; border-radius: 12px; background: linear-gradient(135deg, #0066cc 0%, #00a86b 100%); color: white;">
+        <div class="stat-icon" style="font-size: 32px;">📈</div>
+        <div style="font-size: 18px; font-weight: 600; margin-top: 8px;">Savings & Investments</div>
+        <div style="color: rgba(255,255,255,0.8); font-size: 14px;">Manage your portfolio, crypto, stocks & more</div>
       </a>
     </div>
 
@@ -368,11 +374,53 @@
       }
       
       // Load wallet balance and data
-      await loadWalletBalance();
-      await loadPolicies();
-      await loadTransactionHistory();
-      await loadCustomerNFTs();
+      await Promise.all([
+        loadWalletBalance(),
+        loadPolicies(),
+        loadTransactionHistory(),
+        loadCustomerNFTs(),
+        loadInvestmentPortfolio()
+      ]);
     });
+    
+    // Load investment portfolio data
+    async function loadInvestmentPortfolio() {
+      try {
+        const cid = customerId || 'CUST-ASAF-001';
+        
+        // First try to get savings accounts
+        const accountsResponse = await fetch(`/api/savings/accounts?customer_id=${cid}`);
+        const accountsData = await accountsResponse.json();
+        
+        if (accountsData.accounts && accountsData.accounts.length > 0) {
+          const account = accountsData.accounts[0];
+          
+          // Get full portfolio summary
+          const portfolioResponse = await fetch(`/api/savings/portfolio?account_id=${account.account_id}`);
+          const portfolioData = await portfolioResponse.json();
+          
+          if (portfolioData.total_account_value) {
+            document.getElementById('investment-value').textContent = 
+              '$' + portfolioData.total_account_value.toLocaleString('en-US', {minimumFractionDigits: 0, maximumFractionDigits: 0});
+          }
+        } else {
+          // Fallback: Try legacy investment-portfolio endpoint
+          const response = await fetch(`/api/investment-portfolio?customer_id=${cid}`);
+          const data = await response.json();
+          
+          if (data.total_account_value) {
+            document.getElementById('investment-value').textContent = 
+              '$' + data.total_account_value.toLocaleString('en-US', {minimumFractionDigits: 0, maximumFractionDigits: 0});
+          } else if (data.total_portfolio_value) {
+            document.getElementById('investment-value').textContent = 
+              '$' + data.total_portfolio_value.toLocaleString('en-US', {minimumFractionDigits: 0, maximumFractionDigits: 0});
+          }
+        }
+      } catch (error) {
+        console.log('Investment portfolio load error (non-critical):', error);
+        // Keep default value
+      }
+    }
     
     // Load wallet balance from marketplace API
     async function loadWalletBalance() {

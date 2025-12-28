@@ -111,6 +111,17 @@ except ImportError as e:
     marketplace_enabled = False
     print(f"Warning: Marketplace service not available: {e}")
 
+# Investment Portfolio Service for savings/investment management
+portfolio_service = None
+try:
+    from services.investment_portfolio_service import get_portfolio_service, RiskProfile, AssetClass
+    portfolio_service = get_portfolio_service()
+    portfolio_enabled = True
+    print("✓ Investment Portfolio service enabled (savings, crypto, indexes)")
+except ImportError as e:
+    portfolio_enabled = False
+    print(f"Warning: Investment Portfolio service not available: {e}")
+
 # Initialize pipeline service with data stores
 def _init_pipeline():
     global pipeline_service
@@ -1968,16 +1979,224 @@ class PortalHandler(BaseHTTPRequestHandler):
             self.wfile.write(json.dumps(result).encode('utf-8'))
             return
 
-        # Investment portfolio endpoint
+        # ========== SAVINGS & INVESTMENT PORTFOLIO API ==========
+        # Full-featured investment portfolio management with real-time market data
+        
+        # Get portfolio summary for a customer
+        if path == '/api/savings/portfolio':
+            if not portfolio_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Investment service unavailable'}).encode('utf-8'))
+                return
+            
+            customer_id = qs.get('customer_id', [''])[0]
+            account_id = qs.get('account_id', [''])[0]
+            
+            if account_id:
+                result = portfolio_service.get_portfolio_summary(account_id)
+            elif customer_id:
+                accounts = portfolio_service.get_customer_accounts(customer_id)
+                if accounts:
+                    result = portfolio_service.get_portfolio_summary(accounts[0].account_id)
+                else:
+                    result = {'error': 'No savings account found', 'customer_id': customer_id}
+            else:
+                result = {'error': 'customer_id or account_id required'}
+            
+            self._set_json_headers()
+            self.wfile.write(json.dumps(result, default=str).encode('utf-8'))
+            return
+        
+        # Get all customer savings accounts
+        if path == '/api/savings/accounts':
+            if not portfolio_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Investment service unavailable'}).encode('utf-8'))
+                return
+            
+            customer_id = qs.get('customer_id', [''])[0]
+            if not customer_id:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'customer_id required'}).encode('utf-8'))
+                return
+            
+            accounts = portfolio_service.get_customer_accounts(customer_id)
+            result = {
+                'customer_id': customer_id,
+                'accounts': [
+                    {
+                        'account_id': acc.account_id,
+                        'policy_id': acc.policy_id,
+                        'balance': acc.balance,
+                        'monthly_contribution': acc.monthly_contribution,
+                        'savings_rate_pct': acc.savings_rate_pct,
+                        'risk_profile': acc.risk_profile.value,
+                        'total_assets': sum(a.market_value for a in acc.assets),
+                        'created_at': acc.created_at
+                    }
+                    for acc in accounts
+                ]
+            }
+            
+            self._set_json_headers()
+            self.wfile.write(json.dumps(result, default=str).encode('utf-8'))
+            return
+        
+        # Get investment projections (Monte Carlo simulation)
+        if path == '/api/savings/projections':
+            if not portfolio_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Investment service unavailable'}).encode('utf-8'))
+                return
+            
+            account_id = qs.get('account_id', [''])[0]
+            years = int(qs.get('years', ['25'])[0])
+            
+            if not account_id:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'account_id required'}).encode('utf-8'))
+                return
+            
+            result = portfolio_service.generate_projections(account_id, min(years, 50))
+            self._set_json_headers()
+            self.wfile.write(json.dumps(result, default=str).encode('utf-8'))
+            return
+        
+        # Get AI recommendations
+        if path == '/api/savings/recommendations':
+            if not portfolio_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Investment service unavailable'}).encode('utf-8'))
+                return
+            
+            account_id = qs.get('account_id', [''])[0]
+            if not account_id:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'account_id required'}).encode('utf-8'))
+                return
+            
+            recommendations = portfolio_service.generate_ai_recommendations(account_id)
+            result = {'account_id': account_id, 'recommendations': recommendations}
+            
+            self._set_json_headers()
+            self.wfile.write(json.dumps(result, default=str).encode('utf-8'))
+            return
+        
+        # Get available assets for investment
+        if path == '/api/savings/assets':
+            if not portfolio_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Investment service unavailable'}).encode('utf-8'))
+                return
+            
+            asset_class = qs.get('class', [''])[0]
+            assets = portfolio_service.get_available_assets()
+            
+            if asset_class:
+                assets = [a for a in assets if a['asset_class'] == asset_class]
+            
+            result = {'assets': assets, 'count': len(assets)}
+            self._set_json_headers()
+            self.wfile.write(json.dumps(result, default=str).encode('utf-8'))
+            return
+        
+        # Get real-time market data
+        if path == '/api/savings/market-data':
+            if not portfolio_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Investment service unavailable'}).encode('utf-8'))
+                return
+            
+            symbols = qs.get('symbols', [''])[0]
+            if symbols:
+                symbol_list = [s.strip().upper() for s in symbols.split(',')]
+                data = portfolio_service.get_market_data(symbol_list)
+            else:
+                data = portfolio_service.get_market_data()
+            
+            # Add real-time crypto/index data if available
+            if _market_data:
+                try:
+                    # Get live crypto prices
+                    crypto_symbols = [s for s in (symbol_list if symbols else ['BTC', 'ETH', 'SOL']) 
+                                     if s in ['BTC', 'ETH', 'SOL', 'USDC', 'USDT', 'BNB', 'XRP', 'ADA', 'DOGE']]
+                    if crypto_symbols:
+                        live_crypto = _market_data.get_crypto_prices_usd(crypto_symbols)
+                        if 'prices' in live_crypto:
+                            for sym, price in live_crypto['prices'].items():
+                                if sym in portfolio_service.MARKET_DATA:
+                                    portfolio_service.update_market_prices({sym: price})
+                except Exception:
+                    pass
+            
+            result = {
+                'market_data': data,
+                'last_updated': datetime.now().isoformat(),
+                'source': 'phins_investment_service'
+            }
+            
+            self._set_json_headers()
+            self.wfile.write(json.dumps(result, default=str).encode('utf-8'))
+            return
+        
+        # Get transaction history
+        if path == '/api/savings/transactions':
+            if not portfolio_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Investment service unavailable'}).encode('utf-8'))
+                return
+            
+            account_id = qs.get('account_id', [''])[0]
+            if not account_id:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'account_id required'}).encode('utf-8'))
+                return
+            
+            account = portfolio_service.get_account(account_id)
+            if not account:
+                self._set_json_headers(404)
+                self.wfile.write(json.dumps({'error': 'Account not found'}).encode('utf-8'))
+                return
+            
+            limit = int(qs.get('limit', ['50'])[0])
+            transactions = account.transactions[-limit:]
+            
+            result = {
+                'account_id': account_id,
+                'transactions': transactions,
+                'count': len(transactions),
+                'total_transactions': len(account.transactions)
+            }
+            
+            self._set_json_headers()
+            self.wfile.write(json.dumps(result, default=str).encode('utf-8'))
+            return
+        
+        # ========== END SAVINGS & INVESTMENT PORTFOLIO API ==========
+
+        # Investment portfolio endpoint (legacy - redirect to new API)
         if path.startswith('/api/investment-portfolio'):
             customer_id = qs.get('customer_id', ['CUST001'])[0]
             result = {'customer_id': customer_id, 'message': 'Portfolio data unavailable'}
             try:
-                sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
-                from accounting_engine import AccountingEngine
-                engine = AccountingEngine()
-                portfolio = engine.get_investment_portfolio_summary(customer_id)  # type: ignore
-                result = portfolio  # type: ignore
+                # Try new portfolio service first
+                if portfolio_enabled:
+                    accounts = portfolio_service.get_customer_accounts(customer_id)
+                    if accounts:
+                        result = portfolio_service.get_portfolio_summary(accounts[0].account_id)
+                    else:
+                        # Fallback to accounting engine
+                        sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+                        from accounting_engine import AccountingEngine
+                        engine = AccountingEngine()
+                        portfolio = engine.get_investment_portfolio_summary(customer_id)
+                        result = portfolio
+                else:
+                    sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+                    from accounting_engine import AccountingEngine
+                    engine = AccountingEngine()
+                    portfolio = engine.get_investment_portfolio_summary(customer_id)
+                    result = portfolio
             except Exception as e:
                 result['error'] = str(e)
             
@@ -1991,11 +2210,23 @@ class PortalHandler(BaseHTTPRequestHandler):
             years = int(qs.get('years', ['5'])[0])
             result = {'customer_id': customer_id, 'message': 'Projections unavailable'}
             try:
-                sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
-                from accounting_engine import AccountingEngine
-                engine = AccountingEngine()
-                returns = engine.get_projected_returns_analysis(customer_id, years)  # type: ignore
-                result = returns  # type: ignore
+                # Try new portfolio service first
+                if portfolio_enabled:
+                    accounts = portfolio_service.get_customer_accounts(customer_id)
+                    if accounts:
+                        result = portfolio_service.generate_projections(accounts[0].account_id, years)
+                    else:
+                        sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+                        from accounting_engine import AccountingEngine
+                        engine = AccountingEngine()
+                        returns = engine.get_projected_returns_analysis(customer_id, years)
+                        result = returns
+                else:
+                    sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+                    from accounting_engine import AccountingEngine
+                    engine = AccountingEngine()
+                    returns = engine.get_projected_returns_analysis(customer_id, years)
+                    result = returns
             except Exception as e:
                 result['error'] = str(e)
             
@@ -4796,6 +5027,326 @@ class PortalHandler(BaseHTTPRequestHandler):
                 return
         
         # ========== END MARKETPLACE API ==========
+        
+        # ========== SAVINGS & INVESTMENT PORTFOLIO POST API ==========
+        
+        # Create a new savings account
+        if path == '/api/savings/create-account':
+            if not portfolio_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Investment service unavailable'}).encode('utf-8'))
+                return
+            
+            try:
+                data = json.loads(body)
+                customer_id = data.get('customer_id')
+                policy_id = data.get('policy_id')
+                monthly_contribution = float(data.get('monthly_contribution', 500))
+                savings_rate_pct = float(data.get('savings_rate_pct', 25))
+                risk_profile_str = data.get('risk_profile', 'moderate')
+                
+                if not customer_id or not policy_id:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'customer_id and policy_id required'}).encode('utf-8'))
+                    return
+                
+                # Map risk profile string to enum
+                risk_map = {
+                    'conservative': RiskProfile.CONSERVATIVE,
+                    'moderate_conservative': RiskProfile.MODERATE_CONSERVATIVE,
+                    'moderate': RiskProfile.MODERATE,
+                    'moderate_aggressive': RiskProfile.MODERATE_AGGRESSIVE,
+                    'aggressive': RiskProfile.AGGRESSIVE
+                }
+                risk_profile = risk_map.get(risk_profile_str.lower(), RiskProfile.MODERATE)
+                
+                account = portfolio_service.create_savings_account(
+                    customer_id=customer_id,
+                    policy_id=policy_id,
+                    monthly_contribution=monthly_contribution,
+                    savings_rate_pct=savings_rate_pct,
+                    risk_profile=risk_profile
+                )
+                
+                if audit:
+                    try:
+                        audit.log(customer_id, 'create', 'savings_account', account.account_id, 
+                                 {'monthly': monthly_contribution, 'risk': risk_profile_str})
+                    except Exception:
+                        pass
+                
+                self._set_json_headers(201)
+                result = {
+                    'success': True,
+                    'account_id': account.account_id,
+                    'customer_id': customer_id,
+                    'policy_id': policy_id,
+                    'risk_profile': account.risk_profile.value,
+                    'monthly_contribution': account.monthly_contribution,
+                    'message': 'Savings account created successfully'
+                }
+                self.wfile.write(json.dumps(result).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+        
+        # Deposit funds into savings account
+        if path == '/api/savings/deposit':
+            if not portfolio_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Investment service unavailable'}).encode('utf-8'))
+                return
+            
+            try:
+                data = json.loads(body)
+                account_id = data.get('account_id')
+                amount = float(data.get('amount', 0))
+                source = data.get('source', 'manual_deposit')
+                
+                if not account_id or amount <= 0:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'account_id and positive amount required'}).encode('utf-8'))
+                    return
+                
+                if amount > 1000000:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'Maximum deposit is $1,000,000'}).encode('utf-8'))
+                    return
+                
+                result = portfolio_service.deposit(account_id, amount, source)
+                
+                if result.get('success') and audit:
+                    try:
+                        audit.log('system', 'deposit', 'savings_account', account_id, 
+                                 {'amount': amount, 'source': source})
+                    except Exception:
+                        pass
+                
+                self._set_json_headers(200 if result.get('success') else 400)
+                self.wfile.write(json.dumps(result).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+        
+        # Withdraw funds from savings account
+        if path == '/api/savings/withdraw':
+            if not portfolio_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Investment service unavailable'}).encode('utf-8'))
+                return
+            
+            try:
+                data = json.loads(body)
+                account_id = data.get('account_id')
+                amount = float(data.get('amount', 0))
+                reason = data.get('reason', 'withdrawal')
+                
+                if not account_id or amount <= 0:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'account_id and positive amount required'}).encode('utf-8'))
+                    return
+                
+                result = portfolio_service.withdraw(account_id, amount, reason)
+                
+                if result.get('success') and audit:
+                    try:
+                        audit.log('system', 'withdraw', 'savings_account', account_id, 
+                                 {'amount': amount, 'reason': reason})
+                    except Exception:
+                        pass
+                
+                self._set_json_headers(200 if result.get('success') else 400)
+                self.wfile.write(json.dumps(result).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+        
+        # Invest funds into an asset
+        if path == '/api/savings/invest':
+            if not portfolio_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Investment service unavailable'}).encode('utf-8'))
+                return
+            
+            try:
+                data = json.loads(body)
+                account_id = data.get('account_id')
+                symbol = data.get('symbol', '').upper()
+                amount = float(data.get('amount', 0))
+                
+                if not account_id or not symbol or amount <= 0:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'account_id, symbol, and positive amount required'}).encode('utf-8'))
+                    return
+                
+                result = portfolio_service.invest(account_id, symbol, amount)
+                
+                if result.get('success') and audit:
+                    try:
+                        audit.log('system', 'invest', 'savings_account', account_id, 
+                                 {'symbol': symbol, 'amount': amount, 'price': result.get('price')})
+                    except Exception:
+                        pass
+                
+                self._set_json_headers(200 if result.get('success') else 400)
+                self.wfile.write(json.dumps(result).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+        
+        # Sell an asset from portfolio
+        if path == '/api/savings/sell':
+            if not portfolio_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Investment service unavailable'}).encode('utf-8'))
+                return
+            
+            try:
+                data = json.loads(body)
+                account_id = data.get('account_id')
+                symbol = data.get('symbol', '').upper()
+                quantity = float(data.get('quantity', 0))
+                
+                if not account_id or not symbol or quantity <= 0:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'account_id, symbol, and positive quantity required'}).encode('utf-8'))
+                    return
+                
+                result = portfolio_service.sell_asset(account_id, symbol, quantity)
+                
+                if result.get('success') and audit:
+                    try:
+                        audit.log('system', 'sell', 'savings_account', account_id, 
+                                 {'symbol': symbol, 'quantity': quantity, 'proceeds': result.get('proceeds')})
+                    except Exception:
+                        pass
+                
+                self._set_json_headers(200 if result.get('success') else 400)
+                self.wfile.write(json.dumps(result).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+        
+        # Update risk profile and rebalance
+        if path == '/api/savings/update-risk-profile':
+            if not portfolio_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Investment service unavailable'}).encode('utf-8'))
+                return
+            
+            try:
+                data = json.loads(body)
+                account_id = data.get('account_id')
+                risk_profile_str = data.get('risk_profile', 'moderate')
+                
+                if not account_id:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'account_id required'}).encode('utf-8'))
+                    return
+                
+                account = portfolio_service.get_account(account_id)
+                if not account:
+                    self._set_json_headers(404)
+                    self.wfile.write(json.dumps({'error': 'Account not found'}).encode('utf-8'))
+                    return
+                
+                # Map risk profile string to enum
+                risk_map = {
+                    'conservative': RiskProfile.CONSERVATIVE,
+                    'moderate_conservative': RiskProfile.MODERATE_CONSERVATIVE,
+                    'moderate': RiskProfile.MODERATE,
+                    'moderate_aggressive': RiskProfile.MODERATE_AGGRESSIVE,
+                    'aggressive': RiskProfile.AGGRESSIVE
+                }
+                new_risk = risk_map.get(risk_profile_str.lower(), RiskProfile.MODERATE)
+                
+                # Update account
+                old_risk = account.risk_profile
+                account.risk_profile = new_risk
+                account.target_allocation = portfolio_service.RISK_ALLOCATIONS[new_risk]
+                
+                if audit:
+                    try:
+                        audit.log('system', 'update_risk', 'savings_account', account_id, 
+                                 {'old': old_risk.value, 'new': new_risk.value})
+                    except Exception:
+                        pass
+                
+                # Get recommendations for rebalancing
+                recommendations = portfolio_service.generate_ai_recommendations(account_id)
+                
+                self._set_json_headers()
+                result = {
+                    'success': True,
+                    'account_id': account_id,
+                    'old_risk_profile': old_risk.value,
+                    'new_risk_profile': new_risk.value,
+                    'rebalance_recommendations': recommendations,
+                    'message': f'Risk profile updated to {new_risk.value}. Review rebalancing recommendations.'
+                }
+                self.wfile.write(json.dumps(result).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+        
+        # Update monthly contribution
+        if path == '/api/savings/update-contribution':
+            if not portfolio_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Investment service unavailable'}).encode('utf-8'))
+                return
+            
+            try:
+                data = json.loads(body)
+                account_id = data.get('account_id')
+                monthly_contribution = float(data.get('monthly_contribution', 0))
+                
+                if not account_id or monthly_contribution < 0:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'account_id and non-negative monthly_contribution required'}).encode('utf-8'))
+                    return
+                
+                account = portfolio_service.get_account(account_id)
+                if not account:
+                    self._set_json_headers(404)
+                    self.wfile.write(json.dumps({'error': 'Account not found'}).encode('utf-8'))
+                    return
+                
+                old_contribution = account.monthly_contribution
+                account.monthly_contribution = monthly_contribution
+                
+                if audit:
+                    try:
+                        audit.log('system', 'update_contribution', 'savings_account', account_id, 
+                                 {'old': old_contribution, 'new': monthly_contribution})
+                    except Exception:
+                        pass
+                
+                # Calculate new projections
+                projections = portfolio_service.generate_projections(account_id, 25)
+                
+                self._set_json_headers()
+                result = {
+                    'success': True,
+                    'account_id': account_id,
+                    'old_monthly_contribution': old_contribution,
+                    'new_monthly_contribution': monthly_contribution,
+                    'projected_value_25yr': projections.get('projections', {}).get('percentiles', {}).get('50th', [0])[-1] if projections.get('projections') else 0,
+                    'message': f'Monthly contribution updated to ${monthly_contribution:,.2f}'
+                }
+                self.wfile.write(json.dumps(result).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+        
+        # ========== END SAVINGS & INVESTMENT PORTFOLIO API ==========
         
         # ========== END BILLING API ==========
         # Minimal billing endpoints (demo fallback when engine routes are not used)
