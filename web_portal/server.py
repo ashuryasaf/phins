@@ -534,11 +534,8 @@ if USE_DATABASE and database_enabled:
                         # Get customer_id - either from user record or by looking up by email
                         customer_id = getattr(user, 'customer_id', None)
                         if not customer_id and user.role == 'customer':
-                            # Try to find customer by email
-                            from database.models import Customer
-                            customer = db._session.query(Customer).filter(
-                                Customer.email == username
-                            ).first()
+                            # Try to find customer by email using repository
+                            customer = db.customers.get_by_email(username)
                             if customer:
                                 customer_id = customer.id
                         
@@ -2136,8 +2133,9 @@ class PortalHandler(BaseHTTPRequestHandler):
                     try:
                         from database.manager import DatabaseManager
                         with DatabaseManager() as db:
+                            # Use repository method to get customer by email
                             customer = db.customers.get_by_email(username.lower())
-                            if customer and customer.password_hash and customer.password_salt:
+                            if customer and getattr(customer, 'password_hash', None) and getattr(customer, 'password_salt', None):
                                 if verify_password(password, customer.password_hash, customer.password_salt):
                                     user = {
                                         'hash': customer.password_hash,
@@ -2149,9 +2147,15 @@ class PortalHandler(BaseHTTPRequestHandler):
                                     role = 'customer'
                                     name = customer.name
                                     # Update last login
-                                    db.customers.update_last_login(customer.id)
+                                    try:
+                                        db.customers.update_last_login(customer.id)
+                                        db.commit()
+                                    except Exception:
+                                        pass  # Non-critical
                     except Exception as e:
                         print(f"Customer auth check error: {e}")
+                        import traceback
+                        traceback.print_exc()
                 
                 # 3. Fallback: Check in-memory CUSTOMERS (for non-DB mode)
                 if not user and not database_enabled:
