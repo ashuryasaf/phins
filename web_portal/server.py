@@ -2121,12 +2121,16 @@ class PortalHandler(BaseHTTPRequestHandler):
                 name = None
                 
                 # 1. Check internal users (admin, underwriter, etc.)
-                staff_user = USERS.get(username)
-                if staff_user and verify_password(password, staff_user['hash'], staff_user['salt']):
-                    user = staff_user
-                    customer_id = staff_user.get('customer_id')
-                    role = staff_user['role']
-                    name = staff_user['name']
+                try:
+                    staff_user = USERS.get(username)
+                    if staff_user and verify_password(password, staff_user['hash'], staff_user['salt']):
+                        user = staff_user
+                        customer_id = staff_user.get('customer_id')
+                        role = staff_user['role']
+                        name = staff_user['name']
+                except Exception as e:
+                    print(f"Staff user check error: {e}")
+                    staff_user = None
                 
                 # 2. Check customers table (by email) - for customer logins
                 # This runs if: no user found OR user found but password failed (handles password mismatch between tables)
@@ -2211,8 +2215,11 @@ class PortalHandler(BaseHTTPRequestHandler):
                 self._set_json_headers(400)
                 self.wfile.write(json.dumps({'error': 'Invalid JSON payload'}).encode('utf-8'))
             except Exception as e:
+                print(f"Login error: {e}")
+                import traceback
+                traceback.print_exc()
                 self._set_json_headers(500)
-                self.wfile.write(json.dumps({'error': 'Internal server error'}).encode('utf-8'))
+                self.wfile.write(json.dumps({'error': 'Internal server error', 'debug': str(e)}).encode('utf-8'))
             return
         
         # User Registration Endpoint
