@@ -81,8 +81,10 @@ else:
     UNDERWRITING_APPLICATIONS: Dict[str, Dict[str, Any]] = {}
     SESSIONS: Dict[str, Dict[str, Any]] = {}  # token -> {username, expires, customer_id}
     BILLING: Dict[str, Dict[str, Any]] = {}  # bill_id -> bill data (for metrics)
-    HEALTH_WALLETS: Dict[str, Dict[str, Any]] = {}  # customer_id -> {balance, transactions, monthly_deposit}
-    MEDICAL_PURCHASES: Dict[str, Dict[str, Any]] = {}  # purchase_id -> purchase data
+
+# Health wallets and medical purchases are always in-memory (not yet in DB schema)
+HEALTH_WALLETS: Dict[str, Dict[str, Any]] = {}  # customer_id -> {balance, transactions, monthly_deposit}
+MEDICAL_PURCHASES: Dict[str, Dict[str, Any]] = {}  # purchase_id -> purchase data
 try:
     from services.audit_service import AuditService
     audit = AuditService()
@@ -918,6 +920,96 @@ class PortalHandler(BaseHTTPRequestHandler):
                 return
             self._set_json_headers()
             self.wfile.write(json.dumps(get_bi_data_accounting()).encode('utf-8'))
+            return
+        
+        # BI Dashboard - comprehensive admin dashboard statistics
+        if path == '/api/bi/dashboard':
+            if not require_role(session, ['admin', 'accountant', 'underwriter']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Unauthorized. Admin access required.'}).encode('utf-8'))
+                return
+            
+            # Calculate comprehensive dashboard stats
+            total_customers = len(CUSTOMERS)
+            total_policies = len(POLICIES)
+            active_policies = len([p for p in POLICIES.values() if p.get('status') == 'active'])
+            pending_applications = len([a for a in UNDERWRITING_APPLICATIONS.values() if a.get('status') == 'pending'])
+            approved_applications = len([a for a in UNDERWRITING_APPLICATIONS.values() if a.get('status') == 'approved'])
+            
+            # Claims stats
+            total_claims = len(CLAIMS)
+            pending_claims = len([c for c in CLAIMS.values() if c.get('status') in ['pending', 'under_review', 'medical_assessment']])
+            approved_claims = len([c for c in CLAIMS.values() if c.get('status') == 'approved'])
+            
+            # Billing stats
+            total_revenue = sum(b.get('amount', 0) for b in BILLING.values() if b.get('status') == 'paid')
+            total_premium_collected = sum(b.get('amount', 0) for b in BILLING.values())
+            outstanding_balance = sum(b.get('amount', 0) for b in BILLING.values() if b.get('status') == 'outstanding')
+            
+            # Health wallet stats
+            total_wallet_balance = sum(w.get('balance', 0) for w in HEALTH_WALLETS.values())
+            total_deposits = sum(t.get('amount', 0) for w in HEALTH_WALLETS.values() for t in w.get('transactions', []) if t.get('type') == 'deposit')
+            
+            # Investment stats
+            total_investment_value = sum(p.get('investment_value', 0) for p in POLICIES.values())
+            total_coverage_amount = sum(p.get('coverage_amount', 0) for p in POLICIES.values() if p.get('status') == 'active')
+            
+            # Claims payment stats
+            claims_paid = sum(c.get('amount_approved', 0) for c in CLAIMS.values() if c.get('status') == 'approved')
+            
+            dashboard_data = {
+                'success': True,
+                # Customer metrics
+                'total_customers': total_customers,
+                'new_customers_this_month': len([c for c in CUSTOMERS.values() if c.get('created_at', '')[:7] == datetime.now().strftime('%Y-%m')]),
+                
+                # Policy metrics
+                'total_policies': total_policies,
+                'active_policies': active_policies,
+                'pending_policies': len([p for p in POLICIES.values() if p.get('status') == 'pending_underwriting']),
+                
+                # Underwriting metrics
+                'total_applications': len(UNDERWRITING_APPLICATIONS),
+                'pending_applications': pending_applications,
+                'approved_applications': approved_applications,
+                'rejected_applications': len([a for a in UNDERWRITING_APPLICATIONS.values() if a.get('status') == 'rejected']),
+                
+                # Claims metrics
+                'total_claims': total_claims,
+                'pending_claims': pending_claims,
+                'approved_claims': approved_claims,
+                'rejected_claims': len([c for c in CLAIMS.values() if c.get('status') == 'rejected']),
+                'claims_paid_amount': claims_paid,
+                
+                # Financial metrics
+                'total_revenue': total_revenue,
+                'total_premium_collected': total_premium_collected,
+                'outstanding_balance': outstanding_balance,
+                'total_investment_value': total_investment_value,
+                'total_coverage_amount': total_coverage_amount,
+                'total_aum': total_investment_value + total_wallet_balance,
+                
+                # Wallet metrics
+                'total_wallet_balance': total_wallet_balance,
+                'total_deposits': total_deposits,
+                'active_wallets': len([w for w in HEALTH_WALLETS.values() if w.get('balance', 0) > 0]),
+                
+                # Pipeline summary
+                'pipeline': {
+                    'registered': len([c for c in CUSTOMERS.values()]),
+                    'applied': len(UNDERWRITING_APPLICATIONS),
+                    'underwriting': pending_applications,
+                    'approved': approved_applications,
+                    'active': active_policies,
+                    'billing': len([b for b in BILLING.values() if b.get('status') == 'outstanding']),
+                    'claims': pending_claims
+                },
+                
+                'timestamp': datetime.now().isoformat()
+            }
+            
+            self._set_json_headers()
+            self.wfile.write(json.dumps(dashboard_data).encode('utf-8'))
             return
         
         # Financial Reporting Endpoints

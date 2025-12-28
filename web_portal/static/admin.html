@@ -38,35 +38,145 @@
       <p class="muted-text">Comprehensive system management and oversight</p>
     </div>
 
-    <!-- System Statistics -->
+    <!-- System Statistics - Row 1 -->
     <div class="dashboard-stats">
       <div class="stat-box stat-box-blue">
         <div class="stat-icon">👥</div>
-        <div class="stat-value">12,458</div>
+        <div class="stat-value" id="stat-customers">0</div>
         <div class="stat-label">Total Customers</div>
-        <div class="stat-change">+234 this month</div>
+        <div class="stat-change" id="stat-customers-new">Loading...</div>
       </div>
       <div class="stat-box stat-box-green">
         <div class="stat-icon">📋</div>
-        <div class="stat-value">50,123</div>
+        <div class="stat-value" id="stat-policies">0</div>
         <div class="stat-label">Active Policies</div>
-        <div class="stat-change">+456 this month</div>
+        <div class="stat-change" id="stat-policies-pending">Loading...</div>
       </div>
       <div class="stat-box stat-box-orange">
         <div class="stat-icon">📝</div>
-        <div class="stat-value">89</div>
-        <div class="stat-label">Pending Claims</div>
-        <div class="stat-change">Requires attention</div>
+        <div class="stat-value" id="stat-applications">0</div>
+        <div class="stat-label">Pending Applications</div>
+        <div class="stat-change" id="stat-applications-approved">Loading...</div>
       </div>
       <div class="stat-box stat-box-purple">
         <div class="stat-icon">💰</div>
-        <div class="stat-value">$2.5B</div>
+        <div class="stat-value" id="stat-aum">$0</div>
         <div class="stat-label">Total AUM</div>
-        <div class="stat-change">+$45M this quarter</div>
+        <div class="stat-change" id="stat-premium">Loading...</div>
+      </div>
+    </div>
+    
+    <!-- System Statistics - Row 2 -->
+    <div class="dashboard-stats" style="margin-top: 16px;">
+      <div class="stat-box" style="background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);">
+        <div class="stat-icon">🏥</div>
+        <div class="stat-value" id="stat-claims">0</div>
+        <div class="stat-label">Pending Claims</div>
+        <div class="stat-change" id="stat-claims-approved">Loading...</div>
+      </div>
+      <div class="stat-box" style="background: linear-gradient(135deg, #ee0979 0%, #ff6a00 100%);">
+        <div class="stat-icon">💵</div>
+        <div class="stat-value" id="stat-revenue">$0</div>
+        <div class="stat-label">Total Revenue</div>
+        <div class="stat-change" id="stat-outstanding">Loading...</div>
+      </div>
+      <div class="stat-box" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
+        <div class="stat-icon">🏦</div>
+        <div class="stat-value" id="stat-deposits">$0</div>
+        <div class="stat-label">Health Wallet Deposits</div>
+        <div class="stat-change" id="stat-wallets">Loading...</div>
+      </div>
+      <div class="stat-box" style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);">
+        <div class="stat-icon">📈</div>
+        <div class="stat-value" id="stat-investment">$0</div>
+        <div class="stat-label">Investment Value</div>
+        <div class="stat-change" id="stat-coverage">Loading...</div>
+      </div>
+    </div>
+    
+    <!-- Pipeline Overview -->
+    <div class="section-content" style="margin-top: 24px; background: linear-gradient(135deg, #f5f7fa 0%, #e4e8ec 100%); border-radius: 12px; padding: 20px;">
+      <h3 style="margin-bottom: 16px;">📊 Insurance Pipeline Overview</h3>
+      <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+        <div style="text-align: center; flex: 1; min-width: 80px; padding: 12px; background: white; border-radius: 8px;">
+          <div style="font-size: 24px; font-weight: bold; color: #667eea;" id="pipe-registered">0</div>
+          <div style="font-size: 12px; color: #666;">Registered</div>
+        </div>
+        <div style="font-size: 20px; color: #999;">→</div>
+        <div style="text-align: center; flex: 1; min-width: 80px; padding: 12px; background: white; border-radius: 8px;">
+          <div style="font-size: 24px; font-weight: bold; color: #ffc107;" id="pipe-applied">0</div>
+          <div style="font-size: 12px; color: #666;">Applied</div>
+        </div>
+        <div style="font-size: 20px; color: #999;">→</div>
+        <div style="text-align: center; flex: 1; min-width: 80px; padding: 12px; background: white; border-radius: 8px;">
+          <div style="font-size: 24px; font-weight: bold; color: #fd7e14;" id="pipe-underwriting">0</div>
+          <div style="font-size: 12px; color: #666;">Underwriting</div>
+        </div>
+        <div style="font-size: 20px; color: #999;">→</div>
+        <div style="text-align: center; flex: 1; min-width: 80px; padding: 12px; background: white; border-radius: 8px;">
+          <div style="font-size: 24px; font-weight: bold; color: #28a745;" id="pipe-approved">0</div>
+          <div style="font-size: 12px; color: #666;">Approved</div>
+        </div>
+        <div style="font-size: 20px; color: #999;">→</div>
+        <div style="text-align: center; flex: 1; min-width: 80px; padding: 12px; background: white; border-radius: 8px;">
+          <div style="font-size: 24px; font-weight: bold; color: #20c997;" id="pipe-active">0</div>
+          <div style="font-size: 12px; color: #666;">Active</div>
+        </div>
+        <div style="font-size: 20px; color: #999;">→</div>
+        <div style="text-align: center; flex: 1; min-width: 80px; padding: 12px; background: white; border-radius: 8px;">
+          <div style="font-size: 24px; font-weight: bold; color: #17a2b8;" id="pipe-billing">0</div>
+          <div style="font-size: 12px; color: #666;">Billing</div>
+        </div>
+        <div style="font-size: 20px; color: #999;">→</div>
+        <div style="text-align: center; flex: 1; min-width: 80px; padding: 12px; background: white; border-radius: 8px;">
+          <div style="font-size: 24px; font-weight: bold; color: #dc3545;" id="pipe-claims">0</div>
+          <div style="font-size: 12px; color: #666;">Claims</div>
+        </div>
       </div>
     </div>
 
     <!-- Division-Specific Sections -->
+    
+    <!-- Customer Management Section -->
+    <section id="customers" class="section-content" style="margin-top: 24px;">
+      <div class="section-header">
+        <h2>👥 Customer Management — Recent Activity</h2>
+        <button class="btn btn-primary" onclick="window.location.href='/customer-management.html'">📋 Full Customer List</button>
+      </div>
+      
+      <div class="table-card">
+        <div class="filter-bar">
+          <input type="text" placeholder="Search customers..." class="search-input" id="customer-search" onkeyup="filterCustomerTable()">
+          <select class="filter-select" id="customer-status-filter" onchange="filterCustomerTable()">
+            <option value="">All Stages</option>
+            <option value="registered">Registered</option>
+            <option value="applied">Applied</option>
+            <option value="approved">Approved</option>
+            <option value="active">Active Policy</option>
+          </select>
+        </div>
+        
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Customer ID</th>
+              <th>Name</th>
+              <th>Email</th>
+              <th>Pipeline Stage</th>
+              <th>Policies</th>
+              <th>Wallet Balance</th>
+              <th>Created</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="customers-table">
+            <tr>
+              <td colspan="8" style="text-align: center; color: #666;">Loading customers...</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
     
     <!-- Sales Division -->
     <section id="policies" class="section-content">
@@ -629,11 +739,134 @@
     // Initialize dashboard with dynamic data
     document.addEventListener('DOMContentLoaded', () => {
       loadDashboardStats();
+      loadCustomerList();
       loadUnderwritingApplications();
       loadPolicies();
       loadClaims();
       loadBillingData();
     });
+    
+    // Customer data storage
+    let allCustomers = [];
+    
+    // Load customer list
+    async function loadCustomerList() {
+      try {
+        const response = await fetch('/api/admin/customers', {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        
+        if (response.ok) {
+          const data = await response.json();
+          allCustomers = data.customers || [];
+          displayCustomers(allCustomers);
+          
+          // Update customer count in stats
+          document.getElementById('stat-customers').textContent = allCustomers.length;
+        }
+      } catch (err) {
+        console.error('Failed to load customers:', err);
+        document.getElementById('customers-table').innerHTML = 
+          '<tr><td colspan="8" style="text-align:center;color:#dc3545;">Failed to load customers</td></tr>';
+      }
+    }
+    
+    // Display customers in table
+    function displayCustomers(customers) {
+      const tbody = document.getElementById('customers-table');
+      if (!customers || customers.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:#666;">No customers found</td></tr>';
+        return;
+      }
+      
+      tbody.innerHTML = customers.slice(0, 15).map(c => {
+        const stageColors = {
+          'registered': '#6c757d',
+          'applied': '#ffc107',
+          'underwriting': '#fd7e14',
+          'approved': '#28a745',
+          'active_policy': '#20c997',
+          'fully_active': '#17a2b8'
+        };
+        const stageColor = stageColors[c.pipeline_stage] || '#6c757d';
+        const walletBalance = c.wallet_balance || 0;
+        const createdDate = c.created_at ? new Date(c.created_at).toLocaleDateString() : 'N/A';
+        
+        return `
+          <tr>
+            <td><small>${c.id}</small></td>
+            <td><strong>${c.name || 'N/A'}</strong></td>
+            <td>${c.email || 'N/A'}</td>
+            <td><span class="badge" style="background:${stageColor};color:white;">${(c.pipeline_stage || 'unknown').replace('_', ' ')}</span></td>
+            <td>${c.active_policies || 0} / ${c.total_policies || 0}</td>
+            <td>$${walletBalance.toLocaleString()}</td>
+            <td>${createdDate}</td>
+            <td>
+              <button class="btn-icon" title="View" onclick="viewCustomer('${c.id}')">👁️</button>
+              <button class="btn-icon" title="Validate" onclick="validateCustomer('${c.id}')">✓</button>
+            </td>
+          </tr>
+        `;
+      }).join('');
+    }
+    
+    // Filter customer table
+    function filterCustomerTable() {
+      const search = document.getElementById('customer-search').value.toLowerCase();
+      const stageFilter = document.getElementById('customer-status-filter').value;
+      
+      const filtered = allCustomers.filter(c => {
+        const matchesSearch = !search || 
+          (c.name && c.name.toLowerCase().includes(search)) ||
+          (c.email && c.email.toLowerCase().includes(search)) ||
+          (c.id && c.id.toLowerCase().includes(search));
+        const matchesStage = !stageFilter || (c.pipeline_stage && c.pipeline_stage.includes(stageFilter));
+        return matchesSearch && matchesStage;
+      });
+      
+      displayCustomers(filtered);
+    }
+    
+    // View customer details
+    function viewCustomer(customerId) {
+      const customer = allCustomers.find(c => c.id === customerId);
+      if (customer) {
+        alert(`Customer Details:\n\n` +
+          `ID: ${customer.id}\n` +
+          `Name: ${customer.name || 'N/A'}\n` +
+          `Email: ${customer.email || 'N/A'}\n` +
+          `Stage: ${customer.pipeline_stage || 'Unknown'}\n` +
+          `Policies: ${customer.active_policies || 0} active / ${customer.total_policies || 0} total\n` +
+          `Wallet: $${(customer.wallet_balance || 0).toLocaleString()}\n` +
+          `Applications: ${customer.applications?.length || 0}\n` +
+          `Created: ${customer.created_at || 'N/A'}`
+        );
+      }
+    }
+    
+    // Validate customer
+    async function validateCustomer(customerId) {
+      try {
+        const response = await fetch(`/api/admin/validate-customer/${customerId}`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        
+        if (response.ok) {
+          const data = await response.json();
+          const v = data.validation || {};
+          alert(`✅ Customer Validation: ${customerId}\n\n` +
+            `Has Profile: ${v.has_profile ? '✓' : '✗'}\n` +
+            `Has Application: ${v.has_application ? '✓' : '✗'}\n` +
+            `UW Completed: ${v.underwriting_complete ? '✓' : '✗'}\n` +
+            `Has Policy: ${v.has_policy ? '✓' : '✗'}\n` +
+            `Has Bill: ${v.has_bill ? '✓' : '✗'}\n\n` +
+            `Overall: ${v.is_valid ? '✓ VALID' : '⚠️ INCOMPLETE'}`
+          );
+        }
+      } catch (err) {
+        alert('Failed to validate customer: ' + err.message);
+      }
+    }
     
     // Load dashboard statistics
     async function loadDashboardStats() {
@@ -645,18 +878,85 @@
         if (response.ok) {
           const data = await response.json();
           
-          // Update stats boxes
-          document.querySelector('.stat-box-blue .stat-value').textContent = 
-            Number(data.total_customers || 0).toLocaleString();
-          document.querySelector('.stat-box-green .stat-value').textContent = 
-            Number(data.active_policies || 0).toLocaleString();
-          document.querySelector('.stat-box-orange .stat-value').textContent = 
-            Number(data.pending_claims || 0);
-          document.querySelector('.stat-box-purple .stat-value').textContent = 
-            '$' + (Number(data.total_premium_collected || 0) / 1000000).toFixed(1) + 'M';
+          // Row 1 - Primary Stats
+          document.getElementById('stat-customers').textContent = Number(data.total_customers || 0).toLocaleString();
+          document.getElementById('stat-customers-new').textContent = `+${data.new_customers_this_month || 0} this month`;
+          
+          document.getElementById('stat-policies').textContent = Number(data.active_policies || 0).toLocaleString();
+          document.getElementById('stat-policies-pending').textContent = `${data.pending_policies || 0} pending`;
+          
+          document.getElementById('stat-applications').textContent = Number(data.pending_applications || 0);
+          document.getElementById('stat-applications-approved').textContent = `${data.approved_applications || 0} approved`;
+          
+          const aum = data.total_aum || 0;
+          document.getElementById('stat-aum').textContent = aum >= 1000000 ? `$${(aum/1000000).toFixed(1)}M` : `$${aum.toLocaleString()}`;
+          document.getElementById('stat-premium').textContent = `$${Number(data.total_premium_collected || 0).toLocaleString()} collected`;
+          
+          // Row 2 - Secondary Stats
+          document.getElementById('stat-claims').textContent = Number(data.pending_claims || 0);
+          document.getElementById('stat-claims-approved').textContent = `${data.approved_claims || 0} approved`;
+          
+          const revenue = data.total_revenue || 0;
+          document.getElementById('stat-revenue').textContent = revenue >= 1000000 ? `$${(revenue/1000000).toFixed(1)}M` : `$${revenue.toLocaleString()}`;
+          document.getElementById('stat-outstanding').textContent = `$${Number(data.outstanding_balance || 0).toLocaleString()} outstanding`;
+          
+          document.getElementById('stat-deposits').textContent = `$${Number(data.total_deposits || 0).toLocaleString()}`;
+          document.getElementById('stat-wallets').textContent = `${data.active_wallets || 0} active wallets`;
+          
+          const investment = data.total_investment_value || 0;
+          document.getElementById('stat-investment').textContent = investment >= 1000000 ? `$${(investment/1000000).toFixed(1)}M` : `$${investment.toLocaleString()}`;
+          document.getElementById('stat-coverage').textContent = `$${Number(data.total_coverage_amount || 0).toLocaleString()} coverage`;
+          
+          // Pipeline Stats
+          if (data.pipeline) {
+            document.getElementById('pipe-registered').textContent = data.pipeline.registered || 0;
+            document.getElementById('pipe-applied').textContent = data.pipeline.applied || 0;
+            document.getElementById('pipe-underwriting').textContent = data.pipeline.underwriting || 0;
+            document.getElementById('pipe-approved').textContent = data.pipeline.approved || 0;
+            document.getElementById('pipe-active').textContent = data.pipeline.active || 0;
+            document.getElementById('pipe-billing').textContent = data.pipeline.billing || 0;
+            document.getElementById('pipe-claims').textContent = data.pipeline.claims || 0;
+          }
+          
+          console.log('Dashboard stats loaded:', data);
+        } else {
+          console.error('Failed to load dashboard stats, status:', response.status);
+          // Fallback to pipeline-stats endpoint
+          await loadPipelineStats();
         }
       } catch (err) {
         console.error('Failed to load dashboard stats:', err);
+        // Fallback to pipeline-stats endpoint
+        await loadPipelineStats();
+      }
+    }
+    
+    // Fallback pipeline stats loader
+    async function loadPipelineStats() {
+      try {
+        const response = await fetch('/api/admin/pipeline-stats', {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        
+        if (response.ok) {
+          const data = await response.json();
+          const stats = data.stats || {};
+          
+          document.getElementById('stat-customers').textContent = stats.total_customers || 0;
+          document.getElementById('stat-policies').textContent = stats.pipeline_flow?.active_policies || 0;
+          document.getElementById('stat-applications').textContent = stats.pipeline_flow?.pending_underwriting || 0;
+          
+          // Pipeline flow
+          if (stats.pipeline_flow) {
+            document.getElementById('pipe-registered').textContent = stats.total_customers || 0;
+            document.getElementById('pipe-applied').textContent = stats.total_applications || 0;
+            document.getElementById('pipe-underwriting').textContent = stats.pipeline_flow.pending_underwriting || 0;
+            document.getElementById('pipe-active').textContent = stats.pipeline_flow.active_policies || 0;
+            document.getElementById('pipe-billing').textContent = stats.pipeline_flow.billing_outstanding || 0;
+          }
+        }
+      } catch (err) {
+        console.error('Failed to load pipeline stats:', err);
       }
     }
     
