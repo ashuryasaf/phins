@@ -101,44 +101,139 @@
 
     <!-- Payment Processing -->
     <section class="card">
-      <h2>Process Payment</h2>
+      <h2>🔐 Secure Payment Processing</h2>
+      <div style="background: #e7f3ff; border-left: 4px solid #667eea; padding: 12px 16px; margin-bottom: 20px; border-radius: 4px;">
+        <strong>🛡️ PCI DSS Compliant</strong> - Your card data is encrypted and never stored in plain text.
+      </div>
+      
       <form id="payment-form">
-        <label>Customer ID:
-          <input type="text" name="customer_id" required placeholder="CUST-12345">
-        </label>
-        
-        <label>Policy ID:
-          <input type="text" name="policy_id" required placeholder="POL-20251212-1234">
-        </label>
-        
-        <label>Amount (USD):
-          <input type="number" name="amount" step="0.01" min="0" required placeholder="250.00">
-        </label>
-        
-        <label>Card Number:
-          <input type="text" name="card_number" required placeholder="4532015112830366" maxlength="19">
-        </label>
-        
-        <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 1rem;">
-          <label>Expiry (MM/YYYY):
-            <input type="text" name="expiry" required placeholder="12/2026" pattern="\d{2}/\d{4}">
+        <!-- Policy & Customer Information -->
+        <fieldset style="border: 1px solid #ddd; padding: 1rem; border-radius: 8px; margin-bottom: 1rem;">
+          <legend style="font-weight: bold; padding: 0 0.5rem;">📋 Policy Information</legend>
+          
+          <label>Customer ID:
+            <input type="text" name="customer_id" id="customer_id" required placeholder="CUST-12345">
           </label>
-          <label>CVV:
-            <input type="text" name="cvv" required placeholder="123" maxlength="4">
+          
+          <label>Policy ID:
+            <input type="text" name="policy_id" id="policy_id" required placeholder="POL-20251212-1234">
           </label>
-        </div>
+          
+          <div id="premium-info" style="display: none; background: #f8f9fa; padding: 1rem; border-radius: 4px; margin-top: 0.5rem;">
+            <strong>Premium Details:</strong>
+            <div id="premium-details"></div>
+          </div>
+        </fieldset>
         
-        <label>Payment Type:
-          <select name="payment_type">
-            <option value="premium">Monthly Premium</option>
-            <option value="down_payment">Down Payment</option>
-            <option value="deductible">Deductible</option>
-            <option value="other">Other</option>
-          </select>
-        </label>
+        <!-- Payment Amount & Type -->
+        <fieldset style="border: 1px solid #ddd; padding: 1rem; border-radius: 8px; margin-bottom: 1rem;">
+          <legend style="font-weight: bold; padding: 0 0.5rem;">💵 Payment Details</legend>
+          
+          <label>Payment Type:
+            <select name="payment_type" id="payment_type" required>
+              <option value="">-- Select Payment Type --</option>
+              <option value="premium">Monthly Premium</option>
+              <option value="quarterly_premium">Quarterly Premium</option>
+              <option value="annual_premium">Annual Premium</option>
+              <option value="down_payment">Initial Down Payment</option>
+              <option value="claim_deductible">Claim Deductible</option>
+              <option value="reinstatement_fee">Policy Reinstatement Fee</option>
+              <option value="late_fee">Late Payment Fee</option>
+              <option value="other">Other</option>
+            </select>
+          </label>
+          
+          <label>Amount (USD):
+            <input type="number" name="amount" id="payment_amount" step="0.01" min="0.01" required placeholder="250.00">
+          </label>
+          
+          <div id="amount-validation" style="font-size: 0.85rem; margin-top: 0.25rem;"></div>
+        </fieldset>
         
-        <button type="submit" class="btn btn-primary">💰 Process Payment</button>
-        <p id="payment-result" class="muted"></p>
+        <!-- Card Information with Real-time Validation -->
+        <fieldset style="border: 1px solid #ddd; padding: 1rem; border-radius: 8px; margin-bottom: 1rem;">
+          <legend style="font-weight: bold; padding: 0 0.5rem;">💳 Card Information</legend>
+          
+          <label>Card Number (16 digits):
+            <div style="position: relative;">
+              <input type="text" name="card_number" id="card_number" required 
+                     placeholder="5425 2334 3010 9903" 
+                     maxlength="23" 
+                     autocomplete="cc-number"
+                     style="padding-right: 60px;">
+              <span id="card-type-icon" style="position: absolute; right: 12px; top: 50%; transform: translateY(-50%); font-size: 1.5rem;"></span>
+            </div>
+          </label>
+          <div id="card-validation" style="font-size: 0.85rem; margin-top: 0.25rem;"></div>
+          
+          <label>Cardholder Name:
+            <input type="text" name="cardholder_name" id="cardholder_name" required 
+                   placeholder="JOHN DOE" 
+                   style="text-transform: uppercase;"
+                   autocomplete="cc-name">
+          </label>
+          
+          <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem;">
+            <label>Expiry Month:
+              <select name="expiry_month" id="expiry_month" required autocomplete="cc-exp-month">
+                <option value="">MM</option>
+                <option value="01">01 - January</option>
+                <option value="02">02 - February</option>
+                <option value="03">03 - March</option>
+                <option value="04">04 - April</option>
+                <option value="05">05 - May</option>
+                <option value="06">06 - June</option>
+                <option value="07">07 - July</option>
+                <option value="08">08 - August</option>
+                <option value="09">09 - September</option>
+                <option value="10">10 - October</option>
+                <option value="11">11 - November</option>
+                <option value="12">12 - December</option>
+              </select>
+            </label>
+            <label>Expiry Year:
+              <select name="expiry_year" id="expiry_year" required autocomplete="cc-exp-year">
+                <option value="">YYYY</option>
+              </select>
+            </label>
+            <label>CVV/CVC:
+              <input type="password" name="cvv" id="cvv" required 
+                     placeholder="***" 
+                     minlength="3" maxlength="4"
+                     autocomplete="cc-csc">
+            </label>
+          </div>
+          <div id="expiry-validation" style="font-size: 0.85rem; margin-top: 0.25rem;"></div>
+          <p style="font-size: 0.8rem; color: #666; margin-top: 0.5rem;">
+            🔒 Your CVV is never stored - it's used only for this transaction.
+          </p>
+        </fieldset>
+        
+        <!-- Insurance-Specific Confirmations -->
+        <fieldset style="border: 1px solid #ddd; padding: 1rem; border-radius: 8px; margin-bottom: 1rem;">
+          <legend style="font-weight: bold; padding: 0 0.5rem;">✅ Payment Confirmations</legend>
+          
+          <label style="display: flex; align-items: flex-start; gap: 0.5rem; margin: 0.5rem 0;">
+            <input type="checkbox" name="confirm_amount" id="confirm_amount" required style="margin-top: 3px;">
+            <span>I confirm the payment amount is correct and corresponds to my policy premium or authorized charges.</span>
+          </label>
+          
+          <label style="display: flex; align-items: flex-start; gap: 0.5rem; margin: 0.5rem 0;">
+            <input type="checkbox" name="confirm_cardholder" id="confirm_cardholder" required style="margin-top: 3px;">
+            <span>I am the authorized cardholder or have authorization to use this card for payment.</span>
+          </label>
+          
+          <label style="display: flex; align-items: flex-start; gap: 0.5rem; margin: 0.5rem 0;">
+            <input type="checkbox" name="confirm_terms" id="confirm_terms" required style="margin-top: 3px;">
+            <span>I understand that late or missed premium payments may result in policy lapse or cancellation.</span>
+          </label>
+        </fieldset>
+        
+        <button type="submit" class="btn btn-primary" id="submit-payment" style="width: 100%; padding: 1rem; font-size: 1.1rem;">
+          🔐 Process Secure Payment
+        </button>
+        
+        <div id="payment-result" style="margin-top: 1rem; padding: 1rem; border-radius: 4px; display: none;"></div>
       </form>
     </section>
 

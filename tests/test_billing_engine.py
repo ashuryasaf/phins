@@ -41,41 +41,64 @@ class TestSecurityValidator:
     def test_validate_card_number_valid(self):
         """Test Luhn algorithm with valid cards"""
         valid_cards = [
-            "4532015112830366",  # Visa
-            "5425233430109903",  # Mastercard
-            "374245455400126",   # Amex
+            "4532015112830366",  # Visa (16 digits)
+            "5425233430109903",  # Mastercard (16 digits)
+            "374245455400126",   # Amex (15 digits)
         ]
         
         for card in valid_cards:
-            assert SecurityValidator.validate_card_number(card) is True
+            result = SecurityValidator.validate_card_number(card)
+            assert result['valid'] is True, f"Card {card} should be valid"
+            assert len(result['errors']) == 0
     
     def test_validate_card_number_invalid(self):
         """Test Luhn algorithm with invalid cards"""
         invalid_cards = [
             "1234567890123456",
-            # "0000000000000000",  # This actually passes Luhn check
             "1111111111111111",
             "12345",
             "9999888877776666",  # Invalid Luhn
         ]
         
         for card in invalid_cards:
-            assert SecurityValidator.validate_card_number(card) is False
+            result = SecurityValidator.validate_card_number(card)
+            assert result['valid'] is False, f"Card {card} should be invalid"
+            assert len(result['errors']) > 0
+    
+    def test_validate_mastercard_length(self):
+        """Test Mastercard must be exactly 16 digits"""
+        # Valid 16-digit Mastercard
+        result = SecurityValidator.validate_card_number("5425233430109903")
+        assert result['valid'] is True
+        assert result['card_type'] == 'mastercard'
+        
+        # Invalid 15-digit starting with 54 (Mastercard prefix but wrong length)
+        result = SecurityValidator.validate_card_number("542523343010990")  # 15 digits
+        assert result['valid'] is False
     
     def test_validate_cvv(self):
         """Test CVV validation"""
-        assert SecurityValidator.validate_cvv("123") is True
-        assert SecurityValidator.validate_cvv("1234", "amex") is True
-        assert SecurityValidator.validate_cvv("12") is False
-        assert SecurityValidator.validate_cvv("abc") is False
+        result = SecurityValidator.validate_cvv("123")
+        assert result['valid'] is True
+        
+        result = SecurityValidator.validate_cvv("1234", "amex")
+        assert result['valid'] is True
+        
+        result = SecurityValidator.validate_cvv("12")
+        assert result['valid'] is False
+        
+        result = SecurityValidator.validate_cvv("abc")
+        assert result['valid'] is False
     
     def test_validate_expiry(self):
         """Test expiry date validation"""
         # Future dates should be valid
-        assert SecurityValidator.validate_expiry(12, 2030) is True
+        result = SecurityValidator.validate_expiry(12, 2030)
+        assert result['valid'] is True
         
         # Past dates should be invalid
-        assert SecurityValidator.validate_expiry(1, 2020) is False
+        result = SecurityValidator.validate_expiry(1, 2020)
+        assert result['valid'] is False
     
     def test_mask_card_number(self):
         """Test card masking"""

@@ -3044,6 +3044,72 @@ class PortalHandler(BaseHTTPRequestHandler):
                     self._set_json_headers(500)
                     self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
                 return
+            
+            # Validate card number (enhanced with Mastercard 16-digit check)
+            if path == '/api/billing/validate-card':
+                try:
+                    data = json.loads(body)
+                    card_number = data.get('card_number', '')
+                    expected_type = data.get('card_type')
+                    
+                    # Use enhanced SecurityValidator
+                    validation_result = SecurityValidator.validate_card_number(card_number, expected_type)
+                    
+                    self._set_json_headers()
+                    self.wfile.write(json.dumps(validation_result).encode('utf-8'))
+                except Exception as e:
+                    self._set_json_headers(500)
+                    self.wfile.write(json.dumps({'valid': False, 'errors': [str(e)]}).encode('utf-8'))
+                return
+            
+            # Get billing stats for dashboard
+            if path == '/api/billing/stats':
+                try:
+                    # Calculate real stats from BILLING data
+                    bills = list(BILLING.values())
+                    total_transactions = len(bills)
+                    successful = len([b for b in bills if b.get('status') in ['paid', 'partial']])
+                    failed = len([b for b in bills if b.get('status') == 'failed'])
+                    total_revenue = sum(float(b.get('amount_paid', 0)) for b in bills)
+                    
+                    self._set_json_headers()
+                    self.wfile.write(json.dumps({
+                        'total_transactions': total_transactions,
+                        'successful_payments': successful,
+                        'failed_payments': failed,
+                        'total_revenue': round(total_revenue, 2),
+                        'pending_alerts': 0
+                    }).encode('utf-8'))
+                except Exception as e:
+                    self._set_json_headers(500)
+                    self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+                return
+            
+            # Get recent transactions
+            if path == '/api/billing/transactions':
+                try:
+                    # Get recent transactions from billing history
+                    transactions = []
+                    for bill_id, bill in BILLING.items():
+                        transactions.append({
+                            'transaction_id': bill_id,
+                            'customer_id': bill.get('customer_id', 'N/A'),
+                            'amount': float(bill.get('amount_due', 0)),
+                            'status': 'success' if bill.get('status') == 'paid' else bill.get('status', 'pending'),
+                            'timestamp': bill.get('created_date', datetime.now().isoformat()),
+                            'payment_method': bill.get('payment_method', '****-****-****-****')
+                        })
+                    
+                    # Sort by timestamp desc and limit to 50
+                    transactions.sort(key=lambda x: x['timestamp'], reverse=True)
+                    transactions = transactions[:50]
+                    
+                    self._set_json_headers()
+                    self.wfile.write(json.dumps({'transactions': transactions}).encode('utf-8'))
+                except Exception as e:
+                    self._set_json_headers(500)
+                    self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+                return
         # ========== END BILLING API ==========
         # Minimal billing endpoints (demo fallback when engine routes are not used)
         if path == '/api/billing/create':

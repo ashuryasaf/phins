@@ -428,24 +428,295 @@
   <script>
     // Set admin username
     const storedUser = sessionStorage.getItem('username');
+    const token = localStorage.getItem('phins_token');
+    
     if (storedUser !== 'admin') {
       // Redirect non-admin users
       alert('Admin access required');
       window.location.href = '/login.html';
+    }
+    
+    // Initialize dashboard with dynamic data
+    document.addEventListener('DOMContentLoaded', () => {
+      loadDashboardStats();
+      loadUnderwritingApplications();
+      loadPolicies();
+      loadClaims();
+      loadBillingData();
+    });
+    
+    // Load dashboard statistics
+    async function loadDashboardStats() {
+      try {
+        const response = await fetch('/api/bi/dashboard', {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        
+        if (response.ok) {
+          const data = await response.json();
+          
+          // Update stats boxes
+          document.querySelector('.stat-box-blue .stat-value').textContent = 
+            Number(data.total_customers || 0).toLocaleString();
+          document.querySelector('.stat-box-green .stat-value').textContent = 
+            Number(data.active_policies || 0).toLocaleString();
+          document.querySelector('.stat-box-orange .stat-value').textContent = 
+            Number(data.pending_claims || 0);
+          document.querySelector('.stat-box-purple .stat-value').textContent = 
+            '$' + (Number(data.total_premium_collected || 0) / 1000000).toFixed(1) + 'M';
+        }
+      } catch (err) {
+        console.error('Failed to load dashboard stats:', err);
+      }
+    }
+    
+    // Load underwriting applications dynamically
+    async function loadUnderwritingApplications() {
+      try {
+        const response = await fetch('/api/underwriting', {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        
+        if (response.ok) {
+          const data = await response.json();
+          const applications = data.applications || data || [];
+          displayUnderwritingApplications(applications);
+          
+          // Update pending badge
+          const pendingCount = applications.filter(a => a.status === 'pending').length;
+          const badge = document.querySelector('#underwriting .badge-orange');
+          if (badge) badge.textContent = `${pendingCount} Pending Reviews`;
+        }
+      } catch (err) {
+        console.error('Failed to load underwriting applications:', err);
+      }
+    }
+    
+    function displayUnderwritingApplications(applications) {
+      const tbody = document.querySelector('#underwriting .data-table tbody');
+      if (!tbody || applications.length === 0) return;
+      
+      tbody.innerHTML = applications.slice(0, 10).map(app => {
+        const riskClass = app.risk_score === 'low' || app.risk_assessment === 'low' ? 'badge-success' :
+                         app.risk_score === 'high' || app.risk_assessment === 'high' ? 'badge-danger' : 'badge-orange';
+        const statusClass = app.status === 'approved' ? 'badge-active' : 
+                           app.status === 'rejected' ? 'badge-danger' : 'badge-pending';
+        
+        return `
+          <tr>
+            <td>${app.id}</td>
+            <td>${app.policy_id || 'N/A'}</td>
+            <td>${app.customer_name || 'N/A'}</td>
+            <td><span class="badge ${riskClass}">${(app.risk_score || app.risk_assessment || 'medium').charAt(0).toUpperCase() + (app.risk_score || app.risk_assessment || 'medium').slice(1)}</span></td>
+            <td>${app.medical_exam_required ? 'Yes' : 'No'}</td>
+            <td>${app.premium_adjustment ? app.premium_adjustment + '%' : '0%'}</td>
+            <td><span class="badge ${statusClass}">${(app.status || 'pending').charAt(0).toUpperCase() + (app.status || 'pending').slice(1)}</span></td>
+            <td>
+              ${app.status === 'pending' ? `
+                <button class="btn-small btn-success" onclick="approveApplication('${app.id}')">Approve</button>
+                <button class="btn-small btn-danger" onclick="rejectApplication('${app.id}')">Reject</button>
+              ` : `
+                <button class="btn-icon" title="View">👁️</button>
+              `}
+            </td>
+          </tr>
+        `;
+      }).join('');
+    }
+    
+    async function approveApplication(uwId) {
+      if (!confirm('Approve this application? This will activate the policy and generate billing.')) return;
+      
+      try {
+        const response = await fetch(`/api/underwriting/approve`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ id: uwId })
+        });
+        
+        const data = await response.json();
+        
+        if (response.ok && data.success) {
+          alert(`✅ Application approved!\\n\\nPolicy Status: ${data.policy_status || 'active'}\\nBilling ID: ${data.bill_id || 'Generated'}`);
+          loadUnderwritingApplications();
+          loadDashboardStats();
+        } else {
+          alert('❌ Failed to approve: ' + (data.error || 'Unknown error'));
+        }
+      } catch (err) {
+        alert('❌ Error: ' + err.message);
+      }
+    }
+    
+    async function rejectApplication(uwId) {
+      const reason = prompt('Enter rejection reason:');
+      if (!reason) return;
+      
+      try {
+        const response = await fetch(`/api/underwriting/reject`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ id: uwId, reason: reason })
+        });
+        
+        if (response.ok) {
+          alert('Application rejected.');
+          loadUnderwritingApplications();
+        }
+      } catch (err) {
+        alert('Error: ' + err.message);
+      }
+    }
+    
+    // Load policies dynamically
+    async function loadPolicies() {
+      try {
+        const response = await fetch('/api/policies', {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        
+        if (response.ok) {
+          const data = await response.json();
+          const policies = Array.isArray(data) ? data : data.policies || [];
+          displayPolicies(policies);
+        }
+      } catch (err) {
+        console.error('Failed to load policies:', err);
+      }
+    }
+    
+    function displayPolicies(policies) {
+      const tbody = document.querySelector('#policies .data-table tbody');
+      if (!tbody || policies.length === 0) return;
+      
+      tbody.innerHTML = policies.slice(0, 10).map(policy => {
+        const statusClass = policy.status === 'active' ? 'badge-active' : 
+                           policy.status === 'pending' ? 'badge-pending' : 'badge-danger';
+        
+        return `
+          <tr>
+            <td>${policy.id || policy.policy_id}</td>
+            <td>${policy.customer_name || 'N/A'}</td>
+            <td>PHINS ${(policy.type || 'Standard').charAt(0).toUpperCase() + (policy.type || 'Standard').slice(1)}</td>
+            <td>$${Number(policy.monthly_premium || 0).toFixed(0)}/mo</td>
+            <td>$${Number(policy.coverage_amount || 0).toLocaleString()}</td>
+            <td>$${Number(policy.investment_value || 0).toLocaleString()}</td>
+            <td><span class="badge ${statusClass}">${(policy.status || 'pending').charAt(0).toUpperCase() + (policy.status || 'pending').slice(1)}</span></td>
+            <td>${policy.start_date ? new Date(policy.start_date).toLocaleDateString() : 'N/A'}</td>
+            <td>
+              <button class="btn-icon" title="View">👁️</button>
+              <button class="btn-icon" title="Edit">✏️</button>
+            </td>
+          </tr>
+        `;
+      }).join('');
+    }
+    
+    // Load claims dynamically  
+    async function loadClaims() {
+      try {
+        const response = await fetch('/api/claims', {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        
+        if (response.ok) {
+          const data = await response.json();
+          const claims = Array.isArray(data) ? data : data.claims || [];
+          displayClaims(claims);
+        }
+      } catch (err) {
+        console.error('Failed to load claims:', err);
+      }
+    }
+    
+    function displayClaims(claims) {
+      const tbody = document.querySelector('#claims .data-table tbody');
+      if (!tbody || claims.length === 0) return;
+      
+      tbody.innerHTML = claims.slice(0, 10).map(claim => {
+        const statusClass = claim.status === 'approved' ? 'badge-active' : 
+                           claim.status === 'pending' ? 'badge-pending' : 'badge-danger';
+        
+        return `
+          <tr>
+            <td>${claim.id || claim.claim_id}</td>
+            <td>${claim.policy_id}</td>
+            <td>${claim.customer_name || 'N/A'}</td>
+            <td>${claim.adl_impairments || 'N/A'}</td>
+            <td>${claim.benefit_type || 'Standard'}</td>
+            <td>$${Number(claim.amount_claimed || 0).toLocaleString()}</td>
+            <td>$${Number(claim.amount_approved || 0).toLocaleString()}</td>
+            <td>${claim.date_filed ? new Date(claim.date_filed).toLocaleDateString() : 'N/A'}</td>
+            <td><span class="badge ${statusClass}">${(claim.status || 'pending').charAt(0).toUpperCase() + (claim.status || 'pending').slice(1)}</span></td>
+            <td>
+              ${claim.status === 'pending' ? `
+                <button class="btn-small btn-success" onclick="approveClaim('${claim.id || claim.claim_id}')">Approve</button>
+                <button class="btn-small btn-danger" onclick="alert('Reject')">Reject</button>
+              ` : `
+                <button class="btn-small" onclick="alert('Process Payment')">Pay</button>
+              `}
+            </td>
+          </tr>
+        `;
+      }).join('');
+    }
+    
+    // Load billing data dynamically
+    async function loadBillingData() {
+      try {
+        const response = await fetch('/api/billing/stats', {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        
+        if (response.ok) {
+          const data = await response.json();
+          
+          // Update billing section revenue
+          const revenueItems = document.querySelectorAll('#billing .revenue-item .revenue-value');
+          if (revenueItems.length >= 2) {
+            revenueItems[0].textContent = '$' + Number(data.total_revenue || 0).toLocaleString();
+          }
+        }
+      } catch (err) {
+        console.error('Failed to load billing data:', err);
+      }
     }
 
     // Logout functionality
     document.querySelector('.btn-logout').addEventListener('click', function(e) {
       e.preventDefault();
       sessionStorage.clear();
+      localStorage.removeItem('phins_token');
       window.location.href = '/';
     });
 
     // Approve claim function
     function approveClaim(claimId) {
       if (confirm(`Approve claim ${claimId}?`)) {
-        alert(`Claim ${claimId} approved successfully!`);
-        // In production, this would call the API
+        fetch(`/api/claims/approve`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ id: claimId })
+        })
+        .then(response => response.json())
+        .then(data => {
+          if (data.success) {
+            alert(`✅ Claim ${claimId} approved successfully!`);
+            loadClaims();
+          } else {
+            alert('❌ Failed to approve claim: ' + (data.error || 'Unknown error'));
+          }
+        })
+        .catch(err => alert('Error: ' + err.message));
       }
     }
 
@@ -478,7 +749,7 @@
       localStorage.setItem('phins_admin_user', JSON.stringify({name: currentUser, role: 'admin'}));
       
       // Check if user wants to stay in same tab or open new
-      const useNewTab = confirm('Open policy creation in:\n\nOK = New Tab\nCancel = Same Window');
+      const useNewTab = confirm('Open policy creation in:\\n\\nOK = New Tab\\nCancel = Same Window');
       
       if (useNewTab) {
         window.open('/admin-portal.html', '_blank');
