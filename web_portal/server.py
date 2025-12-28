@@ -358,10 +358,10 @@ def detect_malicious_payload(value: str) -> bool:
         'os.system', 'subprocess', 'popen', 'pty.spawn',
         # Reverse shells
         'socket', 'connect(', 'bind(', 'listen(',
-        # Crypto mining
-        'crypto', 'mining', 'monero', 'bitcoin',
+        # Crypto mining (specific patterns - not blocking "crypto" as it's a valid API param)
+        'cryptominer', 'cryptojacking', 'coinhive', 'monero.', 'xmrig',
         # Data exfiltration 
-        'base64', 'pickle', 'marshal', 'shelve',
+        'pickle', 'marshal', 'shelve',
         # LDAP injection
         '(|', '(&', '(!(', '*)(', ')(&',
         # XML injection
