@@ -36,13 +36,17 @@
             </div>
             <div class="progress-step" data-step="4">
                 <div class="step-number">4</div>
+                <div class="step-label">Payment</div>
+            </div>
+            <div class="progress-step" data-step="5">
+                <div class="step-number">5</div>
                 <div class="step-label">Review</div>
             </div>
         </div>
 
         <div class="application-content">
             <h1>Apply for PHINS Coverage</h1>
-            <p class="subtitle">Complete your application in 4 easy steps. Your information is secure and confidential.</p>
+            <p class="subtitle">Complete your application in 5 easy steps. Your information is secure and confidential.</p>
 
             <form id="customer-application-form">
                 <!-- Step 1: Personal Information -->
@@ -352,10 +356,157 @@
                     </div>
                 </div>
 
-                <!-- Step 4: Review & Submit -->
+                <!-- Step 4: Payment Setup -->
                 <div class="form-step" data-step="4">
                     <div class="step-header">
-                        <h2>✅ Step 4: Review Your Application</h2>
+                        <h2>💳 Step 4: Payment Setup</h2>
+                        <p>Set up your payment method for premium billing and medical expense account.</p>
+                    </div>
+
+                    <div class="form-section">
+                        <div class="info-box" style="background: #e7f3ff; border-left: 4px solid #667eea;">
+                            <strong>🔒 PCI DSS Compliant:</strong> Your card information is encrypted and securely stored. We never store your full card number - only a secure token for future billing.
+                        </div>
+
+                        <h3>Primary Payment Method</h3>
+                        <p style="color: #666; margin-bottom: 1rem;">This card will be used for premium payments and can be used for medical products/services.</p>
+
+                        <div class="form-group">
+                            <label for="card-number">Card Number (16 digits) *</label>
+                            <div style="position: relative;">
+                                <input type="text" id="card-number" required 
+                                       placeholder="5555 5555 5555 4444" 
+                                       maxlength="23" 
+                                       autocomplete="cc-number"
+                                       style="padding-right: 60px;">
+                                <span id="card-type-icon" style="position: absolute; right: 12px; top: 50%; transform: translateY(-50%); font-size: 1.5rem;"></span>
+                            </div>
+                            <div id="card-validation-msg" style="font-size: 0.85rem; margin-top: 0.25rem;"></div>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="cardholder-name">Cardholder Name *</label>
+                            <input type="text" id="cardholder-name" required 
+                                   placeholder="JOHN DOE" 
+                                   style="text-transform: uppercase;"
+                                   autocomplete="cc-name">
+                        </div>
+
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="expiry-month">Expiry Month *</label>
+                                <select id="expiry-month" required autocomplete="cc-exp-month">
+                                    <option value="">MM</option>
+                                    <option value="01">01 - January</option>
+                                    <option value="02">02 - February</option>
+                                    <option value="03">03 - March</option>
+                                    <option value="04">04 - April</option>
+                                    <option value="05">05 - May</option>
+                                    <option value="06">06 - June</option>
+                                    <option value="07">07 - July</option>
+                                    <option value="08">08 - August</option>
+                                    <option value="09">09 - September</option>
+                                    <option value="10">10 - October</option>
+                                    <option value="11">11 - November</option>
+                                    <option value="12">12 - December</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="expiry-year">Expiry Year *</label>
+                                <select id="expiry-year" required autocomplete="cc-exp-year">
+                                    <option value="">YYYY</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="cvv">CVV/CVC *</label>
+                                <input type="password" id="cvv" required 
+                                       placeholder="***" 
+                                       minlength="3" maxlength="4"
+                                       autocomplete="cc-csc">
+                                <small>3 digits (4 for Amex)</small>
+                            </div>
+                        </div>
+
+                        <h3 style="margin-top: 2rem;">Billing Preferences</h3>
+                        
+                        <div class="question-group">
+                            <label class="question-label">How would you like to pay your premium?</label>
+                            <div class="radio-group">
+                                <label class="radio-option">
+                                    <input type="radio" name="billing-frequency" value="monthly" checked>
+                                    <span>Monthly (Most popular)</span>
+                                </label>
+                                <label class="radio-option">
+                                    <input type="radio" name="billing-frequency" value="quarterly">
+                                    <span>Quarterly (Save 3%)</span>
+                                </label>
+                                <label class="radio-option">
+                                    <input type="radio" name="billing-frequency" value="annual">
+                                    <span>Annual (Save 10%)</span>
+                                </label>
+                            </div>
+                        </div>
+
+                        <div class="question-group">
+                            <label class="question-label">Enable automatic payments?</label>
+                            <div class="radio-group">
+                                <label class="radio-option">
+                                    <input type="radio" name="auto-pay" value="yes" checked>
+                                    <span>Yes, charge my card automatically each billing cycle</span>
+                                </label>
+                                <label class="radio-option">
+                                    <input type="radio" name="auto-pay" value="no">
+                                    <span>No, I'll pay manually each time</span>
+                                </label>
+                            </div>
+                        </div>
+
+                        <h3 style="margin-top: 2rem;">🏥 Medical Expense Account (Optional)</h3>
+                        <div class="info-box">
+                            <strong>What is the Medical Expense Account?</strong><br>
+                            Activate your PHINS Health Wallet to easily pay for:
+                            <ul style="margin: 0.5rem 0 0 1.5rem;">
+                                <li>🩺 Medical consultations and telemedicine</li>
+                                <li>🦽 Medical devices and mobility aids</li>
+                                <li>💊 Prescription medications</li>
+                                <li>🧴 Medical supplies (incontinence products, wound care, etc.)</li>
+                                <li>🏠 Home health care services</li>
+                            </ul>
+                        </div>
+
+                        <div class="question-group">
+                            <label class="checkbox-option large">
+                                <input type="checkbox" id="enable-health-wallet" checked>
+                                <span>Enable PHINS Health Wallet for easy medical expense payments</span>
+                            </label>
+                        </div>
+
+                        <div id="health-wallet-options" style="margin-top: 1rem; padding: 1rem; background: #f8f9fa; border-radius: 8px;">
+                            <label for="monthly-deposit">Monthly Health Wallet Deposit (Optional)</label>
+                            <p style="color: #666; font-size: 0.9rem; margin-bottom: 0.5rem;">Pre-fund your wallet for medical expenses. This is separate from your premium.</p>
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <select id="monthly-deposit">
+                                        <option value="0">No monthly deposit</option>
+                                        <option value="50">$50/month</option>
+                                        <option value="100" selected>$100/month</option>
+                                        <option value="200">$200/month</option>
+                                        <option value="500">$500/month</option>
+                                        <option value="custom">Custom amount</option>
+                                    </select>
+                                </div>
+                                <div class="form-group" id="custom-deposit-group" style="display: none;">
+                                    <input type="number" id="custom-deposit" min="10" max="10000" placeholder="Enter amount">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Step 5: Review & Submit -->
+                <div class="form-step" data-step="5">
+                    <div class="step-header">
+                        <h2>✅ Step 5: Review Your Application</h2>
                         <p>Please review all information carefully before submitting.</p>
                     </div>
 
@@ -378,16 +529,25 @@
                             <button type="button" class="edit-btn" onclick="goToStep(3)">Edit</button>
                         </div>
 
+                        <div class="review-card">
+                            <h3>💳 Payment Setup</h3>
+                            <div class="review-grid" id="review-payment"></div>
+                            <button type="button" class="edit-btn" onclick="goToStep(4)">Edit</button>
+                        </div>
+
                         <div class="final-premium-box">
-                            <h3>Your Estimated Premium</h3>
+                            <h3>Your Billing Summary</h3>
                             <div class="final-premium">
                                 <div class="premium-large">
                                     <span class="amount" id="final-premium-amount">$1,500</span>
-                                    <span class="period">per year</span>
+                                    <span class="period" id="final-period">per year</span>
                                 </div>
                                 <div class="premium-options-display">
                                     <span>Monthly: <strong id="final-monthly">$125</strong></span>
                                     <span>Quarterly: <strong id="final-quarterly">$375</strong></span>
+                                </div>
+                                <div id="health-wallet-summary" style="margin-top: 1rem; padding-top: 1rem; border-top: 1px solid #ddd;">
+                                    <span>🏥 Health Wallet Deposit: <strong id="final-wallet-deposit">$100/month</strong></span>
                                 </div>
                             </div>
                         </div>
@@ -400,6 +560,10 @@
                             <label class="checkbox-option large">
                                 <input type="checkbox" id="accuracy-agree" required>
                                 <span>I certify that all information provided is accurate and complete to the best of my knowledge</span>
+                            </label>
+                            <label class="checkbox-option large">
+                                <input type="checkbox" id="billing-agree" required>
+                                <span>I authorize PHINS to charge my payment method for premium payments and any approved medical expenses</span>
                             </label>
                         </div>
                     </div>

@@ -5,6 +5,33 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>PHINS Portal — My Dashboard</title>
   <link rel="stylesheet" href="/styles.css">
+  <style>
+    /* Health Wallet Styles */
+    .wallet-quick-btn {
+      transition: transform 0.2s, box-shadow 0.2s;
+    }
+    .wallet-quick-btn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    }
+    .product-card {
+      transition: transform 0.2s, box-shadow 0.2s;
+    }
+    .product-card:hover {
+      transform: translateY(-4px);
+      box-shadow: 0 8px 20px rgba(0,0,0,0.15);
+    }
+    #health-wallet {
+      border: 2px solid #28a745;
+    }
+    .wallet-balance-badge {
+      animation: pulse 2s infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.8; }
+    }
+  </style>
 </head>
 <body>
   <header class="topbar">
@@ -13,6 +40,7 @@
       <nav class="nav">
         <a href="/dashboard.html">Dashboard</a>
         <a href="/dashboard.html#policies">My Policies</a>
+        <a href="/dashboard.html#health-wallet" style="color: #28a745;">🏥 Health Wallet</a>
         <a href="/dashboard.html#claims">Claims</a>
         <a href="/dashboard.html#billing">Billing</a>
         <select id="language-selector" class="language-selector" onchange="changeLanguage(this.value)">
@@ -57,10 +85,10 @@
         <div class="stat-value" id="total-premium">$550</div>
         <div class="stat-label">Monthly Premium Total</div>
       </div>
-      <div class="stat-box">
-        <div class="stat-icon">📝</div>
-        <div class="stat-value" id="claim-count">1</div>
-        <div class="stat-label">ADL Assessment Pending</div>
+      <div class="stat-box" style="background: linear-gradient(135deg, #28a745 0%, #20c997 100%);">
+        <div class="stat-icon">🏥</div>
+        <div class="stat-value" id="wallet-balance">$850</div>
+        <div class="stat-label">Health Wallet Balance</div>
       </div>
       <div class="stat-box">
         <div class="stat-icon">📈</div>
@@ -68,6 +96,91 @@
         <div class="stat-label">Total Investment Value</div>
       </div>
     </div>
+
+    <!-- Health Wallet & Medical Products Section -->
+    <section id="health-wallet" class="section-content" style="background: linear-gradient(135deg, #e8f5e9 0%, #c8e6c9 100%); border-radius: 12px; padding: 24px; margin-bottom: 32px;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+        <h2 style="margin: 0;">🏥 PHINS Health Wallet</h2>
+        <span style="background: #28a745; color: white; padding: 8px 16px; border-radius: 20px; font-weight: 600;">Balance: <span id="wallet-balance-display">$850.00</span></span>
+      </div>
+      
+      <p style="color: #555; margin-bottom: 20px;">Pay for medical products and services directly from your health wallet. Fast, easy, and covered by your PHINS policy.</p>
+      
+      <!-- Quick Actions -->
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin-bottom: 24px;">
+        <button onclick="showMedicalCategory('consultation')" class="wallet-quick-btn" style="background: #667eea; color: white; border: none; padding: 16px; border-radius: 8px; cursor: pointer; font-size: 14px;">
+          🩺 Book Consultation
+        </button>
+        <button onclick="showMedicalCategory('devices')" class="wallet-quick-btn" style="background: #764ba2; color: white; border: none; padding: 16px; border-radius: 8px; cursor: pointer; font-size: 14px;">
+          🦽 Medical Devices
+        </button>
+        <button onclick="showMedicalCategory('supplies')" class="wallet-quick-btn" style="background: #f093fb; color: white; border: none; padding: 16px; border-radius: 8px; cursor: pointer; font-size: 14px;">
+          🧴 Daily Supplies
+        </button>
+        <button onclick="showMedicalCategory('pharmacy')" class="wallet-quick-btn" style="background: #4facfe; color: white; border: none; padding: 16px; border-radius: 8px; cursor: pointer; font-size: 14px;">
+          💊 Pharmacy
+        </button>
+        <button onclick="showMedicalCategory('homecare')" class="wallet-quick-btn" style="background: #43e97b; color: #333; border: none; padding: 16px; border-radius: 8px; cursor: pointer; font-size: 14px;">
+          🏠 Home Care
+        </button>
+        <button onclick="addFundsToWallet()" class="wallet-quick-btn" style="background: #ffd700; color: #333; border: none; padding: 16px; border-radius: 8px; cursor: pointer; font-size: 14px;">
+          ➕ Add Funds
+        </button>
+      </div>
+    </section>
+
+    <!-- Medical Products Marketplace -->
+    <section id="medical-marketplace" class="section-content" style="display: none;">
+      <div style="display: flex; justify-content: space-between; align-items: center;">
+        <h2 id="marketplace-title">🛒 Medical Products & Services</h2>
+        <button onclick="closeMarketplace()" style="background: none; border: none; font-size: 24px; cursor: pointer;">✕</button>
+      </div>
+      
+      <div id="product-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 20px; margin-top: 20px;">
+        <!-- Products loaded dynamically -->
+      </div>
+    </section>
+
+    <!-- Purchase History Section -->
+    <section id="purchase-history" class="section-content">
+      <h2>🧾 Recent Medical Purchases</h2>
+      <div class="table-card">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Product/Service</th>
+              <th>Category</th>
+              <th>Amount</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody id="purchase-history-table">
+            <tr>
+              <td>Dec 20, 2025</td>
+              <td>🩺 General Practitioner Visit</td>
+              <td>Consultation</td>
+              <td>$75.00</td>
+              <td><span class="badge badge-active">Completed</span></td>
+            </tr>
+            <tr>
+              <td>Dec 15, 2025</td>
+              <td>🧴 Adult Diapers (Pack of 30)</td>
+              <td>Supplies</td>
+              <td>$28.00</td>
+              <td><span class="badge badge-active">Delivered</span></td>
+            </tr>
+            <tr>
+              <td>Dec 10, 2025</td>
+              <td>💊 Prescription Refill Service</td>
+              <td>Pharmacy</td>
+              <td>$10.00</td>
+              <td><span class="badge badge-active">Completed</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
 
     <!-- My Policies Section -->
     <section id="policies" class="section-content">
@@ -240,6 +353,155 @@
   </footer>
 
   <script>
+    // Health Wallet Balance
+    let walletBalance = 850.00;
+    
+    // Medical Products Catalog
+    const medicalProducts = {
+      consultation: [
+        { id: 'cons-1', name: '🩺 General Practitioner Visit', price: 75, description: 'In-person or telehealth consultation with a GP', duration: '30 min' },
+        { id: 'cons-2', name: '🧠 Specialist Consultation', price: 150, description: 'Neurologist, cardiologist, or other specialist', duration: '45 min' },
+        { id: 'cons-3', name: '📱 Telehealth Quick Consult', price: 35, description: '15-minute video call with a nurse practitioner', duration: '15 min' },
+        { id: 'cons-4', name: '🏥 Physical Therapy Session', price: 120, description: 'One-on-one PT session for mobility improvement', duration: '60 min' },
+        { id: 'cons-5', name: '💆 Mental Health Counseling', price: 100, description: 'Licensed therapist session', duration: '50 min' },
+      ],
+      devices: [
+        { id: 'dev-1', name: '🦽 Standard Wheelchair', price: 450, description: 'Lightweight manual wheelchair with cushion', category: 'Mobility' },
+        { id: 'dev-2', name: '🦯 Walking Cane (Adjustable)', price: 35, description: 'Aluminum adjustable walking cane with rubber tip', category: 'Mobility' },
+        { id: 'dev-3', name: '🩺 Blood Pressure Monitor', price: 65, description: 'Digital automatic BP monitor with memory', category: 'Monitoring' },
+        { id: 'dev-4', name: '💉 Glucose Monitor Kit', price: 85, description: 'Blood glucose meter with 50 test strips', category: 'Monitoring' },
+        { id: 'dev-5', name: '🛏️ Hospital Bed (Adjustable)', price: 1200, description: 'Electric adjustable hospital bed for home use', category: 'Home Care' },
+        { id: 'dev-6', name: '🚿 Shower Chair', price: 75, description: 'Non-slip shower chair with back support', category: 'Bathroom Safety' },
+        { id: 'dev-7', name: '🚶 Walker (Folding)', price: 120, description: 'Folding aluminum walker with wheels', category: 'Mobility' },
+        { id: 'dev-8', name: '📟 Medical Alert System', price: 199, description: 'Personal emergency response system with fall detection', category: 'Safety' },
+      ],
+      supplies: [
+        { id: 'sup-1', name: '🧴 Adult Diapers (Pack of 30)', price: 28, description: 'Premium absorbent incontinence briefs, medium size', size: 'M/L/XL available' },
+        { id: 'sup-2', name: '🧴 Adult Diapers (Pack of 60)', price: 52, description: 'Value pack incontinence briefs', size: 'M/L/XL available' },
+        { id: 'sup-3', name: '🧻 Disposable Bed Pads (50 ct)', price: 35, description: 'Waterproof underpads for bed protection', size: '23x36 inches' },
+        { id: 'sup-4', name: '🧤 Disposable Gloves (100 ct)', price: 15, description: 'Nitrile examination gloves, powder-free', size: 'S/M/L' },
+        { id: 'sup-5', name: '🩹 Wound Care Kit', price: 45, description: 'Complete wound care supplies with bandages and antiseptic', contents: '50+ items' },
+        { id: 'sup-6', name: '🧼 No-Rinse Body Wash', price: 18, description: 'Gentle cleansing foam, no water needed', size: '16 oz' },
+        { id: 'sup-7', name: '💧 Skin Barrier Cream', price: 22, description: 'Protective moisture barrier cream', size: '4 oz' },
+        { id: 'sup-8', name: '🛁 Bathing Wipes (Pack of 48)', price: 12, description: 'Pre-moistened cleansing cloths', fragrance: 'Unscented' },
+      ],
+      pharmacy: [
+        { id: 'rx-1', name: '💊 Prescription Refill Service', price: 10, description: 'Copay for generic medications (up to 30-day supply)', note: 'Rx required' },
+        { id: 'rx-2', name: '💉 Insulin Supplies', price: 45, description: 'Insulin syringes and alcohol swabs (monthly supply)', note: 'Rx required' },
+        { id: 'rx-3', name: '🩹 First Aid Kit (Complete)', price: 35, description: '200+ piece emergency first aid kit', contents: 'Bandages, antiseptic, tools' },
+        { id: 'rx-4', name: '😷 Face Masks (Box of 50)', price: 15, description: '3-ply disposable medical masks', certification: 'FDA registered' },
+        { id: 'rx-5', name: '🧴 Hand Sanitizer (1 gallon)', price: 25, description: '70% alcohol hand sanitizer', size: '1 gallon pump' },
+      ],
+      homecare: [
+        { id: 'hc-1', name: '🏠 Home Health Aide (4 hrs)', price: 120, description: 'Personal care assistance at home', duration: '4 hours' },
+        { id: 'hc-2', name: '🏠 Home Health Aide (8 hrs)', price: 220, description: 'Full day personal care assistance', duration: '8 hours' },
+        { id: 'hc-3', name: '🍽️ Meal Delivery (Weekly)', price: 85, description: '7 days of nutritious prepared meals', meals: '21 meals' },
+        { id: 'hc-4', name: '🚗 Medical Transportation', price: 45, description: 'Round-trip to medical appointments', distance: 'Up to 25 miles' },
+        { id: 'hc-5', name: '🏡 Home Safety Assessment', price: 150, description: 'Professional home safety evaluation', includes: 'Written report' },
+        { id: 'hc-6', name: '🧹 Light Housekeeping (4 hrs)', price: 80, description: 'Basic cleaning and organization', duration: '4 hours' },
+      ]
+    };
+    
+    const categoryTitles = {
+      consultation: '🩺 Medical Consultations',
+      devices: '🦽 Medical Devices & Equipment',
+      supplies: '🧴 Daily Care Supplies',
+      pharmacy: '💊 Pharmacy & Medications',
+      homecare: '🏠 Home Care Services'
+    };
+    
+    function showMedicalCategory(category) {
+      const products = medicalProducts[category] || [];
+      const title = categoryTitles[category] || 'Products';
+      
+      document.getElementById('marketplace-title').textContent = title;
+      document.getElementById('medical-marketplace').style.display = 'block';
+      
+      const grid = document.getElementById('product-grid');
+      grid.innerHTML = products.map(product => `
+        <div class="product-card" style="background: white; border-radius: 12px; padding: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+          <h3 style="margin: 0 0 8px 0; font-size: 16px;">${product.name}</h3>
+          <p style="color: #666; font-size: 14px; margin: 0 0 12px 0;">${product.description}</p>
+          ${product.duration ? `<p style="color: #888; font-size: 12px; margin: 0 0 8px 0;">⏱️ ${product.duration}</p>` : ''}
+          ${product.category ? `<p style="color: #888; font-size: 12px; margin: 0 0 8px 0;">📁 ${product.category}</p>` : ''}
+          ${product.size ? `<p style="color: #888; font-size: 12px; margin: 0 0 8px 0;">📏 ${product.size}</p>` : ''}
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 16px;">
+            <span style="font-size: 20px; font-weight: bold; color: #28a745;">$${product.price.toFixed(2)}</span>
+            <button onclick="purchaseProduct('${product.id}', '${product.name.replace(/'/g, "\\'")}', ${product.price})" 
+                    style="background: #667eea; color: white; border: none; padding: 10px 20px; border-radius: 6px; cursor: pointer; font-weight: 600;">
+              Pay with Wallet
+            </button>
+          </div>
+        </div>
+      `).join('');
+      
+      // Scroll to marketplace
+      document.getElementById('medical-marketplace').scrollIntoView({ behavior: 'smooth' });
+    }
+    
+    function closeMarketplace() {
+      document.getElementById('medical-marketplace').style.display = 'none';
+    }
+    
+    function purchaseProduct(productId, productName, price) {
+      if (price > walletBalance) {
+        const shortfall = price - walletBalance;
+        if (confirm(`Insufficient balance! You need $${shortfall.toFixed(2)} more.\\n\\nWould you like to add funds to your wallet?`)) {
+          addFundsToWallet();
+        }
+        return;
+      }
+      
+      if (confirm(`Purchase ${productName} for $${price.toFixed(2)}?\\n\\nThis will be deducted from your Health Wallet.`)) {
+        // Process purchase
+        walletBalance -= price;
+        updateWalletDisplay();
+        
+        // Show success message
+        const notification = document.createElement('div');
+        notification.style.cssText = 'position:fixed;top:80px;right:20px;background:#28a745;color:#fff;padding:16px 24px;border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,0.2);z-index:1000;font-weight:600;max-width:300px;';
+        notification.innerHTML = `
+          <div style="font-size: 18px; margin-bottom: 8px;">✅ Purchase Complete!</div>
+          <div style="font-size: 14px; opacity: 0.9;">${productName}</div>
+          <div style="font-size: 14px; opacity: 0.9;">Amount: $${price.toFixed(2)}</div>
+          <div style="font-size: 12px; opacity: 0.8; margin-top: 8px;">New Balance: $${walletBalance.toFixed(2)}</div>
+        `;
+        document.body.appendChild(notification);
+        setTimeout(() => notification.remove(), 5000);
+        
+        // Log transaction (in production, this would be an API call)
+        console.log('Purchase:', { productId, productName, price, newBalance: walletBalance });
+      }
+    }
+    
+    function addFundsToWallet() {
+      const amount = prompt('Enter amount to add to your Health Wallet (min $10, max $5000):', '100');
+      if (amount === null) return;
+      
+      const numAmount = parseFloat(amount);
+      if (isNaN(numAmount) || numAmount < 10 || numAmount > 5000) {
+        alert('Please enter a valid amount between $10 and $5000');
+        return;
+      }
+      
+      // In production, this would open a payment modal
+      if (confirm(`Add $${numAmount.toFixed(2)} to your Health Wallet?\\n\\nThis will be charged to your payment method on file.`)) {
+        walletBalance += numAmount;
+        updateWalletDisplay();
+        
+        const notification = document.createElement('div');
+        notification.style.cssText = 'position:fixed;top:80px;right:20px;background:#28a745;color:#fff;padding:16px 24px;border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,0.2);z-index:1000;font-weight:600;';
+        notification.innerHTML = `✅ Added $${numAmount.toFixed(2)} to wallet!<br>New Balance: $${walletBalance.toFixed(2)}`;
+        document.body.appendChild(notification);
+        setTimeout(() => notification.remove(), 4000);
+      }
+    }
+    
+    function updateWalletDisplay() {
+      document.getElementById('wallet-balance').textContent = `$${walletBalance.toFixed(0)}`;
+      document.getElementById('wallet-balance-display').textContent = `$${walletBalance.toFixed(2)}`;
+    }
+    
     // Load statement data
     fetch('/api/statement?customer_id=CUST001')
       .then(res => res.json())
@@ -279,6 +541,7 @@
     document.querySelector('.btn-logout').addEventListener('click', function(e) {
       e.preventDefault();
       sessionStorage.clear();
+      localStorage.removeItem('phins_token');
       window.location.href = '/';
     });
 

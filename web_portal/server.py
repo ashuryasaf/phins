@@ -81,6 +81,8 @@ else:
     UNDERWRITING_APPLICATIONS: Dict[str, Dict[str, Any]] = {}
     SESSIONS: Dict[str, Dict[str, Any]] = {}  # token -> {username, expires, customer_id}
     BILLING: Dict[str, Dict[str, Any]] = {}  # bill_id -> bill data (for metrics)
+    HEALTH_WALLETS: Dict[str, Dict[str, Any]] = {}  # customer_id -> {balance, transactions, monthly_deposit}
+    MEDICAL_PURCHASES: Dict[str, Dict[str, Any]] = {}  # purchase_id -> purchase data
 try:
     from services.audit_service import AuditService
     audit = AuditService()
@@ -1407,6 +1409,70 @@ class PortalHandler(BaseHTTPRequestHandler):
             self._set_json_headers()
             self.wfile.write(json.dumps(data).encode('utf-8'))
             return
+        
+        # Health Wallet GET endpoint
+        if path.startswith('/api/health-wallet'):
+            customer_id = qs.get('customer_id', ['CUST001'])[0]
+            
+            # Get or create wallet
+            if customer_id not in HEALTH_WALLETS:
+                HEALTH_WALLETS[customer_id] = {
+                    'customer_id': customer_id,
+                    'balance': 850.00,
+                    'monthly_deposit': 100.00,
+                    'transactions': [],
+                    'created_at': datetime.now().isoformat()
+                }
+            
+            wallet = HEALTH_WALLETS[customer_id]
+            self._set_json_headers()
+            self.wfile.write(json.dumps({
+                'success': True,
+                'wallet': wallet
+            }).encode('utf-8'))
+            return
+        
+        # Medical products catalog
+        if path.startswith('/api/medical-products'):
+            category = qs.get('category', [None])[0]
+            
+            products = {
+                'consultation': [
+                    {'id': 'cons-1', 'name': 'General Practitioner Visit', 'price': 75, 'category': 'consultation'},
+                    {'id': 'cons-2', 'name': 'Specialist Consultation', 'price': 150, 'category': 'consultation'},
+                    {'id': 'cons-3', 'name': 'Telehealth Quick Consult', 'price': 35, 'category': 'consultation'},
+                ],
+                'devices': [
+                    {'id': 'dev-1', 'name': 'Standard Wheelchair', 'price': 450, 'category': 'devices'},
+                    {'id': 'dev-2', 'name': 'Walking Cane', 'price': 35, 'category': 'devices'},
+                    {'id': 'dev-3', 'name': 'Blood Pressure Monitor', 'price': 65, 'category': 'devices'},
+                ],
+                'supplies': [
+                    {'id': 'sup-1', 'name': 'Adult Diapers (30 ct)', 'price': 28, 'category': 'supplies'},
+                    {'id': 'sup-2', 'name': 'Adult Diapers (60 ct)', 'price': 52, 'category': 'supplies'},
+                    {'id': 'sup-3', 'name': 'Disposable Bed Pads', 'price': 35, 'category': 'supplies'},
+                ],
+                'pharmacy': [
+                    {'id': 'rx-1', 'name': 'Prescription Refill', 'price': 10, 'category': 'pharmacy'},
+                    {'id': 'rx-2', 'name': 'First Aid Kit', 'price': 35, 'category': 'pharmacy'},
+                ],
+                'homecare': [
+                    {'id': 'hc-1', 'name': 'Home Health Aide (4 hrs)', 'price': 120, 'category': 'homecare'},
+                    {'id': 'hc-2', 'name': 'Meal Delivery (Weekly)', 'price': 85, 'category': 'homecare'},
+                ]
+            }
+            
+            if category and category in products:
+                result = products[category]
+            else:
+                result = [item for cat in products.values() for item in cat]
+            
+            self._set_json_headers()
+            self.wfile.write(json.dumps({
+                'success': True,
+                'products': result
+            }).encode('utf-8'))
+            return
 
         if path.startswith('/api/allocations'):
             customer_id = qs.get('customer_id', ['CUST001'])[0]
@@ -1665,6 +1731,7 @@ class PortalHandler(BaseHTTPRequestHandler):
                     self._set_json_headers()
                     self.wfile.write(json.dumps({
                         'token': token,
+                        'username': username,  # Return username for tests
                         'role': user['role'],
                         'name': user['name'],
                         'customer_id': user.get('customer_id'),
@@ -2449,6 +2516,52 @@ class PortalHandler(BaseHTTPRequestHandler):
                 
                 # Create underwriting application
                 uw_id = f"UW-{datetime.now().strftime('%Y%m%d')}-{random.randint(1000, 9999)}"
+                
+                # Process payment info (tokenize card - never store full number)
+                payment_info = data.get('payment', {})
+                payment_token = None
+                card_last4 = None
+                card_type = None
+                billing_frequency = 'monthly'
+                auto_pay = False
+                
+                if payment_info:
+                    card_number = payment_info.get('card_number', '')
+                    if card_number:
+                        # Validate card using SecurityValidator
+                        try:
+                            from billing_engine import SecurityValidator
+                            validation_result = SecurityValidator.validate_card_number(card_number)
+                            if validation_result.get('valid'):
+                                # Create secure token (hash the card)
+                                card_last4 = card_number[-4:]
+                                card_type = validation_result.get('card_type', 'unknown')
+                                payment_token = SecurityValidator.hash_sensitive_data(card_number)
+                            else:
+                                # Log validation failure but don't block application
+                                print(f"Card validation warning: {validation_result.get('errors', [])}")
+                        except Exception as e:
+                            print(f"Payment processing error: {e}")
+                    
+                    billing_frequency = payment_info.get('billing_frequency', 'monthly')
+                    auto_pay = payment_info.get('auto_pay', False)
+                
+                # Process health wallet setup
+                health_wallet_info = data.get('health_wallet', {})
+                health_wallet_enabled = health_wallet_info.get('enabled', False)
+                monthly_deposit = health_wallet_info.get('monthly_deposit', 0)
+                
+                # Initialize health wallet if enabled
+                if health_wallet_enabled:
+                    HEALTH_WALLETS[customer_id] = {
+                        'customer_id': customer_id,
+                        'balance': 0,  # Start with zero, will deposit after approval
+                        'monthly_deposit': monthly_deposit,
+                        'transactions': [],
+                        'created_at': datetime.now().isoformat(),
+                        'status': 'pending_activation'
+                    }
+                
                 UNDERWRITING_APPLICATIONS[uw_id] = {
                     'id': uw_id,
                     'policy_id': policy_id,
@@ -2464,7 +2577,22 @@ class PortalHandler(BaseHTTPRequestHandler):
                     'questionnaire_responses': data.get('questionnaire', {}),
                     'medical_exam_required': data.get('medical_exam_required', False),
                     'submitted_date': datetime.now().isoformat(),
-                    'created_date': datetime.now().isoformat()
+                    'created_date': datetime.now().isoformat(),
+                    # Payment and billing info (stored securely)
+                    'payment_setup': {
+                        'card_last4': card_last4,
+                        'card_type': card_type,
+                        'cardholder_name': payment_info.get('cardholder_name', ''),
+                        'expiry_month': payment_info.get('expiry_month', ''),
+                        'expiry_year': payment_info.get('expiry_year', ''),
+                        'billing_frequency': billing_frequency,
+                        'auto_pay': auto_pay,
+                        'payment_token': payment_token  # Hashed token, not raw card
+                    },
+                    'health_wallet': {
+                        'enabled': health_wallet_enabled,
+                        'monthly_deposit': monthly_deposit
+                    }
                 }
                 
                 # Calculate premium
@@ -2483,7 +2611,22 @@ class PortalHandler(BaseHTTPRequestHandler):
                     'risk_score': data.get('risk_score', 'medium'),
                     'start_date': data.get('start_date', datetime.now().isoformat()),
                     'end_date': data.get('end_date', (datetime.now() + timedelta(days=365)).isoformat()),
-                    'created_date': datetime.now().isoformat()
+                    'created_date': datetime.now().isoformat(),
+                    # Billing configuration (from application Step 4)
+                    'billing': {
+                        'frequency': billing_frequency,
+                        'auto_pay': auto_pay,
+                        'payment_method': {
+                            'type': 'card',
+                            'card_last4': card_last4,
+                            'card_type': card_type
+                        } if card_last4 else None,
+                        'next_billing_date': (datetime.now() + timedelta(days=30)).isoformat()
+                    },
+                    'health_wallet': {
+                        'enabled': health_wallet_enabled,
+                        'monthly_deposit': monthly_deposit
+                    }
                 }
                 
                 POLICIES[policy_id] = policy
@@ -3341,6 +3484,182 @@ class PortalHandler(BaseHTTPRequestHandler):
                     self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
                 return
         # ========== END PAYMENT GATEWAY API ==========
+        
+        # ========== HEALTH WALLET API ==========
+            
+            # Get or create health wallet
+            if path == '/api/health-wallet':
+                try:
+                    data = json.loads(body) if body else {}
+                    customer_id = data.get('customer_id', 'CUST001')
+                    
+                    # Get or create wallet
+                    if customer_id not in HEALTH_WALLETS:
+                        HEALTH_WALLETS[customer_id] = {
+                            'customer_id': customer_id,
+                            'balance': 850.00,  # Default starting balance for demo
+                            'monthly_deposit': 100.00,
+                            'transactions': [],
+                            'created_at': datetime.now().isoformat()
+                        }
+                    
+                    wallet = HEALTH_WALLETS[customer_id]
+                    self._set_json_headers()
+                    self.wfile.write(json.dumps({
+                        'success': True,
+                        'wallet': wallet
+                    }).encode('utf-8'))
+                except Exception as e:
+                    self._set_json_headers(500)
+                    self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+                return
+            
+            # Add funds to wallet
+            if path == '/api/health-wallet/deposit':
+                try:
+                    data = json.loads(body)
+                    customer_id = data.get('customer_id', 'CUST001')
+                    amount = float(data.get('amount', 0))
+                    payment_method = data.get('payment_method', 'card_on_file')
+                    
+                    if amount < 10 or amount > 5000:
+                        self._set_json_headers(400)
+                        self.wfile.write(json.dumps({'error': 'Amount must be between $10 and $5000'}).encode('utf-8'))
+                        return
+                    
+                    # Initialize wallet if not exists
+                    if customer_id not in HEALTH_WALLETS:
+                        HEALTH_WALLETS[customer_id] = {
+                            'customer_id': customer_id,
+                            'balance': 0,
+                            'monthly_deposit': 0,
+                            'transactions': [],
+                            'created_at': datetime.now().isoformat()
+                        }
+                    
+                    # Add funds
+                    HEALTH_WALLETS[customer_id]['balance'] += amount
+                    
+                    # Record transaction
+                    transaction = {
+                        'id': f"TXN-{datetime.now().strftime('%Y%m%d%H%M%S')}",
+                        'type': 'deposit',
+                        'amount': amount,
+                        'payment_method': payment_method,
+                        'timestamp': datetime.now().isoformat(),
+                        'balance_after': HEALTH_WALLETS[customer_id]['balance']
+                    }
+                    HEALTH_WALLETS[customer_id]['transactions'].append(transaction)
+                    
+                    self._set_json_headers()
+                    self.wfile.write(json.dumps({
+                        'success': True,
+                        'transaction': transaction,
+                        'new_balance': HEALTH_WALLETS[customer_id]['balance']
+                    }).encode('utf-8'))
+                except Exception as e:
+                    self._set_json_headers(500)
+                    self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+                return
+            
+            # Purchase medical product/service
+            if path == '/api/health-wallet/purchase':
+                try:
+                    data = json.loads(body)
+                    customer_id = data.get('customer_id', 'CUST001')
+                    product_id = data.get('product_id')
+                    product_name = data.get('product_name')
+                    amount = float(data.get('amount', 0))
+                    category = data.get('category', 'general')
+                    
+                    if not product_id or not amount:
+                        self._set_json_headers(400)
+                        self.wfile.write(json.dumps({'error': 'Product ID and amount required'}).encode('utf-8'))
+                        return
+                    
+                    # Check wallet balance
+                    if customer_id not in HEALTH_WALLETS:
+                        HEALTH_WALLETS[customer_id] = {
+                            'customer_id': customer_id,
+                            'balance': 0,
+                            'monthly_deposit': 0,
+                            'transactions': [],
+                            'created_at': datetime.now().isoformat()
+                        }
+                    
+                    wallet = HEALTH_WALLETS[customer_id]
+                    if wallet['balance'] < amount:
+                        self._set_json_headers(400)
+                        self.wfile.write(json.dumps({
+                            'error': 'Insufficient balance',
+                            'balance': wallet['balance'],
+                            'required': amount,
+                            'shortfall': amount - wallet['balance']
+                        }).encode('utf-8'))
+                        return
+                    
+                    # Deduct amount
+                    wallet['balance'] -= amount
+                    
+                    # Create purchase record
+                    purchase_id = f"PUR-{datetime.now().strftime('%Y%m%d%H%M%S')}"
+                    purchase = {
+                        'id': purchase_id,
+                        'customer_id': customer_id,
+                        'product_id': product_id,
+                        'product_name': product_name,
+                        'category': category,
+                        'amount': amount,
+                        'status': 'completed',
+                        'timestamp': datetime.now().isoformat()
+                    }
+                    MEDICAL_PURCHASES[purchase_id] = purchase
+                    
+                    # Record transaction in wallet
+                    transaction = {
+                        'id': f"TXN-{datetime.now().strftime('%Y%m%d%H%M%S')}",
+                        'type': 'purchase',
+                        'amount': -amount,
+                        'product_id': product_id,
+                        'product_name': product_name,
+                        'category': category,
+                        'timestamp': datetime.now().isoformat(),
+                        'balance_after': wallet['balance']
+                    }
+                    wallet['transactions'].append(transaction)
+                    
+                    self._set_json_headers()
+                    self.wfile.write(json.dumps({
+                        'success': True,
+                        'purchase': purchase,
+                        'transaction': transaction,
+                        'new_balance': wallet['balance']
+                    }).encode('utf-8'))
+                except Exception as e:
+                    self._set_json_headers(500)
+                    self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+                return
+            
+            # Get purchase history
+            if path == '/api/health-wallet/purchases':
+                try:
+                    data = json.loads(body) if body else {}
+                    customer_id = data.get('customer_id', 'CUST001')
+                    
+                    purchases = [p for p in MEDICAL_PURCHASES.values() if p.get('customer_id') == customer_id]
+                    purchases.sort(key=lambda x: x.get('timestamp', ''), reverse=True)
+                    
+                    self._set_json_headers()
+                    self.wfile.write(json.dumps({
+                        'success': True,
+                        'purchases': purchases[:50]  # Last 50
+                    }).encode('utf-8'))
+                except Exception as e:
+                    self._set_json_headers(500)
+                    self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+                return
+        
+        # ========== END HEALTH WALLET API ==========
         
         # ========== END BILLING API ==========
         # Minimal billing endpoints (demo fallback when engine routes are not used)
