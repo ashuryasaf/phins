@@ -3,29 +3,137 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>PHINS Admin Portal</title>
+  <title>PHINS Admin Dashboard</title>
   <link rel="stylesheet" href="/styles.css">
+  <style>
+    /* PHINS Unified Header */
+    .phins-header {
+      background: linear-gradient(135deg, #1a1f36 0%, #2d3561 50%, #1a1f36 100%);
+      border-bottom: 1px solid rgba(255,255,255,0.1);
+      padding: 0;
+      position: sticky;
+      top: 0;
+      z-index: 1000;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+    }
+    .phins-header-inner {
+      max-width: 1600px;
+      margin: 0 auto;
+      padding: 0.75rem 2rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .phins-logo {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      text-decoration: none;
+    }
+    .phins-logo-icon {
+      width: 44px;
+      height: 44px;
+      background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.5rem;
+      box-shadow: 0 4px 15px rgba(79, 172, 254, 0.4);
+    }
+    .phins-logo-text {
+      font-size: 1.75rem;
+      font-weight: 700;
+      background: linear-gradient(135deg, #4facfe 0%, #00f2fe 50%, #43e97b 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    .phins-nav {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .phins-nav a {
+      padding: 0.5rem 1rem;
+      color: rgba(255,255,255,0.8);
+      text-decoration: none;
+      border-radius: 8px;
+      font-size: 0.9rem;
+      font-weight: 500;
+      transition: all 0.2s ease;
+    }
+    .phins-nav a:hover {
+      background: rgba(255,255,255,0.1);
+      color: white;
+    }
+    .phins-nav a.active {
+      background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+      color: white;
+    }
+    .phins-nav .nav-divider {
+      width: 1px;
+      height: 24px;
+      background: rgba(255,255,255,0.2);
+      margin: 0 0.5rem;
+    }
+    .phins-nav .btn-logout {
+      background: linear-gradient(135deg, #ff6b6b 0%, #ee5a5a 100%);
+      color: white;
+      padding: 0.5rem 1rem;
+      border-radius: 8px;
+      font-weight: 600;
+    }
+    .phins-nav .btn-logout:hover {
+      background: linear-gradient(135deg, #ee5a5a 0%, #dc4747 100%);
+      transform: translateY(-1px);
+    }
+    .language-selector {
+      background: rgba(255,255,255,0.1);
+      border: 1px solid rgba(255,255,255,0.2);
+      color: white;
+      padding: 0.4rem 0.75rem;
+      border-radius: 6px;
+      font-size: 0.85rem;
+      cursor: pointer;
+    }
+    .language-selector option {
+      background: #1a1f36;
+      color: white;
+    }
+    /* Soft gradient backgrounds */
+    body {
+      background: linear-gradient(180deg, #f0f4f8 0%, #e2e8f0 100%);
+      min-height: 100vh;
+    }
+    .stat-box-blue { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important; }
+    .stat-box-green { background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%) !important; }
+    .stat-box-orange { background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%) !important; }
+    .stat-box-purple { background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%) !important; }
+  </style>
 </head>
 <body>
-  <header class="topbar">
-    <div class="container">
-      <h1 class="brand">🛡️ PHINS Admin Portal</h1>
-      <nav class="nav">
-        <a href="/admin.html">Overview</a>
+  <header class="phins-header">
+    <div class="phins-header-inner">
+      <a href="/admin.html" class="phins-logo">
+        <div class="phins-logo-icon">🛡️</div>
+        <span class="phins-logo-text">PHINS</span>
+      </a>
+      <nav class="phins-nav">
+        <a href="/admin.html" class="active">Overview</a>
         <a href="/admin.html#policies">Policies</a>
         <a href="/admin.html#claims">Claims</a>
         <a href="/admin.html#underwriting">Underwriting</a>
         <a href="/billing.html">💳 Billing</a>
-        <a href="/admin-portal.html">⚙️ Advanced Tools</a>
+        <a href="/savings-portfolio.html">📈 Investments</a>
+        <div class="nav-divider"></div>
         <select id="language-selector" class="language-selector" onchange="changeLanguage(this.value)">
-          <option value="en">🌐 English</option>
-          <option value="es">🌐 Español</option>
-          <option value="fr">🌐 Français</option>
-          <option value="de">🌐 Deutsch</option>
+          <option value="en">🌐 EN</option>
+          <option value="es">🌐 ES</option>
+          <option value="fr">🌐 FR</option>
+          <option value="de">🌐 DE</option>
           <option value="zh">🌐 中文</option>
-          <option value="ar">🌐 العربية</option>
-          <option value="ru">🌐 Русский</option>
-          <option value="pt">🌐 Português</option>
+          <option value="he">🌐 עב</option>
         </select>
         <a href="/" class="btn-logout">Logout</a>
       </nav>
@@ -1222,30 +1330,8 @@
     
     // Enhanced New Policy Button Handler
     function openNewPolicyForm() {
-      // Ensure current authentication is stored
-      const currentToken = localStorage.getItem('phins_token');
-      const currentUser = sessionStorage.getItem('username');
-      
-      if (!currentToken || !currentUser) {
-        alert('Authentication error. Please log in again.');
-        window.location.href = '/login.html';
-        return;
-      }
-      
-      // Store admin authentication state for admin-portal
-      localStorage.setItem('phins_redirect_source', 'admin-dashboard');
-      localStorage.setItem('phins_admin_verified', 'true');
-      localStorage.setItem('phins_admin_token', currentToken);
-      localStorage.setItem('phins_admin_user', JSON.stringify({name: currentUser, role: 'admin'}));
-      
-      // Check if user wants to stay in same tab or open new
-      const useNewTab = confirm('Open policy creation in:\\n\\nOK = New Tab\\nCancel = Same Window');
-      
-      if (useNewTab) {
-        window.open('/admin-portal.html', '_blank');
-      } else {
-        window.location.href = '/admin-portal.html';
-      }
+      // Navigate to apply page for new policy creation
+      window.location.href = '/apply.html';
     }
     
     // Load saved language

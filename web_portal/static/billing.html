@@ -185,17 +185,115 @@
     .tab-content.active {
       display: block;
     }
+    /* PHINS Unified Header */
+    .phins-header {
+      background: linear-gradient(135deg, #1a1f36 0%, #2d3561 50%, #1a1f36 100%);
+      border-bottom: 1px solid rgba(255,255,255,0.1);
+      padding: 0;
+      position: sticky;
+      top: 0;
+      z-index: 1000;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+    }
+    .phins-header-inner {
+      max-width: 1600px;
+      margin: 0 auto;
+      padding: 0.75rem 2rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .phins-logo {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      text-decoration: none;
+    }
+    .phins-logo-icon {
+      width: 44px;
+      height: 44px;
+      background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.5rem;
+      box-shadow: 0 4px 15px rgba(79, 172, 254, 0.4);
+    }
+    .phins-logo-text {
+      font-size: 1.75rem;
+      font-weight: 700;
+      background: linear-gradient(135deg, #4facfe 0%, #00f2fe 50%, #43e97b 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    .phins-nav {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .phins-nav a {
+      padding: 0.5rem 1rem;
+      color: rgba(255,255,255,0.8);
+      text-decoration: none;
+      border-radius: 8px;
+      font-size: 0.9rem;
+      font-weight: 500;
+      transition: all 0.2s ease;
+    }
+    .phins-nav a:hover {
+      background: rgba(255,255,255,0.1);
+      color: white;
+    }
+    .phins-nav a.active {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+    }
+    .phins-nav .btn-logout {
+      background: linear-gradient(135deg, #ff6b6b 0%, #ee5a5a 100%);
+      color: white;
+      padding: 0.5rem 1rem;
+      border-radius: 8px;
+      font-weight: 600;
+    }
+    body {
+      background: linear-gradient(180deg, #f0f4f8 0%, #e2e8f0 100%);
+      min-height: 100vh;
+      margin: 0;
+    }
+    .page-title-bar {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      padding: 20px 2rem;
+      margin-bottom: 24px;
+    }
+    .page-title-bar h1 {
+      margin: 0;
+      font-size: 1.5rem;
+    }
   </style>
 </head>
 <body>
-  <header>
-    <h1>💳 Billing & Payment Management</h1>
-    <nav>
-      <a href="/admin.html">Admin Dashboard</a>
-      <a href="/dashboard.html">Customer Portal</a>
-      <a href="/login.html">Logout</a>
-    </nav>
+  <header class="phins-header">
+    <div class="phins-header-inner">
+      <a href="/admin.html" class="phins-logo">
+        <div class="phins-logo-icon">🛡️</div>
+        <span class="phins-logo-text">PHINS</span>
+      </a>
+      <nav class="phins-nav">
+        <a href="/admin.html">Admin</a>
+        <a href="/billing.html" class="active">💳 Billing</a>
+        <a href="/accountant-dashboard.html">💰 Accounting</a>
+        <a href="/savings-portfolio.html">📈 Investments</a>
+        <a href="/dashboard.html">Customer Portal</a>
+        <a href="/login.html" class="btn-logout">Logout</a>
+      </nav>
+    </div>
   </header>
+  <div class="page-title-bar">
+    <h1>💳 Billing & Payment Management</h1>
+  </div>
 
   <main>
     <!-- Test Mode Banner -->

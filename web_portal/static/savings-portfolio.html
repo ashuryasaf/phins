@@ -37,67 +37,69 @@
             line-height: 1.6;
         }
         
-        /* Header */
-        .header {
-            background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
-            border-bottom: 1px solid var(--border);
-            padding: 1rem 2rem;
+        /* PHINS Unified Header */
+        .phins-header {
+            background: linear-gradient(135deg, #1a1f36 0%, #2d3561 50%, #1a1f36 100%);
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+            padding: 0;
+            position: sticky;
+            top: 0;
+            z-index: 1000;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+        }
+        .phins-header-inner {
+            max-width: 1600px;
+            margin: 0 auto;
+            padding: 0.75rem 2rem;
             display: flex;
             justify-content: space-between;
             align-items: center;
-            position: sticky;
-            top: 0;
-            z-index: 100;
         }
-        
-        .logo {
+        .phins-logo {
             display: flex;
             align-items: center;
             gap: 0.75rem;
+            text-decoration: none;
         }
-        
-        .logo-icon {
-            width: 40px;
-            height: 40px;
-            background: var(--gradient-primary);
-            border-radius: 10px;
+        .phins-logo-icon {
+            width: 44px;
+            height: 44px;
+            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+            border-radius: 12px;
             display: flex;
             align-items: center;
             justify-content: center;
             font-size: 1.5rem;
+            box-shadow: 0 4px 15px rgba(79, 172, 254, 0.4);
         }
-        
-        .logo-text {
-            font-size: 1.5rem;
+        .phins-logo-text {
+            font-size: 1.75rem;
             font-weight: 700;
-            background: linear-gradient(135deg, #60a5fa 0%, #34d399 100%);
+            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 50%, #43e97b 100%);
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
+            background-clip: text;
         }
-        
-        .header-nav {
+        .phins-nav {
             display: flex;
-            gap: 1rem;
+            align-items: center;
+            gap: 0.5rem;
         }
-        
-        .nav-btn {
+        .phins-nav a {
             padding: 0.5rem 1rem;
-            background: transparent;
-            border: 1px solid var(--border);
-            border-radius: 8px;
-            color: var(--text-secondary);
-            cursor: pointer;
-            transition: all 0.2s;
+            color: rgba(255,255,255,0.8);
             text-decoration: none;
+            border-radius: 8px;
+            font-size: 0.9rem;
+            font-weight: 500;
+            transition: all 0.2s ease;
         }
-        
-        .nav-btn:hover {
-            background: var(--bg-hover);
-            color: var(--text-primary);
+        .phins-nav a:hover {
+            background: rgba(255,255,255,0.1);
+            color: white;
         }
-        
-        .nav-btn.active {
-            background: var(--primary);
+        .phins-nav a.active {
+            background: linear-gradient(135deg, #0066cc 0%, #00a86b 100%);
             border-color: var(--primary);
             color: white;
         }
@@ -832,17 +834,20 @@
     </style>
 </head>
 <body>
-    <header class="header">
-        <div class="logo">
-            <div class="logo-icon">&#128176;</div>
-            <span class="logo-text">PHINS Savings</span>
+    <header class="phins-header">
+        <div class="phins-header-inner">
+            <a href="/dashboard.html" class="phins-logo">
+                <div class="phins-logo-icon">🛡️</div>
+                <span class="phins-logo-text">PHINS</span>
+            </a>
+            <nav class="phins-nav">
+                <a href="/dashboard.html">Dashboard</a>
+                <a href="/savings-portfolio.html" class="active">📈 Investments</a>
+                <a href="/dashboard.html#health-wallet">🏥 Wallet</a>
+                <a href="/dashboard.html#claims">Claims</a>
+                <a href="/login.html" style="background: linear-gradient(135deg, #ff6b6b 0%, #ee5a5a 100%); color: white; font-weight: 600;">Logout</a>
+            </nav>
         </div>
-        <nav class="header-nav">
-            <a href="dashboard.html" class="nav-btn">&#127968; Dashboard</a>
-            <a href="savings-portfolio.html" class="nav-btn active">&#128200; Investments</a>
-            <a href="index.html" class="nav-btn">&#128196; Policies</a>
-            <button class="nav-btn" onclick="logout()">&#128682; Logout</button>
-        </nav>
     </header>
 
     <main class="main-content">
