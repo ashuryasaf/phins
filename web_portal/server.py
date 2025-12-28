@@ -4096,9 +4096,9 @@ class PortalHandler(BaseHTTPRequestHandler):
                     amount = float(data.get('amount', 0))
                     payment_method = data.get('payment_method', 'card_on_file')
                     
-                    if amount < 10 or amount > 5000:
+                    if amount < 1 or amount > 100000:
                         self._set_json_headers(400)
-                        self.wfile.write(json.dumps({'error': 'Amount must be between $10 and $5000'}).encode('utf-8'))
+                        self.wfile.write(json.dumps({'error': 'Amount must be between $1 and $100,000'}).encode('utf-8'))
                         return
                     
                     # Initialize wallet if not exists

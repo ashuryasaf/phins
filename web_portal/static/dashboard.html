@@ -688,12 +688,12 @@
     }
     
     async function addFundsToWallet() {
-      const amount = prompt('Enter amount to add to your Health Wallet (min $10, max $5000):', '100');
+      const amount = prompt('Enter amount to add to your Health Wallet (min $1, max $100,000):', '1000');
       if (amount === null) return;
       
       const numAmount = parseFloat(amount);
-      if (isNaN(numAmount) || numAmount < 10 || numAmount > 5000) {
-        alert('Please enter a valid amount between $10 and $5000');
+      if (isNaN(numAmount) || numAmount < 1 || numAmount > 100000) {
+        alert('Please enter a valid amount between $1 and $100,000');
         return;
       }
       
