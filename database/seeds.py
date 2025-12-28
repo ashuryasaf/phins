@@ -63,9 +63,10 @@ def seed_default_users(session=None):
                 'email': 'accountant@phins.ai'
             },
             # Primary customer account (links to CUST-ASAF-001 in customers table)
+            # NOTE: Password must match the one in seed_sample_data for customers table
             {
                 'username': 'asaf@assurance.co.il',
-                'password': 'Asaf2024!',
+                'password': 'Assurance2024!',
                 'role': 'customer',
                 'name': 'Asaf Assurance',
                 'email': 'asaf@assurance.co.il'

@@ -2128,7 +2128,8 @@ class PortalHandler(BaseHTTPRequestHandler):
                     role = staff_user['role']
                     name = staff_user['name']
                 
-                # 2. If not staff, check customers table (by email)
+                # 2. Check customers table (by email) - for customer logins
+                # This runs if: no user found OR user found but password failed (handles password mismatch between tables)
                 if not user and USE_DATABASE and database_enabled:
                     try:
                         from database.manager import DatabaseManager
