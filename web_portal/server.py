@@ -1410,6 +1410,246 @@ class PortalHandler(BaseHTTPRequestHandler):
             self.wfile.write(json.dumps(data).encode('utf-8'))
             return
         
+        # ========== CUSTOMER DATA & PIPELINE VALIDATION API ==========
+        
+        # List all registered customers with their complete pipeline status
+        if path == '/api/admin/customers':
+            # Build comprehensive customer list with all related data
+            customer_list = []
+            
+            for cust_id, customer in CUSTOMERS.items():
+                # Find associated policies
+                customer_policies = [p for p in POLICIES.values() if p.get('customer_id') == cust_id]
+                
+                # Find associated underwriting applications
+                customer_apps = [a for a in UNDERWRITING_APPLICATIONS.values() if a.get('customer_id') == cust_id]
+                
+                # Find associated bills
+                customer_bills = [b for b in BILLING.values() if b.get('customer_id') == cust_id]
+                
+                # Get health wallet
+                wallet = HEALTH_WALLETS.get(cust_id, {})
+                
+                # Determine pipeline stage
+                pipeline_stage = 'registered'
+                if customer_apps:
+                    pending_apps = [a for a in customer_apps if a.get('status') == 'pending']
+                    approved_apps = [a for a in customer_apps if a.get('status') == 'approved']
+                    if pending_apps:
+                        pipeline_stage = 'underwriting'
+                    elif approved_apps:
+                        pipeline_stage = 'approved'
+                
+                if customer_policies:
+                    active_policies = [p for p in customer_policies if p.get('status') == 'active']
+                    if active_policies:
+                        pipeline_stage = 'active_policy'
+                
+                if customer_bills:
+                    outstanding_bills = [b for b in customer_bills if b.get('status') == 'outstanding']
+                    paid_bills = [b for b in customer_bills if b.get('status') == 'paid']
+                    if outstanding_bills:
+                        pipeline_stage = 'billing_pending'
+                    elif paid_bills:
+                        pipeline_stage = 'fully_active'
+                
+                customer_list.append({
+                    'id': cust_id,
+                    'name': customer.get('name', 'N/A'),
+                    'email': customer.get('email', 'N/A'),
+                    'phone': customer.get('phone', 'N/A'),
+                    'created_date': customer.get('created_date', 'N/A'),
+                    'pipeline_stage': pipeline_stage,
+                    'policies_count': len(customer_policies),
+                    'active_policies': len([p for p in customer_policies if p.get('status') == 'active']),
+                    'pending_applications': len([a for a in customer_apps if a.get('status') == 'pending']),
+                    'outstanding_bills': len([b for b in customer_bills if b.get('status') == 'outstanding']),
+                    'total_premium_due': sum(b.get('amount_due', 0) for b in customer_bills if b.get('status') == 'outstanding'),
+                    'wallet_balance': wallet.get('balance', 0),
+                    'policies': customer_policies,
+                    'applications': customer_apps,
+                    'bills': customer_bills
+                })
+            
+            # Sort by created date (newest first)
+            customer_list.sort(key=lambda x: x.get('created_date', ''), reverse=True)
+            
+            self._set_json_headers()
+            self.wfile.write(json.dumps({
+                'success': True,
+                'total_customers': len(customer_list),
+                'customers': customer_list,
+                'summary': {
+                    'total': len(customer_list),
+                    'in_underwriting': len([c for c in customer_list if c['pipeline_stage'] == 'underwriting']),
+                    'approved': len([c for c in customer_list if c['pipeline_stage'] == 'approved']),
+                    'active_policies': len([c for c in customer_list if c['pipeline_stage'] in ('active_policy', 'billing_pending', 'fully_active')]),
+                    'pending_billing': len([c for c in customer_list if c['pipeline_stage'] == 'billing_pending'])
+                }
+            }).encode('utf-8'))
+            return
+        
+        # Validate entire pipeline for a customer
+        if path.startswith('/api/admin/validate-customer/'):
+            customer_id = path.split('/')[-1]
+            
+            validation_results = {
+                'customer_id': customer_id,
+                'valid': True,
+                'checks': [],
+                'errors': [],
+                'warnings': []
+            }
+            
+            # Check 1: Customer exists
+            customer = CUSTOMERS.get(customer_id)
+            if customer:
+                validation_results['checks'].append({'check': 'customer_exists', 'status': 'PASS', 'details': customer.get('name')})
+            else:
+                validation_results['valid'] = False
+                validation_results['errors'].append('Customer not found')
+                validation_results['checks'].append({'check': 'customer_exists', 'status': 'FAIL'})
+                self._set_json_headers()
+                self.wfile.write(json.dumps(validation_results).encode('utf-8'))
+                return
+            
+            # Check 2: Valid email
+            email = customer.get('email', '')
+            if email and '@' in email:
+                validation_results['checks'].append({'check': 'valid_email', 'status': 'PASS', 'details': email})
+            else:
+                validation_results['warnings'].append('Missing or invalid email')
+                validation_results['checks'].append({'check': 'valid_email', 'status': 'WARN', 'details': email or 'Missing'})
+            
+            # Check 3: Underwriting applications
+            apps = [a for a in UNDERWRITING_APPLICATIONS.values() if a.get('customer_id') == customer_id]
+            if apps:
+                for app in apps:
+                    status = app.get('status', 'unknown')
+                    app_id = app.get('id')
+                    validation_results['checks'].append({
+                        'check': f'underwriting_{app_id}',
+                        'status': 'PASS' if status in ('approved', 'pending') else 'WARN',
+                        'details': f'Status: {status}'
+                    })
+            else:
+                validation_results['warnings'].append('No underwriting applications found')
+            
+            # Check 4: Policies
+            policies = [p for p in POLICIES.values() if p.get('customer_id') == customer_id]
+            if policies:
+                for policy in policies:
+                    status = policy.get('status', 'unknown')
+                    policy_id = policy.get('id')
+                    has_uw = policy.get('underwriting_id') in [a.get('id') for a in apps]
+                    
+                    if status == 'active':
+                        validation_results['checks'].append({
+                            'check': f'policy_{policy_id}',
+                            'status': 'PASS',
+                            'details': f'Active, linked to UW: {has_uw}'
+                        })
+                    elif status == 'pending_underwriting':
+                        validation_results['checks'].append({
+                            'check': f'policy_{policy_id}',
+                            'status': 'PENDING',
+                            'details': 'Awaiting underwriting approval'
+                        })
+                    else:
+                        validation_results['checks'].append({
+                            'check': f'policy_{policy_id}',
+                            'status': 'WARN',
+                            'details': f'Status: {status}'
+                        })
+            
+            # Check 5: Billing
+            bills = [b for b in BILLING.values() if b.get('customer_id') == customer_id]
+            active_policies = [p for p in policies if p.get('status') == 'active']
+            
+            if active_policies and not bills:
+                validation_results['errors'].append('Active policy without billing record')
+                validation_results['valid'] = False
+                validation_results['checks'].append({
+                    'check': 'billing_exists',
+                    'status': 'FAIL',
+                    'details': 'Active policy found but no billing record'
+                })
+            elif bills:
+                total_due = sum(b.get('amount_due', 0) for b in bills if b.get('status') == 'outstanding')
+                validation_results['checks'].append({
+                    'check': 'billing_status',
+                    'status': 'PASS',
+                    'details': f'{len(bills)} bills, ${total_due:.2f} outstanding'
+                })
+            
+            # Check 6: Health wallet (if enabled)
+            wallet = HEALTH_WALLETS.get(customer_id)
+            if wallet:
+                validation_results['checks'].append({
+                    'check': 'health_wallet',
+                    'status': 'PASS',
+                    'details': f'Balance: ${wallet.get("balance", 0):.2f}'
+                })
+            
+            self._set_json_headers()
+            self.wfile.write(json.dumps(validation_results).encode('utf-8'))
+            return
+        
+        # Pipeline summary statistics
+        if path == '/api/admin/pipeline-stats':
+            stats = {
+                'total_customers': len(CUSTOMERS),
+                'total_applications': len(UNDERWRITING_APPLICATIONS),
+                'total_policies': len(POLICIES),
+                'total_bills': len(BILLING),
+                'total_wallets': len(HEALTH_WALLETS),
+                'applications_by_status': {},
+                'policies_by_status': {},
+                'bills_by_status': {},
+                'pipeline_flow': {
+                    'pending_underwriting': 0,
+                    'approved_pending_activation': 0,
+                    'active_policies': 0,
+                    'billing_outstanding': 0,
+                    'billing_paid': 0
+                }
+            }
+            
+            # Count applications by status
+            for app in UNDERWRITING_APPLICATIONS.values():
+                status = app.get('status', 'unknown')
+                stats['applications_by_status'][status] = stats['applications_by_status'].get(status, 0) + 1
+            
+            # Count policies by status
+            for policy in POLICIES.values():
+                status = policy.get('status', 'unknown')
+                stats['policies_by_status'][status] = stats['policies_by_status'].get(status, 0) + 1
+                
+                if status == 'pending_underwriting':
+                    stats['pipeline_flow']['pending_underwriting'] += 1
+                elif status == 'active':
+                    stats['pipeline_flow']['active_policies'] += 1
+            
+            # Count bills by status
+            for bill in BILLING.values():
+                status = bill.get('status', 'unknown')
+                stats['bills_by_status'][status] = stats['bills_by_status'].get(status, 0) + 1
+                
+                if status == 'outstanding':
+                    stats['pipeline_flow']['billing_outstanding'] += 1
+                elif status == 'paid':
+                    stats['pipeline_flow']['billing_paid'] += 1
+            
+            self._set_json_headers()
+            self.wfile.write(json.dumps({
+                'success': True,
+                'stats': stats,
+                'timestamp': datetime.now().isoformat()
+            }).encode('utf-8'))
+            return
+        
+        # ========== END CUSTOMER DATA & PIPELINE VALIDATION API ==========
+        
         # Health Wallet GET endpoint
         if path.startswith('/api/health-wallet'):
             customer_id = qs.get('customer_id', ['CUST001'])[0]
@@ -2730,80 +2970,184 @@ class PortalHandler(BaseHTTPRequestHandler):
                 self.wfile.write(json.dumps({'error': 'Invalid request', 'details': str(e)}).encode('utf-8'))
             return
         
-        # Approve Underwriting Endpoint
+        # Approve Underwriting Endpoint - Full Pipeline Validation
         if path == '/api/underwriting/approve':
             try:
                 data = json.loads(body)
                 uw_id = data.get('id')
                 app = UNDERWRITING_APPLICATIONS.get(uw_id)
                 
-                if app:
-                    app['status'] = 'approved'
-                    app['decision_date'] = datetime.now().isoformat()
-                    app['approved_by'] = data.get('approved_by', 'admin')
-                    
-                    # Update policy status to ACTIVE
-                    policy_id = app.get('policy_id')
-                    customer_id = app.get('customer_id')
-                    bill_id = None
-                    
-                    if policy_id and policy_id in POLICIES:
-                        policy = POLICIES[policy_id]
-                        policy['status'] = 'active'
-                        policy['approval_date'] = datetime.now().isoformat()
-                        
-                        # Auto-generate billing record for active policy
-                        bill_id = f"BILL-{datetime.now().strftime('%Y%m%d%H%M%S')}-{random.randint(1000,9999)}"
-                        monthly_premium = policy.get('monthly_premium', 0) or policy.get('annual_premium', 0) / 12
-                        
-                        bill = {
-                            'id': bill_id,
-                            'bill_id': bill_id,
-                            'policy_id': policy_id,
-                            'customer_id': customer_id or policy.get('customer_id'),
-                            'amount': round(float(monthly_premium), 2),
-                            'amount_due': round(float(monthly_premium), 2),
-                            'amount_paid': 0.0,
-                            'status': 'outstanding',
-                            'due_date': (datetime.now() + timedelta(days=30)).isoformat(),
-                            'created_date': datetime.now().isoformat(),
-                            'updated_date': datetime.now().isoformat(),
-                            'description': f"Initial premium for policy {policy_id}"
-                        }
-                        BILLING[bill_id] = bill
-                        
-                        if audit:
-                            try:
-                                audit.log('system', 'create', 'bill', bill_id, {
-                                    'policy_id': policy_id,
-                                    'amount': bill['amount'],
-                                    'trigger': 'policy_approval'
-                                })
-                            except Exception:
-                                pass
-                    
-                    if audit:
-                        actor = data.get('approved_by', 'admin')
-                        try:
-                            audit.log(actor, 'approve', 'underwriting', uw_id, {
-                                'policy_id': policy_id,
-                                'bill_id': bill_id,
-                                'policy_status': 'active'
-                            })
-                        except Exception:
-                            pass
-                    
-                    self._set_json_headers()
-                    self.wfile.write(json.dumps({
-                        'success': True,
-                        'application': app,
-                        'policy_status': 'active',
-                        'bill_id': bill_id,
-                        'message': 'Policy approved and activated. Initial billing generated.'
-                    }).encode('utf-8'))
-                else:
+                if not app:
                     self._set_json_headers(404)
                     self.wfile.write(json.dumps({'error': 'Application not found'}).encode('utf-8'))
+                    return
+                
+                # VALIDATION 1: Check application status
+                if app.get('status') == 'approved':
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'Application already approved'}).encode('utf-8'))
+                    return
+                
+                if app.get('status') == 'rejected':
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'Cannot approve a rejected application'}).encode('utf-8'))
+                    return
+                
+                # VALIDATION 2: Check customer exists
+                customer_id = app.get('customer_id')
+                if customer_id and customer_id not in CUSTOMERS:
+                    # Auto-create customer record if missing
+                    CUSTOMERS[customer_id] = {
+                        'id': customer_id,
+                        'name': app.get('customer_name', 'Unknown'),
+                        'email': app.get('customer_email', ''),
+                        'created_date': datetime.now().isoformat()
+                    }
+                
+                # VALIDATION 3: Check policy exists
+                policy_id = app.get('policy_id')
+                if not policy_id or policy_id not in POLICIES:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'Policy not found for this application'}).encode('utf-8'))
+                    return
+                
+                policy = POLICIES[policy_id]
+                
+                # VALIDATION 4: Check policy not already active
+                if policy.get('status') == 'active':
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'Policy is already active'}).encode('utf-8'))
+                    return
+                
+                # All validations passed - proceed with approval
+                now = datetime.now()
+                
+                # Update application status
+                app['status'] = 'approved'
+                app['decision_date'] = now.isoformat()
+                app['approved_by'] = data.get('approved_by', 'admin')
+                app['approval_notes'] = data.get('notes', '')
+                
+                # PIPELINE STEP: Activate policy
+                policy['status'] = 'active'
+                policy['approval_date'] = now.isoformat()
+                policy['effective_date'] = now.isoformat()
+                policy['approved_by'] = data.get('approved_by', 'admin')
+                
+                # PIPELINE STEP: Generate billing record
+                bill_id = f"BILL-{now.strftime('%Y%m%d%H%M%S')}-{random.randint(1000,9999)}"
+                monthly_premium = policy.get('monthly_premium', 0) or policy.get('annual_premium', 0) / 12
+                
+                # Get billing configuration from application
+                payment_setup = app.get('payment_setup', {})
+                billing_frequency = payment_setup.get('billing_frequency', 'monthly')
+                auto_pay = payment_setup.get('auto_pay', False)
+                
+                # Calculate billing amount based on frequency
+                if billing_frequency == 'quarterly':
+                    billing_amount = monthly_premium * 3 * 0.97  # 3% discount
+                    due_days = 90
+                elif billing_frequency == 'annual':
+                    billing_amount = monthly_premium * 12 * 0.90  # 10% discount
+                    due_days = 365
+                else:
+                    billing_amount = monthly_premium
+                    due_days = 30
+                
+                bill = {
+                    'id': bill_id,
+                    'bill_id': bill_id,
+                    'policy_id': policy_id,
+                    'customer_id': customer_id,
+                    'customer_name': app.get('customer_name', ''),
+                    'customer_email': app.get('customer_email', ''),
+                    'amount': round(float(billing_amount), 2),
+                    'amount_due': round(float(billing_amount), 2),
+                    'amount_paid': 0.0,
+                    'status': 'outstanding',
+                    'billing_frequency': billing_frequency,
+                    'auto_pay': auto_pay,
+                    'payment_method': {
+                        'type': 'card',
+                        'card_last4': payment_setup.get('card_last4'),
+                        'card_type': payment_setup.get('card_type')
+                    } if payment_setup.get('card_last4') else None,
+                    'due_date': (now + timedelta(days=due_days)).isoformat(),
+                    'billing_period_start': now.isoformat(),
+                    'billing_period_end': (now + timedelta(days=due_days)).isoformat(),
+                    'created_date': now.isoformat(),
+                    'updated_date': now.isoformat(),
+                    'description': f"Premium for policy {policy_id} ({billing_frequency})"
+                }
+                BILLING[bill_id] = bill
+                
+                # PIPELINE STEP: Activate health wallet if enabled
+                health_wallet_info = app.get('health_wallet', {})
+                if health_wallet_info.get('enabled') and customer_id:
+                    if customer_id not in HEALTH_WALLETS:
+                        HEALTH_WALLETS[customer_id] = {
+                            'customer_id': customer_id,
+                            'balance': 0,
+                            'monthly_deposit': health_wallet_info.get('monthly_deposit', 0),
+                            'transactions': [],
+                            'created_at': now.isoformat()
+                        }
+                    HEALTH_WALLETS[customer_id]['status'] = 'active'
+                    
+                    # Process initial deposit if monthly_deposit > 0
+                    monthly_deposit = health_wallet_info.get('monthly_deposit', 0)
+                    if monthly_deposit > 0:
+                        HEALTH_WALLETS[customer_id]['balance'] = monthly_deposit
+                        HEALTH_WALLETS[customer_id]['transactions'].append({
+                            'id': f"TXN-{now.strftime('%Y%m%d%H%M%S')}",
+                            'type': 'initial_deposit',
+                            'amount': monthly_deposit,
+                            'description': 'Initial health wallet deposit upon policy activation',
+                            'timestamp': now.isoformat(),
+                            'balance_after': monthly_deposit
+                        })
+                
+                # Audit logging
+                if audit:
+                    try:
+                        audit.log('system', 'create', 'bill', bill_id, {
+                            'policy_id': policy_id,
+                            'amount': bill['amount'],
+                            'trigger': 'policy_approval'
+                        })
+                        actor = data.get('approved_by', 'admin')
+                        audit.log(actor, 'approve', 'underwriting', uw_id, {
+                            'policy_id': policy_id,
+                            'bill_id': bill_id,
+                            'policy_status': 'active',
+                            'billing_frequency': billing_frequency
+                        })
+                    except Exception:
+                        pass
+                
+                # Build comprehensive response
+                response = {
+                    'success': True,
+                    'message': 'Policy approved and activated. Full pipeline completed.',
+                    'pipeline_completed': {
+                        'underwriting': {'status': 'approved', 'id': uw_id},
+                        'policy': {'status': 'active', 'id': policy_id},
+                        'billing': {'status': 'generated', 'id': bill_id, 'amount': bill['amount']},
+                        'health_wallet': {'status': 'active' if health_wallet_info.get('enabled') else 'not_enabled'}
+                    },
+                    'application': app,
+                    'policy': policy,
+                    'bill': bill,
+                    'validation': {
+                        'customer_verified': True,
+                        'policy_activated': True,
+                        'billing_generated': True,
+                        'health_wallet_activated': health_wallet_info.get('enabled', False)
+                    }
+                }
+                
+                self._set_json_headers()
+                self.wfile.write(json.dumps(response).encode('utf-8'))
             except Exception as e:
                 self._set_json_headers(400)
                 self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
