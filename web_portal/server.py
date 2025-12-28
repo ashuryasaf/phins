@@ -3110,6 +3110,223 @@ class PortalHandler(BaseHTTPRequestHandler):
                     self._set_json_headers(500)
                     self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
                 return
+        
+        # ========== PAYMENT GATEWAY API (PayPal, Stripe, Crypto) ==========
+        # Import payment gateway service
+        try:
+            from services.payment_gateway_service import get_payment_gateway, PaymentResult
+            payment_gateway = get_payment_gateway(test_mode=True, market_data_service=_market_data)
+            payment_gateway_enabled = True
+        except ImportError:
+            payment_gateway_enabled = False
+            payment_gateway = None
+        
+        if payment_gateway_enabled:
+            # Get available payment methods
+            if path == '/api/payment/methods':
+                try:
+                    methods = payment_gateway.get_available_methods()
+                    self._set_json_headers()
+                    self.wfile.write(json.dumps({
+                        'success': True,
+                        'methods': methods,
+                        'test_mode': payment_gateway.test_mode
+                    }).encode('utf-8'))
+                except Exception as e:
+                    self._set_json_headers(500)
+                    self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+                return
+            
+            # Process payment (unified endpoint)
+            if path == '/api/payment/process':
+                try:
+                    data = json.loads(body)
+                    method = data.get('method', 'credit_card')
+                    amount = float(data.get('amount', 0))
+                    currency = data.get('currency', 'USD')
+                    customer_id = data.get('customer_id')
+                    policy_id = data.get('policy_id')
+                    
+                    if amount <= 0:
+                        self._set_json_headers(400)
+                        self.wfile.write(json.dumps({'error': 'Amount must be positive'}).encode('utf-8'))
+                        return
+                    
+                    # Process payment through unified gateway
+                    result = payment_gateway.process_payment(
+                        method=method,
+                        amount=amount,
+                        currency=currency,
+                        customer_id=customer_id,
+                        policy_id=policy_id,
+                        card_number=data.get('card_number'),
+                        expiry_month=data.get('expiry_month'),
+                        expiry_year=data.get('expiry_year'),
+                        cvv=data.get('cvv'),
+                        email=data.get('email'),
+                        description=data.get('description')
+                    )
+                    
+                    # If successful card/PayPal payment, update billing record
+                    if result.success and result.status == 'completed' and policy_id:
+                        # Find and update billing record
+                        for bill_id, bill in BILLING.items():
+                            if bill.get('policy_id') == policy_id and bill.get('status') in ['outstanding', 'partial']:
+                                bill['amount_paid'] = float(bill.get('amount_paid', 0)) + amount
+                                if bill['amount_paid'] >= float(bill.get('amount_due', 0)):
+                                    bill['status'] = 'paid'
+                                else:
+                                    bill['status'] = 'partial'
+                                bill['payment_method'] = method
+                                bill['transaction_id'] = result.transaction_id
+                                bill['updated_date'] = datetime.now().isoformat()
+                                break
+                    
+                    self._set_json_headers()
+                    self.wfile.write(json.dumps(result.to_dict()).encode('utf-8'))
+                except Exception as e:
+                    self._set_json_headers(500)
+                    self.wfile.write(json.dumps({'success': False, 'error': str(e)}).encode('utf-8'))
+                return
+            
+            # PayPal specific endpoints
+            if path == '/api/payment/paypal/create':
+                try:
+                    data = json.loads(body)
+                    amount = float(data.get('amount', 0))
+                    result = payment_gateway.paypal.create_order(
+                        amount=amount,
+                        currency=data.get('currency', 'USD'),
+                        description=data.get('description', 'Insurance Premium')
+                    )
+                    self._set_json_headers()
+                    self.wfile.write(json.dumps(result.to_dict()).encode('utf-8'))
+                except Exception as e:
+                    self._set_json_headers(500)
+                    self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+                return
+            
+            if path.startswith('/api/payment/paypal/capture/'):
+                try:
+                    order_id = path.split('/')[-1]
+                    result = payment_gateway.paypal.capture_order(order_id)
+                    self._set_json_headers()
+                    self.wfile.write(json.dumps(result.to_dict()).encode('utf-8'))
+                except Exception as e:
+                    self._set_json_headers(500)
+                    self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+                return
+            
+            # Apple Pay session
+            if path == '/api/payment/apple-pay/session':
+                try:
+                    data = json.loads(body)
+                    result = payment_gateway.stripe.create_apple_pay_session(
+                        amount=float(data.get('amount', 0)),
+                        currency=data.get('currency', 'USD')
+                    )
+                    self._set_json_headers()
+                    self.wfile.write(json.dumps(result.to_dict()).encode('utf-8'))
+                except Exception as e:
+                    self._set_json_headers(500)
+                    self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+                return
+            
+            # Google Pay session
+            if path == '/api/payment/google-pay/session':
+                try:
+                    data = json.loads(body)
+                    result = payment_gateway.stripe.create_google_pay_session(
+                        amount=float(data.get('amount', 0)),
+                        currency=data.get('currency', 'USD')
+                    )
+                    self._set_json_headers()
+                    self.wfile.write(json.dumps(result.to_dict()).encode('utf-8'))
+                except Exception as e:
+                    self._set_json_headers(500)
+                    self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+                return
+            
+            # Crypto payment request
+            if path == '/api/payment/crypto/create':
+                try:
+                    data = json.loads(body)
+                    amount = float(data.get('amount', 0))
+                    crypto = data.get('crypto', 'BTC').upper()
+                    
+                    result = payment_gateway.crypto.create_payment_request(
+                        amount_usd=amount,
+                        crypto_symbol=crypto,
+                        customer_id=data.get('customer_id'),
+                        policy_id=data.get('policy_id')
+                    )
+                    self._set_json_headers()
+                    self.wfile.write(json.dumps(result.to_dict()).encode('utf-8'))
+                except Exception as e:
+                    self._set_json_headers(500)
+                    self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+                return
+            
+            # Check crypto payment status
+            if path.startswith('/api/payment/crypto/status/'):
+                try:
+                    payment_id = path.split('/')[-1]
+                    result = payment_gateway.crypto.check_payment_status(payment_id)
+                    self._set_json_headers()
+                    self.wfile.write(json.dumps(result.to_dict()).encode('utf-8'))
+                except Exception as e:
+                    self._set_json_headers(500)
+                    self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+                return
+            
+            # Simulate crypto payment (for testing)
+            if path.startswith('/api/payment/crypto/simulate/'):
+                try:
+                    payment_id = path.split('/')[-1]
+                    result = payment_gateway.simulate_crypto_confirmation(payment_id)
+                    self._set_json_headers()
+                    self.wfile.write(json.dumps(result.to_dict()).encode('utf-8'))
+                except Exception as e:
+                    self._set_json_headers(500)
+                    self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+                return
+            
+            # Payment status check
+            if path.startswith('/api/payment/status/'):
+                try:
+                    transaction_id = path.split('/')[-1]
+                    method = parsed_url.query and urllib.parse.parse_qs(parsed_url.query).get('method', [None])[0]
+                    result = payment_gateway.check_status(transaction_id, method)
+                    self._set_json_headers()
+                    self.wfile.write(json.dumps(result.to_dict()).encode('utf-8'))
+                except Exception as e:
+                    self._set_json_headers(500)
+                    self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+                return
+            
+            # Transaction history
+            if path == '/api/payment/history':
+                try:
+                    data = json.loads(body) if body else {}
+                    customer_id = data.get('customer_id')
+                    limit = int(data.get('limit', 50))
+                    
+                    transactions = payment_gateway.get_transaction_history(
+                        customer_id=customer_id,
+                        limit=limit
+                    )
+                    self._set_json_headers()
+                    self.wfile.write(json.dumps({
+                        'success': True,
+                        'transactions': transactions,
+                        'test_mode': payment_gateway.test_mode
+                    }).encode('utf-8'))
+                except Exception as e:
+                    self._set_json_headers(500)
+                    self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+                return
+        # ========== END PAYMENT GATEWAY API ==========
+        
         # ========== END BILLING API ==========
         # Minimal billing endpoints (demo fallback when engine routes are not used)
         if path == '/api/billing/create':
