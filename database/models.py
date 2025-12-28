@@ -354,6 +354,7 @@ class Session(Base):
     token = Column(String(100), primary_key=True)
     username = Column(String(100), index=True)
     customer_id = Column(String(50), index=True)
+    role = Column(String(50), index=True)  # admin, underwriter, claims, accountant, customer
     ip_address = Column(String(45))  # Support IPv6
     expires = Column(DateTime, nullable=False, index=True)
     created_date = Column(DateTime, default=datetime.utcnow, nullable=False)
@@ -364,6 +365,7 @@ class Session(Base):
             'token': self.token,
             'username': self.username,
             'customer_id': self.customer_id,
+            'role': self.role,
             'ip_address': self.ip_address,
             'expires': self.expires.isoformat() if self.expires else None,
             'created_date': self.created_date.isoformat() if self.created_date else None

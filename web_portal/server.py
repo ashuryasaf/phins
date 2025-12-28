@@ -2191,8 +2191,7 @@ class PortalHandler(BaseHTTPRequestHandler):
                             'expires': expires.isoformat(),
                             'customer_id': customer_id,
                             'role': role,
-                            'ip': client_ip,
-                            'created_at': datetime.now().isoformat()
+                            'ip_address': client_ip
                         }
                     
                     self._set_json_headers()
