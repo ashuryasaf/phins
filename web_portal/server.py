@@ -2117,8 +2117,55 @@ class PortalHandler(BaseHTTPRequestHandler):
                     self.wfile.write(json.dumps({'error': 'Invalid credentials'}).encode('utf-8'))
                     return
                 
-                user = USERS.get(username)
-                if user and verify_password(password, user['hash'], user['salt']):
+                # Try to authenticate - check USERS first (staff), then CUSTOMERS (policyholders)
+                user = None
+                customer_id = None
+                role = None
+                name = None
+                
+                # 1. Check internal users (admin, underwriter, etc.)
+                staff_user = USERS.get(username)
+                if staff_user and verify_password(password, staff_user['hash'], staff_user['salt']):
+                    user = staff_user
+                    customer_id = staff_user.get('customer_id')
+                    role = staff_user['role']
+                    name = staff_user['name']
+                
+                # 2. If not staff, check customers table (by email)
+                if not user and USE_DATABASE and database_enabled:
+                    try:
+                        from database.manager import DatabaseManager
+                        with DatabaseManager() as db:
+                            customer = db.customers.get_by_email(username.lower())
+                            if customer and customer.password_hash and customer.password_salt:
+                                if verify_password(password, customer.password_hash, customer.password_salt):
+                                    user = {
+                                        'hash': customer.password_hash,
+                                        'salt': customer.password_salt,
+                                        'role': 'customer',
+                                        'name': customer.name
+                                    }
+                                    customer_id = customer.id
+                                    role = 'customer'
+                                    name = customer.name
+                                    # Update last login
+                                    db.customers.update_last_login(customer.id)
+                    except Exception as e:
+                        print(f"Customer auth check error: {e}")
+                
+                # 3. Fallback: Check in-memory CUSTOMERS (for non-DB mode)
+                if not user and not database_enabled:
+                    for cust_id, cust in CUSTOMERS.items():
+                        if cust.get('email', '').lower() == username.lower():
+                            if cust.get('password_hash') and cust.get('password_salt'):
+                                if verify_password(password, cust['password_hash'], cust['password_salt']):
+                                    user = cust
+                                    customer_id = cust_id
+                                    role = 'customer'
+                                    name = cust.get('name', 'Customer')
+                            break
+                
+                if user:
                     # Clear failed login attempts on success
                     with STATE_LOCK:
                         if client_ip in FAILED_LOGINS:
@@ -2133,18 +2180,20 @@ class PortalHandler(BaseHTTPRequestHandler):
                         SESSIONS[token] = {
                             'username': username,
                             'expires': expires.isoformat(),
-                            'customer_id': user.get('customer_id'),
+                            'customer_id': customer_id,
+                            'role': role,
                             'ip': client_ip,
                             'created_at': datetime.now().isoformat()
                         }
                     
                     self._set_json_headers()
                     self.wfile.write(json.dumps({
+                        'success': True,
                         'token': token,
-                        'username': username,  # Return username for tests
-                        'role': user['role'],
-                        'name': user['name'],
-                        'customer_id': user.get('customer_id'),
+                        'username': username,
+                        'role': role,
+                        'name': name,
+                        'customer_id': customer_id,
                         'expires': expires.isoformat()
                     }).encode('utf-8'))
                 else:
