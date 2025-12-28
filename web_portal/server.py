@@ -2453,11 +2453,18 @@ class PortalHandler(BaseHTTPRequestHandler):
                     'id': uw_id,
                     'policy_id': policy_id,
                     'customer_id': customer_id,
+                    'customer_name': customer_name,  # Include customer name for dashboard display
+                    'customer_email': customer_email,  # Include email for reference
+                    'policy_type': data.get('type', 'life'),  # Include policy type
+                    'coverage_amount': data.get('coverage_amount', 100000),  # Include coverage amount
+                    'age': data.get('age', 0),  # Include age
                     'status': 'pending',
-                    'questionnaire_responses': data.get('questionnaire', {}),
+                    'risk_score': data.get('risk_score', 'medium'),  # Use risk_score (matches dashboard)
                     'risk_assessment': data.get('risk_score', 'medium'),
+                    'questionnaire_responses': data.get('questionnaire', {}),
                     'medical_exam_required': data.get('medical_exam_required', False),
-                    'submitted_date': datetime.now().isoformat()
+                    'submitted_date': datetime.now().isoformat(),
+                    'created_date': datetime.now().isoformat()
                 }
                 
                 # Calculate premium
@@ -2532,9 +2539,17 @@ class PortalHandler(BaseHTTPRequestHandler):
                     'id': uw_id,
                     'policy_id': policy_id,
                     'customer_id': customer_id,
+                    'customer_name': data.get('customer_name') or customer_id,
+                    'customer_email': data.get('customer_email', ''),
+                    'policy_type': policy_type,
+                    'coverage_amount': coverage_amount,
+                    'age': data.get('age', 30),
                     'status': 'pending',
+                    'risk_score': data.get('risk_score', 'medium'),
                     'risk_assessment': data.get('risk_score', 'medium'),
-                    'submitted_date': datetime.now().isoformat()
+                    'medical_exam_required': data.get('medical_exam_required', False),
+                    'submitted_date': datetime.now().isoformat(),
+                    'created_date': datetime.now().isoformat()
                 }
                 # Premium calc
                 premium_data = calculate_premium({
