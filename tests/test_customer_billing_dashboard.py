@@ -400,6 +400,163 @@ class TestCustomerBillingDashboard:
             self.log('Dashboard Data Integrity', 'FAIL', f'Error: {e}')
             return False
     
+    def test_adjustable_allocation(self):
+        """Test: Customer can adjust allocation percentages"""
+        print("\n--- Testing Adjustable Allocation ---")
+        
+        # Set custom allocation: 30% savings, 70% risk
+        resp = self._post('/api/customer/allocation', {
+            'customer_id': self.customer_id,
+            'savings_pct': 30.0,
+            'risk_pct': 70.0,
+            'index_pct': 50.0,
+            'bonds_pct': 40.0,
+            'crypto_pct': 10.0
+        })
+        
+        if resp.get('status') != 200:
+            self.log('Set Custom Allocation', 'FAIL', f"Status: {resp.get('status')}")
+            return False
+        
+        body = resp.get('body', {})
+        if not body.get('success'):
+            self.log('Set Custom Allocation', 'FAIL', 'Not successful')
+            return False
+        
+        # Verify allocation was saved
+        get_resp = self._post('/api/customer/allocation', {
+            'customer_id': self.customer_id
+        })
+        
+        if get_resp.get('status') != 200:
+            self.log('Get Custom Allocation', 'FAIL', f"Status: {get_resp.get('status')}")
+            return False
+        
+        alloc = get_resp.get('body', {}).get('allocation', {})
+        if alloc.get('savings_pct') != 30.0:
+            self.log('Verify Custom Allocation', 'FAIL', f"Savings: {alloc.get('savings_pct')} != 30.0")
+            return False
+        
+        self.log('Adjustable Allocation', 'PASS', 'Custom allocation saved: 30% savings, 70% risk')
+        return True
+    
+    def test_payment_uses_custom_allocation(self):
+        """Test: Payment uses customer's custom allocation"""
+        print("\n--- Testing Payment with Custom Allocation ---")
+        
+        # Make payment (should use the 30% savings from previous test)
+        resp = self._post('/api/customer/payment', {
+            'customer_id': self.customer_id,
+            'amount': 100.0,
+            'payment_method': 'card'
+        })
+        
+        if resp.get('status') != 200:
+            self.log('Payment with Custom Allocation', 'FAIL', f"Status: {resp.get('status')}")
+            return False
+        
+        body = resp.get('body', {})
+        savings = body.get('savings_allocated', 0)
+        savings_pct = body.get('savings_pct', 0)
+        
+        # Should be 30% of $100 = $30
+        if abs(savings - 30.0) > 0.01:
+            self.log('Payment with Custom Allocation', 'FAIL', f"Savings: {savings} != 30.0")
+            return False
+        
+        if savings_pct != 30.0:
+            self.log('Payment with Custom Allocation', 'FAIL', f"Savings %: {savings_pct} != 30.0")
+            return False
+        
+        self.log('Payment with Custom Allocation', 'PASS', f'Used custom 30% allocation: ${savings}')
+        return True
+    
+    def test_investment_deposit(self):
+        """Test: Customer can deposit additional savings to investments"""
+        print("\n--- Testing Investment Deposit ---")
+        
+        resp = self._post('/api/customer/investment/deposit', {
+            'customer_id': self.customer_id,
+            'amount': 500.0,
+            'deposit_type': 'additional_savings'
+        })
+        
+        if resp.get('status') != 200:
+            self.log('Investment Deposit', 'FAIL', f"Status: {resp.get('status')}")
+            return False
+        
+        body = resp.get('body', {})
+        if not body.get('success'):
+            self.log('Investment Deposit', 'FAIL', 'Not successful')
+            return False
+        
+        if not body.get('nft_token_id'):
+            self.log('Investment Deposit', 'FAIL', 'No NFT token created')
+            return False
+        
+        account_balance = body.get('account_balance', 0)
+        if account_balance < 500:
+            self.log('Investment Deposit', 'FAIL', f'Balance too low: {account_balance}')
+            return False
+        
+        self.log('Investment Deposit', 'PASS', f'Deposited $500, Balance: ${account_balance:.2f}')
+        return True
+    
+    def test_investment_account_query(self):
+        """Test: Query investment account details"""
+        print("\n--- Testing Investment Account Query ---")
+        
+        resp = self._post('/api/customer/investment/account', {
+            'customer_id': self.customer_id
+        })
+        
+        if resp.get('status') != 200:
+            self.log('Investment Account Query', 'FAIL', f"Status: {resp.get('status')}")
+            return False
+        
+        body = resp.get('body', {})
+        if not body.get('success'):
+            self.log('Investment Account Query', 'FAIL', 'Not successful')
+            return False
+        
+        breakdown = body.get('breakdown', {})
+        if 'index_funds' not in breakdown:
+            self.log('Investment Account Query', 'FAIL', 'Missing breakdown data')
+            return False
+        
+        total = body.get('total_balance', 0)
+        self.log('Investment Account Query', 'PASS', f'Total balance: ${total:.2f}')
+        return True
+    
+    def test_transaction_ledger(self):
+        """Test: All transactions recorded in master ledger"""
+        print("\n--- Testing Transaction Ledger ---")
+        
+        resp = self._post('/api/customer/transactions', {
+            'customer_id': self.customer_id,
+            'limit': 10
+        })
+        
+        if resp.get('status') != 200:
+            self.log('Transaction Ledger', 'FAIL', f"Status: {resp.get('status')}")
+            return False
+        
+        body = resp.get('body', {})
+        transactions = body.get('transactions', [])
+        
+        if len(transactions) == 0:
+            self.log('Transaction Ledger', 'FAIL', 'No transactions recorded')
+            return False
+        
+        # Verify transactions have required fields
+        for tx in transactions:
+            if not tx.get('nft_token_id'):
+                self.log('Transaction Ledger', 'FAIL', f"Transaction {tx.get('id')} missing NFT token")
+                return False
+        
+        self.log('Transaction Ledger', 'PASS', f'{len(transactions)} transactions with NFT tokens')
+        return True
+    
     def run_all_tests(self):
         """Run all tests and report results"""
         print("\n" + "="*60)
@@ -417,6 +574,11 @@ class TestCustomerBillingDashboard:
             self.test_billing_allocation_calculation,
             self.test_record_customer_action,
             self.test_nft_ledger_integrity,
+            self.test_adjustable_allocation,
+            self.test_payment_uses_custom_allocation,
+            self.test_investment_deposit,
+            self.test_investment_account_query,
+            self.test_transaction_ledger,
             self.test_password_change,
             self.test_billing_api_endpoints,
             self.test_dashboard_data_integrity,

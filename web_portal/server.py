@@ -87,6 +87,109 @@ HEALTH_WALLETS: Dict[str, Dict[str, Any]] = {}  # customer_id -> {balance, trans
 MEDICAL_PURCHASES: Dict[str, Dict[str, Any]] = {}  # purchase_id -> purchase data
 NFT_LEDGER: Dict[str, Dict[str, Any]] = {}  # token_id -> NFT token data for customer ledger
 
+# Customer allocation preferences - adjustable savings/risk percentages
+CUSTOMER_ALLOCATIONS: Dict[str, Dict[str, Any]] = {}  # customer_id -> {savings_pct, risk_pct, index_pct, bonds_pct, crypto_pct, updated_at}
+
+# Investment accounts - additional customer savings deposits
+INVESTMENT_ACCOUNTS: Dict[str, Dict[str, Any]] = {}  # customer_id -> {balance, deposits: [], allocations: [], created_at}
+
+# Transaction ledger - master ledger for all financial transactions
+TRANSACTION_LEDGER: Dict[str, Dict[str, Any]] = {}  # tx_id -> transaction data
+
+
+def get_customer_allocation(customer_id: str) -> Dict[str, float]:
+    """Get customer's allocation preferences or return defaults"""
+    default_allocation = {
+        'savings_pct': 25.0,  # % of premium to savings/investments
+        'risk_pct': 75.0,     # % of premium to risk coverage
+        'index_pct': 60.0,    # % of savings to index funds
+        'bonds_pct': 30.0,    # % of savings to bonds
+        'crypto_pct': 10.0,   # % of savings to crypto
+    }
+    
+    if customer_id in CUSTOMER_ALLOCATIONS:
+        return {**default_allocation, **CUSTOMER_ALLOCATIONS[customer_id]}
+    return default_allocation
+
+
+def update_customer_allocation(customer_id: str, allocations: Dict[str, float]) -> Dict[str, Any]:
+    """Update customer's allocation preferences with validation"""
+    # Validate percentages
+    savings_pct = allocations.get('savings_pct', 25.0)
+    risk_pct = allocations.get('risk_pct', 75.0)
+    
+    # Savings + Risk must equal 100%
+    if abs((savings_pct + risk_pct) - 100.0) > 0.01:
+        raise ValueError("Savings + Risk percentages must equal 100%")
+    
+    # Investment allocation (of savings) must equal 100%
+    index_pct = allocations.get('index_pct', 60.0)
+    bonds_pct = allocations.get('bonds_pct', 30.0)
+    crypto_pct = allocations.get('crypto_pct', 10.0)
+    
+    if abs((index_pct + bonds_pct + crypto_pct) - 100.0) > 0.01:
+        raise ValueError("Index + Bonds + Crypto percentages must equal 100%")
+    
+    # Crypto max 30%
+    if crypto_pct > 30.0:
+        raise ValueError("Crypto allocation cannot exceed 30%")
+    
+    # Savings must be at least 10% (regulatory requirement)
+    if savings_pct < 10.0:
+        raise ValueError("Savings allocation must be at least 10%")
+    
+    allocation_record = {
+        'savings_pct': savings_pct,
+        'risk_pct': risk_pct,
+        'index_pct': index_pct,
+        'bonds_pct': bonds_pct,
+        'crypto_pct': crypto_pct,
+        'updated_at': datetime.now().isoformat(),
+        'customer_id': customer_id
+    }
+    
+    CUSTOMER_ALLOCATIONS[customer_id] = allocation_record
+    return allocation_record
+
+
+def record_transaction(
+    customer_id: str,
+    tx_type: str,
+    amount: float,
+    description: str,
+    metadata: Dict[str, Any] = None
+) -> Dict[str, Any]:
+    """Record transaction in master ledger and NFT ledger"""
+    tx_id = f"TX-{datetime.now().strftime('%Y%m%d%H%M%S')}-{random.randint(10000, 99999)}"
+    
+    transaction = {
+        'id': tx_id,
+        'customer_id': customer_id,
+        'type': tx_type,
+        'amount': amount,
+        'description': description,
+        'metadata': metadata or {},
+        'timestamp': datetime.now().isoformat(),
+        'status': 'completed'
+    }
+    
+    # Store in transaction ledger
+    TRANSACTION_LEDGER[tx_id] = transaction
+    
+    # Also create NFT token for blockchain record
+    nft_token = generate_nft_token(
+        customer_id=customer_id,
+        transaction_type=tx_type,
+        transaction_id=tx_id,
+        amount=amount,
+        description=description,
+        metadata=metadata
+    )
+    NFT_LEDGER[nft_token['token_id']] = nft_token
+    
+    transaction['nft_token_id'] = nft_token['token_id']
+    return transaction
+
 def generate_nft_token(
     customer_id: str,
     transaction_type: str,
@@ -6259,7 +6362,7 @@ For claims or questions, please contact:
         
         # ========== CUSTOMER BILLING & SETTINGS ENDPOINTS ==========
         
-        # Customer premium payment with NFT recording and investment allocation
+        # Customer premium payment with NFT recording and CUSTOM investment allocation
         if path == '/api/customer/payment':
             try:
                 data = json.loads(body)
@@ -6274,30 +6377,72 @@ For claims or questions, please contact:
                     self.wfile.write(json.dumps({'error': 'Invalid customer_id or amount'}).encode('utf-8'))
                     return
                 
+                # Get customer's CUSTOM allocation preferences
+                allocation_prefs = get_customer_allocation(customer_id)
+                savings_pct = allocation_prefs['savings_pct'] / 100.0
+                risk_pct = allocation_prefs['risk_pct'] / 100.0
+                
                 # Process payment
                 payment_id = f"PAY-{datetime.now().strftime('%Y%m%d%H%M%S')}-{random.randint(1000, 9999)}"
                 
-                # Calculate allocations (25% to savings/investments, 75% to coverage)
-                savings_amount = amount * 0.25
-                risk_amount = amount * 0.75
+                # Calculate allocations using customer's preferences
+                savings_amount = amount * savings_pct
+                risk_amount = amount * risk_pct
                 
-                # Create NFT token for the payment
-                nft_token = None
-                if create_nft:
-                    nft_token = generate_nft_token(
-                        customer_id=customer_id,
-                        transaction_type='premium_payment',
-                        transaction_id=payment_id,
-                        amount=amount,
-                        description=f'Premium payment via {payment_method}. Savings: ${savings_amount:.2f} → Investments',
-                        metadata={
-                            'payment_method': payment_method,
-                            'savings_allocation': savings_amount,
-                            'risk_allocation': risk_amount,
-                            'investment_allocation': True if allocate_to_investments else False
-                        }
-                    )
-                    NFT_LEDGER[nft_token['token_id']] = nft_token
+                # Calculate investment breakdown
+                index_amount = savings_amount * (allocation_prefs['index_pct'] / 100.0)
+                bonds_amount = savings_amount * (allocation_prefs['bonds_pct'] / 100.0)
+                crypto_amount = savings_amount * (allocation_prefs['crypto_pct'] / 100.0)
+                
+                # Update customer's investment account
+                if customer_id not in INVESTMENT_ACCOUNTS:
+                    INVESTMENT_ACCOUNTS[customer_id] = {
+                        'balance': 0.0,
+                        'index_balance': 0.0,
+                        'bonds_balance': 0.0,
+                        'crypto_balance': 0.0,
+                        'deposits': [],
+                        'allocations': [],
+                        'created_at': datetime.now().isoformat()
+                    }
+                
+                inv_account = INVESTMENT_ACCOUNTS[customer_id]
+                inv_account['balance'] += savings_amount
+                inv_account['index_balance'] = inv_account.get('index_balance', 0.0) + index_amount
+                inv_account['bonds_balance'] = inv_account.get('bonds_balance', 0.0) + bonds_amount
+                inv_account['crypto_balance'] = inv_account.get('crypto_balance', 0.0) + crypto_amount
+                
+                # Record deposit in investment account
+                deposit_record = {
+                    'id': payment_id,
+                    'type': 'premium_allocation',
+                    'amount': savings_amount,
+                    'index_amount': index_amount,
+                    'bonds_amount': bonds_amount,
+                    'crypto_amount': crypto_amount,
+                    'timestamp': datetime.now().isoformat()
+                }
+                inv_account['deposits'].append(deposit_record)
+                INVESTMENT_ACCOUNTS[customer_id] = inv_account
+                
+                # Record in master transaction ledger
+                tx = record_transaction(
+                    customer_id=customer_id,
+                    tx_type='premium_payment',
+                    amount=amount,
+                    description=f'Premium payment via {payment_method}. Savings: ${savings_amount:.2f} ({allocation_prefs["savings_pct"]}%) → Investments',
+                    metadata={
+                        'payment_method': payment_method,
+                        'savings_allocation': savings_amount,
+                        'risk_allocation': risk_amount,
+                        'savings_pct': allocation_prefs['savings_pct'],
+                        'risk_pct': allocation_prefs['risk_pct'],
+                        'index_amount': index_amount,
+                        'bonds_amount': bonds_amount,
+                        'crypto_amount': crypto_amount,
+                        'investment_account_balance': inv_account['balance']
+                    }
+                )
                 
                 # Record the payment
                 payment_record = {
@@ -6306,8 +6451,14 @@ For claims or questions, please contact:
                     'amount': amount,
                     'savings_allocated': savings_amount,
                     'risk_allocated': risk_amount,
+                    'savings_pct': allocation_prefs['savings_pct'],
+                    'risk_pct': allocation_prefs['risk_pct'],
+                    'index_amount': index_amount,
+                    'bonds_amount': bonds_amount,
+                    'crypto_amount': crypto_amount,
                     'payment_method': payment_method,
-                    'nft_token_id': nft_token['token_id'] if nft_token else None,
+                    'nft_token_id': tx.get('nft_token_id'),
+                    'transaction_id': tx['id'],
                     'timestamp': datetime.now().isoformat(),
                     'status': 'completed'
                 }
@@ -6339,15 +6490,249 @@ For claims or questions, please contact:
                 self.wfile.write(json.dumps({
                     'success': True,
                     'payment': payment_record,
-                    'nft_token_id': nft_token['token_id'] if nft_token else None,
+                    'nft_token_id': tx.get('nft_token_id'),
                     'savings_allocated': savings_amount,
                     'risk_allocated': risk_amount,
+                    'savings_pct': allocation_prefs['savings_pct'],
+                    'risk_pct': allocation_prefs['risk_pct'],
+                    'investment_breakdown': {
+                        'index': index_amount,
+                        'bonds': bonds_amount,
+                        'crypto': crypto_amount
+                    },
+                    'investment_account_balance': inv_account['balance'],
                     'bills_updated': bills_paid
                 }).encode('utf-8'))
                 
             except Exception as e:
                 self._set_json_headers(400)
                 self.wfile.write(json.dumps({'error': 'Payment failed', 'details': str(e)}).encode('utf-8'))
+            return
+        
+        # Get/Set customer allocation preferences
+        if path == '/api/customer/allocation':
+            try:
+                data = json.loads(body) if body else {}
+                customer_id = data.get('customer_id')
+                
+                if not customer_id:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'customer_id required'}).encode('utf-8'))
+                    return
+                
+                # If allocation data provided, update preferences
+                if any(k in data for k in ['savings_pct', 'risk_pct', 'index_pct', 'bonds_pct', 'crypto_pct']):
+                    allocation_data = {
+                        'savings_pct': float(data.get('savings_pct', 25.0)),
+                        'risk_pct': float(data.get('risk_pct', 75.0)),
+                        'index_pct': float(data.get('index_pct', 60.0)),
+                        'bonds_pct': float(data.get('bonds_pct', 30.0)),
+                        'crypto_pct': float(data.get('crypto_pct', 10.0)),
+                    }
+                    
+                    try:
+                        updated = update_customer_allocation(customer_id, allocation_data)
+                        
+                        # Record allocation change in ledger
+                        record_transaction(
+                            customer_id=customer_id,
+                            tx_type='allocation_change',
+                            amount=0,
+                            description=f'Allocation updated: Savings {allocation_data["savings_pct"]}% | Index {allocation_data["index_pct"]}% | Bonds {allocation_data["bonds_pct"]}% | Crypto {allocation_data["crypto_pct"]}%',
+                            metadata=allocation_data
+                        )
+                        
+                        self._set_json_headers(200)
+                        self.wfile.write(json.dumps({
+                            'success': True,
+                            'allocation': updated,
+                            'message': 'Allocation preferences updated'
+                        }).encode('utf-8'))
+                    except ValueError as e:
+                        self._set_json_headers(400)
+                        self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+                else:
+                    # Just get current allocation
+                    allocation = get_customer_allocation(customer_id)
+                    self._set_json_headers(200)
+                    self.wfile.write(json.dumps({
+                        'success': True,
+                        'allocation': allocation
+                    }).encode('utf-8'))
+                    
+            except Exception as e:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'Allocation request failed', 'details': str(e)}).encode('utf-8'))
+            return
+        
+        # Additional investment deposit (add savings beyond premium)
+        if path == '/api/customer/investment/deposit':
+            try:
+                data = json.loads(body)
+                customer_id = data.get('customer_id')
+                amount = float(data.get('amount', 0))
+                deposit_type = data.get('deposit_type', 'additional_savings')
+                
+                if not customer_id or amount <= 0:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'Invalid customer_id or amount'}).encode('utf-8'))
+                    return
+                
+                # Get customer's allocation preferences for investment breakdown
+                allocation_prefs = get_customer_allocation(customer_id)
+                
+                # Calculate investment breakdown
+                index_amount = amount * (allocation_prefs['index_pct'] / 100.0)
+                bonds_amount = amount * (allocation_prefs['bonds_pct'] / 100.0)
+                crypto_amount = amount * (allocation_prefs['crypto_pct'] / 100.0)
+                
+                # Initialize or update investment account
+                if customer_id not in INVESTMENT_ACCOUNTS:
+                    INVESTMENT_ACCOUNTS[customer_id] = {
+                        'balance': 0.0,
+                        'index_balance': 0.0,
+                        'bonds_balance': 0.0,
+                        'crypto_balance': 0.0,
+                        'deposits': [],
+                        'allocations': [],
+                        'created_at': datetime.now().isoformat()
+                    }
+                
+                inv_account = INVESTMENT_ACCOUNTS[customer_id]
+                inv_account['balance'] += amount
+                inv_account['index_balance'] = inv_account.get('index_balance', 0.0) + index_amount
+                inv_account['bonds_balance'] = inv_account.get('bonds_balance', 0.0) + bonds_amount
+                inv_account['crypto_balance'] = inv_account.get('crypto_balance', 0.0) + crypto_amount
+                
+                deposit_id = f"DEP-{datetime.now().strftime('%Y%m%d%H%M%S')}-{random.randint(1000, 9999)}"
+                
+                # Record deposit
+                deposit_record = {
+                    'id': deposit_id,
+                    'type': deposit_type,
+                    'amount': amount,
+                    'index_amount': index_amount,
+                    'bonds_amount': bonds_amount,
+                    'crypto_amount': crypto_amount,
+                    'timestamp': datetime.now().isoformat()
+                }
+                inv_account['deposits'].append(deposit_record)
+                INVESTMENT_ACCOUNTS[customer_id] = inv_account
+                
+                # Record in master ledger
+                tx = record_transaction(
+                    customer_id=customer_id,
+                    tx_type='investment_deposit',
+                    amount=amount,
+                    description=f'Additional investment deposit: ${amount:.2f}',
+                    metadata={
+                        'deposit_type': deposit_type,
+                        'index_amount': index_amount,
+                        'bonds_amount': bonds_amount,
+                        'crypto_amount': crypto_amount,
+                        'allocation_prefs': allocation_prefs,
+                        'new_balance': inv_account['balance']
+                    }
+                )
+                
+                self._set_json_headers(200)
+                self.wfile.write(json.dumps({
+                    'success': True,
+                    'deposit': deposit_record,
+                    'nft_token_id': tx.get('nft_token_id'),
+                    'transaction_id': tx['id'],
+                    'investment_breakdown': {
+                        'index': index_amount,
+                        'bonds': bonds_amount,
+                        'crypto': crypto_amount
+                    },
+                    'account_balance': inv_account['balance'],
+                    'account_details': {
+                        'index_balance': inv_account['index_balance'],
+                        'bonds_balance': inv_account['bonds_balance'],
+                        'crypto_balance': inv_account['crypto_balance']
+                    }
+                }).encode('utf-8'))
+                
+            except Exception as e:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'Investment deposit failed', 'details': str(e)}).encode('utf-8'))
+            return
+        
+        # Get investment account summary
+        if path == '/api/customer/investment/account':
+            try:
+                data = json.loads(body) if body else {}
+                customer_id = data.get('customer_id')
+                
+                if not customer_id:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'customer_id required'}).encode('utf-8'))
+                    return
+                
+                inv_account = INVESTMENT_ACCOUNTS.get(customer_id, {
+                    'balance': 0.0,
+                    'index_balance': 0.0,
+                    'bonds_balance': 0.0,
+                    'crypto_balance': 0.0,
+                    'deposits': [],
+                    'allocations': []
+                })
+                
+                allocation_prefs = get_customer_allocation(customer_id)
+                
+                self._set_json_headers(200)
+                self.wfile.write(json.dumps({
+                    'success': True,
+                    'account': inv_account,
+                    'allocation_preferences': allocation_prefs,
+                    'total_balance': inv_account.get('balance', 0.0),
+                    'breakdown': {
+                        'index_funds': inv_account.get('index_balance', 0.0),
+                        'bonds': inv_account.get('bonds_balance', 0.0),
+                        'crypto': inv_account.get('crypto_balance', 0.0)
+                    }
+                }).encode('utf-8'))
+                
+            except Exception as e:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'Account request failed', 'details': str(e)}).encode('utf-8'))
+            return
+        
+        # Get customer transaction ledger
+        if path == '/api/customer/transactions':
+            try:
+                data = json.loads(body) if body else {}
+                customer_id = data.get('customer_id')
+                tx_type = data.get('type')  # Optional filter
+                limit = int(data.get('limit', 50))
+                
+                if not customer_id:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'customer_id required'}).encode('utf-8'))
+                    return
+                
+                # Get transactions from master ledger
+                transactions = [
+                    tx for tx in TRANSACTION_LEDGER.values()
+                    if tx.get('customer_id') == customer_id
+                    and (not tx_type or tx.get('type') == tx_type)
+                ]
+                
+                # Sort by timestamp descending
+                transactions.sort(key=lambda x: x.get('timestamp', ''), reverse=True)
+                transactions = transactions[:limit]
+                
+                self._set_json_headers(200)
+                self.wfile.write(json.dumps({
+                    'success': True,
+                    'transactions': transactions,
+                    'count': len(transactions)
+                }).encode('utf-8'))
+                
+            except Exception as e:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'Transaction request failed', 'details': str(e)}).encode('utf-8'))
             return
         
         # Customer password change

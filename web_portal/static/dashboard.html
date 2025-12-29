@@ -777,28 +777,39 @@
         <div style="background: white; border-radius: 12px; padding: 16px; box-shadow: 0 2px 8px rgba(0,0,0,0.08);">
           <div style="font-size: 0.85rem; color: #546e7a; margin-bottom: 4px;">📈 Savings Allocation</div>
           <div id="billing-savings-allocation" style="font-size: 1.5rem; font-weight: 700; color: #2e7d32;">$0.00</div>
-          <div style="font-size: 0.75rem; color: #999; margin-top: 4px;">25% → Investments</div>
+          <div id="billing-savings-pct" style="font-size: 0.75rem; color: #999; margin-top: 4px;">25% → Investments</div>
         </div>
         <div style="background: white; border-radius: 12px; padding: 16px; box-shadow: 0 2px 8px rgba(0,0,0,0.08);">
           <div style="font-size: 0.85rem; color: #546e7a; margin-bottom: 4px;">🛡️ Risk Allocation</div>
           <div id="billing-risk-allocation" style="font-size: 1.5rem; font-weight: 700; color: #ef6c00;">$0.00</div>
-          <div style="font-size: 0.75rem; color: #999; margin-top: 4px;">75% → Coverage</div>
+          <div id="billing-risk-pct" style="font-size: 0.75rem; color: #999; margin-top: 4px;">75% → Coverage</div>
+        </div>
+        <div style="background: linear-gradient(135deg, #1565c0 0%, #1976d2 100%); border-radius: 12px; padding: 16px; box-shadow: 0 2px 8px rgba(0,0,0,0.15);">
+          <div style="font-size: 0.85rem; color: rgba(255,255,255,0.85); margin-bottom: 4px;">💼 Investment Balance</div>
+          <div id="billing-investment-balance" style="font-size: 1.5rem; font-weight: 700; color: white;">$0.00</div>
+          <div style="font-size: 0.75rem; color: rgba(255,255,255,0.7); margin-top: 4px;">Total Savings Account</div>
         </div>
       </div>
       
       <!-- Billing Quick Actions -->
-      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-bottom: 24px;">
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin-bottom: 24px;">
         <button onclick="showPaymentModal()" class="wallet-quick-btn" style="background: linear-gradient(135deg, #7b1fa2 0%, #9c27b0 100%); color: white; border: none; padding: 16px; border-radius: 10px; cursor: pointer; font-size: 14px; font-weight: 600; box-shadow: 0 4px 12px rgba(123, 31, 162, 0.2);">
-          💳 Pay Policy Premium
+          💳 Pay Premium
         </button>
-        <button onclick="showAutoPaySettings()" class="wallet-quick-btn" style="background: linear-gradient(135deg, #1565c0 0%, #1976d2 100%); color: white; border: none; padding: 16px; border-radius: 10px; cursor: pointer; font-size: 14px; font-weight: 600; box-shadow: 0 4px 12px rgba(21, 101, 192, 0.2);">
-          🔄 Auto-Pay Settings
-        </button>
-        <button onclick="showChangePassword()" class="wallet-quick-btn" style="background: linear-gradient(135deg, #ef6c00 0%, #ff9800 100%); color: white; border: none; padding: 16px; border-radius: 10px; cursor: pointer; font-size: 14px; font-weight: 600; box-shadow: 0 4px 12px rgba(239, 108, 0, 0.2);">
-          🔐 Change Password
+        <button onclick="showInvestmentDeposit()" class="wallet-quick-btn" style="background: linear-gradient(135deg, #1565c0 0%, #42a5f5 100%); color: white; border: none; padding: 16px; border-radius: 10px; cursor: pointer; font-size: 14px; font-weight: 600; box-shadow: 0 4px 12px rgba(21, 101, 192, 0.2);">
+          💰 Add Savings
         </button>
         <button onclick="showAllocationSettings()" class="wallet-quick-btn" style="background: linear-gradient(135deg, #2e7d32 0%, #43a047 100%); color: white; border: none; padding: 16px; border-radius: 10px; cursor: pointer; font-size: 14px; font-weight: 600; box-shadow: 0 4px 12px rgba(46, 125, 50, 0.2);">
-          📊 Allocation Settings
+          📊 Adjust Allocation
+        </button>
+        <button onclick="showAutoPaySettings()" class="wallet-quick-btn" style="background: linear-gradient(135deg, #0d47a1 0%, #1565c0 100%); color: white; border: none; padding: 16px; border-radius: 10px; cursor: pointer; font-size: 14px; font-weight: 600; box-shadow: 0 4px 12px rgba(13, 71, 161, 0.2);">
+          🔄 Auto-Pay
+        </button>
+        <button onclick="showChangePassword()" class="wallet-quick-btn" style="background: linear-gradient(135deg, #ef6c00 0%, #ff9800 100%); color: white; border: none; padding: 16px; border-radius: 10px; cursor: pointer; font-size: 14px; font-weight: 600; box-shadow: 0 4px 12px rgba(239, 108, 0, 0.2);">
+          🔐 Password
+        </button>
+        <button onclick="showTransactionHistory()" class="wallet-quick-btn" style="background: linear-gradient(135deg, #546e7a 0%, #78909c 100%); color: white; border: none; padding: 16px; border-radius: 10px; cursor: pointer; font-size: 14px; font-weight: 600; box-shadow: 0 4px 12px rgba(84, 110, 122, 0.2);">
+          📜 Transactions
         </button>
       </div>
       
@@ -2033,10 +2044,13 @@
       await loadPremiumAllocations();
     }
     
-    // Load and display premium allocations to investments
+    // Load and display premium allocations to investments (using customer's custom allocation)
     async function loadPremiumAllocations() {
       const cid = customerId || sessionStorage.getItem('customer_id');
       if (!cid) return;
+      
+      // First load allocation preferences
+      await loadAllocationPreferences();
       
       try {
         // Get policies to calculate allocations
@@ -2065,10 +2079,14 @@
             return;
           }
           
+          // Use customer's custom allocation percentages
+          const savingsPct = customerAllocation.savings_pct / 100;
+          const riskPct = customerAllocation.risk_pct / 100;
+          
           tbody.innerHTML = policies.map(p => {
             const premium = Number(p.monthly_premium || p.annual_premium / 12 || 0);
-            const savings = premium * 0.25; // 25% to savings/investments
-            const risk = premium * 0.75; // 75% to coverage
+            const savings = premium * savingsPct;
+            const risk = premium * riskPct;
             
             totalPremium += premium;
             totalSavings += savings;
@@ -2077,15 +2095,15 @@
             const frequency = p.billing?.frequency || 'monthly';
             const frequencyLabel = frequency.charAt(0).toUpperCase() + frequency.slice(1);
             
-            // Determine fund allocation based on policy type
-            const fundAllocation = getFundAllocationForPolicy(p.type, savings);
+            // Use customer's fund allocation preferences
+            const fundAllocation = `${customerAllocation.index_pct}% Index, ${customerAllocation.bonds_pct}% Bonds, ${customerAllocation.crypto_pct}% Crypto`;
             
             return `
               <tr>
                 <td style="font-weight: 500;">${p.id}</td>
                 <td><span style="background: #e3f2fd; color: #1565c0; padding: 4px 8px; border-radius: 4px; font-size: 0.85rem;">${frequencyLabel}</span></td>
                 <td style="font-weight: 600;">$${premium.toFixed(2)}/mo</td>
-                <td style="font-weight: 600; color: #2e7d32;">$${savings.toFixed(2)}</td>
+                <td style="font-weight: 600; color: #2e7d32;">$${savings.toFixed(2)} (${customerAllocation.savings_pct}%)</td>
                 <td style="font-size: 0.85rem;">${fundAllocation}</td>
                 <td>
                   <span style="background: linear-gradient(135deg, #1565c0 0%, #1976d2 100%); color: white; padding: 3px 8px; border-radius: 4px; font-size: 0.75rem; cursor: pointer;" onclick="viewAllocationNFT('${p.id}')" title="View NFT record">
@@ -2097,26 +2115,21 @@
             `;
           }).join('');
           
-          // Update summary cards
+          // Update summary cards with custom allocation
           document.getElementById('billing-total-premium').textContent = `$${totalPremium.toFixed(2)}`;
           document.getElementById('billing-savings-allocation').textContent = `$${totalSavings.toFixed(2)}`;
           document.getElementById('billing-risk-allocation').textContent = `$${totalRisk.toFixed(2)}`;
+          updateAllocationDisplay();
         }
       } catch (err) {
         console.error('Error loading premium allocations:', err);
       }
     }
     
-    // Get fund allocation description based on policy type
+    // Get fund allocation description based on customer preferences (legacy support)
     function getFundAllocationForPolicy(policyType, amount) {
-      const allocations = {
-        'life': `60% Index Funds, 30% Bonds, 10% Crypto`,
-        'health': `50% Index Funds, 40% Bonds, 10% Stable`,
-        'auto': `70% Index Funds, 20% Bonds, 10% Crypto`,
-        'property': `40% Index Funds, 50% Bonds, 10% REIT`,
-        'disability': `50% Index Funds, 35% Bonds, 15% Crypto`
-      };
-      return allocations[policyType] || `60% Index Funds, 30% Bonds, 10% Diversified`;
+      // Now uses customer's custom allocation instead of policy type
+      return `${customerAllocation.index_pct}% Index, ${customerAllocation.bonds_pct}% Bonds, ${customerAllocation.crypto_pct}% Crypto`;
     }
     
     // Render billing history table
@@ -2419,71 +2432,171 @@
       }
     }
     
-    // Show allocation settings
+    // Customer allocation preferences (global state)
+    let customerAllocation = {
+      savings_pct: 25,
+      risk_pct: 75,
+      index_pct: 60,
+      bonds_pct: 30,
+      crypto_pct: 10
+    };
+    let investmentBalance = 0;
+    
+    // Load customer allocation preferences
+    async function loadAllocationPreferences() {
+      const cid = customerId || sessionStorage.getItem('customer_id');
+      if (!cid) return;
+      
+      try {
+        const response = await fetch('/api/customer/allocation', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${authToken}`
+          },
+          body: JSON.stringify({ customer_id: cid })
+        });
+        
+        if (response.ok) {
+          const data = await response.json();
+          if (data.allocation) {
+            customerAllocation = data.allocation;
+            updateAllocationDisplay();
+          }
+        }
+      } catch (err) {
+        console.log('Allocation preferences load (using defaults):', err);
+      }
+      
+      // Also load investment account
+      await loadInvestmentAccount();
+    }
+    
+    // Load investment account balance
+    async function loadInvestmentAccount() {
+      const cid = customerId || sessionStorage.getItem('customer_id');
+      if (!cid) return;
+      
+      try {
+        const response = await fetch('/api/customer/investment/account', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${authToken}`
+          },
+          body: JSON.stringify({ customer_id: cid })
+        });
+        
+        if (response.ok) {
+          const data = await response.json();
+          investmentBalance = data.total_balance || 0;
+          document.getElementById('billing-investment-balance').textContent = `$${investmentBalance.toFixed(2)}`;
+        }
+      } catch (err) {
+        console.log('Investment account load:', err);
+      }
+    }
+    
+    // Update allocation display
+    function updateAllocationDisplay() {
+      document.getElementById('billing-savings-pct').textContent = `${customerAllocation.savings_pct}% → Investments`;
+      document.getElementById('billing-risk-pct').textContent = `${customerAllocation.risk_pct}% → Coverage`;
+    }
+    
+    // Show allocation settings with FULL customization
     function showAllocationSettings() {
       const modal = document.getElementById('settings-modal');
-      document.getElementById('modal-title').textContent = '📊 Investment Allocation Settings';
+      document.getElementById('modal-title').textContent = '📊 Adjust Allocation Settings';
       document.getElementById('modal-content').innerHTML = `
         <div style="margin-bottom: 20px;">
-          <p style="color: #666;">Customize how your premium savings (25%) are allocated to investments.</p>
+          <p style="color: #666;">Customize your premium split and investment allocation. Changes apply to all future payments.</p>
         </div>
         
-        <div style="background: #e3f2fd; border-radius: 8px; padding: 16px; margin-bottom: 20px;">
-          <div style="font-weight: 600; color: #1565c0; margin-bottom: 8px;">Current Allocation</div>
-          <div style="display: flex; justify-content: space-between; font-size: 0.9rem;">
-            <span>Monthly Savings:</span>
-            <span style="font-weight: 600;" id="allocation-monthly">$0.00</span>
+        <div style="background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%); border-radius: 12px; padding: 16px; margin-bottom: 20px;">
+          <div style="font-weight: 600; color: #1565c0; margin-bottom: 12px;">📊 Premium Split</div>
+          
+          <div style="margin-bottom: 16px;">
+            <label style="display: block; margin-bottom: 8px; font-weight: 500;">Savings % (to Investments)</label>
+            <input type="range" id="alloc-savings" min="10" max="50" value="${customerAllocation.savings_pct}" style="width: 100%;" oninput="updatePremiumSplit()">
+            <div style="display: flex; justify-content: space-between; font-size: 0.85rem; color: #666;">
+              <span>10% min</span>
+              <span id="alloc-savings-value" style="font-weight: 700; color: #2e7d32;">${customerAllocation.savings_pct}%</span>
+              <span>50% max</span>
+            </div>
+          </div>
+          
+          <div style="display: flex; justify-content: space-between; padding: 12px; background: white; border-radius: 8px;">
+            <div style="text-align: center;">
+              <div style="font-size: 0.8rem; color: #666;">Savings</div>
+              <div id="split-savings-display" style="font-size: 1.2rem; font-weight: 700; color: #2e7d32;">${customerAllocation.savings_pct}%</div>
+            </div>
+            <div style="text-align: center;">
+              <div style="font-size: 0.8rem; color: #666;">Coverage</div>
+              <div id="split-risk-display" style="font-size: 1.2rem; font-weight: 700; color: #ef6c00;">${customerAllocation.risk_pct}%</div>
+            </div>
           </div>
         </div>
         
-        <div style="margin-bottom: 16px;">
-          <label style="display: block; margin-bottom: 8px; font-weight: 500;">Index Funds (%)</label>
-          <input type="range" id="alloc-index" min="0" max="100" value="60" style="width: 100%;" oninput="updateAllocationPreview()">
-          <div style="display: flex; justify-content: space-between; font-size: 0.85rem; color: #666;">
-            <span>0%</span>
-            <span id="alloc-index-value">60%</span>
-            <span>100%</span>
+        <div style="background: #f5f5f5; border-radius: 12px; padding: 16px; margin-bottom: 20px;">
+          <div style="font-weight: 600; color: #333; margin-bottom: 12px;">💼 Investment Breakdown (of Savings)</div>
+          
+          <div style="margin-bottom: 12px;">
+            <label style="display: block; margin-bottom: 6px; font-weight: 500;">Index Funds</label>
+            <input type="range" id="alloc-index" min="0" max="100" value="${customerAllocation.index_pct}" style="width: 100%;" oninput="updateInvestmentSplit()">
+            <div style="display: flex; justify-content: space-between; font-size: 0.85rem; color: #666;">
+              <span>0%</span>
+              <span id="alloc-index-value">${customerAllocation.index_pct}%</span>
+              <span>100%</span>
+            </div>
           </div>
-        </div>
-        
-        <div style="margin-bottom: 16px;">
-          <label style="display: block; margin-bottom: 8px; font-weight: 500;">Bonds (%)</label>
-          <input type="range" id="alloc-bonds" min="0" max="100" value="30" style="width: 100%;" oninput="updateAllocationPreview()">
-          <div style="display: flex; justify-content: space-between; font-size: 0.85rem; color: #666;">
-            <span>0%</span>
-            <span id="alloc-bonds-value">30%</span>
-            <span>100%</span>
+          
+          <div style="margin-bottom: 12px;">
+            <label style="display: block; margin-bottom: 6px; font-weight: 500;">Bonds</label>
+            <input type="range" id="alloc-bonds" min="0" max="100" value="${customerAllocation.bonds_pct}" style="width: 100%;" oninput="updateInvestmentSplit()">
+            <div style="display: flex; justify-content: space-between; font-size: 0.85rem; color: #666;">
+              <span>0%</span>
+              <span id="alloc-bonds-value">${customerAllocation.bonds_pct}%</span>
+              <span>100%</span>
+            </div>
           </div>
-        </div>
-        
-        <div style="margin-bottom: 16px;">
-          <label style="display: block; margin-bottom: 8px; font-weight: 500;">Crypto (%)</label>
-          <input type="range" id="alloc-crypto" min="0" max="30" value="10" style="width: 100%;" oninput="updateAllocationPreview()">
-          <div style="display: flex; justify-content: space-between; font-size: 0.85rem; color: #666;">
-            <span>0%</span>
-            <span id="alloc-crypto-value">10%</span>
-            <span>30% max</span>
+          
+          <div style="margin-bottom: 12px;">
+            <label style="display: block; margin-bottom: 6px; font-weight: 500;">Crypto (max 30%)</label>
+            <input type="range" id="alloc-crypto" min="0" max="30" value="${customerAllocation.crypto_pct}" style="width: 100%;" oninput="updateInvestmentSplit()">
+            <div style="display: flex; justify-content: space-between; font-size: 0.85rem; color: #666;">
+              <span>0%</span>
+              <span id="alloc-crypto-value">${customerAllocation.crypto_pct}%</span>
+              <span>30% max</span>
+            </div>
           </div>
-        </div>
-        
-        <div id="alloc-warning" style="display: none; background: #fff3cd; border-radius: 8px; padding: 12px; margin-bottom: 16px; color: #856404; font-size: 0.9rem;">
-          ⚠️ Total must equal 100%
+          
+          <div id="alloc-warning" style="display: none; background: #fff3cd; border-radius: 8px; padding: 12px; color: #856404; font-size: 0.9rem;">
+            ⚠️ Investment split must equal 100%
+          </div>
         </div>
         
         <button onclick="saveAllocationSettings()" style="width: 100%; background: linear-gradient(135deg, #2e7d32 0%, #43a047 100%); color: white; border: none; padding: 14px; border-radius: 8px; font-size: 16px; font-weight: 600; cursor: pointer;">
-          Save Allocation
+          Save Allocation Settings
         </button>
+        
+        <p style="text-align: center; color: #666; font-size: 0.85rem; margin-top: 16px;">
+          🔗 Changes recorded on blockchain for transparency
+        </p>
       `;
-      
-      // Set current monthly savings
-      const savingsEl = document.getElementById('billing-savings-allocation');
-      const savings = parseFloat(savingsEl.textContent.replace('$', '')) || 0;
-      document.getElementById('allocation-monthly').textContent = `$${savings.toFixed(2)}`;
       
       modal.style.display = 'flex';
     }
     
-    function updateAllocationPreview() {
+    function updatePremiumSplit() {
+      const savings = parseInt(document.getElementById('alloc-savings').value);
+      const risk = 100 - savings;
+      
+      document.getElementById('alloc-savings-value').textContent = `${savings}%`;
+      document.getElementById('split-savings-display').textContent = `${savings}%`;
+      document.getElementById('split-risk-display').textContent = `${risk}%`;
+    }
+    
+    function updateInvestmentSplit() {
       const index = parseInt(document.getElementById('alloc-index').value);
       const bonds = parseInt(document.getElementById('alloc-bonds').value);
       const crypto = parseInt(document.getElementById('alloc-crypto').value);
@@ -2497,27 +2610,228 @@
       
       if (total !== 100) {
         warning.style.display = 'block';
-        warning.textContent = `⚠️ Total is ${total}% (must equal 100%)`;
+        warning.textContent = `⚠️ Investment split is ${total}% (must equal 100%)`;
       } else {
         warning.style.display = 'none';
       }
     }
     
     async function saveAllocationSettings() {
+      const savings = parseInt(document.getElementById('alloc-savings').value);
+      const risk = 100 - savings;
       const index = parseInt(document.getElementById('alloc-index').value);
       const bonds = parseInt(document.getElementById('alloc-bonds').value);
       const crypto = parseInt(document.getElementById('alloc-crypto').value);
       
       if (index + bonds + crypto !== 100) {
-        alert('Allocation percentages must total 100%');
+        alert('Investment allocation must total 100%');
         return;
       }
       
-      // Record settings change on NFT
-      await recordCustomerAction('allocation_change', 0, `Allocation: Index ${index}%, Bonds ${bonds}%, Crypto ${crypto}%`);
+      const cid = customerId || sessionStorage.getItem('customer_id');
       
-      closeSettingsModal();
-      showNotification(`✅ Investment allocation updated! Index ${index}% | Bonds ${bonds}% | Crypto ${crypto}%`, 'success');
+      try {
+        const response = await fetch('/api/customer/allocation', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${authToken}`
+          },
+          body: JSON.stringify({
+            customer_id: cid,
+            savings_pct: savings,
+            risk_pct: risk,
+            index_pct: index,
+            bonds_pct: bonds,
+            crypto_pct: crypto
+          })
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+          customerAllocation = {
+            savings_pct: savings,
+            risk_pct: risk,
+            index_pct: index,
+            bonds_pct: bonds,
+            crypto_pct: crypto
+          };
+          updateAllocationDisplay();
+          closeSettingsModal();
+          showNotification(`✅ Allocation updated! Savings: ${savings}% | Index: ${index}% | Bonds: ${bonds}% | Crypto: ${crypto}%`, 'success');
+          loadBillingDetails();
+        } else {
+          throw new Error(result.error || 'Allocation update failed');
+        }
+      } catch (err) {
+        closeSettingsModal();
+        showNotification(`⚠️ ${err.message || 'Could not save allocation'}`, 'error');
+      }
+    }
+    
+    // Show investment deposit modal
+    function showInvestmentDeposit() {
+      const modal = document.getElementById('settings-modal');
+      document.getElementById('modal-title').textContent = '💰 Add Savings to Investments';
+      document.getElementById('modal-content').innerHTML = `
+        <div style="margin-bottom: 20px;">
+          <p style="color: #666;">Add additional funds to your investment account beyond your premium allocations.</p>
+        </div>
+        
+        <div style="background: linear-gradient(135deg, #1565c0 0%, #1976d2 100%); border-radius: 12px; padding: 16px; margin-bottom: 20px; color: white;">
+          <div style="font-size: 0.85rem; opacity: 0.9; margin-bottom: 4px;">Current Investment Balance</div>
+          <div style="font-size: 1.8rem; font-weight: 700;">$${investmentBalance.toFixed(2)}</div>
+        </div>
+        
+        <div style="margin-bottom: 16px;">
+          <label style="display: block; margin-bottom: 8px; font-weight: 500;">Deposit Amount</label>
+          <input type="number" id="deposit-amount" placeholder="Enter amount" min="10" style="width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 8px; font-size: 16px;">
+          <p style="font-size: 0.8rem; color: #666; margin-top: 4px;">Minimum deposit: $10</p>
+        </div>
+        
+        <div style="background: #e8f5e9; border-radius: 8px; padding: 12px; margin-bottom: 16px;">
+          <div style="font-size: 0.85rem; color: #2e7d32; font-weight: 500; margin-bottom: 8px;">Investment Breakdown (your current allocation)</div>
+          <div style="display: flex; gap: 12px; font-size: 0.85rem;">
+            <span>📈 Index: ${customerAllocation.index_pct}%</span>
+            <span>📊 Bonds: ${customerAllocation.bonds_pct}%</span>
+            <span>🪙 Crypto: ${customerAllocation.crypto_pct}%</span>
+          </div>
+        </div>
+        
+        <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 16px;">
+          <button onclick="setDepositAmount(100)" style="padding: 10px; border: 1px solid #1565c0; background: white; color: #1565c0; border-radius: 6px; cursor: pointer; font-weight: 600;">$100</button>
+          <button onclick="setDepositAmount(500)" style="padding: 10px; border: 1px solid #1565c0; background: white; color: #1565c0; border-radius: 6px; cursor: pointer; font-weight: 600;">$500</button>
+          <button onclick="setDepositAmount(1000)" style="padding: 10px; border: 1px solid #1565c0; background: white; color: #1565c0; border-radius: 6px; cursor: pointer; font-weight: 600;">$1,000</button>
+        </div>
+        
+        <button onclick="processInvestmentDeposit()" style="width: 100%; background: linear-gradient(135deg, #1565c0 0%, #1976d2 100%); color: white; border: none; padding: 14px; border-radius: 8px; font-size: 16px; font-weight: 600; cursor: pointer;">
+          Deposit to Investments
+        </button>
+        
+        <p style="text-align: center; color: #666; font-size: 0.85rem; margin-top: 16px;">
+          🔗 NFT token created for this transaction
+        </p>
+      `;
+      
+      modal.style.display = 'flex';
+    }
+    
+    function setDepositAmount(amount) {
+      document.getElementById('deposit-amount').value = amount;
+    }
+    
+    async function processInvestmentDeposit() {
+      const amount = parseFloat(document.getElementById('deposit-amount').value);
+      
+      if (isNaN(amount) || amount < 10) {
+        alert('Please enter a valid amount (minimum $10)');
+        return;
+      }
+      
+      const cid = customerId || sessionStorage.getItem('customer_id');
+      
+      try {
+        const response = await fetch('/api/customer/investment/deposit', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${authToken}`
+          },
+          body: JSON.stringify({
+            customer_id: cid,
+            amount: amount,
+            deposit_type: 'additional_savings'
+          })
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+          investmentBalance = result.account_balance;
+          document.getElementById('billing-investment-balance').textContent = `$${investmentBalance.toFixed(2)}`;
+          
+          closeSettingsModal();
+          showNotification(`✅ $${amount.toFixed(2)} deposited! New balance: $${investmentBalance.toFixed(2)} | NFT: ${result.nft_token_id?.substring(0, 12)}...`, 'success');
+          
+          loadNFTLedger();
+          loadBillingDetails();
+        } else {
+          throw new Error(result.error || 'Deposit failed');
+        }
+      } catch (err) {
+        closeSettingsModal();
+        showNotification(`⚠️ ${err.message || 'Could not process deposit'}`, 'error');
+      }
+    }
+    
+    // Show transaction history
+    function showTransactionHistory() {
+      const modal = document.getElementById('settings-modal');
+      document.getElementById('modal-title').textContent = '📜 Transaction History';
+      document.getElementById('modal-content').innerHTML = `
+        <div style="margin-bottom: 16px;">
+          <p style="color: #666;">All your financial transactions are recorded on the blockchain.</p>
+        </div>
+        <div id="tx-history-list" style="max-height: 400px; overflow-y: auto;">
+          <div style="text-align: center; padding: 20px; color: #666;">Loading transactions...</div>
+        </div>
+        <div style="margin-top: 16px;">
+          <button onclick="closeSettingsModal()" style="width: 100%; padding: 12px; border: 1px solid #666; background: white; color: #666; border-radius: 8px; cursor: pointer;">Close</button>
+        </div>
+      `;
+      
+      modal.style.display = 'flex';
+      loadTransactionHistoryModal();
+    }
+    
+    async function loadTransactionHistoryModal() {
+      const cid = customerId || sessionStorage.getItem('customer_id');
+      if (!cid) return;
+      
+      try {
+        const response = await fetch('/api/customer/transactions', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${authToken}`
+          },
+          body: JSON.stringify({ customer_id: cid, limit: 20 })
+        });
+        
+        const result = await response.json();
+        const txList = document.getElementById('tx-history-list');
+        
+        if (result.transactions && result.transactions.length > 0) {
+          txList.innerHTML = result.transactions.map(tx => {
+            const date = new Date(tx.timestamp).toLocaleDateString();
+            const time = new Date(tx.timestamp).toLocaleTimeString();
+            const typeIcon = tx.type === 'premium_payment' ? '💳' : 
+                            tx.type === 'investment_deposit' ? '💰' : 
+                            tx.type === 'allocation_change' ? '📊' : '📝';
+            const amountColor = tx.amount > 0 ? '#2e7d32' : '#666';
+            
+            return `
+              <div style="padding: 12px; border-bottom: 1px solid #eee;">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                  <div>
+                    <span style="font-size: 1.2rem; margin-right: 8px;">${typeIcon}</span>
+                    <span style="font-weight: 500;">${tx.type.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())}</span>
+                  </div>
+                  <span style="font-weight: 600; color: ${amountColor};">${tx.amount > 0 ? '+' : ''}$${tx.amount.toFixed(2)}</span>
+                </div>
+                <div style="font-size: 0.85rem; color: #666; margin-top: 4px;">${tx.description}</div>
+                <div style="font-size: 0.75rem; color: #999; margin-top: 4px;">${date} ${time} | NFT: ${tx.nft_token_id?.substring(0, 12) || 'N/A'}...</div>
+              </div>
+            `;
+          }).join('');
+        } else {
+          txList.innerHTML = '<div style="text-align: center; padding: 20px; color: #666;">No transactions found</div>';
+        }
+      } catch (err) {
+        document.getElementById('tx-history-list').innerHTML = 
+          '<div style="text-align: center; padding: 20px; color: #dc3545;">Error loading transactions</div>';
+      }
     }
     
     // View allocation NFT
