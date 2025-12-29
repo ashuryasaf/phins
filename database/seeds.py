@@ -6,7 +6,8 @@ Populates the database with default users and sample data.
 
 import hashlib
 import secrets
-from datetime import datetime
+import random
+from datetime import datetime, timedelta
 import logging
 
 from database import get_db_session, init_database
@@ -117,7 +118,8 @@ def seed_sample_data(session=None):
     try:
         from database.repositories import (
             CustomerRepository, PolicyRepository, 
-            UnderwritingRepository, BillingRepository
+            UnderwritingRepository, BillingRepository,
+            ClaimRepository
         )
         from datetime import timedelta
         
@@ -235,6 +237,69 @@ def seed_sample_data(session=None):
                         due_date=now + timedelta(days=30)
                     )
                     logger.info(f"Created bill: {bill.id}")
+            
+            # Create sample claims for the primary customer
+            claim_repo = ClaimRepository(session)
+            sample_claims = [
+                {
+                    'id': 'CLM-ASAF-001',
+                    'policy_id': 'POL-ASAF-HEALTH-001',
+                    'type': 'Medical',
+                    'description': 'Emergency room visit for chest pain - cardiac evaluation',
+                    'claimed_amount': 15000.00,
+                    'status': 'Pending'
+                },
+                {
+                    'id': 'CLM-ASAF-002',
+                    'policy_id': 'POL-ASAF-HEALTH-001',
+                    'type': 'Prescription',
+                    'description': 'Monthly prescription medications - cardiovascular',
+                    'claimed_amount': 850.00,
+                    'status': 'Under Review'
+                },
+                {
+                    'id': 'CLM-ASAF-003',
+                    'policy_id': 'POL-ASAF-AUTO-001',
+                    'type': 'Collision',
+                    'description': 'Fender bender accident - rear bumper damage repair',
+                    'claimed_amount': 3500.00,
+                    'status': 'Approved',
+                    'approved_amount': 3200.00
+                },
+                {
+                    'id': 'CLM-ASAF-004',
+                    'policy_id': 'POL-ASAF-HEALTH-001',
+                    'type': 'Dental',
+                    'description': 'Root canal treatment and crown placement',
+                    'claimed_amount': 2800.00,
+                    'status': 'Pending'
+                },
+                {
+                    'id': 'CLM-ASAF-005',
+                    'policy_id': 'POL-ASAF-LIFE-001',
+                    'type': 'Disability',
+                    'description': 'Temporary disability claim - work injury recovery',
+                    'claimed_amount': 45000.00,
+                    'status': 'Under Review'
+                }
+            ]
+            
+            for claim_data in sample_claims:
+                try:
+                    claim = claim_repo.create(
+                        id=claim_data['id'],
+                        policy_id=claim_data['policy_id'],
+                        customer_id=primary_customer.id,
+                        type=claim_data['type'],
+                        description=claim_data['description'],
+                        claimed_amount=claim_data['claimed_amount'],
+                        approved_amount=claim_data.get('approved_amount'),
+                        status=claim_data['status'],
+                        filed_date=now - timedelta(days=random.randint(1, 30))
+                    )
+                    logger.info(f"Created claim: {claim.id}")
+                except Exception as e:
+                    logger.warning(f"Could not create claim {claim_data['id']}: {e}")
         else:
             logger.info(f"Primary customer {primary_customer.email} already exists, skipping...")
         

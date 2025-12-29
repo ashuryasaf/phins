@@ -1416,8 +1416,9 @@ class PortalHandler(BaseHTTPRequestHandler):
 
                 wants_paging = ('page' in qs) or ('page_size' in qs)
                 if not wants_paging:
+                    # Always return object with claims array for consistency
                     self._set_json_headers()
-                    self.wfile.write(json.dumps(claims_list).encode('utf-8'))
+                    self.wfile.write(json.dumps({'claims': claims_list, 'total': len(claims_list)}).encode('utf-8'))
                 else:
                     page = int(qs.get('page', ['1'])[0])
                     page_size = int(qs.get('page_size', ['50'])[0])
@@ -3687,9 +3688,9 @@ class PortalHandler(BaseHTTPRequestHandler):
                     'type': data.get('type', 'general'),
                     'description': data.get('description', ''),
                     'claimed_amount': float(data.get('claimed_amount', 0)),
-                    'status': 'pending',
+                    'status': 'Pending',
                     'filed_date': datetime.now().isoformat(),
-                    'documents': data.get('documents', [])
+                    'created_date': datetime.now().isoformat()
                 }
                 
                 CLAIMS[claim_id] = claim
@@ -3715,11 +3716,13 @@ class PortalHandler(BaseHTTPRequestHandler):
                 claim = CLAIMS.get(claim_id)
                 
                 if claim:
-                    claim['status'] = 'approved'
+                    claim['status'] = 'Approved'
                     claim['approved_amount'] = float(data.get('approved_amount', claim['claimed_amount']))
                     claim['approval_date'] = datetime.now().isoformat()
                     claim['approved_by'] = data.get('approved_by', 'admin')
                     claim['approval_notes'] = data.get('notes', '')
+                    # Persist to database
+                    CLAIMS[claim_id] = claim
                     if audit:
                         actor = claim.get('approved_by', 'admin')
                         try:
@@ -3745,9 +3748,11 @@ class PortalHandler(BaseHTTPRequestHandler):
                 claim = CLAIMS.get(claim_id)
                 
                 if claim:
-                    claim['status'] = 'rejected'
+                    claim['status'] = 'Rejected'
                     claim['rejection_date'] = datetime.now().isoformat()
                     claim['rejection_reason'] = data.get('reason', 'Not covered')
+                    # Persist to database
+                    CLAIMS[claim_id] = claim
                     if audit:
                         actor = data.get('rejected_by', 'admin')
                         try:
@@ -3772,12 +3777,15 @@ class PortalHandler(BaseHTTPRequestHandler):
                 claim_id = data.get('id')
                 claim = CLAIMS.get(claim_id)
                 
-                if claim and claim['status'] == 'approved':
-                    claim['status'] = 'paid'
+                # Check if claim is approved (case-insensitive)
+                if claim and claim.get('status', '').lower() == 'approved':
+                    claim['status'] = 'Paid'
                     claim['payment_date'] = datetime.now().isoformat()
                     claim['payment_method'] = data.get('payment_method', 'bank_transfer')
                     claim['payment_reference'] = f"PAY-{datetime.now().strftime('%Y%m%d')}-{random.randint(1000, 9999)}"
                     claim['paid_amount'] = claim.get('approved_amount', claim['claimed_amount'])
+                    # Persist to database
+                    CLAIMS[claim_id] = claim
                     if audit:
                         actor = data.get('processed_by', 'accountant')
                         try:
