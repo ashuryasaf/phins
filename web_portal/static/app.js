@@ -20,8 +20,14 @@ document.addEventListener('DOMContentLoaded', function () {
     });
   }
 
-  // Fetch statement
-  fetch('/api/statement?customer_id=CUST001')
+  // Fetch statement - get customer ID from session
+  const customerId = sessionStorage.getItem('customer_id') || '';
+  if (!customerId) {
+    summaryEl.innerHTML = '<p class="muted">Please log in to view your statement.</p>';
+    return;
+  }
+  
+  fetch('/api/statement?customer_id=' + encodeURIComponent(customerId))
     .then(function (r) { return r.json(); })
     .then(function (data) {
       renderSummary(data);

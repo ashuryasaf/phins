@@ -182,22 +182,22 @@
     <div class="dashboard-stats">
       <div class="stat-box">
         <div class="stat-icon">📋</div>
-        <div class="stat-value" id="policy-count">2</div>
+        <div class="stat-value" id="policy-count">0</div>
         <div class="stat-label">Active PHINS Contracts</div>
       </div>
       <div class="stat-box">
         <div class="stat-icon">💰</div>
-        <div class="stat-value" id="total-premium">$550</div>
+        <div class="stat-value" id="total-premium">$0</div>
         <div class="stat-label">Monthly Premium Total</div>
       </div>
       <div class="stat-box" style="background: linear-gradient(135deg, #28a745 0%, #20c997 100%);">
         <div class="stat-icon">🏥</div>
-        <div class="stat-value" id="wallet-balance">$850</div>
+        <div class="stat-value" id="wallet-balance">$0</div>
         <div class="stat-label">Health Wallet Balance</div>
       </div>
       <div class="stat-box">
         <div class="stat-icon">📈</div>
-        <div class="stat-value" id="investment-value">$12,450</div>
+        <div class="stat-value" id="investment-value">$0</div>
         <div class="stat-label">Total Investment Value</div>
       </div>
     </div>
@@ -206,7 +206,7 @@
     <section id="health-wallet" class="section-content" style="background: linear-gradient(135deg, #e8f5e9 0%, #c8e6c9 100%); border-radius: 12px; padding: 24px; margin-bottom: 32px;">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
         <h2 style="margin: 0;">🏥 PHINS Health Wallet</h2>
-        <span style="background: #28a745; color: white; padding: 8px 16px; border-radius: 20px; font-weight: 600;">Balance: <span id="wallet-balance-display">$850.00</span></span>
+        <span style="background: #28a745; color: white; padding: 8px 16px; border-radius: 20px; font-weight: 600;">Balance: <span id="wallet-balance-display">$0.00</span></span>
       </div>
       
       <p style="color: #555; margin-bottom: 20px;">Pay for medical products and services directly from your health wallet. Fast, easy, and covered by your PHINS policy.</p>
@@ -262,25 +262,7 @@
           </thead>
           <tbody id="purchase-history-table">
             <tr>
-              <td>Dec 20, 2025</td>
-              <td>🩺 General Practitioner Visit</td>
-              <td>Consultation</td>
-              <td>$75.00</td>
-              <td><span class="badge badge-active">Completed</span></td>
-            </tr>
-            <tr>
-              <td>Dec 15, 2025</td>
-              <td>🧴 Adult Diapers (Pack of 30)</td>
-              <td>Supplies</td>
-              <td>$28.00</td>
-              <td><span class="badge badge-active">Delivered</span></td>
-            </tr>
-            <tr>
-              <td>Dec 10, 2025</td>
-              <td>💊 Prescription Refill Service</td>
-              <td>Pharmacy</td>
-              <td>$10.00</td>
-              <td><span class="badge badge-active">Completed</span></td>
+              <td colspan="5" style="text-align: center; color: #666;">Loading purchase history...</td>
             </tr>
           </tbody>
         </table>
@@ -305,22 +287,7 @@
           </thead>
           <tbody id="policies-table">
             <tr>
-              <td>POL-000123</td>
-              <td>PHINS Standard</td>
-              <td>$1,000,000</td>
-              <td>$200/mo</td>
-              <td>$5,450</td>
-              <td><span class="badge badge-active">Active</span></td>
-              <td><button class="btn-small">View</button></td>
-            </tr>
-            <tr>
-              <td>POL-000124</td>
-              <td>PHINS Premium</td>
-              <td>$2,000,000</td>
-              <td>$350/mo</td>
-              <td>$7,000</td>
-              <td><span class="badge badge-active">Active</span></td>
-              <td><button class="btn-small">View</button></td>
+              <td colspan="7" style="text-align: center; color: #666;">Loading policies...</td>
             </tr>
           </tbody>
         </table>
@@ -338,15 +305,15 @@
         <div id="summary" class="summary-grid">
           <div class="summary-item">
             <div class="summary-label">Total Premium</div>
-            <div class="summary-value">$300.00</div>
+            <div class="summary-value">$0.00</div>
           </div>
           <div class="summary-item">
             <div class="summary-label">Risk Allocation (75%)</div>
-            <div class="summary-value">$225.00</div>
+            <div class="summary-value">$0.00</div>
           </div>
           <div class="summary-item">
             <div class="summary-label">Savings Allocation (25%)</div>
-            <div class="summary-value">$75.00</div>
+            <div class="summary-value">$0.00</div>
           </div>
         </div>
         
@@ -370,22 +337,9 @@
               <th>Actions</th>
             </tr>
           </thead>
-          <tbody>
+          <tbody id="claims-table">
             <tr>
-              <td>CLM-001234</td>
-              <td>PHINS Standard (POL-000123)</td>
-              <td>2025-12-05</td>
-              <td>$50,000/mo lifetime</td>
-              <td><span class="badge badge-pending">ADL Assessment</span></td>
-              <td><button class="btn-small">Details</button></td>
-            </tr>
-            <tr>
-              <td>CLM-001198</td>
-              <td>PHINS Premium (POL-000124)</td>
-              <td>2025-11-20</td>
-              <td>$850,000 lump sum</td>
-              <td><span class="badge badge-active">Approved - 3 ADLs Confirmed</span></td>
-              <td><button class="btn-small">Details</button></td>
+              <td colspan="6" style="text-align: center; color: #666;">Loading claims...</td>
             </tr>
           </tbody>
         </table>
@@ -401,25 +355,14 @@
       <div class="billing-grid">
         <div class="card">
           <h3>Current Balance</h3>
-          <div class="balance-amount">$450.00</div>
-          <p class="muted-text">Due Date: December 25, 2025</p>
+          <div class="balance-amount" id="current-balance">$0.00</div>
+          <p class="muted-text" id="due-date-text">Loading...</p>
           <button class="btn btn-primary btn-full" onclick="alert('Payment feature - Coming Soon!')">Make Payment</button>
         </div>
         <div class="card">
           <h3>Payment History</h3>
-          <ul class="payment-list">
-            <li>
-              <span>Nov 2025</span>
-              <span class="payment-amount">$450.00</span>
-            </li>
-            <li>
-              <span>Oct 2025</span>
-              <span class="payment-amount">$450.00</span>
-            </li>
-            <li>
-              <span>Sep 2025</span>
-              <span class="payment-amount">$450.00</span>
-            </li>
+          <ul class="payment-list" id="payment-history">
+            <li style="text-align: center; color: #666;">Loading payment history...</li>
           </ul>
           <a href="#" class="link">View All Payments</a>
         </div>
@@ -433,19 +376,19 @@
         <div class="portfolio-summary">
           <div class="portfolio-item">
             <div class="portfolio-label">Total Investment Value</div>
-            <div class="portfolio-value">$12,450.00</div>
+            <div class="portfolio-value" id="portfolio-value">$0.00</div>
           </div>
           <div class="portfolio-item">
             <div class="portfolio-label">Total Contributions</div>
-            <div class="portfolio-value">$10,800.00</div>
+            <div class="portfolio-value" id="portfolio-contributions">$0.00</div>
           </div>
           <div class="portfolio-item">
             <div class="portfolio-label">Total Returns</div>
-            <div class="portfolio-value text-success">+$1,650.00 (15.3%)</div>
+            <div class="portfolio-value text-success" id="portfolio-returns">$0.00 (0%)</div>
           </div>
         </div>
         <div style="margin-top:24px">
-          <a href="#" class="link">View Detailed Portfolio Analysis</a>
+          <a href="/savings-portfolio.html" class="link">View Detailed Portfolio Analysis</a>
         </div>
       </div>
     </section>
@@ -476,16 +419,20 @@
       await Promise.all([
         loadWalletBalance(),
         loadPolicies(),
+        loadClaims(),
+        loadBillingInfo(),
         loadTransactionHistory(),
         loadCustomerNFTs(),
-        loadInvestmentPortfolio()
+        loadInvestmentPortfolio(),
+        loadPortfolioData()
       ]);
     });
     
     // Load investment portfolio data
     async function loadInvestmentPortfolio() {
       try {
-        const cid = customerId || 'CUST-ASAF-001';
+        const cid = customerId || sessionStorage.getItem('customer_id');
+        if (!cid) return;
         
         // First try to get savings accounts
         const accountsResponse = await fetch(`/api/savings/accounts?customer_id=${cid}`);
@@ -517,16 +464,15 @@
         }
       } catch (error) {
         console.log('Investment portfolio load error (non-critical):', error);
-        // Keep default value
       }
     }
     
     // Load wallet balance from marketplace API
     async function loadWalletBalance() {
       try {
-        if (!customerId) {
-          // Initialize with default for demo
-          walletBalance = 850.00;
+        const cid = customerId || sessionStorage.getItem('customer_id');
+        if (!cid) {
+          walletBalance = 0;
           updateWalletDisplay();
           return;
         }
@@ -537,18 +483,144 @@
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${authToken}`
           },
-          body: JSON.stringify({ customer_id: customerId })
+          body: JSON.stringify({ customer_id: cid })
         });
         
         if (response.ok) {
           const data = await response.json();
           walletBalance = data.balance || 0;
           updateWalletDisplay();
+        } else {
+          walletBalance = 0;
+          updateWalletDisplay();
         }
       } catch (err) {
         console.error('Failed to load wallet balance:', err);
-        walletBalance = 850.00; // Fallback for demo
+        walletBalance = 0;
         updateWalletDisplay();
+      }
+    }
+    
+    // Load claims from API
+    async function loadClaims() {
+      try {
+        const response = await fetch('/api/claims', {
+          headers: { 'Authorization': `Bearer ${authToken}` }
+        });
+        
+        if (response.ok) {
+          const data = await response.json();
+          const claims = data.claims || [];
+          displayClaims(claims);
+        }
+      } catch (err) {
+        console.error('Failed to load claims:', err);
+        document.getElementById('claims-table').innerHTML = 
+          '<tr><td colspan="6" style="text-align:center;color:#666;">No claims found</td></tr>';
+      }
+    }
+    
+    function displayClaims(claims) {
+      const tbody = document.getElementById('claims-table');
+      if (!claims.length) {
+        tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#666;">No claims found</td></tr>';
+        return;
+      }
+      
+      tbody.innerHTML = claims.slice(0, 5).map(c => {
+        const statusClass = (c.status || '').toLowerCase().includes('approved') ? 'badge-active' : 
+                           (c.status || '').toLowerCase().includes('pending') ? 'badge-pending' : 'badge-orange';
+        return `
+          <tr>
+            <td>${c.id}</td>
+            <td>${c.policy_id || 'N/A'}</td>
+            <td>${c.filed_date ? new Date(c.filed_date).toLocaleDateString() : 'N/A'}</td>
+            <td>$${Number(c.claimed_amount || 0).toLocaleString()}</td>
+            <td><span class="badge ${statusClass}">${c.status || 'Pending'}</span></td>
+            <td><button class="btn-small" onclick="viewClaim('${c.id}')">Details</button></td>
+          </tr>
+        `;
+      }).join('');
+    }
+    
+    function viewClaim(claimId) {
+      alert('Claim Details: ' + claimId + '\\n\\nFull claim management coming soon.');
+    }
+    
+    // Load billing information
+    async function loadBillingInfo() {
+      try {
+        const cid = customerId || sessionStorage.getItem('customer_id');
+        const response = await fetch(`/api/billing?customer_id=${cid || ''}`, {
+          headers: { 'Authorization': `Bearer ${authToken}` }
+        });
+        
+        if (response.ok) {
+          const data = await response.json();
+          const bills = data.bills || [];
+          displayBillingInfo(bills);
+        }
+      } catch (err) {
+        console.error('Failed to load billing info:', err);
+      }
+    }
+    
+    function displayBillingInfo(bills) {
+      const pendingBills = bills.filter(b => b.status === 'pending' || b.status === 'outstanding');
+      const paidBills = bills.filter(b => b.status === 'paid');
+      
+      // Current balance
+      const totalOutstanding = pendingBills.reduce((sum, b) => sum + Number(b.amount_due || 0), 0);
+      document.getElementById('current-balance').textContent = '$' + totalOutstanding.toFixed(2);
+      
+      // Due date
+      const nextBill = pendingBills.sort((a, b) => new Date(a.due_date) - new Date(b.due_date))[0];
+      if (nextBill && nextBill.due_date) {
+        document.getElementById('due-date-text').textContent = 'Due: ' + new Date(nextBill.due_date).toLocaleDateString();
+      } else {
+        document.getElementById('due-date-text').textContent = 'No outstanding balance';
+      }
+      
+      // Payment history
+      const historyList = document.getElementById('payment-history');
+      if (paidBills.length === 0) {
+        historyList.innerHTML = '<li style="text-align:center;color:#666;">No payment history</li>';
+      } else {
+        historyList.innerHTML = paidBills.slice(0, 5).map(b => {
+          const date = b.paid_date ? new Date(b.paid_date).toLocaleDateString('en-US', {month: 'short', year: 'numeric'}) : 'N/A';
+          return `<li><span>${date}</span><span class="payment-amount">$${Number(b.amount_paid || b.amount_due || 0).toFixed(2)}</span></li>`;
+        }).join('');
+      }
+    }
+    
+    // Load portfolio data
+    async function loadPortfolioData() {
+      try {
+        const cid = customerId || sessionStorage.getItem('customer_id') || 'CUST-ASAF-001';
+        const accountsResponse = await fetch(`/api/savings/accounts?customer_id=${cid}`);
+        const accountsData = await accountsResponse.json();
+        
+        if (accountsData.accounts && accountsData.accounts.length > 0) {
+          const account = accountsData.accounts[0];
+          const portfolioResponse = await fetch(`/api/savings/portfolio?account_id=${account.account_id}`);
+          const portfolioData = await portfolioResponse.json();
+          
+          const totalValue = portfolioData.total_account_value || 0;
+          const contributions = portfolioData.total_contributions || 0;
+          const returns = totalValue - contributions;
+          const returnPct = contributions > 0 ? ((returns / contributions) * 100).toFixed(1) : 0;
+          
+          document.getElementById('portfolio-value').textContent = '$' + totalValue.toLocaleString('en-US', {minimumFractionDigits: 2});
+          document.getElementById('portfolio-contributions').textContent = '$' + contributions.toLocaleString('en-US', {minimumFractionDigits: 2});
+          document.getElementById('portfolio-returns').textContent = (returns >= 0 ? '+' : '') + '$' + returns.toLocaleString('en-US', {minimumFractionDigits: 2}) + ' (' + returnPct + '%)';
+          
+          if (returns < 0) {
+            document.getElementById('portfolio-returns').classList.remove('text-success');
+            document.getElementById('portfolio-returns').classList.add('text-danger');
+          }
+        }
+      } catch (err) {
+        console.log('Portfolio load info (non-critical):', err);
       }
     }
     
@@ -774,7 +846,7 @@
             'Authorization': `Bearer ${authToken}`
           },
           body: JSON.stringify({
-            customer_id: customerId || 'CUST001',
+            customer_id: customerId || sessionStorage.getItem('customer_id') || '',
             product_id: productId,
             product_details: {
               ...productDetails,
@@ -856,7 +928,7 @@
             'Authorization': `Bearer ${authToken}`
           },
           body: JSON.stringify({
-            customer_id: customerId || 'CUST001',
+            customer_id: customerId || sessionStorage.getItem('customer_id') || '',
             amount: numAmount,
             source: 'card_payment'
           })
@@ -1001,33 +1073,47 @@
     }
     
     // Load statement data
-    fetch('/api/statement?customer_id=CUST001')
-      .then(res => res.json())
-      .then(data => {
+    async function loadStatementData() {
+      const cid = customerId || sessionStorage.getItem('customer_id');
+      if (!cid) return;
+      
+      try {
+        const res = await fetch(`/api/statement?customer_id=${cid}`);
+        const data = await res.json();
+        
         document.getElementById('summary').innerHTML = `
           <div class="summary-item">
             <div class="summary-label">Total Premium</div>
-            <div class="summary-value">$${data.total_premium.toFixed(2)}</div>
+            <div class="summary-value">$${Number(data.total_premium || 0).toFixed(2)}</div>
           </div>
           <div class="summary-item">
             <div class="summary-label">Risk Allocation (75%)</div>
-            <div class="summary-value">$${data.risk_total.toFixed(2)}</div>
+            <div class="summary-value">$${Number(data.risk_total || 0).toFixed(2)}</div>
           </div>
           <div class="summary-item">
             <div class="summary-label">Savings Allocation (25%)</div>
-            <div class="summary-value">$${data.savings_total.toFixed(2)}</div>
+            <div class="summary-value">$${Number(data.savings_total || 0).toFixed(2)}</div>
           </div>
         `;
         
         const list = document.getElementById('alloc-list');
-        list.innerHTML = data.allocations.map(a => `
-          <li>
-            <span><strong>${a.allocation_id}</strong></span>
-            <span>Total: $${a.amount.toFixed(2)} | Risk: $${a.risk_amount.toFixed(2)} | Savings: $${a.savings_amount.toFixed(2)}</span>
-          </li>
-        `).join('');
-      })
-      .catch(err => console.error('Error loading statement:', err));
+        if (data.allocations && data.allocations.length > 0) {
+          list.innerHTML = data.allocations.map(a => `
+            <li>
+              <span><strong>${a.allocation_id}</strong></span>
+              <span>Total: $${Number(a.amount || 0).toFixed(2)} | Risk: $${Number(a.risk_amount || 0).toFixed(2)} | Savings: $${Number(a.savings_amount || 0).toFixed(2)}</span>
+            </li>
+          `).join('');
+        } else {
+          list.innerHTML = '<li style="color:#666;">No allocations found</li>';
+        }
+      } catch (err) {
+        console.error('Error loading statement:', err);
+      }
+    }
+    
+    // Call statement data loader after DOM content loaded
+    loadStatementData();
 
     // Set username from sessionStorage if available
     const storedUser = sessionStorage.getItem('username');

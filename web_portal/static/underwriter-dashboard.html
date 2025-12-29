@@ -266,7 +266,19 @@
             document.getElementById('pending-count').textContent = pending.length;
             document.getElementById('approved-today').textContent = approvedToday.length;
             document.getElementById('high-risk-count').textContent = highRisk.length;
-            document.getElementById('avg-processing').textContent = '2.5h';
+            
+            // Calculate avg processing time from actual data
+            const processedApps = applications.filter(a => a.status === 'approved' && a.created_date && a.updated_date);
+            if (processedApps.length > 0) {
+                const avgHours = processedApps.reduce((sum, a) => {
+                    const created = new Date(a.created_date);
+                    const updated = new Date(a.updated_date);
+                    return sum + (updated - created) / (1000 * 60 * 60);
+                }, 0) / processedApps.length;
+                document.getElementById('avg-processing').textContent = avgHours < 24 ? avgHours.toFixed(1) + 'h' : (avgHours / 24).toFixed(1) + 'd';
+            } else {
+                document.getElementById('avg-processing').textContent = '-';
+            }
         }
         
         function openAssessment(appId, defaultDecision) {

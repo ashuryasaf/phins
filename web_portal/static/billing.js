@@ -598,21 +598,13 @@ async function loadRecentTransactions() {
       transactions = data.transactions || [];
     }
     
-    // Fallback mock data if no transactions
+    const list = document.getElementById('transaction-list');
+    
     if (transactions.length === 0) {
-      transactions = [
-        {
-          transaction_id: 'TXN-' + Date.now(),
-          customer_id: 'CUST-DEMO',
-          amount: 250.00,
-          status: 'success',
-          timestamp: new Date().toISOString(),
-          payment_method: '****-****-****-4242'
-        }
-      ];
+      list.innerHTML = '<p class="muted">No recent transactions</p>';
+      return;
     }
     
-    const list = document.getElementById('transaction-list');
     list.innerHTML = transactions.map(txn => `
       <div class="transaction-item">
         <div>

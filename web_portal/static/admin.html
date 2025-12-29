@@ -330,51 +330,9 @@
               <th>Actions</th>
             </tr>
           </thead>
-          <tbody>
+          <tbody id="policies-tbody">
             <tr>
-              <td>POL-000123</td>
-              <td>John Smith</td>
-              <td>PHINS Standard</td>
-              <td>$200/mo</td>
-              <td>$1,000,000</td>
-              <td>$5,450</td>
-              <td><span class="badge badge-active">Active</span></td>
-              <td>2024-01-15</td>
-              <td>
-                <button class="btn-icon" title="View">👁️</button>
-                <button class="btn-icon" title="Edit">✏️</button>
-                <button class="btn-icon" title="Renew">🔄</button>
-              </td>
-            </tr>
-            <tr>
-              <td>POL-000124</td>
-              <td>Jane Doe</td>
-              <td>PHINS Premium</td>
-              <td>$350/mo</td>
-              <td>$2,000,000</td>
-              <td>$7,000</td>
-              <td><span class="badge badge-active">Active</span></td>
-              <td>2024-03-20</td>
-              <td>
-                <button class="btn-icon" title="View">👁️</button>
-                <button class="btn-icon" title="Edit">✏️</button>
-                <button class="btn-icon" title="Renew">🔄</button>
-              </td>
-            </tr>
-            <tr>
-              <td>POL-000125</td>
-              <td>Bob Johnson</td>
-              <td>PHINS Elite</td>
-              <td>$800/mo</td>
-              <td>$5,000,000</td>
-              <td>$0</td>
-              <td><span class="badge badge-pending">Pending UW</span></td>
-              <td>2025-12-01</td>
-              <td>
-                <button class="btn-icon" title="View">👁️</button>
-                <button class="btn-icon" title="Edit">✏️</button>
-                <button class="btn-icon" title="Approve">✓</button>
-              </td>
+              <td colspan="9" style="text-align: center; color: #666;">Loading policies...</td>
             </tr>
           </tbody>
         </table>
@@ -385,7 +343,7 @@
     <section id="underwriting" class="section-content">
       <div class="section-header">
         <h2>🔍 Underwriting Division — Risk Assessment</h2>
-        <span class="badge badge-orange">15 Pending Reviews</span>
+        <span class="badge badge-orange" id="uw-pending-badge">0 Pending Reviews</span>
       </div>
       
       <div class="table-card">
@@ -402,44 +360,9 @@
               <th>Actions</th>
             </tr>
           </thead>
-          <tbody>
+          <tbody id="underwriting-tbody">
             <tr>
-              <td>UW-00123</td>
-              <td>POL-000125</td>
-              <td>Bob Johnson</td>
-              <td><span class="badge badge-orange">Medium</span></td>
-              <td>Yes</td>
-              <td>+10%</td>
-              <td><span class="badge badge-pending">Pending</span></td>
-              <td>
-                <button class="btn-small btn-success" onclick="alert('Approve')">Approve</button>
-                <button class="btn-small btn-danger" onclick="alert('Reject')">Reject</button>
-              </td>
-            </tr>
-            <tr>
-              <td>UW-00124</td>
-              <td>POL-000126</td>
-              <td>Alice Williams</td>
-              <td><span class="badge badge-success">Low</span></td>
-              <td>No</td>
-              <td>0%</td>
-              <td><span class="badge badge-pending">Pending</span></td>
-              <td>
-                <button class="btn-small btn-success" onclick="alert('Approve')">Approve</button>
-                <button class="btn-small btn-danger" onclick="alert('Reject')">Reject</button>
-              </td>
-            </tr>
-            <tr>
-              <td>UW-00122</td>
-              <td>POL-000123</td>
-              <td>John Smith</td>
-              <td><span class="badge badge-success">Low</span></td>
-              <td>No</td>
-              <td>0%</td>
-              <td><span class="badge badge-active">Approved</span></td>
-              <td>
-                <button class="btn-icon" title="View">👁️</button>
-              </td>
+              <td colspan="8" style="text-align: center; color: #666;">Loading underwriting applications...</td>
             </tr>
           </tbody>
         </table>
@@ -450,7 +373,7 @@
     <section id="claims" class="section-content">
       <div class="section-header">
         <h2>📝 Claims Division — ADL-Based Disability Claims</h2>
-        <span class="badge badge-orange">15 ADL Assessments Pending</span>
+        <span class="badge badge-orange" id="claims-pending-badge">0 ADL Assessments Pending</span>
       </div>
       
       <div class="table-card">
@@ -469,35 +392,9 @@
               <th>Actions</th>
             </tr>
           </thead>
-          <tbody>
+          <tbody id="claims-tbody">
             <tr>
-              <td>CLM-001234</td>
-              <td>POL-000123</td>
-              <td>John Smith</td>
-              <td>Bathing, Dressing, Transferring (3)</td>
-              <td>Monthly Lifetime</td>
-              <td>$50,000/mo</td>
-              <td>-</td>
-              <td>2025-12-05</td>
-              <td><span class="badge badge-pending">Medical Assessment</span></td>
-              <td>
-                <button class="btn-small btn-success" onclick="approveClaim('CLM-001234')">Approve</button>
-                <button class="btn-small btn-danger" onclick="alert('Reject')">Reject</button>
-              </td>
-            </tr>
-            <tr>
-              <td>CLM-001235</td>
-              <td>POL-000124</td>
-              <td>Jane Doe</td>
-              <td>Eating, Toileting, Continence, Dressing (4)</td>
-              <td>Lump Sum</td>
-              <td>$850,000</td>
-              <td>$850,000</td>
-              <td>2025-12-03</td>
-              <td><span class="badge badge-active">Approved - Permanent Disability Confirmed</span></td>
-              <td>
-                <button class="btn-small" onclick="alert('Process Payment')">Pay</button>
-              </td>
+              <td colspan="10" style="text-align: center; color: #666;">Loading claims...</td>
             </tr>
           </tbody>
         </table>
@@ -515,19 +412,19 @@
           <h3>Revenue Overview</h3>
           <div class="revenue-item">
             <span>Monthly Premium Income:</span>
-            <span class="revenue-value">$8,234,500</span>
+            <span class="revenue-value" id="revenue-premium">$0</span>
           </div>
           <div class="revenue-item">
             <span>Outstanding Receivables:</span>
-            <span class="revenue-value text-warning">$456,780</span>
+            <span class="revenue-value text-warning" id="revenue-outstanding">$0</span>
           </div>
           <div class="revenue-item">
             <span>Claims Paid (This Month):</span>
-            <span class="revenue-value">$2,345,600</span>
+            <span class="revenue-value" id="revenue-claims">$0</span>
           </div>
           <div class="revenue-item">
             <span>Investment Returns:</span>
-            <span class="revenue-value text-success">+$1,234,500</span>
+            <span class="revenue-value text-success" id="revenue-investment">$0</span>
           </div>
         </div>
       </div>
@@ -545,22 +442,9 @@
               <th>Date</th>
             </tr>
           </thead>
-          <tbody>
+          <tbody id="transactions-tbody">
             <tr>
-              <td>TXN-98765</td>
-              <td>John Smith</td>
-              <td>Premium Payment</td>
-              <td class="text-success">+$200</td>
-              <td><span class="badge badge-active">Paid</span></td>
-              <td>2025-12-10</td>
-            </tr>
-            <tr>
-              <td>TXN-98764</td>
-              <td>Jane Doe</td>
-              <td>Claim Payment</td>
-              <td class="text-danger">-$3,200</td>
-              <td><span class="badge badge-active">Processed</span></td>
-              <td>2025-12-09</td>
+              <td colspan="6" style="text-align: center; color: #666;">Loading transactions...</td>
             </tr>
           </tbody>
         </table>
@@ -585,22 +469,9 @@
               <th>Actions</th>
             </tr>
           </thead>
-          <tbody>
+          <tbody id="reinsurance-tbody">
             <tr>
-              <td>Swiss Re</td>
-              <td>Proportional</td>
-              <td>$125,000,000</td>
-              <td>15%</td>
-              <td><span class="badge badge-active">Active</span></td>
-              <td><button class="btn-icon">👁️</button></td>
-            </tr>
-            <tr>
-              <td>Munich Re</td>
-              <td>Excess-of-Loss</td>
-              <td>$50,000,000</td>
-              <td>12%</td>
-              <td><span class="badge badge-active">Active</span></td>
-              <td><button class="btn-icon">👁️</button></td>
+              <td colspan="6" style="text-align: center; color: #666;">Loading reinsurance data...</td>
             </tr>
           </tbody>
         </table>
@@ -618,19 +489,19 @@
           <h3>Legal Overview</h3>
           <div class="legal-item">
             <span>Open Disputes:</span>
-            <span class="legal-value">12</span>
+            <span class="legal-value" id="legal-disputes">0</span>
           </div>
           <div class="legal-item">
             <span>Pending Litigations:</span>
-            <span class="legal-value text-warning">3</span>
+            <span class="legal-value text-warning" id="legal-litigations">0</span>
           </div>
           <div class="legal-item">
             <span>Compliance Audits:</span>
-            <span class="legal-value text-success">All Clear</span>
+            <span class="legal-value text-success" id="legal-compliance">Loading...</span>
           </div>
           <div class="legal-item">
             <span>Regulatory Filings:</span>
-            <span class="legal-value text-success">Up to Date</span>
+            <span class="legal-value text-success" id="legal-filings">Loading...</span>
           </div>
         </div>
       </div>
@@ -852,6 +723,9 @@
       loadPolicies();
       loadClaims();
       loadBillingData();
+      loadTransactions();
+      loadReinsuranceData();
+      loadLegalData();
     });
     
     // Customer data storage
@@ -1207,8 +1081,18 @@
     }
     
     function displayUnderwritingApplications(applications) {
-      const tbody = document.querySelector('#underwriting .data-table tbody');
-      if (!tbody || applications.length === 0) return;
+      const tbody = document.getElementById('underwriting-tbody');
+      if (!tbody) return;
+      
+      // Update badge
+      const pendingCount = applications.filter(a => a.status === 'pending').length;
+      const badge = document.getElementById('uw-pending-badge');
+      if (badge) badge.textContent = `${pendingCount} Pending Reviews`;
+      
+      if (applications.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:#666;">No underwriting applications found</td></tr>';
+        return;
+      }
       
       tbody.innerHTML = applications.slice(0, 10).map(app => {
         const riskClass = app.risk_score === 'low' || app.risk_assessment === 'low' ? 'badge-success' :
@@ -1223,7 +1107,7 @@
             <td>${app.customer_name || 'N/A'}</td>
             <td><span class="badge ${riskClass}">${(app.risk_score || app.risk_assessment || 'medium').charAt(0).toUpperCase() + (app.risk_score || app.risk_assessment || 'medium').slice(1)}</span></td>
             <td>${app.medical_exam_required ? 'Yes' : 'No'}</td>
-            <td>${app.premium_adjustment ? app.premium_adjustment + '%' : '0%'}</td>
+            <td>${app.premium_adjustment ? '+' + app.premium_adjustment + '%' : '0%'}</td>
             <td><span class="badge ${statusClass}">${(app.status || 'pending').charAt(0).toUpperCase() + (app.status || 'pending').slice(1)}</span></td>
             <td>
               ${app.status === 'pending' ? `
@@ -1306,12 +1190,17 @@
     }
     
     function displayPolicies(policies) {
-      const tbody = document.querySelector('#policies .data-table tbody');
-      if (!tbody || policies.length === 0) return;
+      const tbody = document.getElementById('policies-tbody');
+      if (!tbody) return;
+      
+      if (policies.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:#666;">No policies found</td></tr>';
+        return;
+      }
       
       tbody.innerHTML = policies.slice(0, 10).map(policy => {
         const statusClass = policy.status === 'active' ? 'badge-active' : 
-                           policy.status === 'pending' ? 'badge-pending' : 'badge-danger';
+                           policy.status === 'pending' || policy.status === 'pending_underwriting' ? 'badge-pending' : 'badge-danger';
         
         return `
           <tr>
@@ -1321,7 +1210,7 @@
             <td>$${Number(policy.monthly_premium || 0).toFixed(0)}/mo</td>
             <td>$${Number(policy.coverage_amount || 0).toLocaleString()}</td>
             <td>$${Number(policy.investment_value || 0).toLocaleString()}</td>
-            <td><span class="badge ${statusClass}">${(policy.status || 'pending').charAt(0).toUpperCase() + (policy.status || 'pending').slice(1)}</span></td>
+            <td><span class="badge ${statusClass}">${(policy.status || 'pending').replace('_', ' ').charAt(0).toUpperCase() + (policy.status || 'pending').replace('_', ' ').slice(1)}</span></td>
             <td>${policy.start_date ? new Date(policy.start_date).toLocaleDateString() : 'N/A'}</td>
             <td>
               <button class="btn-icon" title="View">👁️</button>
@@ -1350,35 +1239,99 @@
     }
     
     function displayClaims(claims) {
-      const tbody = document.querySelector('#claims .data-table tbody');
-      if (!tbody || claims.length === 0) return;
+      const tbody = document.getElementById('claims-tbody');
+      if (!tbody) return;
+      
+      // Update badge
+      const pendingCount = claims.filter(c => c.status === 'Pending' || c.status === 'pending' || c.status === 'Under Review').length;
+      const badge = document.getElementById('claims-pending-badge');
+      if (badge) badge.textContent = `${pendingCount} ADL Assessments Pending`;
+      
+      if (claims.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;color:#666;">No claims found</td></tr>';
+        return;
+      }
       
       tbody.innerHTML = claims.slice(0, 10).map(claim => {
-        const statusClass = claim.status === 'approved' ? 'badge-active' : 
-                           claim.status === 'pending' ? 'badge-pending' : 'badge-danger';
+        const status = (claim.status || 'pending').toLowerCase();
+        const statusClass = status === 'approved' || status === 'paid' ? 'badge-active' : 
+                           status === 'pending' || status === 'under review' ? 'badge-pending' : 'badge-danger';
         
         return `
           <tr>
             <td>${claim.id || claim.claim_id}</td>
-            <td>${claim.policy_id}</td>
-            <td>${claim.customer_name || 'N/A'}</td>
-            <td>${claim.adl_impairments || 'N/A'}</td>
+            <td>${claim.policy_id || 'N/A'}</td>
+            <td>${claim.customer_name || claim.customer_id || 'N/A'}</td>
+            <td>${claim.adl_impairments || claim.type || 'N/A'}</td>
             <td>${claim.benefit_type || 'Standard'}</td>
-            <td>$${Number(claim.amount_claimed || 0).toLocaleString()}</td>
-            <td>$${Number(claim.amount_approved || 0).toLocaleString()}</td>
-            <td>${claim.date_filed ? new Date(claim.date_filed).toLocaleDateString() : 'N/A'}</td>
-            <td><span class="badge ${statusClass}">${(claim.status || 'pending').charAt(0).toUpperCase() + (claim.status || 'pending').slice(1)}</span></td>
+            <td>$${Number(claim.claimed_amount || claim.amount_claimed || 0).toLocaleString()}</td>
+            <td>$${Number(claim.approved_amount || claim.amount_approved || 0).toLocaleString()}</td>
+            <td>${claim.filed_date || claim.date_filed ? new Date(claim.filed_date || claim.date_filed).toLocaleDateString() : 'N/A'}</td>
+            <td><span class="badge ${statusClass}">${(claim.status || 'Pending')}</span></td>
             <td>
-              ${claim.status === 'pending' ? `
+              ${status === 'pending' || status === 'under review' ? `
                 <button class="btn-small btn-success" onclick="approveClaim('${claim.id || claim.claim_id}')">Approve</button>
-                <button class="btn-small btn-danger" onclick="alert('Reject')">Reject</button>
+                <button class="btn-small btn-danger" onclick="rejectClaim('${claim.id || claim.claim_id}')">Reject</button>
+              ` : status === 'approved' ? `
+                <button class="btn-small" onclick="payClaim('${claim.id || claim.claim_id}')">Pay</button>
               ` : `
-                <button class="btn-small" onclick="alert('Process Payment')">Pay</button>
+                <button class="btn-icon" title="View">👁️</button>
               `}
             </td>
           </tr>
         `;
       }).join('');
+    }
+    
+    // Reject claim function
+    async function rejectClaim(claimId) {
+      const reason = prompt('Enter rejection reason:');
+      if (!reason) return;
+      
+      try {
+        const response = await fetch('/api/claims/reject', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ id: claimId, reason: reason })
+        });
+        
+        if (response.ok) {
+          alert('Claim rejected.');
+          loadClaims();
+        } else {
+          alert('Failed to reject claim.');
+        }
+      } catch (err) {
+        alert('Error: ' + err.message);
+      }
+    }
+    
+    // Pay claim function
+    async function payClaim(claimId) {
+      if (!confirm('Process payment for claim ' + claimId + '?')) return;
+      
+      try {
+        const response = await fetch('/api/claims/pay', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ id: claimId })
+        });
+        
+        if (response.ok) {
+          alert('Payment processed successfully!');
+          loadClaims();
+        } else {
+          alert('Failed to process payment.');
+        }
+      } catch (err) {
+        alert('Error: ' + err.message);
+      }
     }
     
     // Load billing data dynamically
@@ -1391,14 +1344,129 @@
         if (response.ok) {
           const data = await response.json();
           
-          // Update billing section revenue
-          const revenueItems = document.querySelectorAll('#billing .revenue-item .revenue-value');
-          if (revenueItems.length >= 2) {
-            revenueItems[0].textContent = '$' + Number(data.total_revenue || 0).toLocaleString();
-          }
+          // Update revenue stats
+          document.getElementById('revenue-premium').textContent = '$' + Number(data.total_revenue || data.monthly_premium_income || 0).toLocaleString();
+          document.getElementById('revenue-outstanding').textContent = '$' + Number(data.outstanding_balance || data.outstanding_receivables || 0).toLocaleString();
+          document.getElementById('revenue-claims').textContent = '$' + Number(data.claims_paid || data.claims_paid_this_month || 0).toLocaleString();
+          document.getElementById('revenue-investment').textContent = '+$' + Number(data.investment_returns || 0).toLocaleString();
         }
       } catch (err) {
         console.error('Failed to load billing data:', err);
+        // Set to 0 on error
+        document.getElementById('revenue-premium').textContent = '$0';
+        document.getElementById('revenue-outstanding').textContent = '$0';
+        document.getElementById('revenue-claims').textContent = '$0';
+        document.getElementById('revenue-investment').textContent = '$0';
+      }
+    }
+    
+    // Load transactions
+    async function loadTransactions() {
+      try {
+        const response = await fetch('/api/billing/transactions', {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        
+        const tbody = document.getElementById('transactions-tbody');
+        if (response.ok) {
+          const data = await response.json();
+          const transactions = data.transactions || [];
+          
+          if (transactions.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#666;">No transactions found</td></tr>';
+            return;
+          }
+          
+          tbody.innerHTML = transactions.slice(0, 10).map(txn => {
+            const isPositive = txn.type === 'premium' || txn.type === 'payment' || txn.type === 'deposit';
+            const amountClass = isPositive ? 'text-success' : 'text-danger';
+            const amountPrefix = isPositive ? '+' : '-';
+            const statusClass = txn.status === 'completed' || txn.status === 'paid' ? 'badge-active' : 'badge-pending';
+            
+            return `
+              <tr>
+                <td>${txn.id || txn.transaction_id || 'N/A'}</td>
+                <td>${txn.customer_name || txn.customer_id || 'N/A'}</td>
+                <td>${txn.type || 'Payment'}</td>
+                <td class="${amountClass}">${amountPrefix}$${Number(txn.amount || 0).toLocaleString()}</td>
+                <td><span class="badge ${statusClass}">${txn.status || 'Pending'}</span></td>
+                <td>${txn.date ? new Date(txn.date).toLocaleDateString() : 'N/A'}</td>
+              </tr>
+            `;
+          }).join('');
+        } else {
+          tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#666;">No transactions found</td></tr>';
+        }
+      } catch (err) {
+        console.error('Failed to load transactions:', err);
+        document.getElementById('transactions-tbody').innerHTML = 
+          '<tr><td colspan="6" style="text-align:center;color:#666;">No transactions found</td></tr>';
+      }
+    }
+    
+    // Load reinsurance data
+    async function loadReinsuranceData() {
+      try {
+        const response = await fetch('/api/reinsurance', {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        
+        const tbody = document.getElementById('reinsurance-tbody');
+        if (response.ok) {
+          const data = await response.json();
+          const partners = data.partners || [];
+          
+          if (partners.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#666;">No reinsurance partners configured</td></tr>';
+            return;
+          }
+          
+          tbody.innerHTML = partners.map(p => `
+            <tr>
+              <td>${p.name || 'N/A'}</td>
+              <td>${p.type || 'N/A'}</td>
+              <td>$${Number(p.ceded_amount || 0).toLocaleString()}</td>
+              <td>${p.commission_rate || 0}%</td>
+              <td><span class="badge badge-active">${p.status || 'Active'}</span></td>
+              <td><button class="btn-icon" title="View">👁️</button></td>
+            </tr>
+          `).join('');
+        } else {
+          tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#666;">No reinsurance data available</td></tr>';
+        }
+      } catch (err) {
+        console.error('Failed to load reinsurance data:', err);
+        document.getElementById('reinsurance-tbody').innerHTML = 
+          '<tr><td colspan="6" style="text-align:center;color:#666;">No reinsurance data available</td></tr>';
+      }
+    }
+    
+    // Load legal data
+    async function loadLegalData() {
+      try {
+        const response = await fetch('/api/legal/stats', {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        
+        if (response.ok) {
+          const data = await response.json();
+          document.getElementById('legal-disputes').textContent = data.open_disputes || 0;
+          document.getElementById('legal-litigations').textContent = data.pending_litigations || 0;
+          document.getElementById('legal-compliance').textContent = data.compliance_status || 'All Clear';
+          document.getElementById('legal-filings').textContent = data.regulatory_status || 'Up to Date';
+        } else {
+          // Default values when API not available
+          document.getElementById('legal-disputes').textContent = '0';
+          document.getElementById('legal-litigations').textContent = '0';
+          document.getElementById('legal-compliance').textContent = 'All Clear';
+          document.getElementById('legal-filings').textContent = 'Up to Date';
+        }
+      } catch (err) {
+        console.error('Failed to load legal data:', err);
+        document.getElementById('legal-disputes').textContent = '0';
+        document.getElementById('legal-litigations').textContent = '0';
+        document.getElementById('legal-compliance').textContent = 'All Clear';
+        document.getElementById('legal-filings').textContent = 'Up to Date';
       }
     }
 
