@@ -3329,8 +3329,20 @@ documents for full terms and conditions.
                             existing_customer = db.customers.get_by_email(customer_email)
                             if existing_customer:
                                 customer_id = existing_customer.id
+                                # Ensure customer is in CUSTOMERS dict for response
+                                if customer_id not in CUSTOMERS:
+                                    CUSTOMERS[customer_id] = {
+                                        'id': customer_id,
+                                        'name': existing_customer.name if hasattr(existing_customer, 'name') else customer_name,
+                                        'email': existing_customer.email if hasattr(existing_customer, 'email') else customer_email,
+                                        'phone': existing_customer.phone if hasattr(existing_customer, 'phone') else customer_phone,
+                                        'created_date': existing_customer.created_at.isoformat() if hasattr(existing_customer, 'created_at') and existing_customer.created_at else datetime.now().isoformat()
+                                    }
                     except Exception as e:
                         print(f"Error checking existing customer: {e}")
+                
+                # Initialize temp_password to None (will be set if new customer is created)
+                temp_password = None
                 
                 # Create customer if new (and no existing customer with same email)
                 if not existing_customer and customer_id not in CUSTOMERS:
@@ -3487,17 +3499,36 @@ documents for full terms and conditions.
                 
                 self._set_json_headers(201)
                 
-                # Return temp_password (stored in closure before hashing)
-                login_username = CUSTOMERS[customer_id].get('email') or f"{customer_id.lower()}@example.com"
-                self.wfile.write(json.dumps({
+                # Build response - safely get customer data
+                customer_data = CUSTOMERS.get(customer_id, {
+                    'id': customer_id,
+                    'name': customer_name,
+                    'email': customer_email,
+                    'phone': customer_phone
+                })
+                login_username = customer_data.get('email') or f"{customer_id.lower()}@example.com"
+                
+                response_data = {
                     'policy': policy,
                     'underwriting': UNDERWRITING_APPLICATIONS[uw_id],
-                    'customer': CUSTOMERS[customer_id],
-                    'provisioned_login': {
+                    'customer': customer_data
+                }
+                
+                # Only include provisioned_login if this is a new customer with temp password
+                if temp_password:
+                    response_data['provisioned_login'] = {
                         'username': login_username,
                         'password': temp_password  # Return plain password for first login
                     }
-                }).encode('utf-8'))
+                else:
+                    # Existing customer - indicate they should use existing credentials
+                    response_data['provisioned_login'] = {
+                        'username': login_username,
+                        'existing_account': True,
+                        'message': 'Use your existing password to login'
+                    }
+                
+                self.wfile.write(json.dumps(response_data).encode('utf-8'))
             except Exception as e:
                 self._set_json_headers(400)
                 self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
