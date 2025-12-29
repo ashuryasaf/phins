@@ -2,7 +2,11 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="theme-color" content="#0d47a1" />
   <title>PHINS Portal — Login</title>
   <link rel="stylesheet" href="/styles.css">
   <style>
@@ -118,6 +122,42 @@
       margin-top: 16px;
       text-align: center;
       font-weight: 600;
+    }
+    
+    /* Mobile Responsive */
+    @media screen and (max-width: 480px) {
+      .login-container {
+        padding: 12px;
+      }
+      .login-card {
+        padding: 28px 20px;
+        border-radius: 16px;
+      }
+      .login-logo {
+        font-size: 2.5rem;
+      }
+      .login-title {
+        font-size: 1.5rem;
+      }
+      .login-subtitle {
+        font-size: 0.9rem;
+      }
+      .form-group input {
+        padding: 12px 14px;
+        font-size: 16px; /* Prevents iOS zoom */
+      }
+      .btn-login-submit {
+        padding: 14px;
+        font-size: 1rem;
+      }
+    }
+    
+    /* Safe area for notched phones */
+    @supports (padding: max(0px)) {
+      .login-container {
+        padding-top: max(16px, env(safe-area-inset-top));
+        padding-bottom: max(16px, env(safe-area-inset-bottom));
+      }
     }
   </style>
 </head>

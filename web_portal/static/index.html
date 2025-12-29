@@ -2,14 +2,147 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="theme-color" content="#0d47a1" />
+  <meta name="apple-mobile-web-app-title" content="PHINS" />
   <title>PHINS Insurance — Comprehensive Coverage & Financial Security</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/styles.css">
+  <style>
+    /* Splash Screen */
+    #splash-screen {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: linear-gradient(135deg, #0d47a1 0%, #1565c0 50%, #1976d2 100%);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 9999;
+      transition: opacity 0.5s ease, visibility 0.5s ease;
+    }
+    #splash-screen.hidden {
+      opacity: 0;
+      visibility: hidden;
+    }
+    .splash-logo {
+      width: 120px;
+      height: 120px;
+      background: linear-gradient(135deg, #42a5f5 0%, #64b5f6 100%);
+      border-radius: 30px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 4rem;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+      border: 3px solid rgba(255,255,255,0.3);
+      animation: pulse-logo 2s ease-in-out infinite;
+    }
+    .splash-text {
+      margin-top: 24px;
+      font-size: 2.5rem;
+      font-weight: 700;
+      color: white;
+      letter-spacing: 4px;
+    }
+    .splash-tagline {
+      margin-top: 8px;
+      font-size: 1rem;
+      color: rgba(255,255,255,0.8);
+      letter-spacing: 2px;
+    }
+    @keyframes pulse-logo {
+      0%, 100% { transform: scale(1); }
+      50% { transform: scale(1.05); }
+    }
+    
+    /* Mobile Responsive */
+    @media screen and (max-width: 768px) {
+      .topbar .container {
+        flex-direction: column;
+        padding: 12px;
+      }
+      .topbar .nav {
+        flex-wrap: wrap;
+        justify-content: center;
+        gap: 8px;
+        margin-top: 12px;
+      }
+      .topbar .nav a {
+        padding: 8px 12px;
+        font-size: 0.85rem;
+      }
+      .hero-content h1 {
+        font-size: 1.5rem !important;
+      }
+      .hero-subtitle {
+        font-size: 1rem !important;
+      }
+      .hero-actions {
+        flex-direction: column !important;
+        gap: 16px !important;
+      }
+      .hero-actions > div {
+        width: 100%;
+      }
+      .hero-actions .btn {
+        width: 100%;
+        padding: 14px 20px !important;
+      }
+      .section-title {
+        font-size: 1.5rem !important;
+      }
+      .product-grid {
+        grid-template-columns: 1fr !important;
+      }
+      .product-card {
+        padding: 20px !important;
+      }
+      .underwriting-grid {
+        grid-template-columns: 1fr !important;
+      }
+      .contact-grid {
+        grid-template-columns: 1fr !important;
+      }
+      .footer-content {
+        grid-template-columns: 1fr !important;
+        text-align: center;
+      }
+    }
+    
+    @media screen and (max-width: 480px) {
+      .splash-logo {
+        width: 100px;
+        height: 100px;
+        font-size: 3rem;
+      }
+      .splash-text {
+        font-size: 2rem;
+      }
+      .brand {
+        font-size: 1.2rem !important;
+      }
+      .topbar .nav .language-selector {
+        display: none;
+      }
+    }
+  </style>
 </head>
 <body>
+  <!-- Splash Screen -->
+  <div id="splash-screen">
+    <div class="splash-logo">🛡️</div>
+    <div class="splash-text">PHINS</div>
+    <div class="splash-tagline">INSURANCE & INVESTMENTS</div>
+  </div>
   <header class="topbar">
     <div class="container">
       <h1 class="brand">🛡️ PHINS Insurance</h1>
@@ -602,13 +735,25 @@
       }, 3000);
     }
     
-    // Load saved language preference
+    // Hide splash screen
+    function hideSplashScreen() {
+      const splash = document.getElementById('splash-screen');
+      if (splash) {
+        splash.classList.add('hidden');
+        setTimeout(() => splash.remove(), 500);
+      }
+    }
+    
+    // Load saved language preference and hide splash
     window.addEventListener('DOMContentLoaded', function() {
       const savedLang = localStorage.getItem('phins_language');
       if (savedLang) {
         document.getElementById('language-selector').value = savedLang;
         changeLanguage(savedLang);
       }
+      
+      // Hide splash screen after 1.5s for branding
+      setTimeout(hideSplashScreen, 1500);
     });
   </script>
 </body>
