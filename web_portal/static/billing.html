@@ -3,7 +3,10 @@
 <head>
   <meta charset="utf-8">
   <title>PHINS – Billing & Payments</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="theme-color" content="#1a1f36">
   <link rel="stylesheet" href="/styles.css">
   <style>
     .transaction-list { max-height: 400px; overflow-y: auto; margin: 1rem 0; }
@@ -257,6 +260,52 @@
       border-radius: 8px;
       font-weight: 600;
     }
+    
+    /* Mobile Menu Button */
+    .mobile-menu-btn {
+      display: none;
+      background: rgba(255,255,255,0.1);
+      border: 1px solid rgba(255,255,255,0.2);
+      color: white;
+      padding: 8px 12px;
+      border-radius: 8px;
+      font-size: 1.5rem;
+      cursor: pointer;
+    }
+    
+    /* Mobile Responsive */
+    @media screen and (max-width: 768px) {
+      .phins-header-inner { padding: 0.5rem 1rem; }
+      .phins-logo-icon { width: 36px; height: 36px; font-size: 1.2rem; }
+      .phins-logo-text { font-size: 1.3rem; }
+      .mobile-menu-btn { display: block; }
+      .phins-nav {
+        display: none;
+        position: absolute;
+        top: 100%;
+        left: 0;
+        right: 0;
+        background: linear-gradient(135deg, #1a1f36 0%, #2d3561 100%);
+        flex-direction: column;
+        padding: 16px;
+        gap: 8px;
+        box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+      }
+      .phins-nav.open { display: flex; }
+      .phins-nav a { width: 100%; text-align: center; padding: 12px 16px; font-size: 1rem; }
+      .phins-nav .btn-logout { margin-top: 8px; }
+      .page-title-bar { padding: 16px 1rem; }
+      .page-title-bar h1 { font-size: 1.2rem; }
+      main { padding: 12px; }
+      .stats-grid { grid-template-columns: repeat(2, 1fr); gap: 10px; }
+      .stat-card { padding: 16px; }
+      .stat-value { font-size: 1.5rem; }
+      .section { padding: 16px; margin-bottom: 16px; }
+    }
+    @media screen and (max-width: 480px) {
+      .stats-grid { grid-template-columns: 1fr; }
+    }
+    
     body {
       background: linear-gradient(180deg, #f0f4f8 0%, #e2e8f0 100%);
       min-height: 100vh;
@@ -281,16 +330,22 @@
         <div class="phins-logo-icon">🛡️</div>
         <span class="phins-logo-text">PHINS</span>
       </a>
-      <nav class="phins-nav">
+      <button class="mobile-menu-btn" onclick="toggleMobileMenu()">☰</button>
+      <nav class="phins-nav" id="mobile-nav">
         <a href="/admin.html">Admin</a>
+        <a href="/underwriter-dashboard.html">🔍 Underwriting</a>
         <a href="/billing.html" class="active">💳 Billing</a>
         <a href="/accountant-dashboard.html">💰 Accounting</a>
         <a href="/savings-portfolio.html">📈 Investments</a>
-        <a href="/dashboard.html">Customer Portal</a>
         <a href="/login.html" class="btn-logout">Logout</a>
       </nav>
     </div>
   </header>
+  <script>
+    function toggleMobileMenu() {
+      document.getElementById('mobile-nav').classList.toggle('open');
+    }
+  </script>
   <div class="page-title-bar">
     <h1>💳 Billing & Payment Management</h1>
   </div>
