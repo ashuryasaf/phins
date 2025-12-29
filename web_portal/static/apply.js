@@ -828,45 +828,80 @@ async function handleSubmit(e) {
         return;
     }
     
-    // Prepare submission data
-    const submissionData = {
-        customer_name: `${formData.personal.firstName} ${formData.personal.lastName}`,
-        customer_email: formData.personal.email,
-        customer_phone: formData.personal.phone,
-        customer_dob: formData.personal.dob,
-        type: formData.coverage.policyType,
-        coverage_amount: formData.coverage.coverageAmount,
-        age: calculateAge(formData.personal.dob),
-        risk_score: calculateRiskScore(),
-        medical_exam_required: formData.health.medicalConditions === 'yes' || formData.health.surgery === 'yes',
-        questionnaire: {
-            smoke: formData.health.tobacco,
-            medical_conditions: formData.health.medicalConditions,
-            conditions_list: formData.health.conditionsList,
-            surgery: formData.health.surgery,
-            surgery_list: formData.health.surgeryList,
-            hazardous_activities: formData.health.hazardous,
-            family_history: formData.health.familyHistory.join(','),
-            medications: formData.health.medications,
-            height: formData.health.height,
-            weight: formData.health.weight
-        },
-        // Payment and billing information
-        payment: {
-            card_number: formData.payment?._cardNumber || '',
-            cvv: formData.payment?._cvv || '',
-            expiry_month: formData.payment?.expiryMonth || '',
-            expiry_year: formData.payment?.expiryYear || '',
-            cardholder_name: formData.payment?.cardholderName || '',
-            card_type: formData.payment?.cardType || 'unknown',
-            billing_frequency: formData.payment?.billingFrequency || 'monthly',
-            auto_pay: formData.payment?.autoPay || false
-        },
-        health_wallet: {
-            enabled: formData.payment?.healthWalletEnabled || false,
-            monthly_deposit: formData.payment?.monthlyDeposit || 0
-        }
-    };
+    // Validate that all form data is present
+    if (!formData.personal || !formData.coverage || !formData.health || !formData.payment) {
+        alert('Some application data is missing. Please go back and complete all steps.');
+        console.error('Missing formData:', { 
+            personal: !!formData.personal, 
+            coverage: !!formData.coverage, 
+            health: !!formData.health, 
+            payment: !!formData.payment 
+        });
+        return;
+    }
+    
+    // Prepare submission data with null safety
+    let submissionData;
+    try {
+        submissionData = {
+            customer_name: `${formData.personal.firstName || ''} ${formData.personal.lastName || ''}`.trim(),
+            customer_email: formData.personal.email || '',
+            customer_phone: formData.personal.phone || '',
+            customer_dob: formData.personal.dob || '',
+            type: formData.coverage.policyType || 'life',
+            coverage_amount: formData.coverage.coverageAmount || 100000,
+            age: formData.personal.dob ? calculateAge(formData.personal.dob) : 30,
+            risk_score: calculateRiskScore(),
+            medical_exam_required: formData.health.medicalConditions === 'yes' || formData.health.surgery === 'yes',
+            questionnaire: {
+                smoke: formData.health.tobacco || 'no',
+                medical_conditions: formData.health.medicalConditions || 'no',
+                conditions_list: formData.health.conditionsList || '',
+                surgery: formData.health.surgery || 'no',
+                surgery_list: formData.health.surgeryList || '',
+                hazardous_activities: formData.health.hazardous || 'no',
+                family_history: (formData.health.familyHistory || []).join(','),
+                medications: formData.health.medications || '',
+                height: formData.health.height || '',
+                weight: formData.health.weight || ''
+            },
+            // Payment and billing information
+            payment: {
+                card_number: formData.payment._cardNumber || '',
+                cvv: formData.payment._cvv || '',
+                expiry_month: formData.payment.expiryMonth || '',
+                expiry_year: formData.payment.expiryYear || '',
+                cardholder_name: formData.payment.cardholderName || '',
+                card_type: formData.payment.cardType || 'unknown',
+                billing_frequency: formData.payment.billingFrequency || 'monthly',
+                auto_pay: formData.payment.autoPay || false
+            },
+            health_wallet: {
+                enabled: formData.payment.healthWalletEnabled || false,
+                monthly_deposit: formData.payment.monthlyDeposit || 0
+            }
+        };
+    } catch (dataError) {
+        alert('Error preparing application data. Please review your information and try again.');
+        console.error('Data preparation error:', dataError);
+        return;
+    }
+    
+    // Validate required fields
+    if (!submissionData.customer_name.trim()) {
+        alert('Customer name is required');
+        return;
+    }
+    if (!submissionData.customer_email.trim()) {
+        alert('Email address is required');
+        return;
+    }
+    
+    // Show loading state
+    const submitBtn = document.getElementById('submit-btn');
+    const originalText = submitBtn.textContent;
+    submitBtn.textContent = 'Submitting...';
+    submitBtn.disabled = true;
     
     try {
         const response = await fetch('/api/policies/create', {
@@ -877,22 +912,36 @@ async function handleSubmit(e) {
             body: JSON.stringify(submissionData)
         });
         
-        const data = await response.json();
+        let data;
+        try {
+            data = await response.json();
+        } catch (parseError) {
+            console.error('Response parse error:', parseError);
+            alert('Server returned an invalid response. Please try again.');
+            return;
+        }
         
         if (response.ok) {
             // Show success message
-            document.getElementById('app-id').textContent = data.underwriting.id;
-            document.getElementById('policy-id').textContent = data.policy.id;
+            document.getElementById('app-id').textContent = data.underwriting?.id || 'N/A';
+            document.getElementById('policy-id').textContent = data.policy?.id || 'N/A';
             document.getElementById('success-premium').textContent = 
-                new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(data.policy.annual_premium) + ' per year';
+                new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(data.policy?.annual_premium || 0) + ' per year';
             
             document.getElementById('success-message').style.display = 'flex';
+            
+            // Hide form
+            document.getElementById('customer-application-form').style.display = 'none';
         } else {
             alert('Error submitting application: ' + (data.error || 'Please try again'));
         }
     } catch (error) {
-        alert('Network error. Please check your connection and try again.');
         console.error('Submission error:', error);
+        alert('Error submitting application: ' + (error.message || 'Please check your connection and try again.'));
+    } finally {
+        // Reset button state
+        submitBtn.textContent = originalText;
+        submitBtn.disabled = false;
     }
 }
 
