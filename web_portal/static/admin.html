@@ -182,6 +182,97 @@
     .stat-box-purple { background: linear-gradient(135deg, #42a5f5 0%, #64b5f6 100%) !important; color: white !important; }
     .stat-box-blue .stat-value, .stat-box-green .stat-value, .stat-box-orange .stat-value, .stat-box-purple .stat-value { color: white !important; }
     .stat-box-blue .stat-label, .stat-box-green .stat-label, .stat-box-orange .stat-label, .stat-box-purple .stat-label { color: rgba(255,255,255,0.9) !important; }
+    
+    /* Elegant Action Buttons */
+    .action-btn {
+      width: 36px;
+      height: 36px;
+      border-radius: 10px;
+      border: none;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    .action-btn:hover {
+      transform: scale(1.1);
+    }
+    .action-btn.view {
+      background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);
+      color: white;
+      box-shadow: 0 2px 8px rgba(99, 102, 241, 0.3);
+    }
+    .action-btn.view:hover {
+      box-shadow: 0 4px 16px rgba(99, 102, 241, 0.5);
+    }
+    .action-btn.approve {
+      background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+      color: white;
+      box-shadow: 0 2px 8px rgba(16, 185, 129, 0.3);
+    }
+    .action-btn.approve:hover {
+      box-shadow: 0 4px 16px rgba(16, 185, 129, 0.5);
+    }
+    .action-btn.reject {
+      background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+      color: white;
+      box-shadow: 0 2px 8px rgba(239, 68, 68, 0.3);
+    }
+    .action-btn.reject:hover {
+      box-shadow: 0 4px 16px rgba(239, 68, 68, 0.5);
+    }
+    .action-btn.edit {
+      background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+      color: white;
+      box-shadow: 0 2px 8px rgba(245, 158, 11, 0.3);
+    }
+    .action-btn.edit:hover {
+      box-shadow: 0 4px 16px rgba(245, 158, 11, 0.5);
+    }
+    .action-btn.pay {
+      background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
+      color: white;
+      box-shadow: 0 2px 8px rgba(139, 92, 246, 0.3);
+    }
+    .action-btn.pay:hover {
+      box-shadow: 0 4px 16px rgba(139, 92, 246, 0.5);
+    }
+    .action-btn.info {
+      background: linear-gradient(135deg, #0ea5e9 0%, #0284c7 100%);
+      color: white;
+      box-shadow: 0 2px 8px rgba(14, 165, 233, 0.3);
+    }
+    .action-btn.info:hover {
+      box-shadow: 0 4px 16px rgba(14, 165, 233, 0.5);
+    }
+    
+    .btn-small {
+      padding: 8px 16px;
+      border-radius: 8px;
+      border: none;
+      cursor: pointer;
+      font-weight: 600;
+      font-size: 0.85rem;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      margin-right: 6px;
+    }
+    .btn-small:hover {
+      transform: translateY(-2px);
+    }
+    .btn-small.btn-success {
+      background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+      color: white;
+      box-shadow: 0 2px 8px rgba(16, 185, 129, 0.3);
+    }
+    .btn-small.btn-danger {
+      background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+      color: white;
+      box-shadow: 0 2px 8px rgba(239, 68, 68, 0.3);
+    }
   </style>
 </head>
 <body>
@@ -861,8 +952,14 @@
             <td>$${walletBalance.toLocaleString()}</td>
             <td>${createdDate}</td>
             <td>
-              <button class="btn-icon" title="View" onclick="viewCustomer('${c.id}')">👁️</button>
-              <button class="btn-icon" title="Validate" onclick="validateCustomer('${c.id}')">✓</button>
+              <div style="display: flex; gap: 6px;">
+                <button class="action-btn view" title="View Details" onclick="viewCustomer('${c.id}')">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                </button>
+                <button class="action-btn approve" title="Validate" onclick="validateCustomer('${c.id}')">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                </button>
+              </div>
             </td>
           </tr>
         `;
@@ -1006,9 +1103,15 @@
         </div>
         ` : ''}
         
-        <div style="display:flex;gap:10px;margin-top:24px;padding-top:20px;border-top:1px solid #e0e0e0;">
-          <button class="btn btn-primary" onclick="validateCustomer('${customer.id}'); closeCustomerModal();">✓ Validate</button>
-          <button class="btn btn-secondary" onclick="closeCustomerModal()">Close</button>
+        <div style="display:flex;gap:12px;margin-top:24px;padding-top:20px;border-top:1px solid #e0e0e0;">
+          <button class="btn" style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: white; padding: 12px 24px; border-radius: 10px; border: none; cursor: pointer; font-weight: 600; display: inline-flex; align-items: center; gap: 8px; box-shadow: 0 2px 8px rgba(16,185,129,0.3);" onclick="validateCustomer('${customer.id}'); closeCustomerModal();">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>
+            Validate Customer
+          </button>
+          <button class="btn" style="background: linear-gradient(135deg, #6b7280 0%, #4b5563 100%); color: white; padding: 12px 24px; border-radius: 10px; border: none; cursor: pointer; font-weight: 600; display: inline-flex; align-items: center; gap: 8px;" onclick="closeCustomerModal()">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+            Close
+          </button>
         </div>
       `;
       
@@ -1187,12 +1290,20 @@
             <td>${app.premium_adjustment ? '+' + app.premium_adjustment + '%' : '0%'}</td>
             <td><span class="badge ${statusClass}">${(app.status || 'pending').charAt(0).toUpperCase() + (app.status || 'pending').slice(1)}</span></td>
             <td>
-              ${app.status === 'pending' ? `
-                <button class="btn-small btn-success" onclick="approveApplication('${app.id}')">Approve</button>
-                <button class="btn-small btn-danger" onclick="rejectApplication('${app.id}')">Reject</button>
-              ` : `
-                <button class="btn-icon" title="View">👁️</button>
-              `}
+              <div style="display: flex; gap: 6px;">
+                ${app.status === 'pending' ? `
+                  <button class="action-btn approve" title="Approve" onclick="approveApplication('${app.id}')">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                  </button>
+                  <button class="action-btn reject" title="Reject" onclick="rejectApplication('${app.id}')">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                  </button>
+                ` : `
+                  <button class="action-btn view" title="View Details">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                  </button>
+                `}
+              </div>
             </td>
           </tr>
         `;
@@ -1290,8 +1401,14 @@
             <td><span class="badge ${statusClass}">${(policy.status || 'pending').replace('_', ' ').charAt(0).toUpperCase() + (policy.status || 'pending').replace('_', ' ').slice(1)}</span></td>
             <td>${policy.start_date ? new Date(policy.start_date).toLocaleDateString() : 'N/A'}</td>
             <td>
-              <button class="btn-icon" title="View">👁️</button>
-              <button class="btn-icon" title="Edit">✏️</button>
+              <div style="display: flex; gap: 6px;">
+                <button class="action-btn view" title="View Details">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                </button>
+                <button class="action-btn edit" title="Edit">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
+                </button>
+              </div>
             </td>
           </tr>
         `;
@@ -1346,14 +1463,24 @@
             <td>${claim.filed_date || claim.date_filed ? new Date(claim.filed_date || claim.date_filed).toLocaleDateString() : 'N/A'}</td>
             <td><span class="badge ${statusClass}">${(claim.status || 'Pending')}</span></td>
             <td>
-              ${status === 'pending' || status === 'under review' ? `
-                <button class="btn-small btn-success" onclick="approveClaim('${claim.id || claim.claim_id}')">Approve</button>
-                <button class="btn-small btn-danger" onclick="rejectClaim('${claim.id || claim.claim_id}')">Reject</button>
-              ` : status === 'approved' ? `
-                <button class="btn-small" onclick="payClaim('${claim.id || claim.claim_id}')">Pay</button>
-              ` : `
-                <button class="btn-icon" title="View">👁️</button>
-              `}
+              <div style="display: flex; gap: 6px;">
+                ${status === 'pending' || status === 'under review' ? `
+                  <button class="action-btn approve" title="Approve Claim" onclick="approveClaim('${claim.id || claim.claim_id}')">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                  </button>
+                  <button class="action-btn reject" title="Reject Claim" onclick="rejectClaim('${claim.id || claim.claim_id}')">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                  </button>
+                ` : status === 'approved' ? `
+                  <button class="action-btn pay" title="Process Payment" onclick="payClaim('${claim.id || claim.claim_id}')">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"></rect><line x1="1" y1="10" x2="23" y2="10"></line></svg>
+                  </button>
+                ` : `
+                  <button class="action-btn view" title="View Details">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                  </button>
+                `}
+              </div>
             </td>
           </tr>
         `;
@@ -1505,7 +1632,11 @@
               <td>$${Number(p.ceded_amount || 0).toLocaleString()}</td>
               <td>${p.commission_rate || 0}%</td>
               <td><span class="badge badge-active">${p.status || 'Active'}</span></td>
-              <td><button class="btn-icon" title="View">👁️</button></td>
+              <td>
+                <button class="action-btn view" title="View Details">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                </button>
+              </td>
             </tr>
           `).join('');
         } else {
@@ -1707,12 +1838,20 @@
             <td><small>${txn.nft_token_id || 'N/A'}</small></td>
             <td><span class="badge ${statusClass}">${txn.status || 'Unknown'}</span></td>
             <td>
-              ${txn.status === 'pending' || txn.status === 'pending_approval' ? `
-                <button class="btn-icon" title="Approve" onclick="approveMarketplaceTxn('${txn.transaction_id}')">✅</button>
-                <button class="btn-icon" title="Reject" onclick="rejectMarketplaceTxn('${txn.transaction_id}')">❌</button>
-              ` : `
-                <button class="btn-icon" title="View NFT" onclick="viewNFT('${txn.nft_token_id}')">🔗</button>
-              `}
+              <div style="display: flex; gap: 6px;">
+                ${txn.status === 'pending' || txn.status === 'pending_approval' ? `
+                  <button class="action-btn approve" title="Approve Transaction" onclick="approveMarketplaceTxn('${txn.transaction_id}')">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                  </button>
+                  <button class="action-btn reject" title="Reject Transaction" onclick="rejectMarketplaceTxn('${txn.transaction_id}')">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                  </button>
+                ` : `
+                  <button class="action-btn info" title="View NFT" onclick="viewNFT('${txn.nft_token_id}')">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg>
+                  </button>
+                `}
+              </div>
             </td>
           </tr>
         `;
@@ -1745,8 +1884,14 @@
             <td><small>${nft.token_id || 'N/A'}</small></td>
             <td><span class="badge badge-pending">PENDING</span></td>
             <td>
-              <button class="btn-icon" style="background:#28a745;color:#fff;border-radius:4px;padding:4px 8px;" onclick="approveMarketplaceTxn('${txn.transaction_id}')">✅</button>
-              <button class="btn-icon" style="background:#dc3545;color:#fff;border-radius:4px;padding:4px 8px;" onclick="rejectMarketplaceTxn('${txn.transaction_id}')">❌</button>
+              <div style="display: flex; gap: 6px;">
+                <button class="action-btn approve" title="Approve" onclick="approveMarketplaceTxn('${txn.transaction_id}')">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                </button>
+                <button class="action-btn reject" title="Reject" onclick="rejectMarketplaceTxn('${txn.transaction_id}')">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                </button>
+              </div>
             </td>
           </tr>
         `;

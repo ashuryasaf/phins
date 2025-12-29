@@ -4521,6 +4521,21 @@ For claims or questions, please contact:
                     policy_id = app.get('policy_id')
                     if policy_id and policy_id in POLICIES:
                         POLICIES[policy_id]['status'] = 'rejected'
+                    
+                    # Record in transaction ledger for audit trail
+                    record_transaction(
+                        customer_id=app.get('customer_id', 'unknown'),
+                        tx_type='underwriting_rejected',
+                        amount=0,
+                        description=f"Application {uw_id} rejected - {data.get('reason', 'Risk assessment failed')}",
+                        metadata={
+                            'uw_id': uw_id,
+                            'policy_id': policy_id,
+                            'reason': data.get('reason', 'Risk assessment failed'),
+                            'rejected_by': data.get('rejected_by', 'admin')
+                        }
+                    )
+                    
                     if audit:
                         actor = data.get('rejected_by', 'admin')
                         try:
@@ -4530,6 +4545,66 @@ For claims or questions, please contact:
                     
                     self._set_json_headers()
                     self.wfile.write(json.dumps({'success': True, 'application': app}).encode('utf-8'))
+                else:
+                    self._set_json_headers(404)
+                    self.wfile.write(json.dumps({'error': 'Application not found'}).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+        
+        # Refer Underwriting Endpoint - Move to Manual Review
+        if path == '/api/underwriting/refer':
+            try:
+                data = json.loads(body)
+                uw_id = data.get('id')
+                app = UNDERWRITING_APPLICATIONS.get(uw_id)
+                
+                if app:
+                    app['status'] = 'referred'
+                    app['decision_date'] = datetime.now().isoformat()
+                    app['referral_reason'] = data.get('notes', 'Requires manual review')
+                    app['referred_by'] = data.get('approved_by', 'admin')
+                    app['referral_priority'] = data.get('priority', 'normal')
+                    
+                    # Update policy status to pending_manual_review
+                    policy_id = app.get('policy_id')
+                    if policy_id and policy_id in POLICIES:
+                        POLICIES[policy_id]['status'] = 'pending_manual_review'
+                    
+                    # Record in transaction ledger
+                    record_transaction(
+                        customer_id=app.get('customer_id', 'unknown'),
+                        tx_type='underwriting_referred',
+                        amount=0,
+                        description=f"Application {uw_id} referred for manual review",
+                        metadata={
+                            'uw_id': uw_id,
+                            'policy_id': policy_id,
+                            'reason': data.get('notes', 'Requires manual review'),
+                            'referred_by': data.get('approved_by', 'admin'),
+                            'priority': app['referral_priority']
+                        }
+                    )
+                    
+                    if audit:
+                        actor = data.get('approved_by', 'admin')
+                        try:
+                            audit.log(actor, 'refer', 'underwriting', uw_id, {
+                                'policy_id': policy_id, 
+                                'reason': app['referral_reason'],
+                                'priority': app['referral_priority']
+                            })
+                        except Exception:
+                            pass
+                    
+                    self._set_json_headers()
+                    self.wfile.write(json.dumps({
+                        'success': True, 
+                        'application': app,
+                        'message': 'Application referred for manual review',
+                        'next_stage': 'manual_review'
+                    }).encode('utf-8'))
                 else:
                     self._set_json_headers(404)
                     self.wfile.write(json.dumps({'error': 'Application not found'}).encode('utf-8'))
@@ -4606,13 +4681,34 @@ For claims or questions, please contact:
                 claim = CLAIMS.get(claim_id)
                 
                 if claim:
+                    approved_amount = float(data.get('approved_amount', claim['claimed_amount']))
+                    
                     claim['status'] = 'Approved'
-                    claim['approved_amount'] = float(data.get('approved_amount', claim['claimed_amount']))
+                    claim['approved_amount'] = approved_amount
                     claim['approval_date'] = datetime.now().isoformat()
                     claim['approved_by'] = data.get('approved_by', 'admin')
                     claim['approval_notes'] = data.get('notes', '')
+                    claim['next_stage'] = 'payment'  # Pipeline tracking
+                    
                     # Persist to database
                     CLAIMS[claim_id] = claim
+                    
+                    # Record in transaction ledger for audit trail
+                    record_transaction(
+                        customer_id=claim.get('customer_id', 'unknown'),
+                        tx_type='claim_approved',
+                        amount=approved_amount,
+                        description=f"Claim {claim_id} approved for ${approved_amount:.2f}",
+                        metadata={
+                            'claim_id': claim_id,
+                            'policy_id': claim.get('policy_id'),
+                            'claimed_amount': claim.get('claimed_amount'),
+                            'approved_amount': approved_amount,
+                            'approved_by': data.get('approved_by', 'admin'),
+                            'notes': data.get('notes', '')
+                        }
+                    )
+                    
                     if audit:
                         actor = claim.get('approved_by', 'admin')
                         try:
@@ -4621,7 +4717,12 @@ For claims or questions, please contact:
                             pass
                     
                     self._set_json_headers()
-                    self.wfile.write(json.dumps({'success': True, 'claim': claim}).encode('utf-8'))
+                    self.wfile.write(json.dumps({
+                        'success': True, 
+                        'claim': claim,
+                        'message': 'Claim approved. Ready for payment processing.',
+                        'next_stage': 'payment'
+                    }).encode('utf-8'))
                 else:
                     self._set_json_headers(404)
                     self.wfile.write(json.dumps({'error': 'Claim not found'}).encode('utf-8'))
@@ -4638,11 +4739,31 @@ For claims or questions, please contact:
                 claim = CLAIMS.get(claim_id)
                 
                 if claim:
+                    rejection_reason = data.get('reason', 'Not covered')
+                    
                     claim['status'] = 'Rejected'
                     claim['rejection_date'] = datetime.now().isoformat()
-                    claim['rejection_reason'] = data.get('reason', 'Not covered')
+                    claim['rejection_reason'] = rejection_reason
+                    claim['rejected_by'] = data.get('rejected_by', 'admin')
+                    
                     # Persist to database
                     CLAIMS[claim_id] = claim
+                    
+                    # Record in transaction ledger
+                    record_transaction(
+                        customer_id=claim.get('customer_id', 'unknown'),
+                        tx_type='claim_rejected',
+                        amount=0,
+                        description=f"Claim {claim_id} rejected - {rejection_reason}",
+                        metadata={
+                            'claim_id': claim_id,
+                            'policy_id': claim.get('policy_id'),
+                            'claimed_amount': claim.get('claimed_amount'),
+                            'rejection_reason': rejection_reason,
+                            'rejected_by': data.get('rejected_by', 'admin')
+                        }
+                    )
+                    
                     if audit:
                         actor = data.get('rejected_by', 'admin')
                         try:
@@ -4651,7 +4772,11 @@ For claims or questions, please contact:
                             pass
                     
                     self._set_json_headers()
-                    self.wfile.write(json.dumps({'success': True, 'claim': claim}).encode('utf-8'))
+                    self.wfile.write(json.dumps({
+                        'success': True, 
+                        'claim': claim,
+                        'message': 'Claim rejected.'
+                    }).encode('utf-8'))
                 else:
                     self._set_json_headers(404)
                     self.wfile.write(json.dumps({'error': 'Claim not found'}).encode('utf-8'))
@@ -4669,13 +4794,35 @@ For claims or questions, please contact:
                 
                 # Check if claim is approved (case-insensitive)
                 if claim and claim.get('status', '').lower() == 'approved':
+                    paid_amount = claim.get('approved_amount', claim['claimed_amount'])
+                    payment_reference = f"PAY-{datetime.now().strftime('%Y%m%d')}-{random.randint(1000, 9999)}"
+                    
                     claim['status'] = 'Paid'
                     claim['payment_date'] = datetime.now().isoformat()
                     claim['payment_method'] = data.get('payment_method', 'bank_transfer')
-                    claim['payment_reference'] = f"PAY-{datetime.now().strftime('%Y%m%d')}-{random.randint(1000, 9999)}"
-                    claim['paid_amount'] = claim.get('approved_amount', claim['claimed_amount'])
+                    claim['payment_reference'] = payment_reference
+                    claim['paid_amount'] = paid_amount
+                    claim['processed_by'] = data.get('processed_by', 'accountant')
+                    
                     # Persist to database
                     CLAIMS[claim_id] = claim
+                    
+                    # Record payment in transaction ledger
+                    record_transaction(
+                        customer_id=claim.get('customer_id', 'unknown'),
+                        tx_type='claim_paid',
+                        amount=paid_amount,
+                        description=f"Claim {claim_id} payment processed - ${paid_amount:.2f}",
+                        metadata={
+                            'claim_id': claim_id,
+                            'policy_id': claim.get('policy_id'),
+                            'paid_amount': paid_amount,
+                            'payment_method': claim['payment_method'],
+                            'payment_reference': payment_reference,
+                            'processed_by': data.get('processed_by', 'accountant')
+                        }
+                    )
+                    
                     if audit:
                         actor = data.get('processed_by', 'accountant')
                         try:
@@ -4684,7 +4831,12 @@ For claims or questions, please contact:
                             pass
                     
                     self._set_json_headers()
-                    self.wfile.write(json.dumps({'success': True, 'claim': claim}).encode('utf-8'))
+                    self.wfile.write(json.dumps({
+                        'success': True, 
+                        'claim': claim,
+                        'message': f'Payment of ${paid_amount:.2f} processed successfully.',
+                        'payment_reference': payment_reference
+                    }).encode('utf-8'))
                 else:
                     self._set_json_headers(400)
                     self.wfile.write(json.dumps({'error': 'Claim not approved or not found'}).encode('utf-8'))
