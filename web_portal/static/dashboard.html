@@ -166,18 +166,53 @@
       <p class="muted-text">Manage your policies, claims, and account information</p>
     </div>
 
-    <!-- Quick Actions -->
-    <div class="dashboard-actions" style="margin-bottom: 32px; display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px;">
-      <a href="/apply.html" class="action-card" style="text-decoration: none; color: inherit; padding: 24px; border-radius: 16px; background: linear-gradient(135deg, #1565c0 0%, #1976d2 100%); color: white; box-shadow: 0 8px 30px rgba(21, 101, 192, 0.25);">
-        <div class="stat-icon" style="font-size: 32px;">➕</div>
-        <div style="font-size: 18px; font-weight: 600; margin-top: 8px;">Apply for New Policy</div>
-        <div style="color: rgba(255,255,255,0.85); font-size: 14px;">Start your application in minutes</div>
+    <!-- Quick Actions - 4 Main Buttons -->
+    <div class="dashboard-actions" style="margin-bottom: 32px; display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px;">
+      
+      <!-- Investment Button -->
+      <a href="/savings-portfolio.html" class="action-card" style="text-decoration: none; color: inherit; padding: 24px; border-radius: 16px; background: linear-gradient(135deg, #1565c0 0%, #1976d2 100%); color: white; box-shadow: 0 8px 30px rgba(21, 101, 192, 0.25); transition: transform 0.2s, box-shadow 0.2s;" onmouseover="this.style.transform='translateY(-4px)';this.style.boxShadow='0 12px 40px rgba(21, 101, 192, 0.35)';" onmouseout="this.style.transform='';this.style.boxShadow='0 8px 30px rgba(21, 101, 192, 0.25)';">
+        <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+          <div class="stat-icon" style="font-size: 36px;">📈</div>
+          <span style="background: rgba(255,255,255,0.2); padding: 4px 10px; border-radius: 12px; font-size: 12px;">LIVE</span>
+        </div>
+        <div style="font-size: 20px; font-weight: 700; margin-top: 12px;">Investments</div>
+        <div style="font-size: 28px; font-weight: 700; margin: 8px 0;" id="action-investment-value">$0.00</div>
+        <div style="color: rgba(255,255,255,0.85); font-size: 13px;">Portfolio • Crypto • Stocks • Bonds</div>
       </a>
-      <a href="/savings-portfolio.html" class="action-card" style="text-decoration: none; color: inherit; padding: 24px; border-radius: 16px; background: linear-gradient(135deg, #0d47a1 0%, #1565c0 100%); color: white; box-shadow: 0 8px 30px rgba(13, 71, 161, 0.25);">
-        <div class="stat-icon" style="font-size: 32px;">📈</div>
-        <div style="font-size: 18px; font-weight: 600; margin-top: 8px;">Savings & Investments</div>
-        <div style="color: rgba(255,255,255,0.85); font-size: 14px;">Manage your portfolio, crypto, stocks & more</div>
+      
+      <!-- Wallet Button -->
+      <a href="#health-wallet" class="action-card" style="text-decoration: none; color: inherit; padding: 24px; border-radius: 16px; background: linear-gradient(135deg, #2e7d32 0%, #43a047 100%); color: white; box-shadow: 0 8px 30px rgba(46, 125, 50, 0.25); transition: transform 0.2s, box-shadow 0.2s;" onmouseover="this.style.transform='translateY(-4px)';this.style.boxShadow='0 12px 40px rgba(46, 125, 50, 0.35)';" onmouseout="this.style.transform='';this.style.boxShadow='0 8px 30px rgba(46, 125, 50, 0.25)';">
+        <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+          <div class="stat-icon" style="font-size: 36px;">🏥</div>
+          <span style="background: rgba(255,255,255,0.2); padding: 4px 10px; border-radius: 12px; font-size: 12px;">ACTIVE</span>
+        </div>
+        <div style="font-size: 20px; font-weight: 700; margin-top: 12px;">Health Wallet</div>
+        <div style="font-size: 28px; font-weight: 700; margin: 8px 0;" id="action-wallet-balance">$0.00</div>
+        <div style="color: rgba(255,255,255,0.85); font-size: 13px;">Medical • Pharmacy • Services</div>
       </a>
+      
+      <!-- Apply for Policy Button -->
+      <a href="/apply.html" class="action-card" style="text-decoration: none; color: inherit; padding: 24px; border-radius: 16px; background: linear-gradient(135deg, #0d47a1 0%, #1565c0 100%); color: white; box-shadow: 0 8px 30px rgba(13, 71, 161, 0.25); transition: transform 0.2s, box-shadow 0.2s;" onmouseover="this.style.transform='translateY(-4px)';this.style.boxShadow='0 12px 40px rgba(13, 71, 161, 0.35)';" onmouseout="this.style.transform='';this.style.boxShadow='0 8px 30px rgba(13, 71, 161, 0.25)';">
+        <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+          <div class="stat-icon" style="font-size: 36px;">➕</div>
+          <span style="background: rgba(255,255,255,0.2); padding: 4px 10px; border-radius: 12px; font-size: 12px;">NEW</span>
+        </div>
+        <div style="font-size: 20px; font-weight: 700; margin-top: 12px;">New Policy</div>
+        <div style="font-size: 14px; margin: 8px 0; color: rgba(255,255,255,0.9);">Apply in minutes</div>
+        <div style="color: rgba(255,255,255,0.85); font-size: 13px;">Disability • Investment • Protection</div>
+      </a>
+      
+      <!-- File Claim Button -->
+      <a href="#claims" class="action-card" style="text-decoration: none; color: inherit; padding: 24px; border-radius: 16px; background: linear-gradient(135deg, #ef6c00 0%, #ff9800 100%); color: white; box-shadow: 0 8px 30px rgba(239, 108, 0, 0.25); transition: transform 0.2s, box-shadow 0.2s;" onmouseover="this.style.transform='translateY(-4px)';this.style.boxShadow='0 12px 40px rgba(239, 108, 0, 0.35)';" onmouseout="this.style.transform='';this.style.boxShadow='0 8px 30px rgba(239, 108, 0, 0.25)';">
+        <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+          <div class="stat-icon" style="font-size: 36px;">📝</div>
+          <span id="pending-claims-badge" style="background: rgba(255,255,255,0.2); padding: 4px 10px; border-radius: 12px; font-size: 12px; display: none;">0 PENDING</span>
+        </div>
+        <div style="font-size: 20px; font-weight: 700; margin-top: 12px;">Claims</div>
+        <div style="font-size: 14px; margin: 8px 0; color: rgba(255,255,255,0.9);">File or track claims</div>
+        <div style="color: rgba(255,255,255,0.85); font-size: 13px;">Submit • Track • History</div>
+      </a>
+      
     </div>
 
     <!-- Quick Stats -->
@@ -508,6 +543,8 @@
         const cid = customerId || sessionStorage.getItem('customer_id');
         if (!cid) return;
         
+        let totalValue = 0;
+        
         // First try to get savings accounts
         const accountsResponse = await fetch(`/api/savings/accounts?customer_id=${cid}`);
         const accountsData = await accountsResponse.json();
@@ -520,8 +557,7 @@
           const portfolioData = await portfolioResponse.json();
           
           if (portfolioData.total_account_value) {
-            document.getElementById('investment-value').textContent = 
-              '$' + portfolioData.total_account_value.toLocaleString('en-US', {minimumFractionDigits: 0, maximumFractionDigits: 0});
+            totalValue = portfolioData.total_account_value;
           }
         } else {
           // Fallback: Try legacy investment-portfolio endpoint
@@ -529,15 +565,18 @@
           const data = await response.json();
           
           if (data.total_account_value) {
-            document.getElementById('investment-value').textContent = 
-              '$' + data.total_account_value.toLocaleString('en-US', {minimumFractionDigits: 0, maximumFractionDigits: 0});
+            totalValue = data.total_account_value;
           } else if (data.total_portfolio_value) {
-            document.getElementById('investment-value').textContent = 
-              '$' + data.total_portfolio_value.toLocaleString('en-US', {minimumFractionDigits: 0, maximumFractionDigits: 0});
+            totalValue = data.total_portfolio_value;
           }
         }
+        
+        // Update all investment displays
+        updateInvestmentDisplay(totalValue);
+        
       } catch (error) {
         console.log('Investment portfolio load error (non-critical):', error);
+        updateInvestmentDisplay(0);
       }
     }
     
@@ -586,11 +625,19 @@
           const data = await response.json();
           const claims = data.claims || [];
           displayClaims(claims);
+          
+          // Count pending claims for badge
+          const pendingCount = claims.filter(c => 
+            (c.status || '').toLowerCase().includes('pending') || 
+            (c.status || '').toLowerCase().includes('review')
+          ).length;
+          updatePendingClaimsBadge(pendingCount);
         }
       } catch (err) {
         console.error('Failed to load claims:', err);
         document.getElementById('claims-table').innerHTML = 
           '<tr><td colspan="6" style="text-align:center;color:#666;">No claims found</td></tr>';
+        updatePendingClaimsBadge(0);
       }
     }
     
@@ -1045,6 +1092,29 @@
     function updateWalletDisplay() {
       document.getElementById('wallet-balance').textContent = `$${walletBalance.toFixed(0)}`;
       document.getElementById('wallet-balance-display').textContent = `$${walletBalance.toFixed(2)}`;
+      // Also update action button
+      const actionWallet = document.getElementById('action-wallet-balance');
+      if (actionWallet) actionWallet.textContent = `$${walletBalance.toFixed(2)}`;
+    }
+    
+    function updateInvestmentDisplay(value) {
+      const investmentEl = document.getElementById('investment-value');
+      if (investmentEl) investmentEl.textContent = `$${value.toFixed(0)}`;
+      // Also update action button
+      const actionInvestment = document.getElementById('action-investment-value');
+      if (actionInvestment) actionInvestment.textContent = `$${value.toFixed(2)}`;
+    }
+    
+    function updatePendingClaimsBadge(count) {
+      const badge = document.getElementById('pending-claims-badge');
+      if (badge) {
+        if (count > 0) {
+          badge.textContent = `${count} PENDING`;
+          badge.style.display = 'inline-block';
+        } else {
+          badge.style.display = 'none';
+        }
+      }
     }
     
     // View policy details
