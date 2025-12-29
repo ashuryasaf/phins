@@ -6,20 +6,20 @@
   <title>PHINS Admin Dashboard</title>
   <link rel="stylesheet" href="/styles.css">
   <style>
-    /* PHINS Unified Header */
+    /* PHINS Unified Header - Elegant Gradient Blue */
     .phins-header {
-      background: linear-gradient(135deg, #1a1f36 0%, #2d3561 50%, #1a1f36 100%);
-      border-bottom: 1px solid rgba(255,255,255,0.1);
+      background: linear-gradient(135deg, #0d47a1 0%, #1565c0 50%, #1976d2 100%);
+      border-bottom: 1px solid rgba(255,255,255,0.15);
       padding: 0;
       position: sticky;
       top: 0;
       z-index: 1000;
-      box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+      box-shadow: 0 4px 24px rgba(13, 71, 161, 0.3);
     }
     .phins-header-inner {
       max-width: 1600px;
       margin: 0 auto;
-      padding: 0.75rem 2rem;
+      padding: 0.85rem 2rem;
       display: flex;
       justify-content: space-between;
       align-items: center;
@@ -33,18 +33,19 @@
     .phins-logo-icon {
       width: 44px;
       height: 44px;
-      background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+      background: linear-gradient(135deg, #42a5f5 0%, #64b5f6 100%);
       border-radius: 12px;
       display: flex;
       align-items: center;
       justify-content: center;
       font-size: 1.5rem;
-      box-shadow: 0 4px 15px rgba(79, 172, 254, 0.4);
+      box-shadow: 0 4px 15px rgba(66, 165, 245, 0.4);
+      border: 1px solid rgba(255,255,255,0.2);
     }
     .phins-logo-text {
       font-size: 1.75rem;
       font-weight: 700;
-      background: linear-gradient(135deg, #4facfe 0%, #00f2fe 50%, #43e97b 100%);
+      background: linear-gradient(135deg, #fff 0%, #e3f2fd 100%);
       -webkit-background-clip: text;
       -webkit-text-fill-color: transparent;
       background-clip: text;
@@ -56,7 +57,7 @@
     }
     .phins-nav a {
       padding: 0.5rem 1rem;
-      color: rgba(255,255,255,0.8);
+      color: rgba(255,255,255,0.85);
       text-decoration: none;
       border-radius: 8px;
       font-size: 0.9rem;
@@ -64,12 +65,13 @@
       transition: all 0.2s ease;
     }
     .phins-nav a:hover {
-      background: rgba(255,255,255,0.1);
+      background: rgba(255,255,255,0.12);
       color: white;
     }
     .phins-nav a.active {
-      background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+      background: linear-gradient(135deg, #42a5f5 0%, #64b5f6 100%);
       color: white;
+      box-shadow: 0 4px 12px rgba(66, 165, 245, 0.3);
     }
     .phins-nav .nav-divider {
       width: 1px;
@@ -78,19 +80,19 @@
       margin: 0 0.5rem;
     }
     .phins-nav .btn-logout {
-      background: linear-gradient(135deg, #ff6b6b 0%, #ee5a5a 100%);
+      background: linear-gradient(135deg, #ef5350 0%, #e53935 100%);
       color: white;
       padding: 0.5rem 1rem;
       border-radius: 8px;
       font-weight: 600;
     }
     .phins-nav .btn-logout:hover {
-      background: linear-gradient(135deg, #ee5a5a 0%, #dc4747 100%);
+      background: linear-gradient(135deg, #e53935 0%, #c62828 100%);
       transform: translateY(-1px);
     }
     .language-selector {
       background: rgba(255,255,255,0.1);
-      border: 1px solid rgba(255,255,255,0.2);
+      border: 1px solid rgba(255,255,255,0.25);
       color: white;
       padding: 0.4rem 0.75rem;
       border-radius: 6px;
@@ -98,18 +100,20 @@
       cursor: pointer;
     }
     .language-selector option {
-      background: #1a1f36;
+      background: #0d47a1;
       color: white;
     }
     /* Soft gradient backgrounds */
     body {
-      background: linear-gradient(180deg, #f0f4f8 0%, #e2e8f0 100%);
+      background: linear-gradient(180deg, #f5f9fc 0%, #e3f2fd 100%);
       min-height: 100vh;
     }
-    .stat-box-blue { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important; }
-    .stat-box-green { background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%) !important; }
-    .stat-box-orange { background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%) !important; }
-    .stat-box-purple { background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%) !important; }
+    .stat-box-blue { background: linear-gradient(135deg, #1565c0 0%, #1976d2 100%) !important; color: white !important; }
+    .stat-box-green { background: linear-gradient(135deg, #2e7d32 0%, #4caf50 100%) !important; color: white !important; }
+    .stat-box-orange { background: linear-gradient(135deg, #f57c00 0%, #ff9800 100%) !important; color: white !important; }
+    .stat-box-purple { background: linear-gradient(135deg, #42a5f5 0%, #64b5f6 100%) !important; color: white !important; }
+    .stat-box-blue .stat-value, .stat-box-green .stat-value, .stat-box-orange .stat-value, .stat-box-purple .stat-value { color: white !important; }
+    .stat-box-blue .stat-label, .stat-box-green .stat-label, .stat-box-orange .stat-label, .stat-box-purple .stat-label { color: rgba(255,255,255,0.9) !important; }
   </style>
 </head>
 <body>
@@ -176,29 +180,29 @@
     
     <!-- System Statistics - Row 2 -->
     <div class="dashboard-stats" style="margin-top: 16px;">
-      <div class="stat-box" style="background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);">
+      <div class="stat-box" style="background: linear-gradient(135deg, #1565c0 0%, #42a5f5 100%); color: white;">
         <div class="stat-icon">🏥</div>
-        <div class="stat-value" id="stat-claims">0</div>
-        <div class="stat-label">Pending Claims</div>
-        <div class="stat-change" id="stat-claims-approved">Loading...</div>
+        <div class="stat-value" id="stat-claims" style="color: white;">0</div>
+        <div class="stat-label" style="color: rgba(255,255,255,0.9);">Pending Claims</div>
+        <div class="stat-change" id="stat-claims-approved" style="color: rgba(255,255,255,0.8);">Loading...</div>
       </div>
-      <div class="stat-box" style="background: linear-gradient(135deg, #ee0979 0%, #ff6a00 100%);">
+      <div class="stat-box" style="background: linear-gradient(135deg, #0d47a1 0%, #1565c0 100%); color: white;">
         <div class="stat-icon">💵</div>
-        <div class="stat-value" id="stat-revenue">$0</div>
-        <div class="stat-label">Total Revenue</div>
-        <div class="stat-change" id="stat-outstanding">Loading...</div>
+        <div class="stat-value" id="stat-revenue" style="color: white;">$0</div>
+        <div class="stat-label" style="color: rgba(255,255,255,0.9);">Total Revenue</div>
+        <div class="stat-change" id="stat-outstanding" style="color: rgba(255,255,255,0.8);">Loading...</div>
       </div>
-      <div class="stat-box" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
+      <div class="stat-box" style="background: linear-gradient(135deg, #1976d2 0%, #64b5f6 100%); color: white;">
         <div class="stat-icon">🏦</div>
-        <div class="stat-value" id="stat-deposits">$0</div>
-        <div class="stat-label">Health Wallet Deposits</div>
-        <div class="stat-change" id="stat-wallets">Loading...</div>
+        <div class="stat-value" id="stat-deposits" style="color: white;">$0</div>
+        <div class="stat-label" style="color: rgba(255,255,255,0.9);">Health Wallet Deposits</div>
+        <div class="stat-change" id="stat-wallets" style="color: rgba(255,255,255,0.8);">Loading...</div>
       </div>
-      <div class="stat-box" style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);">
+      <div class="stat-box" style="background: linear-gradient(135deg, #42a5f5 0%, #90caf9 100%); color: white;">
         <div class="stat-icon">📈</div>
-        <div class="stat-value" id="stat-investment">$0</div>
-        <div class="stat-label">Investment Value</div>
-        <div class="stat-change" id="stat-coverage">Loading...</div>
+        <div class="stat-value" id="stat-investment" style="color: white;">$0</div>
+        <div class="stat-label" style="color: rgba(255,255,255,0.9);">Investment Value</div>
+        <div class="stat-change" id="stat-coverage" style="color: rgba(255,255,255,0.8);">Loading...</div>
       </div>
     </div>
     
@@ -508,7 +512,7 @@
     </section>
     
     <!-- Marketplace & Services Division -->
-    <section id="marketplace" class="section-content" style="background: linear-gradient(135deg, #e8f5e9 0%, #c8e6c9 100%); border-radius: 12px; padding: 24px;">
+    <section id="marketplace" class="section-content" style="background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%); border-radius: 16px; padding: 28px; border: 1px solid rgba(21, 101, 192, 0.1);">
       <div class="section-header">
         <h2>🛒 Marketplace Division — Services & Products</h2>
         <span class="badge badge-success" id="marketplace-status">NFT-Verified</span>
@@ -627,7 +631,7 @@
     </section>
     
     <!-- Insurance AI BI Dashboard -->
-    <section class="section-content" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border-radius: 12px; padding: 24px;">
+    <section class="section-content" style="background: linear-gradient(135deg, #0d47a1 0%, #1565c0 50%, #1976d2 100%); color: white; border-radius: 16px; padding: 28px; box-shadow: 0 8px 30px rgba(13, 71, 161, 0.25);">
       <div class="section-header">
         <h2 style="color: white;">🤖 AI-Powered Insurance BI System</h2>
         <span class="badge" style="background: #28a745;">LIVE</span>
