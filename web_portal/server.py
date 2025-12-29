@@ -85,6 +85,56 @@ else:
 # Health wallets and medical purchases are always in-memory (not yet in DB schema)
 HEALTH_WALLETS: Dict[str, Dict[str, Any]] = {}  # customer_id -> {balance, transactions, monthly_deposit}
 MEDICAL_PURCHASES: Dict[str, Dict[str, Any]] = {}  # purchase_id -> purchase data
+NFT_LEDGER: Dict[str, Dict[str, Any]] = {}  # token_id -> NFT token data for customer ledger
+
+def generate_nft_token(
+    customer_id: str,
+    transaction_type: str,
+    transaction_id: str,
+    amount: float,
+    description: str,
+    metadata: Dict[str, Any] = None
+) -> Dict[str, Any]:
+    """Generate an NFT token for transaction integrity and ledger tracking"""
+    import hashlib
+    token_id = f"NFT-{datetime.now().strftime('%Y%m%d%H%M%S')}-{random.randint(10000, 99999)}"
+    
+    # Create transaction hash for integrity
+    hash_data = f"{token_id}{customer_id}{transaction_id}{amount}{datetime.now().isoformat()}"
+    transaction_hash = hashlib.sha256(hash_data.encode()).hexdigest()[:16]
+    
+    # Create verification hash
+    verification_data = json.dumps({
+        'token_id': token_id,
+        'customer_id': customer_id,
+        'transaction_type': transaction_type,
+        'amount': amount
+    }, sort_keys=True)
+    verification_hash = hashlib.sha3_256(verification_data.encode()).hexdigest()[:32]
+    
+    nft_token = {
+        'token_id': token_id,
+        'chain_type': 'PHINS-CHAIN',
+        'transaction_hash': transaction_hash,
+        'verification_hash': verification_hash,
+        'owner_id': customer_id,
+        'owner_type': 'customer',
+        'transaction_type': transaction_type,
+        'transaction_id': transaction_id,
+        'amount': amount,
+        'description': description,
+        'metadata': metadata or {},
+        'created_at': datetime.now().isoformat(),
+        'status': 'confirmed',
+        'block_number': random.randint(1000000, 9999999),
+        'gas_fee': 0.0,  # No gas fees on PHINS-CHAIN
+        'smart_contract_ref': f"PHINS-SC-{datetime.now().strftime('%Y%m')}-WALLET"
+    }
+    
+    # Store in NFT ledger
+    NFT_LEDGER[token_id] = nft_token
+    
+    return nft_token
 try:
     from services.audit_service import AuditService
     audit = AuditService()
@@ -2405,7 +2455,102 @@ For claims or questions, please contact:
         
         # ========== END CUSTOMER DATA & PIPELINE VALIDATION API ==========
         
-        # Health Wallet GET endpoint
+        # Health Wallet GET endpoints
+        if path == '/api/health-wallet/purchases':
+            # GET purchases history
+            customer_id = qs.get('customer_id', ['CUST001'])[0]
+            
+            purchases = [p for p in MEDICAL_PURCHASES.values() if p.get('customer_id') == customer_id]
+            purchases.sort(key=lambda x: x.get('timestamp', ''), reverse=True)
+            
+            self._set_json_headers()
+            self.wfile.write(json.dumps({
+                'success': True,
+                'purchases': purchases[:50]  # Last 50
+            }).encode('utf-8'))
+            return
+        
+        # NFT Ledger GET endpoint - Customer Transaction Ledger
+        if path == '/api/nft-ledger':
+            customer_id = qs.get('customer_id', ['CUST001'])[0]
+            
+            # Get all NFT tokens for this customer
+            customer_nfts = [
+                nft for nft in NFT_LEDGER.values() 
+                if nft.get('owner_id') == customer_id
+            ]
+            customer_nfts.sort(key=lambda x: x.get('created_at', ''), reverse=True)
+            
+            # Calculate summary stats
+            total_deposits = sum(
+                nft.get('amount', 0) for nft in customer_nfts 
+                if nft.get('transaction_type') == 'wallet_deposit'
+            )
+            total_purchases = sum(
+                nft.get('amount', 0) for nft in customer_nfts 
+                if nft.get('transaction_type') == 'medical_purchase'
+            )
+            
+            self._set_json_headers()
+            self.wfile.write(json.dumps({
+                'success': True,
+                'customer_id': customer_id,
+                'ledger': customer_nfts[:100],  # Last 100 entries
+                'summary': {
+                    'total_tokens': len(customer_nfts),
+                    'total_deposits': total_deposits,
+                    'total_purchases': total_purchases,
+                    'net_flow': total_deposits - total_purchases
+                },
+                'chain_info': {
+                    'chain_type': 'PHINS-CHAIN',
+                    'smart_contract': f"PHINS-SC-{datetime.now().strftime('%Y%m')}-WALLET",
+                    'network': 'mainnet'
+                }
+            }).encode('utf-8'))
+            return
+        
+        # Verify specific NFT token
+        if path == '/api/nft-ledger/verify':
+            token_id = qs.get('token_id', [None])[0]
+            
+            if not token_id:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'Token ID required'}).encode('utf-8'))
+                return
+            
+            nft = NFT_LEDGER.get(token_id)
+            if not nft:
+                self._set_json_headers(404)
+                self.wfile.write(json.dumps({
+                    'valid': False,
+                    'error': 'Token not found'
+                }).encode('utf-8'))
+                return
+            
+            # Verify the token
+            import hashlib
+            verification_data = json.dumps({
+                'token_id': nft['token_id'],
+                'customer_id': nft['owner_id'],
+                'transaction_type': nft['transaction_type'],
+                'amount': nft['amount']
+            }, sort_keys=True)
+            computed_hash = hashlib.sha3_256(verification_data.encode()).hexdigest()[:32]
+            is_valid = computed_hash == nft.get('verification_hash')
+            
+            self._set_json_headers()
+            self.wfile.write(json.dumps({
+                'valid': is_valid,
+                'token': nft,
+                'verification': {
+                    'computed_hash': computed_hash,
+                    'stored_hash': nft.get('verification_hash'),
+                    'match': is_valid
+                }
+            }).encode('utf-8'))
+            return
+        
         if path.startswith('/api/health-wallet'):
             customer_id = qs.get('customer_id', ['CUST001'])[0]
             
@@ -2420,10 +2565,15 @@ For claims or questions, please contact:
                 }
             
             wallet = HEALTH_WALLETS[customer_id]
+            
+            # Also get NFT count for this customer
+            nft_count = len([nft for nft in NFT_LEDGER.values() if nft.get('owner_id') == customer_id])
+            
             self._set_json_headers()
             self.wfile.write(json.dumps({
                 'success': True,
-                'wallet': wallet
+                'wallet': wallet,
+                'nft_count': nft_count
             }).encode('utf-8'))
             return
         
@@ -4976,11 +5126,13 @@ For claims or questions, please contact:
                         }
                     
                     # Add funds
+                    prev_balance = HEALTH_WALLETS[customer_id]['balance']
                     HEALTH_WALLETS[customer_id]['balance'] += amount
                     
                     # Record transaction
+                    transaction_id = f"TXN-{datetime.now().strftime('%Y%m%d%H%M%S')}-{random.randint(1000, 9999)}"
                     transaction = {
-                        'id': f"TXN-{datetime.now().strftime('%Y%m%d%H%M%S')}",
+                        'id': transaction_id,
                         'type': 'deposit',
                         'amount': amount,
                         'payment_method': payment_method,
@@ -4989,10 +5141,26 @@ For claims or questions, please contact:
                     }
                     HEALTH_WALLETS[customer_id]['transactions'].append(transaction)
                     
+                    # Generate NFT token for ledger
+                    nft_token = generate_nft_token(
+                        customer_id=customer_id,
+                        transaction_type='wallet_deposit',
+                        transaction_id=transaction_id,
+                        amount=amount,
+                        description=f"Health Wallet Deposit via {payment_method}",
+                        metadata={
+                            'payment_method': payment_method,
+                            'previous_balance': prev_balance,
+                            'new_balance': HEALTH_WALLETS[customer_id]['balance']
+                        }
+                    )
+                    transaction['nft_token_id'] = nft_token['token_id']
+                    
                     self._set_json_headers()
                     self.wfile.write(json.dumps({
                         'success': True,
                         'transaction': transaction,
+                        'nft_token': nft_token,
                         'new_balance': HEALTH_WALLETS[customer_id]['balance']
                     }).encode('utf-8'))
                 except Exception as e:
@@ -5009,6 +5177,7 @@ For claims or questions, please contact:
                     product_name = data.get('product_name')
                     amount = float(data.get('amount', 0))
                     category = data.get('category', 'general')
+                    provider = data.get('provider', '')
                     
                     if not product_id or not amount:
                         self._set_json_headers(400)
@@ -5037,32 +5206,57 @@ For claims or questions, please contact:
                         return
                     
                     # Deduct amount
+                    prev_balance = wallet['balance']
                     wallet['balance'] -= amount
                     
                     # Create purchase record
-                    purchase_id = f"PUR-{datetime.now().strftime('%Y%m%d%H%M%S')}"
+                    purchase_id = f"PUR-{datetime.now().strftime('%Y%m%d%H%M%S')}-{random.randint(1000, 9999)}"
+                    
+                    # Generate NFT token for ledger
+                    nft_token = generate_nft_token(
+                        customer_id=customer_id,
+                        transaction_type='medical_purchase',
+                        transaction_id=purchase_id,
+                        amount=amount,
+                        description=f"Medical Purchase: {product_name}",
+                        metadata={
+                            'product_id': product_id,
+                            'product_name': product_name,
+                            'category': category,
+                            'provider': provider,
+                            'previous_balance': prev_balance,
+                            'new_balance': wallet['balance']
+                        }
+                    )
+                    
                     purchase = {
                         'id': purchase_id,
                         'customer_id': customer_id,
                         'product_id': product_id,
                         'product_name': product_name,
                         'category': category,
+                        'provider': provider,
                         'amount': amount,
                         'status': 'completed',
-                        'timestamp': datetime.now().isoformat()
+                        'timestamp': datetime.now().isoformat(),
+                        'nft_token_id': nft_token['token_id'],
+                        'transaction_hash': nft_token['transaction_hash'],
+                        'verification_hash': nft_token['verification_hash']
                     }
                     MEDICAL_PURCHASES[purchase_id] = purchase
                     
                     # Record transaction in wallet
+                    transaction_id = f"TXN-{datetime.now().strftime('%Y%m%d%H%M%S')}-{random.randint(1000, 9999)}"
                     transaction = {
-                        'id': f"TXN-{datetime.now().strftime('%Y%m%d%H%M%S')}",
+                        'id': transaction_id,
                         'type': 'purchase',
                         'amount': -amount,
                         'product_id': product_id,
                         'product_name': product_name,
                         'category': category,
                         'timestamp': datetime.now().isoformat(),
-                        'balance_after': wallet['balance']
+                        'balance_after': wallet['balance'],
+                        'nft_token_id': nft_token['token_id']
                     }
                     wallet['transactions'].append(transaction)
                     
@@ -5071,6 +5265,7 @@ For claims or questions, please contact:
                         'success': True,
                         'purchase': purchase,
                         'transaction': transaction,
+                        'nft_token': nft_token,
                         'new_balance': wallet['balance']
                     }).encode('utf-8'))
                 except Exception as e:
