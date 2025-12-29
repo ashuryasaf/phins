@@ -16,14 +16,17 @@ logger = logging.getLogger(__name__)
 
 def convert_datetime_strings(data: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Convert ISO datetime strings to datetime objects for database insertion.
+    Convert ISO datetime strings to datetime objects and dict fields to JSON strings.
     
     Args:
-        data: Dictionary that may contain datetime strings
+        data: Dictionary that may contain datetime strings and nested dicts
     
     Returns:
         Dictionary with datetime strings converted to datetime objects
+        and dict fields converted to JSON strings
     """
+    import json
+    
     datetime_fields = [
         'created_date', 'updated_date', 'start_date', 'end_date',
         'approval_date', 'filed_date', 'payment_date', 'submitted_date',
@@ -31,7 +34,15 @@ def convert_datetime_strings(data: Dict[str, Any]) -> Dict[str, Any]:
         'timestamp'
     ]
     
+    # Fields that should be stored as JSON strings
+    json_fields = [
+        'questionnaire_responses', 'payment_setup', 'health_wallet', 
+        'billing', 'metadata', 'additional_data'
+    ]
+    
     result = data.copy()
+    
+    # Convert datetime fields
     for field in datetime_fields:
         if field in result and result[field] is not None:
             value = result[field]
@@ -42,6 +53,17 @@ def convert_datetime_strings(data: Dict[str, Any]) -> Dict[str, Any]:
                 except (ValueError, AttributeError):
                     # If parsing fails, keep original value
                     pass
+    
+    # Convert dict/list fields to JSON strings for storage
+    for field in json_fields:
+        if field in result and result[field] is not None:
+            value = result[field]
+            if isinstance(value, (dict, list)):
+                try:
+                    result[field] = json.dumps(value)
+                except (TypeError, ValueError):
+                    # If JSON encoding fails, try str
+                    result[field] = str(value)
     
     return result
 

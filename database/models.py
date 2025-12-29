@@ -149,12 +149,28 @@ class Policy(Base):
     # Legacy field mappings for compatibility
     uw_status = Column(String(50))  # Maps to underwriting status
     
+    # JSON fields stored as text
+    billing = Column(Text)  # JSON string for billing configuration
+    health_wallet = Column(Text)  # JSON string for health wallet config
+    
     # Relationships
     customer = relationship("Customer", back_populates="policies")
     claims = relationship("Claim", back_populates="policy", cascade="all, delete-orphan")
     
     def to_dict(self):
         """Convert model to dictionary"""
+        import json as json_module
+        
+        def safe_json_loads(val):
+            if val is None:
+                return {}
+            if isinstance(val, dict):
+                return val
+            try:
+                return json_module.loads(val)
+            except:
+                return {}
+        
         return {
             'id': self.id,
             'customer_id': self.customer_id,
@@ -171,7 +187,9 @@ class Policy(Base):
             'approval_date': self.approval_date.isoformat() if self.approval_date else None,
             'created_date': self.created_date.isoformat() if self.created_date else None,
             'updated_date': self.updated_date.isoformat() if self.updated_date else None,
-            'uw_status': self.uw_status
+            'uw_status': self.uw_status,
+            'billing': safe_json_loads(self.billing),
+            'health_wallet': safe_json_loads(self.health_wallet)
         }
 
 
@@ -225,11 +243,28 @@ class UnderwritingApplication(Base):
     id = Column(String(50), primary_key=True)
     policy_id = Column(String(50), index=True)
     customer_id = Column(String(50), index=True)
+    
+    # Customer info (denormalized for dashboard display)
+    customer_name = Column(String(200))
+    customer_email = Column(String(254))
+    
+    # Policy details
+    policy_type = Column(String(50))
+    coverage_amount = Column(Float)
+    age = Column(Integer)
+    risk_score = Column(String(20))  # low, medium, high, very_high (alias for risk_assessment)
+    
     status = Column(String(50), default='pending')
     risk_assessment = Column(String(20))  # low, medium, high, very_high
     medical_exam_required = Column(Boolean, default=False)
     additional_documents_required = Column(Boolean, default=False)
     notes = Column(Text)
+    
+    # JSON fields stored as text
+    questionnaire_responses = Column(Text)  # JSON string
+    payment_setup = Column(Text)  # JSON string
+    health_wallet = Column(Text)  # JSON string
+    
     submitted_date = Column(DateTime, default=datetime.utcnow, nullable=False)
     decision_date = Column(DateTime)
     decided_by = Column(String(100))  # Username of underwriter
@@ -238,15 +273,36 @@ class UnderwritingApplication(Base):
     
     def to_dict(self):
         """Convert model to dictionary"""
+        import json as json_module
+        
+        def safe_json_loads(val):
+            if val is None:
+                return {}
+            if isinstance(val, dict):
+                return val
+            try:
+                return json_module.loads(val)
+            except:
+                return {}
+        
         return {
             'id': self.id,
             'policy_id': self.policy_id,
             'customer_id': self.customer_id,
+            'customer_name': self.customer_name,
+            'customer_email': self.customer_email,
+            'policy_type': self.policy_type,
+            'coverage_amount': self.coverage_amount,
+            'age': self.age,
+            'risk_score': self.risk_score,
             'status': self.status,
             'risk_assessment': self.risk_assessment,
             'medical_exam_required': self.medical_exam_required,
             'additional_documents_required': self.additional_documents_required,
             'notes': self.notes,
+            'questionnaire_responses': safe_json_loads(self.questionnaire_responses),
+            'payment_setup': safe_json_loads(self.payment_setup),
+            'health_wallet': safe_json_loads(self.health_wallet),
             'submitted_date': self.submitted_date.isoformat() if self.submitted_date else None,
             'decision_date': self.decision_date.isoformat() if self.decision_date else None,
             'decided_by': self.decided_by,

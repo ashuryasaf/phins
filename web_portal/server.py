@@ -569,6 +569,38 @@ if USE_DATABASE and database_enabled:
                 raise KeyError(username)
             return result
         
+        def __setitem__(self, username: str, value: dict):
+            """Create or update a user in the database"""
+            try:
+                from database.manager import DatabaseManager
+                with DatabaseManager() as db:
+                    existing_user = db.users.get_by_username(username)
+                    if existing_user:
+                        # Update existing user
+                        db.users.update(
+                            existing_user.id,
+                            password_hash=value.get('hash'),
+                            password_salt=value.get('salt'),
+                            role=value.get('role', existing_user.role),
+                            name=value.get('name', existing_user.name),
+                            customer_id=value.get('customer_id', existing_user.customer_id)
+                        )
+                    else:
+                        # Create new user
+                        db.users.create(
+                            username=username,
+                            password_hash=value.get('hash'),
+                            password_salt=value.get('salt'),
+                            role=value.get('role', 'customer'),
+                            name=value.get('name', username),
+                            email=username,  # Username is email for customers
+                            customer_id=value.get('customer_id'),
+                            active=True
+                        )
+            except Exception as e:
+                print(f"Warning: Error creating/updating user in database: {e}")
+                raise
+        
         def __contains__(self, username: str):
             return self.get(username) is not None
     
@@ -3192,29 +3224,47 @@ class PortalHandler(BaseHTTPRequestHandler):
                 policy_id = generate_policy_id()
                 customer_id = data.get('customer_id') or generate_customer_id()
                 
-                # Create customer if new
-                if customer_id not in CUSTOMERS:
-                    CUSTOMERS[customer_id] = {
-                        'id': customer_id,
-                        'name': customer_name,
-                        'email': customer_email,
-                        'phone': customer_phone,
-                        'dob': data.get('customer_dob', ''),
-                        'created_date': datetime.now().isoformat()
-                    }
-                    # Provision portal login for the customer
-                    cust_email = CUSTOMERS[customer_id].get('email') or f"{customer_id.lower()}@example.com"
-                    temp_password = f"pw-{uuid.uuid4().hex[:10]}"
-                    
-                    # Hash the password for security
-                    pwd_hash = hash_password(temp_password)
-                    USERS[cust_email] = {
-                        'hash': pwd_hash['hash'],
-                        'salt': pwd_hash['salt'],
-                        'role': 'customer',
-                        'name': CUSTOMERS[customer_id].get('name') or customer_id,
-                        'customer_id': customer_id
-                    }
+                # Check if customer with this email already exists
+                existing_customer = None
+                if customer_email and USE_DATABASE:
+                    try:
+                        from database.manager import DatabaseManager
+                        with DatabaseManager() as db:
+                            existing_customer = db.customers.get_by_email(customer_email)
+                            if existing_customer:
+                                customer_id = existing_customer.id
+                    except Exception as e:
+                        print(f"Error checking existing customer: {e}")
+                
+                # Create customer if new (and no existing customer with same email)
+                if not existing_customer and customer_id not in CUSTOMERS:
+                    try:
+                        CUSTOMERS[customer_id] = {
+                            'id': customer_id,
+                            'name': customer_name,
+                            'email': customer_email,
+                            'phone': customer_phone,
+                            'dob': data.get('customer_dob', ''),
+                            'created_date': datetime.now().isoformat()
+                        }
+                        # Provision portal login for the customer
+                        cust_email = customer_email or f"{customer_id.lower()}@example.com"
+                        temp_password = f"pw-{uuid.uuid4().hex[:10]}"
+                        
+                        # Hash the password for security
+                        pwd_hash = hash_password(temp_password)
+                        USERS[cust_email] = {
+                            'hash': pwd_hash['hash'],
+                            'salt': pwd_hash['salt'],
+                            'role': 'customer',
+                            'name': customer_name or customer_id,
+                            'customer_id': customer_id
+                        }
+                    except Exception as e:
+                        print(f"Error creating customer: {e}")
+                        self._set_json_headers(400)
+                        self.wfile.write(json.dumps({'error': 'Failed to create customer account'}).encode('utf-8'))
+                        return
                 
                 # Create underwriting application
                 uw_id = f"UW-{datetime.now().strftime('%Y%m%d')}-{random.randint(1000, 9999)}"
