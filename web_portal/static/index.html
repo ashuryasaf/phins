@@ -29,7 +29,7 @@
           <option value="ru">🌐 Русский</option>
           <option value="pt">🌐 Português</option>
         </select>
-        <a href="/login.html" class="btn-login">Login / Sign Up</a>
+        <a href="/login.html" class="btn-login">🔐 Secure Login</a>
       </nav>
     </div>
   </header>
@@ -40,10 +40,37 @@
       <div class="hero-content">
         <h1>PHINS: Specialized Disability Protection & Investment</h1>
         <p class="hero-subtitle">Global coverage for severe permanent disabilities (ADL-based) with integrated wealth building</p>
-        <div class="hero-actions">
-          <a href="/apply.html" class="btn btn-primary">Apply Now</a>
-          <a href="/quote.html" class="btn btn-primary">Get a Quote</a>
-          <a href="/login.html" class="btn btn-secondary">Access My Account</a>
+        
+        <!-- Two Clear Paths -->
+        <div class="hero-actions" style="display: flex; gap: 24px; justify-content: center; flex-wrap: wrap; margin-top: 32px;">
+          <!-- New Customer Path -->
+          <div style="text-align: center;">
+            <a href="#quote" class="btn btn-primary" style="font-size: 1.1rem; padding: 16px 32px;">
+              📋 Get a Quote
+            </a>
+            <p style="margin-top: 8px; font-size: 0.85rem; color: rgba(255,255,255,0.8);">New customers start here</p>
+          </div>
+          
+          <!-- Existing Customer Path -->
+          <div style="text-align: center;">
+            <a href="/login.html" class="btn btn-secondary" style="font-size: 1.1rem; padding: 16px 32px; background: rgba(255,255,255,0.95); color: #0d47a1;">
+              🔐 Access My Account
+            </a>
+            <p style="margin-top: 8px; font-size: 0.85rem; color: rgba(255,255,255,0.8);">Existing policyholders</p>
+          </div>
+        </div>
+        
+        <!-- Security Badge -->
+        <div style="margin-top: 24px; display: flex; justify-content: center; gap: 16px; flex-wrap: wrap;">
+          <span style="background: rgba(255,255,255,0.15); color: white; padding: 6px 12px; border-radius: 20px; font-size: 0.8rem;">
+            🔒 256-bit SSL Encryption
+          </span>
+          <span style="background: rgba(255,255,255,0.15); color: white; padding: 6px 12px; border-radius: 20px; font-size: 0.8rem;">
+            ✓ SOC 2 Compliant
+          </span>
+          <span style="background: rgba(255,255,255,0.15); color: white; padding: 6px 12px; border-radius: 20px; font-size: 0.8rem;">
+            🛡️ HIPAA Secure
+          </span>
         </div>
       </div>
     </div>
@@ -108,36 +135,49 @@
           </div>
 
           <div style="text-align:center; margin-top:32px;">
-            <a href="#quote" class="btn btn-primary" style="margin-right:12px;">Get Your Quote</a>
-            <a href="#about" class="btn btn-outline">Learn More About Coverage</a>
+            <a href="#quote" class="btn btn-primary">📋 Get Your Free Quote</a>
           </div>
         </div>
       </div>
     </div>
   </section>
 
-  <!-- Get Quote Section -->
+  <!-- Get Quote Section - New Customers Only -->
   <section id="quote" class="section section-alt">
     <div class="container">
-      <h2 class="section-title">Start Your Insurance Journey</h2>
+      <h2 class="section-title">📋 Get Your Free Quote</h2>
+      <p style="text-align: center; max-width: 600px; margin: 0 auto 32px; color: var(--muted);">
+        New to PHINS? Start here to receive a personalized quote. Already a customer? 
+        <a href="/login.html" style="color: var(--brand); font-weight: 600;">Access your account →</a>
+      </p>
+      
       <div class="quote-container">
-        <div class="card">
-          <h3>Get a Free Quote</h3>
+        <div class="card" style="position: relative;">
+          <!-- Security Badge -->
+          <div style="position: absolute; top: -12px; right: 20px; background: linear-gradient(135deg, #28a745 0%, #20c997 100%); color: white; padding: 6px 16px; border-radius: 20px; font-size: 0.8rem; font-weight: 600;">
+            🔒 Secure Form
+          </div>
+          
+          <h3 style="margin-top: 8px;">Request Your Personalized Quote</h3>
+          <p style="color: var(--muted); margin-bottom: 24px; font-size: 0.95rem;">
+            Complete the form below and our team will prepare a customized quote within 24 hours.
+          </p>
+          
           <form id="quote-form" class="quote-form">
             <div class="form-group">
-              <label for="name">Full Name</label>
-              <input type="text" id="name" name="name" required>
+              <label for="name">Full Name *</label>
+              <input type="text" id="name" name="name" required placeholder="Enter your full legal name">
             </div>
             <div class="form-group">
-              <label for="email">Email Address</label>
-              <input type="email" id="email" name="email" required>
+              <label for="email">Email Address *</label>
+              <input type="email" id="email" name="email" required placeholder="you@example.com">
             </div>
             <div class="form-group">
-              <label for="phone">Phone Number</label>
-              <input type="tel" id="phone" name="phone" required>
+              <label for="phone">Phone Number *</label>
+              <input type="tel" id="phone" name="phone" required placeholder="+1 (555) 000-0000">
             </div>
             <div class="form-group">
-              <label for="product">Coverage Amount Desired</label>
+              <label for="product">Coverage Amount Desired *</label>
               <select id="product" name="product" required>
                 <option value="">Select coverage level...</option>
                 <option value="basic">Basic: $500,000 coverage + investment</option>
@@ -148,12 +188,27 @@
               </select>
             </div>
             <div class="form-group">
-              <label for="message">Additional Information</label>
-              <textarea id="message" name="message" rows="4"></textarea>
+              <label for="message">Additional Information (Optional)</label>
+              <textarea id="message" name="message" rows="3" placeholder="Any specific requirements or questions?"></textarea>
             </div>
-            <button type="submit" class="btn btn-primary btn-full">Submit Request</button>
+            
+            <button type="submit" class="btn btn-primary btn-full" style="font-size: 1.05rem; padding: 14px;">
+              📤 Submit Quote Request
+            </button>
+            
+            <p style="text-align: center; margin-top: 16px; font-size: 0.8rem; color: var(--muted);">
+              🔒 Your information is protected with 256-bit encryption
+            </p>
           </form>
           <div id="quote-message" class="form-message"></div>
+          
+          <!-- Or Apply Directly -->
+          <div style="margin-top: 24px; padding-top: 24px; border-top: 1px solid #e0e0e0; text-align: center;">
+            <p style="color: var(--muted); margin-bottom: 12px;">Ready to apply? Skip the quote and start your application:</p>
+            <a href="/apply.html" class="btn btn-outline" style="border-color: var(--brand); color: var(--brand);">
+              📝 Start Full Application
+            </a>
+          </div>
         </div>
       </div>
     </div>
@@ -278,9 +333,6 @@
         </div>
       </div>
 
-      <div style="text-align:center; margin-top:32px;">
-        <a href="#quote" class="btn btn-primary">Start Your Application</a>
-      </div>
     </div>
   </section>
 
@@ -375,13 +427,22 @@
     </div>
   </section>
 
-  <!-- Customer Portal Access -->
+  <!-- Existing Customer Portal Access -->
   <section class="section cta-section">
     <div class="container">
       <div class="cta-content">
-        <h2>Existing Customer?</h2>
-        <p>Access your account to view policies, make claims, and manage your investments</p>
-        <a href="/login.html" class="btn btn-primary btn-large">Login to Portal</a>
+        <h2>🔐 Existing Policyholder?</h2>
+        <p style="max-width: 500px; margin: 0 auto 24px;">Securely access your account to view policies, file claims, manage your Health Wallet, and track your investments</p>
+        <a href="/login.html" class="btn btn-primary btn-large" style="font-size: 1.1rem; padding: 16px 40px;">
+          Access My Account
+        </a>
+        <div style="margin-top: 16px; display: flex; justify-content: center; gap: 12px; flex-wrap: wrap;">
+          <span style="color: rgba(255,255,255,0.8); font-size: 0.85rem;">🔒 Multi-factor Authentication</span>
+          <span style="color: rgba(255,255,255,0.8); font-size: 0.85rem;">•</span>
+          <span style="color: rgba(255,255,255,0.8); font-size: 0.85rem;">📱 Mobile Friendly</span>
+          <span style="color: rgba(255,255,255,0.8); font-size: 0.85rem;">•</span>
+          <span style="color: rgba(255,255,255,0.8); font-size: 0.85rem;">24/7 Access</span>
+        </div>
       </div>
     </div>
   </section>
@@ -390,16 +451,29 @@
     <div class="container">
       <div class="footer-content">
         <div class="footer-section">
-          <h4>PHINS Insurance</h4>
-          <p>Your trusted partner in insurance and financial security.</p>
+          <h4>🛡️ PHINS Insurance</h4>
+          <p>Your trusted partner in specialized disability protection and wealth building.</p>
+          <div style="margin-top: 12px; display: flex; gap: 8px; flex-wrap: wrap;">
+            <span style="background: rgba(255,255,255,0.1); padding: 4px 8px; border-radius: 4px; font-size: 0.75rem;">SOC 2</span>
+            <span style="background: rgba(255,255,255,0.1); padding: 4px 8px; border-radius: 4px; font-size: 0.75rem;">HIPAA</span>
+            <span style="background: rgba(255,255,255,0.1); padding: 4px 8px; border-radius: 4px; font-size: 0.75rem;">PCI DSS</span>
+          </div>
+        </div>
+        <div class="footer-section">
+          <h4>Get Started</h4>
+          <ul>
+            <li><a href="#quote">📋 Get a Quote</a></li>
+            <li><a href="/apply.html">📝 Apply Now</a></li>
+            <li><a href="/login.html">🔐 Customer Login</a></li>
+          </ul>
         </div>
         <div class="footer-section">
           <h4>Quick Links</h4>
           <ul>
             <li><a href="#products">Products</a></li>
+            <li><a href="#underwriting">Underwriting</a></li>
             <li><a href="#about">About Us</a></li>
             <li><a href="#contact">Contact</a></li>
-            <li><a href="/login.html">Customer Portal</a></li>
           </ul>
         </div>
         <div class="footer-section">
@@ -413,7 +487,7 @@
         </div>
       </div>
       <div class="footer-bottom">
-        <p>© 2025 PHINS Insurance Company. All rights reserved. Licensed in all 50 states.</p>
+        <p>© 2025 PHINS Insurance Company. All rights reserved. Licensed in all 50 states. | 🔒 All connections secured with 256-bit SSL encryption</p>
       </div>
     </div>
   </footer>
