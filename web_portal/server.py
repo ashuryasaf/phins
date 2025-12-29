@@ -1409,6 +1409,102 @@ class PortalHandler(BaseHTTPRequestHandler):
                     self.wfile.write(json.dumps(payload).encode('utf-8'))
             return
         
+        # Policy Document Download Endpoint
+        if path.startswith('/api/policies/') and path.endswith('/document'):
+            policy_id = path.split('/')[3]
+            
+            if not session:
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Unauthorized'}).encode('utf-8'))
+                return
+            
+            user = get_session_user(session) or {}
+            role = (user.get('role') or '').lower()
+            session_customer_id = user.get('customer_id') or session.get('customer_id')
+            
+            policy = POLICIES.get(policy_id)
+            if not policy:
+                self._set_json_headers(404)
+                self.wfile.write(json.dumps({'error': 'Policy not found'}).encode('utf-8'))
+                return
+            
+            # Check authorization
+            if role == 'customer' and session_customer_id != policy.get('customer_id'):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Access denied'}).encode('utf-8'))
+                return
+            
+            # Get customer info
+            customer = CUSTOMERS.get(policy.get('customer_id')) or {}
+            
+            # Generate policy document
+            doc_content = f"""
+════════════════════════════════════════════════════════════════════════
+                        PHINS INSURANCE COMPANY
+                          POLICY DOCUMENT
+════════════════════════════════════════════════════════════════════════
+
+Policy Number: {policy.get('id', 'N/A')}
+Status: {policy.get('status', 'Active')}
+Generated: {datetime.now().strftime('%B %d, %Y')}
+
+────────────────────────────────────────────────────────────────────────
+                      POLICYHOLDER INFORMATION
+────────────────────────────────────────────────────────────────────────
+
+Name: {customer.get('name', 'N/A')}
+Email: {customer.get('email', 'N/A')}
+Phone: {customer.get('phone', 'N/A')}
+Customer ID: {policy.get('customer_id', 'N/A')}
+
+────────────────────────────────────────────────────────────────────────
+                        COVERAGE DETAILS
+────────────────────────────────────────────────────────────────────────
+
+Policy Type: {(policy.get('type') or 'Insurance').upper()}
+Coverage Amount: ${policy.get('coverage_amount', 0):,.2f}
+Annual Premium: ${policy.get('annual_premium', 0):,.2f}
+Monthly Premium: ${policy.get('monthly_premium', policy.get('annual_premium', 0) / 12):,.2f}
+
+Effective Date: {policy.get('start_date', 'N/A')}
+Expiration Date: {policy.get('end_date', 'N/A')}
+
+Risk Assessment: {policy.get('risk_score', 'Standard')}
+
+────────────────────────────────────────────────────────────────────────
+                      TERMS AND CONDITIONS
+────────────────────────────────────────────────────────────────────────
+
+This policy is subject to the terms, conditions, and exclusions
+set forth in the PHINS Insurance Company Master Policy Agreement.
+
+Coverage is contingent upon timely payment of premiums and 
+compliance with all policy requirements.
+
+For claims or questions, please contact:
+- Phone: 1-800-PHINS-HELP
+- Email: support@phins.ai
+- Web: https://phins.ai
+
+────────────────────────────────────────────────────────────────────────
+
+© {datetime.now().year} PHINS Insurance Company. All rights reserved.
+
+This document is for informational purposes and serves as a
+summary of your coverage. Please refer to your complete policy
+documents for full terms and conditions.
+
+════════════════════════════════════════════════════════════════════════
+""".strip()
+            
+            # Return as text file download
+            self.send_response(200)
+            self.send_header('Content-Type', 'text/plain; charset=utf-8')
+            self.send_header('Content-Disposition', f'attachment; filename="PHINS_Policy_{policy_id}.txt"')
+            self.end_headers()
+            self.wfile.write(doc_content.encode('utf-8'))
+            return
+        
         # Claims Management Endpoints
         if path == '/api/claims':
             if not session:

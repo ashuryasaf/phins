@@ -935,21 +935,137 @@
       displayCustomers(filtered);
     }
     
-    // View customer details
-    function viewCustomer(customerId) {
+    // View customer details - shows modal with full customer info
+    async function viewCustomer(customerId) {
       const customer = allCustomers.find(c => c.id === customerId);
-      if (customer) {
-        alert(`Customer Details:\n\n` +
-          `ID: ${customer.id}\n` +
-          `Name: ${customer.name || 'N/A'}\n` +
-          `Email: ${customer.email || 'N/A'}\n` +
-          `Stage: ${customer.pipeline_stage || 'Unknown'}\n` +
-          `Policies: ${customer.active_policies || 0} active / ${customer.total_policies || 0} total\n` +
-          `Wallet: $${(customer.wallet_balance || 0).toLocaleString()}\n` +
-          `Applications: ${customer.applications?.length || 0}\n` +
-          `Created: ${customer.created_at || 'N/A'}`
-        );
+      if (!customer) return;
+      
+      // Show modal
+      const modal = document.getElementById('customer-detail-modal');
+      const content = document.getElementById('customer-modal-content');
+      
+      // Load additional customer data
+      let policies = [];
+      let claims = [];
+      
+      try {
+        const policiesRes = await fetch(`/api/policies?customer_id=${customerId}`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (policiesRes.ok) {
+          const data = await policiesRes.json();
+          policies = data.policies || data.items || (Array.isArray(data) ? data : []);
+        }
+        
+        const claimsRes = await fetch(`/api/claims?customer_id=${customerId}`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (claimsRes.ok) {
+          const data = await claimsRes.json();
+          claims = data.claims || data.items || (Array.isArray(data) ? data : []);
+        }
+      } catch (e) {
+        console.error('Error loading customer details:', e);
       }
+      
+      const stageColors = {
+        'lead': '#6c757d',
+        'application': '#ffc107',
+        'underwriting': '#17a2b8',
+        'active_customer': '#28a745',
+        'lapsed': '#dc3545'
+      };
+      const stageColor = stageColors[customer.pipeline_stage] || '#6c757d';
+      
+      content.innerHTML = `
+        <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 24px;">
+          <div>
+            <h2 style="margin: 0 0 8px 0;">${customer.name || 'Unknown'}</h2>
+            <p style="margin: 0; color: #666;">${customer.email || 'No email'}</p>
+          </div>
+          <span style="background:${stageColor};color:white;padding:6px 16px;border-radius:20px;font-weight:600;font-size:0.85rem;">
+            ${(customer.pipeline_stage || 'unknown').replace('_', ' ').toUpperCase()}
+          </span>
+        </div>
+        
+        <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 24px;">
+          <div style="background:#f8f9fa;padding:16px;border-radius:10px;text-align:center;">
+            <div style="font-size:2rem;font-weight:700;color:#667eea;">${customer.active_policies || 0}</div>
+            <div style="font-size:0.85rem;color:#666;">Active Policies</div>
+          </div>
+          <div style="background:#f8f9fa;padding:16px;border-radius:10px;text-align:center;">
+            <div style="font-size:2rem;font-weight:700;color:#28a745;">$${(customer.wallet_balance || 0).toLocaleString()}</div>
+            <div style="font-size:0.85rem;color:#666;">Wallet Balance</div>
+          </div>
+          <div style="background:#f8f9fa;padding:16px;border-radius:10px;text-align:center;">
+            <div style="font-size:2rem;font-weight:700;color:#dc3545;">${claims.filter(c => c.status === 'Pending' || c.status === 'Under Review').length}</div>
+            <div style="font-size:0.85rem;color:#666;">Pending Claims</div>
+          </div>
+        </div>
+        
+        <div style="margin-bottom: 20px;">
+          <h4 style="margin: 0 0 12px 0;">📋 Customer Information</h4>
+          <table style="width:100%;border-collapse:collapse;">
+            <tr><td style="padding:8px 0;color:#666;">Customer ID:</td><td style="padding:8px 0;font-weight:600;">${customer.id}</td></tr>
+            <tr><td style="padding:8px 0;color:#666;">Phone:</td><td style="padding:8px 0;">${customer.phone || 'N/A'}</td></tr>
+            <tr><td style="padding:8px 0;color:#666;">Created:</td><td style="padding:8px 0;">${customer.created_at ? new Date(customer.created_at).toLocaleDateString() : 'N/A'}</td></tr>
+            <tr><td style="padding:8px 0;color:#666;">Total Policies:</td><td style="padding:8px 0;">${customer.total_policies || policies.length}</td></tr>
+          </table>
+        </div>
+        
+        ${policies.length > 0 ? `
+        <div style="margin-bottom: 20px;">
+          <h4 style="margin: 0 0 12px 0;">📄 Policies</h4>
+          <div style="max-height:150px;overflow-y:auto;">
+            ${policies.slice(0, 5).map(p => `
+              <div style="background:#f8f9fa;padding:12px;border-radius:8px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;">
+                <div>
+                  <strong>${p.id}</strong> - ${p.type || 'Insurance'}
+                  <br><small style="color:#666;">Coverage: $${Number(p.coverage_amount || 0).toLocaleString()}</small>
+                </div>
+                <span style="padding:4px 10px;border-radius:12px;font-size:0.75rem;font-weight:600;
+                  background:${p.status === 'active' ? '#d4edda' : '#fff3cd'};
+                  color:${p.status === 'active' ? '#155724' : '#856404'};">
+                  ${p.status || 'Unknown'}
+                </span>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+        ` : ''}
+        
+        ${claims.length > 0 ? `
+        <div style="margin-bottom: 20px;">
+          <h4 style="margin: 0 0 12px 0;">📝 Recent Claims</h4>
+          <div style="max-height:150px;overflow-y:auto;">
+            ${claims.slice(0, 5).map(c => `
+              <div style="background:#f8f9fa;padding:12px;border-radius:8px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;">
+                <div>
+                  <strong>${c.id}</strong> - ${c.type || 'General'}
+                  <br><small style="color:#666;">Amount: $${Number(c.claimed_amount || 0).toFixed(2)}</small>
+                </div>
+                <span style="padding:4px 10px;border-radius:12px;font-size:0.75rem;font-weight:600;
+                  background:${c.status === 'Approved' || c.status === 'Paid' ? '#d4edda' : c.status === 'Rejected' ? '#f8d7da' : '#fff3cd'};
+                  color:${c.status === 'Approved' || c.status === 'Paid' ? '#155724' : c.status === 'Rejected' ? '#721c24' : '#856404'};">
+                  ${c.status || 'Pending'}
+                </span>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+        ` : ''}
+        
+        <div style="display:flex;gap:10px;margin-top:24px;padding-top:20px;border-top:1px solid #e0e0e0;">
+          <button class="btn btn-primary" onclick="validateCustomer('${customer.id}'); closeCustomerModal();">✓ Validate</button>
+          <button class="btn btn-secondary" onclick="closeCustomerModal()">Close</button>
+        </div>
+      `;
+      
+      modal.style.display = 'block';
+    }
+    
+    function closeCustomerModal() {
+      document.getElementById('customer-detail-modal').style.display = 'none';
     }
     
     // Validate customer
@@ -1585,6 +1701,27 @@
     document.addEventListener('DOMContentLoaded', () => {
       setTimeout(loadMarketplaceData, 1000);
     });
+    
+    // Close modal on outside click
+    window.onclick = function(event) {
+      const modal = document.getElementById('customer-detail-modal');
+      if (event.target === modal) {
+        closeCustomerModal();
+      }
+    }
   </script>
+  
+  <!-- Customer Detail Modal -->
+  <div id="customer-detail-modal" style="display:none;position:fixed;z-index:2000;left:0;top:0;width:100%;height:100%;background:rgba(0,0,0,0.6);backdrop-filter:blur(4px);">
+    <div style="background:white;margin:5% auto;padding:30px;width:90%;max-width:700px;border-radius:16px;box-shadow:0 20px 60px rgba(0,0,0,0.3);max-height:80vh;overflow-y:auto;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
+        <h2 style="margin:0;">👤 Customer Details</h2>
+        <span onclick="closeCustomerModal()" style="font-size:28px;cursor:pointer;color:#999;">&times;</span>
+      </div>
+      <div id="customer-modal-content">
+        <p>Loading...</p>
+      </div>
+    </div>
+  </div>
 </body>
 </html>
