@@ -657,10 +657,10 @@ if USE_DATABASE and database_enabled:
     USERS = UserDictWrapper()
 else:
     USERS: Dict[str, Dict[str, Any]] = {
-        'admin': {**hash_password('admin123'), 'role': 'admin', 'name': 'Admin User'},
-        'underwriter': {**hash_password('under123'), 'role': 'underwriter', 'name': 'John Underwriter'},
-        'claims_adjuster': {**hash_password('claims123'), 'role': 'claims', 'name': 'Jane Claims'},
-        'accountant': {**hash_password('acct123'), 'role': 'accountant', 'name': 'Bob Accountant'}
+        'admin': {**hash_password('PDadmin123@'), 'role': 'admin', 'name': 'Admin User'},
+        'underwriter': {**hash_password('PDadmin123@'), 'role': 'underwriter', 'name': 'John Underwriter'},
+        'claims_adjuster': {**hash_password('PDadmin123@'), 'role': 'claims', 'name': 'Jane Claims'},
+        'accountant': {**hash_password('PDadmin123@'), 'role': 'accountant', 'name': 'Bob Accountant'}
     }
 
 
