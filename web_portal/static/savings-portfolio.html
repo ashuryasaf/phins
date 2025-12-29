@@ -6,21 +6,21 @@
     <title>Savings & Investment Portfolio | PHINS</title>
     <style>
         :root {
-            --primary: #0066cc;
-            --primary-dark: #004d99;
-            --secondary: #00a86b;
-            --accent: #f59e0b;
-            --danger: #dc2626;
-            --success: #10b981;
-            --bg-dark: #0f172a;
-            --bg-card: #1e293b;
-            --bg-hover: #334155;
-            --text-primary: #f1f5f9;
-            --text-secondary: #94a3b8;
-            --border: #334155;
-            --gradient-primary: linear-gradient(135deg, #0066cc 0%, #0052a3 100%);
-            --gradient-success: linear-gradient(135deg, #10b981 0%, #059669 100%);
-            --gradient-crypto: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+            --primary: #1565c0;
+            --primary-dark: #0d47a1;
+            --secondary: #42a5f5;
+            --accent: #64b5f6;
+            --danger: #ef5350;
+            --success: #4caf50;
+            --bg-dark: #0d1b3e;
+            --bg-card: #1a237e;
+            --bg-hover: #283593;
+            --text-primary: #f5f9fc;
+            --text-secondary: #90caf9;
+            --border: #3949ab;
+            --gradient-primary: linear-gradient(135deg, #1565c0 0%, #0d47a1 100%);
+            --gradient-success: linear-gradient(135deg, #4caf50 0%, #388e3c 100%);
+            --gradient-crypto: linear-gradient(135deg, #ffc107 0%, #ff9800 100%);
         }
         
         * {
@@ -37,20 +37,20 @@
             line-height: 1.6;
         }
         
-        /* PHINS Unified Header */
+        /* PHINS Unified Header - Elegant Gradient Blue */
         .phins-header {
-            background: linear-gradient(135deg, #1a1f36 0%, #2d3561 50%, #1a1f36 100%);
-            border-bottom: 1px solid rgba(255,255,255,0.1);
+            background: linear-gradient(135deg, #0d47a1 0%, #1565c0 50%, #1976d2 100%);
+            border-bottom: 1px solid rgba(255,255,255,0.15);
             padding: 0;
             position: sticky;
             top: 0;
             z-index: 1000;
-            box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+            box-shadow: 0 4px 24px rgba(13, 71, 161, 0.3);
         }
         .phins-header-inner {
             max-width: 1600px;
             margin: 0 auto;
-            padding: 0.75rem 2rem;
+            padding: 0.85rem 2rem;
             display: flex;
             justify-content: space-between;
             align-items: center;
@@ -64,18 +64,19 @@
         .phins-logo-icon {
             width: 44px;
             height: 44px;
-            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+            background: linear-gradient(135deg, #42a5f5 0%, #64b5f6 100%);
             border-radius: 12px;
             display: flex;
             align-items: center;
             justify-content: center;
             font-size: 1.5rem;
-            box-shadow: 0 4px 15px rgba(79, 172, 254, 0.4);
+            box-shadow: 0 4px 15px rgba(66, 165, 245, 0.4);
+            border: 1px solid rgba(255,255,255,0.2);
         }
         .phins-logo-text {
             font-size: 1.75rem;
             font-weight: 700;
-            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 50%, #43e97b 100%);
+            background: linear-gradient(135deg, #fff 0%, #e3f2fd 100%);
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
             background-clip: text;
@@ -87,7 +88,7 @@
         }
         .phins-nav a {
             padding: 0.5rem 1rem;
-            color: rgba(255,255,255,0.8);
+            color: rgba(255,255,255,0.85);
             text-decoration: none;
             border-radius: 8px;
             font-size: 0.9rem;
@@ -95,13 +96,13 @@
             transition: all 0.2s ease;
         }
         .phins-nav a:hover {
-            background: rgba(255,255,255,0.1);
+            background: rgba(255,255,255,0.12);
             color: white;
         }
         .phins-nav a.active {
-            background: linear-gradient(135deg, #0066cc 0%, #00a86b 100%);
-            border-color: var(--primary);
+            background: linear-gradient(135deg, #42a5f5 0%, #64b5f6 100%);
             color: white;
+            box-shadow: 0 4px 12px rgba(66, 165, 245, 0.3);
         }
         
         /* Main Content */
@@ -845,7 +846,7 @@
                 <a href="/savings-portfolio.html" class="active">📈 Investments</a>
                 <a href="/dashboard.html#health-wallet">🏥 Wallet</a>
                 <a href="/dashboard.html#claims">Claims</a>
-                <a href="/login.html" style="background: linear-gradient(135deg, #ff6b6b 0%, #ee5a5a 100%); color: white; font-weight: 600;">Logout</a>
+                <a href="/login.html" style="background: linear-gradient(135deg, #ef5350 0%, #e53935 100%); color: white; font-weight: 600; padding: 0.5rem 1rem; border-radius: 8px;">Logout</a>
             </nav>
         </div>
     </header>

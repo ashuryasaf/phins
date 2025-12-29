@@ -771,6 +771,111 @@ class PortalHandler(BaseHTTPRequestHandler):
         self.send_header("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
         self.send_header("Content-Security-Policy", "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'")
         self.end_headers()
+    
+    def _generate_text_policy_document(self, policy: Dict, customer: Dict, underwriting: Dict, bills: list, claims: list) -> None:
+        """Fallback text document generation when PDF library not available"""
+        questionnaire = underwriting.get('questionnaire_responses', {})
+        payment_setup = underwriting.get('payment_setup', {})
+        health_wallet_info = underwriting.get('health_wallet', {}) or policy.get('health_wallet', {})
+        customer_id = policy.get('customer_id')
+        
+        doc_content = f"""
+================================================================================
+                           PHINS INSURANCE COMPANY
+                        COMPREHENSIVE POLICY DOCUMENT
+================================================================================
+
+Document Generated: {datetime.now().strftime('%B %d, %Y at %H:%M:%S')}
+Policy Number: {policy.get('id', 'N/A')}
+Policy Status: {(policy.get('status', 'Unknown')).replace('_', ' ').title()}
+Underwriting Reference: {policy.get('underwriting_id', 'N/A')}
+
+--------------------------------------------------------------------------------
+                    SECTION 1: POLICYHOLDER INFORMATION
+--------------------------------------------------------------------------------
+
+Full Name: {customer.get('name', underwriting.get('customer_name', 'N/A'))}
+Customer ID: {customer_id or 'N/A'}
+Email Address: {customer.get('email', underwriting.get('customer_email', 'N/A'))}
+Phone Number: {customer.get('phone', 'N/A')}
+Age at Application: {underwriting.get('age', 'N/A')} years
+Occupation: {customer.get('occupation', questionnaire.get('occupation', 'N/A'))}
+
+--------------------------------------------------------------------------------
+                       SECTION 2: COVERAGE DETAILS
+--------------------------------------------------------------------------------
+
+Policy Type: {policy.get('type', 'life').upper()}
+Coverage Amount: ${policy.get('coverage_amount', 0):,.2f}
+Annual Premium: ${policy.get('annual_premium', 0):,.2f}
+Monthly Premium: ${policy.get('monthly_premium', 0):,.2f}
+Risk Classification: {(policy.get('risk_score', 'Standard')).replace('_', ' ').title()}
+Effective Date: {policy.get('start_date', 'N/A')[:10] if policy.get('start_date') else 'N/A'}
+Expiration Date: {policy.get('end_date', 'N/A')[:10] if policy.get('end_date') else 'N/A'}
+Medical Exam Required: {'Yes' if underwriting.get('medical_exam_required') else 'No'}
+
+--------------------------------------------------------------------------------
+                 SECTION 3: HEALTH & LIFESTYLE ASSESSMENT
+--------------------------------------------------------------------------------
+
+Tobacco Use: {questionnaire.get('smoke', 'Not Specified')}
+Pre-existing Conditions: {'Yes' if questionnaire.get('medical_conditions') == 'yes' else 'None Reported'}
+Prior Surgeries (5 years): {'Yes' if questionnaire.get('surgery') == 'yes' else 'None Reported'}
+Hazardous Activities: {questionnaire.get('hazardous_activities', 'None')}
+Height: {questionnaire.get('height', 'N/A')} cm
+Weight: {questionnaire.get('weight', 'N/A')} kg
+
+--------------------------------------------------------------------------------
+                SECTION 4: BILLING & PAYMENT CONFIGURATION
+--------------------------------------------------------------------------------
+
+Billing Frequency: {payment_setup.get('billing_frequency', 'monthly').title()}
+Auto-Pay Enabled: {'Yes' if payment_setup.get('auto_pay') else 'No'}
+Payment Method: {(payment_setup.get('card_type', 'Card')).title()} ending in {payment_setup.get('card_last4', '****')}
+Cardholder Name: {payment_setup.get('cardholder_name', 'N/A')}
+
+--------------------------------------------------------------------------------
+                     SECTION 5: PHINS HEALTH WALLET
+--------------------------------------------------------------------------------
+
+Health Wallet Status: {'Enabled' if health_wallet_info.get('enabled') else 'Not Enabled'}
+Monthly Auto-Deposit: ${health_wallet_info.get('monthly_deposit', 0):,.2f}
+
+--------------------------------------------------------------------------------
+                     SECTION 6: ACCOUNT STATISTICS
+--------------------------------------------------------------------------------
+
+Total Policies: {len([p for p in POLICIES.values() if p.get('customer_id') == customer_id])}
+Total Claims Filed: {len(claims)}
+Application Submitted: {underwriting.get('submitted_date', 'N/A')[:10] if underwriting.get('submitted_date') else 'N/A'}
+
+--------------------------------------------------------------------------------
+                       TERMS AND CONDITIONS
+--------------------------------------------------------------------------------
+
+This policy is subject to the terms, conditions, and exclusions set forth in 
+the PHINS Insurance Company Master Policy Agreement.
+
+Coverage is contingent upon timely payment of premiums and compliance with 
+all policy requirements.
+
+For claims or questions, please contact:
+- Phone: 1-800-PHINS-HELP
+- Email: support@phins.ai
+- Web: https://phins.ai
+
+--------------------------------------------------------------------------------
+
+(c) {datetime.now().year} PHINS Insurance Company. All rights reserved.
+
+================================================================================
+""".strip()
+        
+        self.send_response(200)
+        self.send_header('Content-Type', 'text/plain; charset=utf-8')
+        self.send_header('Content-Disposition', f'attachment; filename="PHINS_Policy_{policy.get("id", "unknown")}.txt"')
+        self.end_headers()
+        self.wfile.write(doc_content.encode('utf-8'))
 
     def _set_file_headers(self, path: str) -> None:
         self.send_response(200)
@@ -1409,7 +1514,7 @@ class PortalHandler(BaseHTTPRequestHandler):
                     self.wfile.write(json.dumps(payload).encode('utf-8'))
             return
         
-        # Policy Document Download Endpoint
+        # Policy Document Download Endpoint - Comprehensive PDF Generation
         if path.startswith('/api/policies/') and path.endswith('/document'):
             policy_id = path.split('/')[3]
             
@@ -1434,75 +1539,418 @@ class PortalHandler(BaseHTTPRequestHandler):
                 self.wfile.write(json.dumps({'error': 'Access denied'}).encode('utf-8'))
                 return
             
-            # Get customer info
-            customer = CUSTOMERS.get(policy.get('customer_id')) or {}
+            # Get all related data
+            customer_id = policy.get('customer_id')
+            customer = CUSTOMERS.get(customer_id) or {}
             
-            # Generate policy document
-            doc_content = f"""
-════════════════════════════════════════════════════════════════════════
-                        PHINS INSURANCE COMPANY
-                          POLICY DOCUMENT
-════════════════════════════════════════════════════════════════════════
-
-Policy Number: {policy.get('id', 'N/A')}
-Status: {policy.get('status', 'Active')}
-Generated: {datetime.now().strftime('%B %d, %Y')}
-
-────────────────────────────────────────────────────────────────────────
-                      POLICYHOLDER INFORMATION
-────────────────────────────────────────────────────────────────────────
-
-Name: {customer.get('name', 'N/A')}
-Email: {customer.get('email', 'N/A')}
-Phone: {customer.get('phone', 'N/A')}
-Customer ID: {policy.get('customer_id', 'N/A')}
-
-────────────────────────────────────────────────────────────────────────
-                        COVERAGE DETAILS
-────────────────────────────────────────────────────────────────────────
-
-Policy Type: {(policy.get('type') or 'Insurance').upper()}
-Coverage Amount: ${policy.get('coverage_amount', 0):,.2f}
-Annual Premium: ${policy.get('annual_premium', 0):,.2f}
-Monthly Premium: ${policy.get('monthly_premium', policy.get('annual_premium', 0) / 12):,.2f}
-
-Effective Date: {policy.get('start_date', 'N/A')}
-Expiration Date: {policy.get('end_date', 'N/A')}
-
-Risk Assessment: {policy.get('risk_score', 'Standard')}
-
-────────────────────────────────────────────────────────────────────────
-                      TERMS AND CONDITIONS
-────────────────────────────────────────────────────────────────────────
-
-This policy is subject to the terms, conditions, and exclusions
-set forth in the PHINS Insurance Company Master Policy Agreement.
-
-Coverage is contingent upon timely payment of premiums and 
-compliance with all policy requirements.
-
-For claims or questions, please contact:
-- Phone: 1-800-PHINS-HELP
-- Email: support@phins.ai
-- Web: https://phins.ai
-
-────────────────────────────────────────────────────────────────────────
-
-© {datetime.now().year} PHINS Insurance Company. All rights reserved.
-
-This document is for informational purposes and serves as a
-summary of your coverage. Please refer to your complete policy
-documents for full terms and conditions.
-
-════════════════════════════════════════════════════════════════════════
-""".strip()
+            # Get underwriting application data
+            uw_id = policy.get('underwriting_id')
+            underwriting = UNDERWRITING_APPLICATIONS.get(uw_id) or {}
+            questionnaire = underwriting.get('questionnaire_responses', {})
+            payment_setup = underwriting.get('payment_setup', {})
+            health_wallet_info = underwriting.get('health_wallet', {}) or policy.get('health_wallet', {})
             
-            # Return as text file download
-            self.send_response(200)
-            self.send_header('Content-Type', 'text/plain; charset=utf-8')
-            self.send_header('Content-Disposition', f'attachment; filename="PHINS_Policy_{policy_id}.txt"')
-            self.end_headers()
-            self.wfile.write(doc_content.encode('utf-8'))
+            # Get billing history
+            customer_bills = [b for b in BILLING.values() if b.get('customer_id') == customer_id or b.get('policy_id') == policy_id]
+            
+            # Get claims history
+            customer_claims = [c for c in CLAIMS.values() if c.get('customer_id') == customer_id or c.get('policy_id') == policy_id]
+            
+            # Generate comprehensive PDF
+            try:
+                from reportlab.lib import colors
+                from reportlab.lib.pagesizes import letter, A4
+                from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+                from reportlab.lib.units import inch
+                from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image, HRFlowable
+                from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
+                from io import BytesIO
+                
+                buffer = BytesIO()
+                doc = SimpleDocTemplate(buffer, pagesize=letter, 
+                                       rightMargin=0.75*inch, leftMargin=0.75*inch,
+                                       topMargin=0.75*inch, bottomMargin=0.75*inch)
+                
+                styles = getSampleStyleSheet()
+                
+                # Custom styles
+                title_style = ParagraphStyle('Title', parent=styles['Heading1'], 
+                                            fontSize=24, alignment=TA_CENTER, 
+                                            textColor=colors.HexColor('#0d47a1'),
+                                            spaceAfter=20)
+                subtitle_style = ParagraphStyle('Subtitle', parent=styles['Normal'], 
+                                               fontSize=12, alignment=TA_CENTER, 
+                                               textColor=colors.HexColor('#546e7a'),
+                                               spaceAfter=30)
+                section_style = ParagraphStyle('Section', parent=styles['Heading2'], 
+                                              fontSize=14, textColor=colors.HexColor('#1565c0'),
+                                              spaceBefore=20, spaceAfter=10,
+                                              borderColor=colors.HexColor('#1565c0'),
+                                              borderWidth=1, borderPadding=5)
+                normal_style = ParagraphStyle('CustomNormal', parent=styles['Normal'], 
+                                             fontSize=10, leading=14)
+                label_style = ParagraphStyle('Label', parent=styles['Normal'], 
+                                            fontSize=9, textColor=colors.HexColor('#546e7a'))
+                value_style = ParagraphStyle('Value', parent=styles['Normal'], 
+                                            fontSize=10, textColor=colors.HexColor('#1a237e'))
+                
+                story = []
+                
+                # Header
+                story.append(Paragraph("🛡️ PHINS INSURANCE COMPANY", title_style))
+                story.append(Paragraph("COMPREHENSIVE POLICY DOCUMENT", subtitle_style))
+                story.append(HRFlowable(width="100%", thickness=2, color=colors.HexColor('#1565c0')))
+                story.append(Spacer(1, 20))
+                
+                # Document Info Table
+                doc_info = [
+                    ['Document Generated:', datetime.now().strftime('%B %d, %Y at %H:%M:%S')],
+                    ['Policy Number:', policy.get('id', 'N/A')],
+                    ['Policy Status:', (policy.get('status', 'Unknown')).replace('_', ' ').title()],
+                    ['Underwriting Reference:', uw_id or 'N/A'],
+                ]
+                doc_table = Table(doc_info, colWidths=[2*inch, 4.5*inch])
+                doc_table.setStyle(TableStyle([
+                    ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+                    ('FONTSIZE', (0, 0), (-1, -1), 9),
+                    ('TEXTCOLOR', (0, 0), (0, -1), colors.HexColor('#546e7a')),
+                    ('TEXTCOLOR', (1, 0), (1, -1), colors.HexColor('#1a237e')),
+                    ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+                ]))
+                story.append(doc_table)
+                story.append(Spacer(1, 20))
+                
+                # Section 1: Policyholder Information
+                story.append(Paragraph("📋 SECTION 1: POLICYHOLDER INFORMATION", section_style))
+                story.append(HRFlowable(width="100%", thickness=1, color=colors.HexColor('#e3f2fd')))
+                
+                # Calculate age from DOB
+                age = underwriting.get('age', 0)
+                dob = customer.get('dob', '')
+                if dob and not age:
+                    try:
+                        birth_date = datetime.fromisoformat(dob.replace('Z', '+00:00')) if 'T' in dob else datetime.strptime(dob, '%Y-%m-%d')
+                        age = (datetime.now() - birth_date).days // 365
+                    except:
+                        age = 'N/A'
+                
+                customer_data = [
+                    ['Full Name:', customer.get('name', underwriting.get('customer_name', 'N/A'))],
+                    ['Customer ID:', customer_id or 'N/A'],
+                    ['Email Address:', customer.get('email', underwriting.get('customer_email', 'N/A'))],
+                    ['Phone Number:', customer.get('phone', 'N/A')],
+                    ['Date of Birth:', dob if dob else 'N/A'],
+                    ['Age at Application:', f"{age} years" if age else 'N/A'],
+                    ['Gender:', customer.get('gender', 'N/A').title() if customer.get('gender') else 'N/A'],
+                    ['Occupation:', customer.get('occupation', questionnaire.get('occupation', 'N/A'))],
+                    ['Address:', customer.get('address', 'N/A')],
+                    ['City/State/ZIP:', f"{customer.get('city', '')} {customer.get('state', '')} {customer.get('zip', '')}".strip() or 'N/A'],
+                    ['Account Created:', customer.get('created_date', 'N/A')[:10] if customer.get('created_date') else 'N/A'],
+                ]
+                cust_table = Table(customer_data, colWidths=[2*inch, 4.5*inch])
+                cust_table.setStyle(TableStyle([
+                    ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+                    ('FONTSIZE', (0, 0), (-1, -1), 9),
+                    ('TEXTCOLOR', (0, 0), (0, -1), colors.HexColor('#546e7a')),
+                    ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+                    ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+                    ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#fafcff')),
+                ]))
+                story.append(cust_table)
+                story.append(Spacer(1, 15))
+                
+                # Section 2: Coverage Details
+                story.append(Paragraph("🛡️ SECTION 2: COVERAGE DETAILS", section_style))
+                story.append(HRFlowable(width="100%", thickness=1, color=colors.HexColor('#e3f2fd')))
+                
+                policy_type_labels = {
+                    'life': 'Life Insurance',
+                    'health': 'Health Insurance',
+                    'disability': 'PHINS Disability + Investment',
+                    'auto': 'Auto Insurance',
+                    'property': 'Property Insurance'
+                }
+                policy_type = policy.get('type', 'life')
+                
+                coverage_data = [
+                    ['Policy Type:', policy_type_labels.get(policy_type, policy_type.title())],
+                    ['Coverage Amount:', f"${policy.get('coverage_amount', 0):,.2f}"],
+                    ['Annual Premium:', f"${policy.get('annual_premium', 0):,.2f}"],
+                    ['Monthly Premium:', f"${policy.get('monthly_premium', 0):,.2f}"],
+                    ['Risk Classification:', (policy.get('risk_score', 'Standard')).replace('_', ' ').title()],
+                    ['Effective Date:', policy.get('start_date', 'N/A')[:10] if policy.get('start_date') else 'N/A'],
+                    ['Expiration Date:', policy.get('end_date', 'N/A')[:10] if policy.get('end_date') else 'N/A'],
+                    ['Medical Exam Required:', 'Yes' if underwriting.get('medical_exam_required') else 'No'],
+                ]
+                
+                # Add investment allocation for disability policies
+                if policy_type == 'disability':
+                    coverage_data.append(['Investment Allocation:', '75% Risk / 25% Savings'])
+                    coverage_data.append(['ADL Coverage Trigger:', '3+ Activities of Daily Living'])
+                
+                cov_table = Table(coverage_data, colWidths=[2*inch, 4.5*inch])
+                cov_table.setStyle(TableStyle([
+                    ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+                    ('FONTSIZE', (0, 0), (-1, -1), 9),
+                    ('TEXTCOLOR', (0, 0), (0, -1), colors.HexColor('#546e7a')),
+                    ('TEXTCOLOR', (1, 1), (1, 1), colors.HexColor('#1565c0')),  # Coverage amount in blue
+                    ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+                    ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#fafcff')),
+                ]))
+                story.append(cov_table)
+                story.append(Spacer(1, 15))
+                
+                # Section 3: Health Assessment (from application questionnaire)
+                story.append(Paragraph("🏥 SECTION 3: HEALTH & LIFESTYLE ASSESSMENT", section_style))
+                story.append(HRFlowable(width="100%", thickness=1, color=colors.HexColor('#e3f2fd')))
+                
+                tobacco_labels = {'no': 'Non-smoker', 'yes': 'Current User', 'former': 'Former User (Quit 1+ years)'}
+                hazard_labels = {'no': 'None', 'occasional': 'Occasional (1-2x/year)', 'regular': 'Regular (Monthly+)'}
+                
+                health_data = [
+                    ['Tobacco Use:', tobacco_labels.get(questionnaire.get('smoke', 'no'), 'Not Specified')],
+                    ['Pre-existing Conditions:', 'Yes' if questionnaire.get('medical_conditions') == 'yes' else 'None Reported'],
+                ]
+                
+                if questionnaire.get('medical_conditions') == 'yes' and questionnaire.get('conditions_list'):
+                    health_data.append(['Conditions Listed:', questionnaire.get('conditions_list', 'N/A')])
+                
+                health_data.extend([
+                    ['Prior Surgeries (5 years):', 'Yes' if questionnaire.get('surgery') == 'yes' else 'None Reported'],
+                ])
+                
+                if questionnaire.get('surgery') == 'yes' and questionnaire.get('surgery_list'):
+                    health_data.append(['Surgery Details:', questionnaire.get('surgery_list', 'N/A')])
+                
+                health_data.extend([
+                    ['Hazardous Activities:', hazard_labels.get(questionnaire.get('hazardous_activities', 'no'), 'Not Specified')],
+                    ['Family Medical History:', questionnaire.get('family_history', 'None reported').replace(',', ', ').title() if questionnaire.get('family_history') else 'None Reported'],
+                    ['Height:', f"{questionnaire.get('height', 'N/A')} cm" if questionnaire.get('height') else 'N/A'],
+                    ['Weight:', f"{questionnaire.get('weight', 'N/A')} kg" if questionnaire.get('weight') else 'N/A'],
+                ])
+                
+                # Calculate BMI if height and weight available
+                try:
+                    height = float(questionnaire.get('height', 0))
+                    weight = float(questionnaire.get('weight', 0))
+                    if height > 0 and weight > 0:
+                        bmi = weight / ((height / 100) ** 2)
+                        bmi_category = 'Underweight' if bmi < 18.5 else 'Normal' if bmi < 25 else 'Overweight' if bmi < 30 else 'Obese'
+                        health_data.append(['BMI:', f"{bmi:.1f} ({bmi_category})"])
+                except:
+                    pass
+                
+                if questionnaire.get('medications'):
+                    health_data.append(['Current Medications:', questionnaire.get('medications', 'None')])
+                
+                health_table = Table(health_data, colWidths=[2*inch, 4.5*inch])
+                health_table.setStyle(TableStyle([
+                    ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+                    ('FONTSIZE', (0, 0), (-1, -1), 9),
+                    ('TEXTCOLOR', (0, 0), (0, -1), colors.HexColor('#546e7a')),
+                    ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+                    ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+                    ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#fafcff')),
+                ]))
+                story.append(health_table)
+                story.append(Spacer(1, 15))
+                
+                # Section 4: Billing & Payment Configuration
+                story.append(Paragraph("💳 SECTION 4: BILLING & PAYMENT CONFIGURATION", section_style))
+                story.append(HRFlowable(width="100%", thickness=1, color=colors.HexColor('#e3f2fd')))
+                
+                billing_config = policy.get('billing', {})
+                freq_labels = {'monthly': 'Monthly', 'quarterly': 'Quarterly (3% Discount)', 'annual': 'Annual (10% Discount)'}
+                
+                billing_data = [
+                    ['Billing Frequency:', freq_labels.get(billing_config.get('frequency', payment_setup.get('billing_frequency', 'monthly')), 'Monthly')],
+                    ['Auto-Pay Enabled:', 'Yes ✓' if billing_config.get('auto_pay', payment_setup.get('auto_pay')) else 'No'],
+                    ['Payment Method:', f"{(payment_setup.get('card_type', 'Card')).title()} ending in {payment_setup.get('card_last4', '****')}" if payment_setup.get('card_last4') else 'Not Configured'],
+                    ['Cardholder Name:', payment_setup.get('cardholder_name', 'N/A')],
+                    ['Card Expiry:', f"{payment_setup.get('expiry_month', '--')}/{payment_setup.get('expiry_year', '----')}" if payment_setup.get('expiry_month') else 'N/A'],
+                    ['Next Billing Date:', billing_config.get('next_billing_date', 'N/A')[:10] if billing_config.get('next_billing_date') else 'N/A'],
+                ]
+                
+                billing_table = Table(billing_data, colWidths=[2*inch, 4.5*inch])
+                billing_table.setStyle(TableStyle([
+                    ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+                    ('FONTSIZE', (0, 0), (-1, -1), 9),
+                    ('TEXTCOLOR', (0, 0), (0, -1), colors.HexColor('#546e7a')),
+                    ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+                    ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#fafcff')),
+                ]))
+                story.append(billing_table)
+                story.append(Spacer(1, 15))
+                
+                # Section 5: Health Wallet
+                story.append(Paragraph("🏥 SECTION 5: PHINS HEALTH WALLET", section_style))
+                story.append(HRFlowable(width="100%", thickness=1, color=colors.HexColor('#e3f2fd')))
+                
+                wallet_enabled = health_wallet_info.get('enabled', False)
+                wallet_data = HEALTH_WALLETS.get(customer_id, {})
+                
+                hw_data = [
+                    ['Health Wallet Status:', 'Enabled ✓' if wallet_enabled else 'Not Enabled'],
+                    ['Monthly Auto-Deposit:', f"${health_wallet_info.get('monthly_deposit', 0):,.2f}" if wallet_enabled else 'N/A'],
+                    ['Current Balance:', f"${wallet_data.get('balance', 0):,.2f}" if wallet_data else 'N/A'],
+                    ['Wallet Created:', wallet_data.get('created_at', 'N/A')[:10] if wallet_data.get('created_at') else 'N/A'],
+                ]
+                
+                hw_table = Table(hw_data, colWidths=[2*inch, 4.5*inch])
+                hw_table.setStyle(TableStyle([
+                    ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+                    ('FONTSIZE', (0, 0), (-1, -1), 9),
+                    ('TEXTCOLOR', (0, 0), (0, -1), colors.HexColor('#546e7a')),
+                    ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+                    ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#fafcff')),
+                ]))
+                story.append(hw_table)
+                story.append(Spacer(1, 15))
+                
+                # Section 6: Billing History
+                if customer_bills:
+                    story.append(Paragraph("📊 SECTION 6: BILLING HISTORY", section_style))
+                    story.append(HRFlowable(width="100%", thickness=1, color=colors.HexColor('#e3f2fd')))
+                    
+                    bill_header = [['Bill ID', 'Amount', 'Due Date', 'Status', 'Paid Date']]
+                    bill_rows = []
+                    for bill in customer_bills[:10]:  # Last 10 bills
+                        bill_rows.append([
+                            bill.get('id', 'N/A')[:15],
+                            f"${bill.get('amount_due', 0):,.2f}",
+                            bill.get('due_date', 'N/A')[:10] if bill.get('due_date') else 'N/A',
+                            bill.get('status', 'N/A').title(),
+                            bill.get('paid_date', '-')[:10] if bill.get('paid_date') else '-'
+                        ])
+                    
+                    if bill_rows:
+                        bill_table = Table(bill_header + bill_rows, colWidths=[1.5*inch, 1*inch, 1.2*inch, 1*inch, 1.2*inch])
+                        bill_table.setStyle(TableStyle([
+                            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                            ('FONTSIZE', (0, 0), (-1, -1), 8),
+                            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1565c0')),
+                            ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+                            ('ALIGN', (1, 0), (1, -1), 'RIGHT'),
+                            ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#e0e0e0')),
+                            ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+                            ('TOPPADDING', (0, 0), (-1, -1), 6),
+                        ]))
+                        story.append(bill_table)
+                    story.append(Spacer(1, 15))
+                
+                # Section 7: Claims History
+                if customer_claims:
+                    story.append(Paragraph("📝 SECTION 7: CLAIMS HISTORY", section_style))
+                    story.append(HRFlowable(width="100%", thickness=1, color=colors.HexColor('#e3f2fd')))
+                    
+                    claim_header = [['Claim ID', 'Type', 'Amount', 'Status', 'Filed Date']]
+                    claim_rows = []
+                    for claim in customer_claims[:10]:
+                        claim_rows.append([
+                            claim.get('id', 'N/A')[:15],
+                            claim.get('type', 'N/A').title(),
+                            f"${claim.get('claimed_amount', 0):,.2f}",
+                            claim.get('status', 'N/A').title(),
+                            claim.get('filed_date', 'N/A')[:10] if claim.get('filed_date') else 'N/A'
+                        ])
+                    
+                    if claim_rows:
+                        claim_table = Table(claim_header + claim_rows, colWidths=[1.5*inch, 1*inch, 1.2*inch, 1*inch, 1.2*inch])
+                        claim_table.setStyle(TableStyle([
+                            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                            ('FONTSIZE', (0, 0), (-1, -1), 8),
+                            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1565c0')),
+                            ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+                            ('ALIGN', (2, 0), (2, -1), 'RIGHT'),
+                            ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#e0e0e0')),
+                            ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+                            ('TOPPADDING', (0, 0), (-1, -1), 6),
+                        ]))
+                        story.append(claim_table)
+                    story.append(Spacer(1, 15))
+                
+                # Section 8: Statistics & Analytics
+                story.append(Paragraph("📈 SECTION 8: ACCOUNT STATISTICS", section_style))
+                story.append(HRFlowable(width="100%", thickness=1, color=colors.HexColor('#e3f2fd')))
+                
+                # Calculate statistics
+                total_premiums_paid = sum(b.get('amount_paid', 0) for b in customer_bills if b.get('status') == 'paid')
+                total_claims_filed = len(customer_claims)
+                total_claims_approved = len([c for c in customer_claims if c.get('status', '').lower() in ('approved', 'paid')])
+                total_claims_amount = sum(c.get('approved_amount', 0) for c in customer_claims if c.get('status', '').lower() in ('approved', 'paid'))
+                
+                # Get all customer policies
+                customer_policies = [p for p in POLICIES.values() if p.get('customer_id') == customer_id]
+                total_coverage = sum(p.get('coverage_amount', 0) for p in customer_policies)
+                
+                stats_data = [
+                    ['Total Policies:', str(len(customer_policies))],
+                    ['Total Coverage Amount:', f"${total_coverage:,.2f}"],
+                    ['Total Premiums Paid:', f"${total_premiums_paid:,.2f}"],
+                    ['Total Claims Filed:', str(total_claims_filed)],
+                    ['Claims Approved:', str(total_claims_approved)],
+                    ['Total Claims Paid:', f"${total_claims_amount:,.2f}"],
+                    ['Customer Since:', customer.get('created_date', 'N/A')[:10] if customer.get('created_date') else 'N/A'],
+                    ['Application Submitted:', underwriting.get('submitted_date', 'N/A')[:10] if underwriting.get('submitted_date') else 'N/A'],
+                ]
+                
+                stats_table = Table(stats_data, colWidths=[2*inch, 4.5*inch])
+                stats_table.setStyle(TableStyle([
+                    ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+                    ('FONTSIZE', (0, 0), (-1, -1), 9),
+                    ('TEXTCOLOR', (0, 0), (0, -1), colors.HexColor('#546e7a')),
+                    ('TEXTCOLOR', (1, 1), (1, 1), colors.HexColor('#1565c0')),
+                    ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+                    ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#fafcff')),
+                ]))
+                story.append(stats_table)
+                story.append(Spacer(1, 20))
+                
+                # Terms & Conditions Footer
+                story.append(HRFlowable(width="100%", thickness=2, color=colors.HexColor('#1565c0')))
+                story.append(Spacer(1, 10))
+                
+                terms_style = ParagraphStyle('Terms', parent=styles['Normal'], fontSize=8, 
+                                            textColor=colors.HexColor('#546e7a'), leading=10)
+                
+                terms_text = """
+                <b>TERMS AND CONDITIONS</b><br/><br/>
+                This policy is subject to the terms, conditions, and exclusions set forth in the PHINS Insurance 
+                Company Master Policy Agreement. Coverage is contingent upon timely payment of premiums and 
+                compliance with all policy requirements. For claims or questions, please contact:<br/><br/>
+                • Phone: 1-800-PHINS-HELP (1-800-744-6743)<br/>
+                • Email: support@phins.ai<br/>
+                • Web: https://phins.ai<br/><br/>
+                © """ + str(datetime.now().year) + """ PHINS Insurance Company. All rights reserved. This document is for 
+                informational purposes and serves as a summary of your coverage. Please refer to your complete 
+                policy documents for full terms and conditions.
+                """
+                story.append(Paragraph(terms_text, terms_style))
+                
+                # Build PDF
+                doc.build(story)
+                
+                # Return PDF
+                pdf_content = buffer.getvalue()
+                buffer.close()
+                
+                self.send_response(200)
+                self.send_header('Content-Type', 'application/pdf')
+                self.send_header('Content-Disposition', f'attachment; filename="PHINS_Policy_{policy_id}.pdf"')
+                self.send_header('Content-Length', str(len(pdf_content)))
+                self.end_headers()
+                self.wfile.write(pdf_content)
+                
+            except ImportError as ie:
+                # Fallback to text if reportlab not available
+                print(f"PDF generation error (missing library): {ie}")
+                self._generate_text_policy_document(policy, customer, underwriting, customer_bills, customer_claims)
+            except Exception as e:
+                print(f"PDF generation error: {e}")
+                import traceback
+                traceback.print_exc()
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': f'Failed to generate PDF: {str(e)}'}).encode('utf-8'))
             return
         
         # Claims Management Endpoints
@@ -3329,8 +3777,20 @@ documents for full terms and conditions.
                             existing_customer = db.customers.get_by_email(customer_email)
                             if existing_customer:
                                 customer_id = existing_customer.id
+                                # Ensure customer is in CUSTOMERS dict for response
+                                if customer_id not in CUSTOMERS:
+                                    CUSTOMERS[customer_id] = {
+                                        'id': customer_id,
+                                        'name': existing_customer.name if hasattr(existing_customer, 'name') else customer_name,
+                                        'email': existing_customer.email if hasattr(existing_customer, 'email') else customer_email,
+                                        'phone': existing_customer.phone if hasattr(existing_customer, 'phone') else customer_phone,
+                                        'created_date': existing_customer.created_at.isoformat() if hasattr(existing_customer, 'created_at') and existing_customer.created_at else datetime.now().isoformat()
+                                    }
                     except Exception as e:
                         print(f"Error checking existing customer: {e}")
+                
+                # Initialize temp_password to None (will be set if new customer is created)
+                temp_password = None
                 
                 # Create customer if new (and no existing customer with same email)
                 if not existing_customer and customer_id not in CUSTOMERS:
@@ -3487,17 +3947,36 @@ documents for full terms and conditions.
                 
                 self._set_json_headers(201)
                 
-                # Return temp_password (stored in closure before hashing)
-                login_username = CUSTOMERS[customer_id].get('email') or f"{customer_id.lower()}@example.com"
-                self.wfile.write(json.dumps({
+                # Build response - safely get customer data
+                customer_data = CUSTOMERS.get(customer_id, {
+                    'id': customer_id,
+                    'name': customer_name,
+                    'email': customer_email,
+                    'phone': customer_phone
+                })
+                login_username = customer_data.get('email') or f"{customer_id.lower()}@example.com"
+                
+                response_data = {
                     'policy': policy,
                     'underwriting': UNDERWRITING_APPLICATIONS[uw_id],
-                    'customer': CUSTOMERS[customer_id],
-                    'provisioned_login': {
+                    'customer': customer_data
+                }
+                
+                # Only include provisioned_login if this is a new customer with temp password
+                if temp_password:
+                    response_data['provisioned_login'] = {
                         'username': login_username,
                         'password': temp_password  # Return plain password for first login
                     }
-                }).encode('utf-8'))
+                else:
+                    # Existing customer - indicate they should use existing credentials
+                    response_data['provisioned_login'] = {
+                        'username': login_username,
+                        'existing_account': True,
+                        'message': 'Use your existing password to login'
+                    }
+                
+                self.wfile.write(json.dumps(response_data).encode('utf-8'))
             except Exception as e:
                 self._set_json_headers(400)
                 self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
