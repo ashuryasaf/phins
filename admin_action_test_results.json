@@ -1,119 +1,119 @@
 {
-  "timestamp": "2025-12-29T11:52:39.274181",
+  "timestamp": "2025-12-29T22:55:43.367799",
   "results": [
     {
       "test": "Admin Login",
       "status": "PASS",
       "details": "Token acquired",
-      "timestamp": "2025-12-29T11:52:39.135298"
+      "timestamp": "2025-12-29T22:55:43.227831"
     },
     {
       "test": "Create Test Application",
       "status": "PASS",
-      "details": "Customer: CUST-63152, UW: UW-20251229-7564",
-      "timestamp": "2025-12-29T11:52:39.184647"
+      "details": "Customer: CUST-12927, UW: UW-20251229-3410",
+      "timestamp": "2025-12-29T22:55:43.276270"
     },
     {
       "test": "Underwriting Approve",
       "status": "PASS",
-      "details": "Policy: active, Bill: BILL-20251229115239-1735",
-      "timestamp": "2025-12-29T11:52:39.193807"
+      "details": "Policy: active, Bill: BILL-20251229225543-4595",
+      "timestamp": "2025-12-29T22:55:43.286206"
     },
     {
       "test": "Bill Creation (from approval)",
       "status": "PASS",
-      "details": "Bill ID: BILL-20251229115239-1735",
-      "timestamp": "2025-12-29T11:52:39.193818"
+      "details": "Bill ID: BILL-20251229225543-4595",
+      "timestamp": "2025-12-29T22:55:43.286223"
     },
     {
       "test": "Data Integrity Check",
       "status": "PASS",
       "details": "Customer verified",
-      "timestamp": "2025-12-29T11:52:39.193822"
+      "timestamp": "2025-12-29T22:55:43.286227"
     },
     {
       "test": "Underwriting Reject",
       "status": "PASS",
       "details": "Status: rejected",
-      "timestamp": "2025-12-29T11:52:39.232754"
+      "timestamp": "2025-12-29T22:55:43.327077"
     },
     {
       "test": "Rejection Status Verified",
       "status": "PASS",
       "details": "",
-      "timestamp": "2025-12-29T11:52:39.232763"
+      "timestamp": "2025-12-29T22:55:43.327087"
     },
     {
       "test": "Create Claim",
       "status": "PASS",
-      "details": "Claim ID: CLM-20251229-6215",
-      "timestamp": "2025-12-29T11:52:39.239971"
+      "details": "Claim ID: CLM-20251229-3711",
+      "timestamp": "2025-12-29T22:55:43.334723"
     },
     {
       "test": "Claim Approve",
       "status": "PASS",
       "details": "Status: Approved, Approved: $4500.0",
-      "timestamp": "2025-12-29T11:52:39.245613"
+      "timestamp": "2025-12-29T22:55:43.339877"
     },
     {
       "test": "Claim Amount Integrity",
       "status": "PASS",
       "details": "",
-      "timestamp": "2025-12-29T11:52:39.245624"
+      "timestamp": "2025-12-29T22:55:43.339889"
     },
     {
       "test": "Claim Reject",
       "status": "PASS",
       "details": "Status: Rejected",
-      "timestamp": "2025-12-29T11:52:39.255581"
+      "timestamp": "2025-12-29T22:55:43.350204"
     },
     {
       "test": "Billing Create",
       "status": "PASS",
-      "details": "Bill ID: BILL-20251229-1362",
-      "timestamp": "2025-12-29T11:52:39.262150"
+      "details": "Bill ID: BILL-20251229-7622",
+      "timestamp": "2025-12-29T22:55:43.354964"
     },
     {
       "test": "Bill Structure Integrity",
       "status": "PASS",
       "details": "",
-      "timestamp": "2025-12-29T11:52:39.262160"
+      "timestamp": "2025-12-29T22:55:43.354974"
     },
     {
       "test": "Billing Pay",
       "status": "PASS",
       "details": "Paid: $100.0, Status: partial",
-      "timestamp": "2025-12-29T11:52:39.263233"
+      "timestamp": "2025-12-29T22:55:43.356677"
     },
     {
       "test": "Dashboard Stats",
       "status": "WARN",
       "details": "Dashboard endpoint not found (API may differ)",
-      "timestamp": "2025-12-29T11:52:39.265554"
+      "timestamp": "2025-12-29T22:55:43.358216"
     },
     {
       "test": "Customer Validation",
       "status": "PASS",
       "details": "Checks: 5/6 passed",
-      "timestamp": "2025-12-29T11:52:39.269109"
+      "timestamp": "2025-12-29T22:55:43.362471"
     },
     {
       "test": "Customer Data Integrity",
       "status": "PASS",
       "details": "",
-      "timestamp": "2025-12-29T11:52:39.271012"
+      "timestamp": "2025-12-29T22:55:43.364509"
     },
     {
       "test": "Underwriting Data Integrity",
       "status": "WARN",
       "details": "May not have direct GET endpoint",
-      "timestamp": "2025-12-29T11:52:39.272174"
+      "timestamp": "2025-12-29T22:55:43.365755"
     },
     {
       "test": "Policy Data Integrity",
       "status": "PASS",
       "details": "",
-      "timestamp": "2025-12-29T11:52:39.274080"
+      "timestamp": "2025-12-29T22:55:43.367686"
     }
   ],
   "success": true

@@ -2174,6 +2174,20 @@ For claims or questions, please contact:
             self.wfile.write(json.dumps(payload).encode('utf-8'))
             return
 
+        # Customer billing list - GET /api/billing?customer_id=XXX
+        if path == '/api/billing':
+            customer_id = qs.get('customer_id', [None])[0]
+            
+            # Filter bills by customer if provided
+            if customer_id:
+                bills_list = [b for b in BILLING.values() if b.get('customer_id') == customer_id]
+            else:
+                bills_list = list(BILLING.values())
+            
+            self._set_json_headers()
+            self.wfile.write(json.dumps({'bills': bills_list}).encode('utf-8'))
+            return
+        
         # Customer billing "next due" (portal convenience)
         if path == '/api/billing/next-due':
             if not session:
@@ -6241,6 +6255,212 @@ For claims or questions, please contact:
             except Exception as e:
                 self._set_json_headers(400)
                 self.wfile.write(json.dumps({'error': 'Invalid request', 'details': str(e)}).encode('utf-8'))
+            return
+        
+        # ========== CUSTOMER BILLING & SETTINGS ENDPOINTS ==========
+        
+        # Customer premium payment with NFT recording and investment allocation
+        if path == '/api/customer/payment':
+            try:
+                data = json.loads(body)
+                customer_id = data.get('customer_id')
+                amount = float(data.get('amount', 0))
+                payment_method = data.get('payment_method', 'card')
+                create_nft = data.get('create_nft', True)
+                allocate_to_investments = data.get('allocate_to_investments', True)
+                
+                if not customer_id or amount <= 0:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'Invalid customer_id or amount'}).encode('utf-8'))
+                    return
+                
+                # Process payment
+                payment_id = f"PAY-{datetime.now().strftime('%Y%m%d%H%M%S')}-{random.randint(1000, 9999)}"
+                
+                # Calculate allocations (25% to savings/investments, 75% to coverage)
+                savings_amount = amount * 0.25
+                risk_amount = amount * 0.75
+                
+                # Create NFT token for the payment
+                nft_token = None
+                if create_nft:
+                    nft_token = generate_nft_token(
+                        customer_id=customer_id,
+                        transaction_type='premium_payment',
+                        transaction_id=payment_id,
+                        amount=amount,
+                        description=f'Premium payment via {payment_method}. Savings: ${savings_amount:.2f} → Investments',
+                        metadata={
+                            'payment_method': payment_method,
+                            'savings_allocation': savings_amount,
+                            'risk_allocation': risk_amount,
+                            'investment_allocation': True if allocate_to_investments else False
+                        }
+                    )
+                    NFT_LEDGER[nft_token['token_id']] = nft_token
+                
+                # Record the payment
+                payment_record = {
+                    'id': payment_id,
+                    'customer_id': customer_id,
+                    'amount': amount,
+                    'savings_allocated': savings_amount,
+                    'risk_allocated': risk_amount,
+                    'payment_method': payment_method,
+                    'nft_token_id': nft_token['token_id'] if nft_token else None,
+                    'timestamp': datetime.now().isoformat(),
+                    'status': 'completed'
+                }
+                
+                # Update any outstanding bills for this customer
+                bills_paid = []
+                remaining_amount = amount
+                for bill_id, bill in list(BILLING.items()):
+                    if remaining_amount <= 0:
+                        break
+                    if bill.get('customer_id') == customer_id and bill.get('status') in ['outstanding', 'pending']:
+                        bill_due = bill.get('amount', bill.get('amount_due', 0))
+                        bill_paid_so_far = bill.get('amount_paid', 0)
+                        outstanding = bill_due - bill_paid_so_far
+                        
+                        if outstanding > 0:
+                            payment_for_bill = min(remaining_amount, outstanding)
+                            bill['amount_paid'] = bill_paid_so_far + payment_for_bill
+                            if bill['amount_paid'] >= bill_due:
+                                bill['status'] = 'paid'
+                                bill['paid_date'] = datetime.now().isoformat()
+                            else:
+                                bill['status'] = 'partial'
+                            BILLING[bill_id] = bill
+                            remaining_amount -= payment_for_bill
+                            bills_paid.append(bill_id)
+                
+                self._set_json_headers(200)
+                self.wfile.write(json.dumps({
+                    'success': True,
+                    'payment': payment_record,
+                    'nft_token_id': nft_token['token_id'] if nft_token else None,
+                    'savings_allocated': savings_amount,
+                    'risk_allocated': risk_amount,
+                    'bills_updated': bills_paid
+                }).encode('utf-8'))
+                
+            except Exception as e:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'Payment failed', 'details': str(e)}).encode('utf-8'))
+            return
+        
+        # Customer password change
+        if path == '/api/customer/change-password':
+            try:
+                data = json.loads(body)
+                current_password = data.get('current_password')
+                new_password = data.get('new_password')
+                
+                # Get customer from session
+                auth_header = self.headers.get('Authorization', '')
+                token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else ''
+                session = SESSIONS.get(token, {})
+                username = session.get('username')
+                
+                if not username:
+                    self._set_json_headers(401)
+                    self.wfile.write(json.dumps({'error': 'Not authenticated'}).encode('utf-8'))
+                    return
+                
+                if not current_password or not new_password:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'Both current and new password required'}).encode('utf-8'))
+                    return
+                
+                # Validate new password strength
+                if len(new_password) < 8:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'New password must be at least 8 characters'}).encode('utf-8'))
+                    return
+                
+                # Find and verify user
+                user = USERS.get(username)
+                if not user:
+                    self._set_json_headers(404)
+                    self.wfile.write(json.dumps({'error': 'User not found'}).encode('utf-8'))
+                    return
+                
+                # Verify current password
+                if not verify_password(current_password, user['hash'], user['salt']):
+                    self._set_json_headers(401)
+                    self.wfile.write(json.dumps({'error': 'Current password is incorrect'}).encode('utf-8'))
+                    return
+                
+                # Hash new password
+                new_hash = hash_password(new_password)
+                user['hash'] = new_hash['hash']
+                user['salt'] = new_hash['salt']
+                USERS[username] = user
+                
+                # Record password change on NFT ledger
+                customer_id = session.get('customer_id', username)
+                nft_token = generate_nft_token(
+                    customer_id=customer_id,
+                    transaction_type='password_change',
+                    transaction_id=f"PWD-{datetime.now().strftime('%Y%m%d%H%M%S')}",
+                    amount=0,
+                    description='Password changed',
+                    metadata={'action': 'security_update'}
+                )
+                NFT_LEDGER[nft_token['token_id']] = nft_token
+                
+                self._set_json_headers(200)
+                self.wfile.write(json.dumps({
+                    'success': True,
+                    'message': 'Password changed successfully',
+                    'nft_token_id': nft_token['token_id']
+                }).encode('utf-8'))
+                
+            except Exception as e:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'Password change failed', 'details': str(e)}).encode('utf-8'))
+            return
+        
+        # Record customer action on NFT ledger
+        if path == '/api/customer/action':
+            try:
+                data = json.loads(body)
+                customer_id = data.get('customer_id')
+                action_type = data.get('action_type')
+                amount = float(data.get('amount', 0))
+                description = data.get('description', '')
+                
+                if not customer_id or not action_type:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'customer_id and action_type required'}).encode('utf-8'))
+                    return
+                
+                # Generate NFT token for the action
+                action_id = f"ACT-{datetime.now().strftime('%Y%m%d%H%M%S')}-{random.randint(1000, 9999)}"
+                nft_token = generate_nft_token(
+                    customer_id=customer_id,
+                    transaction_type=action_type,
+                    transaction_id=action_id,
+                    amount=amount,
+                    description=description,
+                    metadata={
+                        'action_type': action_type,
+                        'timestamp': data.get('timestamp', datetime.now().isoformat())
+                    }
+                )
+                NFT_LEDGER[nft_token['token_id']] = nft_token
+                
+                self._set_json_headers(200)
+                self.wfile.write(json.dumps({
+                    'success': True,
+                    'action_id': action_id,
+                    'nft_token': nft_token
+                }).encode('utf-8'))
+                
+            except Exception as e:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'Action recording failed', 'details': str(e)}).encode('utf-8'))
             return
         
         # Default: not found
