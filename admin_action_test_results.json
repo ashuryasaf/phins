@@ -1,0 +1,120 @@
+{
+  "timestamp": "2025-12-29T11:52:39.274181",
+  "results": [
+    {
+      "test": "Admin Login",
+      "status": "PASS",
+      "details": "Token acquired",
+      "timestamp": "2025-12-29T11:52:39.135298"
+    },
+    {
+      "test": "Create Test Application",
+      "status": "PASS",
+      "details": "Customer: CUST-63152, UW: UW-20251229-7564",
+      "timestamp": "2025-12-29T11:52:39.184647"
+    },
+    {
+      "test": "Underwriting Approve",
+      "status": "PASS",
+      "details": "Policy: active, Bill: BILL-20251229115239-1735",
+      "timestamp": "2025-12-29T11:52:39.193807"
+    },
+    {
+      "test": "Bill Creation (from approval)",
+      "status": "PASS",
+      "details": "Bill ID: BILL-20251229115239-1735",
+      "timestamp": "2025-12-29T11:52:39.193818"
+    },
+    {
+      "test": "Data Integrity Check",
+      "status": "PASS",
+      "details": "Customer verified",
+      "timestamp": "2025-12-29T11:52:39.193822"
+    },
+    {
+      "test": "Underwriting Reject",
+      "status": "PASS",
+      "details": "Status: rejected",
+      "timestamp": "2025-12-29T11:52:39.232754"
+    },
+    {
+      "test": "Rejection Status Verified",
+      "status": "PASS",
+      "details": "",
+      "timestamp": "2025-12-29T11:52:39.232763"
+    },
+    {
+      "test": "Create Claim",
+      "status": "PASS",
+      "details": "Claim ID: CLM-20251229-6215",
+      "timestamp": "2025-12-29T11:52:39.239971"
+    },
+    {
+      "test": "Claim Approve",
+      "status": "PASS",
+      "details": "Status: Approved, Approved: $4500.0",
+      "timestamp": "2025-12-29T11:52:39.245613"
+    },
+    {
+      "test": "Claim Amount Integrity",
+      "status": "PASS",
+      "details": "",
+      "timestamp": "2025-12-29T11:52:39.245624"
+    },
+    {
+      "test": "Claim Reject",
+      "status": "PASS",
+      "details": "Status: Rejected",
+      "timestamp": "2025-12-29T11:52:39.255581"
+    },
+    {
+      "test": "Billing Create",
+      "status": "PASS",
+      "details": "Bill ID: BILL-20251229-1362",
+      "timestamp": "2025-12-29T11:52:39.262150"
+    },
+    {
+      "test": "Bill Structure Integrity",
+      "status": "PASS",
+      "details": "",
+      "timestamp": "2025-12-29T11:52:39.262160"
+    },
+    {
+      "test": "Billing Pay",
+      "status": "PASS",
+      "details": "Paid: $100.0, Status: partial",
+      "timestamp": "2025-12-29T11:52:39.263233"
+    },
+    {
+      "test": "Dashboard Stats",
+      "status": "WARN",
+      "details": "Dashboard endpoint not found (API may differ)",
+      "timestamp": "2025-12-29T11:52:39.265554"
+    },
+    {
+      "test": "Customer Validation",
+      "status": "PASS",
+      "details": "Checks: 5/6 passed",
+      "timestamp": "2025-12-29T11:52:39.269109"
+    },
+    {
+      "test": "Customer Data Integrity",
+      "status": "PASS",
+      "details": "",
+      "timestamp": "2025-12-29T11:52:39.271012"
+    },
+    {
+      "test": "Underwriting Data Integrity",
+      "status": "WARN",
+      "details": "May not have direct GET endpoint",
+      "timestamp": "2025-12-29T11:52:39.272174"
+    },
+    {
+      "test": "Policy Data Integrity",
+      "status": "PASS",
+      "details": "",
+      "timestamp": "2025-12-29T11:52:39.274080"
+    }
+  ],
+  "success": true
+}

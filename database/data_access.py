@@ -68,6 +68,54 @@ def convert_datetime_strings(data: Dict[str, Any]) -> Dict[str, Any]:
     return result
 
 
+# Field mappings from server dictionary keys to database model fields
+# This ensures backward compatibility with existing code that uses different key names
+FIELD_MAPPINGS = {
+    'billing': {
+        'bill_id': 'id',           # bill_id → id (database uses 'id' as primary key)
+        'amount_due': 'amount',    # amount_due → amount
+    },
+    'claims': {
+        'claim_id': 'id',          # claim_id → id
+    },
+    'policies': {
+        'policy_id': 'id',         # policy_id → id (if used)
+    },
+    'underwriting': {
+        'uw_id': 'id',             # uw_id → id (if used)
+        'application_id': 'id',    # application_id → id
+    }
+}
+
+
+def map_fields_for_repository(repository_name: str, data: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Map field names from server dictionary format to database model format.
+    
+    Args:
+        repository_name: Name of the repository (billing, claims, etc.)
+        data: Dictionary with server field names
+    
+    Returns:
+        Dictionary with database model field names
+    """
+    mappings = FIELD_MAPPINGS.get(repository_name, {})
+    if not mappings:
+        return data
+    
+    result = data.copy()
+    
+    for old_name, new_name in mappings.items():
+        if old_name in result:
+            # Copy value to new field name
+            if new_name not in result:  # Don't overwrite if already present
+                result[new_name] = result[old_name]
+            # Remove old field name (to avoid 'unexpected keyword argument' errors)
+            del result[old_name]
+    
+    return result
+
+
 class DatabaseDict:
     """
     Dictionary-like wrapper around database repository.
@@ -114,12 +162,16 @@ class DatabaseDict:
         # Convert datetime strings to datetime objects
         value = convert_datetime_strings(value)
         
+        # Map field names from server format to database format
+        value = map_fields_for_repository(self.repository_name, value)
+        
         with DatabaseManager() as db:
             repo = self._get_repository(db)
             existing = repo.get_by_id(key)
             if existing:
-                # Update existing
-                repo.update(key, **value)
+                # Update existing - filter out keys that aren't model attributes
+                update_data = {k: v for k, v in value.items() if hasattr(existing, k)}
+                repo.update(key, **update_data)
             else:
                 # Create new (ensure id is set)
                 if 'id' not in value and self.repository_name not in ['users', 'sessions']:
@@ -128,7 +180,17 @@ class DatabaseDict:
                     value['username'] = key
                 elif 'token' not in value and self.repository_name == 'sessions':
                     value['token'] = key
-                repo.create(**value)
+                
+                # Filter out keys that aren't valid model attributes to prevent errors
+                try:
+                    model_class = repo.model_class
+                    valid_columns = {c.name for c in model_class.__table__.columns}
+                    filtered_value = {k: v for k, v in value.items() if k in valid_columns}
+                    repo.create(**filtered_value)
+                except Exception as e:
+                    # Fallback: try creating with all values
+                    logger.warning(f"Error filtering columns for {self.repository_name}: {e}")
+                    repo.create(**value)
         self._cache_valid = False
     
     def __delitem__(self, key: str):

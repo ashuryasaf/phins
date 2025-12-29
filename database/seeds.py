@@ -33,32 +33,32 @@ def seed_default_users(session=None):
     try:
         user_repo = UserRepository(session)
         
-        # Default users
+        # Default users (password: PDadmin123@ for all system accounts)
         default_users = [
             {
                 'username': 'admin',
-                'password': 'admin123',
+                'password': 'PDadmin123@',
                 'role': 'admin',
                 'name': 'Admin User',
                 'email': 'admin@phins.ai'
             },
             {
                 'username': 'underwriter',
-                'password': 'under123',
+                'password': 'PDadmin123@',
                 'role': 'underwriter',
                 'name': 'John Underwriter',
                 'email': 'underwriter@phins.ai'
             },
             {
                 'username': 'claims_adjuster',
-                'password': 'claims123',
+                'password': 'PDadmin123@',
                 'role': 'claims',
                 'name': 'Jane Claims',
                 'email': 'claims@phins.ai'
             },
             {
                 'username': 'accountant',
-                'password': 'acct123',
+                'password': 'PDadmin123@',
                 'role': 'accountant',
                 'name': 'Bob Accountant',
                 'email': 'accountant@phins.ai'

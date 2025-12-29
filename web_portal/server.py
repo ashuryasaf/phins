@@ -3876,7 +3876,7 @@ For claims or questions, please contact:
                         'decision_date': datetime.now().isoformat(),
                     }
                     bill_id = f"BILL-{datetime.now().strftime('%Y%m%d')}-{random.randint(1000,9999)}"
-                    BILLING[bill_id] = {'bill_id': bill_id, 'policy_id': pol_id, 'amount_due': prem['monthly'], 'amount_paid': 0.0, 'status': 'outstanding', 'created_date': datetime.now().isoformat(), 'due_date': (datetime.now() + timedelta(days=30)).isoformat()}
+                    BILLING[bill_id] = {'id': bill_id, 'policy_id': pol_id, 'amount': prem['monthly'], 'amount_paid': 0.0, 'status': 'outstanding', 'created_date': datetime.now().isoformat(), 'due_date': (datetime.now() + timedelta(days=30)).isoformat()}
 
                     # Seed a basic token registry
                     TOKEN_REGISTRY['TK-BTC'] = {'id': 'TK-BTC', 'symbol': 'BTC', 'name': 'Bitcoin', 'asset_type': 'currency', 'enabled': True, 'classification': 'internal', 'created_by': 'system', 'created_date': datetime.now().isoformat()}
@@ -4293,13 +4293,11 @@ For claims or questions, please contact:
                 
                 bill = {
                     'id': bill_id,
-                    'bill_id': bill_id,
                     'policy_id': policy_id,
                     'customer_id': customer_id,
                     'customer_name': app.get('customer_name', ''),
                     'customer_email': app.get('customer_email', ''),
                     'amount': round(float(billing_amount), 2),
-                    'amount_due': round(float(billing_amount), 2),
                     'amount_paid': 0.0,
                     'status': 'outstanding',
                     'billing_frequency': billing_frequency,
@@ -6190,9 +6188,9 @@ For claims or questions, please contact:
                     return
                 bill_id = f"BILL-{datetime.now().strftime('%Y%m%d')}-{random.randint(1000,9999)}"
                 bill = {
-                    'bill_id': bill_id,
+                    'id': bill_id,
                     'policy_id': policy_id,
-                    'amount_due': amount_due,
+                    'amount': amount_due,
                     'amount_paid': 0.0,
                     'status': 'outstanding',
                     'created_date': datetime.now().isoformat(),
@@ -6226,7 +6224,9 @@ For claims or questions, please contact:
                     self.wfile.write(json.dumps({'error': 'Invalid amount'}).encode('utf-8'))
                     return
                 bill['amount_paid'] = bill.get('amount_paid', 0.0) + amount
-                if bill['amount_paid'] >= bill['amount_due']:
+                # Support both 'amount' and 'amount_due' field names for compatibility
+                amount_due = bill.get('amount', bill.get('amount_due', 0))
+                if bill['amount_paid'] >= amount_due:
                     bill['status'] = 'paid'
                     bill['paid_date'] = datetime.now().isoformat()
                 else:
