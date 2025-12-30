@@ -7027,23 +7027,24 @@ For claims or questions, please contact:
                                     break
                         
                         if bill_id and bill_id in BILLING:
-                            bill = BILLING[bill_id]
-                            prev_paid = bill.get('amount_paid', 0)
-                            bill['amount_paid'] = prev_paid + amount
+                            # Direct assignment to ensure update on the BILLING dictionary itself
+                            prev_paid = BILLING[bill_id].get('amount_paid', 0)
+                            BILLING[bill_id]['amount_paid'] = prev_paid + amount
+                            bill_amount = BILLING[bill_id].get('amount', 0)
                             
                             # Check if fully paid
-                            if bill['amount_paid'] >= bill['amount']:
-                                bill['status'] = 'paid'
-                                bill['paid_date'] = datetime.now().isoformat()
-                                bill['payment_method'] = payment_method
-                                bill['transaction_id'] = payment_result['transaction_id']
-                            elif bill['amount_paid'] > 0:
-                                bill['status'] = 'partially_paid'
+                            if BILLING[bill_id]['amount_paid'] >= bill_amount:
+                                BILLING[bill_id]['status'] = 'paid'
+                                BILLING[bill_id]['paid_date'] = datetime.now().isoformat()
+                                BILLING[bill_id]['payment_method'] = payment_method
+                                BILLING[bill_id]['transaction_id'] = payment_result['transaction_id']
+                            elif BILLING[bill_id]['amount_paid'] > 0:
+                                BILLING[bill_id]['status'] = 'partially_paid'
                             
-                            bill['updated_date'] = datetime.now().isoformat()
+                            BILLING[bill_id]['updated_date'] = datetime.now().isoformat()
                             payment_result['bill_id'] = bill_id
-                            payment_result['bill_status'] = bill['status']
-                            payment_result['amount_due_remaining'] = max(0, bill['amount'] - bill['amount_paid'])
+                            payment_result['bill_status'] = BILLING[bill_id]['status']
+                            payment_result['amount_due_remaining'] = max(0, bill_amount - BILLING[bill_id]['amount_paid'])
                             new_balance = 0  # Premium payments don't add to a balance
                             
                             # Route savings portion through pipeline if configured
