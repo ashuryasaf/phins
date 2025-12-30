@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Apply for PHINS Coverage - Insurance Application</title>
+    <title>Apply for PHINS Unified Contract - Save • Pay • Invest • Consume • Hedge</title>
     <link rel="stylesheet" href="styles.css">
     <link rel="stylesheet" href="apply-styles.css">
 </head>
@@ -45,8 +45,8 @@
         </div>
 
         <div class="application-content">
-            <h1>Apply for PHINS Coverage</h1>
-            <p class="subtitle">Complete your application in 5 easy steps. Your information is secure and confidential.</p>
+            <h1>🛡️ Apply for Your PHINS Unified Contract</h1>
+            <p class="subtitle">One contract to <strong>Save</strong>, <strong>Pay</strong>, <strong>Invest</strong>, <strong>Consume</strong> & <strong>Hedge</strong> disability. Complete in 5 easy steps.</p>
 
             <form id="customer-application-form">
                 <!-- Step 1: Personal Information -->
@@ -127,94 +127,382 @@
                     </div>
                 </div>
 
-                <!-- Step 2: Coverage Selection -->
+                <!-- Step 2: PHINS Unified Contract Configuration -->
                 <div class="form-step" data-step="2">
                     <div class="step-header">
-                        <h2>🛡️ Step 2: Choose Your Coverage</h2>
-                        <p>Select the protection level that best fits your needs and budget.</p>
+                        <h2>🛡️ Step 2: Configure Your PHINS Contract</h2>
+                        <p>One contract that lets you <strong>Save</strong>, <strong>Pay</strong>, <strong>Invest</strong>, <strong>Consume</strong> & <strong>Hedge</strong> disability. Customize your perfect balance.</p>
                     </div>
 
                     <div class="form-section">
-                        <h3>Policy Type</h3>
-                        <div class="policy-cards">
-                            <div class="policy-option" data-type="life">
-                                <div class="policy-icon">💼</div>
-                                <h4>Life Insurance</h4>
-                                <p>Financial protection for your loved ones in case of death</p>
-                                <ul>
-                                    <li>Death benefit payout</li>
-                                    <li>Investment component</li>
-                                    <li>Estate planning</li>
-                                </ul>
-                                <button type="button" class="select-policy" data-type="life">Select</button>
+                        <!-- PHINS Product Overview -->
+                        <div class="phins-product-overview">
+                            <div class="phins-unified-badge">
+                                <span class="badge-icon">🛡️</span>
+                                <span class="badge-text">PHINS Unified Contract</span>
+                                <span class="badge-highlight">AI-BI Secured</span>
                             </div>
-
-                            <div class="policy-option" data-type="health">
-                                <div class="policy-icon">🏥</div>
-                                <h4>Health Insurance</h4>
-                                <p>Comprehensive medical coverage and health protection</p>
-                                <ul>
-                                    <li>Medical expenses</li>
-                                    <li>Hospitalization</li>
-                                    <li>Preventive care</li>
-                                </ul>
-                                <button type="button" class="select-policy" data-type="health">Select</button>
-                            </div>
-
-                            <div class="policy-option" data-type="disability">
-                                <div class="policy-icon recommended">♿</div>
-                                <div class="recommended-badge">Recommended</div>
-                                <h4>PHINS Disability + Investment</h4>
-                                <p>Severe disability protection with wealth building</p>
-                                <ul>
-                                    <li>ADL-based coverage</li>
-                                    <li>75% investment growth</li>
-                                    <li>25% guaranteed savings</li>
-                                    <li>Lifetime benefits</li>
-                                </ul>
-                                <button type="button" class="select-policy" data-type="disability">Select</button>
+                            
+                            <div class="phins-pillars-mini">
+                                <div class="pillar-mini"><span class="pillar-icon">💰</span><span>Save</span></div>
+                                <div class="pillar-mini"><span class="pillar-icon">🏥</span><span>Pay</span></div>
+                                <div class="pillar-mini active"><span class="pillar-icon">📈</span><span>Invest</span></div>
+                                <div class="pillar-mini"><span class="pillar-icon">🛒</span><span>Consume</span></div>
+                                <div class="pillar-mini"><span class="pillar-icon">🛡️</span><span>Hedge</span></div>
                             </div>
                         </div>
 
-                        <input type="hidden" id="policy-type" required>
-
-                        <div id="coverage-details" class="coverage-details" style="display: none;">
-                            <h3>Coverage Amount</h3>
+                        <!-- Coverage Amount Selection -->
+                        <div class="coverage-section">
+                            <h3><span class="section-icon">🎯</span> Total Coverage Amount</h3>
+                            <p class="section-desc">Select your total disability coverage. This determines your maximum benefit if you become severely disabled.</p>
+                            
                             <div class="coverage-slider-container">
-                                <input type="range" id="coverage-slider" min="50000" max="5000000" step="50000" value="250000">
+                                <input type="range" id="coverage-slider" min="100000" max="5000000" step="50000" value="500000">
                                 <div class="coverage-display">
-                                    <span class="coverage-amount" id="coverage-amount-display">$250,000</span>
-                                    <small>Slide to adjust your coverage amount</small>
+                                    <span class="coverage-amount" id="coverage-amount-display">$500,000</span>
+                                    <small>Total Disability Coverage</small>
                                 </div>
                             </div>
 
                             <div class="coverage-options">
                                 <div class="quick-select">
-                                    <button type="button" class="quick-amount" data-amount="100000">$100K</button>
                                     <button type="button" class="quick-amount" data-amount="250000">$250K</button>
                                     <button type="button" class="quick-amount active" data-amount="500000">$500K</button>
                                     <button type="button" class="quick-amount" data-amount="1000000">$1M</button>
                                     <button type="button" class="quick-amount" data-amount="2000000">$2M</button>
+                                    <button type="button" class="quick-amount" data-amount="5000000">$5M</button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <input type="hidden" id="policy-type" value="phins_unified" required>
+
+                        <!-- Premium Allocation Section -->
+                        <div class="premium-allocation-section">
+                            <h3><span class="section-icon">⚖️</span> Premium Allocation Strategy</h3>
+                            <p class="section-desc">Decide how your monthly premium is distributed. Adjust the sliders to match your financial goals and risk tolerance.</p>
+                            
+                            <!-- Savings vs Risk Toggle -->
+                            <div class="allocation-strategy-toggle">
+                                <div class="strategy-option" data-strategy="conservative">
+                                    <div class="strategy-icon">🏦</div>
+                                    <div class="strategy-label">Conservative</div>
+                                    <div class="strategy-desc">More savings, less risk</div>
+                                </div>
+                                <div class="strategy-option active" data-strategy="balanced">
+                                    <div class="strategy-icon">⚖️</div>
+                                    <div class="strategy-label">Balanced</div>
+                                    <div class="strategy-desc">Equal distribution</div>
+                                </div>
+                                <div class="strategy-option" data-strategy="growth">
+                                    <div class="strategy-icon">🚀</div>
+                                    <div class="strategy-label">Growth</div>
+                                    <div class="strategy-desc">Higher risk, higher return</div>
+                                </div>
+                                <div class="strategy-option" data-strategy="custom">
+                                    <div class="strategy-icon">🎛️</div>
+                                    <div class="strategy-label">Custom</div>
+                                    <div class="strategy-desc">You decide</div>
                                 </div>
                             </div>
 
+                            <!-- Allocation Sliders -->
+                            <div class="allocation-sliders">
+                                <!-- Savings Allocation -->
+                                <div class="allocation-item savings-allocation">
+                                    <div class="allocation-header">
+                                        <div class="allocation-icon">💰</div>
+                                        <div class="allocation-info">
+                                            <h4>Guaranteed Savings</h4>
+                                            <p>Capital-protected growth with competitive yields (3-5% annually)</p>
+                                        </div>
+                                        <div class="allocation-value">
+                                            <span id="savings-pct-display">25%</span>
+                                            <small id="savings-amount-display">$0/mo</small>
+                                        </div>
+                                    </div>
+                                    <input type="range" id="savings-allocation" class="allocation-slider" min="10" max="60" step="5" value="25">
+                                    <div class="allocation-features">
+                                        <span class="feature-tag">✓ Capital Protected</span>
+                                        <span class="feature-tag">✓ Tax-Deferred</span>
+                                        <span class="feature-tag">✓ Guaranteed Returns</span>
+                                    </div>
+                                </div>
+
+                                <!-- Investment Allocation -->
+                                <div class="allocation-item investment-allocation">
+                                    <div class="allocation-header">
+                                        <div class="allocation-icon">📈</div>
+                                        <div class="allocation-info">
+                                            <h4>AI-Managed Investments</h4>
+                                            <p>Diversified portfolio with AI optimization (target 8-15% annually)</p>
+                                        </div>
+                                        <div class="allocation-value">
+                                            <span id="investment-pct-display">35%</span>
+                                            <small id="investment-amount-display">$0/mo</small>
+                                        </div>
+                                    </div>
+                                    <input type="range" id="investment-allocation" class="allocation-slider" min="0" max="60" step="5" value="35">
+                                    <div class="allocation-features">
+                                        <span class="feature-tag">✓ Multi-Asset</span>
+                                        <span class="feature-tag">✓ AI-Optimized</span>
+                                        <span class="feature-tag">✓ Real-Time</span>
+                                    </div>
+                                </div>
+
+                                <!-- Health Wallet Allocation -->
+                                <div class="allocation-item health-wallet-allocation">
+                                    <div class="allocation-header">
+                                        <div class="allocation-icon">🏥</div>
+                                        <div class="allocation-info">
+                                            <h4>Health Wallet</h4>
+                                            <p>Instant access for medical expenses, prescriptions & health products</p>
+                                        </div>
+                                        <div class="allocation-value">
+                                            <span id="health-wallet-pct-display">15%</span>
+                                            <small id="health-wallet-amount-display">$0/mo</small>
+                                        </div>
+                                    </div>
+                                    <input type="range" id="health-wallet-allocation" class="allocation-slider" min="5" max="40" step="5" value="15">
+                                    <div class="allocation-features">
+                                        <span class="feature-tag">✓ Instant Access</span>
+                                        <span class="feature-tag">✓ Tax-Free Medical</span>
+                                        <span class="feature-tag">✓ Marketplace Access</span>
+                                    </div>
+                                </div>
+
+                                <!-- Disability Protection Allocation -->
+                                <div class="allocation-item disability-allocation">
+                                    <div class="allocation-header">
+                                        <div class="allocation-icon">🛡️</div>
+                                        <div class="allocation-info">
+                                            <h4>Disability Hedge</h4>
+                                            <p>ADL-based severe disability protection with lifetime benefits</p>
+                                        </div>
+                                        <div class="allocation-value">
+                                            <span id="disability-pct-display">25%</span>
+                                            <small id="disability-amount-display">$0/mo</small>
+                                        </div>
+                                    </div>
+                                    <input type="range" id="disability-allocation" class="allocation-slider" min="15" max="50" step="5" value="25">
+                                    <div class="allocation-features">
+                                        <span class="feature-tag">✓ 3+ ADL Trigger</span>
+                                        <span class="feature-tag">✓ Global Coverage</span>
+                                        <span class="feature-tag">✓ Lifetime Benefits</span>
+                                    </div>
+                                </div>
+
+                                <!-- Allocation Total -->
+                                <div class="allocation-total">
+                                    <div class="total-bar">
+                                        <div class="total-segment savings" id="total-savings-bar" style="width: 25%;"></div>
+                                        <div class="total-segment investment" id="total-investment-bar" style="width: 35%;"></div>
+                                        <div class="total-segment health" id="total-health-bar" style="width: 15%;"></div>
+                                        <div class="total-segment disability" id="total-disability-bar" style="width: 25%;"></div>
+                                    </div>
+                                    <div class="total-legend">
+                                        <span class="legend-item"><span class="legend-color savings"></span> Savings</span>
+                                        <span class="legend-item"><span class="legend-color investment"></span> Investment</span>
+                                        <span class="legend-item"><span class="legend-color health"></span> Health</span>
+                                        <span class="legend-item"><span class="legend-color disability"></span> Disability</span>
+                                    </div>
+                                    <div class="total-status" id="allocation-status">
+                                        <span class="status-icon">✅</span>
+                                        <span class="status-text">Allocation Complete: 100%</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- AI Investment Bot Configuration -->
+                        <div class="ai-bot-section">
+                            <h3><span class="section-icon">🤖</span> Your Personal AI Investment Bot</h3>
+                            <p class="section-desc">Configure your custom AI-powered trading bot. The bot manages your investment allocation using advanced algorithms.</p>
+                            
+                            <div class="ai-bot-config">
+                                <div class="bot-feature-card">
+                                    <div class="bot-icon">🎯</div>
+                                    <h4>Risk Profile</h4>
+                                    <select id="ai-risk-profile" class="bot-select">
+                                        <option value="conservative">Conservative - Low volatility, steady growth</option>
+                                        <option value="moderate" selected>Moderate - Balanced risk/reward</option>
+                                        <option value="aggressive">Aggressive - Higher risk, higher potential</option>
+                                        <option value="ai_optimized">AI-Optimized - Let AI decide based on market</option>
+                                    </select>
+                                </div>
+
+                                <div class="bot-feature-card">
+                                    <div class="bot-icon">📊</div>
+                                    <h4>Asset Preferences</h4>
+                                    <div class="asset-checkboxes">
+                                        <label class="asset-checkbox"><input type="checkbox" name="ai-assets" value="stocks" checked> 📈 Stocks & ETFs</label>
+                                        <label class="asset-checkbox"><input type="checkbox" name="ai-assets" value="bonds" checked> 📃 Bonds</label>
+                                        <label class="asset-checkbox"><input type="checkbox" name="ai-assets" value="crypto"> ₿ Crypto</label>
+                                        <label class="asset-checkbox"><input type="checkbox" name="ai-assets" value="commodities"> 🥇 Commodities</label>
+                                        <label class="asset-checkbox"><input type="checkbox" name="ai-assets" value="forex"> 💱 Forex</label>
+                                    </div>
+                                </div>
+
+                                <div class="bot-feature-card">
+                                    <div class="bot-icon">⚡</div>
+                                    <h4>Trading Strategy</h4>
+                                    <select id="ai-strategy" class="bot-select">
+                                        <option value="dca">Dollar-Cost Averaging (Recommended)</option>
+                                        <option value="momentum">Momentum Trading</option>
+                                        <option value="value">Value Investing</option>
+                                        <option value="balanced" selected>Balanced Multi-Strategy</option>
+                                        <option value="custom">Custom AI-Generated</option>
+                                    </select>
+                                </div>
+
+                                <div class="bot-feature-card full-width">
+                                    <div class="bot-icon">🔒</div>
+                                    <h4>Safety Settings</h4>
+                                    <div class="safety-options">
+                                        <label class="safety-option">
+                                            <input type="checkbox" id="stop-loss" checked>
+                                            <span class="safety-label">Enable Stop-Loss (5% max daily loss)</span>
+                                        </label>
+                                        <label class="safety-option">
+                                            <input type="checkbox" id="diversification" checked>
+                                            <span class="safety-label">Enforce Diversification (max 20% per asset)</span>
+                                        </label>
+                                        <label class="safety-option">
+                                            <input type="checkbox" id="rebalancing" checked>
+                                            <span class="safety-label">Auto-Rebalancing (quarterly)</span>
+                                        </label>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="ai-bot-preview">
+                                <div class="preview-header">
+                                    <span class="preview-icon">🤖</span>
+                                    <span class="preview-title">Your AI Bot Preview</span>
+                                </div>
+                                <div class="preview-stats">
+                                    <div class="stat-item">
+                                        <span class="stat-label">Expected Return</span>
+                                        <span class="stat-value" id="expected-return">8-12% annually</span>
+                                    </div>
+                                    <div class="stat-item">
+                                        <span class="stat-label">Risk Level</span>
+                                        <span class="stat-value" id="risk-level">Moderate</span>
+                                    </div>
+                                    <div class="stat-item">
+                                        <span class="stat-label">Trading Frequency</span>
+                                        <span class="stat-value" id="trading-freq">Weekly Rebalance</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Savings Term Selection -->
+                        <div class="savings-term-section">
+                            <h3><span class="section-icon">📅</span> Savings & Investment Term</h3>
+                            <p class="section-desc">Select your target savings horizon. Longer terms typically yield better returns.</p>
+                            
+                            <div class="term-options">
+                                <div class="term-option" data-years="5">
+                                    <div class="term-years">5</div>
+                                    <div class="term-label">Years</div>
+                                    <div class="term-desc">Short-term goals</div>
+                                </div>
+                                <div class="term-option" data-years="10">
+                                    <div class="term-years">10</div>
+                                    <div class="term-label">Years</div>
+                                    <div class="term-desc">Medium-term</div>
+                                </div>
+                                <div class="term-option active" data-years="15">
+                                    <div class="term-years">15</div>
+                                    <div class="term-label">Years</div>
+                                    <div class="term-desc">Recommended</div>
+                                </div>
+                                <div class="term-option" data-years="20">
+                                    <div class="term-years">20</div>
+                                    <div class="term-label">Years</div>
+                                    <div class="term-desc">Long-term wealth</div>
+                                </div>
+                                <div class="term-option" data-years="30">
+                                    <div class="term-years">30</div>
+                                    <div class="term-label">Years</div>
+                                    <div class="term-desc">Max growth</div>
+                                </div>
+                            </div>
+                            <input type="hidden" id="savings-term" value="15">
+                        </div>
+
+                        <!-- Premium Summary -->
+                        <div class="premium-summary-section">
+                            <h3><span class="section-icon">💳</span> Your Premium Summary</h3>
+                            
                             <div class="premium-estimate" id="premium-estimate">
-                                <h4>Estimated Premium</h4>
                                 <div class="premium-breakdown">
                                     <div class="premium-item">
                                         <span>Monthly</span>
-                                        <strong id="monthly-premium">$125.00</strong>
+                                        <strong id="monthly-premium">$250.00</strong>
                                     </div>
                                     <div class="premium-item">
                                         <span>Quarterly</span>
-                                        <strong id="quarterly-premium">$375.00</strong>
+                                        <strong id="quarterly-premium">$750.00</strong>
                                     </div>
                                     <div class="premium-item highlighted">
-                                        <span>Annual</span>
-                                        <strong id="annual-premium">$1,500.00</strong>
+                                        <span>Annual (Save 10%)</span>
+                                        <strong id="annual-premium">$2,700.00</strong>
                                     </div>
                                 </div>
-                                <small>*Final premium determined after underwriting review</small>
+                                
+                                <div class="premium-allocation-summary">
+                                    <h4>Monthly Allocation Breakdown</h4>
+                                    <div class="allocation-breakdown-grid">
+                                        <div class="breakdown-item">
+                                            <span class="breakdown-icon">💰</span>
+                                            <span class="breakdown-label">Savings</span>
+                                            <span class="breakdown-amount" id="breakdown-savings">$62.50</span>
+                                        </div>
+                                        <div class="breakdown-item">
+                                            <span class="breakdown-icon">📈</span>
+                                            <span class="breakdown-label">Investment</span>
+                                            <span class="breakdown-amount" id="breakdown-investment">$87.50</span>
+                                        </div>
+                                        <div class="breakdown-item">
+                                            <span class="breakdown-icon">🏥</span>
+                                            <span class="breakdown-label">Health Wallet</span>
+                                            <span class="breakdown-amount" id="breakdown-health">$37.50</span>
+                                        </div>
+                                        <div class="breakdown-item">
+                                            <span class="breakdown-icon">🛡️</span>
+                                            <span class="breakdown-label">Disability</span>
+                                            <span class="breakdown-amount" id="breakdown-disability">$62.50</span>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="projection-preview">
+                                    <h4>📊 Projected Growth (15 Years)</h4>
+                                    <div class="projection-grid">
+                                        <div class="projection-item">
+                                            <span class="projection-label">Total Savings Account</span>
+                                            <span class="projection-value" id="proj-savings">$15,420</span>
+                                        </div>
+                                        <div class="projection-item">
+                                            <span class="projection-label">Investment Portfolio</span>
+                                            <span class="projection-value" id="proj-investment">$28,650</span>
+                                        </div>
+                                        <div class="projection-item">
+                                            <span class="projection-label">Disability Coverage</span>
+                                            <span class="projection-value" id="proj-coverage">$500,000</span>
+                                        </div>
+                                        <div class="projection-item highlight">
+                                            <span class="projection-label">Total Contract Value</span>
+                                            <span class="projection-value" id="proj-total">$544,070</span>
+                                        </div>
+                                    </div>
+                                    <small>*Projections based on historical performance. Actual results may vary.</small>
+                                </div>
+                                
+                                <small style="display: block; margin-top: 16px; text-align: center;">*Final premium determined after underwriting review. All allocations recorded on secure ledgers.</small>
                             </div>
                         </div>
                     </div>
@@ -580,24 +868,26 @@
             <!-- Success Message -->
             <div id="success-message" class="success-modal" style="display: none;">
                 <div class="success-content">
-                    <div class="success-icon">✅</div>
-                    <h2>Application Submitted Successfully!</h2>
+                    <div class="success-icon">🛡️</div>
+                    <h2>PHINS Contract Application Submitted!</h2>
+                    <p style="color: #666; margin-bottom: 1.5rem;">Your unified contract is being processed. Save • Pay • Invest • Consume • Hedge - all in one!</p>
                     <div class="application-details">
                         <p><strong>Application ID:</strong> <span id="app-id"></span></p>
-                        <p><strong>Policy ID:</strong> <span id="policy-id"></span></p>
-                        <p><strong>Estimated Premium:</strong> <span id="success-premium"></span></p>
+                        <p><strong>Contract ID:</strong> <span id="policy-id"></span></p>
+                        <p><strong>Estimated Annual Premium:</strong> <span id="success-premium"></span></p>
                     </div>
                     <div class="next-steps">
-                        <h3>What Happens Next?</h3>
+                        <h3>🚀 What Happens Next?</h3>
                         <ol>
-                            <li>✉️ Check your email for confirmation</li>
-                            <li>📋 Our underwriting team will review your application (2-3 business days)</li>
-                            <li>📞 We may contact you for additional information</li>
-                            <li>🎉 Receive your policy approval and payment instructions</li>
+                            <li>✉️ Check your email for confirmation & login credentials</li>
+                            <li>📋 Our AI-powered underwriting reviews your application (24-48 hours)</li>
+                            <li>🤖 Your personal AI investment bot will be configured</li>
+                            <li>💰 Health Wallet & Savings accounts activated upon approval</li>
+                            <li>🎉 Start saving, investing & accessing your benefits!</li>
                         </ol>
                     </div>
                     <div class="success-actions">
-                        <a href="/login.html" class="btn btn-primary">Login to Track Status</a>
+                        <a href="/login.html" class="btn btn-primary">🔐 Login to Track Status</a>
                         <a href="/" class="btn btn-secondary">Return to Home</a>
                     </div>
                 </div>

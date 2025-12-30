@@ -103,6 +103,13 @@
       .product-grid {
         grid-template-columns: 1fr !important;
       }
+      .hero-pillars {
+        gap: 8px !important;
+      }
+      .pillar-item {
+        min-width: 80px !important;
+        padding: 12px 14px !important;
+      }
       .product-card {
         padding: 20px !important;
       }
@@ -171,17 +178,46 @@
   <section id="home" class="hero">
     <div class="container">
       <div class="hero-content">
-        <h1>PHINS: Specialized Disability Protection & Investment</h1>
-        <p class="hero-subtitle">Global coverage for severe permanent disabilities (ADL-based) with integrated wealth building</p>
+        <h1>PHINS: One Contract. Complete Protection.</h1>
+        <p class="hero-subtitle">Save • Pay • Invest • Consume • Hedge Disability — All in One Revolutionary Platform</p>
+        
+        <!-- Five Pillars Visual -->
+        <div class="hero-pillars" style="display: flex; justify-content: center; gap: 16px; flex-wrap: wrap; margin: 32px auto; max-width: 800px;">
+          <div class="pillar-item" style="background: rgba(255,255,255,0.12); backdrop-filter: blur(10px); padding: 16px 20px; border-radius: 16px; text-align: center; min-width: 120px; border: 1px solid rgba(255,255,255,0.2);">
+            <div style="font-size: 2rem; margin-bottom: 8px;">💰</div>
+            <div style="font-weight: 600; font-size: 0.95rem;">SAVE</div>
+            <div style="font-size: 0.75rem; opacity: 0.8;">Build Wealth</div>
+          </div>
+          <div class="pillar-item" style="background: rgba(255,255,255,0.12); backdrop-filter: blur(10px); padding: 16px 20px; border-radius: 16px; text-align: center; min-width: 120px; border: 1px solid rgba(255,255,255,0.2);">
+            <div style="font-size: 2rem; margin-bottom: 8px;">🏥</div>
+            <div style="font-weight: 600; font-size: 0.95rem;">PAY</div>
+            <div style="font-size: 0.75rem; opacity: 0.8;">Medical Expenses</div>
+          </div>
+          <div class="pillar-item" style="background: rgba(255,255,255,0.12); backdrop-filter: blur(10px); padding: 16px 20px; border-radius: 16px; text-align: center; min-width: 120px; border: 1px solid rgba(255,255,255,0.2);">
+            <div style="font-size: 2rem; margin-bottom: 8px;">📈</div>
+            <div style="font-weight: 600; font-size: 0.95rem;">INVEST</div>
+            <div style="font-size: 0.75rem; opacity: 0.8;">AI-Powered Growth</div>
+          </div>
+          <div class="pillar-item" style="background: rgba(255,255,255,0.12); backdrop-filter: blur(10px); padding: 16px 20px; border-radius: 16px; text-align: center; min-width: 120px; border: 1px solid rgba(255,255,255,0.2);">
+            <div style="font-size: 2rem; margin-bottom: 8px;">🛒</div>
+            <div style="font-weight: 600; font-size: 0.95rem;">CONSUME</div>
+            <div style="font-size: 0.75rem; opacity: 0.8;">Health Products</div>
+          </div>
+          <div class="pillar-item" style="background: rgba(76,175,80,0.3); backdrop-filter: blur(10px); padding: 16px 20px; border-radius: 16px; text-align: center; min-width: 120px; border: 2px solid rgba(76,175,80,0.6);">
+            <div style="font-size: 2rem; margin-bottom: 8px;">🛡️</div>
+            <div style="font-weight: 600; font-size: 0.95rem;">HEDGE</div>
+            <div style="font-size: 0.75rem; opacity: 0.8;">Disability Coverage</div>
+          </div>
+        </div>
         
         <!-- Two Clear Paths -->
         <div class="hero-actions" style="display: flex; gap: 24px; justify-content: center; flex-wrap: wrap; margin-top: 32px;">
           <!-- New Customer Path -->
           <div style="text-align: center;">
-            <a href="#quote" class="btn btn-primary" style="font-size: 1.1rem; padding: 16px 32px;">
-              📋 Get a Quote
+            <a href="/apply.html" class="btn btn-primary" style="font-size: 1.1rem; padding: 16px 32px; background: linear-gradient(135deg, #4caf50 0%, #2e7d32 100%);">
+              🚀 Get Your PHINS Contract
             </a>
-            <p style="margin-top: 8px; font-size: 0.85rem; color: rgba(255,255,255,0.8);">New customers start here</p>
+            <p style="margin-top: 8px; font-size: 0.85rem; color: rgba(255,255,255,0.8);">Start your 5-minute application</p>
           </div>
           
           <!-- Existing Customer Path -->
@@ -199,10 +235,13 @@
             🔒 256-bit SSL Encryption
           </span>
           <span style="background: rgba(255,255,255,0.15); color: white; padding: 6px 12px; border-radius: 20px; font-size: 0.8rem;">
-            ✓ SOC 2 Compliant
+            🤖 AI-BI Secured
           </span>
           <span style="background: rgba(255,255,255,0.15); color: white; padding: 6px 12px; border-radius: 20px; font-size: 0.8rem;">
-            🛡️ HIPAA Secure
+            🛡️ HIPAA Compliant
+          </span>
+          <span style="background: rgba(255,255,255,0.15); color: white; padding: 6px 12px; border-radius: 20px; font-size: 0.8rem;">
+            ⛓️ Ledger-Backed
           </span>
         </div>
       </div>
@@ -212,64 +251,166 @@
   <!-- Products Section -->
   <section id="products" class="section">
     <div class="container">
-      <h2 class="section-title">The PHINS Solution</h2>
-      <p style="text-align:center; max-width:800px; margin:0 auto 48px; font-size:1.1rem; color:var(--muted);">A revolutionary single-contract insurance product combining severe disability protection with investment growth. Designed for global coverage with ADL-based permanent disability criteria.</p>
-      <div class="product-grid">
-        <div class="product-card" style="grid-column: 1 / -1; max-width: 900px; margin: 0 auto;">
-          <div class="product-icon">🛡️</div>
-          <h3>PHINS Disability Protection & Investment Contract</h3>
-          <p style="font-size:1.05rem; margin-bottom:24px;">The only specialized insurance contract you need: combining severe permanent disability protection with wealth-building investment strategy.</p>
+      <h2 class="section-title">The PHINS Unified Contract</h2>
+      <p style="text-align:center; max-width:900px; margin:0 auto 48px; font-size:1.1rem; color:var(--muted);">One revolutionary contract that replaces multiple financial products. Save money, pay medical expenses, invest with AI, purchase health products, and hedge against severe disability — all from a single integrated platform backed by secure ledgers and AI-BI technology.</p>
+      
+      <!-- Five Pillars Grid -->
+      <div class="product-grid" style="grid-template-columns: repeat(5, 1fr); gap: 16px; margin-bottom: 48px;">
+        <!-- SAVE -->
+        <div class="product-card" style="text-align:center; padding: 24px 16px;">
+          <div class="product-icon" style="background: linear-gradient(135deg, #4CAF50, #2E7D32); -webkit-background-clip: text; -webkit-text-fill-color: transparent; font-size: 3rem;">💰</div>
+          <h3 style="font-size: 1.1rem; margin: 12px 0 8px;">SAVE</h3>
+          <p style="font-size: 0.85rem; color: var(--muted);">Build guaranteed savings with competitive yields. Your money grows tax-advantaged within the contract.</p>
+          <ul style="text-align: left; font-size: 0.8rem; margin-top: 12px;">
+            <li>Guaranteed returns</li>
+            <li>Capital protection</li>
+            <li>Tax-deferred growth</li>
+          </ul>
+        </div>
+        
+        <!-- PAY -->
+        <div class="product-card" style="text-align:center; padding: 24px 16px;">
+          <div class="product-icon" style="font-size: 3rem;">🏥</div>
+          <h3 style="font-size: 1.1rem; margin: 12px 0 8px;">PAY</h3>
+          <p style="font-size: 0.85rem; color: var(--muted);">Health Wallet for medical expenses. Instant access to funds for healthcare needs.</p>
+          <ul style="text-align: left; font-size: 0.8rem; margin-top: 12px;">
+            <li>Consultations</li>
+            <li>Medical devices</li>
+            <li>Prescriptions</li>
+          </ul>
+        </div>
+        
+        <!-- INVEST -->
+        <div class="product-card" style="text-align:center; padding: 24px 16px; border: 2px solid var(--brand);">
+          <div style="position: absolute; top: -10px; right: -10px; background: var(--brand); color: white; padding: 4px 12px; border-radius: 12px; font-size: 0.7rem;">AI-POWERED</div>
+          <div class="product-icon" style="font-size: 3rem;">📈</div>
+          <h3 style="font-size: 1.1rem; margin: 12px 0 8px;">INVEST</h3>
+          <p style="font-size: 0.85rem; color: var(--muted);">AI-driven portfolio management with your personal investment bot.</p>
+          <ul style="text-align: left; font-size: 0.8rem; margin-top: 12px;">
+            <li>Custom AI bot</li>
+            <li>Multi-asset allocation</li>
+            <li>Algo trading</li>
+          </ul>
+        </div>
+        
+        <!-- CONSUME -->
+        <div class="product-card" style="text-align:center; padding: 24px 16px;">
+          <div class="product-icon" style="font-size: 3rem;">🛒</div>
+          <h3 style="font-size: 1.1rem; margin: 12px 0 8px;">CONSUME</h3>
+          <p style="font-size: 0.85rem; color: var(--muted);">Access health marketplace for products and services at preferred rates.</p>
+          <ul style="text-align: left; font-size: 0.8rem; margin-top: 12px;">
+            <li>Medical supplies</li>
+            <li>Mobility aids</li>
+            <li>Telemedicine</li>
+          </ul>
+        </div>
+        
+        <!-- HEDGE -->
+        <div class="product-card" style="text-align:center; padding: 24px 16px; background: linear-gradient(135deg, rgba(13,71,161,0.08), rgba(25,118,210,0.05));">
+          <div class="product-icon" style="font-size: 3rem;">🛡️</div>
+          <h3 style="font-size: 1.1rem; margin: 12px 0 8px;">HEDGE</h3>
+          <p style="font-size: 0.85rem; color: var(--muted);">ADL-based disability protection with lifetime benefits.</p>
+          <ul style="text-align: left; font-size: 0.8rem; margin-top: 12px;">
+            <li>Global coverage</li>
+            <li>3+ ADL trigger</li>
+            <li>Lifetime benefits</li>
+          </ul>
+        </div>
+      </div>
+      
+      <!-- Main Product Card -->
+      <div class="product-card" style="max-width: 1000px; margin: 0 auto;">
+        <div style="display: flex; align-items: center; justify-content: center; gap: 16px; margin-bottom: 24px;">
+          <div style="font-size: 3rem;">🛡️</div>
+          <div>
+            <h3 style="margin: 0;">PHINS Unified Insurance + Investment Contract</h3>
+            <p style="margin: 4px 0 0; color: var(--muted);">The World's Most Advanced AI-BI Hedging Platform</p>
+          </div>
+        </div>
+        
+        <!-- Premium Allocation Preview -->
+        <div style="background: linear-gradient(135deg, #f8f9fa, #e8f4f8); padding: 32px; border-radius: 16px; margin: 24px 0;">
+          <h4 style="text-align: center; margin-bottom: 24px; color: var(--brand);">🎯 How Your Premium Works</h4>
+          <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; text-align: center;">
+            <div style="background: white; padding: 20px; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.08);">
+              <div style="font-size: 2rem; font-weight: 700; color: #4CAF50;">25-50%</div>
+              <div style="font-weight: 600; margin: 8px 0;">Savings</div>
+              <div style="font-size: 0.8rem; color: var(--muted);">Guaranteed Growth</div>
+            </div>
+            <div style="background: white; padding: 20px; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.08);">
+              <div style="font-size: 2rem; font-weight: 700; color: #2196F3;">20-40%</div>
+              <div style="font-weight: 600; margin: 8px 0;">Investments</div>
+              <div style="font-size: 0.8rem; color: var(--muted);">AI-Managed Portfolio</div>
+            </div>
+            <div style="background: white; padding: 20px; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.08);">
+              <div style="font-size: 2rem; font-weight: 700; color: #9C27B0;">10-20%</div>
+              <div style="font-weight: 600; margin: 8px 0;">Health Wallet</div>
+              <div style="font-size: 0.8rem; color: var(--muted);">Medical Expenses</div>
+            </div>
+            <div style="background: white; padding: 20px; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.08);">
+              <div style="font-size: 2rem; font-weight: 700; color: #FF5722;">15-30%</div>
+              <div style="font-weight: 600; margin: 8px 0;">Disability</div>
+              <div style="font-size: 0.8rem; color: var(--muted);">ADL Protection</div>
+            </div>
+          </div>
+          <p style="text-align: center; margin-top: 20px; font-size: 0.9rem; color: var(--muted);">
+            <strong>You control the allocation!</strong> Customize how your premium is distributed based on your needs and risk tolerance.
+          </p>
+        </div>
+        
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:32px; margin:32px 0; text-align:left;">
+          <div>
+            <h4 style="color:var(--brand); margin:0 0 16px 0; display: flex; align-items: center; gap: 8px;">
+              <span style="font-size: 1.5rem;">🛡️</span> Disability Hedge Coverage
+            </h4>
+            <ul class="feature-list">
+              <li><strong>✓ ADL-Based Trigger:</strong> Benefits activate when unable to perform 3+ ADLs</li>
+              <li><strong>✓ Global Coverage:</strong> Protected anywhere in the world</li>
+              <li><strong>✓ Lifetime Benefits:</strong> Monthly income for life upon qualification</li>
+              <li><strong>✓ Lump Sum Option:</strong> One-time payout up to full coverage</li>
+              <li><strong>✓ No Waiting Period:</strong> Coverage active from day one</li>
+            </ul>
+          </div>
           
-          <div style="display:grid; grid-template-columns:1fr 1fr; gap:32px; margin:32px 0; text-align:left;">
-            <div>
-              <h4 style="color:var(--brand); margin:0 0 16px 0;">🏥 Severe Disability Coverage</h4>
-              <ul class="feature-list">
-                <li><strong>✓ ADL-Based Criteria:</strong> Coverage triggers when unable to perform 3+ Activities of Daily Living (ADL)</li>
-                <li><strong>✓ Permanent Disability:</strong> Protection for lifelong severe impairments</li>
-                <li><strong>✓ Global Coverage:</strong> Valid worldwide, no geographic restrictions</li>
-                <li><strong>✓ Comprehensive ADLs:</strong> Bathing, dressing, eating, toileting, transferring, continence</li>
-                <li><strong>✓ Monthly Benefits:</strong> Lifetime income replacement upon qualification</li>
-                <li><strong>✓ Lump Sum Option:</strong> One-time payment available up to full coverage amount</li>
-              </ul>
-            </div>
-            
-            <div>
-              <h4 style="color:var(--brand); margin:0 0 16px 0;">📈 Investment Component</h4>
-              <ul class="feature-list">
-                <li><strong>✓ 75% Risk Allocation:</strong> Professional portfolio management for growth</li>
-                <li><strong>✓ 25% Savings Allocation:</strong> Guaranteed returns with capital protection</li>
-                <li><strong>✓ Dual Benefits:</strong> Protection + wealth accumulation in one contract</li>
-                <li><strong>✓ Tax Advantages:</strong> Investment growth within insurance wrapper</li>
-                <li><strong>✓ Liquidity Options:</strong> Partial withdrawals available after vesting</li>
-                <li><strong>✓ Estate Planning:</strong> Beneficiary designation with bypass provisions</li>
-              </ul>
-            </div>
+          <div>
+            <h4 style="color:var(--brand); margin:0 0 16px 0; display: flex; align-items: center; gap: 8px;">
+              <span style="font-size: 1.5rem;">🤖</span> AI Investment Bot
+            </h4>
+            <ul class="feature-list">
+              <li><strong>✓ Personal AI Bot:</strong> Customized algorithmic trading strategy</li>
+              <li><strong>✓ Multi-Asset:</strong> Stocks, bonds, crypto, commodities</li>
+              <li><strong>✓ Risk-Adjusted:</strong> AI optimizes for your risk profile</li>
+              <li><strong>✓ Real-Time:</strong> 24/7 market monitoring</li>
+              <li><strong>✓ Transparent:</strong> Full visibility into all transactions</li>
+            </ul>
           </div>
+        </div>
 
-          <div style="background:var(--bg); padding:24px; border-radius:8px; margin:24px 0;">
-            <h4 style="color:var(--brand); margin:0 0 16px 0;">📊 Global Statistics & Why This Matters</h4>
-            <div style="display:grid; grid-template-columns:repeat(3, 1fr); gap:20px; margin-bottom:16px;">
-              <div style="text-align:center;">
-                <div style="font-size:2rem; font-weight:700; color:var(--brand);">1 in 4</div>
-                <div style="font-size:0.9rem; color:var(--muted);">Adults will experience severe disability before retirement</div>
-              </div>
-              <div style="text-align:center;">
-                <div style="font-size:2rem; font-weight:700; color:var(--brand);">15%</div>
-                <div style="font-size:0.9rem; color:var(--muted);">Global population lives with some form of disability (WHO)</div>
-              </div>
-              <div style="text-align:center;">
-                <div style="font-size:2rem; font-weight:700; color:var(--brand);">$70K</div>
-                <div style="font-size:0.9rem; color:var(--muted);">Average annual cost of severe disability care (US)</div>
-              </div>
+        <div style="background:var(--bg); padding:24px; border-radius:12px; margin:24px 0;">
+          <h4 style="color:var(--brand); margin:0 0 16px 0;">📊 Why PHINS is Different</h4>
+          <div style="display:grid; grid-template-columns:repeat(4, 1fr); gap:20px; margin-bottom:16px;">
+            <div style="text-align:center;">
+              <div style="font-size:2rem; font-weight:700; color:var(--brand);">1 in 4</div>
+              <div style="font-size:0.85rem; color:var(--muted);">Will experience disability before retirement</div>
             </div>
-            <p style="margin:16px 0 0 0; font-size:0.95rem; color:var(--muted); line-height:1.6;">
-              <strong>Key Facts:</strong> According to the World Health Organization, over 1 billion people (15% of global population) experience some form of disability, with severe disabilities affecting approximately 190 million adults worldwide. The Social Security Administration reports that a 20-year-old worker has a 1-in-4 chance of becoming disabled before reaching retirement age. The inability to perform 3 or more ADLs represents severe functional impairment requiring substantial ongoing care, with lifetime costs often exceeding $1-3 million. Traditional insurance rarely covers long-term severe disability adequately, creating a critical protection gap that PHINS addresses while simultaneously building wealth for your future.
-            </p>
+            <div style="text-align:center;">
+              <div style="font-size:2rem; font-weight:700; color:#4CAF50;">12%+</div>
+              <div style="font-size:0.85rem; color:var(--muted);">Average AI bot returns (risk-adjusted)</div>
+            </div>
+            <div style="text-align:center;">
+              <div style="font-size:2rem; font-weight:700; color:#9C27B0;">$0</div>
+              <div style="font-size:0.85rem; color:var(--muted);">Out-of-pocket with Health Wallet</div>
+            </div>
+            <div style="text-align:center;">
+              <div style="font-size:2rem; font-weight:700; color:#FF5722;">100%</div>
+              <div style="font-size:0.85rem; color:var(--muted);">Ledger-backed transactions</div>
+            </div>
           </div>
+        </div>
 
-          <div style="text-align:center; margin-top:32px;">
-            <a href="#quote" class="btn btn-primary">📋 Get Your Free Quote</a>
-          </div>
+        <div style="text-align:center; margin-top:32px;">
+          <a href="/apply.html" class="btn btn-primary" style="font-size: 1.2rem; padding: 18px 48px; background: linear-gradient(135deg, #4CAF50, #2E7D32);">🚀 Start Your PHINS Application</a>
+          <p style="margin-top: 12px; color: var(--muted); font-size: 0.9rem;">5-minute application • Instant AI quote • No commitment</p>
         </div>
       </div>
     </div>

@@ -4625,16 +4625,66 @@ For claims or questions, please contact:
                 health_wallet_enabled = health_wallet_info.get('enabled', False)
                 monthly_deposit = health_wallet_info.get('monthly_deposit', 0)
                 
+                # PHINS Unified Contract - Premium Allocation
+                premium_allocation = data.get('premium_allocation', {})
+                savings_pct = premium_allocation.get('savings_pct', 25)
+                investment_pct = premium_allocation.get('investment_pct', 35)
+                health_wallet_pct = premium_allocation.get('health_wallet_pct', 15)
+                disability_pct = premium_allocation.get('disability_pct', 25)
+                allocation_strategy = premium_allocation.get('strategy', 'balanced')
+                
+                # If PHINS unified, health wallet is always enabled
+                if data.get('type') == 'phins_unified':
+                    health_wallet_enabled = True
+                    monthly_deposit = premium_allocation.get('health_wallet_amount', 0)
+                
+                # PHINS Unified Contract - AI Bot Configuration
+                ai_bot_config = data.get('ai_bot_config', {})
+                
+                # PHINS Unified Contract - Projections
+                projections = data.get('projections', {})
+                contract_term = projections.get('term_years', data.get('contract_term', 15))
+                
                 # Initialize health wallet if enabled
                 if health_wallet_enabled:
                     HEALTH_WALLETS[customer_id] = {
                         'customer_id': customer_id,
                         'balance': 0,  # Start with zero, will deposit after approval
                         'monthly_deposit': monthly_deposit,
+                        'allocation_pct': health_wallet_pct,
                         'transactions': [],
                         'created_at': datetime.now().isoformat(),
                         'status': 'pending_activation'
                     }
+                
+                # Initialize investment account for PHINS unified
+                if data.get('type') == 'phins_unified' and investment_pct > 0:
+                    INVESTMENT_ACCOUNTS[customer_id] = {
+                        'customer_id': customer_id,
+                        'balance': 0,
+                        'savings_balance': 0,
+                        'investment_balance': 0,
+                        'allocation_pct': {
+                            'savings': savings_pct,
+                            'investment': investment_pct
+                        },
+                        'ai_bot_config': ai_bot_config,
+                        'deposits': [],
+                        'created_at': datetime.now().isoformat(),
+                        'status': 'pending_activation'
+                    }
+                
+                # Update customer allocations
+                CUSTOMER_ALLOCATIONS[customer_id] = {
+                    'savings_pct': savings_pct,
+                    'investment_pct': investment_pct,
+                    'health_wallet_pct': health_wallet_pct,
+                    'disability_pct': disability_pct,
+                    'strategy': allocation_strategy,
+                    'contract_term': contract_term,
+                    'ai_bot_config': ai_bot_config,
+                    'updated_at': datetime.now().isoformat()
+                }
                 
                 UNDERWRITING_APPLICATIONS[uw_id] = {
                     'id': uw_id,
@@ -4644,6 +4694,7 @@ For claims or questions, please contact:
                     'customer_email': customer_email,  # Include email for reference
                     'policy_type': data.get('type', 'life'),  # Include policy type
                     'coverage_amount': data.get('coverage_amount', 100000),  # Include coverage amount
+                    'contract_term': contract_term,  # PHINS contract term
                     'age': data.get('age', 0),  # Include age
                     'status': 'pending',
                     'risk_score': data.get('risk_score', 'medium'),  # Use risk_score (matches dashboard)
@@ -4652,6 +4703,24 @@ For claims or questions, please contact:
                     'medical_exam_required': data.get('medical_exam_required', False),
                     'submitted_date': datetime.now().isoformat(),
                     'created_date': datetime.now().isoformat(),
+                    # PHINS Unified Contract - Premium Allocation
+                    'premium_allocation': {
+                        'strategy': allocation_strategy,
+                        'savings_pct': savings_pct,
+                        'investment_pct': investment_pct,
+                        'health_wallet_pct': health_wallet_pct,
+                        'disability_pct': disability_pct,
+                        'monthly_amounts': {
+                            'savings': premium_allocation.get('savings_amount', 0),
+                            'investment': premium_allocation.get('investment_amount', 0),
+                            'health_wallet': premium_allocation.get('health_wallet_amount', 0),
+                            'disability': premium_allocation.get('disability_amount', 0)
+                        }
+                    },
+                    # PHINS AI Bot Configuration
+                    'ai_bot_config': ai_bot_config,
+                    # PHINS Projections
+                    'projections': projections,
                     # Payment and billing info (stored securely)
                     'payment_setup': {
                         'card_last4': card_last4,
@@ -4665,7 +4734,8 @@ For claims or questions, please contact:
                     },
                     'health_wallet': {
                         'enabled': health_wallet_enabled,
-                        'monthly_deposit': monthly_deposit
+                        'monthly_deposit': monthly_deposit,
+                        'allocation_pct': health_wallet_pct
                     }
                 }
                 
@@ -4678,14 +4748,27 @@ For claims or questions, please contact:
                     'customer_id': customer_id,
                     'type': data.get('type', 'life'),
                     'coverage_amount': data.get('coverage_amount', 100000),
+                    'contract_term': contract_term,  # PHINS contract term in years
                     'annual_premium': premium_data['annual'],
                     'monthly_premium': premium_data['monthly'],
                     'status': 'pending_underwriting',
                     'underwriting_id': uw_id,
                     'risk_score': data.get('risk_score', 'medium'),
                     'start_date': data.get('start_date', datetime.now().isoformat()),
-                    'end_date': data.get('end_date', (datetime.now() + timedelta(days=365)).isoformat()),
+                    'end_date': data.get('end_date', (datetime.now() + timedelta(days=365 * contract_term)).isoformat()),
                     'created_date': datetime.now().isoformat(),
+                    # PHINS Unified Contract - Premium Allocation
+                    'premium_allocation': {
+                        'strategy': allocation_strategy,
+                        'savings_pct': savings_pct,
+                        'investment_pct': investment_pct,
+                        'health_wallet_pct': health_wallet_pct,
+                        'disability_pct': disability_pct
+                    },
+                    # PHINS AI Bot Configuration
+                    'ai_bot_config': ai_bot_config,
+                    # PHINS Projections
+                    'projections': projections,
                     # Billing configuration (from application Step 4)
                     'billing': {
                         'frequency': billing_frequency,
@@ -4699,9 +4782,31 @@ For claims or questions, please contact:
                     },
                     'health_wallet': {
                         'enabled': health_wallet_enabled,
-                        'monthly_deposit': monthly_deposit
+                        'monthly_deposit': monthly_deposit,
+                        'allocation_pct': health_wallet_pct
                     }
                 }
+                
+                # Record the contract creation in the transaction ledger
+                if data.get('type') == 'phins_unified':
+                    record_transaction(
+                        customer_id=customer_id,
+                        tx_type='contract_creation',
+                        amount=premium_data['annual'],
+                        description=f'PHINS Unified Contract Created - Coverage: ${coverage_amount:,.0f}',
+                        metadata={
+                            'policy_id': policy_id,
+                            'contract_term': contract_term,
+                            'premium_allocation': {
+                                'savings': savings_pct,
+                                'investment': investment_pct,
+                                'health_wallet': health_wallet_pct,
+                                'disability': disability_pct
+                            },
+                            'ai_bot_enabled': bool(ai_bot_config),
+                            'projections': projections
+                        }
+                    )
                 
                 POLICIES[policy_id] = policy
                 if audit:
