@@ -5344,7 +5344,7 @@ For claims or questions, please contact:
                     }
                 )
                 claim['nft_token_id'] = claim_tx.get('nft_token_id')
-                claim['ledger_tx_id'] = claim_tx.get('tx_id')
+                claim['ledger_tx_id'] = claim_tx.get('id')  # Fixed: use 'id' not 'tx_id'
                 
                 if audit:
                     actor = session.get('username') if session else 'system'
@@ -6109,7 +6109,7 @@ For claims or questions, please contact:
                         }
                     )
                     transaction['nft_token_id'] = ledger_tx.get('nft_token_id')
-                    transaction['ledger_tx_id'] = ledger_tx.get('tx_id')
+                    transaction['ledger_tx_id'] = ledger_tx.get('id')  # Fixed: use 'id' not 'tx_id'
                     
                     self._set_json_headers()
                     self.wfile.write(json.dumps({
@@ -6199,7 +6199,7 @@ For claims or questions, please contact:
                         'nft_token_id': ledger_tx.get('nft_token_id'),
                         'transaction_hash': NFT_LEDGER.get(ledger_tx.get('nft_token_id'), {}).get('transaction_hash', ''),
                         'verification_hash': NFT_LEDGER.get(ledger_tx.get('nft_token_id'), {}).get('verification_hash', ''),
-                        'ledger_tx_id': ledger_tx.get('tx_id')
+                        'ledger_tx_id': ledger_tx.get('id')  # Fixed: use 'id' not 'tx_id'
                     }
                     MEDICAL_PURCHASES[purchase_id] = purchase
                     
@@ -6215,7 +6215,7 @@ For claims or questions, please contact:
                         'timestamp': datetime.now().isoformat(),
                         'balance_after': wallet['balance'],
                         'nft_token_id': ledger_tx.get('nft_token_id'),
-                        'ledger_tx_id': ledger_tx.get('tx_id')
+                        'ledger_tx_id': ledger_tx.get('id')  # Fixed: use 'id' not 'tx_id'
                     }
                     wallet['transactions'].append(transaction)
                     
