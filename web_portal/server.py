@@ -275,6 +275,18 @@ except ImportError as e:
     portfolio_enabled = False
     print(f"Warning: Investment Portfolio service not available: {e}")
 
+# Algo Trading Service for automated trading strategies
+algo_trading_service = None
+algo_trading_enabled = False
+try:
+    from services.algo_trading_service import get_algo_trading_service, TradingStrategy
+    if portfolio_service:
+        algo_trading_service = get_algo_trading_service(portfolio_service)
+        algo_trading_enabled = True
+        print("✓ Algo Trading service enabled (automated strategies, signals, bot trading)")
+except ImportError as e:
+    print(f"Warning: Algo Trading service not available: {e}")
+
 # Initialize pipeline service with data stores
 def _init_pipeline():
     global pipeline_service
@@ -3017,6 +3029,125 @@ For claims or questions, please contact:
             return
         
         # ========== END SAVINGS & INVESTMENT PORTFOLIO API ==========
+        
+        # ========== ALGO TRADING GET API ==========
+        # Get all trading bots for an account
+        if path == '/api/algo/bots':
+            if not algo_trading_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Algo trading service unavailable'}).encode('utf-8'))
+                return
+            
+            account_id = qs.get('account_id', [''])[0]
+            
+            bots = []
+            for bot in algo_trading_service.bots.values():
+                if not account_id or bot.account_id == account_id:
+                    from dataclasses import asdict
+                    bot_data = asdict(bot)
+                    bot_data['win_rate'] = bot.win_rate
+                    bots.append(bot_data)
+            
+            self._set_json_headers()
+            self.wfile.write(json.dumps({'bots': bots}).encode('utf-8'))
+            return
+        
+        # Get bot performance
+        if path == '/api/algo/bots/performance':
+            if not algo_trading_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Algo trading service unavailable'}).encode('utf-8'))
+                return
+            
+            bot_id = qs.get('bot_id', [''])[0]
+            if not bot_id:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'bot_id required'}).encode('utf-8'))
+                return
+            
+            performance = algo_trading_service.get_bot_performance(bot_id)
+            self._set_json_headers()
+            self.wfile.write(json.dumps(performance).encode('utf-8'))
+            return
+        
+        # Get trading signals
+        if path == '/api/algo/signals':
+            if not algo_trading_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Algo trading service unavailable'}).encode('utf-8'))
+                return
+            
+            symbol = qs.get('symbol', [''])[0]
+            limit = int(qs.get('limit', ['50'])[0])
+            
+            signals = algo_trading_service.get_all_signals(symbol if symbol else None, limit)
+            self._set_json_headers()
+            self.wfile.write(json.dumps({'signals': signals}).encode('utf-8'))
+            return
+        
+        # Get order history
+        if path == '/api/algo/orders':
+            if not algo_trading_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Algo trading service unavailable'}).encode('utf-8'))
+                return
+            
+            account_id = qs.get('account_id', [''])[0]
+            limit = int(qs.get('limit', ['50'])[0])
+            
+            orders = algo_trading_service.get_order_history(account_id if account_id else None, limit)
+            self._set_json_headers()
+            self.wfile.write(json.dumps({'orders': orders}).encode('utf-8'))
+            return
+        
+        # Get technical indicators for a symbol
+        if path == '/api/algo/indicators':
+            if not algo_trading_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Algo trading service unavailable'}).encode('utf-8'))
+                return
+            
+            symbol = qs.get('symbol', ['SPY'])[0]
+            indicators = algo_trading_service.calculate_indicators(symbol)
+            
+            from dataclasses import asdict
+            self._set_json_headers()
+            self.wfile.write(json.dumps(asdict(indicators)).encode('utf-8'))
+            return
+        
+        # Get market overview with signals
+        if path == '/api/algo/market-overview':
+            if not algo_trading_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Algo trading service unavailable'}).encode('utf-8'))
+                return
+            
+            overview = algo_trading_service.get_market_overview()
+            self._set_json_headers()
+            self.wfile.write(json.dumps(overview).encode('utf-8'))
+            return
+        
+        # Generate a signal for a specific symbol and strategy
+        if path == '/api/algo/generate-signal':
+            if not algo_trading_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Algo trading service unavailable'}).encode('utf-8'))
+                return
+            
+            symbol = qs.get('symbol', ['SPY'])[0]
+            strategy = qs.get('strategy', ['momentum'])[0]
+            
+            try:
+                signal = algo_trading_service.generate_signal(symbol, TradingStrategy(strategy))
+                from dataclasses import asdict
+                self._set_json_headers()
+                self.wfile.write(json.dumps({'signal': asdict(signal)}).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+        
+        # ========== END ALGO TRADING GET API ==========
 
         # Investment portfolio endpoint (legacy - redirect to new API)
         if path.startswith('/api/investment-portfolio'):
@@ -6442,6 +6573,201 @@ For claims or questions, please contact:
             return
         
         # ========== END SAVINGS & INVESTMENT PORTFOLIO API ==========
+        
+        # ========== ALGO TRADING API ==========
+        # Advanced algorithmic trading system with strategies, signals, and auto-execution
+        
+        # Create a new trading bot
+        if path == '/api/algo/bots/create':
+            if not algo_trading_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Algo trading service unavailable'}).encode('utf-8'))
+                return
+            
+            try:
+                data = json.loads(body)
+                account_id = data.get('account_id')
+                name = data.get('name', 'My Trading Bot')
+                strategy = data.get('strategy', 'momentum')
+                symbols = data.get('symbols', ['SPY', 'BTC'])
+                
+                if not account_id:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'account_id is required'}).encode('utf-8'))
+                    return
+                
+                bot = algo_trading_service.create_bot(
+                    account_id=account_id,
+                    name=name,
+                    strategy=TradingStrategy(strategy),
+                    symbols=symbols,
+                    max_position_size=float(data.get('max_position_size', 1000)),
+                    max_daily_trades=int(data.get('max_daily_trades', 10)),
+                    stop_loss_pct=float(data.get('stop_loss_pct', 5)),
+                    take_profit_pct=float(data.get('take_profit_pct', 10)),
+                    dca_interval_hours=int(data.get('dca_interval_hours', 24)),
+                    dca_amount=float(data.get('dca_amount', 100))
+                )
+                
+                self._set_json_headers(201)
+                from dataclasses import asdict
+                self.wfile.write(json.dumps({
+                    'success': True,
+                    'bot': asdict(bot)
+                }).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+        
+        # Start a trading bot
+        if path == '/api/algo/bots/start':
+            if not algo_trading_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Algo trading service unavailable'}).encode('utf-8'))
+                return
+            
+            try:
+                data = json.loads(body)
+                bot_id = data.get('bot_id')
+                result = algo_trading_service.start_bot(bot_id)
+                self._set_json_headers()
+                self.wfile.write(json.dumps(result).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+        
+        # Stop a trading bot
+        if path == '/api/algo/bots/stop':
+            if not algo_trading_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Algo trading service unavailable'}).encode('utf-8'))
+                return
+            
+            try:
+                data = json.loads(body)
+                bot_id = data.get('bot_id')
+                result = algo_trading_service.stop_bot(bot_id)
+                self._set_json_headers()
+                self.wfile.write(json.dumps(result).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+        
+        # Delete a trading bot
+        if path == '/api/algo/bots/delete':
+            if not algo_trading_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Algo trading service unavailable'}).encode('utf-8'))
+                return
+            
+            try:
+                data = json.loads(body)
+                bot_id = data.get('bot_id')
+                if bot_id in algo_trading_service.bots:
+                    del algo_trading_service.bots[bot_id]
+                    self._set_json_headers()
+                    self.wfile.write(json.dumps({'success': True}).encode('utf-8'))
+                else:
+                    self._set_json_headers(404)
+                    self.wfile.write(json.dumps({'error': 'Bot not found'}).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+        
+        # Run a single bot trading cycle
+        if path == '/api/algo/bots/run-cycle':
+            if not algo_trading_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Algo trading service unavailable'}).encode('utf-8'))
+                return
+            
+            try:
+                data = json.loads(body)
+                bot_id = data.get('bot_id')
+                results = algo_trading_service.run_bot_cycle(bot_id)
+                self._set_json_headers()
+                self.wfile.write(json.dumps({
+                    'success': True,
+                    'bot_id': bot_id,
+                    'results': results
+                }).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+        
+        # Execute a quick trade
+        if path == '/api/algo/trade':
+            if not algo_trading_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Algo trading service unavailable'}).encode('utf-8'))
+                return
+            
+            try:
+                data = json.loads(body)
+                account_id = data.get('account_id')
+                symbol = data.get('symbol')
+                side = data.get('side')  # buy or sell
+                amount = float(data.get('amount', 100))
+                
+                if not all([account_id, symbol, side]):
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'account_id, symbol, and side are required'}).encode('utf-8'))
+                    return
+                
+                from services.algo_trading_service import OrderType
+                order = algo_trading_service.create_order(
+                    account_id=account_id,
+                    symbol=symbol,
+                    side=side,
+                    amount=amount,
+                    order_type=OrderType.MARKET,
+                    stop_loss_pct=float(data.get('stop_loss_pct', 5)),
+                    take_profit_pct=float(data.get('take_profit_pct', 10)),
+                    signal_id=data.get('signal_id')
+                )
+                
+                from dataclasses import asdict
+                self._set_json_headers()
+                self.wfile.write(json.dumps({
+                    'success': True,
+                    'order': asdict(order)
+                }).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+        
+        # Auto-rebalance portfolio
+        if path == '/api/algo/rebalance':
+            if not algo_trading_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Algo trading service unavailable'}).encode('utf-8'))
+                return
+            
+            try:
+                data = json.loads(body)
+                account_id = data.get('account_id')
+                tolerance_pct = float(data.get('tolerance_pct', 5.0))
+                
+                actions = algo_trading_service.auto_rebalance(account_id, tolerance_pct)
+                
+                self._set_json_headers()
+                self.wfile.write(json.dumps({
+                    'success': True,
+                    'account_id': account_id,
+                    'actions': actions
+                }).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+        
+        # ========== END ALGO TRADING API ==========
         
         # ========== END BILLING API ==========
         # Minimal billing endpoints (demo fallback when engine routes are not used)

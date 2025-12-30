@@ -1,0 +1,1362 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Algo Trading | PHINS</title>
+    <style>
+        :root {
+            --primary: #6366f1;
+            --primary-dark: #4f46e5;
+            --secondary: #8b5cf6;
+            --success: #10b981;
+            --danger: #ef4444;
+            --warning: #f59e0b;
+            --info: #0ea5e9;
+            --bg-dark: #0f172a;
+            --bg-card: #1e293b;
+            --bg-hover: #334155;
+            --text-primary: #f1f5f9;
+            --text-secondary: #94a3b8;
+            --border: #475569;
+        }
+        
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: var(--bg-dark);
+            color: var(--text-primary);
+            min-height: 100vh;
+        }
+        
+        /* Header */
+        .header {
+            background: linear-gradient(135deg, #1e1b4b 0%, #312e81 50%, #1e1b4b 100%);
+            padding: 1rem 2rem;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+        
+        .header-inner {
+            max-width: 1600px;
+            margin: 0 auto;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            text-decoration: none;
+            color: white;
+        }
+        
+        .logo-icon {
+            width: 44px;
+            height: 44px;
+            background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.5rem;
+        }
+        
+        .logo-text {
+            font-size: 1.5rem;
+            font-weight: 700;
+            background: linear-gradient(135deg, #fff 0%, #c7d2fe 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        
+        .nav {
+            display: flex;
+            gap: 0.5rem;
+        }
+        
+        .nav a {
+            padding: 0.5rem 1rem;
+            color: rgba(255,255,255,0.8);
+            text-decoration: none;
+            border-radius: 8px;
+            font-size: 0.9rem;
+            transition: all 0.2s;
+        }
+        
+        .nav a:hover { background: rgba(255,255,255,0.1); color: white; }
+        .nav a.active { background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%); color: white; }
+        
+        /* Main Content */
+        .main {
+            max-width: 1600px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+        
+        /* Page Title */
+        .page-title {
+            margin-bottom: 2rem;
+        }
+        
+        .page-title h1 {
+            font-size: 2rem;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            margin-bottom: 0.5rem;
+        }
+        
+        .page-title p {
+            color: var(--text-secondary);
+        }
+        
+        /* Stats Grid */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+            margin-bottom: 2rem;
+        }
+        
+        .stat-card {
+            background: var(--bg-card);
+            border-radius: 16px;
+            padding: 1.5rem;
+            border: 1px solid var(--border);
+        }
+        
+        .stat-card.highlight {
+            background: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%);
+            border: none;
+        }
+        
+        .stat-card.success {
+            background: linear-gradient(135deg, #059669 0%, #10b981 100%);
+            border: none;
+        }
+        
+        .stat-label {
+            font-size: 0.875rem;
+            color: var(--text-secondary);
+            margin-bottom: 0.5rem;
+        }
+        
+        .highlight .stat-label, .success .stat-label { color: rgba(255,255,255,0.8); }
+        
+        .stat-value {
+            font-size: 1.75rem;
+            font-weight: 700;
+        }
+        
+        .stat-change {
+            font-size: 0.875rem;
+            margin-top: 0.25rem;
+        }
+        
+        .stat-change.positive { color: var(--success); }
+        .stat-change.negative { color: var(--danger); }
+        
+        /* Grid Layout */
+        .dashboard-grid {
+            display: grid;
+            grid-template-columns: 2fr 1fr;
+            gap: 1.5rem;
+        }
+        
+        @media (max-width: 1200px) {
+            .dashboard-grid { grid-template-columns: 1fr; }
+        }
+        
+        /* Section */
+        .section {
+            background: var(--bg-card);
+            border-radius: 16px;
+            padding: 1.5rem;
+            border: 1px solid var(--border);
+            margin-bottom: 1.5rem;
+        }
+        
+        .section-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1.5rem;
+        }
+        
+        .section-title {
+            font-size: 1.25rem;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        
+        /* Buttons */
+        .btn {
+            padding: 0.75rem 1.5rem;
+            border-radius: 10px;
+            font-size: 0.875rem;
+            font-weight: 600;
+            cursor: pointer;
+            border: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        
+        .btn:hover { transform: translateY(-2px); }
+        
+        .btn-primary {
+            background: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%);
+            color: white;
+            box-shadow: 0 4px 15px rgba(99, 102, 241, 0.3);
+        }
+        
+        .btn-success {
+            background: linear-gradient(135deg, #059669 0%, #10b981 100%);
+            color: white;
+            box-shadow: 0 4px 15px rgba(16, 185, 129, 0.3);
+        }
+        
+        .btn-danger {
+            background: linear-gradient(135deg, #dc2626 0%, #ef4444 100%);
+            color: white;
+            box-shadow: 0 4px 15px rgba(239, 68, 68, 0.3);
+        }
+        
+        .btn-outline {
+            background: transparent;
+            border: 1px solid var(--border);
+            color: var(--text-secondary);
+        }
+        
+        .btn-outline:hover { background: var(--bg-hover); color: white; }
+        
+        .btn-small { padding: 0.5rem 1rem; font-size: 0.8rem; }
+        
+        /* Bot Cards */
+        .bot-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+            gap: 1rem;
+        }
+        
+        .bot-card {
+            background: var(--bg-hover);
+            border-radius: 12px;
+            padding: 1.25rem;
+            border: 1px solid var(--border);
+            transition: all 0.2s;
+        }
+        
+        .bot-card:hover {
+            border-color: var(--primary);
+            box-shadow: 0 4px 20px rgba(99, 102, 241, 0.15);
+        }
+        
+        .bot-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 1rem;
+        }
+        
+        .bot-name {
+            font-weight: 600;
+            font-size: 1.1rem;
+        }
+        
+        .bot-strategy {
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+            margin-top: 0.25rem;
+        }
+        
+        .bot-status {
+            padding: 0.25rem 0.75rem;
+            border-radius: 20px;
+            font-size: 0.75rem;
+            font-weight: 600;
+        }
+        
+        .bot-status.running {
+            background: rgba(16, 185, 129, 0.2);
+            color: #34d399;
+        }
+        
+        .bot-status.stopped {
+            background: rgba(239, 68, 68, 0.2);
+            color: #f87171;
+        }
+        
+        .bot-stats {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 0.75rem;
+            margin-bottom: 1rem;
+        }
+        
+        .bot-stat {
+            text-align: center;
+        }
+        
+        .bot-stat-value {
+            font-size: 1.1rem;
+            font-weight: 600;
+        }
+        
+        .bot-stat-label {
+            font-size: 0.7rem;
+            color: var(--text-secondary);
+        }
+        
+        .bot-symbols {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+            margin-bottom: 1rem;
+        }
+        
+        .symbol-badge {
+            padding: 0.25rem 0.5rem;
+            background: var(--bg-card);
+            border-radius: 6px;
+            font-size: 0.75rem;
+            font-weight: 500;
+        }
+        
+        .bot-actions {
+            display: flex;
+            gap: 0.5rem;
+        }
+        
+        /* Signals Table */
+        .signals-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        
+        .signals-table th {
+            text-align: left;
+            padding: 0.75rem;
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            color: var(--text-secondary);
+            border-bottom: 1px solid var(--border);
+        }
+        
+        .signals-table td {
+            padding: 1rem 0.75rem;
+            border-bottom: 1px solid var(--border);
+        }
+        
+        .signals-table tr:hover { background: var(--bg-hover); }
+        
+        .signal-badge {
+            padding: 0.25rem 0.75rem;
+            border-radius: 20px;
+            font-size: 0.75rem;
+            font-weight: 600;
+        }
+        
+        .signal-badge.strong_buy { background: rgba(16, 185, 129, 0.2); color: #34d399; }
+        .signal-badge.buy { background: rgba(16, 185, 129, 0.15); color: #6ee7b7; }
+        .signal-badge.hold { background: rgba(100, 116, 139, 0.2); color: #94a3b8; }
+        .signal-badge.sell { background: rgba(239, 68, 68, 0.15); color: #fca5a5; }
+        .signal-badge.strong_sell { background: rgba(239, 68, 68, 0.2); color: #f87171; }
+        
+        .confidence-bar {
+            width: 60px;
+            height: 6px;
+            background: var(--bg-card);
+            border-radius: 3px;
+            overflow: hidden;
+        }
+        
+        .confidence-fill {
+            height: 100%;
+            border-radius: 3px;
+            transition: width 0.3s;
+        }
+        
+        /* Market Overview */
+        .market-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+            gap: 0.75rem;
+        }
+        
+        .market-item {
+            background: var(--bg-hover);
+            border-radius: 10px;
+            padding: 1rem;
+            text-align: center;
+        }
+        
+        .market-symbol {
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+        }
+        
+        .market-price {
+            font-size: 1.1rem;
+            font-weight: 600;
+            margin-bottom: 0.25rem;
+        }
+        
+        .market-change {
+            font-size: 0.8rem;
+        }
+        
+        .market-change.positive { color: var(--success); }
+        .market-change.negative { color: var(--danger); }
+        
+        .market-signal {
+            margin-top: 0.5rem;
+            font-size: 0.7rem;
+            padding: 0.25rem 0.5rem;
+            border-radius: 12px;
+            display: inline-block;
+        }
+        
+        /* Technical Indicators */
+        .indicator-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 1rem;
+        }
+        
+        .indicator-card {
+            background: var(--bg-hover);
+            border-radius: 10px;
+            padding: 1rem;
+        }
+        
+        .indicator-name {
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+            margin-bottom: 0.5rem;
+        }
+        
+        .indicator-value {
+            font-size: 1.25rem;
+            font-weight: 600;
+        }
+        
+        .indicator-bar {
+            height: 8px;
+            background: var(--bg-card);
+            border-radius: 4px;
+            margin-top: 0.5rem;
+            overflow: hidden;
+        }
+        
+        .indicator-fill {
+            height: 100%;
+            border-radius: 4px;
+        }
+        
+        /* Form Elements */
+        .form-group {
+            margin-bottom: 1rem;
+        }
+        
+        .form-label {
+            display: block;
+            font-size: 0.875rem;
+            color: var(--text-secondary);
+            margin-bottom: 0.5rem;
+        }
+        
+        .form-input, .form-select {
+            width: 100%;
+            padding: 0.75rem 1rem;
+            background: var(--bg-hover);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            color: var(--text-primary);
+            font-size: 1rem;
+        }
+        
+        .form-input:focus, .form-select:focus {
+            outline: none;
+            border-color: var(--primary);
+        }
+        
+        /* Modal */
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.8);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .modal.active { display: flex; }
+        
+        .modal-content {
+            background: var(--bg-card);
+            border-radius: 16px;
+            padding: 2rem;
+            max-width: 500px;
+            width: 90%;
+            max-height: 90vh;
+            overflow-y: auto;
+        }
+        
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1.5rem;
+        }
+        
+        .modal-close {
+            background: none;
+            border: none;
+            color: var(--text-secondary);
+            font-size: 1.5rem;
+            cursor: pointer;
+        }
+        
+        /* Toast */
+        .toast-container {
+            position: fixed;
+            bottom: 2rem;
+            right: 2rem;
+            z-index: 1001;
+        }
+        
+        .toast {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 1rem 1.5rem;
+            margin-top: 0.5rem;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            animation: slideIn 0.3s ease;
+        }
+        
+        .toast.success { border-left: 4px solid var(--success); }
+        .toast.error { border-left: 4px solid var(--danger); }
+        .toast.info { border-left: 4px solid var(--info); }
+        
+        @keyframes slideIn {
+            from { transform: translateX(100%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+        
+        /* Order History */
+        .order-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0.75rem;
+            background: var(--bg-hover);
+            border-radius: 8px;
+            margin-bottom: 0.5rem;
+        }
+        
+        .order-info {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+        
+        .order-side {
+            width: 36px;
+            height: 36px;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.2rem;
+        }
+        
+        .order-side.buy { background: rgba(16, 185, 129, 0.2); }
+        .order-side.sell { background: rgba(239, 68, 68, 0.2); }
+        
+        .order-symbol { font-weight: 600; }
+        .order-details { font-size: 0.8rem; color: var(--text-secondary); }
+        
+        .order-pnl { font-weight: 600; }
+        .order-pnl.positive { color: var(--success); }
+        .order-pnl.negative { color: var(--danger); }
+        
+        /* Responsive */
+        @media (max-width: 768px) {
+            .header { padding: 1rem; }
+            .main { padding: 1rem; }
+            .stats-grid { grid-template-columns: repeat(2, 1fr); }
+            .nav { display: none; }
+        }
+    </style>
+</head>
+<body>
+    <header class="header">
+        <div class="header-inner">
+            <a href="/dashboard.html" class="logo">
+                <div class="logo-icon">🤖</div>
+                <span class="logo-text">PHINS Algo Trading</span>
+            </a>
+            <nav class="nav">
+                <a href="/dashboard.html">Dashboard</a>
+                <a href="/savings-portfolio.html">📈 Portfolio</a>
+                <a href="/algo-trading.html" class="active">🤖 Algo Trading</a>
+                <a href="/login.html" style="background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);">Logout</a>
+            </nav>
+        </div>
+    </header>
+
+    <main class="main">
+        <div class="page-title">
+            <h1>🤖 Algorithmic Trading System</h1>
+            <p>Automated trading strategies with AI-powered signals and risk management</p>
+        </div>
+
+        <!-- Performance Stats -->
+        <div class="stats-grid">
+            <div class="stat-card highlight">
+                <div class="stat-label">💰 Total P&L</div>
+                <div class="stat-value" id="totalPnl">$0.00</div>
+                <div class="stat-change positive" id="pnlChange">+0.00% today</div>
+            </div>
+            <div class="stat-card success">
+                <div class="stat-label">📊 Win Rate</div>
+                <div class="stat-value" id="winRate">0%</div>
+                <div class="stat-change" id="winRateChange">0/0 trades</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">🤖 Active Bots</div>
+                <div class="stat-value" id="activeBots">0</div>
+                <div class="stat-change" id="botsChange">0 signals today</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">📈 Sharpe Ratio</div>
+                <div class="stat-value" id="sharpeRatio">0.00</div>
+                <div class="stat-change">Risk-adjusted return</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">📉 Max Drawdown</div>
+                <div class="stat-value" id="maxDrawdown">0%</div>
+                <div class="stat-change">Peak to trough</div>
+            </div>
+        </div>
+
+        <div class="dashboard-grid">
+            <div class="main-column">
+                <!-- Trading Bots -->
+                <div class="section">
+                    <div class="section-header">
+                        <h2 class="section-title">🤖 Trading Bots</h2>
+                        <button class="btn btn-primary" onclick="showCreateBotModal()">
+                            <span>➕</span> Create Bot
+                        </button>
+                    </div>
+                    <div class="bot-grid" id="botGrid">
+                        <!-- Populated by JS -->
+                    </div>
+                </div>
+
+                <!-- Active Signals -->
+                <div class="section">
+                    <div class="section-header">
+                        <h2 class="section-title">📡 Live Trading Signals</h2>
+                        <button class="btn btn-outline btn-small" onclick="refreshSignals()">⟳ Refresh</button>
+                    </div>
+                    <table class="signals-table">
+                        <thead>
+                            <tr>
+                                <th>Symbol</th>
+                                <th>Signal</th>
+                                <th>Strategy</th>
+                                <th>Confidence</th>
+                                <th>Target</th>
+                                <th>Stop Loss</th>
+                                <th>Action</th>
+                            </tr>
+                        </thead>
+                        <tbody id="signalsTable">
+                            <!-- Populated by JS -->
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Order History -->
+                <div class="section">
+                    <div class="section-header">
+                        <h2 class="section-title">📜 Recent Orders</h2>
+                    </div>
+                    <div id="orderHistory">
+                        <!-- Populated by JS -->
+                    </div>
+                </div>
+            </div>
+
+            <div class="sidebar">
+                <!-- Market Overview -->
+                <div class="section">
+                    <div class="section-header">
+                        <h2 class="section-title">📊 Market Overview</h2>
+                    </div>
+                    <div class="market-grid" id="marketGrid">
+                        <!-- Populated by JS -->
+                    </div>
+                </div>
+
+                <!-- Technical Indicators -->
+                <div class="section">
+                    <div class="section-header">
+                        <h2 class="section-title">📉 Indicators</h2>
+                        <select class="form-select" style="width: auto;" id="indicatorSymbol" onchange="loadIndicators()">
+                            <option value="SPY">SPY</option>
+                            <option value="QQQ">QQQ</option>
+                            <option value="BTC">BTC</option>
+                            <option value="ETH">ETH</option>
+                        </select>
+                    </div>
+                    <div class="indicator-grid" id="indicatorGrid">
+                        <!-- Populated by JS -->
+                    </div>
+                </div>
+
+                <!-- Quick Trade -->
+                <div class="section">
+                    <div class="section-header">
+                        <h2 class="section-title">⚡ Quick Trade</h2>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Symbol</label>
+                        <select class="form-select" id="quickTradeSymbol">
+                            <option value="SPY">SPY - S&P 500</option>
+                            <option value="QQQ">QQQ - NASDAQ</option>
+                            <option value="BTC">BTC - Bitcoin</option>
+                            <option value="ETH">ETH - Ethereum</option>
+                            <option value="GLD">GLD - Gold</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Amount ($)</label>
+                        <input type="number" class="form-input" id="quickTradeAmount" placeholder="100" min="10">
+                    </div>
+                    <div style="display: flex; gap: 0.5rem;">
+                        <button class="btn btn-success" style="flex: 1;" onclick="quickTrade('buy')">📈 Buy</button>
+                        <button class="btn btn-danger" style="flex: 1;" onclick="quickTrade('sell')">📉 Sell</button>
+                    </div>
+                </div>
+
+                <!-- Auto Rebalance -->
+                <div class="section">
+                    <div class="section-header">
+                        <h2 class="section-title">⚖️ Auto Rebalance</h2>
+                    </div>
+                    <p style="color: var(--text-secondary); font-size: 0.875rem; margin-bottom: 1rem;">
+                        Automatically rebalance your portfolio to target allocation.
+                    </p>
+                    <button class="btn btn-primary" style="width: 100%;" onclick="autoRebalance()">
+                        🔄 Rebalance Now
+                    </button>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Create Bot Modal -->
+    <div class="modal" id="createBotModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>🤖 Create Trading Bot</h2>
+                <button class="modal-close" onclick="hideCreateBotModal()">×</button>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Bot Name</label>
+                <input type="text" class="form-input" id="botName" placeholder="My Trading Bot">
+            </div>
+            <div class="form-group">
+                <label class="form-label">Strategy</label>
+                <select class="form-select" id="botStrategy">
+                    <option value="momentum">📈 Momentum</option>
+                    <option value="mean_reversion">🔄 Mean Reversion</option>
+                    <option value="trend_following">📊 Trend Following</option>
+                    <option value="rsi_strategy">📉 RSI Strategy</option>
+                    <option value="macd_crossover">📈 MACD Crossover</option>
+                    <option value="dollar_cost_averaging">💰 DCA (Dollar Cost Averaging)</option>
+                    <option value="breakout">🚀 Breakout</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Trading Symbols</label>
+                <select class="form-select" id="botSymbols" multiple style="height: 120px;">
+                    <option value="SPY" selected>SPY - S&P 500</option>
+                    <option value="QQQ">QQQ - NASDAQ</option>
+                    <option value="BTC" selected>BTC - Bitcoin</option>
+                    <option value="ETH">ETH - Ethereum</option>
+                    <option value="GLD">GLD - Gold</option>
+                    <option value="BND">BND - Bonds</option>
+                </select>
+                <small style="color: var(--text-secondary);">Hold Ctrl/Cmd to select multiple</small>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Max Position Size ($)</label>
+                <input type="number" class="form-input" id="botMaxPosition" value="1000" min="100">
+            </div>
+            <div class="form-group">
+                <label class="form-label">Stop Loss (%)</label>
+                <input type="number" class="form-input" id="botStopLoss" value="5" min="1" max="20">
+            </div>
+            <div class="form-group">
+                <label class="form-label">Take Profit (%)</label>
+                <input type="number" class="form-input" id="botTakeProfit" value="10" min="1" max="50">
+            </div>
+            <button class="btn btn-primary" style="width: 100%;" onclick="createBot()">
+                🚀 Launch Bot
+            </button>
+        </div>
+    </div>
+
+    <!-- Toast Container -->
+    <div class="toast-container" id="toastContainer"></div>
+
+    <script>
+        // Global state
+        let accountId = null;
+        let bots = [];
+        let signals = [];
+        let orders = [];
+        
+        // Initialize
+        document.addEventListener('DOMContentLoaded', async () => {
+            const session = JSON.parse(localStorage.getItem('session') || '{}');
+            const customerId = session.customer_id || 'CUST-ASAF-001';
+            
+            // Get account ID
+            try {
+                const response = await fetch(`/api/savings/accounts?customer_id=${customerId}`);
+                const data = await response.json();
+                if (data.accounts && data.accounts.length > 0) {
+                    accountId = data.accounts[0].account_id;
+                }
+            } catch (e) {
+                console.error('Failed to get account:', e);
+            }
+            
+            // Load all data
+            await Promise.all([
+                loadBots(),
+                loadSignals(),
+                loadOrders(),
+                loadMarketOverview(),
+                loadIndicators()
+            ]);
+            
+            // Refresh signals every 30 seconds
+            setInterval(loadSignals, 30000);
+            setInterval(loadMarketOverview, 30000);
+        });
+        
+        async function loadBots() {
+            try {
+                const response = await fetch(`/api/algo/bots?account_id=${accountId}`);
+                const data = await response.json();
+                bots = data.bots || [];
+                renderBots();
+                updateStats();
+            } catch (e) {
+                console.error('Failed to load bots:', e);
+                renderBots();
+            }
+        }
+        
+        function renderBots() {
+            const grid = document.getElementById('botGrid');
+            
+            if (bots.length === 0) {
+                grid.innerHTML = `
+                    <div style="grid-column: 1/-1; text-align: center; padding: 3rem; color: var(--text-secondary);">
+                        <div style="font-size: 3rem; margin-bottom: 1rem;">🤖</div>
+                        <p>No trading bots yet. Create your first bot to start automated trading!</p>
+                    </div>
+                `;
+                return;
+            }
+            
+            grid.innerHTML = bots.map(bot => `
+                <div class="bot-card">
+                    <div class="bot-header">
+                        <div>
+                            <div class="bot-name">${bot.name}</div>
+                            <div class="bot-strategy">${formatStrategy(bot.strategy)}</div>
+                        </div>
+                        <span class="bot-status ${bot.is_active ? 'running' : 'stopped'}">
+                            ${bot.is_active ? '● Running' : '○ Stopped'}
+                        </span>
+                    </div>
+                    <div class="bot-stats">
+                        <div class="bot-stat">
+                            <div class="bot-stat-value ${bot.total_pnl >= 0 ? 'positive' : 'negative'}" style="color: ${bot.total_pnl >= 0 ? 'var(--success)' : 'var(--danger)'}">
+                                ${bot.total_pnl >= 0 ? '+' : ''}$${bot.total_pnl.toFixed(2)}
+                            </div>
+                            <div class="bot-stat-label">P&L</div>
+                        </div>
+                        <div class="bot-stat">
+                            <div class="bot-stat-value">${bot.win_rate.toFixed(1)}%</div>
+                            <div class="bot-stat-label">Win Rate</div>
+                        </div>
+                        <div class="bot-stat">
+                            <div class="bot-stat-value">${bot.total_trades}</div>
+                            <div class="bot-stat-label">Trades</div>
+                        </div>
+                    </div>
+                    <div class="bot-symbols">
+                        ${bot.symbols.map(s => `<span class="symbol-badge">${s}</span>`).join('')}
+                    </div>
+                    <div class="bot-actions">
+                        ${bot.is_active 
+                            ? `<button class="btn btn-danger btn-small" onclick="stopBot('${bot.bot_id}')">⏹ Stop</button>`
+                            : `<button class="btn btn-success btn-small" onclick="startBot('${bot.bot_id}')">▶ Start</button>`
+                        }
+                        <button class="btn btn-outline btn-small" onclick="runBotCycle('${bot.bot_id}')">🔄 Run Cycle</button>
+                        <button class="btn btn-outline btn-small" onclick="deleteBot('${bot.bot_id}')">🗑</button>
+                    </div>
+                </div>
+            `).join('');
+        }
+        
+        function formatStrategy(strategy) {
+            const names = {
+                'momentum': '📈 Momentum',
+                'mean_reversion': '🔄 Mean Reversion',
+                'trend_following': '📊 Trend Following',
+                'rsi_strategy': '📉 RSI Strategy',
+                'macd_crossover': '📈 MACD Crossover',
+                'dollar_cost_averaging': '💰 DCA',
+                'breakout': '🚀 Breakout',
+                'grid_trading': '📊 Grid Trading'
+            };
+            return names[strategy] || strategy;
+        }
+        
+        async function loadSignals() {
+            try {
+                const response = await fetch('/api/algo/signals?limit=20');
+                const data = await response.json();
+                signals = data.signals || [];
+                renderSignals();
+            } catch (e) {
+                console.error('Failed to load signals:', e);
+            }
+        }
+        
+        function renderSignals() {
+            const table = document.getElementById('signalsTable');
+            
+            if (signals.length === 0) {
+                table.innerHTML = `
+                    <tr>
+                        <td colspan="7" style="text-align: center; color: var(--text-secondary); padding: 2rem;">
+                            No signals yet. Create a bot to generate trading signals.
+                        </td>
+                    </tr>
+                `;
+                return;
+            }
+            
+            table.innerHTML = signals.slice(0, 10).map(signal => {
+                const confidenceColor = signal.confidence >= 0.8 ? 'var(--success)' : signal.confidence >= 0.6 ? 'var(--warning)' : 'var(--text-secondary)';
+                
+                return `
+                    <tr>
+                        <td><strong>${signal.symbol}</strong></td>
+                        <td><span class="signal-badge ${signal.signal_type}">${signal.signal_type.replace('_', ' ').toUpperCase()}</span></td>
+                        <td>${formatStrategy(signal.strategy)}</td>
+                        <td>
+                            <div style="display: flex; align-items: center; gap: 0.5rem;">
+                                <div class="confidence-bar">
+                                    <div class="confidence-fill" style="width: ${signal.confidence * 100}%; background: ${confidenceColor};"></div>
+                                </div>
+                                <span>${(signal.confidence * 100).toFixed(0)}%</span>
+                            </div>
+                        </td>
+                        <td>$${signal.price_target.toFixed(2)}</td>
+                        <td>$${signal.stop_loss.toFixed(2)}</td>
+                        <td>
+                            <button class="btn btn-success btn-small" onclick="executeSignal('${signal.signal_id}', '${signal.symbol}', 'buy')">Execute</button>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+        }
+        
+        async function loadOrders() {
+            try {
+                const response = await fetch(`/api/algo/orders?account_id=${accountId}&limit=10`);
+                const data = await response.json();
+                orders = data.orders || [];
+                renderOrders();
+            } catch (e) {
+                console.error('Failed to load orders:', e);
+            }
+        }
+        
+        function renderOrders() {
+            const container = document.getElementById('orderHistory');
+            
+            if (orders.length === 0) {
+                container.innerHTML = `
+                    <div style="text-align: center; color: var(--text-secondary); padding: 2rem;">
+                        No orders yet
+                    </div>
+                `;
+                return;
+            }
+            
+            container.innerHTML = orders.map(order => `
+                <div class="order-item">
+                    <div class="order-info">
+                        <div class="order-side ${order.side}">${order.side === 'buy' ? '📈' : '📉'}</div>
+                        <div>
+                            <div class="order-symbol">${order.symbol}</div>
+                            <div class="order-details">${order.quantity.toFixed(4)} @ $${order.price.toFixed(2)}</div>
+                        </div>
+                    </div>
+                    <div class="order-pnl ${order.pnl >= 0 ? 'positive' : 'negative'}">
+                        ${order.pnl >= 0 ? '+' : ''}$${order.pnl.toFixed(2)}
+                    </div>
+                </div>
+            `).join('');
+        }
+        
+        async function loadMarketOverview() {
+            try {
+                const response = await fetch('/api/algo/market-overview');
+                const data = await response.json();
+                renderMarketOverview(data.assets || []);
+            } catch (e) {
+                console.error('Failed to load market overview:', e);
+            }
+        }
+        
+        function renderMarketOverview(assets) {
+            const grid = document.getElementById('marketGrid');
+            
+            grid.innerHTML = assets.map(asset => {
+                const isPositive = asset.change_24h >= 0;
+                const signalClass = asset.signal.includes('buy') ? 'success' : asset.signal.includes('sell') ? 'danger' : 'secondary';
+                
+                return `
+                    <div class="market-item">
+                        <div class="market-symbol">${asset.symbol}</div>
+                        <div class="market-price">$${formatNumber(asset.price)}</div>
+                        <div class="market-change ${isPositive ? 'positive' : 'negative'}">
+                            ${isPositive ? '▲' : '▼'} ${Math.abs(asset.change_24h).toFixed(2)}%
+                        </div>
+                        <div class="market-signal signal-badge ${asset.signal}">${asset.signal.replace('_', ' ')}</div>
+                    </div>
+                `;
+            }).join('');
+        }
+        
+        async function loadIndicators() {
+            const symbol = document.getElementById('indicatorSymbol').value;
+            
+            try {
+                const response = await fetch(`/api/algo/indicators?symbol=${symbol}`);
+                const data = await response.json();
+                renderIndicators(data);
+            } catch (e) {
+                console.error('Failed to load indicators:', e);
+            }
+        }
+        
+        function renderIndicators(data) {
+            const grid = document.getElementById('indicatorGrid');
+            
+            const rsiColor = data.rsi_14 < 30 ? 'var(--success)' : data.rsi_14 > 70 ? 'var(--danger)' : 'var(--warning)';
+            
+            grid.innerHTML = `
+                <div class="indicator-card">
+                    <div class="indicator-name">RSI (14)</div>
+                    <div class="indicator-value" style="color: ${rsiColor}">${data.rsi_14?.toFixed(1) || 50}</div>
+                    <div class="indicator-bar">
+                        <div class="indicator-fill" style="width: ${data.rsi_14 || 50}%; background: ${rsiColor};"></div>
+                    </div>
+                </div>
+                <div class="indicator-card">
+                    <div class="indicator-name">MACD</div>
+                    <div class="indicator-value" style="color: ${data.macd_histogram >= 0 ? 'var(--success)' : 'var(--danger)'}">
+                        ${data.macd_histogram?.toFixed(4) || 0}
+                    </div>
+                </div>
+                <div class="indicator-card">
+                    <div class="indicator-name">SMA 20</div>
+                    <div class="indicator-value">$${data.sma_20?.toFixed(2) || 0}</div>
+                </div>
+                <div class="indicator-card">
+                    <div class="indicator-name">SMA 50</div>
+                    <div class="indicator-value">$${data.sma_50?.toFixed(2) || 0}</div>
+                </div>
+                <div class="indicator-card">
+                    <div class="indicator-name">Volatility</div>
+                    <div class="indicator-value">${((data.volatility || 0) * 100).toFixed(1)}%</div>
+                </div>
+                <div class="indicator-card">
+                    <div class="indicator-name">24h Change</div>
+                    <div class="indicator-value" style="color: ${data.price_change_24h >= 0 ? 'var(--success)' : 'var(--danger)'}">
+                        ${data.price_change_24h >= 0 ? '+' : ''}${data.price_change_24h?.toFixed(2) || 0}%
+                    </div>
+                </div>
+            `;
+        }
+        
+        function updateStats() {
+            const totalPnl = bots.reduce((sum, b) => sum + (b.total_pnl || 0), 0);
+            const totalTrades = bots.reduce((sum, b) => sum + (b.total_trades || 0), 0);
+            const winningTrades = bots.reduce((sum, b) => sum + (b.winning_trades || 0), 0);
+            const winRate = totalTrades > 0 ? (winningTrades / totalTrades) * 100 : 0;
+            const activeBots = bots.filter(b => b.is_active).length;
+            
+            document.getElementById('totalPnl').textContent = `${totalPnl >= 0 ? '+' : ''}$${totalPnl.toFixed(2)}`;
+            document.getElementById('pnlChange').className = `stat-change ${totalPnl >= 0 ? 'positive' : 'negative'}`;
+            document.getElementById('winRate').textContent = `${winRate.toFixed(1)}%`;
+            document.getElementById('winRateChange').textContent = `${winningTrades}/${totalTrades} trades`;
+            document.getElementById('activeBots').textContent = activeBots;
+            document.getElementById('botsChange').textContent = `${signals.length} signals today`;
+        }
+        
+        // Bot Actions
+        function showCreateBotModal() {
+            document.getElementById('createBotModal').classList.add('active');
+        }
+        
+        function hideCreateBotModal() {
+            document.getElementById('createBotModal').classList.remove('active');
+        }
+        
+        async function createBot() {
+            const name = document.getElementById('botName').value || 'My Trading Bot';
+            const strategy = document.getElementById('botStrategy').value;
+            const symbolsSelect = document.getElementById('botSymbols');
+            const symbols = Array.from(symbolsSelect.selectedOptions).map(o => o.value);
+            const maxPosition = parseFloat(document.getElementById('botMaxPosition').value) || 1000;
+            const stopLoss = parseFloat(document.getElementById('botStopLoss').value) || 5;
+            const takeProfit = parseFloat(document.getElementById('botTakeProfit').value) || 10;
+            
+            try {
+                const response = await fetch('/api/algo/bots/create', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        account_id: accountId,
+                        name,
+                        strategy,
+                        symbols,
+                        max_position_size: maxPosition,
+                        stop_loss_pct: stopLoss,
+                        take_profit_pct: takeProfit
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    showToast(`Bot "${name}" created successfully!`, 'success');
+                    hideCreateBotModal();
+                    loadBots();
+                } else {
+                    showToast(data.error || 'Failed to create bot', 'error');
+                }
+            } catch (e) {
+                showToast('Failed to create bot', 'error');
+            }
+        }
+        
+        async function startBot(botId) {
+            try {
+                const response = await fetch('/api/algo/bots/start', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ bot_id: botId })
+                });
+                
+                const data = await response.json();
+                if (data.success) {
+                    showToast('Bot started', 'success');
+                    loadBots();
+                }
+            } catch (e) {
+                showToast('Failed to start bot', 'error');
+            }
+        }
+        
+        async function stopBot(botId) {
+            try {
+                const response = await fetch('/api/algo/bots/stop', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ bot_id: botId })
+                });
+                
+                const data = await response.json();
+                if (data.success) {
+                    showToast('Bot stopped', 'success');
+                    loadBots();
+                }
+            } catch (e) {
+                showToast('Failed to stop bot', 'error');
+            }
+        }
+        
+        async function runBotCycle(botId) {
+            try {
+                const response = await fetch('/api/algo/bots/run-cycle', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ bot_id: botId })
+                });
+                
+                const data = await response.json();
+                if (data.results && data.results.length > 0) {
+                    showToast(`Executed ${data.results.length} trade(s)`, 'success');
+                } else {
+                    showToast('No trades executed this cycle', 'info');
+                }
+                loadBots();
+                loadSignals();
+                loadOrders();
+            } catch (e) {
+                showToast('Failed to run bot cycle', 'error');
+            }
+        }
+        
+        async function deleteBot(botId) {
+            if (!confirm('Delete this bot?')) return;
+            
+            try {
+                const response = await fetch('/api/algo/bots/delete', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ bot_id: botId })
+                });
+                
+                const data = await response.json();
+                if (data.success) {
+                    showToast('Bot deleted', 'success');
+                    loadBots();
+                }
+            } catch (e) {
+                showToast('Failed to delete bot', 'error');
+            }
+        }
+        
+        async function quickTrade(side) {
+            const symbol = document.getElementById('quickTradeSymbol').value;
+            const amount = parseFloat(document.getElementById('quickTradeAmount').value) || 100;
+            
+            try {
+                const response = await fetch('/api/algo/trade', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        account_id: accountId,
+                        symbol,
+                        side,
+                        amount
+                    })
+                });
+                
+                const data = await response.json();
+                if (data.success) {
+                    showToast(`${side.toUpperCase()} order executed for ${symbol}`, 'success');
+                    loadOrders();
+                } else {
+                    showToast(data.error || 'Trade failed', 'error');
+                }
+            } catch (e) {
+                showToast('Trade failed', 'error');
+            }
+        }
+        
+        async function autoRebalance() {
+            try {
+                const response = await fetch('/api/algo/rebalance', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ account_id: accountId })
+                });
+                
+                const data = await response.json();
+                if (data.actions && data.actions.length > 0) {
+                    showToast(`Rebalancing: ${data.actions.length} action(s) suggested`, 'success');
+                } else {
+                    showToast('Portfolio is balanced!', 'info');
+                }
+            } catch (e) {
+                showToast('Rebalance failed', 'error');
+            }
+        }
+        
+        async function executeSignal(signalId, symbol, side) {
+            try {
+                const response = await fetch('/api/algo/trade', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        account_id: accountId,
+                        symbol,
+                        side,
+                        amount: 500,
+                        signal_id: signalId
+                    })
+                });
+                
+                const data = await response.json();
+                if (data.success) {
+                    showToast('Signal executed!', 'success');
+                    loadOrders();
+                } else {
+                    showToast(data.error || 'Execution failed', 'error');
+                }
+            } catch (e) {
+                showToast('Execution failed', 'error');
+            }
+        }
+        
+        function refreshSignals() {
+            loadSignals();
+            loadMarketOverview();
+            showToast('Signals refreshed', 'info');
+        }
+        
+        function formatNumber(num) {
+            if (num >= 1000) return (num / 1000).toFixed(2) + 'K';
+            return num.toFixed(2);
+        }
+        
+        function showToast(message, type = 'info') {
+            const container = document.getElementById('toastContainer');
+            const toast = document.createElement('div');
+            toast.className = `toast ${type}`;
+            toast.innerHTML = `
+                <span>${type === 'success' ? '✓' : type === 'error' ? '✗' : 'ℹ'}</span>
+                <span>${message}</span>
+            `;
+            container.appendChild(toast);
+            setTimeout(() => toast.remove(), 4000);
+        }
+    </script>
+</body>
+</html>
