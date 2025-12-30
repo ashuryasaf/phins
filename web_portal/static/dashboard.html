@@ -654,31 +654,42 @@
     </section>
 
     <!-- Purchase History Section (Medical Only) -->
-    <section id="purchase-history" class="section-content">
-      <h2>🧾 Recent Medical Purchases</h2>
-      <div class="table-card">
-        <table class="data-table">
-          <thead>
+    <section id="purchase-history" class="section-content" style="background: linear-gradient(135deg, #fff8e1 0%, #ffecb3 100%); border-radius: 16px; padding: 28px; margin-bottom: 32px; border: 1px solid rgba(255, 193, 7, 0.2);">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+        <div>
+          <h2 style="margin: 0; color: #f57c00;">🧾 Recent Medical Purchases</h2>
+          <p style="margin: 4px 0 0 0; color: #666; font-size: 0.9rem;">All purchases validated and stored on NFT & Transaction Ledgers</p>
+        </div>
+        <div id="purchase-validation-badge" style="background: linear-gradient(135deg, #4caf50 0%, #66bb6a 100%); color: white; padding: 8px 16px; border-radius: 20px; font-size: 0.85rem; font-weight: 600;">
+          ✓ Ledger Verified
+        </div>
+      </div>
+      
+      <div class="table-card" style="background: white; border-radius: 12px; overflow: hidden;">
+        <table class="data-table" style="margin: 0;">
+          <thead style="background: linear-gradient(135deg, #f57c00 0%, #ff9800 100%);">
             <tr>
-              <th>Date</th>
-              <th>Product/Service</th>
-              <th>Category</th>
-              <th>Provider</th>
-              <th>Amount</th>
-              <th>NFT Token</th>
-              <th>Status</th>
+              <th style="color: white;">Date</th>
+              <th style="color: white;">Product/Service</th>
+              <th style="color: white;">Category</th>
+              <th style="color: white;">Provider</th>
+              <th style="color: white;">Amount</th>
+              <th style="color: white;">NFT Token</th>
+              <th style="color: white;">Ledger</th>
+              <th style="color: white;">Status</th>
             </tr>
           </thead>
           <tbody id="purchase-history-table">
             <tr>
-              <td colspan="7" style="text-align: center; color: #666;">Loading purchase history...</td>
+              <td colspan="8" style="text-align: center; color: #666; padding: 40px;">Loading purchase history...</td>
             </tr>
           </tbody>
         </table>
       </div>
-      <div style="margin-top: 16px; display: flex; gap: 12px;">
-        <button onclick="refreshPurchases()" class="btn btn-outline" style="border-color: #1565c0; color: #1565c0;">🔄 Refresh</button>
-        <button onclick="exportPurchases()" class="btn btn-outline" style="border-color: #28a745; color: #28a745;">📥 Export CSV</button>
+      <div style="margin-top: 16px; display: flex; gap: 12px; flex-wrap: wrap;">
+        <button onclick="refreshPurchases()" class="btn" style="background: linear-gradient(135deg, #1565c0 0%, #1976d2 100%); color: white; border: none; padding: 10px 20px; border-radius: 8px; cursor: pointer; font-weight: 600;">🔄 Refresh</button>
+        <button onclick="validateAllPurchases()" class="btn" style="background: linear-gradient(135deg, #4caf50 0%, #66bb6a 100%); color: white; border: none; padding: 10px 20px; border-radius: 8px; cursor: pointer; font-weight: 600;">✓ Validate All on Ledgers</button>
+        <button onclick="exportPurchases()" class="btn" style="background: linear-gradient(135deg, #546e7a 0%, #78909c 100%); color: white; border: none; padding: 10px 20px; border-radius: 8px; cursor: pointer; font-weight: 600;">📥 Export CSV</button>
       </div>
     </section>
 
@@ -1996,13 +2007,17 @@
       }
     }
     
+    // Store purchases for validation
+    let medicalPurchases = [];
+    
     function renderPurchaseHistory(purchases) {
       const tbody = document.getElementById('purchase-history-table');
+      medicalPurchases = purchases || []; // Store for validation
       
       if (!purchases || purchases.length === 0) {
         tbody.innerHTML = `
           <tr>
-            <td colspan="7" style="text-align: center; color: #666; padding: 40px;">
+            <td colspan="8" style="text-align: center; color: #666; padding: 40px;">
               <div style="font-size: 2rem; margin-bottom: 8px;">🛒</div>
               No medical purchases yet. Use your Health Wallet to purchase medical products and services.
             </td>
@@ -2016,12 +2031,19 @@
         const time = new Date(p.timestamp).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
         const statusColor = p.status === 'completed' ? '#28a745' : p.status === 'pending' ? '#ffc107' : '#dc3545';
         const statusIcon = p.status === 'completed' ? '✅' : p.status === 'pending' ? '⏳' : '❌';
+        
+        // NFT badge with ledger link indicator
+        const hasNft = !!p.nft_token_id;
+        const hasLedger = !!p.ledger_tx_id;
+        const ledgerStatus = hasNft && hasLedger ? '✓ Verified' : hasNft ? '○ NFT Only' : '⚠ Pending';
+        const ledgerColor = hasNft && hasLedger ? '#2e7d32' : hasNft ? '#f57c00' : '#c62828';
+        
         const nftBadge = p.nft_token_id ? 
-          `<span style="background: linear-gradient(135deg, #1565c0 0%, #1976d2 100%); color: white; padding: 4px 8px; border-radius: 4px; font-size: 0.75rem; cursor: pointer;" onclick="showNFTDetails('${p.nft_token_id}')" title="Click to verify">${p.nft_token_id.substring(0, 12)}...</span>` :
-          '<span style="color: #999;">-</span>';
+          `<span style="background: linear-gradient(135deg, #1565c0 0%, #1976d2 100%); color: white; padding: 4px 8px; border-radius: 4px; font-size: 0.75rem; cursor: pointer;" onclick="validatePurchase('${p.id}')" title="Click to validate on all ledgers">${p.nft_token_id.substring(0, 12)}...</span>` :
+          '<span style="color: #999; cursor: pointer;" onclick="validatePurchase(\'' + p.id + '\')" title="Click to validate">⚠ Validate</span>';
         
         return `
-          <tr>
+          <tr data-purchase-id="${p.id}">
             <td>
               <div style="font-weight: 500;">${date}</div>
               <div style="font-size: 0.8rem; color: #666;">${time}</div>
@@ -2031,10 +2053,103 @@
             <td>${p.provider || '-'}</td>
             <td style="font-weight: 600; color: #dc3545;">-$${p.amount.toFixed(2)}</td>
             <td>${nftBadge}</td>
+            <td><span style="font-size: 0.75rem; color: ${ledgerColor};">${ledgerStatus}</span></td>
             <td><span style="color: ${statusColor};">${statusIcon} ${p.status.charAt(0).toUpperCase() + p.status.slice(1)}</span></td>
           </tr>
         `;
       }).join('');
+    }
+    
+    // Validate a single purchase on all ledgers
+    async function validatePurchase(purchaseId) {
+      const cid = customerId || sessionStorage.getItem('customer_id') || 'CUST001';
+      showNotification('🔄 Validating purchase on all ledgers...', 'info');
+      
+      try {
+        // Check NFT ledger
+        const nftResponse = await fetch(`/api/nft-ledger?customer_id=${cid}`);
+        const nftData = await nftResponse.json();
+        
+        // Check transaction ledger
+        const txResponse = await fetch('/api/unified-payment/history', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ customer_id: cid, limit: 100 })
+        });
+        const txData = await txResponse.json();
+        
+        // Find purchase in both ledgers
+        const purchase = medicalPurchases.find(p => p.id === purchaseId);
+        const nftRecord = nftData.ledger?.find(n => n.token_id === purchase?.nft_token_id);
+        const txRecord = txData.transactions?.find(t => t.id === purchase?.ledger_tx_id || t.metadata?.purchase_id === purchaseId);
+        
+        if (nftRecord && txRecord) {
+          showNotification(`✅ Purchase ${purchaseId} validated!\n⛓️ NFT: ${purchase.nft_token_id}\n📝 Ledger: ${txRecord.id}`, 'success');
+        } else if (nftRecord) {
+          showNotification(`⚠️ Purchase ${purchaseId} found in NFT ledger but missing from transaction ledger`, 'warning');
+        } else if (txRecord) {
+          showNotification(`⚠️ Purchase ${purchaseId} found in transaction ledger but missing NFT`, 'warning');
+        } else {
+          showNotification(`❌ Purchase ${purchaseId} not found in ledgers - may need re-sync`, 'error');
+        }
+      } catch (err) {
+        showNotification(`❌ Validation failed: ${err.message}`, 'error');
+      }
+    }
+    
+    // Validate all medical purchases
+    async function validateAllPurchases() {
+      if (!medicalPurchases || medicalPurchases.length === 0) {
+        showNotification('No purchases to validate', 'info');
+        return;
+      }
+      
+      showNotification(`🔄 Validating ${medicalPurchases.length} purchases...`, 'info');
+      
+      const cid = customerId || sessionStorage.getItem('customer_id') || 'CUST001';
+      
+      try {
+        // Get NFT and transaction ledgers
+        const [nftResponse, txResponse] = await Promise.all([
+          fetch(`/api/nft-ledger?customer_id=${cid}`),
+          fetch('/api/unified-payment/history', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ customer_id: cid, limit: 200 })
+          })
+        ]);
+        
+        const nftData = await nftResponse.json();
+        const txData = await txResponse.json();
+        
+        let validated = 0;
+        let nftOnly = 0;
+        let missing = 0;
+        
+        for (const purchase of medicalPurchases) {
+          const nftRecord = nftData.ledger?.find(n => n.token_id === purchase.nft_token_id);
+          const txRecord = txData.transactions?.find(t => 
+            t.id === purchase.ledger_tx_id || 
+            t.metadata?.purchase_id === purchase.id ||
+            (t.tx_type === 'medical_purchase' && Math.abs(t.amount - purchase.amount) < 0.01)
+          );
+          
+          if (nftRecord && txRecord) {
+            validated++;
+          } else if (nftRecord || txRecord) {
+            nftOnly++;
+          } else {
+            missing++;
+          }
+        }
+        
+        showNotification(`✅ Validation Complete!\n✓ Fully Validated: ${validated}\n○ Partial: ${nftOnly}\n⚠ Missing: ${missing}`, validated === medicalPurchases.length ? 'success' : 'warning');
+        
+        // Refresh purchase history to update UI
+        loadPurchaseHistory();
+      } catch (err) {
+        showNotification(`❌ Validation failed: ${err.message}`, 'error');
+      }
     }
     
     function refreshPurchases() {
@@ -2045,11 +2160,11 @@
     function exportPurchases() {
       const cid = customerId || sessionStorage.getItem('customer_id') || 'CUST001';
       // Create CSV from current data
-      const rows = [['Date', 'Product', 'Category', 'Provider', 'Amount', 'NFT Token', 'Status']];
+      const rows = [['Date', 'Product', 'Category', 'Provider', 'Amount', 'NFT Token', 'Ledger Status', 'Status']];
       const tbody = document.getElementById('purchase-history-table');
       tbody.querySelectorAll('tr').forEach(row => {
         const cells = row.querySelectorAll('td');
-        if (cells.length >= 7) {
+        if (cells.length >= 8) {
           rows.push([
             cells[0].textContent.trim(),
             cells[1].textContent.trim(),
@@ -2057,7 +2172,8 @@
             cells[3].textContent.trim(),
             cells[4].textContent.trim(),
             cells[5].textContent.trim(),
-            cells[6].textContent.trim()
+            cells[6].textContent.trim(),
+            cells[7].textContent.trim()
           ]);
         }
       });
@@ -2447,8 +2563,27 @@
       }).join('');
     }
     
-    // Show payment modal
+    // Show payment modal - Uses Unified Payment System
     function showPaymentModal() {
+      // Use unified payment modal for premium payments
+      initPaymentModal();
+      if (unifiedPayment) {
+        // Get current amount due
+        const amountDueEl = document.getElementById('billing-amount-due');
+        const amountDue = parseFloat(amountDueEl.textContent.replace('$', '').replace(',', '')) || 0;
+        
+        unifiedPayment.open({ 
+          destination: 'health_wallet',
+          amount: amountDue > 0 ? amountDue : null
+        });
+      } else {
+        // Fallback to simple modal
+        showPaymentModalFallback();
+      }
+    }
+    
+    // Fallback payment modal
+    function showPaymentModalFallback() {
       const modal = document.getElementById('settings-modal');
       document.getElementById('modal-title').textContent = '💳 Make Payment';
       document.getElementById('modal-content').innerHTML = `
@@ -2475,9 +2610,12 @@
         <div style="margin-bottom: 16px;">
           <label style="display: block; margin-bottom: 8px; font-weight: 500;">Payment Method</label>
           <select id="payment-method" style="width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 8px; font-size: 16px;">
-            <option value="card">💳 Credit/Debit Card on File</option>
-            <option value="bank">🏦 Bank Transfer</option>
-            <option value="wallet">🏥 Health Wallet</option>
+            <option value="credit_card">💳 Credit Card</option>
+            <option value="debit_card">💳 Debit Card</option>
+            <option value="apple_pay">🍎 Apple Pay</option>
+            <option value="paypal">🅿️ PayPal</option>
+            <option value="crypto_btc">₿ Bitcoin</option>
+            <option value="internal_transfer">🔄 From Health Wallet</option>
           </select>
         </div>
         
@@ -2487,13 +2625,13 @@
         
         <p style="text-align: center; color: #666; font-size: 0.85rem; margin-top: 16px;">
           🔒 Payment is secured with 256-bit encryption<br>
-          An NFT record will be created for this transaction
+          🔗 NFT record will be created on all ledgers
         </p>
       `;
       
       // Load current amount due
       const amountDueEl = document.getElementById('billing-amount-due');
-      const amountDue = parseFloat(amountDueEl.textContent.replace('$', '')) || 0;
+      const amountDue = parseFloat(amountDueEl.textContent.replace('$', '').replace(',', '')) || 0;
       document.getElementById('payment-amount-due').textContent = `$${amountDue.toFixed(2)}`;
       document.getElementById('payment-to-investments').textContent = `$${(amountDue * 0.25).toFixed(2)}`;
       document.getElementById('payment-input').value = amountDue.toFixed(2);
@@ -2943,8 +3081,20 @@
       }
     }
     
-    // Show investment deposit modal
+    // Show investment deposit modal - Uses Unified Payment System
     function showInvestmentDeposit() {
+      // Use unified payment modal for investment deposits
+      initPaymentModal();
+      if (unifiedPayment) {
+        unifiedPayment.open({ destination: 'investment' });
+      } else {
+        // Fallback to simple modal
+        showInvestmentDepositFallback();
+      }
+    }
+    
+    // Fallback investment deposit modal
+    function showInvestmentDepositFallback() {
       const modal = document.getElementById('settings-modal');
       document.getElementById('modal-title').textContent = '💰 Add Savings to Investments';
       document.getElementById('modal-content').innerHTML = `
