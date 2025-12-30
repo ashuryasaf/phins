@@ -6792,229 +6792,229 @@ For claims or questions, please contact:
         # ========== END UNIFIED BILLING & DEPOSIT API ==========
         
         # ========== HEALTH WALLET API ==========
-            
-            # Get or create health wallet
-            if path == '/api/health-wallet':
-                try:
-                    data = json.loads(body) if body else {}
-                    customer_id = data.get('customer_id', 'CUST001')
-                    
-                    # Get or create wallet
-                    if customer_id not in HEALTH_WALLETS:
-                        HEALTH_WALLETS[customer_id] = {
-                            'customer_id': customer_id,
-                            'balance': 850.00,  # Default starting balance for demo
-                            'monthly_deposit': 100.00,
-                            'transactions': [],
-                            'created_at': datetime.now().isoformat()
-                        }
-                    
-                    wallet = HEALTH_WALLETS[customer_id]
-                    self._set_json_headers()
-                    self.wfile.write(json.dumps({
-                        'success': True,
-                        'wallet': wallet
-                    }).encode('utf-8'))
-                except Exception as e:
-                    self._set_json_headers(500)
-                    self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
-                return
-            
-            # Add funds to wallet
-            if path == '/api/health-wallet/deposit':
-                try:
-                    data = json.loads(body)
-                    customer_id = data.get('customer_id', 'CUST001')
-                    amount = float(data.get('amount', 0))
-                    payment_method = data.get('payment_method', 'card_on_file')
-                    
-                    if amount < 1 or amount > 100000:
-                        self._set_json_headers(400)
-                        self.wfile.write(json.dumps({'error': 'Amount must be between $1 and $100,000'}).encode('utf-8'))
-                        return
-                    
-                    # Initialize wallet if not exists
-                    if customer_id not in HEALTH_WALLETS:
-                        HEALTH_WALLETS[customer_id] = {
-                            'customer_id': customer_id,
-                            'balance': 0,
-                            'monthly_deposit': 0,
-                            'transactions': [],
-                            'created_at': datetime.now().isoformat()
-                        }
-                    
-                    # Add funds
-                    prev_balance = HEALTH_WALLETS[customer_id]['balance']
-                    HEALTH_WALLETS[customer_id]['balance'] += amount
-                    
-                    # Record transaction
-                    transaction_id = f"TXN-{datetime.now().strftime('%Y%m%d%H%M%S')}-{random.randint(1000, 9999)}"
-                    transaction = {
-                        'id': transaction_id,
-                        'type': 'deposit',
-                        'amount': amount,
-                        'payment_method': payment_method,
-                        'timestamp': datetime.now().isoformat(),
-                        'balance_after': HEALTH_WALLETS[customer_id]['balance']
-                    }
-                    HEALTH_WALLETS[customer_id]['transactions'].append(transaction)
-                    
-                    # Record on TRANSACTION_LEDGER and NFT_LEDGER using proper function
-                    ledger_tx = record_transaction(
-                        customer_id=customer_id,
-                        tx_type='wallet_deposit',
-                        amount=amount,
-                        description=f"Health Wallet Deposit via {payment_method}",
-                        metadata={
-                            'payment_method': payment_method,
-                            'previous_balance': prev_balance,
-                            'new_balance': HEALTH_WALLETS[customer_id]['balance'],
-                            'wallet_transaction_id': transaction_id
-                        }
-                    )
-                    transaction['nft_token_id'] = ledger_tx.get('nft_token_id')
-                    transaction['ledger_tx_id'] = ledger_tx.get('id')  # Fixed: use 'id' not 'tx_id'
-                    
-                    self._set_json_headers()
-                    self.wfile.write(json.dumps({
-                        'success': True,
-                        'transaction': transaction,
-                        'nft_token_id': ledger_tx.get('nft_token_id'),
-                        'ledger_recorded': True,
-                        'new_balance': HEALTH_WALLETS[customer_id]['balance']
-                    }).encode('utf-8'))
-                except Exception as e:
-                    self._set_json_headers(500)
-                    self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
-                return
-            
-            # Purchase medical product/service
-            if path == '/api/health-wallet/purchase':
-                try:
-                    data = json.loads(body)
-                    customer_id = data.get('customer_id', 'CUST001')
-                    product_id = data.get('product_id')
-                    product_name = data.get('product_name')
-                    amount = float(data.get('amount', 0))
-                    category = data.get('category', 'general')
-                    provider = data.get('provider', '')
-                    
-                    if not product_id or not amount:
-                        self._set_json_headers(400)
-                        self.wfile.write(json.dumps({'error': 'Product ID and amount required'}).encode('utf-8'))
-                        return
-                    
-                    # Check wallet balance
-                    if customer_id not in HEALTH_WALLETS:
-                        HEALTH_WALLETS[customer_id] = {
-                            'customer_id': customer_id,
-                            'balance': 0,
-                            'monthly_deposit': 0,
-                            'transactions': [],
-                            'created_at': datetime.now().isoformat()
-                        }
-                    
-                    wallet = HEALTH_WALLETS[customer_id]
-                    if wallet['balance'] < amount:
-                        self._set_json_headers(400)
-                        self.wfile.write(json.dumps({
-                            'error': 'Insufficient balance',
-                            'balance': wallet['balance'],
-                            'required': amount,
-                            'shortfall': amount - wallet['balance']
-                        }).encode('utf-8'))
-                        return
-                    
-                    # Deduct amount
-                    prev_balance = wallet['balance']
-                    wallet['balance'] -= amount
-                    
-                    # Create purchase record
-                    purchase_id = f"PUR-{datetime.now().strftime('%Y%m%d%H%M%S')}-{random.randint(1000, 9999)}"
-                    
-                    # Record on TRANSACTION_LEDGER and NFT_LEDGER
-                    ledger_tx = record_transaction(
-                        customer_id=customer_id,
-                        tx_type='medical_purchase',
-                        amount=amount,
-                        description=f"Medical Purchase: {product_name} from {provider or 'provider'}",
-                        metadata={
-                            'purchase_id': purchase_id,
-                            'product_id': product_id,
-                            'product_name': product_name,
-                            'category': category,
-                            'provider': provider,
-                            'previous_balance': prev_balance,
-                            'new_balance': wallet['balance'],
-                            'payment_source': 'health_wallet'
-                        }
-                    )
-                    
-                    purchase = {
-                        'id': purchase_id,
+        
+        # Get or create health wallet
+        if path == '/api/health-wallet':
+            try:
+                data = json.loads(body) if body else {}
+                customer_id = data.get('customer_id', 'CUST001')
+                
+                # Get or create wallet
+                if customer_id not in HEALTH_WALLETS:
+                    HEALTH_WALLETS[customer_id] = {
                         'customer_id': customer_id,
+                        'balance': 850.00,  # Default starting balance for demo
+                        'monthly_deposit': 100.00,
+                        'transactions': [],
+                        'created_at': datetime.now().isoformat()
+                    }
+                
+                wallet = HEALTH_WALLETS[customer_id]
+                self._set_json_headers()
+                self.wfile.write(json.dumps({
+                    'success': True,
+                    'wallet': wallet
+                }).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+        
+        # Add funds to wallet
+        if path == '/api/health-wallet/deposit':
+            try:
+                data = json.loads(body)
+                customer_id = data.get('customer_id', 'CUST001')
+                amount = float(data.get('amount', 0))
+                payment_method = data.get('payment_method', 'card_on_file')
+                
+                if amount < 1 or amount > 100000:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'Amount must be between $1 and $100,000'}).encode('utf-8'))
+                    return
+                
+                # Initialize wallet if not exists
+                if customer_id not in HEALTH_WALLETS:
+                    HEALTH_WALLETS[customer_id] = {
+                        'customer_id': customer_id,
+                        'balance': 0,
+                        'monthly_deposit': 0,
+                        'transactions': [],
+                        'created_at': datetime.now().isoformat()
+                    }
+                
+                # Add funds
+                prev_balance = HEALTH_WALLETS[customer_id]['balance']
+                HEALTH_WALLETS[customer_id]['balance'] += amount
+                
+                # Record transaction
+                transaction_id = f"TXN-{datetime.now().strftime('%Y%m%d%H%M%S')}-{random.randint(1000, 9999)}"
+                transaction = {
+                    'id': transaction_id,
+                    'type': 'deposit',
+                    'amount': amount,
+                    'payment_method': payment_method,
+                    'timestamp': datetime.now().isoformat(),
+                    'balance_after': HEALTH_WALLETS[customer_id]['balance']
+                }
+                HEALTH_WALLETS[customer_id]['transactions'].append(transaction)
+                
+                # Record on TRANSACTION_LEDGER and NFT_LEDGER using proper function
+                ledger_tx = record_transaction(
+                    customer_id=customer_id,
+                    tx_type='wallet_deposit',
+                    amount=amount,
+                    description=f"Health Wallet Deposit via {payment_method}",
+                    metadata={
+                        'payment_method': payment_method,
+                        'previous_balance': prev_balance,
+                        'new_balance': HEALTH_WALLETS[customer_id]['balance'],
+                        'wallet_transaction_id': transaction_id
+                    }
+                )
+                transaction['nft_token_id'] = ledger_tx.get('nft_token_id')
+                transaction['ledger_tx_id'] = ledger_tx.get('id')  # Fixed: use 'id' not 'tx_id'
+                
+                self._set_json_headers()
+                self.wfile.write(json.dumps({
+                    'success': True,
+                    'transaction': transaction,
+                    'nft_token_id': ledger_tx.get('nft_token_id'),
+                    'ledger_recorded': True,
+                    'new_balance': HEALTH_WALLETS[customer_id]['balance']
+                }).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+        
+        # Purchase medical product/service
+        if path == '/api/health-wallet/purchase':
+            try:
+                data = json.loads(body)
+                customer_id = data.get('customer_id', 'CUST001')
+                product_id = data.get('product_id')
+                product_name = data.get('product_name')
+                amount = float(data.get('amount', 0))
+                category = data.get('category', 'general')
+                provider = data.get('provider', '')
+                
+                if not product_id or not amount:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'Product ID and amount required'}).encode('utf-8'))
+                    return
+                
+                # Check wallet balance
+                if customer_id not in HEALTH_WALLETS:
+                    HEALTH_WALLETS[customer_id] = {
+                        'customer_id': customer_id,
+                        'balance': 0,
+                        'monthly_deposit': 0,
+                        'transactions': [],
+                        'created_at': datetime.now().isoformat()
+                    }
+                
+                wallet = HEALTH_WALLETS[customer_id]
+                if wallet['balance'] < amount:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({
+                        'error': 'Insufficient balance',
+                        'balance': wallet['balance'],
+                        'required': amount,
+                        'shortfall': amount - wallet['balance']
+                    }).encode('utf-8'))
+                    return
+                
+                # Deduct amount
+                prev_balance = wallet['balance']
+                wallet['balance'] -= amount
+                
+                # Create purchase record
+                purchase_id = f"PUR-{datetime.now().strftime('%Y%m%d%H%M%S')}-{random.randint(1000, 9999)}"
+                
+                # Record on TRANSACTION_LEDGER and NFT_LEDGER
+                ledger_tx = record_transaction(
+                    customer_id=customer_id,
+                    tx_type='medical_purchase',
+                    amount=amount,
+                    description=f"Medical Purchase: {product_name} from {provider or 'provider'}",
+                    metadata={
+                        'purchase_id': purchase_id,
                         'product_id': product_id,
                         'product_name': product_name,
                         'category': category,
                         'provider': provider,
-                        'amount': amount,
-                        'status': 'completed',
-                        'timestamp': datetime.now().isoformat(),
-                        'nft_token_id': ledger_tx.get('nft_token_id'),
-                        'transaction_hash': NFT_LEDGER.get(ledger_tx.get('nft_token_id'), {}).get('transaction_hash', ''),
-                        'verification_hash': NFT_LEDGER.get(ledger_tx.get('nft_token_id'), {}).get('verification_hash', ''),
-                        'ledger_tx_id': ledger_tx.get('id')  # Fixed: use 'id' not 'tx_id'
+                        'previous_balance': prev_balance,
+                        'new_balance': wallet['balance'],
+                        'payment_source': 'health_wallet'
                     }
-                    MEDICAL_PURCHASES[purchase_id] = purchase
-                    
-                    # Record transaction in wallet
-                    transaction_id = f"TXN-{datetime.now().strftime('%Y%m%d%H%M%S')}-{random.randint(1000, 9999)}"
-                    transaction = {
-                        'id': transaction_id,
-                        'type': 'purchase',
-                        'amount': -amount,
-                        'product_id': product_id,
-                        'product_name': product_name,
-                        'category': category,
-                        'timestamp': datetime.now().isoformat(),
-                        'balance_after': wallet['balance'],
-                        'nft_token_id': ledger_tx.get('nft_token_id'),
-                        'ledger_tx_id': ledger_tx.get('id')  # Fixed: use 'id' not 'tx_id'
-                    }
-                    wallet['transactions'].append(transaction)
-                    
-                    self._set_json_headers()
-                    self.wfile.write(json.dumps({
-                        'success': True,
-                        'purchase': purchase,
-                        'transaction': transaction,
-                        'nft_token_id': ledger_tx.get('nft_token_id'),
-                        'ledger_recorded': True,
-                        'new_balance': wallet['balance']
-                    }).encode('utf-8'))
-                except Exception as e:
-                    self._set_json_headers(500)
-                    self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
-                return
-            
-            # Get purchase history
-            if path == '/api/health-wallet/purchases':
-                try:
-                    data = json.loads(body) if body else {}
-                    customer_id = data.get('customer_id', 'CUST001')
-                    
-                    purchases = [p for p in MEDICAL_PURCHASES.values() if p.get('customer_id') == customer_id]
-                    purchases.sort(key=lambda x: x.get('timestamp', ''), reverse=True)
-                    
-                    self._set_json_headers()
-                    self.wfile.write(json.dumps({
-                        'success': True,
-                        'purchases': purchases[:50]  # Last 50
-                    }).encode('utf-8'))
-                except Exception as e:
-                    self._set_json_headers(500)
-                    self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
-                return
+                )
+                
+                purchase = {
+                    'id': purchase_id,
+                    'customer_id': customer_id,
+                    'product_id': product_id,
+                    'product_name': product_name,
+                    'category': category,
+                    'provider': provider,
+                    'amount': amount,
+                    'status': 'completed',
+                    'timestamp': datetime.now().isoformat(),
+                    'nft_token_id': ledger_tx.get('nft_token_id'),
+                    'transaction_hash': NFT_LEDGER.get(ledger_tx.get('nft_token_id'), {}).get('transaction_hash', ''),
+                    'verification_hash': NFT_LEDGER.get(ledger_tx.get('nft_token_id'), {}).get('verification_hash', ''),
+                    'ledger_tx_id': ledger_tx.get('id')  # Fixed: use 'id' not 'tx_id'
+                }
+                MEDICAL_PURCHASES[purchase_id] = purchase
+                
+                # Record transaction in wallet
+                transaction_id = f"TXN-{datetime.now().strftime('%Y%m%d%H%M%S')}-{random.randint(1000, 9999)}"
+                transaction = {
+                    'id': transaction_id,
+                    'type': 'purchase',
+                    'amount': -amount,
+                    'product_id': product_id,
+                    'product_name': product_name,
+                    'category': category,
+                    'timestamp': datetime.now().isoformat(),
+                    'balance_after': wallet['balance'],
+                    'nft_token_id': ledger_tx.get('nft_token_id'),
+                    'ledger_tx_id': ledger_tx.get('id')  # Fixed: use 'id' not 'tx_id'
+                }
+                wallet['transactions'].append(transaction)
+                
+                self._set_json_headers()
+                self.wfile.write(json.dumps({
+                    'success': True,
+                    'purchase': purchase,
+                    'transaction': transaction,
+                    'nft_token_id': ledger_tx.get('nft_token_id'),
+                    'ledger_recorded': True,
+                    'new_balance': wallet['balance']
+                }).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+        
+        # Get purchase history (POST)
+        if path == '/api/health-wallet/purchases':
+            try:
+                data = json.loads(body) if body else {}
+                customer_id = data.get('customer_id', 'CUST001')
+                
+                purchases = [p for p in MEDICAL_PURCHASES.values() if p.get('customer_id') == customer_id]
+                purchases.sort(key=lambda x: x.get('timestamp', ''), reverse=True)
+                
+                self._set_json_headers()
+                self.wfile.write(json.dumps({
+                    'success': True,
+                    'purchases': purchases[:50]  # Last 50
+                }).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
         
         # ========== END HEALTH WALLET API ==========
         
