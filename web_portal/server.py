@@ -3733,7 +3733,7 @@ For claims or questions, please contact:
             # 4. Algo Trading Stats
             algo_orders = [tx for tx in TRANSACTION_LEDGER.values() if tx.get('tx_type') in ['algo_trade', 'algo_order']]
             algo_stats = {
-                'active_bots': len(getattr(_algo_trading_service, 'bots', {})) if algo_trading_enabled else 0,
+                'active_bots': len(getattr(algo_trading_service, 'bots', {})) if algo_trading_enabled else 0,
                 'total_orders': len(algo_orders),
                 'total_volume': total_algo_volume,
                 'unique_customers': len(algo_customers),
