@@ -112,13 +112,17 @@ def save_ledger_data():
         with _persistence_lock:
             data = {
                 'saved_at': datetime.now().isoformat(),
-                'version': '1.0',
+                'version': '1.1',
                 'health_wallets': HEALTH_WALLETS,
                 'medical_purchases': MEDICAL_PURCHASES,
                 'nft_ledger': NFT_LEDGER,
                 'customer_allocations': CUSTOMER_ALLOCATIONS,
                 'investment_accounts': INVESTMENT_ACCOUNTS,
-                'transaction_ledger': TRANSACTION_LEDGER
+                'transaction_ledger': TRANSACTION_LEDGER,
+                'billing': BILLING,
+                'policies': POLICIES,
+                'customers': CUSTOMERS,
+                'underwriting_applications': UNDERWRITING_APPLICATIONS
             }
             
             # Write to temp file first, then rename for atomic operation
@@ -135,6 +139,7 @@ def save_ledger_data():
 def load_ledger_data():
     """Load ledger data from persistent storage on startup"""
     global HEALTH_WALLETS, MEDICAL_PURCHASES, NFT_LEDGER, CUSTOMER_ALLOCATIONS, INVESTMENT_ACCOUNTS, TRANSACTION_LEDGER
+    global BILLING, POLICIES, CUSTOMERS, UNDERWRITING_APPLICATIONS
     
     if not PERSISTENCE_ENABLED:
         print("[PERSISTENCE] Persistence disabled, using in-memory storage only")
@@ -156,6 +161,13 @@ def load_ledger_data():
         INVESTMENT_ACCOUNTS.update(data.get('investment_accounts', {}))
         TRANSACTION_LEDGER.update(data.get('transaction_ledger', {}))
         
+        # Load pipeline data (v1.1+)
+        if data.get('version', '1.0') >= '1.1':
+            BILLING.update(data.get('billing', {}))
+            POLICIES.update(data.get('policies', {}))
+            CUSTOMERS.update(data.get('customers', {}))
+            UNDERWRITING_APPLICATIONS.update(data.get('underwriting_applications', {}))
+        
         print(f"[PERSISTENCE] Loaded ledger data from {LEDGER_PERSISTENCE_FILE}")
         print(f"  - Health Wallets: {len(HEALTH_WALLETS)}")
         print(f"  - Medical Purchases: {len(MEDICAL_PURCHASES)}")
@@ -163,6 +175,10 @@ def load_ledger_data():
         print(f"  - Customer Allocations: {len(CUSTOMER_ALLOCATIONS)}")
         print(f"  - Investment Accounts: {len(INVESTMENT_ACCOUNTS)}")
         print(f"  - Transaction Ledger: {len(TRANSACTION_LEDGER)}")
+        print(f"  - Billing: {len(BILLING)}")
+        print(f"  - Policies: {len(POLICIES)}")
+        print(f"  - Customers: {len(CUSTOMERS)}")
+        print(f"  - Underwriting: {len(UNDERWRITING_APPLICATIONS)}")
         print(f"  - Saved at: {data.get('saved_at', 'unknown')}")
         return True
     except Exception as e:
