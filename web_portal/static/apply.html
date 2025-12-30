@@ -127,96 +127,329 @@
                     </div>
                 </div>
 
-                <!-- Step 2: Coverage Selection -->
+                <!-- Step 2: PHINS Unified Contract -->
                 <div class="form-step" data-step="2">
                     <div class="step-header">
-                        <h2>🛡️ Step 2: Choose Your Coverage</h2>
-                        <p>Select the protection level that best fits your needs and budget.</p>
+                        <h2>🛡️ Step 2: Your PHINS Contract</h2>
+                        <p style="font-size: 1.1rem; max-width: 700px; margin: 0 auto;">One powerful contract that lets you <strong>Save</strong>, <strong>Pay</strong>, <strong>Invest</strong>, <strong>Consume</strong>, and <strong>Hedge</strong> against severe disability.</p>
                     </div>
 
+                    <!-- Unified Contract Hero -->
+                    <div class="form-section" style="background: linear-gradient(135deg, #0d47a1 0%, #1565c0 50%, #1976d2 100%); color: white; border-radius: 16px; padding: 32px; margin-bottom: 24px;">
+                        <div style="text-align: center; margin-bottom: 24px;">
+                            <div style="display: inline-flex; align-items: center; justify-content: center; width: 80px; height: 80px; background: linear-gradient(135deg, #42a5f5 0%, #64b5f6 100%); border-radius: 20px; font-size: 2.5rem; margin-bottom: 16px; box-shadow: 0 8px 32px rgba(0,0,0,0.2);">🛡️</div>
+                            <h3 style="color: white; font-size: 1.5rem; margin: 0 0 8px 0;">PHINS Unified Protection Contract</h3>
+                            <p style="color: rgba(255,255,255,0.9); margin: 0; font-size: 1rem;">The world's most advanced insurance + investment platform</p>
+                        </div>
+                        
+                        <!-- 5 Pillars -->
+                        <div style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 16px; text-align: center;">
+                            <div style="background: rgba(255,255,255,0.1); padding: 16px 8px; border-radius: 12px; backdrop-filter: blur(10px);">
+                                <div style="font-size: 1.8rem; margin-bottom: 8px;">💰</div>
+                                <div style="font-weight: 600; font-size: 0.9rem;">SAVE</div>
+                                <div style="font-size: 0.75rem; color: rgba(255,255,255,0.8); margin-top: 4px;">Build wealth</div>
+                            </div>
+                            <div style="background: rgba(255,255,255,0.1); padding: 16px 8px; border-radius: 12px; backdrop-filter: blur(10px);">
+                                <div style="font-size: 1.8rem; margin-bottom: 8px;">💳</div>
+                                <div style="font-weight: 600; font-size: 0.9rem;">PAY</div>
+                                <div style="font-size: 0.75rem; color: rgba(255,255,255,0.8); margin-top: 4px;">Medical expenses</div>
+                            </div>
+                            <div style="background: rgba(255,255,255,0.1); padding: 16px 8px; border-radius: 12px; backdrop-filter: blur(10px);">
+                                <div style="font-size: 1.8rem; margin-bottom: 8px;">📈</div>
+                                <div style="font-weight: 600; font-size: 0.9rem;">INVEST</div>
+                                <div style="font-size: 0.75rem; color: rgba(255,255,255,0.8); margin-top: 4px;">Grow portfolio</div>
+                            </div>
+                            <div style="background: rgba(255,255,255,0.1); padding: 16px 8px; border-radius: 12px; backdrop-filter: blur(10px);">
+                                <div style="font-size: 1.8rem; margin-bottom: 8px;">🛒</div>
+                                <div style="font-weight: 600; font-size: 0.9rem;">CONSUME</div>
+                                <div style="font-size: 0.75rem; color: rgba(255,255,255,0.8); margin-top: 4px;">Use benefits</div>
+                            </div>
+                            <div style="background: rgba(255,255,255,0.1); padding: 16px 8px; border-radius: 12px; backdrop-filter: blur(10px);">
+                                <div style="font-size: 1.8rem; margin-bottom: 8px;">🛡️</div>
+                                <div style="font-weight: 600; font-size: 0.9rem;">HEDGE</div>
+                                <div style="font-size: 0.75rem; color: rgba(255,255,255,0.8); margin-top: 4px;">Disability cover</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <input type="hidden" id="policy-type" value="phins_unified" required>
+
+                    <!-- Coverage Amount Selection -->
                     <div class="form-section">
-                        <h3>Policy Type</h3>
-                        <div class="policy-cards">
-                            <div class="policy-option" data-type="life">
-                                <div class="policy-icon">💼</div>
-                                <h4>Life Insurance</h4>
-                                <p>Financial protection for your loved ones in case of death</p>
-                                <ul>
-                                    <li>Death benefit payout</li>
-                                    <li>Investment component</li>
-                                    <li>Estate planning</li>
-                                </ul>
-                                <button type="button" class="select-policy" data-type="life">Select</button>
+                        <h3 style="display: flex; align-items: center; gap: 10px;">
+                            <span style="display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 10px; color: white; font-size: 1.2rem;">🎯</span>
+                            Coverage Amount
+                        </h3>
+                        <p style="color: #666; margin-bottom: 20px;">Select your total coverage amount. This determines your disability protection and investment capacity.</p>
+                        
+                        <div class="coverage-slider-container" style="background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%); padding: 24px; border-radius: 16px;">
+                            <input type="range" id="coverage-slider" min="100000" max="5000000" step="50000" value="500000" style="width: 100%; height: 8px; border-radius: 4px; accent-color: #0d47a1;">
+                            <div class="coverage-display" style="text-align: center; margin-top: 16px;">
+                                <span class="coverage-amount" id="coverage-amount-display" style="font-size: 2.5rem; font-weight: 700; color: #0d47a1;">$500,000</span>
+                                <small style="display: block; color: #666; margin-top: 4px;">Slide to adjust your coverage amount</small>
                             </div>
-
-                            <div class="policy-option" data-type="health">
-                                <div class="policy-icon">🏥</div>
-                                <h4>Health Insurance</h4>
-                                <p>Comprehensive medical coverage and health protection</p>
-                                <ul>
-                                    <li>Medical expenses</li>
-                                    <li>Hospitalization</li>
-                                    <li>Preventive care</li>
-                                </ul>
-                                <button type="button" class="select-policy" data-type="health">Select</button>
-                            </div>
-
-                            <div class="policy-option" data-type="disability">
-                                <div class="policy-icon recommended">♿</div>
-                                <div class="recommended-badge">Recommended</div>
-                                <h4>PHINS Disability + Investment</h4>
-                                <p>Severe disability protection with wealth building</p>
-                                <ul>
-                                    <li>ADL-based coverage</li>
-                                    <li>75% investment growth</li>
-                                    <li>25% guaranteed savings</li>
-                                    <li>Lifetime benefits</li>
-                                </ul>
-                                <button type="button" class="select-policy" data-type="disability">Select</button>
+                            
+                            <div class="quick-select" style="display: flex; justify-content: center; gap: 8px; margin-top: 16px; flex-wrap: wrap;">
+                                <button type="button" class="quick-amount" data-amount="100000" style="padding: 8px 16px; border: 2px solid #e0e0e0; background: white; border-radius: 8px; cursor: pointer; font-weight: 600; transition: all 0.2s;">$100K</button>
+                                <button type="button" class="quick-amount" data-amount="250000" style="padding: 8px 16px; border: 2px solid #e0e0e0; background: white; border-radius: 8px; cursor: pointer; font-weight: 600; transition: all 0.2s;">$250K</button>
+                                <button type="button" class="quick-amount active" data-amount="500000" style="padding: 8px 16px; border: 2px solid #0d47a1; background: #e3f2fd; border-radius: 8px; cursor: pointer; font-weight: 600; color: #0d47a1; transition: all 0.2s;">$500K</button>
+                                <button type="button" class="quick-amount" data-amount="1000000" style="padding: 8px 16px; border: 2px solid #e0e0e0; background: white; border-radius: 8px; cursor: pointer; font-weight: 600; transition: all 0.2s;">$1M</button>
+                                <button type="button" class="quick-amount" data-amount="2000000" style="padding: 8px 16px; border: 2px solid #e0e0e0; background: white; border-radius: 8px; cursor: pointer; font-weight: 600; transition: all 0.2s;">$2M</button>
                             </div>
                         </div>
 
-                        <input type="hidden" id="policy-type" required>
-
-                        <div id="coverage-details" class="coverage-details" style="display: none;">
-                            <h3>Coverage Amount</h3>
-                            <div class="coverage-slider-container">
-                                <input type="range" id="coverage-slider" min="50000" max="5000000" step="50000" value="250000">
-                                <div class="coverage-display">
-                                    <span class="coverage-amount" id="coverage-amount-display">$250,000</span>
-                                    <small>Slide to adjust your coverage amount</small>
-                                </div>
-                            </div>
-
-                            <div class="coverage-options">
-                                <div class="quick-select">
-                                    <button type="button" class="quick-amount" data-amount="100000">$100K</button>
-                                    <button type="button" class="quick-amount" data-amount="250000">$250K</button>
-                                    <button type="button" class="quick-amount active" data-amount="500000">$500K</button>
-                                    <button type="button" class="quick-amount" data-amount="1000000">$1M</button>
-                                    <button type="button" class="quick-amount" data-amount="2000000">$2M</button>
-                                </div>
-                            </div>
-
-                            <div class="premium-estimate" id="premium-estimate">
-                                <h4>Estimated Premium</h4>
-                                <div class="premium-breakdown">
-                                    <div class="premium-item">
-                                        <span>Monthly</span>
-                                        <strong id="monthly-premium">$125.00</strong>
-                                    </div>
-                                    <div class="premium-item">
-                                        <span>Quarterly</span>
-                                        <strong id="quarterly-premium">$375.00</strong>
-                                    </div>
-                                    <div class="premium-item highlighted">
-                                        <span>Annual</span>
-                                        <strong id="annual-premium">$1,500.00</strong>
-                                    </div>
-                                </div>
-                                <small>*Final premium determined after underwriting review</small>
+                        <!-- Coverage Years -->
+                        <div style="margin-top: 24px;">
+                            <label style="font-weight: 600; display: flex; align-items: center; gap: 8px; margin-bottom: 12px;">
+                                <span style="display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; background: #e3f2fd; border-radius: 8px; color: #0d47a1; font-size: 0.9rem;">📅</span>
+                                Savings & Investment Period
+                            </label>
+                            <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px;">
+                                <label class="radio-card" style="display: block; padding: 16px; border: 2px solid #e0e0e0; border-radius: 12px; cursor: pointer; text-align: center; transition: all 0.2s;">
+                                    <input type="radio" name="coverage-years" value="10" style="display: none;">
+                                    <div style="font-size: 1.5rem; font-weight: 700; color: #0d47a1;">10</div>
+                                    <div style="font-size: 0.85rem; color: #666;">Years</div>
+                                </label>
+                                <label class="radio-card" style="display: block; padding: 16px; border: 2px solid #e0e0e0; border-radius: 12px; cursor: pointer; text-align: center; transition: all 0.2s;">
+                                    <input type="radio" name="coverage-years" value="15" style="display: none;">
+                                    <div style="font-size: 1.5rem; font-weight: 700; color: #0d47a1;">15</div>
+                                    <div style="font-size: 0.85rem; color: #666;">Years</div>
+                                </label>
+                                <label class="radio-card selected" style="display: block; padding: 16px; border: 2px solid #0d47a1; border-radius: 12px; cursor: pointer; text-align: center; background: #e3f2fd; transition: all 0.2s;">
+                                    <input type="radio" name="coverage-years" value="20" checked style="display: none;">
+                                    <div style="font-size: 1.5rem; font-weight: 700; color: #0d47a1;">20</div>
+                                    <div style="font-size: 0.85rem; color: #0d47a1;">Years</div>
+                                    <div style="font-size: 0.7rem; background: #0d47a1; color: white; padding: 2px 8px; border-radius: 4px; margin-top: 4px;">Popular</div>
+                                </label>
+                                <label class="radio-card" style="display: block; padding: 16px; border: 2px solid #e0e0e0; border-radius: 12px; cursor: pointer; text-align: center; transition: all 0.2s;">
+                                    <input type="radio" name="coverage-years" value="30" style="display: none;">
+                                    <div style="font-size: 1.5rem; font-weight: 700; color: #0d47a1;">30</div>
+                                    <div style="font-size: 0.85rem; color: #666;">Years</div>
+                                </label>
                             </div>
                         </div>
+                    </div>
+
+                    <!-- Premium Allocation Section -->
+                    <div class="form-section" style="margin-top: 24px;">
+                        <h3 style="display: flex; align-items: center; gap: 10px;">
+                            <span style="display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; background: linear-gradient(135deg, #28a745 0%, #20c997 100%); border-radius: 10px; color: white; font-size: 1.2rem;">⚖️</span>
+                            Premium Allocation Strategy
+                        </h3>
+                        <p style="color: #666; margin-bottom: 20px;">Choose how your premium is distributed between protection and wealth building.</p>
+
+                        <!-- Risk/Savings Split -->
+                        <div style="background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%); padding: 24px; border-radius: 16px; margin-bottom: 20px;">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                                <div style="display: flex; align-items: center; gap: 8px;">
+                                    <span style="font-size: 1.3rem;">🛡️</span>
+                                    <span style="font-weight: 600;">Protection</span>
+                                    <span id="protection-pct" style="background: #dc3545; color: white; padding: 2px 10px; border-radius: 12px; font-weight: 700;">25%</span>
+                                </div>
+                                <div style="display: flex; align-items: center; gap: 8px;">
+                                    <span id="savings-pct" style="background: #28a745; color: white; padding: 2px 10px; border-radius: 12px; font-weight: 700;">75%</span>
+                                    <span style="font-weight: 600;">Savings & Investment</span>
+                                    <span style="font-size: 1.3rem;">💰</span>
+                                </div>
+                            </div>
+                            <input type="range" id="allocation-slider" min="10" max="50" value="25" style="width: 100%; height: 10px; border-radius: 5px; background: linear-gradient(to right, #dc3545 0%, #dc3545 25%, #28a745 25%, #28a745 100%); accent-color: #0d47a1;">
+                            <div style="display: flex; justify-content: space-between; margin-top: 8px; font-size: 0.8rem; color: #666;">
+                                <span>More Protection</span>
+                                <span>More Savings</span>
+                            </div>
+                        </div>
+
+                        <!-- Allocation Breakdown Cards -->
+                        <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px;">
+                            <!-- Protection Allocation -->
+                            <div style="background: linear-gradient(135deg, #fff5f5 0%, #ffe3e3 100%); border: 2px solid #ffcdd2; border-radius: 16px; padding: 20px;">
+                                <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 16px;">
+                                    <span style="display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 40px; background: #dc3545; border-radius: 10px; color: white; font-size: 1.3rem;">🛡️</span>
+                                    <div>
+                                        <div style="font-weight: 700; color: #c62828;">Protection Pool</div>
+                                        <div style="font-size: 0.8rem; color: #666;">Disability Coverage</div>
+                                    </div>
+                                </div>
+                                <ul style="margin: 0; padding-left: 20px; font-size: 0.9rem; color: #555;">
+                                    <li>Severe disability coverage (ADL-based)</li>
+                                    <li>Monthly benefit payments</li>
+                                    <li>Lump sum option available</li>
+                                    <li>Global coverage, no restrictions</li>
+                                </ul>
+                                <div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid #ffcdd2;">
+                                    <div style="display: flex; justify-content: space-between;">
+                                        <span style="color: #666; font-size: 0.85rem;">Monthly allocation:</span>
+                                        <span id="protection-monthly" style="font-weight: 700; color: #c62828;">$31.25</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Savings Allocation -->
+                            <div style="background: linear-gradient(135deg, #f1f8e9 0%, #dcedc8 100%); border: 2px solid #c5e1a5; border-radius: 16px; padding: 20px;">
+                                <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 16px;">
+                                    <span style="display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 40px; background: #28a745; border-radius: 10px; color: white; font-size: 1.3rem;">💰</span>
+                                    <div>
+                                        <div style="font-weight: 700; color: #2e7d32;">Savings & Investment Pool</div>
+                                        <div style="font-size: 0.8rem; color: #666;">Wealth Building</div>
+                                    </div>
+                                </div>
+                                <ul style="margin: 0; padding-left: 20px; font-size: 0.9rem; color: #555;">
+                                    <li>Health Wallet (medical expenses)</li>
+                                    <li>Investment Portfolio</li>
+                                    <li>AI Algo Trading Bot</li>
+                                    <li>Guaranteed principal protection</li>
+                                </ul>
+                                <div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid #c5e1a5;">
+                                    <div style="display: flex; justify-content: space-between;">
+                                        <span style="color: #666; font-size: 0.85rem;">Monthly allocation:</span>
+                                        <span id="savings-monthly" style="font-weight: 700; color: #2e7d32;">$93.75</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Savings Distribution Section -->
+                    <div class="form-section" style="margin-top: 24px;">
+                        <h3 style="display: flex; align-items: center; gap: 10px;">
+                            <span style="display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%); border-radius: 10px; color: white; font-size: 1.2rem;">📊</span>
+                            Savings Distribution
+                        </h3>
+                        <p style="color: #666; margin-bottom: 20px;">Customize how your savings are allocated across different investment channels.</p>
+
+                        <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px;">
+                            <!-- Health Wallet -->
+                            <div style="background: white; border: 2px solid #e0e0e0; border-radius: 16px; padding: 20px; text-align: center; position: relative;">
+                                <span style="position: absolute; top: -10px; right: 10px; background: #17a2b8; color: white; padding: 2px 10px; border-radius: 12px; font-size: 0.75rem; font-weight: 600;">Recommended</span>
+                                <div style="font-size: 2.5rem; margin-bottom: 8px;">🏥</div>
+                                <h4 style="margin: 0 0 4px 0; color: #333;">Health Wallet</h4>
+                                <p style="font-size: 0.8rem; color: #666; margin: 0 0 16px 0;">Pay medical expenses instantly</p>
+                                <div style="display: flex; align-items: center; justify-content: center; gap: 8px;">
+                                    <button type="button" onclick="adjustAllocation('wallet', -5)" style="width: 32px; height: 32px; border-radius: 50%; border: 2px solid #e0e0e0; background: white; cursor: pointer; font-size: 1.2rem;">−</button>
+                                    <input type="number" id="wallet-pct" value="15" min="0" max="100" style="width: 60px; text-align: center; font-size: 1.2rem; font-weight: 700; border: 2px solid #0d47a1; border-radius: 8px; padding: 8px;">
+                                    <span style="font-weight: 700;">%</span>
+                                    <button type="button" onclick="adjustAllocation('wallet', 5)" style="width: 32px; height: 32px; border-radius: 50%; border: 2px solid #e0e0e0; background: white; cursor: pointer; font-size: 1.2rem;">+</button>
+                                </div>
+                                <div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid #e0e0e0;">
+                                    <span style="font-size: 0.85rem; color: #666;">Monthly: </span>
+                                    <span id="wallet-monthly" style="font-weight: 700; color: #17a2b8;">$14.06</span>
+                                </div>
+                            </div>
+
+                            <!-- Investment Portfolio -->
+                            <div style="background: white; border: 2px solid #e0e0e0; border-radius: 16px; padding: 20px; text-align: center;">
+                                <div style="font-size: 2.5rem; margin-bottom: 8px;">📈</div>
+                                <h4 style="margin: 0 0 4px 0; color: #333;">Investment Portfolio</h4>
+                                <p style="font-size: 0.8rem; color: #666; margin: 0 0 16px 0;">Index funds, bonds, crypto</p>
+                                <div style="display: flex; align-items: center; justify-content: center; gap: 8px;">
+                                    <button type="button" onclick="adjustAllocation('investment', -5)" style="width: 32px; height: 32px; border-radius: 50%; border: 2px solid #e0e0e0; background: white; cursor: pointer; font-size: 1.2rem;">−</button>
+                                    <input type="number" id="investment-pct" value="60" min="0" max="100" style="width: 60px; text-align: center; font-size: 1.2rem; font-weight: 700; border: 2px solid #28a745; border-radius: 8px; padding: 8px;">
+                                    <span style="font-weight: 700;">%</span>
+                                    <button type="button" onclick="adjustAllocation('investment', 5)" style="width: 32px; height: 32px; border-radius: 50%; border: 2px solid #e0e0e0; background: white; cursor: pointer; font-size: 1.2rem;">+</button>
+                                </div>
+                                <div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid #e0e0e0;">
+                                    <span style="font-size: 0.85rem; color: #666;">Monthly: </span>
+                                    <span id="investment-monthly" style="font-weight: 700; color: #28a745;">$56.25</span>
+                                </div>
+                            </div>
+
+                            <!-- Algo Trading Bot -->
+                            <div style="background: linear-gradient(135deg, #f5f3ff 0%, #ede9fe 100%); border: 2px solid #a78bfa; border-radius: 16px; padding: 20px; text-align: center; position: relative;">
+                                <span style="position: absolute; top: -10px; left: 10px; background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%); color: white; padding: 2px 10px; border-radius: 12px; font-size: 0.75rem; font-weight: 600;">🤖 AI Powered</span>
+                                <div style="font-size: 2.5rem; margin-bottom: 8px;">🤖</div>
+                                <h4 style="margin: 0 0 4px 0; color: #333;">Algo Trading Bot</h4>
+                                <p style="font-size: 0.8rem; color: #666; margin: 0 0 16px 0;">Your private AI trading bot</p>
+                                <div style="display: flex; align-items: center; justify-content: center; gap: 8px;">
+                                    <button type="button" onclick="adjustAllocation('algo', -5)" style="width: 32px; height: 32px; border-radius: 50%; border: 2px solid #e0e0e0; background: white; cursor: pointer; font-size: 1.2rem;">−</button>
+                                    <input type="number" id="algo-pct" value="25" min="0" max="100" style="width: 60px; text-align: center; font-size: 1.2rem; font-weight: 700; border: 2px solid #8b5cf6; border-radius: 8px; padding: 8px;">
+                                    <span style="font-weight: 700;">%</span>
+                                    <button type="button" onclick="adjustAllocation('algo', 5)" style="width: 32px; height: 32px; border-radius: 50%; border: 2px solid #e0e0e0; background: white; cursor: pointer; font-size: 1.2rem;">+</button>
+                                </div>
+                                <div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid #a78bfa;">
+                                    <span style="font-size: 0.85rem; color: #666;">Monthly: </span>
+                                    <span id="algo-monthly" style="font-weight: 700; color: #8b5cf6;">$23.44</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Allocation Total Bar -->
+                        <div style="margin-top: 20px; background: #f8f9fa; padding: 16px; border-radius: 12px;">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                                <span style="font-weight: 600;">Total Savings Allocation:</span>
+                                <span id="total-allocation" style="font-weight: 700; color: #0d47a1;">100%</span>
+                            </div>
+                            <div style="height: 8px; background: #e0e0e0; border-radius: 4px; overflow: hidden; display: flex;">
+                                <div id="wallet-bar" style="width: 15%; background: #17a2b8; transition: width 0.3s;"></div>
+                                <div id="investment-bar" style="width: 60%; background: #28a745; transition: width 0.3s;"></div>
+                                <div id="algo-bar" style="width: 25%; background: #8b5cf6; transition: width 0.3s;"></div>
+                            </div>
+                            <div style="display: flex; justify-content: space-between; margin-top: 8px; font-size: 0.75rem; color: #666;">
+                                <span>🏥 Health Wallet</span>
+                                <span>📈 Investment</span>
+                                <span>🤖 Algo Trading</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Premium Estimate -->
+                    <div class="form-section" style="margin-top: 24px; background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%); border-radius: 16px; padding: 24px;">
+                        <h3 style="display: flex; align-items: center; gap: 10px; margin-top: 0;">
+                            <span style="display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; background: #0d47a1; border-radius: 10px; color: white; font-size: 1.2rem;">💵</span>
+                            Your Premium Estimate
+                        </h3>
+
+                        <div class="premium-estimate" id="premium-estimate" style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-top: 20px;">
+                            <div style="background: white; padding: 20px; border-radius: 12px; text-align: center;">
+                                <div style="font-size: 0.9rem; color: #666; margin-bottom: 4px;">Monthly</div>
+                                <div id="monthly-premium" style="font-size: 1.8rem; font-weight: 700; color: #333;">$125.00</div>
+                            </div>
+                            <div style="background: white; padding: 20px; border-radius: 12px; text-align: center;">
+                                <div style="font-size: 0.9rem; color: #666; margin-bottom: 4px;">Quarterly</div>
+                                <div id="quarterly-premium" style="font-size: 1.8rem; font-weight: 700; color: #333;">$363.75</div>
+                                <div style="font-size: 0.75rem; color: #28a745; font-weight: 600;">Save 3%</div>
+                            </div>
+                            <div style="background: linear-gradient(135deg, #0d47a1 0%, #1565c0 100%); padding: 20px; border-radius: 12px; text-align: center; color: white; position: relative;">
+                                <div style="position: absolute; top: -10px; left: 50%; transform: translateX(-50%); background: #ff6b35; color: white; padding: 2px 12px; border-radius: 12px; font-size: 0.7rem; font-weight: 700;">BEST VALUE</div>
+                                <div style="font-size: 0.9rem; opacity: 0.9; margin-bottom: 4px;">Annual</div>
+                                <div id="annual-premium" style="font-size: 1.8rem; font-weight: 700;">$1,350.00</div>
+                                <div style="font-size: 0.75rem; opacity: 0.9;">Save 10%</div>
+                            </div>
+                        </div>
+
+                        <!-- What You Get Summary -->
+                        <div style="margin-top: 20px; background: white; padding: 20px; border-radius: 12px;">
+                            <h4 style="margin: 0 0 16px 0; color: #333;">What You Get with Your PHINS Contract:</h4>
+                            <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; font-size: 0.9rem;">
+                                <div style="display: flex; align-items: flex-start; gap: 8px;">
+                                    <span style="color: #28a745; font-size: 1rem;">✓</span>
+                                    <span><strong id="summary-coverage">$500,000</strong> disability coverage</span>
+                                </div>
+                                <div style="display: flex; align-items: flex-start; gap: 8px;">
+                                    <span style="color: #28a745; font-size: 1rem;">✓</span>
+                                    <span><strong id="summary-years">20</strong> years of savings growth</span>
+                                </div>
+                                <div style="display: flex; align-items: flex-start; gap: 8px;">
+                                    <span style="color: #28a745; font-size: 1rem;">✓</span>
+                                    <span>Health Wallet for medical expenses</span>
+                                </div>
+                                <div style="display: flex; align-items: flex-start; gap: 8px;">
+                                    <span style="color: #28a745; font-size: 1rem;">✓</span>
+                                    <span>Diversified investment portfolio</span>
+                                </div>
+                                <div style="display: flex; align-items: flex-start; gap: 8px;">
+                                    <span style="color: #28a745; font-size: 1rem;">✓</span>
+                                    <span>Personal AI trading bot</span>
+                                </div>
+                                <div style="display: flex; align-items: flex-start; gap: 8px;">
+                                    <span style="color: #28a745; font-size: 1rem;">✓</span>
+                                    <span>Full NFT ledger documentation</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <p style="text-align: center; margin: 16px 0 0 0; font-size: 0.85rem; color: #666;">
+                            <span style="color: #ff6b35;">*</span> Final premium determined after underwriting review. All transactions secured on blockchain ledger.
+                        </p>
                     </div>
                 </div>
 

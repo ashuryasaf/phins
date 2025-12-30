@@ -1,7 +1,18 @@
-// Customer Application JavaScript
+// Customer Application JavaScript - PHINS Unified Contract
 let currentStep = 1;
 const totalSteps = 5;
 let formData = {};
+
+// PHINS Contract allocation state
+let phinsAllocation = {
+    protectionPct: 25,
+    savingsPct: 75,
+    walletPct: 15,
+    investmentPct: 60,
+    algoPct: 25,
+    coverageYears: 20,
+    coverageAmount: 500000
+};
 
 // Card type patterns for validation
 const CARD_PATTERNS = {
@@ -16,7 +27,230 @@ document.addEventListener('DOMContentLoaded', () => {
     setupEventListeners();
     updateStepDisplay();
     populateExpiryYears();
+    initializePHINSContract();
 });
+
+// Initialize PHINS Contract UI
+function initializePHINSContract() {
+    // Setup allocation slider
+    const allocationSlider = document.getElementById('allocation-slider');
+    if (allocationSlider) {
+        allocationSlider.addEventListener('input', updateAllocationSplit);
+        updateAllocationSplit();
+    }
+    
+    // Setup coverage years radio buttons
+    document.querySelectorAll('input[name="coverage-years"]').forEach(radio => {
+        radio.addEventListener('change', function() {
+            phinsAllocation.coverageYears = parseInt(this.value);
+            updateAllocationDisplay();
+            
+            // Update visual selection
+            document.querySelectorAll('.radio-card').forEach(card => {
+                card.classList.remove('selected');
+                card.style.border = '2px solid #e0e0e0';
+                card.style.background = 'white';
+            });
+            this.closest('.radio-card').classList.add('selected');
+            this.closest('.radio-card').style.border = '2px solid #0d47a1';
+            this.closest('.radio-card').style.background = '#e3f2fd';
+        });
+    });
+    
+    // Setup savings distribution inputs
+    ['wallet', 'investment', 'algo'].forEach(type => {
+        const input = document.getElementById(`${type}-pct`);
+        if (input) {
+            input.addEventListener('change', () => rebalanceAllocations(type));
+            input.addEventListener('input', () => updateAllocationBars());
+        }
+    });
+    
+    // Initial update
+    updateAllocationDisplay();
+}
+
+// Update protection/savings split
+function updateAllocationSplit() {
+    const slider = document.getElementById('allocation-slider');
+    if (!slider) return;
+    
+    phinsAllocation.protectionPct = parseInt(slider.value);
+    phinsAllocation.savingsPct = 100 - phinsAllocation.protectionPct;
+    
+    // Update display
+    document.getElementById('protection-pct').textContent = phinsAllocation.protectionPct + '%';
+    document.getElementById('savings-pct').textContent = phinsAllocation.savingsPct + '%';
+    
+    // Update gradient background
+    slider.style.background = `linear-gradient(to right, #dc3545 0%, #dc3545 ${phinsAllocation.protectionPct}%, #28a745 ${phinsAllocation.protectionPct}%, #28a745 100%)`;
+    
+    updateAllocationDisplay();
+}
+
+// Adjust allocation for a specific category
+function adjustAllocation(type, delta) {
+    const input = document.getElementById(`${type}-pct`);
+    if (!input) return;
+    
+    let newValue = parseInt(input.value) + delta;
+    newValue = Math.max(0, Math.min(100, newValue));
+    input.value = newValue;
+    
+    rebalanceAllocations(type);
+}
+
+// Rebalance allocations to ensure they total 100%
+function rebalanceAllocations(changedType) {
+    const walletInput = document.getElementById('wallet-pct');
+    const investmentInput = document.getElementById('investment-pct');
+    const algoInput = document.getElementById('algo-pct');
+    
+    if (!walletInput || !investmentInput || !algoInput) return;
+    
+    let wallet = parseInt(walletInput.value) || 0;
+    let investment = parseInt(investmentInput.value) || 0;
+    let algo = parseInt(algoInput.value) || 0;
+    
+    const total = wallet + investment + algo;
+    
+    if (total !== 100) {
+        // Adjust the other two proportionally
+        const diff = 100 - total;
+        const others = ['wallet', 'investment', 'algo'].filter(t => t !== changedType);
+        
+        if (total > 100) {
+            // Reduce others proportionally
+            const currentOthersTotal = others.reduce((sum, t) => sum + parseInt(document.getElementById(`${t}-pct`).value), 0);
+            if (currentOthersTotal > 0) {
+                others.forEach(t => {
+                    const input = document.getElementById(`${t}-pct`);
+                    const current = parseInt(input.value);
+                    const reduction = Math.round((current / currentOthersTotal) * Math.abs(diff));
+                    input.value = Math.max(0, current - reduction);
+                });
+            }
+        } else {
+            // Increase others proportionally
+            const currentOthersTotal = others.reduce((sum, t) => sum + parseInt(document.getElementById(`${t}-pct`).value), 0);
+            if (currentOthersTotal > 0) {
+                others.forEach(t => {
+                    const input = document.getElementById(`${t}-pct`);
+                    const current = parseInt(input.value);
+                    const increase = Math.round((current / currentOthersTotal) * diff);
+                    input.value = Math.min(100, current + increase);
+                });
+            } else {
+                // If others are 0, split evenly
+                const each = Math.floor(diff / others.length);
+                others.forEach(t => {
+                    document.getElementById(`${t}-pct`).value = each;
+                });
+            }
+        }
+    }
+    
+    // Update state
+    phinsAllocation.walletPct = parseInt(walletInput.value);
+    phinsAllocation.investmentPct = parseInt(investmentInput.value);
+    phinsAllocation.algoPct = parseInt(algoInput.value);
+    
+    updateAllocationBars();
+    updateAllocationDisplay();
+}
+
+// Update allocation bar visuals
+function updateAllocationBars() {
+    const wallet = parseInt(document.getElementById('wallet-pct')?.value) || 0;
+    const investment = parseInt(document.getElementById('investment-pct')?.value) || 0;
+    const algo = parseInt(document.getElementById('algo-pct')?.value) || 0;
+    
+    document.getElementById('wallet-bar').style.width = wallet + '%';
+    document.getElementById('investment-bar').style.width = investment + '%';
+    document.getElementById('algo-bar').style.width = algo + '%';
+    
+    const total = wallet + investment + algo;
+    const totalEl = document.getElementById('total-allocation');
+    if (totalEl) {
+        totalEl.textContent = total + '%';
+        totalEl.style.color = total === 100 ? '#0d47a1' : '#dc3545';
+    }
+}
+
+// Update all allocation displays
+function updateAllocationDisplay() {
+    const coverage = phinsAllocation.coverageAmount;
+    const basePremium = calculateBasePremium(coverage);
+    
+    const monthlyPremium = basePremium;
+    const protectionMonthly = monthlyPremium * (phinsAllocation.protectionPct / 100);
+    const savingsMonthly = monthlyPremium * (phinsAllocation.savingsPct / 100);
+    
+    // Update protection/savings monthly amounts
+    const protectionMonthlyEl = document.getElementById('protection-monthly');
+    const savingsMonthlyEl = document.getElementById('savings-monthly');
+    if (protectionMonthlyEl) protectionMonthlyEl.textContent = formatCurrency(protectionMonthly);
+    if (savingsMonthlyEl) savingsMonthlyEl.textContent = formatCurrency(savingsMonthly);
+    
+    // Update savings distribution amounts
+    const walletMonthly = savingsMonthly * (phinsAllocation.walletPct / 100);
+    const investmentMonthly = savingsMonthly * (phinsAllocation.investmentPct / 100);
+    const algoMonthly = savingsMonthly * (phinsAllocation.algoPct / 100);
+    
+    const walletMonthlyEl = document.getElementById('wallet-monthly');
+    const investmentMonthlyEl = document.getElementById('investment-monthly');
+    const algoMonthlyEl = document.getElementById('algo-monthly');
+    
+    if (walletMonthlyEl) walletMonthlyEl.textContent = formatCurrency(walletMonthly);
+    if (investmentMonthlyEl) investmentMonthlyEl.textContent = formatCurrency(investmentMonthly);
+    if (algoMonthlyEl) algoMonthlyEl.textContent = formatCurrency(algoMonthly);
+    
+    // Update premium displays
+    const quarterlyPremium = monthlyPremium * 3 * 0.97;
+    const annualPremium = monthlyPremium * 12 * 0.90;
+    
+    document.getElementById('monthly-premium').textContent = formatCurrency(monthlyPremium);
+    document.getElementById('quarterly-premium').textContent = formatCurrency(quarterlyPremium);
+    document.getElementById('annual-premium').textContent = formatCurrency(annualPremium);
+    
+    // Update summary
+    const summaryCoverage = document.getElementById('summary-coverage');
+    const summaryYears = document.getElementById('summary-years');
+    if (summaryCoverage) summaryCoverage.textContent = formatCurrency(coverage, false);
+    if (summaryYears) summaryYears.textContent = phinsAllocation.coverageYears;
+    
+    // Store premiums
+    formData.premiums = {
+        monthly: monthlyPremium,
+        quarterly: quarterlyPremium,
+        annual: annualPremium
+    };
+}
+
+// Calculate base premium based on coverage
+function calculateBasePremium(coverage) {
+    const dob = document.getElementById('dob')?.value;
+    let ageFactor = 1.0;
+    
+    if (dob) {
+        const age = calculateAge(dob);
+        ageFactor = 1.0 + (Math.max(0, age - 25) * 0.015);
+    }
+    
+    // Base: $0.25 per $1000 coverage per month
+    const basePremium = (coverage / 1000) * 0.25 * ageFactor;
+    return Math.round(basePremium);
+}
+
+// Format currency
+function formatCurrency(amount, showDecimals = true) {
+    return new Intl.NumberFormat('en-US', {
+        style: 'currency',
+        currency: 'USD',
+        minimumFractionDigits: showDecimals ? 2 : 0,
+        maximumFractionDigits: showDecimals ? 2 : 0
+    }).format(amount);
+}
 
 function setupEventListeners() {
     // Navigation buttons
@@ -140,57 +374,31 @@ function selectPolicy(e) {
 
 function updateCoverageDisplay() {
     const amount = parseInt(document.getElementById('coverage-slider').value);
+    phinsAllocation.coverageAmount = amount;
+    
     document.getElementById('coverage-amount-display').textContent = 
         new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0 }).format(amount);
     
-    // Calculate premium based on coverage
-    calculatePremium(amount);
+    // Update all allocation displays
+    updateAllocationDisplay();
+    
+    // Update quick amount button active state
+    document.querySelectorAll('.quick-amount').forEach(btn => {
+        if (parseInt(btn.dataset.amount) === amount) {
+            btn.style.border = '2px solid #0d47a1';
+            btn.style.background = '#e3f2fd';
+            btn.style.color = '#0d47a1';
+        } else {
+            btn.style.border = '2px solid #e0e0e0';
+            btn.style.background = 'white';
+            btn.style.color = '';
+        }
+    });
 }
 
 function calculatePremium(coverageAmount) {
-    const policyType = document.getElementById('policy-type').value;
-    const dob = document.getElementById('dob').value;
-    
-    if (!policyType || !dob) {
-        return;
-    }
-    
-    const age = calculateAge(dob);
-    
-    // Base premium by type
-    const basePremiums = {
-        'life': 1200,
-        'health': 800,
-        'auto': 600,
-        'property': 1500,
-        'disability': 1500
-    };
-    
-    const basePremium = basePremiums[policyType] || 1000;
-    
-    // Age factor
-    const ageFactor = 1.0 + (Math.max(0, age - 25) * 0.02);
-    
-    // Coverage factor
-    const coverageFactor = coverageAmount / 100000;
-    
-    // Risk factor (will be determined after health assessment, using medium for now)
-    const riskFactor = 1.0;
-    
-    const annualPremium = Math.round(basePremium * ageFactor * coverageFactor * riskFactor);
-    const monthlyPremium = Math.round(annualPremium / 12);
-    const quarterlyPremium = Math.round(annualPremium / 4);
-    
-    // Update display
-    document.getElementById('monthly-premium').textContent = 
-        new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(monthlyPremium);
-    document.getElementById('quarterly-premium').textContent = 
-        new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(quarterlyPremium);
-    document.getElementById('annual-premium').textContent = 
-        new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(annualPremium);
-    
-    // Store for later
-    formData.premiums = { monthly: monthlyPremium, quarterly: quarterlyPremium, annual: annualPremium };
+    // This is now handled by updateAllocationDisplay for the unified PHINS contract
+    updateAllocationDisplay();
 }
 
 function calculateAge(dobString) {
@@ -538,9 +746,13 @@ function validateStep(step) {
     
     // Additional validations
     if (step === 2) {
-        const policyType = document.getElementById('policy-type').value;
-        if (!policyType) {
-            alert('Please select a policy type');
+        // PHINS unified contract is pre-selected, just verify allocations total 100%
+        const walletPct = parseInt(document.getElementById('wallet-pct')?.value) || 0;
+        const investmentPct = parseInt(document.getElementById('investment-pct')?.value) || 0;
+        const algoPct = parseInt(document.getElementById('algo-pct')?.value) || 0;
+        
+        if (walletPct + investmentPct + algoPct !== 100) {
+            alert('Savings distribution must total 100%. Please adjust your allocation.');
             isValid = false;
         }
     }
@@ -613,8 +825,18 @@ function saveStepData(step) {
             
         case 2:
             formData.coverage = {
-                policyType: document.getElementById('policy-type').value,
-                coverageAmount: parseInt(document.getElementById('coverage-slider').value)
+                policyType: document.getElementById('policy-type').value || 'phins_unified',
+                coverageAmount: phinsAllocation.coverageAmount,
+                coverageYears: phinsAllocation.coverageYears,
+                allocation: {
+                    protectionPct: phinsAllocation.protectionPct,
+                    savingsPct: phinsAllocation.savingsPct,
+                    distribution: {
+                        walletPct: phinsAllocation.walletPct,
+                        investmentPct: phinsAllocation.investmentPct,
+                        algoPct: phinsAllocation.algoPct
+                    }
+                }
             };
             break;
             
@@ -694,23 +916,30 @@ function populateReview() {
     `;
     document.getElementById('review-personal').innerHTML = personalHtml;
     
-    // Coverage Details
-    const policyTypes = {
-        'life': 'Life Insurance',
-        'health': 'Health Insurance',
-        'disability': 'PHINS Disability + Investment',
-        'auto': 'Auto Insurance',
-        'property': 'Property Insurance'
-    };
+    // Coverage Details - PHINS Unified Contract
+    const alloc = formData.coverage?.allocation || {};
+    const dist = alloc.distribution || {};
     
     const coverageHtml = `
         <div class="review-item">
-            <strong>Policy Type</strong>
-            <span>${policyTypes[formData.coverage.policyType]}</span>
+            <strong>Contract Type</strong>
+            <span>🛡️ PHINS Unified Protection Contract</span>
         </div>
         <div class="review-item">
             <strong>Coverage Amount</strong>
-            <span>${new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0 }).format(formData.coverage.coverageAmount)}</span>
+            <span>${new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0 }).format(formData.coverage?.coverageAmount || 500000)}</span>
+        </div>
+        <div class="review-item">
+            <strong>Coverage Period</strong>
+            <span>${formData.coverage?.coverageYears || 20} Years</span>
+        </div>
+        <div class="review-item">
+            <strong>Protection Allocation</strong>
+            <span>🛡️ ${alloc.protectionPct || 25}% Protection / 💰 ${alloc.savingsPct || 75}% Savings</span>
+        </div>
+        <div class="review-item">
+            <strong>Savings Distribution</strong>
+            <span>🏥 ${dist.walletPct || 15}% Wallet | 📈 ${dist.investmentPct || 60}% Investment | 🤖 ${dist.algoPct || 25}% Algo Trading</span>
         </div>
     `;
     document.getElementById('review-coverage').innerHTML = coverageHtml;
@@ -843,13 +1072,17 @@ async function handleSubmit(e) {
     // Prepare submission data with null safety
     let submissionData;
     try {
+        const alloc = formData.coverage?.allocation || {};
+        const dist = alloc.distribution || {};
+        
         submissionData = {
             customer_name: `${formData.personal.firstName || ''} ${formData.personal.lastName || ''}`.trim(),
             customer_email: formData.personal.email || '',
             customer_phone: formData.personal.phone || '',
             customer_dob: formData.personal.dob || '',
-            type: formData.coverage.policyType || 'life',
-            coverage_amount: formData.coverage.coverageAmount || 100000,
+            type: 'phins_unified',
+            coverage_amount: formData.coverage?.coverageAmount || 500000,
+            coverage_years: formData.coverage?.coverageYears || 20,
             age: formData.personal.dob ? calculateAge(formData.personal.dob) : 30,
             risk_score: calculateRiskScore(),
             medical_exam_required: formData.health.medicalConditions === 'yes' || formData.health.surgery === 'yes',
@@ -865,6 +1098,16 @@ async function handleSubmit(e) {
                 height: formData.health.height || '',
                 weight: formData.health.weight || ''
             },
+            // PHINS Unified Contract allocation
+            phins_allocation: {
+                protection_pct: alloc.protectionPct || 25,
+                savings_pct: alloc.savingsPct || 75,
+                distribution: {
+                    wallet_pct: dist.walletPct || 15,
+                    investment_pct: dist.investmentPct || 60,
+                    algo_trading_pct: dist.algoPct || 25
+                }
+            },
             // Payment and billing information
             payment: {
                 card_number: formData.payment._cardNumber || '',
@@ -877,9 +1120,12 @@ async function handleSubmit(e) {
                 auto_pay: formData.payment.autoPay || false
             },
             health_wallet: {
-                enabled: formData.payment.healthWalletEnabled || false,
+                enabled: true,  // Always enabled for PHINS unified contract
                 monthly_deposit: formData.payment.monthlyDeposit || 0
-            }
+            },
+            // AI/BI Pipeline integration
+            pipeline_enabled: true,
+            savings_pipeline_enabled: true
         };
     } catch (dataError) {
         alert('Error preparing application data. Please review your information and try again.');

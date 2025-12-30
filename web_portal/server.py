@@ -4636,6 +4636,89 @@ For claims or questions, please contact:
                         'status': 'pending_activation'
                     }
                 
+                # Process PHINS Unified Contract allocation
+                phins_allocation = data.get('phins_allocation', {})
+                coverage_years = data.get('coverage_years', 20)
+                
+                if phins_allocation:
+                    # Store customer allocation preferences
+                    CUSTOMER_ALLOCATIONS[customer_id] = {
+                        'customer_id': customer_id,
+                        'protection_pct': phins_allocation.get('protection_pct', 25),
+                        'savings_pct': phins_allocation.get('savings_pct', 75),
+                        'distribution': phins_allocation.get('distribution', {
+                            'wallet_pct': 15,
+                            'investment_pct': 60,
+                            'algo_trading_pct': 25
+                        }),
+                        'coverage_years': coverage_years,
+                        'created_at': datetime.now().isoformat()
+                    }
+                    
+                    # Initialize savings pipeline account if enabled
+                    if savings_pipeline_enabled and savings_pipeline_service:
+                        try:
+                            # Create pipeline account with customer preferences
+                            dist = phins_allocation.get('distribution', {})
+                            from services.savings_pipeline_service import AllocationStrategy, RiskLevel
+                            
+                            # Determine risk level based on allocation
+                            protection_pct = phins_allocation.get('protection_pct', 25)
+                            if protection_pct >= 40:
+                                risk_level = RiskLevel.CONSERVATIVE
+                            elif protection_pct >= 30:
+                                risk_level = RiskLevel.MODERATE
+                            else:
+                                risk_level = RiskLevel.AGGRESSIVE
+                            
+                            # Create pipeline account
+                            account = savings_pipeline_service.get_or_create_account(customer_id)
+                            account.risk_level = risk_level
+                            account.allocation_config.wallet_pct = dist.get('wallet_pct', 15)
+                            account.allocation_config.investment_pct = dist.get('investment_pct', 60)
+                            account.allocation_config.algo_trading_pct = dist.get('algo_trading_pct', 25)
+                            
+                            # Record on NFT ledger
+                            if generate_nft_token:
+                                nft = generate_nft_token(
+                                    owner_id=customer_id,
+                                    asset_type="phins_contract",
+                                    metadata={
+                                        'contract_type': 'phins_unified',
+                                        'coverage_amount': data.get('coverage_amount', 100000),
+                                        'coverage_years': coverage_years,
+                                        'allocation': phins_allocation,
+                                        'created_at': datetime.now().isoformat()
+                                    }
+                                )
+                            
+                            # Record transaction
+                            if record_transaction:
+                                record_transaction(
+                                    customer_id=customer_id,
+                                    tx_type="phins_contract_created",
+                                    amount=0,
+                                    description=f"PHINS Unified Contract created: ${data.get('coverage_amount', 100000):,.0f} coverage, {coverage_years} years",
+                                    metadata={
+                                        'policy_id': policy_id,
+                                        'allocation': phins_allocation
+                                    }
+                                )
+                        except Exception as e:
+                            print(f"Pipeline setup note: {e}")
+                    
+                    # Initialize investment account
+                    if customer_id not in INVESTMENT_ACCOUNTS:
+                        INVESTMENT_ACCOUNTS[customer_id] = {
+                            'customer_id': customer_id,
+                            'balance': 0,
+                            'index_balance': 0,
+                            'bonds_balance': 0,
+                            'crypto_balance': 0,
+                            'deposits': [],
+                            'created_at': datetime.now().isoformat()
+                        }
+                
                 UNDERWRITING_APPLICATIONS[uw_id] = {
                     'id': uw_id,
                     'policy_id': policy_id,
