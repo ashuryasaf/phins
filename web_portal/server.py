@@ -3516,6 +3516,309 @@ For claims or questions, please contact:
             return
         
         # ========== END COMPREHENSIVE CUSTOMER API ==========
+        
+        # ========== UNIFIED ACTIVITY LOG API ==========
+        # Get all customer activities across all systems in unified view
+        if path == '/api/customer/activity-log':
+            customer_id = qs.get('customer_id', [''])[0]
+            limit = int(qs.get('limit', ['50'])[0])
+            
+            if not customer_id:
+                if session:
+                    customer_id = session.get('customer_id')
+            
+            if not customer_id:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'customer_id required'}).encode('utf-8'))
+                return
+            
+            # Collect all activities from various sources
+            activities = []
+            
+            # 1. Health Wallet Transactions (deposits & internal)
+            wallet = HEALTH_WALLETS.get(customer_id, {})
+            for tx in wallet.get('transactions', []):
+                activities.append({
+                    'id': tx.get('id', f"WAL-{len(activities)}"),
+                    'type': 'deposit' if tx.get('type') == 'deposit' else 'wallet_activity',
+                    'category': 'health_wallet',
+                    'icon': '💰' if tx.get('type') == 'deposit' else '💳',
+                    'description': f"Health Wallet {'Deposit' if tx.get('type') == 'deposit' else tx.get('type', 'Transaction')}",
+                    'amount': tx.get('amount', 0),
+                    'balance_after': tx.get('balance_after', 0),
+                    'timestamp': tx.get('timestamp', tx.get('created_at', '')),
+                    'nft_token_id': tx.get('nft_token_id'),
+                    'ledger_tx_id': tx.get('ledger_tx_id')
+                })
+            
+            # 2. Medical Purchases
+            for purchase in MEDICAL_PURCHASES.values():
+                if purchase.get('customer_id') == customer_id:
+                    activities.append({
+                        'id': purchase.get('id'),
+                        'type': 'medical_purchase',
+                        'category': purchase.get('category', 'medical'),
+                        'icon': '💊',
+                        'description': f"Medical Purchase: {purchase.get('product_name', 'Product')}",
+                        'product_name': purchase.get('product_name'),
+                        'provider': purchase.get('provider'),
+                        'amount': -purchase.get('amount', 0),
+                        'timestamp': purchase.get('timestamp', ''),
+                        'nft_token_id': purchase.get('nft_token_id'),
+                        'ledger_tx_id': purchase.get('ledger_tx_id'),
+                        'status': purchase.get('status', 'completed')
+                    })
+            
+            # 3. Investment Deposits & Activities
+            inv_acc = INVESTMENT_ACCOUNTS.get(customer_id, {})
+            for deposit in inv_acc.get('deposits', []):
+                activities.append({
+                    'id': deposit.get('id', f"INV-{len(activities)}"),
+                    'type': 'investment_deposit',
+                    'category': 'investments',
+                    'icon': '📈',
+                    'description': f"Investment Deposit - {deposit.get('allocation', 'Portfolio')}",
+                    'amount': deposit.get('amount', 0),
+                    'allocation': deposit.get('allocation'),
+                    'timestamp': deposit.get('timestamp', deposit.get('created_at', '')),
+                    'nft_token_id': deposit.get('nft_token_id'),
+                    'ledger_tx_id': deposit.get('ledger_tx_id')
+                })
+            
+            # 4. Algo Trading Orders (from transaction ledger)
+            for tx in TRANSACTION_LEDGER.values():
+                if tx.get('customer_id') == customer_id and tx.get('tx_type') in ['algo_trade', 'algo_order']:
+                    meta = tx.get('metadata', {})
+                    activities.append({
+                        'id': tx.get('id'),
+                        'type': 'algo_trade',
+                        'category': 'algo_trading',
+                        'icon': '🤖',
+                        'description': f"Algo Trade: {meta.get('side', 'Trade')} {meta.get('symbol', '')}",
+                        'symbol': meta.get('symbol'),
+                        'side': meta.get('side'),
+                        'quantity': meta.get('quantity'),
+                        'amount': tx.get('amount', 0),
+                        'timestamp': tx.get('timestamp', tx.get('created_at', '')),
+                        'nft_token_id': tx.get('nft_token_id'),
+                        'status': meta.get('status', 'executed')
+                    })
+            
+            # 5. Bill Payments
+            for tx in TRANSACTION_LEDGER.values():
+                if tx.get('customer_id') == customer_id and tx.get('tx_type') in ['bill_payment', 'premium_payment']:
+                    meta = tx.get('metadata', {})
+                    activities.append({
+                        'id': tx.get('id'),
+                        'type': tx.get('tx_type'),
+                        'category': 'billing',
+                        'icon': '💳',
+                        'description': f"{'Premium' if tx.get('tx_type') == 'premium_payment' else 'Bill'} Payment",
+                        'amount': -tx.get('amount', 0),
+                        'timestamp': tx.get('timestamp', tx.get('created_at', '')),
+                        'nft_token_id': tx.get('nft_token_id'),
+                        'policy_id': meta.get('policy_id')
+                    })
+            
+            # 6. Claims
+            for claim in CLAIMS.values():
+                if claim.get('customer_id') == customer_id:
+                    activities.append({
+                        'id': claim.get('id'),
+                        'type': 'claim',
+                        'category': 'claims',
+                        'icon': '📋',
+                        'description': f"Claim: {claim.get('description', claim.get('type', 'Insurance Claim'))}",
+                        'amount': claim.get('claimed_amount', 0),
+                        'status': claim.get('status', 'pending'),
+                        'timestamp': claim.get('submitted_at', claim.get('created_at', '')),
+                        'nft_token_id': claim.get('nft_token_id'),
+                        'ledger_tx_id': claim.get('ledger_tx_id')
+                    })
+            
+            # Sort by timestamp descending
+            activities.sort(key=lambda x: x.get('timestamp', ''), reverse=True)
+            
+            # Calculate summary
+            total_deposits = sum(a['amount'] for a in activities if a['type'] == 'deposit' and a['amount'] > 0)
+            total_purchases = abs(sum(a['amount'] for a in activities if a['type'] == 'medical_purchase'))
+            total_investments = sum(a['amount'] for a in activities if a['type'] == 'investment_deposit' and a['amount'] > 0)
+            total_algo = sum(abs(a['amount']) for a in activities if a['type'] == 'algo_trade')
+            
+            self._set_json_headers()
+            self.wfile.write(json.dumps({
+                'success': True,
+                'customer_id': customer_id,
+                'activities': activities[:limit],
+                'total_count': len(activities),
+                'summary': {
+                    'total_deposits': total_deposits,
+                    'total_medical_purchases': total_purchases,
+                    'total_investments': total_investments,
+                    'total_algo_trading': total_algo,
+                    'activity_count': len(activities)
+                },
+                'timestamp': datetime.now().isoformat()
+            }, default=str).encode('utf-8'))
+            return
+        
+        # ========== END UNIFIED ACTIVITY LOG API ==========
+        
+        # ========== PLATFORM ANALYTICS API (ADMIN) ==========
+        # Aggregated platform-wide data for admin dashboard predictions & statistics
+        if path == '/api/admin/platform-analytics':
+            # Aggregate all customer data for platform-wide insights
+            
+            # 1. Platform Totals
+            total_customers = len(CUSTOMERS)
+            total_deposits = sum(
+                sum(tx.get('amount', 0) for tx in w.get('transactions', []) if tx.get('type') == 'deposit')
+                for w in HEALTH_WALLETS.values()
+            )
+            total_medical_purchases = sum(p.get('amount', 0) for p in MEDICAL_PURCHASES.values())
+            total_investment_volume = sum(
+                sum(d.get('amount', 0) for d in acc.get('deposits', []))
+                for acc in INVESTMENT_ACCOUNTS.values()
+            )
+            
+            # Algo trading volume from transaction ledger
+            total_algo_volume = sum(
+                abs(tx.get('amount', 0)) 
+                for tx in TRANSACTION_LEDGER.values() 
+                if tx.get('tx_type') in ['algo_trade', 'algo_order']
+            )
+            
+            # 2. Medical Purchases by Category
+            medical_by_category = {}
+            for purchase in MEDICAL_PURCHASES.values():
+                cat = purchase.get('category', 'general')
+                if cat not in medical_by_category:
+                    medical_by_category[cat] = {'count': 0, 'total': 0, 'products': {}}
+                medical_by_category[cat]['count'] += 1
+                medical_by_category[cat]['total'] += purchase.get('amount', 0)
+                
+                # Track individual products
+                product = purchase.get('product_name', 'Unknown')
+                if product not in medical_by_category[cat]['products']:
+                    medical_by_category[cat]['products'][product] = {'count': 0, 'total': 0}
+                medical_by_category[cat]['products'][product]['count'] += 1
+                medical_by_category[cat]['products'][product]['total'] += purchase.get('amount', 0)
+            
+            # 3. Investments by Asset Type
+            investments_by_asset = {
+                'index_funds': {'customers': 0, 'total_usd': 0},
+                'bonds': {'customers': 0, 'total_usd': 0},
+                'crypto': {'customers': 0, 'total_usd': 0},
+                'algo_trading': {'customers': 0, 'total_usd': 0}
+            }
+            for cust_id, acc in INVESTMENT_ACCOUNTS.items():
+                if acc.get('index_balance', 0) > 0:
+                    investments_by_asset['index_funds']['customers'] += 1
+                    investments_by_asset['index_funds']['total_usd'] += acc.get('index_balance', 0)
+                if acc.get('bonds_balance', 0) > 0:
+                    investments_by_asset['bonds']['customers'] += 1
+                    investments_by_asset['bonds']['total_usd'] += acc.get('bonds_balance', 0)
+                if acc.get('crypto_balance', 0) > 0:
+                    investments_by_asset['crypto']['customers'] += 1
+                    investments_by_asset['crypto']['total_usd'] += acc.get('crypto_balance', 0)
+            
+            # Algo trading customer count
+            algo_customers = set()
+            for tx in TRANSACTION_LEDGER.values():
+                if tx.get('tx_type') in ['algo_trade', 'algo_order']:
+                    algo_customers.add(tx.get('customer_id'))
+            investments_by_asset['algo_trading']['customers'] = len(algo_customers)
+            investments_by_asset['algo_trading']['total_usd'] = total_algo_volume
+            
+            # 4. Algo Trading Stats
+            algo_orders = [tx for tx in TRANSACTION_LEDGER.values() if tx.get('tx_type') in ['algo_trade', 'algo_order']]
+            algo_stats = {
+                'active_bots': len(getattr(_algo_trading_service, 'bots', {})) if algo_trading_enabled else 0,
+                'total_orders': len(algo_orders),
+                'total_volume': total_algo_volume,
+                'unique_customers': len(algo_customers),
+                'avg_order_size': total_algo_volume / len(algo_orders) if algo_orders else 0
+            }
+            
+            # 5. Ledger Integrity
+            nft_count = len(NFT_LEDGER)
+            tx_count = len(TRANSACTION_LEDGER)
+            ledger_integrity = {
+                'nft_tokens': nft_count,
+                'transaction_records': tx_count,
+                'integrity_score': 100 if nft_count > 0 and tx_count > 0 else 0,
+                'medical_nfts': len([n for n in NFT_LEDGER.values() if n.get('transaction_type') == 'medical_purchase']),
+                'deposit_nfts': len([n for n in NFT_LEDGER.values() if n.get('transaction_type') == 'wallet_deposit']),
+                'investment_nfts': len([n for n in NFT_LEDGER.values() if n.get('transaction_type') == 'investment_deposit']),
+                'algo_nfts': len([n for n in NFT_LEDGER.values() if n.get('transaction_type') in ['algo_trade', 'algo_order']])
+            }
+            
+            # 6. Transaction Breakdown by Type
+            tx_by_type = {}
+            for tx in TRANSACTION_LEDGER.values():
+                tx_type = tx.get('tx_type', 'unknown')
+                if tx_type not in tx_by_type:
+                    tx_by_type[tx_type] = {'count': 0, 'total_amount': 0}
+                tx_by_type[tx_type]['count'] += 1
+                tx_by_type[tx_type]['total_amount'] += abs(tx.get('amount', 0))
+            
+            # 7. Health Wallet Summary
+            wallet_summary = {
+                'total_wallets': len(HEALTH_WALLETS),
+                'total_balance': sum(w.get('balance', 0) for w in HEALTH_WALLETS.values()),
+                'total_deposits': total_deposits,
+                'total_spent': total_medical_purchases,
+                'avg_balance': sum(w.get('balance', 0) for w in HEALTH_WALLETS.values()) / len(HEALTH_WALLETS) if HEALTH_WALLETS else 0
+            }
+            
+            # 8. Predictions / BI Metrics
+            avg_purchase_per_customer = total_medical_purchases / total_customers if total_customers > 0 else 0
+            avg_investment_per_customer = total_investment_volume / total_customers if total_customers > 0 else 0
+            
+            predictions = {
+                'avg_purchase_per_customer': avg_purchase_per_customer,
+                'avg_investment_per_customer': avg_investment_per_customer,
+                'projected_monthly_purchases': total_medical_purchases * 1.1,  # 10% growth
+                'projected_monthly_investments': total_investment_volume * 1.15,  # 15% growth
+                'customer_lifetime_value': (avg_purchase_per_customer + avg_investment_per_customer) * 12,
+                'platform_health_score': min(100, (nft_count + tx_count) / max(1, total_customers) * 10)
+            }
+            
+            # 9. Top Products
+            all_products = {}
+            for purchase in MEDICAL_PURCHASES.values():
+                product = purchase.get('product_name', 'Unknown')
+                if product not in all_products:
+                    all_products[product] = {'count': 0, 'total': 0}
+                all_products[product]['count'] += 1
+                all_products[product]['total'] += purchase.get('amount', 0)
+            
+            top_products = sorted(all_products.items(), key=lambda x: x[1]['count'], reverse=True)[:10]
+            
+            self._set_json_headers()
+            self.wfile.write(json.dumps({
+                'success': True,
+                'platform_totals': {
+                    'total_customers': total_customers,
+                    'total_deposits': total_deposits,
+                    'total_medical_purchases': total_medical_purchases,
+                    'total_investment_volume': total_investment_volume,
+                    'total_algo_trading_volume': total_algo_volume,
+                    'total_aum': total_deposits + total_investment_volume + total_algo_volume
+                },
+                'medical_by_category': medical_by_category,
+                'investments_by_asset': investments_by_asset,
+                'algo_trading': algo_stats,
+                'ledger_integrity': ledger_integrity,
+                'transactions_by_type': tx_by_type,
+                'wallet_summary': wallet_summary,
+                'predictions': predictions,
+                'top_products': [{'name': p[0], **p[1]} for p in top_products],
+                'timestamp': datetime.now().isoformat()
+            }, default=str).encode('utf-8'))
+            return
+        
+        # ========== END PLATFORM ANALYTICS API ==========
 
         # Investment portfolio endpoint (legacy - redirect to new API)
         if path.startswith('/api/investment-portfolio'):

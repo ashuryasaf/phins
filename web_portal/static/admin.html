@@ -859,6 +859,115 @@
         </div>
       </div>
     </section>
+    
+    <!-- Platform Ledger Analytics Section -->
+    <section id="platform-analytics" class="section-content" style="background: linear-gradient(135deg, #1a237e 0%, #283593 50%, #3949ab 100%); color: white; border-radius: 16px; padding: 28px; margin-top: 24px; box-shadow: 0 8px 30px rgba(26, 35, 126, 0.25);">
+      <div class="section-header" style="margin-bottom: 24px;">
+        <div>
+          <h2 style="color: white; margin: 0;">📊 Platform Ledger Analytics</h2>
+          <p style="opacity: 0.8; margin: 4px 0 0 0; font-size: 0.9rem;">Aggregated data from all customers for BI predictions & statistics</p>
+        </div>
+        <button onclick="loadPlatformAnalytics()" style="background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.3); color: white; padding: 8px 16px; border-radius: 8px; cursor: pointer; font-weight: 600;">🔄 Refresh</button>
+      </div>
+      
+      <!-- Platform Totals Row -->
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; margin-bottom: 24px;">
+        <div style="background: rgba(255,255,255,0.1); border-radius: 12px; padding: 16px; border: 1px solid rgba(255,255,255,0.15);">
+          <div style="font-size: 0.8rem; opacity: 0.8; margin-bottom: 4px;">👥 Total Customers</div>
+          <div id="analytics-customers" style="font-size: 1.8rem; font-weight: 700;">0</div>
+        </div>
+        <div style="background: rgba(255,255,255,0.1); border-radius: 12px; padding: 16px; border: 1px solid rgba(255,255,255,0.15);">
+          <div style="font-size: 0.8rem; opacity: 0.8; margin-bottom: 4px;">💰 Total Deposits</div>
+          <div id="analytics-deposits" style="font-size: 1.8rem; font-weight: 700;">$0</div>
+        </div>
+        <div style="background: rgba(255,255,255,0.1); border-radius: 12px; padding: 16px; border: 1px solid rgba(255,255,255,0.15);">
+          <div style="font-size: 0.8rem; opacity: 0.8; margin-bottom: 4px;">💊 Medical Purchases</div>
+          <div id="analytics-medical" style="font-size: 1.8rem; font-weight: 700;">$0</div>
+        </div>
+        <div style="background: rgba(255,255,255,0.1); border-radius: 12px; padding: 16px; border: 1px solid rgba(255,255,255,0.15);">
+          <div style="font-size: 0.8rem; opacity: 0.8; margin-bottom: 4px;">📈 Investment Volume</div>
+          <div id="analytics-investments" style="font-size: 1.8rem; font-weight: 700;">$0</div>
+        </div>
+        <div style="background: rgba(255,255,255,0.1); border-radius: 12px; padding: 16px; border: 1px solid rgba(255,255,255,0.15);">
+          <div style="font-size: 0.8rem; opacity: 0.8; margin-bottom: 4px;">🤖 Algo Trading</div>
+          <div id="analytics-algo" style="font-size: 1.8rem; font-weight: 700;">$0</div>
+        </div>
+        <div style="background: linear-gradient(135deg, #4caf50 0%, #66bb6a 100%); border-radius: 12px; padding: 16px;">
+          <div style="font-size: 0.8rem; opacity: 0.9; margin-bottom: 4px;">💎 Total AUM</div>
+          <div id="analytics-aum" style="font-size: 1.8rem; font-weight: 700;">$0</div>
+        </div>
+      </div>
+      
+      <!-- Detailed Analytics Grid -->
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 20px;">
+        
+        <!-- Medical Purchases by Category -->
+        <div style="background: rgba(255,255,255,0.08); border-radius: 12px; padding: 20px; border: 1px solid rgba(255,255,255,0.1);">
+          <h4 style="margin: 0 0 16px 0; display: flex; align-items: center; gap: 8px;">
+            <span style="background: #f44336; padding: 6px 10px; border-radius: 8px;">💊</span>
+            Medical Purchases by Category
+          </h4>
+          <div id="analytics-medical-categories" style="max-height: 200px; overflow-y: auto;">
+            <div style="color: rgba(255,255,255,0.6); font-size: 0.9rem;">Loading...</div>
+          </div>
+        </div>
+        
+        <!-- Investments by Asset -->
+        <div style="background: rgba(255,255,255,0.08); border-radius: 12px; padding: 20px; border: 1px solid rgba(255,255,255,0.1);">
+          <h4 style="margin: 0 0 16px 0; display: flex; align-items: center; gap: 8px;">
+            <span style="background: #2196f3; padding: 6px 10px; border-radius: 8px;">📈</span>
+            Investments by Asset Type
+          </h4>
+          <div id="analytics-investments-assets" style="max-height: 200px; overflow-y: auto;">
+            <div style="color: rgba(255,255,255,0.6); font-size: 0.9rem;">Loading...</div>
+          </div>
+        </div>
+        
+        <!-- Algo Trading Stats -->
+        <div style="background: rgba(255,255,255,0.08); border-radius: 12px; padding: 20px; border: 1px solid rgba(255,255,255,0.1);">
+          <h4 style="margin: 0 0 16px 0; display: flex; align-items: center; gap: 8px;">
+            <span style="background: #9c27b0; padding: 6px 10px; border-radius: 8px;">🤖</span>
+            Algo Trading Statistics
+          </h4>
+          <div id="analytics-algo-stats">
+            <div style="color: rgba(255,255,255,0.6); font-size: 0.9rem;">Loading...</div>
+          </div>
+        </div>
+        
+        <!-- Ledger Integrity -->
+        <div style="background: rgba(255,255,255,0.08); border-radius: 12px; padding: 20px; border: 1px solid rgba(255,255,255,0.1);">
+          <h4 style="margin: 0 0 16px 0; display: flex; align-items: center; gap: 8px;">
+            <span style="background: #4caf50; padding: 6px 10px; border-radius: 8px;">⛓️</span>
+            Ledger Integrity
+          </h4>
+          <div id="analytics-ledger-integrity">
+            <div style="color: rgba(255,255,255,0.6); font-size: 0.9rem;">Loading...</div>
+          </div>
+        </div>
+        
+        <!-- Top Products -->
+        <div style="background: rgba(255,255,255,0.08); border-radius: 12px; padding: 20px; border: 1px solid rgba(255,255,255,0.1);">
+          <h4 style="margin: 0 0 16px 0; display: flex; align-items: center; gap: 8px;">
+            <span style="background: #ff9800; padding: 6px 10px; border-radius: 8px;">🏆</span>
+            Top Products Purchased
+          </h4>
+          <div id="analytics-top-products" style="max-height: 200px; overflow-y: auto;">
+            <div style="color: rgba(255,255,255,0.6); font-size: 0.9rem;">Loading...</div>
+          </div>
+        </div>
+        
+        <!-- Predictions / BI Metrics -->
+        <div style="background: linear-gradient(135deg, rgba(76, 175, 80, 0.2) 0%, rgba(129, 199, 132, 0.2) 100%); border-radius: 12px; padding: 20px; border: 1px solid rgba(76, 175, 80, 0.3);">
+          <h4 style="margin: 0 0 16px 0; display: flex; align-items: center; gap: 8px;">
+            <span style="background: #4caf50; padding: 6px 10px; border-radius: 8px;">🔮</span>
+            BI Predictions
+          </h4>
+          <div id="analytics-predictions">
+            <div style="color: rgba(255,255,255,0.6); font-size: 0.9rem;">Loading...</div>
+          </div>
+        </div>
+      </div>
+    </section>
   </main>
 
   <footer class="footer">
@@ -889,6 +998,7 @@
       loadCustomerList();
       loadUnderwritingApplications();
       loadPolicies();
+      loadPlatformAnalytics();
       loadClaims();
       loadBillingData();
       loadTransactions();
@@ -1999,6 +2109,165 @@
         closeCustomerModal();
       }
     }
+    
+    // ========== PLATFORM ANALYTICS FUNCTIONS ==========
+    
+    async function loadPlatformAnalytics() {
+      try {
+        const response = await fetch('/api/admin/platform-analytics', {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        
+        if (!response.ok) {
+          console.error('Failed to load platform analytics');
+          return;
+        }
+        
+        const data = await response.json();
+        if (!data.success) return;
+        
+        // Update Platform Totals
+        const totals = data.platform_totals || {};
+        document.getElementById('analytics-customers').textContent = Number(totals.total_customers || 0).toLocaleString();
+        document.getElementById('analytics-deposits').textContent = '$' + Number(totals.total_deposits || 0).toLocaleString(undefined, {maximumFractionDigits: 0});
+        document.getElementById('analytics-medical').textContent = '$' + Number(totals.total_medical_purchases || 0).toLocaleString(undefined, {maximumFractionDigits: 0});
+        document.getElementById('analytics-investments').textContent = '$' + Number(totals.total_investment_volume || 0).toLocaleString(undefined, {maximumFractionDigits: 0});
+        document.getElementById('analytics-algo').textContent = '$' + Number(totals.total_algo_trading_volume || 0).toLocaleString(undefined, {maximumFractionDigits: 0});
+        document.getElementById('analytics-aum').textContent = '$' + Number(totals.total_aum || 0).toLocaleString(undefined, {maximumFractionDigits: 0});
+        
+        // Medical Purchases by Category
+        const medicalDiv = document.getElementById('analytics-medical-categories');
+        const medicalCats = data.medical_by_category || {};
+        if (Object.keys(medicalCats).length > 0) {
+          medicalDiv.innerHTML = Object.entries(medicalCats).map(([cat, info]) => `
+            <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,0.1);">
+              <div>
+                <div style="font-weight: 600; text-transform: capitalize;">${cat.replace(/_/g, ' ')}</div>
+                <div style="font-size: 0.8rem; opacity: 0.7;">${info.count} purchases</div>
+              </div>
+              <div style="font-weight: 700; color: #81c784;">$${Number(info.total || 0).toLocaleString(undefined, {minimumFractionDigits: 2})}</div>
+            </div>
+          `).join('');
+        } else {
+          medicalDiv.innerHTML = '<div style="opacity: 0.6;">No medical purchases yet</div>';
+        }
+        
+        // Investments by Asset
+        const investDiv = document.getElementById('analytics-investments-assets');
+        const investments = data.investments_by_asset || {};
+        investDiv.innerHTML = Object.entries(investments).map(([asset, info]) => `
+          <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,0.1);">
+            <div>
+              <div style="font-weight: 600; text-transform: capitalize;">${asset.replace(/_/g, ' ')}</div>
+              <div style="font-size: 0.8rem; opacity: 0.7;">${info.customers} customers</div>
+            </div>
+            <div style="font-weight: 700; color: #64b5f6;">$${Number(info.total_usd || 0).toLocaleString(undefined, {minimumFractionDigits: 2})}</div>
+          </div>
+        `).join('');
+        
+        // Algo Trading Stats
+        const algoDiv = document.getElementById('analytics-algo-stats');
+        const algo = data.algo_trading || {};
+        algoDiv.innerHTML = `
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+            <div style="background: rgba(255,255,255,0.05); padding: 12px; border-radius: 8px; text-align: center;">
+              <div style="font-size: 1.5rem; font-weight: 700;">${algo.active_bots || 0}</div>
+              <div style="font-size: 0.75rem; opacity: 0.7;">Active Bots</div>
+            </div>
+            <div style="background: rgba(255,255,255,0.05); padding: 12px; border-radius: 8px; text-align: center;">
+              <div style="font-size: 1.5rem; font-weight: 700;">${algo.total_orders || 0}</div>
+              <div style="font-size: 0.75rem; opacity: 0.7;">Total Orders</div>
+            </div>
+            <div style="background: rgba(255,255,255,0.05); padding: 12px; border-radius: 8px; text-align: center;">
+              <div style="font-size: 1.5rem; font-weight: 700;">${algo.unique_customers || 0}</div>
+              <div style="font-size: 0.75rem; opacity: 0.7;">Traders</div>
+            </div>
+            <div style="background: rgba(255,255,255,0.05); padding: 12px; border-radius: 8px; text-align: center;">
+              <div style="font-size: 1.5rem; font-weight: 700;">$${Number(algo.avg_order_size || 0).toLocaleString(undefined, {maximumFractionDigits: 0})}</div>
+              <div style="font-size: 0.75rem; opacity: 0.7;">Avg Order</div>
+            </div>
+          </div>
+        `;
+        
+        // Ledger Integrity
+        const ledgerDiv = document.getElementById('analytics-ledger-integrity');
+        const ledger = data.ledger_integrity || {};
+        const integrityScore = ledger.integrity_score || 0;
+        const scoreColor = integrityScore >= 80 ? '#4caf50' : integrityScore >= 50 ? '#ff9800' : '#f44336';
+        ledgerDiv.innerHTML = `
+          <div style="display: flex; align-items: center; gap: 16px; margin-bottom: 16px;">
+            <div style="width: 60px; height: 60px; border-radius: 50%; background: conic-gradient(${scoreColor} ${integrityScore}%, rgba(255,255,255,0.1) ${integrityScore}%); display: flex; align-items: center; justify-content: center;">
+              <div style="width: 48px; height: 48px; border-radius: 50%; background: #283593; display: flex; align-items: center; justify-content: center; font-weight: 700;">${integrityScore}%</div>
+            </div>
+            <div>
+              <div style="font-weight: 600;">Integrity Score</div>
+              <div style="font-size: 0.8rem; opacity: 0.7;">${integrityScore >= 80 ? '✓ Excellent' : integrityScore >= 50 ? '⚠ Fair' : '✗ Needs attention'}</div>
+            </div>
+          </div>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 0.85rem;">
+            <div>📝 NFT Tokens: <strong>${ledger.nft_tokens || 0}</strong></div>
+            <div>💳 Transactions: <strong>${ledger.transaction_records || 0}</strong></div>
+            <div>💊 Medical NFTs: <strong>${ledger.medical_nfts || 0}</strong></div>
+            <div>💰 Deposit NFTs: <strong>${ledger.deposit_nfts || 0}</strong></div>
+            <div>📈 Investment NFTs: <strong>${ledger.investment_nfts || 0}</strong></div>
+            <div>🤖 Algo NFTs: <strong>${ledger.algo_nfts || 0}</strong></div>
+          </div>
+        `;
+        
+        // Top Products
+        const productsDiv = document.getElementById('analytics-top-products');
+        const products = data.top_products || [];
+        if (products.length > 0) {
+          productsDiv.innerHTML = products.slice(0, 8).map((p, i) => `
+            <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,0.1);">
+              <div style="display: flex; align-items: center; gap: 10px;">
+                <span style="background: ${i < 3 ? '#ffc107' : 'rgba(255,255,255,0.1)'}; color: ${i < 3 ? '#000' : '#fff'}; width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 0.75rem; font-weight: 700;">${i + 1}</span>
+                <span style="font-size: 0.9rem;">${p.name}</span>
+              </div>
+              <div style="text-align: right;">
+                <div style="font-weight: 600;">$${Number(p.total || 0).toLocaleString(undefined, {minimumFractionDigits: 2})}</div>
+                <div style="font-size: 0.7rem; opacity: 0.6;">${p.count} sold</div>
+              </div>
+            </div>
+          `).join('');
+        } else {
+          productsDiv.innerHTML = '<div style="opacity: 0.6;">No products purchased yet</div>';
+        }
+        
+        // BI Predictions
+        const predictDiv = document.getElementById('analytics-predictions');
+        const predictions = data.predictions || {};
+        predictDiv.innerHTML = `
+          <div style="display: grid; gap: 12px;">
+            <div style="display: flex; justify-content: space-between; padding: 10px; background: rgba(255,255,255,0.05); border-radius: 8px;">
+              <span>Avg Purchase/Customer</span>
+              <strong>$${Number(predictions.avg_purchase_per_customer || 0).toLocaleString(undefined, {minimumFractionDigits: 2})}</strong>
+            </div>
+            <div style="display: flex; justify-content: space-between; padding: 10px; background: rgba(255,255,255,0.05); border-radius: 8px;">
+              <span>Avg Investment/Customer</span>
+              <strong>$${Number(predictions.avg_investment_per_customer || 0).toLocaleString(undefined, {minimumFractionDigits: 2})}</strong>
+            </div>
+            <div style="display: flex; justify-content: space-between; padding: 10px; background: rgba(76,175,80,0.2); border-radius: 8px;">
+              <span>📈 Projected Monthly Purchases</span>
+              <strong style="color: #81c784;">$${Number(predictions.projected_monthly_purchases || 0).toLocaleString(undefined, {maximumFractionDigits: 0})}</strong>
+            </div>
+            <div style="display: flex; justify-content: space-between; padding: 10px; background: rgba(76,175,80,0.2); border-radius: 8px;">
+              <span>📈 Projected Monthly Investments</span>
+              <strong style="color: #81c784;">$${Number(predictions.projected_monthly_investments || 0).toLocaleString(undefined, {maximumFractionDigits: 0})}</strong>
+            </div>
+            <div style="display: flex; justify-content: space-between; padding: 10px; background: rgba(255,215,0,0.15); border-radius: 8px;">
+              <span>💎 Customer Lifetime Value</span>
+              <strong style="color: #ffd54f;">$${Number(predictions.customer_lifetime_value || 0).toLocaleString(undefined, {maximumFractionDigits: 0})}</strong>
+            </div>
+          </div>
+        `;
+        
+      } catch (err) {
+        console.error('Error loading platform analytics:', err);
+      }
+    }
+    
+    // ========== END PLATFORM ANALYTICS FUNCTIONS ==========
   </script>
   
   <!-- Customer Detail Modal -->
