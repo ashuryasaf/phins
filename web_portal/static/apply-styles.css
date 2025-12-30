@@ -748,6 +748,299 @@
     text-decoration: underline;
 }
 
+/* ============================================
+   PHINS COMPLETE COVERAGE - UNIFIED CARD
+   ============================================ */
+
+.phins-unified-coverage {
+    margin-bottom: 2rem;
+}
+
+.phins-hero-card {
+    background: linear-gradient(135deg, #ffffff 0%, #f8fafe 50%, #f0f7ff 100%);
+    border: 3px solid #1565c0;
+    border-radius: 16px;
+    padding: 2.5rem;
+    position: relative;
+    overflow: hidden;
+    box-shadow: 0 8px 30px rgba(21, 101, 192, 0.15);
+    transition: all 0.3s ease;
+}
+
+.phins-hero-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 12px 40px rgba(21, 101, 192, 0.25);
+}
+
+.phins-hero-card.selected {
+    background: linear-gradient(135deg, #e8f5e9 0%, #f1f8e9 50%, #f9fbe7 100%);
+    border-color: #28a745;
+}
+
+.phins-badge {
+    position: absolute;
+    top: -5px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: linear-gradient(135deg, #ff9800 0%, #ffc107 100%);
+    color: white;
+    padding: 0.5rem 1.5rem;
+    border-radius: 0 0 12px 12px;
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    box-shadow: 0 4px 15px rgba(255, 152, 0, 0.3);
+}
+
+.phins-icon {
+    font-size: 4rem;
+    text-align: center;
+    margin: 1rem 0;
+    filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.1));
+}
+
+.phins-hero-card h3 {
+    text-align: center;
+    font-size: 1.8rem;
+    color: #0d47a1;
+    margin-bottom: 0.5rem;
+    font-weight: 700;
+}
+
+.phins-tagline {
+    text-align: center;
+    color: #546e7a;
+    font-size: 1rem;
+    margin-bottom: 2rem;
+    font-weight: 500;
+}
+
+.phins-features-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 1rem;
+    margin-bottom: 2rem;
+}
+
+.phins-feature {
+    display: flex;
+    align-items: flex-start;
+    gap: 1rem;
+    padding: 1rem;
+    background: white;
+    border-radius: 10px;
+    border: 2px solid #e3f2fd;
+    transition: all 0.3s ease;
+}
+
+.phins-feature:hover {
+    border-color: #1565c0;
+    background: linear-gradient(135deg, #e3f2fd 0%, #ffffff 100%);
+    transform: translateX(5px);
+}
+
+.phins-feature .feature-icon {
+    font-size: 1.8rem;
+    min-width: 40px;
+    text-align: center;
+}
+
+.phins-feature .feature-content strong {
+    display: block;
+    color: #2c3e50;
+    font-size: 0.95rem;
+    margin-bottom: 0.25rem;
+}
+
+.phins-feature .feature-content span {
+    color: #7f8c8d;
+    font-size: 0.85rem;
+}
+
+/* Actuarial Info Box */
+.phins-actuarial-info {
+    background: linear-gradient(135deg, #fff3e0 0%, #ffe0b2 100%);
+    border: 2px solid #ff9800;
+    border-radius: 12px;
+    padding: 1.5rem;
+    margin: 2rem 0;
+}
+
+.phins-actuarial-info h4 {
+    color: #e65100;
+    margin-bottom: 0.75rem;
+    font-size: 1.1rem;
+}
+
+.phins-actuarial-info p {
+    color: #5d4037;
+    margin-bottom: 1rem;
+}
+
+.phins-actuarial-info p strong {
+    color: #bf360c;
+    background: rgba(255, 255, 255, 0.7);
+    padding: 0.2rem 0.5rem;
+    border-radius: 4px;
+}
+
+.phins-actuarial-info ul {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+.phins-actuarial-info ul li {
+    padding: 0.4rem 0;
+    color: #5d4037;
+    font-size: 0.9rem;
+}
+
+/* PHINS Select Button */
+.phins-select-btn {
+    display: block;
+    width: 100%;
+    max-width: 400px;
+    margin: 0 auto;
+    padding: 1rem 2rem;
+    font-size: 1.2rem;
+    font-weight: 700;
+    background: linear-gradient(135deg, #1565c0 0%, #1976d2 50%, #42a5f5 100%);
+    color: white;
+    border: none;
+    border-radius: 12px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    box-shadow: 0 4px 20px rgba(21, 101, 192, 0.3);
+}
+
+.phins-select-btn:hover {
+    background: linear-gradient(135deg, #0d47a1 0%, #1565c0 50%, #1976d2 100%);
+    transform: translateY(-3px);
+    box-shadow: 0 8px 30px rgba(21, 101, 192, 0.4);
+}
+
+.phins-select-btn.selected {
+    background: linear-gradient(135deg, #2e7d32 0%, #43a047 50%, #66bb6a 100%);
+    box-shadow: 0 4px 20px rgba(46, 125, 50, 0.3);
+}
+
+/* Coverage Explanation */
+.coverage-explanation {
+    color: #546e7a;
+    font-size: 0.95rem;
+    margin-bottom: 1rem;
+    background: #f5f5f5;
+    padding: 0.75rem 1rem;
+    border-radius: 8px;
+    border-left: 4px solid #1565c0;
+}
+
+/* Risk Breakdown Display */
+.risk-breakdown {
+    background: #fafafa;
+    border: 2px solid #e1e8ed;
+    border-radius: 8px;
+    padding: 1.5rem;
+    margin-top: 1.5rem;
+}
+
+.risk-breakdown h5 {
+    color: #2c3e50;
+    margin-bottom: 1rem;
+    font-size: 1rem;
+    border-bottom: 1px solid #e1e8ed;
+    padding-bottom: 0.5rem;
+}
+
+.risk-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.5rem 0;
+    color: #555;
+}
+
+.risk-item.total {
+    border-top: 2px solid #1565c0;
+    margin-top: 0.5rem;
+    padding-top: 0.75rem;
+    font-weight: 600;
+    color: #0d47a1;
+}
+
+.risk-item strong {
+    color: #1565c0;
+    font-family: 'Monaco', 'Courier New', monospace;
+}
+
+.risk-item.total strong {
+    font-size: 1.1rem;
+    color: #0d47a1;
+}
+
+/* Savings Projection */
+.savings-projection {
+    background: linear-gradient(135deg, #e8f5e9 0%, #f1f8e9 100%);
+    border: 2px solid #43a047;
+    border-radius: 12px;
+    padding: 1.5rem;
+    margin-top: 2rem;
+}
+
+.savings-projection h4 {
+    color: #2e7d32;
+    margin-bottom: 1.5rem;
+    text-align: center;
+}
+
+.projection-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 1rem;
+}
+
+.projection-item {
+    background: white;
+    padding: 1rem;
+    border-radius: 8px;
+    text-align: center;
+    border: 2px solid #c8e6c9;
+}
+
+.projection-item .proj-label {
+    display: block;
+    font-size: 0.8rem;
+    color: #7f8c8d;
+    margin-bottom: 0.5rem;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.projection-item .proj-value {
+    display: block;
+    font-size: 1.3rem;
+    font-weight: 700;
+    color: #2c3e50;
+}
+
+.projection-item .proj-value.good {
+    color: #1976d2;
+}
+
+.projection-item .proj-value.excellent {
+    color: #2e7d32;
+}
+
+.savings-projection > small {
+    display: block;
+    text-align: center;
+    margin-top: 1rem;
+    color: #7f8c8d;
+    font-size: 0.8rem;
+}
+
 /* Responsive Design */
 @media (max-width: 768px) {
     .progress-bar {
@@ -795,5 +1088,27 @@
     .premium-options-display {
         flex-direction: column;
         gap: 0.5rem;
+    }
+
+    /* PHINS Card Mobile Responsive */
+    .phins-hero-card {
+        padding: 1.5rem;
+    }
+
+    .phins-hero-card h3 {
+        font-size: 1.4rem;
+    }
+
+    .phins-features-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .projection-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+
+    .phins-badge {
+        font-size: 0.65rem;
+        padding: 0.4rem 1rem;
     }
 }

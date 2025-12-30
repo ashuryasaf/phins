@@ -856,25 +856,83 @@ def generate_customer_id() -> str:
     return f"CUST-{random.randint(10000, 99999)}"
 
 def calculate_premium(policy_data: Dict[str, Any]) -> Dict[str, float]:
-    """Calculate premium based on policy type and customer data"""
+    """
+    Calculate premium based on PHINS Actuarial Model
+    
+    PHINS Actuarial Premium Formula:
+    ================================
+    Premium = Coverage Amount × (Base Risk Rate × 1.5)
+    
+    Where:
+    - Base Risk Rate = Age-adjusted actuarial disability risk (annual probability)
+    - 1.5 multiplier = 100% for risk coverage + 50% for reinsurance & operations
+    
+    Risk decreases as savings grow (mortgage-style model):
+    - Net Risk = Coverage Amount - Accumulated Savings
+    - Effective Premium decreases over time as savings build
+    """
+    policy_type = policy_data.get('type', 'phins')
+    age = policy_data.get('age', 35)
+    coverage = policy_data.get('coverage_amount', 100000)
+    risk_score = policy_data.get('risk_score', 'medium')
+    
+    # For PHINS Complete Coverage or disability - use actuarial model
+    if policy_type in ['phins', 'disability']:
+        # Base disability risk rate by age (actuarial table - annual probability)
+        def get_base_risk_rate(age):
+            if age < 25: return 0.0015       # 0.15%
+            if age < 30: return 0.0020       # 0.20%
+            if age < 35: return 0.0025       # 0.25%
+            if age < 40: return 0.0030       # 0.30%
+            if age < 45: return 0.0038       # 0.38%
+            if age < 50: return 0.0048       # 0.48%
+            if age < 55: return 0.0062       # 0.62%
+            if age < 60: return 0.0080       # 0.80%
+            if age < 65: return 0.0105       # 1.05%
+            if age < 70: return 0.0140       # 1.40%
+            return 0.0180                     # 1.80% for 70+
+        
+        base_risk_rate = get_base_risk_rate(age)
+        
+        # Reinsurance and operational cost multiplier (50% of base risk)
+        reinsurance_multiplier = 0.5
+        
+        # Risk factor adjustment based on underwriting assessment
+        risk_adjustments = {'low': 0.85, 'medium': 1.0, 'high': 1.25, 'very_high': 1.5}
+        risk_adjustment = risk_adjustments.get(risk_score, 1.0)
+        
+        # Total premium rate = (base risk × 1.5) × risk adjustment
+        total_premium_rate = base_risk_rate * (1 + reinsurance_multiplier) * risk_adjustment
+        
+        # Calculate annual premium
+        annual_premium = coverage * total_premium_rate
+        
+        return {
+            'annual': round(annual_premium, 2),
+            'monthly': round(annual_premium / 12, 2),
+            'quarterly': round(annual_premium / 4, 2),
+            'base_risk_rate': base_risk_rate,
+            'total_premium_rate': total_premium_rate,
+            'risk_adjustment': risk_adjustment,
+            'model': 'phins_actuarial'
+        }
+    
+    # Legacy calculation for other policy types
     base_premium = {
         'life': 1200,
         'health': 800,
         'auto': 600,
         'property': 1500,
         'business': 3000
-    }.get(policy_data.get('type', 'life'), 1000)
+    }.get(policy_type, 1000)
     
     # Age factor
-    age = policy_data.get('age', 30)
     age_factor = 1.0 + (max(0, age - 25) * 0.02)
     
     # Coverage factor
-    coverage = policy_data.get('coverage_amount', 100000)
     coverage_factor = coverage / 100000
     
     # Risk factor based on underwriting
-    risk_score = policy_data.get('risk_score', 'medium')
     risk_factors = {'low': 0.8, 'medium': 1.0, 'high': 1.3, 'very_high': 1.6}
     risk_factor = risk_factors.get(risk_score, 1.0)
     
@@ -882,7 +940,8 @@ def calculate_premium(policy_data: Dict[str, Any]) -> Dict[str, float]:
     return {
         'annual': round(annual_premium, 2),
         'monthly': round(annual_premium / 12, 2),
-        'quarterly': round(annual_premium / 4, 2)
+        'quarterly': round(annual_premium / 4, 2),
+        'model': 'legacy'
     }
 
 def get_bi_data_actuary() -> Dict[str, Any]:
@@ -4672,11 +4731,14 @@ For claims or questions, please contact:
                 # Calculate premium
                 premium_data = calculate_premium(data)
                 
+                # Determine policy type - default to 'phins' for unified coverage
+                policy_type = data.get('type', 'phins')
+                
                 # Create policy
                 policy = {
                     'id': policy_id,
                     'customer_id': customer_id,
-                    'type': data.get('type', 'life'),
+                    'type': policy_type,
                     'coverage_amount': data.get('coverage_amount', 100000),
                     'annual_premium': premium_data['annual'],
                     'monthly_premium': premium_data['monthly'],
@@ -4702,6 +4764,88 @@ For claims or questions, please contact:
                         'monthly_deposit': monthly_deposit
                     }
                 }
+                
+                # PHINS Complete Coverage - enable all integrated services
+                if policy_type == 'phins':
+                    # Store actuarial model data
+                    policy['actuarial_model'] = {
+                        'base_risk_rate': premium_data.get('base_risk_rate', 0.003),
+                        'total_premium_rate': premium_data.get('total_premium_rate', 0.0045),
+                        'risk_adjustment': premium_data.get('risk_adjustment', 1.0),
+                        'model_type': 'phins_actuarial'
+                    }
+                    
+                    # PHINS services bundle - all enabled with unified coverage
+                    policy['phins_services'] = {
+                        'disability_protection': {
+                            'enabled': True,
+                            'type': 'permanent_disability',
+                            'trigger': 'adl_3_or_more',
+                            'benefit_type': 'lump_sum_or_monthly'
+                        },
+                        'savings_account': {
+                            'enabled': True,
+                            'type': 'adjustable',
+                            'allocation_pct': 25.0,  # Default 25% to savings
+                            'adjustable_range': [10, 90]
+                        },
+                        'healthcare_wallet': {
+                            'enabled': True,
+                            'monthly_deposit': monthly_deposit,
+                            'covers': ['medical_devices', 'telemedicine', 'medications', 'supplies', 'home_care']
+                        },
+                        'investment_portfolio': {
+                            'enabled': True,
+                            'ai_managed': True,
+                            'asset_classes': ['index_funds', 'bonds', 'crypto'],
+                            'risk_profile': 'moderate'
+                        },
+                        'algo_trading': {
+                            'enabled': True,
+                            'bot_type': 'private_ai',
+                            'strategies': ['momentum', 'mean_reversion', 'dca']
+                        },
+                        'lump_sum_benefit': {
+                            'enabled': True,
+                            'target_amount': data.get('coverage_amount', 100000),
+                            'mortgage_model': True,  # Risk decreases as savings grow
+                            'maturity_options': ['single_payout', 'annuity', 'hybrid']
+                        }
+                    }
+                    
+                    # Initialize savings pipeline for PHINS customers
+                    if savings_pipeline_enabled and savings_pipeline_service:
+                        try:
+                            from services.savings_pipeline_service import RiskLevel
+                            risk_mapping = {'low': RiskLevel.LOW, 'medium': RiskLevel.MODERATE, 
+                                          'high': RiskLevel.HIGH, 'very_high': RiskLevel.VERY_HIGH}
+                            risk_level = risk_mapping.get(data.get('risk_score', 'medium'), RiskLevel.MODERATE)
+                            savings_pipeline_service.create_pipeline_account(customer_id, risk_level)
+                        except Exception as e:
+                            print(f"Savings pipeline init warning: {e}")
+                    
+                    # Always enable health wallet for PHINS coverage
+                    if customer_id not in HEALTH_WALLETS:
+                        HEALTH_WALLETS[customer_id] = {
+                            'customer_id': customer_id,
+                            'balance': 0,
+                            'monthly_deposit': monthly_deposit,
+                            'transactions': [],
+                            'created_at': datetime.now().isoformat(),
+                            'status': 'pending_activation'
+                        }
+                    
+                    # Initialize investment account for PHINS customers
+                    if customer_id not in INVESTMENT_ACCOUNTS:
+                        INVESTMENT_ACCOUNTS[customer_id] = {
+                            'customer_id': customer_id,
+                            'balance': 0,
+                            'index_balance': 0,
+                            'bonds_balance': 0,
+                            'crypto_balance': 0,
+                            'deposits': [],
+                            'created_at': datetime.now().isoformat()
+                        }
                 
                 POLICIES[policy_id] = policy
                 if audit:
