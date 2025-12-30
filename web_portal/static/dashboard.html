@@ -421,7 +421,7 @@
       </a>
       <nav class="phins-nav">
         <a href="/dashboard.html" class="active">Dashboard</a>
-        <a href="/dashboard.html#policies">Policies</a>
+        <a href="https://phins-portal-production.up.railway.app/client-portal.html#policies">Policies</a>
         <a href="/savings-portfolio.html">📈 Investments</a>
         <a href="/algo-trading.html">🤖 Algo Trading</a>
         <a href="/dashboard.html#billing-settings">💳 Billing</a>
@@ -502,6 +502,17 @@
         <div style="font-size: 20px; font-weight: 700; margin-top: 12px;">New Policy</div>
         <div style="font-size: 14px; margin: 8px 0; color: rgba(255,255,255,0.9);">Apply in minutes</div>
         <div style="color: rgba(255,255,255,0.85); font-size: 13px;">Disability • Investment • Protection</div>
+      </a>
+      
+      <!-- My Policies Button -->
+      <a href="https://phins-portal-production.up.railway.app/client-portal.html#policies" class="action-card" style="text-decoration: none; color: inherit; padding: 24px; border-radius: 16px; background: linear-gradient(135deg, #00695c 0%, #00897b 100%); color: white; box-shadow: 0 8px 30px rgba(0, 105, 92, 0.25); transition: transform 0.2s, box-shadow 0.2s;" onmouseover="this.style.transform='translateY(-4px)';this.style.boxShadow='0 12px 40px rgba(0, 105, 92, 0.35)';" onmouseout="this.style.transform='';this.style.boxShadow='0 8px 30px rgba(0, 105, 92, 0.25)';">
+        <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+          <div class="stat-icon" style="font-size: 36px;">📋</div>
+          <span style="background: rgba(255,255,255,0.2); padding: 4px 10px; border-radius: 12px; font-size: 12px;" id="policies-count-badge">0</span>
+        </div>
+        <div style="font-size: 20px; font-weight: 700; margin-top: 12px;">Policies</div>
+        <div style="font-size: 14px; margin: 8px 0; color: rgba(255,255,255,0.9);">View all your contracts</div>
+        <div style="color: rgba(255,255,255,0.85); font-size: 13px;">Coverage • Details • Documents</div>
       </a>
       
       <!-- File Claim Button -->
@@ -681,31 +692,78 @@
     </section>
 
     <!-- My Policies Section -->
-    <section id="policies" class="section-content">
-      <h2>My PHINS Policies</h2>
-      <div class="table-card">
-        <table class="data-table">
-          <thead>
+    <section id="policies" class="section-content" style="background: linear-gradient(135deg, #e0f2f1 0%, #b2dfdb 100%); border-radius: 16px; padding: 28px; margin-bottom: 32px; border: 1px solid rgba(0, 105, 92, 0.15);">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; flex-wrap: wrap; gap: 12px;">
+        <div>
+          <h2 style="margin: 0; color: #00695c;">📋 My PHINS Policies</h2>
+          <p style="margin: 4px 0 0 0; color: #546e7a; font-size: 0.9rem;">View and manage your insurance contracts and coverage</p>
+        </div>
+        <div style="display: flex; gap: 12px; align-items: center;">
+          <span id="policies-status-badge" style="background: linear-gradient(135deg, #00695c 0%, #00897b 100%); color: white; padding: 8px 16px; border-radius: 20px; font-size: 0.85rem; font-weight: 600;">
+            <span id="policy-count-display">0</span> Active Contracts
+          </span>
+          <a href="https://phins-portal-production.up.railway.app/client-portal.html#policies" style="background: linear-gradient(135deg, #00897b 0%, #26a69a 100%); color: white; padding: 8px 16px; border-radius: 20px; font-size: 0.85rem; font-weight: 600; text-decoration: none; transition: transform 0.2s;" onmouseover="this.style.transform='scale(1.05)'" onmouseout="this.style.transform='scale(1)'">
+            🔗 Open Portal
+          </a>
+        </div>
+      </div>
+      
+      <!-- Policy Summary Cards -->
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; margin-bottom: 24px;">
+        <div style="background: white; border-radius: 12px; padding: 16px; box-shadow: 0 2px 8px rgba(0,0,0,0.08);">
+          <div style="font-size: 0.8rem; color: #666; margin-bottom: 4px;">📊 Total Coverage</div>
+          <div style="font-size: 1.4rem; font-weight: 700; color: #00695c;" id="total-coverage-display">$0</div>
+        </div>
+        <div style="background: white; border-radius: 12px; padding: 16px; box-shadow: 0 2px 8px rgba(0,0,0,0.08);">
+          <div style="font-size: 0.8rem; color: #666; margin-bottom: 4px;">💰 Monthly Premium</div>
+          <div style="font-size: 1.4rem; font-weight: 700; color: #1565c0;" id="total-premium-display">$0</div>
+        </div>
+        <div style="background: white; border-radius: 12px; padding: 16px; box-shadow: 0 2px 8px rgba(0,0,0,0.08);">
+          <div style="font-size: 0.8rem; color: #666; margin-bottom: 4px;">📈 Investment Value</div>
+          <div style="font-size: 1.4rem; font-weight: 700; color: #2e7d32;" id="total-investment-display">$0</div>
+        </div>
+        <div style="background: white; border-radius: 12px; padding: 16px; box-shadow: 0 2px 8px rgba(0,0,0,0.08);">
+          <div style="font-size: 0.8rem; color: #666; margin-bottom: 4px;">🛡️ Protection Level</div>
+          <div style="font-size: 1.4rem; font-weight: 700; color: #7b1fa2;">3+ ADLs</div>
+        </div>
+      </div>
+      
+      <!-- Policies Table -->
+      <div class="table-card" style="background: white; border-radius: 12px; overflow: hidden; box-shadow: 0 2px 12px rgba(0,0,0,0.08);">
+        <table class="data-table" style="margin: 0;">
+          <thead style="background: linear-gradient(135deg, #00695c 0%, #00897b 100%);">
             <tr>
-              <th>Policy ID</th>
-              <th>Contract Type</th>
-              <th>Coverage Amount</th>
-              <th>Monthly Premium</th>
-              <th>Investment Value</th>
-              <th>Status</th>
-              <th>Actions</th>
+              <th style="color: white;">Policy ID</th>
+              <th style="color: white;">Contract Type</th>
+              <th style="color: white;">Coverage Amount</th>
+              <th style="color: white;">Monthly Premium</th>
+              <th style="color: white;">Investment Value</th>
+              <th style="color: white;">Status</th>
+              <th style="color: white;">Actions</th>
             </tr>
           </thead>
           <tbody id="policies-table">
             <tr>
-              <td colspan="7" style="text-align: center; color: #666;">Loading policies...</td>
+              <td colspan="7" style="text-align: center; color: #666; padding: 30px;">
+                <div style="font-size: 48px; margin-bottom: 12px;">📋</div>
+                <div style="font-weight: 600; color: #333;">Loading your policies...</div>
+              </td>
             </tr>
           </tbody>
         </table>
       </div>
-      <div style="margin-top:16px">
-        <p style="color:var(--muted); margin-bottom:12px;"><strong>Coverage Details:</strong> All policies provide severe permanent disability protection (3+ ADLs) with integrated investment component (75% risk / 25% savings allocation).</p>
-        <a href="/#quote" class="btn btn-primary">Increase Coverage</a>
+      
+      <!-- Coverage Information -->
+      <div style="margin-top: 20px; background: white; border-radius: 12px; padding: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.08);">
+        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 16px;">
+          <div>
+            <p style="color: #546e7a; margin: 0; font-size: 0.9rem;"><strong style="color: #00695c;">Coverage Details:</strong> All policies provide severe permanent disability protection (3+ ADLs) with integrated investment component (75% risk / 25% savings allocation).</p>
+          </div>
+          <div style="display: flex; gap: 12px;">
+            <a href="/apply.html" class="btn btn-primary" style="background: linear-gradient(135deg, #00695c 0%, #00897b 100%); border: none; padding: 10px 20px; border-radius: 8px; color: white; text-decoration: none; font-weight: 600; transition: transform 0.2s;" onmouseover="this.style.transform='scale(1.05)'" onmouseout="this.style.transform='scale(1)'">➕ New Policy</a>
+            <a href="https://phins-portal-production.up.railway.app/client-portal.html#policies" class="btn" style="background: linear-gradient(135deg, #1565c0 0%, #1976d2 100%); border: none; padding: 10px 20px; border-radius: 8px; color: white; text-decoration: none; font-weight: 600; transition: transform 0.2s;" onmouseover="this.style.transform='scale(1.05)'" onmouseout="this.style.transform='scale(1)'">📄 View All Details</a>
+          </div>
+        </div>
       </div>
     </section>
 
@@ -1243,6 +1301,12 @@
           // Update policy count
           document.getElementById('policy-count').textContent = policies.length;
           
+          // Update policies count badge on action button
+          const policiesBadge = document.getElementById('policies-count-badge');
+          if (policiesBadge) {
+            policiesBadge.textContent = policies.length;
+          }
+          
           // Update total premium
           const totalMonthly = policies.reduce((sum, p) => sum + (p.monthly_premium || 0), 0);
           document.getElementById('total-premium').textContent = `$${totalMonthly.toFixed(0)}`;
@@ -1257,7 +1321,36 @@
     
     function displayPolicies(policies) {
       const tbody = document.getElementById('policies-table');
-      if (!policies.length) return;
+      
+      // Update policy summary cards
+      const totalCoverage = policies.reduce((sum, p) => sum + Number(p.coverage_amount || 0), 0);
+      const totalPremium = policies.reduce((sum, p) => sum + Number(p.monthly_premium || 0), 0);
+      const totalInvestment = policies.reduce((sum, p) => sum + Number(p.investment_value || 0), 0);
+      
+      const policyCountDisplay = document.getElementById('policy-count-display');
+      const totalCoverageDisplay = document.getElementById('total-coverage-display');
+      const totalPremiumDisplay = document.getElementById('total-premium-display');
+      const totalInvestmentDisplay = document.getElementById('total-investment-display');
+      
+      if (policyCountDisplay) policyCountDisplay.textContent = policies.length;
+      if (totalCoverageDisplay) totalCoverageDisplay.textContent = '$' + totalCoverage.toLocaleString();
+      if (totalPremiumDisplay) totalPremiumDisplay.textContent = '$' + totalPremium.toLocaleString();
+      if (totalInvestmentDisplay) totalInvestmentDisplay.textContent = '$' + totalInvestment.toLocaleString();
+      
+      // Handle empty state
+      if (!policies.length) {
+        tbody.innerHTML = `
+          <tr>
+            <td colspan="7" style="text-align: center; color: #666; padding: 40px;">
+              <div style="font-size: 48px; margin-bottom: 12px;">📋</div>
+              <div style="font-weight: 600; color: #333; margin-bottom: 8px;">No policies yet</div>
+              <div style="color: #666; margin-bottom: 16px;">Start protecting your future today</div>
+              <a href="/apply.html" style="display: inline-block; background: linear-gradient(135deg, #00695c 0%, #00897b 100%); color: white; padding: 10px 24px; border-radius: 8px; text-decoration: none; font-weight: 600;">Apply Now</a>
+            </td>
+          </tr>
+        `;
+        return;
+      }
       
       tbody.innerHTML = policies.map(p => {
         const statusClass = p.status === 'active' ? 'badge-active' : 
@@ -1270,7 +1363,7 @@
             <td>$${Number(p.monthly_premium || 0).toFixed(0)}/mo</td>
             <td>$${Number(p.investment_value || 0).toLocaleString()}</td>
             <td><span class="badge ${statusClass}">${p.status || 'Unknown'}</span></td>
-            <td><button class="btn-small" onclick="viewPolicy('${p.id}')">View</button></td>
+            <td><button class="btn-small" onclick="viewPolicy('${p.id}')" style="background: linear-gradient(135deg, #00695c 0%, #00897b 100%); border: none; color: white; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-weight: 500;">View</button></td>
           </tr>
         `;
       }).join('');
@@ -1601,9 +1694,9 @@
       }
     }
     
-    // View policy details
+    // View policy details - opens external client portal
     function viewPolicy(policyId) {
-      alert(`Policy Details: ${policyId}\n\nFull policy management coming soon.\nContact support for immediate assistance.`);
+      window.open(`https://phins-portal-production.up.railway.app/client-portal.html#policies?id=${policyId}`, '_blank');
     }
     
     // View NFT tokens
