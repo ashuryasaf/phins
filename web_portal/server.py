@@ -3614,13 +3614,30 @@ For claims or questions, please contact:
                 
                 # Get monthly premium contribution from customer's policies
                 monthly_contribution = 0
+                active_policy_count = 0
                 for policy in POLICIES.values():
                     if policy.get('customer_id') == customer_id and policy.get('status') == 'active':
-                        # Get savings allocation percentage
+                        active_policy_count += 1
+                        # Get savings allocation percentage (default 75% for PHINS contracts)
                         customer_alloc = CUSTOMER_ALLOCATIONS.get(customer_id, {})
                         savings_pct = customer_alloc.get('savings_pct', 75) / 100
                         monthly_premium = float(policy.get('monthly_premium', 0))
                         monthly_contribution += monthly_premium * savings_pct
+                
+                # If no customer allocation but has active policy, use policy's allocation if set
+                if monthly_contribution == 0 and active_policy_count > 0:
+                    for policy in POLICIES.values():
+                        if policy.get('customer_id') == customer_id and policy.get('status') == 'active':
+                            monthly_premium = float(policy.get('monthly_premium', 0))
+                            # Use allocation from underwriting if available
+                            uw_id = policy.get('underwriting_id')
+                            if uw_id and uw_id in UNDERWRITING_APPLICATIONS:
+                                hw_config = UNDERWRITING_APPLICATIONS[uw_id].get('health_wallet', {})
+                                if hw_config.get('enabled'):
+                                    # Health wallet monthly deposit as baseline
+                                    monthly_contribution = float(hw_config.get('monthly_deposit', 0))
+                                    # Plus 75% of premium as default savings
+                                    monthly_contribution += monthly_premium * 0.75
                 
                 # Total portfolio value
                 total_value = cash_balance + invested_assets
@@ -3658,15 +3675,22 @@ For claims or questions, please contact:
                 
                 # Get recent transactions from ledger
                 recent_transactions = []
-                for tx_id, tx in list(TRANSACTION_LEDGER.items())[-10:]:
-                    if tx.get('customer_id') == customer_id and tx.get('tx_type') in ['investment_deposit', 'investment_allocation', 'premium_allocation']:
-                        recent_transactions.append({
-                            'id': tx_id,
-                            'type': tx.get('tx_type'),
-                            'amount': tx.get('amount', 0),
-                            'timestamp': tx.get('timestamp', ''),
-                            'description': tx.get('description', '')
-                        })
+                investment_tx_types = ['investment_deposit', 'investment_allocation', 'premium_allocation', 
+                                       'internal_transfer', 'savings_deposit', 'premium_payment']
+                for tx_id, tx in list(TRANSACTION_LEDGER.items())[-50:]:
+                    if tx.get('customer_id') == customer_id:
+                        tx_type = tx.get('tx_type', '')
+                        # Include investment-related and premium payment transactions
+                        if tx_type in investment_tx_types or 'investment' in tx_type.lower() or 'savings' in tx.get('description', '').lower():
+                            recent_transactions.append({
+                                'id': tx_id,
+                                'type': tx_type,
+                                'amount': tx.get('amount', 0),
+                                'timestamp': tx.get('timestamp', ''),
+                                'description': tx.get('description', ''),
+                                'nft_token_id': tx.get('nft_token_id', '')
+                            })
+                recent_transactions = recent_transactions[-10:]  # Limit to 10 most recent
                 
                 # Build comprehensive response
                 result = {
