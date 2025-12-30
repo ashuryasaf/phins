@@ -577,6 +577,29 @@ def _init_savings_pipeline():
 
 _init_savings_pipeline()
 
+# Initialize Portfolio Tracker service for real-time P&L monitoring
+portfolio_tracker_service = None
+portfolio_tracker_enabled = False
+
+def _init_portfolio_tracker():
+    global portfolio_tracker_service, portfolio_tracker_enabled
+    try:
+        from services.portfolio_tracker_service import init_portfolio_tracker
+        portfolio_tracker_service = init_portfolio_tracker(
+            health_wallets=HEALTH_WALLETS,
+            investment_accounts=INVESTMENT_ACCOUNTS,
+            transaction_ledger=TRANSACTION_LEDGER,
+            nft_ledger=NFT_LEDGER,
+            record_transaction_func=record_transaction,
+            generate_nft_token_func=generate_nft_token
+        )
+        portfolio_tracker_enabled = True
+        print("✓ Portfolio Tracker service enabled (real-time P&L monitoring)")
+    except ImportError as e:
+        print(f"Warning: Portfolio Tracker service not available: {e}")
+
+_init_portfolio_tracker()
+
 # Optional: admin datasets (actuarial tables) and market data (crypto/index)
 try:
     from security.vault import encrypt_json
@@ -3569,6 +3592,178 @@ For claims or questions, please contact:
             return
         
         # ========== END UNIFIED BALANCE GET API ==========
+        
+        # ========== PORTFOLIO TRACKER GET API ==========
+        # Real-time P&L tracking for investments and algo trading
+        
+        # Get unified portfolio with real-time P&L
+        if path == '/api/portfolio/unified':
+            if not portfolio_tracker_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Portfolio tracker service unavailable'}).encode('utf-8'))
+                return
+            
+            customer_id = qs.get('customer_id', [''])[0]
+            if not customer_id:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'customer_id required'}).encode('utf-8'))
+                return
+            
+            portfolio = portfolio_tracker_service.get_unified_portfolio(customer_id)
+            self._set_json_headers()
+            self.wfile.write(json.dumps(portfolio, default=str).encode('utf-8'))
+            return
+        
+        # Get all positions with real-time prices and P&L
+        if path == '/api/portfolio/positions':
+            if not portfolio_tracker_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Portfolio tracker service unavailable'}).encode('utf-8'))
+                return
+            
+            customer_id = qs.get('customer_id', [''])[0]
+            portfolio_type = qs.get('type', [''])[0]  # investment, algo_trading, or empty for all
+            
+            if not customer_id:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'customer_id required'}).encode('utf-8'))
+                return
+            
+            from services.portfolio_tracker_service import PortfolioType
+            pt = None
+            if portfolio_type == 'investment':
+                pt = PortfolioType.INVESTMENT
+            elif portfolio_type == 'algo_trading':
+                pt = PortfolioType.ALGO_TRADING
+            
+            positions = portfolio_tracker_service.get_all_positions(customer_id, pt)
+            self._set_json_headers()
+            self.wfile.write(json.dumps({
+                'customer_id': customer_id,
+                'positions': positions,
+                'count': len(positions),
+                'timestamp': datetime.now().isoformat()
+            }, default=str).encode('utf-8'))
+            return
+        
+        # Get portfolio summary with P&L
+        if path == '/api/portfolio/summary':
+            if not portfolio_tracker_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Portfolio tracker service unavailable'}).encode('utf-8'))
+                return
+            
+            customer_id = qs.get('customer_id', [''])[0]
+            portfolio_type = qs.get('type', ['combined'])[0]
+            
+            if not customer_id:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'customer_id required'}).encode('utf-8'))
+                return
+            
+            from services.portfolio_tracker_service import PortfolioType
+            if portfolio_type == 'investment':
+                pt = PortfolioType.INVESTMENT
+            elif portfolio_type == 'algo_trading':
+                pt = PortfolioType.ALGO_TRADING
+            else:
+                pt = PortfolioType.COMBINED
+            
+            summary = portfolio_tracker_service.get_portfolio_summary(customer_id, pt)
+            self._set_json_headers()
+            self.wfile.write(json.dumps(summary.to_dict(), default=str).encode('utf-8'))
+            return
+        
+        # Get trade history with P&L margin %
+        if path == '/api/portfolio/trades':
+            if not portfolio_tracker_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Portfolio tracker service unavailable'}).encode('utf-8'))
+                return
+            
+            customer_id = qs.get('customer_id', [''])[0]
+            limit = int(qs.get('limit', ['50'])[0])
+            portfolio_type = qs.get('type', [''])[0]
+            
+            if not customer_id:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'customer_id required'}).encode('utf-8'))
+                return
+            
+            from services.portfolio_tracker_service import PortfolioType
+            pt = None
+            if portfolio_type == 'investment':
+                pt = PortfolioType.INVESTMENT
+            elif portfolio_type == 'algo_trading':
+                pt = PortfolioType.ALGO_TRADING
+            
+            trades = portfolio_tracker_service.get_trade_history(customer_id, limit, pt)
+            self._set_json_headers()
+            self.wfile.write(json.dumps({
+                'customer_id': customer_id,
+                'trades': trades,
+                'count': len(trades),
+                'timestamp': datetime.now().isoformat()
+            }, default=str).encode('utf-8'))
+            return
+        
+        # Get P&L summary for period
+        if path == '/api/portfolio/pnl':
+            if not portfolio_tracker_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Portfolio tracker service unavailable'}).encode('utf-8'))
+                return
+            
+            customer_id = qs.get('customer_id', [''])[0]
+            period = qs.get('period', ['day'])[0]  # day, week, month, year, all
+            
+            if not customer_id:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'customer_id required'}).encode('utf-8'))
+                return
+            
+            pnl = portfolio_tracker_service.get_pnl_summary(customer_id, period)
+            self._set_json_headers()
+            self.wfile.write(json.dumps(pnl, default=str).encode('utf-8'))
+            return
+        
+        # Get algo trading as sub-portfolio
+        if path == '/api/portfolio/algo':
+            if not portfolio_tracker_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Portfolio tracker service unavailable'}).encode('utf-8'))
+                return
+            
+            customer_id = qs.get('customer_id', [''])[0]
+            if not customer_id:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'customer_id required'}).encode('utf-8'))
+                return
+            
+            algo_portfolio = portfolio_tracker_service.get_algo_portfolio(customer_id)
+            self._set_json_headers()
+            self.wfile.write(json.dumps(algo_portfolio, default=str).encode('utf-8'))
+            return
+        
+        # Get market price for a symbol
+        if path == '/api/portfolio/price':
+            if not portfolio_tracker_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Portfolio tracker service unavailable'}).encode('utf-8'))
+                return
+            
+            symbol = qs.get('symbol', [''])[0]
+            if not symbol:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'symbol required'}).encode('utf-8'))
+                return
+            
+            price = portfolio_tracker_service.get_market_price(symbol)
+            self._set_json_headers()
+            self.wfile.write(json.dumps(price, default=str).encode('utf-8'))
+            return
+        
+        # ========== END PORTFOLIO TRACKER GET API ==========
         
         # ========== SAVINGS PIPELINE GET API ==========
         # Get pipeline analytics for a customer
@@ -8482,6 +8677,287 @@ For claims or questions, please contact:
             return
         
         # ========== END UNIFIED BALANCE POST API ==========
+        
+        # ========== PORTFOLIO TRACKER POST API ==========
+        # Real-time trading with P&L tracking and margin calculation
+        
+        # Deposit to algo trading from investment
+        if path == '/api/portfolio/deposit-to-algo':
+            if not portfolio_tracker_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Portfolio tracker service unavailable'}).encode('utf-8'))
+                return
+            
+            try:
+                data = json.loads(body)
+                customer_id = data.get('customer_id')
+                amount = float(data.get('amount', 0))
+                source = data.get('source', 'investment')  # investment or health_wallet
+                
+                if not customer_id or amount <= 0:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'customer_id and positive amount required'}).encode('utf-8'))
+                    return
+                
+                # Sync algo_balances with unified_balance_service if available
+                if unified_balance_enabled:
+                    portfolio_tracker_service.algo_balances = unified_balance_service.algo_trading_balances
+                
+                result = portfolio_tracker_service.deposit_to_algo(customer_id, amount, source)
+                
+                # Sync back
+                if unified_balance_enabled and result.get('success'):
+                    unified_balance_service.algo_trading_balances = portfolio_tracker_service.algo_balances
+                
+                if result.get('success'):
+                    self._set_json_headers()
+                    # Save ledger data after successful deposit
+                    save_ledger_data()
+                else:
+                    self._set_json_headers(400)
+                
+                self.wfile.write(json.dumps(result, default=str).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+        
+        # Execute a trade with real-time P&L tracking
+        if path == '/api/portfolio/trade':
+            if not portfolio_tracker_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Portfolio tracker service unavailable'}).encode('utf-8'))
+                return
+            
+            try:
+                data = json.loads(body)
+                customer_id = data.get('customer_id')
+                symbol = data.get('symbol', '').upper()
+                trade_type = data.get('type', 'buy').lower()  # buy or sell
+                amount = float(data.get('amount', 0))
+                portfolio_type = data.get('portfolio_type', 'algo_trading')  # algo_trading or investment
+                bot_id = data.get('bot_id')
+                strategy = data.get('strategy')
+                
+                if not customer_id or not symbol or amount <= 0:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'customer_id, symbol, and positive amount required'}).encode('utf-8'))
+                    return
+                
+                from services.portfolio_tracker_service import TradeType, PortfolioType
+                
+                tt = TradeType.BUY if trade_type == 'buy' else TradeType.SELL
+                pt = PortfolioType.ALGO_TRADING if portfolio_type == 'algo_trading' else PortfolioType.INVESTMENT
+                
+                # Sync algo_balances with unified_balance_service if available
+                if unified_balance_enabled:
+                    portfolio_tracker_service.algo_balances = unified_balance_service.algo_trading_balances
+                
+                result = portfolio_tracker_service.execute_trade(
+                    customer_id=customer_id,
+                    symbol=symbol,
+                    trade_type=tt,
+                    amount=amount,
+                    portfolio_type=pt,
+                    bot_id=bot_id,
+                    strategy=strategy
+                )
+                
+                # Sync back
+                if unified_balance_enabled and result.get('success'):
+                    unified_balance_service.algo_trading_balances = portfolio_tracker_service.algo_balances
+                
+                if result.get('success'):
+                    self._set_json_headers()
+                    # Save ledger data after successful trade
+                    save_ledger_data()
+                    
+                    # Include helpful P&L information in response
+                    result['message'] = f"{'Bought' if trade_type == 'buy' else 'Sold'} {symbol}"
+                    if trade_type == 'sell' and result.get('margin_pct'):
+                        pnl = result.get('realized_pnl', 0)
+                        margin = result.get('margin_pct', 0)
+                        result['message'] += f" with {'+' if pnl >= 0 else ''}{margin:.2f}% margin (${pnl:,.2f} P&L)"
+                else:
+                    self._set_json_headers(400)
+                
+                self.wfile.write(json.dumps(result, default=str).encode('utf-8'))
+            except Exception as e:
+                import traceback
+                traceback.print_exc()
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+        
+        # Quick buy - convenience endpoint for buying assets
+        if path == '/api/portfolio/buy':
+            if not portfolio_tracker_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Portfolio tracker service unavailable'}).encode('utf-8'))
+                return
+            
+            try:
+                data = json.loads(body)
+                data['type'] = 'buy'
+                
+                # Forward to trade endpoint
+                customer_id = data.get('customer_id')
+                symbol = data.get('symbol', '').upper()
+                amount = float(data.get('amount', 0))
+                portfolio_type = data.get('portfolio_type', 'algo_trading')
+                
+                if not customer_id or not symbol or amount <= 0:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'customer_id, symbol, and positive amount required'}).encode('utf-8'))
+                    return
+                
+                from services.portfolio_tracker_service import TradeType, PortfolioType
+                tt = TradeType.BUY
+                pt = PortfolioType.ALGO_TRADING if portfolio_type == 'algo_trading' else PortfolioType.INVESTMENT
+                
+                if unified_balance_enabled:
+                    portfolio_tracker_service.algo_balances = unified_balance_service.algo_trading_balances
+                
+                result = portfolio_tracker_service.execute_trade(
+                    customer_id=customer_id,
+                    symbol=symbol,
+                    trade_type=tt,
+                    amount=amount,
+                    portfolio_type=pt
+                )
+                
+                if unified_balance_enabled and result.get('success'):
+                    unified_balance_service.algo_trading_balances = portfolio_tracker_service.algo_balances
+                
+                if result.get('success'):
+                    self._set_json_headers()
+                    save_ledger_data()
+                    
+                    # Get current market info
+                    market = portfolio_tracker_service.get_market_price(symbol)
+                    result['current_price'] = market['price']
+                    result['message'] = f"Bought ${amount:,.2f} of {symbol} @ ${market['price']:,.2f}"
+                else:
+                    self._set_json_headers(400)
+                
+                self.wfile.write(json.dumps(result, default=str).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+        
+        # Quick sell - convenience endpoint for selling assets with P&L calculation
+        if path == '/api/portfolio/sell':
+            if not portfolio_tracker_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Portfolio tracker service unavailable'}).encode('utf-8'))
+                return
+            
+            try:
+                data = json.loads(body)
+                customer_id = data.get('customer_id')
+                symbol = data.get('symbol', '').upper()
+                amount = float(data.get('amount', 0))  # Amount in USD to sell
+                portfolio_type = data.get('portfolio_type', 'algo_trading')
+                
+                if not customer_id or not symbol or amount <= 0:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'customer_id, symbol, and positive amount required'}).encode('utf-8'))
+                    return
+                
+                from services.portfolio_tracker_service import TradeType, PortfolioType
+                tt = TradeType.SELL
+                pt = PortfolioType.ALGO_TRADING if portfolio_type == 'algo_trading' else PortfolioType.INVESTMENT
+                
+                if unified_balance_enabled:
+                    portfolio_tracker_service.algo_balances = unified_balance_service.algo_trading_balances
+                
+                result = portfolio_tracker_service.execute_trade(
+                    customer_id=customer_id,
+                    symbol=symbol,
+                    trade_type=tt,
+                    amount=amount,
+                    portfolio_type=pt
+                )
+                
+                if unified_balance_enabled and result.get('success'):
+                    unified_balance_service.algo_trading_balances = portfolio_tracker_service.algo_balances
+                
+                if result.get('success'):
+                    self._set_json_headers()
+                    save_ledger_data()
+                    
+                    pnl = result.get('realized_pnl', 0)
+                    margin = result.get('margin_pct', 0)
+                    result['message'] = f"Sold ${amount:,.2f} of {symbol}"
+                    result['pnl_summary'] = {
+                        'realized_pnl': pnl,
+                        'margin_pct': margin,
+                        'is_profit': pnl >= 0,
+                        'holding_type': result.get('position', {}).get('position_type', 'short')
+                    }
+                else:
+                    self._set_json_headers(400)
+                
+                self.wfile.write(json.dumps(result, default=str).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+        
+        # Transfer funds between portfolios (cash balance management)
+        if path == '/api/portfolio/transfer':
+            if not portfolio_tracker_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Portfolio tracker service unavailable'}).encode('utf-8'))
+                return
+            
+            try:
+                data = json.loads(body)
+                customer_id = data.get('customer_id')
+                amount = float(data.get('amount', 0))
+                from_account = data.get('from', 'investment')  # investment, algo_trading, health_wallet
+                to_account = data.get('to', 'algo_trading')
+                
+                if not customer_id or amount <= 0:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'customer_id and positive amount required'}).encode('utf-8'))
+                    return
+                
+                # Handle different transfer directions
+                if to_account == 'algo_trading':
+                    if unified_balance_enabled:
+                        result = unified_balance_service.transfer_to_algo_trading(
+                            customer_id, amount, 
+                            'health_wallet' if from_account == 'health_wallet' else 'investment_account'
+                        )
+                    else:
+                        result = portfolio_tracker_service.deposit_to_algo(customer_id, amount, from_account)
+                elif from_account == 'algo_trading':
+                    if unified_balance_enabled:
+                        result = unified_balance_service.withdraw_from_algo_trading(
+                            customer_id, amount,
+                            'health_wallet' if to_account == 'health_wallet' else 'investment_account'
+                        )
+                    else:
+                        result = {'success': False, 'error': 'Cannot withdraw without unified balance service'}
+                else:
+                    result = {'success': False, 'error': f'Unsupported transfer direction: {from_account} -> {to_account}'}
+                
+                if result.get('success'):
+                    self._set_json_headers()
+                    save_ledger_data()
+                    result['message'] = f"Transferred ${amount:,.2f} from {from_account} to {to_account}"
+                else:
+                    self._set_json_headers(400)
+                
+                self.wfile.write(json.dumps(result, default=str).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+        
+        # ========== END PORTFOLIO TRACKER POST API ==========
         
         # ========== SAVINGS PIPELINE POST API ==========
         # Deposit funds to pipeline

@@ -884,6 +884,32 @@
                 <div class="card-value" id="monthlyContribution">$0.00</div>
                 <div class="card-change">Auto-invested monthly</div>
             </div>
+            <div class="summary-card" style="background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%); border: none;">
+                <div class="card-label" style="color: rgba(255,255,255,0.9);">🤖 Algo Trading Portfolio</div>
+                <div class="card-value" id="algoPortfolioValue" style="color: white;">$0.00</div>
+                <div class="card-change" id="algoPnl" style="color: rgba(255,255,255,0.8);">
+                    <span>📊</span> Real-time P&L tracking
+                </div>
+                <button onclick="window.location.href='/algo-trading.html'" style="margin-top: 8px; padding: 6px 12px; background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.3); border-radius: 6px; color: white; cursor: pointer; font-size: 0.8rem;">View Algo Dashboard →</button>
+            </div>
+        </div>
+        
+        <!-- Quick Action: Transfer to Algo Trading -->
+        <div style="background: rgba(99, 102, 241, 0.1); border: 1px solid rgba(99, 102, 241, 0.3); border-radius: 12px; padding: 16px; margin-bottom: 24px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 16px;">
+                <div style="flex: 1; min-width: 200px;">
+                    <div style="font-weight: 600; color: #8b5cf6; margin-bottom: 4px;">🚀 Fund Algo Trading from Cash Balance</div>
+                    <p style="color: var(--text-secondary); font-size: 0.85rem; margin: 0;">
+                        Transfer funds to algo trading for automated strategies, real-time P&L tracking, and margin calculation.
+                    </p>
+                </div>
+                <div style="display: flex; gap: 8px; align-items: center;">
+                    <input type="number" id="algoTransferAmount" placeholder="Amount ($)" min="10" style="padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-card); color: var(--text-primary); width: 140px;">
+                    <button onclick="transferToAlgoTrading()" style="padding: 10px 20px; background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%); border: none; border-radius: 8px; color: white; cursor: pointer; font-weight: 600;">
+                        Transfer →
+                    </button>
+                </div>
+            </div>
         </div>
 
         <div class="dashboard-grid">
@@ -1779,6 +1805,88 @@
             const amount = parseFloat(this.value) || 0;
             const price = marketData[symbol]?.price || 1;
             document.getElementById('modalEstimatedShares').value = (amount / price).toFixed(4);
+        });
+        
+        // ========== ALGO TRADING INTEGRATION ==========
+        
+        // Load Algo Trading Portfolio data
+        async function loadAlgoPortfolio() {
+            try {
+                const response = await fetch(`/api/portfolio/algo?customer_id=${customerId}`);
+                const data = await response.json();
+                
+                if (data.balance) {
+                    const available = data.balance.available || 0;
+                    const inPositions = data.balance.in_positions || 0;
+                    const totalPnl = data.balance.total_pnl || 0;
+                    const totalValue = available + inPositions;
+                    
+                    document.getElementById('algoPortfolioValue').textContent = formatCurrency(totalValue);
+                    
+                    const pnlEl = document.getElementById('algoPnl');
+                    pnlEl.innerHTML = `<span>${totalPnl >= 0 ? '📈' : '📉'}</span> ${totalPnl >= 0 ? '+' : ''}${formatCurrency(totalPnl)} P&L`;
+                    pnlEl.style.color = totalPnl >= 0 ? '#4caf50' : '#ef5350';
+                }
+            } catch (e) {
+                console.error('Failed to load algo portfolio:', e);
+            }
+        }
+        
+        // Transfer funds to Algo Trading
+        async function transferToAlgoTrading() {
+            const amount = parseFloat(document.getElementById('algoTransferAmount').value);
+            
+            if (!amount || amount < 10) {
+                showToast('Minimum transfer is $10', 'error');
+                return;
+            }
+            
+            // Check cash balance
+            const cashBal = parseFloat(document.getElementById('cashBalance').textContent.replace(/[^0-9.-]/g, ''));
+            if (amount > cashBal) {
+                showToast('Insufficient cash balance', 'error');
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/portfolio/deposit-to-algo', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        customer_id: customerId,
+                        amount: amount,
+                        source: 'investment'
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    showToast(`Transferred ${formatCurrency(amount)} to Algo Trading`, 'success');
+                    document.getElementById('algoTransferAmount').value = '';
+                    
+                    // Reload both portfolio and algo data
+                    await Promise.all([loadPortfolioData(), loadAlgoPortfolio()]);
+                    
+                    // Show NFT confirmation
+                    if (data.nft_token_id) {
+                        showToast(`Transaction recorded on NFT Ledger: ${data.nft_token_id.substring(0, 12)}...`, 'info');
+                    }
+                } else {
+                    showToast(data.error || 'Transfer failed', 'error');
+                }
+            } catch (e) {
+                showToast('Transfer failed: ' + e.message, 'error');
+            }
+        }
+        
+        // Load algo portfolio on page load
+        document.addEventListener('DOMContentLoaded', async () => {
+            // Wait a bit for main load to complete, then load algo data
+            setTimeout(loadAlgoPortfolio, 500);
+            
+            // Refresh algo data periodically
+            setInterval(loadAlgoPortfolio, 30000);
         });
     </script>
 </body>

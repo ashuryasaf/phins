@@ -789,6 +789,52 @@
                     </table>
                 </div>
 
+                <!-- Active Positions with Real-time P&L -->
+                <div class="section">
+                    <div class="section-header">
+                        <h2 class="section-title">📊 Active Positions</h2>
+                        <button class="btn btn-outline btn-small" onclick="loadPositions()">⟳ Refresh P&L</button>
+                    </div>
+                    <table class="signals-table" id="positionsTable">
+                        <thead>
+                            <tr>
+                                <th>Symbol</th>
+                                <th>Qty</th>
+                                <th>Avg Cost</th>
+                                <th>Current</th>
+                                <th>Value</th>
+                                <th>P&L</th>
+                                <th>Margin %</th>
+                                <th>Holding</th>
+                                <th>Action</th>
+                            </tr>
+                        </thead>
+                        <tbody id="positionsBody">
+                            <tr><td colspan="9" style="text-align: center; color: var(--text-secondary); padding: 2rem;">Loading positions...</td></tr>
+                        </tbody>
+                    </table>
+                    <div style="margin-top: 1rem; padding: 1rem; background: rgba(99, 102, 241, 0.1); border-radius: 10px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
+                            <div>
+                                <div style="color: var(--text-secondary); font-size: 0.8rem;">Total Unrealized P&L</div>
+                                <div id="totalUnrealizedPnl" style="font-size: 1.25rem; font-weight: 700; color: var(--success);">$0.00</div>
+                            </div>
+                            <div>
+                                <div style="color: var(--text-secondary); font-size: 0.8rem;">Total Realized P&L</div>
+                                <div id="totalRealizedPnl" style="font-size: 1.25rem; font-weight: 700; color: var(--success);">$0.00</div>
+                            </div>
+                            <div>
+                                <div style="color: var(--text-secondary); font-size: 0.8rem;">Win Rate</div>
+                                <div id="winRateDisplay" style="font-size: 1.25rem; font-weight: 700;">0%</div>
+                            </div>
+                            <div>
+                                <div style="color: var(--text-secondary); font-size: 0.8rem;">Total Portfolio</div>
+                                <div id="totalPortfolioValue" style="font-size: 1.25rem; font-weight: 700; color: var(--primary);">$0.00</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- Order History -->
                 <div class="section">
                     <div class="section-header">
@@ -1040,7 +1086,8 @@
                 loadIndicators(),
                 loadUnifiedBalance(),
                 loadAlgoBalance(),
-                loadPipelineData()
+                loadPipelineData(),
+                loadPositions()
             ]);
             
             // Refresh signals every 30 seconds
@@ -1048,6 +1095,7 @@
             setInterval(loadMarketOverview, 30000);
             setInterval(loadUnifiedBalance, 60000);
             setInterval(loadPipelineData, 60000);
+            setInterval(loadPositions, 15000); // Real-time P&L every 15 seconds
         });
         
         async function loadBots() {
@@ -1221,6 +1269,162 @@
                 </div>
             `).join('');
         }
+        
+        // ========== POSITIONS WITH REAL-TIME P&L ==========
+        let positions = [];
+        let portfolioSummary = {};
+        
+        async function loadPositions() {
+            try {
+                // Load positions from portfolio tracker
+                const posResponse = await fetch(`/api/portfolio/positions?customer_id=${customerId}&type=algo_trading`);
+                const posData = await posResponse.json();
+                positions = posData.positions || [];
+                
+                // Load portfolio summary
+                const sumResponse = await fetch(`/api/portfolio/summary?customer_id=${customerId}&type=algo_trading`);
+                portfolioSummary = await sumResponse.json();
+                
+                renderPositions();
+                updatePortfolioStats();
+            } catch (e) {
+                console.error('Failed to load positions:', e);
+                document.getElementById('positionsBody').innerHTML = `
+                    <tr><td colspan="9" style="text-align: center; color: var(--text-secondary); padding: 2rem;">
+                        No positions yet. Execute a trade to start building your portfolio.
+                    </td></tr>
+                `;
+            }
+        }
+        
+        function renderPositions() {
+            const tbody = document.getElementById('positionsBody');
+            
+            if (positions.length === 0) {
+                tbody.innerHTML = `
+                    <tr><td colspan="9" style="text-align: center; color: var(--text-secondary); padding: 2rem;">
+                        No positions yet. Buy assets to see real-time P&L tracking.
+                    </td></tr>
+                `;
+                return;
+            }
+            
+            tbody.innerHTML = positions.map(pos => {
+                const pnlColor = pos.unrealized_pnl >= 0 ? 'var(--success)' : 'var(--danger)';
+                const marginColor = pos.unrealized_pnl_pct >= 0 ? 'var(--success)' : 'var(--danger)';
+                const holdingType = pos.position_type === 'long' ? '📅 Long-term' : '📆 Short-term';
+                const holdingDays = pos.holding_period_days || 0;
+                
+                return `
+                    <tr>
+                        <td><strong>${pos.symbol}</strong><br><small style="color: var(--text-secondary);">${pos.name || pos.symbol}</small></td>
+                        <td>${pos.quantity.toFixed(6)}</td>
+                        <td>$${pos.avg_cost.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
+                        <td>$${pos.current_price.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
+                        <td>$${(pos.quantity * pos.current_price).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
+                        <td style="color: ${pnlColor}; font-weight: 600;">
+                            ${pos.unrealized_pnl >= 0 ? '+' : ''}$${pos.unrealized_pnl.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}
+                        </td>
+                        <td style="color: ${marginColor}; font-weight: 600;">
+                            ${pos.unrealized_pnl_pct >= 0 ? '+' : ''}${pos.unrealized_pnl_pct.toFixed(2)}%
+                        </td>
+                        <td>
+                            <span style="font-size: 0.75rem;">${holdingType}</span><br>
+                            <small style="color: var(--text-secondary);">${holdingDays}d</small>
+                        </td>
+                        <td>
+                            <button class="btn btn-danger btn-small" onclick="sellPosition('${pos.symbol}', ${pos.quantity * pos.current_price})">Sell</button>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+        }
+        
+        function updatePortfolioStats() {
+            const unrealizedPnl = portfolioSummary.unrealized_pnl || 0;
+            const realizedPnl = portfolioSummary.realized_pnl || 0;
+            const totalValue = portfolioSummary.total_value || 0;
+            const winning = portfolioSummary.winning_positions || 0;
+            const total = portfolioSummary.total_positions || 0;
+            const winRate = total > 0 ? (winning / total * 100).toFixed(0) : 0;
+            
+            const unrealizedEl = document.getElementById('totalUnrealizedPnl');
+            unrealizedEl.textContent = `${unrealizedPnl >= 0 ? '+' : ''}$${unrealizedPnl.toLocaleString('en-US', {minimumFractionDigits: 2})}`;
+            unrealizedEl.style.color = unrealizedPnl >= 0 ? 'var(--success)' : 'var(--danger)';
+            
+            const realizedEl = document.getElementById('totalRealizedPnl');
+            realizedEl.textContent = `${realizedPnl >= 0 ? '+' : ''}$${realizedPnl.toLocaleString('en-US', {minimumFractionDigits: 2})}`;
+            realizedEl.style.color = realizedPnl >= 0 ? 'var(--success)' : 'var(--danger)';
+            
+            document.getElementById('winRateDisplay').textContent = `${winRate}%`;
+            document.getElementById('totalPortfolioValue').textContent = `$${totalValue.toLocaleString('en-US', {minimumFractionDigits: 2})}`;
+        }
+        
+        async function sellPosition(symbol, amount) {
+            if (!confirm(`Sell all ${symbol}? (Value: $${amount.toFixed(2)})`)) return;
+            
+            try {
+                const response = await fetch('/api/portfolio/sell', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        customer_id: customerId,
+                        symbol: symbol,
+                        amount: amount,
+                        portfolio_type: 'algo_trading'
+                    })
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    const pnl = result.realized_pnl || 0;
+                    const margin = result.margin_pct || 0;
+                    const isProfit = pnl >= 0;
+                    
+                    showToast(
+                        `Sold ${symbol}: ${isProfit ? '+' : ''}$${pnl.toFixed(2)} (${isProfit ? '+' : ''}${margin.toFixed(2)}% margin)`,
+                        isProfit ? 'success' : 'warning'
+                    );
+                    
+                    // Reload positions and balances
+                    await Promise.all([loadPositions(), loadAlgoBalance(), loadUnifiedBalance()]);
+                } else {
+                    showToast(result.error || 'Failed to sell position', 'error');
+                }
+            } catch (e) {
+                showToast('Failed to execute sell: ' + e.message, 'error');
+            }
+        }
+        
+        // Quick trade from cash balance using portfolio tracker
+        async function executeQuickTradeFromCash(symbol, amount, side = 'buy') {
+            try {
+                const response = await fetch(`/api/portfolio/${side}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        customer_id: customerId,
+                        symbol: symbol,
+                        amount: amount,
+                        portfolio_type: 'algo_trading'
+                    })
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    showToast(result.message, 'success');
+                    await Promise.all([loadPositions(), loadAlgoBalance(), loadUnifiedBalance()]);
+                } else {
+                    showToast(result.error || `Failed to ${side}`, 'error');
+                }
+            } catch (e) {
+                showToast(`Failed to ${side}: ` + e.message, 'error');
+            }
+        }
+        
+        // ========== END POSITIONS ==========
         
         async function loadMarketOverview() {
             try {
@@ -1449,26 +1653,40 @@
             const amount = parseFloat(document.getElementById('quickTradeAmount').value) || 100;
             
             try {
-                const response = await fetch('/api/algo/trade', {
+                // Use portfolio tracker for real-time P&L tracking
+                const response = await fetch('/api/portfolio/trade', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
-                        account_id: accountId,
+                        customer_id: customerId,
                         symbol,
-                        side,
-                        amount
+                        type: side,
+                        amount,
+                        portfolio_type: 'algo_trading'
                     })
                 });
                 
                 const data = await response.json();
                 if (data.success) {
-                    showToast(`${side.toUpperCase()} order executed for ${symbol}`, 'success');
-                    loadOrders();
+                    // Show detailed P&L info for sells
+                    if (side === 'sell' && data.realized_pnl !== undefined) {
+                        const pnl = data.realized_pnl;
+                        const margin = data.margin_pct || 0;
+                        const isProfit = pnl >= 0;
+                        showToast(
+                            `${side.toUpperCase()} ${symbol}: ${isProfit ? '+' : ''}$${pnl.toFixed(2)} (${isProfit ? '+' : ''}${margin.toFixed(2)}% margin)`,
+                            isProfit ? 'success' : 'warning'
+                        );
+                    } else {
+                        showToast(`${side.toUpperCase()} order executed for ${symbol}`, 'success');
+                    }
+                    // Refresh all data
+                    await Promise.all([loadOrders(), loadPositions(), loadAlgoBalance(), loadUnifiedBalance()]);
                 } else {
                     showToast(data.error || 'Trade failed', 'error');
                 }
             } catch (e) {
-                showToast('Trade failed', 'error');
+                showToast('Trade failed: ' + e.message, 'error');
             }
         }
         
