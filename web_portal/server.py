@@ -7015,6 +7015,85 @@ For claims or questions, please contact:
                             algo_trading_balances[customer_id] += amount
                             new_balance = algo_trading_balances[customer_id]
                     
+                    elif destination == 'premium':
+                        # Premium payment - update the bill and record on ledger
+                        bill_id = data.get('bill_id')
+                        
+                        # Find outstanding bill if not specified
+                        if not bill_id:
+                            for bid, bill in BILLING.items():
+                                if bill.get('customer_id') == customer_id and bill.get('status') == 'outstanding':
+                                    bill_id = bid
+                                    break
+                        
+                        if bill_id and bill_id in BILLING:
+                            bill = BILLING[bill_id]
+                            prev_paid = bill.get('amount_paid', 0)
+                            bill['amount_paid'] = prev_paid + amount
+                            
+                            # Check if fully paid
+                            if bill['amount_paid'] >= bill['amount']:
+                                bill['status'] = 'paid'
+                                bill['paid_date'] = datetime.now().isoformat()
+                                bill['payment_method'] = payment_method
+                                bill['transaction_id'] = payment_result['transaction_id']
+                            elif bill['amount_paid'] > 0:
+                                bill['status'] = 'partially_paid'
+                            
+                            bill['updated_date'] = datetime.now().isoformat()
+                            payment_result['bill_id'] = bill_id
+                            payment_result['bill_status'] = bill['status']
+                            payment_result['amount_due_remaining'] = max(0, bill['amount'] - bill['amount_paid'])
+                            new_balance = 0  # Premium payments don't add to a balance
+                            
+                            # Route savings portion through pipeline if configured
+                            if savings_pipeline_enabled and savings_pipeline_service:
+                                try:
+                                    customer_alloc = CUSTOMER_ALLOCATIONS.get(customer_id, {})
+                                    savings_pct = customer_alloc.get('savings_pct', 75)
+                                    savings_amount = amount * (savings_pct / 100)
+                                    
+                                    if savings_amount > 0:
+                                        savings_pipeline_service.deposit_to_pipeline(
+                                            customer_id=customer_id,
+                                            amount=savings_amount,
+                                            source='premium_payment',
+                                            auto_allocate=True
+                                        )
+                                        payment_result['savings_allocated'] = savings_amount
+                                except Exception as pipe_err:
+                                    print(f"Pipeline allocation note: {pipe_err}")
+                        else:
+                            # No bill found, just record as premium payment
+                            new_balance = 0
+                            payment_result['message'] = 'Premium payment recorded (no outstanding bill found)'
+                    
+                    elif destination == 'savings':
+                        # Direct deposit to savings pipeline
+                        if savings_pipeline_enabled and savings_pipeline_service:
+                            result = savings_pipeline_service.deposit_to_pipeline(
+                                customer_id=customer_id,
+                                amount=amount,
+                                source='direct_deposit',
+                                auto_allocate=True
+                            )
+                            new_balance = result.get('new_balance', 0) if result.get('success') else 0
+                            payment_result['pipeline_result'] = result
+                        else:
+                            # Fallback to investment account
+                            if customer_id not in INVESTMENT_ACCOUNTS:
+                                INVESTMENT_ACCOUNTS[customer_id] = {
+                                    'customer_id': customer_id,
+                                    'balance': 0,
+                                    'index_balance': 0,
+                                    'bonds_balance': 0,
+                                    'crypto_balance': 0,
+                                    'deposits': [],
+                                    'created_at': datetime.now().isoformat()
+                                }
+                            INVESTMENT_ACCOUNTS[customer_id]['balance'] += amount
+                            new_balance = INVESTMENT_ACCOUNTS[customer_id]['balance']
+                    
                     payment_result['destination_new_balance'] = new_balance
                     
                     # Record on all ledgers
