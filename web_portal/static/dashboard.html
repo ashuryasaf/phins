@@ -1115,42 +1115,51 @@
       }
     }
     
-    // Load investment portfolio data
+    // Load investment portfolio data - Unified API for Dashboard & Savings Portfolio sync
     async function loadInvestmentPortfolio() {
       try {
         const cid = customerId || sessionStorage.getItem('customer_id');
         if (!cid) return;
         
-        let totalValue = 0;
+        // Use unified investment API (single source of truth)
+        const response = await fetch(`/api/investment/unified?customer_id=${cid}`);
+        const data = await response.json();
         
-        // First try to get savings accounts
-        const accountsResponse = await fetch(`/api/savings/accounts?customer_id=${cid}`);
-        const accountsData = await accountsResponse.json();
-        
-        if (accountsData.accounts && accountsData.accounts.length > 0) {
-          const account = accountsData.accounts[0];
-          
-          // Get full portfolio summary
-          const portfolioResponse = await fetch(`/api/savings/portfolio?account_id=${account.account_id}`);
-          const portfolioData = await portfolioResponse.json();
-          
-          if (portfolioData.total_account_value) {
-            totalValue = portfolioData.total_account_value;
-          }
-        } else {
-          // Fallback: Try legacy investment-portfolio endpoint
-          const response = await fetch(`/api/investment-portfolio?customer_id=${cid}`);
-          const data = await response.json();
-          
-          if (data.total_account_value) {
-            totalValue = data.total_account_value;
-          } else if (data.total_portfolio_value) {
-            totalValue = data.total_portfolio_value;
-          }
+        if (data.error) {
+          console.log('Investment data not available:', data.error);
+          // Fallback to unified balance
+          const balanceResponse = await fetch(`/api/balance/unified?customer_id=${cid}`);
+          const balanceData = await balanceResponse.json();
+          const invBalance = balanceData.balances?.investment_account?.total_balance || 0;
+          updateInvestmentDisplay(invBalance);
+          return;
         }
+        
+        // Store investment data for other components
+        window.investmentData = data;
+        
+        // Total value = cash balance + invested assets
+        const totalValue = data.total_value || 0;
+        const cashBalance = data.cash_balance || 0;
+        const investedAssets = data.invested_assets || 0;
+        const monthlyContribution = data.monthly_contribution || 0;
         
         // Update all investment displays
         updateInvestmentDisplay(totalValue);
+        
+        // Update activity summary with investment data
+        const activityInv = document.getElementById('activity-total-investments');
+        if (activityInv) {
+          activityInv.textContent = `$${totalValue.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+        }
+        
+        // Store for other pages
+        sessionStorage.setItem('investment_total', totalValue.toString());
+        sessionStorage.setItem('investment_cash', cashBalance.toString());
+        sessionStorage.setItem('investment_assets', investedAssets.toString());
+        sessionStorage.setItem('monthly_contribution', monthlyContribution.toString());
+        
+        console.log('Investment data loaded:', { totalValue, cashBalance, investedAssets, monthlyContribution });
         
       } catch (error) {
         console.log('Investment portfolio load error (non-critical):', error);

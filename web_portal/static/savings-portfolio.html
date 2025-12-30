@@ -1192,7 +1192,14 @@
         
         async function loadPortfolioData() {
             try {
-                // First try to get existing accounts
+                // STEP 1: Load unified investment data (syncs with Dashboard)
+                const unifiedResponse = await fetch(`/api/investment/unified?customer_id=${customerId}`);
+                const unifiedData = await unifiedResponse.json();
+                
+                // Store unified data for display
+                window.unifiedInvestment = unifiedData;
+                
+                // STEP 2: Load or create savings account for detailed portfolio management
                 let response = await fetch(`/api/savings/accounts?customer_id=${customerId}`);
                 let data = await response.json();
                 
@@ -1200,13 +1207,16 @@
                     accountId = data.accounts[0].account_id;
                 } else {
                     // Create a new account if none exists
+                    // Use unified data for monthly contribution if available
+                    const monthlyContrib = unifiedData.monthly_contribution || 1000;
+                    
                     response = await fetch('/api/savings/create-account', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
                             customer_id: customerId,
                             policy_id: 'POL-001',
-                            monthly_contribution: 1000,
+                            monthly_contribution: monthlyContrib,
                             savings_rate_pct: 30,
                             risk_profile: 'moderate'
                         })
@@ -1214,33 +1224,58 @@
                     data = await response.json();
                     accountId = data.account_id;
                     
-                    // Seed with initial deposit
+                    // Seed with initial deposit based on unified balance
+                    const initialDeposit = unifiedData.total_value > 0 ? unifiedData.total_value : 25000;
                     await fetch('/api/savings/deposit', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
                             account_id: accountId,
-                            amount: 25000,
+                            amount: initialDeposit,
                             source: 'initial_deposit'
                         })
                     });
                     
-                    // Make some initial investments
-                    await Promise.all([
-                        investInAsset('SPY', 10000),
-                        investInAsset('BTC', 3000),
-                        investInAsset('BND', 5000),
-                        investInAsset('ETH', 2000),
-                        investInAsset('GLD', 2000)
-                    ]);
+                    // Make some initial investments if no existing invested assets
+                    if (unifiedData.invested_assets === 0 || !unifiedData.invested_assets) {
+                        await Promise.all([
+                            investInAsset('SPY', 10000),
+                            investInAsset('BTC', 3000),
+                            investInAsset('BND', 5000),
+                            investInAsset('ETH', 2000),
+                            investInAsset('GLD', 2000)
+                        ]);
+                    }
                 }
                 
-                // Load portfolio summary
+                // STEP 3: Load detailed portfolio summary
                 response = await fetch(`/api/savings/portfolio?account_id=${accountId}`);
                 portfolioData = await response.json();
                 
+                // STEP 4: Merge unified data with portfolio data for complete picture
+                // Override with unified data where available for consistency
+                if (unifiedData && !unifiedData.error) {
+                    portfolioData.cash_balance = unifiedData.cash_balance || portfolioData.cash_balance;
+                    portfolioData.monthly_contribution = unifiedData.monthly_contribution || portfolioData.monthly_contribution;
+                    
+                    // Calculate total account value from unified source
+                    const unifiedTotal = unifiedData.total_value || 0;
+                    if (unifiedTotal > 0) {
+                        // Keep market value from portfolio service (has real-time prices)
+                        // but ensure cash balance syncs with INVESTMENT_ACCOUNTS
+                        portfolioData.total_account_value = Math.max(portfolioData.total_market_value || 0, 0) + (unifiedData.cash_balance || 0);
+                    }
+                }
+                
                 updatePortfolioDisplay();
                 loadTransactions();
+                
+                console.log('Portfolio data loaded:', { 
+                    unified: unifiedData, 
+                    portfolio: portfolioData,
+                    accountId: accountId 
+                });
+                
             } catch (error) {
                 console.error('Failed to load portfolio:', error);
                 showToast('Failed to load portfolio data', 'error');
@@ -1266,19 +1301,39 @@
         function updatePortfolioDisplay() {
             if (!portfolioData) return;
             
-            // Update summary cards
-            document.getElementById('totalValue').textContent = formatCurrency(portfolioData.total_account_value || 0);
-            document.getElementById('cashBalance').textContent = formatCurrency(portfolioData.cash_balance || 0);
-            document.getElementById('investedValue').textContent = formatCurrency(portfolioData.total_market_value || 0);
-            document.getElementById('monthlyContribution').textContent = formatCurrency(portfolioData.monthly_contribution || 0);
+            // Get unified data for consistency with Dashboard
+            const unified = window.unifiedInvestment || {};
             
-            const returnPct = portfolioData.return_pct || 0;
+            // Calculate total value: Cash + Invested Assets + Monthly Premium Allocation
+            const cashBalance = unified.cash_balance || portfolioData.cash_balance || 0;
+            const investedAssets = portfolioData.total_market_value || unified.invested_assets || 0;
+            const monthlyContrib = unified.monthly_contribution || portfolioData.monthly_contribution || 0;
+            
+            // Total = Cash Balance + Invested Assets (market value)
+            const totalValue = cashBalance + investedAssets;
+            
+            // Update summary cards
+            document.getElementById('totalValue').textContent = formatCurrency(totalValue);
+            document.getElementById('cashBalance').textContent = formatCurrency(cashBalance);
+            document.getElementById('investedValue').textContent = formatCurrency(investedAssets);
+            document.getElementById('monthlyContribution').textContent = formatCurrency(monthlyContrib);
+            
+            // P&L from unified data or portfolio
+            const returnPct = unified.return_pct || portfolioData.return_pct || 0;
+            const unrealizedGain = unified.unrealized_gain || portfolioData.unrealized_gain || 0;
+            
             const totalChange = document.getElementById('totalChange');
             totalChange.className = `card-change ${returnPct >= 0 ? 'positive' : 'negative'}`;
             totalChange.innerHTML = `<span>${returnPct >= 0 ? '&#9650;' : '&#9660;'}</span> ${returnPct >= 0 ? '+' : ''}${returnPct.toFixed(2)}% all time`;
             
             document.getElementById('unrealizedGain').textContent = 
-                `${portfolioData.unrealized_gain >= 0 ? '+' : ''}${formatCurrency(portfolioData.unrealized_gain || 0)} unrealized`;
+                `${unrealizedGain >= 0 ? '+' : ''}${formatCurrency(unrealizedGain)} unrealized`;
+            
+            // Update cash balance label to show it's synced
+            const cashLabel = document.getElementById('cashLabel');
+            if (cashLabel && unified.synced) {
+                cashLabel.innerHTML = '✓ Synced with Dashboard';
+            }
             
             // Update allocation chart
             updateAllocationChart();
@@ -1292,6 +1347,10 @@
                 document.getElementById('riskSlider').value = riskIndex + 1;
                 document.getElementById('currentRisk').textContent = riskLabels[riskIndex];
             }
+            
+            // Store for session consistency
+            sessionStorage.setItem('portfolio_total', totalValue.toString());
+            sessionStorage.setItem('portfolio_cash', cashBalance.toString());
         }
         
         function updateAllocationChart() {

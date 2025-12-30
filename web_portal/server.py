@@ -3589,6 +3589,135 @@ For claims or questions, please contact:
             }).encode('utf-8'))
             return
         
+        # ========== UNIFIED INVESTMENT API ==========
+        # Single source of truth connecting Dashboard and Savings Portfolio
+        
+        if path == '/api/investment/unified':
+            customer_id = qs.get('customer_id', [''])[0]
+            if not customer_id:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'customer_id required'}).encode('utf-8'))
+                return
+            
+            try:
+                # Get INVESTMENT_ACCOUNTS data (master record)
+                inv_account = INVESTMENT_ACCOUNTS.get(customer_id, {})
+                
+                # Cash balance = raw balance in investment account
+                cash_balance = float(inv_account.get('balance', 0))
+                
+                # Invested assets breakdown
+                index_balance = float(inv_account.get('index_balance', 0))
+                bonds_balance = float(inv_account.get('bonds_balance', 0))
+                crypto_balance = float(inv_account.get('crypto_balance', 0))
+                invested_assets = index_balance + bonds_balance + crypto_balance
+                
+                # Get monthly premium contribution from customer's policies
+                monthly_contribution = 0
+                for policy in POLICIES.values():
+                    if policy.get('customer_id') == customer_id and policy.get('status') == 'active':
+                        # Get savings allocation percentage
+                        customer_alloc = CUSTOMER_ALLOCATIONS.get(customer_id, {})
+                        savings_pct = customer_alloc.get('savings_pct', 75) / 100
+                        monthly_premium = float(policy.get('monthly_premium', 0))
+                        monthly_contribution += monthly_premium * savings_pct
+                
+                # Total portfolio value
+                total_value = cash_balance + invested_assets
+                
+                # Calculate allocation percentages
+                allocation = {}
+                if total_value > 0:
+                    allocation = {
+                        'cash': {'value': cash_balance, 'percentage': (cash_balance / total_value) * 100},
+                        'index': {'value': index_balance, 'percentage': (index_balance / total_value) * 100},
+                        'bonds': {'value': bonds_balance, 'percentage': (bonds_balance / total_value) * 100},
+                        'crypto': {'value': crypto_balance, 'percentage': (crypto_balance / total_value) * 100}
+                    }
+                
+                # Get portfolio service data if available (for market values and P&L)
+                portfolio_details = {}
+                unrealized_gain = 0
+                return_pct = 0
+                
+                if portfolio_enabled and portfolio_service:
+                    try:
+                        accounts = portfolio_service.get_customer_accounts(customer_id)
+                        if accounts:
+                            account_id = accounts[0].account_id
+                            summary = portfolio_service.get_portfolio_summary(account_id)
+                            unrealized_gain = summary.get('unrealized_gain', 0)
+                            return_pct = summary.get('return_pct', 0)
+                            portfolio_details = {
+                                'assets': summary.get('assets', []),
+                                'allocation': summary.get('allocation', {}),
+                                'account_id': account_id
+                            }
+                    except Exception:
+                        pass
+                
+                # Get recent transactions from ledger
+                recent_transactions = []
+                for tx_id, tx in list(TRANSACTION_LEDGER.items())[-10:]:
+                    if tx.get('customer_id') == customer_id and tx.get('tx_type') in ['investment_deposit', 'investment_allocation', 'premium_allocation']:
+                        recent_transactions.append({
+                            'id': tx_id,
+                            'type': tx.get('tx_type'),
+                            'amount': tx.get('amount', 0),
+                            'timestamp': tx.get('timestamp', ''),
+                            'description': tx.get('description', '')
+                        })
+                
+                # Build comprehensive response
+                result = {
+                    'customer_id': customer_id,
+                    'timestamp': datetime.now().isoformat(),
+                    
+                    # Summary values (matching dashboard)
+                    'total_value': total_value,
+                    'cash_balance': cash_balance,
+                    'invested_assets': invested_assets,
+                    'monthly_contribution': monthly_contribution,
+                    
+                    # P&L data
+                    'unrealized_gain': unrealized_gain,
+                    'return_pct': return_pct,
+                    
+                    # Breakdown
+                    'breakdown': {
+                        'index_funds': index_balance,
+                        'bonds': bonds_balance,
+                        'crypto': crypto_balance,
+                        'cash': cash_balance
+                    },
+                    
+                    # Allocation percentages
+                    'allocation': allocation,
+                    
+                    # Detailed portfolio (if available)
+                    'portfolio': portfolio_details,
+                    
+                    # Recent transactions
+                    'recent_transactions': recent_transactions,
+                    
+                    # Account metadata
+                    'deposits_count': len(inv_account.get('deposits', [])),
+                    'created_at': inv_account.get('created_at', ''),
+                    
+                    # Sync flag for frontend
+                    'synced': True
+                }
+                
+                self._set_json_headers()
+                self.wfile.write(json.dumps(result, default=str).encode('utf-8'))
+                
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+        
+        # ========== END UNIFIED INVESTMENT API ==========
+        
         # Reconcile balances
         if path == '/api/balance/reconcile':
             if not unified_balance_enabled:
@@ -8196,7 +8325,7 @@ For claims or questions, please contact:
                 self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
             return
         
-        # Deposit funds into savings account
+        # Deposit funds into savings account (syncs with INVESTMENT_ACCOUNTS)
         if path == '/api/savings/deposit':
             if not portfolio_enabled:
                 self._set_json_headers(503)
@@ -8208,6 +8337,7 @@ For claims or questions, please contact:
                 account_id = data.get('account_id')
                 amount = float(data.get('amount', 0))
                 source = data.get('source', 'manual_deposit')
+                customer_id = data.get('customer_id')
                 
                 if not account_id or amount <= 0:
                     self._set_json_headers(400)
@@ -8219,14 +8349,66 @@ For claims or questions, please contact:
                     self.wfile.write(json.dumps({'error': 'Maximum deposit is $1,000,000'}).encode('utf-8'))
                     return
                 
+                # Get customer_id from account if not provided
+                if not customer_id:
+                    accounts = portfolio_service.get_customer_accounts('')
+                    for acc in portfolio_service.accounts.values():
+                        if acc.account_id == account_id:
+                            customer_id = acc.customer_id
+                            break
+                
                 result = portfolio_service.deposit(account_id, amount, source)
                 
-                if result.get('success') and audit:
-                    try:
-                        audit.log('system', 'deposit', 'savings_account', account_id, 
-                                 {'amount': amount, 'source': source})
-                    except Exception:
-                        pass
+                if result.get('success'):
+                    # SYNC: Also update INVESTMENT_ACCOUNTS (master record)
+                    if customer_id:
+                        if customer_id not in INVESTMENT_ACCOUNTS:
+                            INVESTMENT_ACCOUNTS[customer_id] = {
+                                'customer_id': customer_id,
+                                'balance': 0,
+                                'index_balance': 0,
+                                'bonds_balance': 0,
+                                'crypto_balance': 0,
+                                'deposits': [],
+                                'created_at': datetime.now().isoformat()
+                            }
+                        
+                        inv_acc = INVESTMENT_ACCOUNTS[customer_id].copy()
+                        inv_acc['balance'] = inv_acc.get('balance', 0) + amount
+                        inv_acc['deposits'].append({
+                            'id': f"DEP-{datetime.now().strftime('%Y%m%d%H%M%S')}-{random.randint(1000,9999)}",
+                            'amount': amount,
+                            'source': source,
+                            'account_id': account_id,
+                            'timestamp': datetime.now().isoformat()
+                        })
+                        INVESTMENT_ACCOUNTS[customer_id] = inv_acc
+                        
+                        # Record on ledger
+                        record_transaction(
+                            customer_id=customer_id,
+                            tx_type='investment_deposit',
+                            amount=amount,
+                            description=f"Investment deposit to savings portfolio from {source}",
+                            metadata={
+                                'account_id': account_id,
+                                'source': source,
+                                'new_balance': inv_acc['balance']
+                            }
+                        )
+                        
+                        # Force save
+                        save_ledger_data()
+                        
+                        result['investment_account_synced'] = True
+                        result['investment_balance'] = inv_acc['balance']
+                    
+                    if audit:
+                        try:
+                            audit.log('system', 'deposit', 'savings_account', account_id, 
+                                     {'amount': amount, 'source': source})
+                        except Exception:
+                            pass
                 
                 self._set_json_headers(200 if result.get('success') else 400)
                 self.wfile.write(json.dumps(result).encode('utf-8'))
