@@ -657,6 +657,97 @@
             </div>
         </div>
 
+        <!-- AI Savings Pipeline Visualization -->
+        <div class="section" style="margin-bottom: 1.5rem; background: linear-gradient(135deg, #1e1b4b 0%, #312e81 100%); border: 1px solid rgba(139, 92, 246, 0.3);">
+            <div class="section-header">
+                <h2 class="section-title">🔄 AI Savings Pipeline</h2>
+                <div style="display: flex; gap: 0.5rem;">
+                    <span id="pipelineHealth" style="background: rgba(16, 185, 129, 0.2); color: #34d399; padding: 0.25rem 0.75rem; border-radius: 20px; font-size: 0.75rem;">● Excellent</span>
+                    <button class="btn btn-outline btn-small" onclick="loadPipelineData()">⟳</button>
+                </div>
+            </div>
+            
+            <!-- Pipeline Flow Visualization -->
+            <div style="display: flex; align-items: center; justify-content: space-between; padding: 1.5rem; background: rgba(0,0,0,0.2); border-radius: 12px; margin-bottom: 1rem; overflow-x: auto;">
+                <!-- Premium Payment -->
+                <div style="text-align: center; min-width: 100px;">
+                    <div style="width: 60px; height: 60px; background: linear-gradient(135deg, #10b981 0%, #059669 100%); border-radius: 12px; display: flex; align-items: center; justify-content: center; margin: 0 auto 0.5rem; font-size: 1.5rem;">💵</div>
+                    <div style="font-weight: 600; font-size: 0.85rem;">Premium</div>
+                    <div style="color: var(--text-secondary); font-size: 0.75rem;">Savings Portion</div>
+                </div>
+                
+                <!-- Arrow -->
+                <div style="flex: 0 0 40px; text-align: center;">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+                </div>
+                
+                <!-- Cash Balance (Staging) -->
+                <div style="text-align: center; min-width: 100px;">
+                    <div style="width: 60px; height: 60px; background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); border-radius: 12px; display: flex; align-items: center; justify-content: center; margin: 0 auto 0.5rem; font-size: 1.5rem;">💰</div>
+                    <div style="font-weight: 600; font-size: 0.85rem;">Cash Balance</div>
+                    <div style="color: var(--success); font-size: 0.75rem;" id="pipelineCashBalance">$0.00</div>
+                </div>
+                
+                <!-- Arrow with AI -->
+                <div style="flex: 0 0 60px; text-align: center;">
+                    <div style="background: linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%); padding: 0.25rem 0.5rem; border-radius: 8px; font-size: 0.7rem; margin-bottom: 0.25rem;">🤖 AI</div>
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--secondary)" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+                </div>
+                
+                <!-- Distribution (3-way split) -->
+                <div style="display: flex; flex-direction: column; gap: 0.5rem; min-width: 280px;">
+                    <!-- Wallet -->
+                    <div style="display: flex; align-items: center; gap: 0.75rem; background: rgba(16, 185, 129, 0.1); padding: 0.5rem 0.75rem; border-radius: 8px;">
+                        <span style="font-size: 1.2rem;">🏥</span>
+                        <div style="flex: 1;">
+                            <div style="font-size: 0.8rem; font-weight: 500;">Health Wallet</div>
+                            <div style="font-size: 0.7rem; color: var(--text-secondary);">Emergency Fund</div>
+                        </div>
+                        <div style="text-align: right;">
+                            <div style="font-size: 0.85rem; font-weight: 600;" id="pipelineWalletPct">15%</div>
+                            <div style="font-size: 0.7rem; color: var(--success);" id="pipelineWalletBal">$0</div>
+                        </div>
+                    </div>
+                    <!-- Investments -->
+                    <div style="display: flex; align-items: center; gap: 0.75rem; background: rgba(59, 130, 246, 0.1); padding: 0.5rem 0.75rem; border-radius: 8px;">
+                        <span style="font-size: 1.2rem;">📈</span>
+                        <div style="flex: 1;">
+                            <div style="font-size: 0.8rem; font-weight: 500;">Investments</div>
+                            <div style="font-size: 0.7rem; color: var(--text-secondary);">Index • Bonds • Crypto</div>
+                        </div>
+                        <div style="text-align: right;">
+                            <div style="font-size: 0.85rem; font-weight: 600;" id="pipelineInvestPct">60%</div>
+                            <div style="font-size: 0.7rem; color: var(--info);" id="pipelineInvestBal">$0</div>
+                        </div>
+                    </div>
+                    <!-- Algo Trading -->
+                    <div style="display: flex; align-items: center; gap: 0.75rem; background: rgba(139, 92, 246, 0.1); padding: 0.5rem 0.75rem; border-radius: 8px;">
+                        <span style="font-size: 1.2rem;">🤖</span>
+                        <div style="flex: 1;">
+                            <div style="font-size: 0.8rem; font-weight: 500;">Algo Trading</div>
+                            <div style="font-size: 0.7rem; color: var(--text-secondary);">Automated Strategies</div>
+                        </div>
+                        <div style="text-align: right;">
+                            <div style="font-size: 0.85rem; font-weight: 600;" id="pipelineAlgoPct">25%</div>
+                            <div style="font-size: 0.7rem; color: var(--secondary);" id="pipelineAlgoBal">$0</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- AI Recommendation -->
+            <div id="aiRecommendation" style="background: rgba(139, 92, 246, 0.1); border: 1px solid rgba(139, 92, 246, 0.3); border-radius: 10px; padding: 1rem;">
+                <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem;">
+                    <span style="font-size: 1.2rem;">🧠</span>
+                    <span style="font-weight: 600;">AI Recommendation</span>
+                    <span style="background: rgba(139, 92, 246, 0.3); padding: 0.15rem 0.5rem; border-radius: 12px; font-size: 0.7rem; margin-left: auto;">85% confidence</span>
+                </div>
+                <p id="aiRecommendationText" style="color: var(--text-secondary); font-size: 0.85rem; margin: 0;">
+                    Analyzing your portfolio... Loading AI recommendations.
+                </p>
+            </div>
+        </div>
+
         <div class="dashboard-grid">
             <div class="main-column">
                 <!-- Trading Bots -->
@@ -946,13 +1037,15 @@
                 loadMarketOverview(),
                 loadIndicators(),
                 loadUnifiedBalance(),
-                loadAlgoBalance()
+                loadAlgoBalance(),
+                loadPipelineData()
             ]);
             
             // Refresh signals every 30 seconds
             setInterval(loadSignals, 30000);
             setInterval(loadMarketOverview, 30000);
             setInterval(loadUnifiedBalance, 60000);
+            setInterval(loadPipelineData, 60000);
         });
         
         async function loadBots() {
@@ -1443,6 +1536,64 @@
             `;
             container.appendChild(toast);
             setTimeout(() => toast.remove(), 4000);
+        }
+        
+        // ========== SAVINGS PIPELINE FUNCTIONS ==========
+        
+        async function loadPipelineData() {
+            try {
+                // Load pipeline analytics
+                const analyticsRes = await fetch(`/api/pipeline/analytics?customer_id=${customerId}`);
+                const analytics = await analyticsRes.json();
+                
+                // Update pipeline visualization
+                if (analytics.balances) {
+                    document.getElementById('pipelineCashBalance').textContent = `$${(analytics.balances.cash_balance || 0).toLocaleString('en-US', {minimumFractionDigits: 2})}`;
+                    document.getElementById('pipelineWalletBal').textContent = `$${(analytics.balances.wallet_balance || 0).toLocaleString('en-US', {minimumFractionDigits: 0})}`;
+                    document.getElementById('pipelineInvestBal').textContent = `$${(analytics.balances.investment_balance || 0).toLocaleString('en-US', {minimumFractionDigits: 0})}`;
+                    document.getElementById('pipelineAlgoBal').textContent = `$${(analytics.balances.algo_trading_balance || 0).toLocaleString('en-US', {minimumFractionDigits: 0})}`;
+                }
+                
+                // Update allocation percentages
+                if (analytics.allocation) {
+                    document.getElementById('pipelineWalletPct').textContent = `${(analytics.allocation.wallet || 15).toFixed(0)}%`;
+                    document.getElementById('pipelineInvestPct').textContent = `${(analytics.allocation.investment || 60).toFixed(0)}%`;
+                    document.getElementById('pipelineAlgoPct').textContent = `${(analytics.allocation.algo_trading || 25).toFixed(0)}%`;
+                }
+                
+                // Update health indicator
+                if (analytics.pipeline_health) {
+                    const healthEl = document.getElementById('pipelineHealth');
+                    const health = analytics.pipeline_health;
+                    const colors = {
+                        'excellent': { bg: 'rgba(16, 185, 129, 0.2)', text: '#34d399' },
+                        'good': { bg: 'rgba(59, 130, 246, 0.2)', text: '#60a5fa' },
+                        'needs_attention': { bg: 'rgba(245, 158, 11, 0.2)', text: '#fbbf24' },
+                        'critical': { bg: 'rgba(239, 68, 68, 0.2)', text: '#f87171' }
+                    };
+                    const color = colors[health.status] || colors.good;
+                    healthEl.style.background = color.bg;
+                    healthEl.style.color = color.text;
+                    healthEl.textContent = `● ${health.status.charAt(0).toUpperCase() + health.status.slice(1)} (${health.score}/100)`;
+                }
+                
+                // Load AI recommendation
+                const recRes = await fetch(`/api/pipeline/ai-recommendation?customer_id=${customerId}`);
+                const recommendation = await recRes.json();
+                
+                if (recommendation.recommendations && recommendation.recommendations.length > 0) {
+                    const topRec = recommendation.recommendations[0];
+                    document.getElementById('aiRecommendationText').textContent = topRec.message;
+                } else {
+                    const sentiment = recommendation.market_conditions?.sentiment_label || 'Neutral';
+                    const roi = recommendation.performance?.roi_pct || 0;
+                    document.getElementById('aiRecommendationText').textContent = 
+                        `Market sentiment: ${sentiment}. Your portfolio ROI: ${roi.toFixed(1)}%. Allocation is optimized for your ${recommendation.risk_level || 'moderate'} risk profile.`;
+                }
+            } catch (e) {
+                console.error('Failed to load pipeline data:', e);
+                document.getElementById('aiRecommendationText').textContent = 'Pipeline data loading... Connect your savings to get AI recommendations.';
+            }
         }
         
         // ========== UNIFIED BALANCE FUNCTIONS ==========

@@ -329,6 +329,28 @@ def _init_unified_balance():
 
 _init_unified_balance()
 
+# Initialize savings pipeline service for AI-powered fund allocation
+savings_pipeline_service = None
+savings_pipeline_enabled = False
+
+def _init_savings_pipeline():
+    global savings_pipeline_service, savings_pipeline_enabled
+    try:
+        from services.savings_pipeline_service import init_savings_pipeline_service
+        savings_pipeline_service = init_savings_pipeline_service(
+            unified_balance_service=unified_balance_service,
+            portfolio_service=portfolio_service,
+            algo_trading_service=algo_trading_service,
+            record_transaction_func=record_transaction,
+            generate_nft_token_func=generate_nft_token
+        )
+        savings_pipeline_enabled = True
+        print("✓ Savings Pipeline service enabled (AI-powered fund allocation)")
+    except ImportError as e:
+        print(f"Warning: Savings Pipeline service not available: {e}")
+
+_init_savings_pipeline()
+
 # Optional: admin datasets (actuarial tables) and market data (crypto/index)
 try:
     from security.vault import encrypt_json
@@ -3282,6 +3304,79 @@ For claims or questions, please contact:
             return
         
         # ========== END UNIFIED BALANCE GET API ==========
+        
+        # ========== SAVINGS PIPELINE GET API ==========
+        # Get pipeline analytics for a customer
+        if path == '/api/pipeline/analytics':
+            if not savings_pipeline_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Savings pipeline service unavailable'}).encode('utf-8'))
+                return
+            
+            customer_id = qs.get('customer_id', [''])[0]
+            if not customer_id:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'customer_id required'}).encode('utf-8'))
+                return
+            
+            analytics = savings_pipeline_service.get_pipeline_analytics(customer_id)
+            self._set_json_headers()
+            self.wfile.write(json.dumps(analytics).encode('utf-8'))
+            return
+        
+        # Get AI recommendation for savings optimization
+        if path == '/api/pipeline/ai-recommendation':
+            if not savings_pipeline_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Savings pipeline service unavailable'}).encode('utf-8'))
+                return
+            
+            customer_id = qs.get('customer_id', [''])[0]
+            if not customer_id:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'customer_id required'}).encode('utf-8'))
+                return
+            
+            recommendation = savings_pipeline_service.get_ai_recommendation(customer_id)
+            self._set_json_headers()
+            self.wfile.write(json.dumps(recommendation).encode('utf-8'))
+            return
+        
+        # Get pipeline summary (admin/BI dashboard)
+        if path == '/api/pipeline/summary':
+            if not savings_pipeline_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Savings pipeline service unavailable'}).encode('utf-8'))
+                return
+            
+            summary = savings_pipeline_service.get_pipeline_summary()
+            self._set_json_headers()
+            self.wfile.write(json.dumps(summary).encode('utf-8'))
+            return
+        
+        # Get pipeline account details
+        if path == '/api/pipeline/account':
+            if not savings_pipeline_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Savings pipeline service unavailable'}).encode('utf-8'))
+                return
+            
+            customer_id = qs.get('customer_id', [''])[0]
+            if not customer_id:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'customer_id required'}).encode('utf-8'))
+                return
+            
+            account = savings_pipeline_service.get_or_create_account(customer_id)
+            from dataclasses import asdict
+            self._set_json_headers()
+            self.wfile.write(json.dumps({
+                'customer_id': customer_id,
+                'account': asdict(account)
+            }).encode('utf-8'))
+            return
+        
+        # ========== END SAVINGS PIPELINE GET API ==========
 
         # Investment portfolio endpoint (legacy - redirect to new API)
         if path.startswith('/api/investment-portfolio'):
@@ -7038,6 +7133,158 @@ For claims or questions, please contact:
         
         # ========== END UNIFIED BALANCE POST API ==========
         
+        # ========== SAVINGS PIPELINE POST API ==========
+        # Deposit funds to pipeline
+        if path == '/api/pipeline/deposit':
+            if not savings_pipeline_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Savings pipeline service unavailable'}).encode('utf-8'))
+                return
+            
+            try:
+                data = json.loads(body)
+                customer_id = data.get('customer_id')
+                amount = float(data.get('amount', 0))
+                source = data.get('source', 'premium_payment')
+                auto_allocate = data.get('auto_allocate', True)
+                
+                if not customer_id or amount <= 0:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'customer_id and positive amount required'}).encode('utf-8'))
+                    return
+                
+                result = savings_pipeline_service.deposit_to_pipeline(
+                    customer_id=customer_id,
+                    amount=amount,
+                    source=source,
+                    auto_allocate=auto_allocate
+                )
+                
+                self._set_json_headers()
+                self.wfile.write(json.dumps(result).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+        
+        # Manually allocate cash balance
+        if path == '/api/pipeline/allocate':
+            if not savings_pipeline_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Savings pipeline service unavailable'}).encode('utf-8'))
+                return
+            
+            try:
+                data = json.loads(body)
+                customer_id = data.get('customer_id')
+                amount = data.get('amount')  # None = allocate all
+                use_ai = data.get('use_ai', True)
+                
+                if not customer_id:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'customer_id required'}).encode('utf-8'))
+                    return
+                
+                result = savings_pipeline_service.allocate_cash_balance(
+                    customer_id=customer_id,
+                    amount=float(amount) if amount else None,
+                    use_ai=use_ai
+                )
+                
+                if result['success']:
+                    self._set_json_headers()
+                else:
+                    self._set_json_headers(400)
+                
+                self.wfile.write(json.dumps(result).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+        
+        # Update pipeline settings (risk level, strategy)
+        if path == '/api/pipeline/settings':
+            if not savings_pipeline_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Savings pipeline service unavailable'}).encode('utf-8'))
+                return
+            
+            try:
+                data = json.loads(body)
+                customer_id = data.get('customer_id')
+                
+                if not customer_id:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'customer_id required'}).encode('utf-8'))
+                    return
+                
+                account = savings_pipeline_service.get_or_create_account(customer_id)
+                
+                # Update settings
+                if 'risk_level' in data:
+                    from services.savings_pipeline_service import RiskLevel
+                    account.risk_level = RiskLevel(data['risk_level'])
+                
+                if 'strategy' in data:
+                    from services.savings_pipeline_service import AllocationStrategy
+                    account.allocation_strategy = AllocationStrategy(data['strategy'])
+                
+                if 'auto_allocate' in data:
+                    account.auto_allocate = bool(data['auto_allocate'])
+                
+                if 'allocation_config' in data:
+                    from services.savings_pipeline_service import AllocationConfig
+                    config_data = data['allocation_config']
+                    account.allocation_config = AllocationConfig(
+                        wallet_pct=float(config_data.get('wallet_pct', 15)),
+                        investment_pct=float(config_data.get('investment_pct', 60)),
+                        algo_trading_pct=float(config_data.get('algo_trading_pct', 25)),
+                        index_pct=float(config_data.get('index_pct', 50)),
+                        bonds_pct=float(config_data.get('bonds_pct', 30)),
+                        crypto_pct=float(config_data.get('crypto_pct', 20))
+                    )
+                
+                from dataclasses import asdict
+                self._set_json_headers()
+                self.wfile.write(json.dumps({
+                    'success': True,
+                    'account': asdict(account)
+                }).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+        
+        # Update market conditions (admin only)
+        if path == '/api/pipeline/market-conditions':
+            if not savings_pipeline_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Savings pipeline service unavailable'}).encode('utf-8'))
+                return
+            
+            try:
+                data = json.loads(body)
+                sentiment = data.get('sentiment')
+                volatility = data.get('volatility')
+                
+                savings_pipeline_service.update_market_conditions(
+                    sentiment=float(sentiment) if sentiment is not None else None,
+                    volatility=float(volatility) if volatility is not None else None
+                )
+                
+                self._set_json_headers()
+                self.wfile.write(json.dumps({
+                    'success': True,
+                    'market_sentiment': savings_pipeline_service.market_sentiment,
+                    'volatility_index': savings_pipeline_service.volatility_index
+                }).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+        
+        # ========== END SAVINGS PIPELINE POST API ==========
+        
         # ========== END BILLING API ==========
         # Minimal billing endpoints (demo fallback when engine routes are not used)
         if path == '/api/billing/create':
@@ -7233,8 +7480,22 @@ For claims or questions, please contact:
                             remaining_amount -= payment_for_bill
                             bills_paid.append(bill_id)
                 
+                # Route savings through the AI Pipeline for smart allocation
+                pipeline_result = None
+                if savings_pipeline_enabled and savings_amount > 0:
+                    try:
+                        # Deposit savings to pipeline (will auto-allocate to wallet, investments, algo trading)
+                        pipeline_result = savings_pipeline_service.deposit_to_pipeline(
+                            customer_id=customer_id,
+                            amount=savings_amount,
+                            source='premium_payment',
+                            auto_allocate=True  # Let AI optimize allocation
+                        )
+                    except Exception as pipe_err:
+                        pipeline_result = {'error': str(pipe_err)}
+                
                 self._set_json_headers(200)
-                self.wfile.write(json.dumps({
+                response = {
                     'success': True,
                     'payment': payment_record,
                     'nft_token_id': tx.get('nft_token_id'),
@@ -7249,7 +7510,14 @@ For claims or questions, please contact:
                     },
                     'investment_account_balance': inv_account['balance'],
                     'bills_updated': bills_paid
-                }).encode('utf-8'))
+                }
+                
+                # Add pipeline allocation details
+                if pipeline_result:
+                    response['pipeline_allocation'] = pipeline_result.get('allocation', {})
+                    response['ai_optimized'] = True
+                
+                self.wfile.write(json.dumps(response).encode('utf-8'))
                 
             except Exception as e:
                 self._set_json_headers(400)
