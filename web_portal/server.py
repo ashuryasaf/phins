@@ -21,6 +21,7 @@ import uuid
 import hashlib
 import secrets
 import threading
+import time
 import csv
 import io
 from typing import Dict, Any
@@ -95,6 +96,222 @@ INVESTMENT_ACCOUNTS: Dict[str, Dict[str, Any]] = {}  # customer_id -> {balance, 
 
 # Transaction ledger - master ledger for all financial transactions
 TRANSACTION_LEDGER: Dict[str, Dict[str, Any]] = {}  # tx_id -> transaction data
+
+# ========== DATA PERSISTENCE LAYER ==========
+# Path for persistent storage file
+LEDGER_PERSISTENCE_FILE = os.environ.get('LEDGER_PERSISTENCE_FILE', '/tmp/phins_ledger_data.json')
+PERSISTENCE_ENABLED = os.environ.get('ENABLE_LEDGER_PERSISTENCE', 'true').lower() == 'true'
+_persistence_lock = threading.Lock()
+
+def save_ledger_data():
+    """Save all ledger data to persistent storage"""
+    if not PERSISTENCE_ENABLED:
+        return
+    
+    try:
+        with _persistence_lock:
+            data = {
+                'saved_at': datetime.now().isoformat(),
+                'version': '1.0',
+                'health_wallets': HEALTH_WALLETS,
+                'medical_purchases': MEDICAL_PURCHASES,
+                'nft_ledger': NFT_LEDGER,
+                'customer_allocations': CUSTOMER_ALLOCATIONS,
+                'investment_accounts': INVESTMENT_ACCOUNTS,
+                'transaction_ledger': TRANSACTION_LEDGER
+            }
+            
+            # Write to temp file first, then rename for atomic operation
+            temp_file = LEDGER_PERSISTENCE_FILE + '.tmp'
+            with open(temp_file, 'w') as f:
+                json.dump(data, f, default=str, indent=2)
+            
+            # Atomic rename
+            os.rename(temp_file, LEDGER_PERSISTENCE_FILE)
+            print(f"[PERSISTENCE] Saved ledger data to {LEDGER_PERSISTENCE_FILE}")
+    except Exception as e:
+        print(f"[PERSISTENCE] Error saving ledger data: {e}")
+
+def load_ledger_data():
+    """Load ledger data from persistent storage on startup"""
+    global HEALTH_WALLETS, MEDICAL_PURCHASES, NFT_LEDGER, CUSTOMER_ALLOCATIONS, INVESTMENT_ACCOUNTS, TRANSACTION_LEDGER
+    
+    if not PERSISTENCE_ENABLED:
+        print("[PERSISTENCE] Persistence disabled, using in-memory storage only")
+        return False
+    
+    if not os.path.exists(LEDGER_PERSISTENCE_FILE):
+        print(f"[PERSISTENCE] No persistence file found at {LEDGER_PERSISTENCE_FILE}, starting fresh")
+        return False
+    
+    try:
+        with open(LEDGER_PERSISTENCE_FILE, 'r') as f:
+            data = json.load(f)
+        
+        # Load each data store
+        HEALTH_WALLETS.update(data.get('health_wallets', {}))
+        MEDICAL_PURCHASES.update(data.get('medical_purchases', {}))
+        NFT_LEDGER.update(data.get('nft_ledger', {}))
+        CUSTOMER_ALLOCATIONS.update(data.get('customer_allocations', {}))
+        INVESTMENT_ACCOUNTS.update(data.get('investment_accounts', {}))
+        TRANSACTION_LEDGER.update(data.get('transaction_ledger', {}))
+        
+        print(f"[PERSISTENCE] Loaded ledger data from {LEDGER_PERSISTENCE_FILE}")
+        print(f"  - Health Wallets: {len(HEALTH_WALLETS)}")
+        print(f"  - Medical Purchases: {len(MEDICAL_PURCHASES)}")
+        print(f"  - NFT Ledger: {len(NFT_LEDGER)}")
+        print(f"  - Customer Allocations: {len(CUSTOMER_ALLOCATIONS)}")
+        print(f"  - Investment Accounts: {len(INVESTMENT_ACCOUNTS)}")
+        print(f"  - Transaction Ledger: {len(TRANSACTION_LEDGER)}")
+        print(f"  - Saved at: {data.get('saved_at', 'unknown')}")
+        return True
+    except Exception as e:
+        print(f"[PERSISTENCE] Error loading ledger data: {e}")
+        return False
+
+def schedule_periodic_save():
+    """Schedule periodic saves of ledger data"""
+    def save_loop():
+        while True:
+            time.sleep(60)  # Save every 60 seconds
+            save_ledger_data()
+    
+    if PERSISTENCE_ENABLED:
+        save_thread = threading.Thread(target=save_loop, daemon=True)
+        save_thread.start()
+        print("[PERSISTENCE] Started periodic save thread (every 60 seconds)")
+
+# ========== END DATA PERSISTENCE LAYER ==========
+
+# ========== REAL-TIME BANKING/TRADING/BILLING CONNECTIONS ==========
+# Configuration for connecting to external financial services
+REAL_TIME_CONFIG = {
+    # Banking APIs (prepared for real-time connections)
+    'banking': {
+        'plaid': {
+            'enabled': os.environ.get('PLAID_ENABLED', 'false').lower() == 'true',
+            'client_id': os.environ.get('PLAID_CLIENT_ID', ''),
+            'secret': os.environ.get('PLAID_SECRET', ''),
+            'environment': os.environ.get('PLAID_ENVIRONMENT', 'sandbox'),  # sandbox, development, production
+            'supported_products': ['auth', 'transactions', 'balance', 'identity'],
+            'webhook_url': os.environ.get('PLAID_WEBHOOK_URL', '')
+        },
+        'stripe_connect': {
+            'enabled': os.environ.get('STRIPE_CONNECT_ENABLED', 'false').lower() == 'true',
+            'api_key': os.environ.get('STRIPE_SECRET_KEY', ''),
+            'publishable_key': os.environ.get('STRIPE_PUBLISHABLE_KEY', ''),
+            'webhook_secret': os.environ.get('STRIPE_WEBHOOK_SECRET', '')
+        },
+        'ach': {
+            'enabled': os.environ.get('ACH_ENABLED', 'false').lower() == 'true',
+            'provider': os.environ.get('ACH_PROVIDER', 'stripe'),  # stripe, plaid, dwolla
+            'routing_validation': True,
+            'micro_deposit_verification': True
+        }
+    },
+    # Trading APIs (prepared for real-time market connections)
+    'trading': {
+        'alpaca': {
+            'enabled': os.environ.get('ALPACA_ENABLED', 'false').lower() == 'true',
+            'api_key': os.environ.get('ALPACA_API_KEY', ''),
+            'api_secret': os.environ.get('ALPACA_API_SECRET', ''),
+            'base_url': os.environ.get('ALPACA_BASE_URL', 'https://paper-api.alpaca.markets'),  # paper or live
+            'data_url': 'https://data.alpaca.markets',
+            'supported_markets': ['US_EQUITY', 'CRYPTO']
+        },
+        'coinbase_pro': {
+            'enabled': os.environ.get('COINBASE_ENABLED', 'false').lower() == 'true',
+            'api_key': os.environ.get('COINBASE_API_KEY', ''),
+            'api_secret': os.environ.get('COINBASE_API_SECRET', ''),
+            'passphrase': os.environ.get('COINBASE_PASSPHRASE', ''),
+            'sandbox': os.environ.get('COINBASE_SANDBOX', 'true').lower() == 'true'
+        },
+        'interactive_brokers': {
+            'enabled': os.environ.get('IB_ENABLED', 'false').lower() == 'true',
+            'gateway_host': os.environ.get('IB_GATEWAY_HOST', 'localhost'),
+            'gateway_port': int(os.environ.get('IB_GATEWAY_PORT', '4002')),  # 4001=live, 4002=paper
+            'client_id': int(os.environ.get('IB_CLIENT_ID', '1')),
+            'account_type': os.environ.get('IB_ACCOUNT_TYPE', 'paper')
+        }
+    },
+    # Billing/Subscription Management
+    'billing': {
+        'stripe_billing': {
+            'enabled': os.environ.get('STRIPE_BILLING_ENABLED', 'false').lower() == 'true',
+            'api_key': os.environ.get('STRIPE_SECRET_KEY', ''),
+            'webhook_secret': os.environ.get('STRIPE_BILLING_WEBHOOK', ''),
+            'default_currency': 'usd',
+            'auto_invoice': True,
+            'proration_behavior': 'create_prorations'
+        },
+        'paypal_subscriptions': {
+            'enabled': os.environ.get('PAYPAL_SUBSCRIPTIONS_ENABLED', 'false').lower() == 'true',
+            'client_id': os.environ.get('PAYPAL_CLIENT_ID', ''),
+            'client_secret': os.environ.get('PAYPAL_SECRET', ''),
+            'sandbox': os.environ.get('PAYPAL_SANDBOX', 'true').lower() == 'true'
+        }
+    },
+    # Market Data Providers
+    'market_data': {
+        'polygon': {
+            'enabled': os.environ.get('POLYGON_ENABLED', 'false').lower() == 'true',
+            'api_key': os.environ.get('POLYGON_API_KEY', ''),
+            'websocket_enabled': True,
+            'subscription_type': 'starter'  # starter, developer, advanced
+        },
+        'finnhub': {
+            'enabled': os.environ.get('FINNHUB_ENABLED', 'false').lower() == 'true',
+            'api_key': os.environ.get('FINNHUB_API_KEY', ''),
+            'premium': False
+        },
+        'coingecko': {
+            'enabled': True,  # Free API, always available
+            'api_url': 'https://api.coingecko.com/api/v3',
+            'pro_api_key': os.environ.get('COINGECKO_API_KEY', '')
+        }
+    },
+    # Webhook Configuration
+    'webhooks': {
+        'base_url': os.environ.get('WEBHOOK_BASE_URL', 'https://phins-portal-production.up.railway.app'),
+        'endpoints': {
+            'stripe': '/webhooks/stripe',
+            'paypal': '/webhooks/paypal',
+            'plaid': '/webhooks/plaid',
+            'trading': '/webhooks/trading'
+        },
+        'signing_secret': os.environ.get('WEBHOOK_SIGNING_SECRET', secrets.token_hex(32))
+    }
+}
+
+def get_real_time_status() -> Dict[str, Any]:
+    """Get status of all real-time connections"""
+    return {
+        'banking': {
+            'plaid': REAL_TIME_CONFIG['banking']['plaid']['enabled'],
+            'stripe_connect': REAL_TIME_CONFIG['banking']['stripe_connect']['enabled'],
+            'ach': REAL_TIME_CONFIG['banking']['ach']['enabled']
+        },
+        'trading': {
+            'alpaca': REAL_TIME_CONFIG['trading']['alpaca']['enabled'],
+            'coinbase_pro': REAL_TIME_CONFIG['trading']['coinbase_pro']['enabled'],
+            'interactive_brokers': REAL_TIME_CONFIG['trading']['interactive_brokers']['enabled']
+        },
+        'billing': {
+            'stripe_billing': REAL_TIME_CONFIG['billing']['stripe_billing']['enabled'],
+            'paypal_subscriptions': REAL_TIME_CONFIG['billing']['paypal_subscriptions']['enabled']
+        },
+        'market_data': {
+            'polygon': REAL_TIME_CONFIG['market_data']['polygon']['enabled'],
+            'finnhub': REAL_TIME_CONFIG['market_data']['finnhub']['enabled'],
+            'coingecko': REAL_TIME_CONFIG['market_data']['coingecko']['enabled']
+        },
+        'persistence': {
+            'enabled': PERSISTENCE_ENABLED,
+            'file_path': LEDGER_PERSISTENCE_FILE
+        }
+    }
+
+# ========== END REAL-TIME CONNECTIONS CONFIG ==========
 
 
 def get_customer_allocation(customer_id: str) -> Dict[str, float]:
@@ -188,6 +405,10 @@ def record_transaction(
     NFT_LEDGER[nft_token['token_id']] = nft_token
     
     transaction['nft_token_id'] = nft_token['token_id']
+    
+    # Trigger async save to persist changes
+    threading.Thread(target=save_ledger_data, daemon=True).start()
+    
     return transaction
 
 def generate_nft_token(
@@ -1189,6 +1410,38 @@ For claims or questions, please contact:
                     'permanent_blocks': sum(1 for b in BLOCKED_IPS.values() if b.get('permanent')),
                     'active_lockouts': sum(1 for f in FAILED_LOGINS.values() 
                                           if f.get('lockout_until', 0) > datetime.now().timestamp())
+                }
+            }, default=str).encode('utf-8'))
+            return
+        
+        # System status endpoint - shows real-time connection status
+        if path == '/api/system/status':
+            self._set_json_headers()
+            self.wfile.write(json.dumps({
+                'status': 'healthy',
+                'timestamp': datetime.now().isoformat(),
+                'version': '2.0.0',
+                'ledger_stats': {
+                    'health_wallets': len(HEALTH_WALLETS),
+                    'medical_purchases': len(MEDICAL_PURCHASES),
+                    'nft_tokens': len(NFT_LEDGER),
+                    'transactions': len(TRANSACTION_LEDGER),
+                    'investment_accounts': len(INVESTMENT_ACCOUNTS),
+                    'customer_allocations': len(CUSTOMER_ALLOCATIONS)
+                },
+                'real_time_connections': get_real_time_status(),
+                'persistence': {
+                    'enabled': PERSISTENCE_ENABLED,
+                    'file_path': LEDGER_PERSISTENCE_FILE,
+                    'file_exists': os.path.exists(LEDGER_PERSISTENCE_FILE) if PERSISTENCE_ENABLED else False
+                },
+                'services': {
+                    'database': database_enabled if 'database_enabled' in dir() else False,
+                    'portfolio': portfolio_enabled if 'portfolio_enabled' in dir() else False,
+                    'algo_trading': algo_trading_enabled if 'algo_trading_enabled' in dir() else False,
+                    'unified_balance': unified_balance_enabled if 'unified_balance_enabled' in dir() else False,
+                    'savings_pipeline': savings_pipeline_enabled if 'savings_pipeline_enabled' in dir() else False,
+                    'marketplace': marketplace_enabled if 'marketplace_enabled' in dir() else False
                 }
             }, default=str).encode('utf-8'))
             return
@@ -9235,6 +9488,16 @@ For claims or questions, please contact:
 
 
 def run_server(port: int = PORT) -> None:
+    # Load persisted ledger data first
+    print("📂 Loading persisted ledger data...")
+    if load_ledger_data():
+        print("✓ Ledger data restored from persistent storage")
+    else:
+        print("ℹ️  Starting with fresh ledger data")
+    
+    # Start periodic save thread
+    schedule_periodic_save()
+    
     # Initialize database if enabled
     if USE_DATABASE and database_enabled:
         print("📊 Initializing database...")
