@@ -506,7 +506,36 @@
     <section id="underwriting" class="section-content">
       <div class="section-header">
         <h2>🔍 Underwriting Division — Risk Assessment</h2>
-        <span class="badge badge-orange" id="uw-pending-badge">0 Pending Reviews</span>
+        <div style="display: flex; gap: 12px; align-items: center;">
+          <span class="badge badge-orange" id="uw-pending-badge">0 Pending Reviews</span>
+          <button class="btn btn-small btn-success" onclick="approveAllPending()" title="Approve all pending applications and activate policies">
+            ✅ Approve All Pending
+          </button>
+          <button class="btn btn-small" style="background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%); color: white;" onclick="validateAllCustomers()" title="Run full pipeline validation on all customers">
+            🔍 Validate All Customers
+          </button>
+        </div>
+      </div>
+      
+      <!-- Quick Actions Panel -->
+      <div style="background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%); padding: 16px; border-radius: 12px; margin-bottom: 20px; border: 1px solid rgba(59, 130, 246, 0.2);">
+        <h4 style="margin: 0 0 12px 0; display: flex; align-items: center; gap: 8px;">
+          <span>⚡</span> Quick Pipeline Actions
+        </h4>
+        <div style="display: flex; gap: 12px; flex-wrap: wrap;">
+          <button class="btn btn-small" style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: white;" onclick="processAllPipelines()">
+            🔄 Process All Pipelines
+          </button>
+          <button class="btn btn-small" style="background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%); color: white;" onclick="allocateAllSavings()">
+            💰 Allocate All Savings
+          </button>
+          <button class="btn btn-small" style="background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); color: white;" onclick="generateMissingBilling()">
+            📄 Generate Missing Bills
+          </button>
+          <a href="/underwriter-dashboard.html" class="btn btn-small" style="background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%); color: white; text-decoration: none;">
+            📋 Full Underwriter Dashboard
+          </a>
+        </div>
       </div>
       
       <div class="table-card">
@@ -1213,10 +1242,51 @@
         </div>
         ` : ''}
         
-        <div style="display:flex;gap:12px;margin-top:24px;padding-top:20px;border-top:1px solid #e0e0e0;">
-          <button class="btn" style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: white; padding: 12px 24px; border-radius: 10px; border: none; cursor: pointer; font-weight: 600; display: inline-flex; align-items: center; gap: 8px; box-shadow: 0 2px 8px rgba(16,185,129,0.3);" onclick="validateCustomer('${customer.id}'); closeCustomerModal();">
+        <!-- Pipeline Validation Section -->
+        <div style="margin-bottom: 20px; padding: 16px; background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%); border-radius: 12px; border: 1px solid rgba(21, 101, 192, 0.2);">
+          <h4 style="margin: 0 0 16px 0; display: flex; align-items: center; gap: 8px;">
+            <span style="font-size: 1.2rem;">🔄</span> Pipeline Status & Actions
+          </h4>
+          <div id="pipeline-status-${customer.id}" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(100px, 1fr)); gap: 8px;">
+            <div style="text-align: center; padding: 8px; background: white; border-radius: 8px; border: 2px solid ${customer.pipeline_stage === 'registered' || customer.pipeline_stage ? '#4caf50' : '#e0e0e0'};">
+              <div style="font-size: 1.2rem;">📝</div>
+              <div style="font-size: 0.7rem; font-weight: 600;">Registered</div>
+            </div>
+            <div style="text-align: center; padding: 8px; background: white; border-radius: 8px; border: 2px solid ${['applied', 'underwriting', 'approved', 'active_policy', 'billing_pending', 'fully_active'].includes(customer.pipeline_stage) ? '#4caf50' : '#e0e0e0'};">
+              <div style="font-size: 1.2rem;">📋</div>
+              <div style="font-size: 0.7rem; font-weight: 600;">Applied</div>
+            </div>
+            <div style="text-align: center; padding: 8px; background: white; border-radius: 8px; border: 2px solid ${['underwriting', 'approved', 'active_policy', 'billing_pending', 'fully_active'].includes(customer.pipeline_stage) ? '#ff9800' : '#e0e0e0'};">
+              <div style="font-size: 1.2rem;">🔍</div>
+              <div style="font-size: 0.7rem; font-weight: 600;">Underwriting</div>
+            </div>
+            <div style="text-align: center; padding: 8px; background: white; border-radius: 8px; border: 2px solid ${['approved', 'active_policy', 'billing_pending', 'fully_active'].includes(customer.pipeline_stage) ? '#4caf50' : '#e0e0e0'};">
+              <div style="font-size: 1.2rem;">✅</div>
+              <div style="font-size: 0.7rem; font-weight: 600;">Approved</div>
+            </div>
+            <div style="text-align: center; padding: 8px; background: white; border-radius: 8px; border: 2px solid ${['active_policy', 'billing_pending', 'fully_active'].includes(customer.pipeline_stage) ? '#4caf50' : '#e0e0e0'};">
+              <div style="font-size: 1.2rem;">📄</div>
+              <div style="font-size: 0.7rem; font-weight: 600;">Policy Active</div>
+            </div>
+            <div style="text-align: center; padding: 8px; background: white; border-radius: 8px; border: 2px solid ${['billing_pending', 'fully_active'].includes(customer.pipeline_stage) ? '#4caf50' : '#e0e0e0'};">
+              <div style="font-size: 1.2rem;">💰</div>
+              <div style="font-size: 0.7rem; font-weight: 600;">Billing</div>
+            </div>
+          </div>
+        </div>
+        
+        <div style="display:flex;gap:12px;margin-top:24px;padding-top:20px;border-top:1px solid #e0e0e0; flex-wrap: wrap;">
+          <button class="btn" style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: white; padding: 12px 24px; border-radius: 10px; border: none; cursor: pointer; font-weight: 600; display: inline-flex; align-items: center; gap: 8px; box-shadow: 0 2px 8px rgba(16,185,129,0.3);" onclick="validateCustomerFull('${customer.id}');">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>
-            Validate Customer
+            Validate Pipeline
+          </button>
+          <button class="btn" style="background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%); color: white; padding: 12px 24px; border-radius: 10px; border: none; cursor: pointer; font-weight: 600; display: inline-flex; align-items: center; gap: 8px; box-shadow: 0 2px 8px rgba(59,130,246,0.3);" onclick="processNextPipelineStep('${customer.id}');">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+            Process Next Step
+          </button>
+          <button class="btn" style="background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%); color: white; padding: 12px 24px; border-radius: 10px; border: none; cursor: pointer; font-weight: 600; display: inline-flex; align-items: center; gap: 8px; box-shadow: 0 2px 8px rgba(139,92,246,0.3);" onclick="allocateSavings('${customer.id}');">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+            Allocate Savings
           </button>
           <button class="btn" style="background: linear-gradient(135deg, #6b7280 0%, #4b5563 100%); color: white; padding: 12px 24px; border-radius: 10px; border: none; cursor: pointer; font-weight: 600; display: inline-flex; align-items: center; gap: 8px;" onclick="closeCustomerModal()">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
@@ -1232,7 +1302,7 @@
       document.getElementById('customer-detail-modal').style.display = 'none';
     }
     
-    // Validate customer
+    // Validate customer (basic)
     async function validateCustomer(customerId) {
       try {
         const response = await fetch(`/api/admin/validate-customer/${customerId}`, {
@@ -1255,6 +1325,501 @@
         alert('Failed to validate customer: ' + err.message);
       }
     }
+    
+    // Full pipeline validation with detailed checks
+    async function validateCustomerFull(customerId) {
+      try {
+        const response = await fetch(`/api/admin/pipeline-validate/${customerId}`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        
+        if (response.ok) {
+          const data = await response.json();
+          const checks = data.checks || [];
+          const errors = data.errors || [];
+          const warnings = data.warnings || [];
+          const nextActions = data.next_actions || [];
+          
+          let message = `🔍 Full Pipeline Validation: ${customerId}\n\n`;
+          message += `═══════════════════════════════════\n`;
+          message += `📊 PIPELINE STAGE: ${(data.pipeline_stage || 'unknown').toUpperCase()}\n`;
+          message += `═══════════════════════════════════\n\n`;
+          
+          message += `✅ PASSED CHECKS:\n`;
+          checks.filter(c => c.status === 'PASS').forEach(c => {
+            message += `  ✓ ${c.check}: ${c.details || ''}\n`;
+          });
+          
+          if (checks.filter(c => c.status === 'PENDING').length > 0) {
+            message += `\n⏳ PENDING:\n`;
+            checks.filter(c => c.status === 'PENDING').forEach(c => {
+              message += `  ○ ${c.check}: ${c.details || ''}\n`;
+            });
+          }
+          
+          if (warnings.length > 0) {
+            message += `\n⚠️ WARNINGS:\n`;
+            warnings.forEach(w => message += `  ⚠ ${w}\n`);
+          }
+          
+          if (errors.length > 0) {
+            message += `\n❌ ERRORS:\n`;
+            errors.forEach(e => message += `  ✗ ${e}\n`);
+          }
+          
+          if (nextActions.length > 0) {
+            message += `\n🎯 NEXT ACTIONS:\n`;
+            nextActions.forEach(a => message += `  → ${a}\n`);
+          }
+          
+          message += `\n═══════════════════════════════════\n`;
+          message += `OVERALL: ${data.valid ? '✓ VALID' : '⚠️ NEEDS ACTION'}\n`;
+          message += `Allocation Status: ${data.allocation_status || 'Not configured'}\n`;
+          
+          alert(message);
+          
+          // Offer to process next step if there are actions
+          if (nextActions.length > 0 && !data.valid) {
+            if (confirm('Would you like to process the next pipeline step?')) {
+              processNextPipelineStep(customerId);
+            }
+          }
+        } else {
+          const err = await response.json();
+          alert('Validation failed: ' + (err.error || 'Unknown error'));
+        }
+      } catch (err) {
+        alert('Failed to validate customer: ' + err.message);
+      }
+    }
+    
+    // Process next pipeline step
+    async function processNextPipelineStep(customerId) {
+      try {
+        const response = await fetch(`/api/admin/pipeline-process/${customerId}`, {
+          method: 'POST',
+          headers: { 
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ auto_advance: true })
+        });
+        
+        if (response.ok) {
+          const data = await response.json();
+          
+          let message = `✅ Pipeline Step Processed!\n\n`;
+          message += `Previous Stage: ${data.previous_stage || 'N/A'}\n`;
+          message += `New Stage: ${data.new_stage || 'N/A'}\n\n`;
+          
+          if (data.actions_taken && data.actions_taken.length > 0) {
+            message += `Actions Taken:\n`;
+            data.actions_taken.forEach(a => message += `  ✓ ${a}\n`);
+          }
+          
+          if (data.allocation_result) {
+            message += `\n💰 Allocation:\n`;
+            message += `  Wallet: $${data.allocation_result.wallet || 0}\n`;
+            message += `  Investment: $${data.allocation_result.investment || 0}\n`;
+            message += `  Algo Trading: $${data.allocation_result.algo_trading || 0}\n`;
+          }
+          
+          alert(message);
+          
+          // Refresh data
+          loadCustomers();
+          loadDashboardStats();
+          closeCustomerModal();
+        } else {
+          const err = await response.json();
+          alert('Failed to process: ' + (err.error || 'Unknown error'));
+        }
+      } catch (err) {
+        alert('Failed to process pipeline step: ' + err.message);
+      }
+    }
+    
+    // Allocate savings based on customer preferences
+    async function allocateSavings(customerId) {
+      // First check if there are funds to allocate
+      try {
+        const checkResponse = await fetch(`/api/savings/accounts?customer_id=${customerId}`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        
+        let cashBalance = 0;
+        if (checkResponse.ok) {
+          const accountData = await checkResponse.json();
+          cashBalance = accountData.cash_balance || 0;
+        }
+        
+        const amount = prompt(
+          `💰 Allocate Savings for Customer\n\n` +
+          `Current Cash Balance: $${cashBalance.toFixed(2)}\n\n` +
+          `Enter amount to allocate (or leave empty for full balance):`,
+          cashBalance > 0 ? cashBalance.toFixed(2) : '100.00'
+        );
+        
+        if (amount === null) return; // Cancelled
+        
+        const response = await fetch('/api/pipeline/allocate', {
+          method: 'POST',
+          headers: { 
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            customer_id: customerId,
+            amount: parseFloat(amount) || undefined,
+            use_ai: true
+          })
+        });
+        
+        if (response.ok) {
+          const data = await response.json();
+          
+          let message = `✅ Savings Allocated Successfully!\n\n`;
+          message += `Total Allocated: $${(data.amount_allocated || 0).toFixed(2)}\n\n`;
+          message += `Breakdown:\n`;
+          
+          const allocation = data.allocation || {};
+          message += `  💊 Health Wallet: $${(allocation.wallet || 0).toFixed(2)}\n`;
+          message += `  📈 Investment: $${(allocation.investment || 0).toFixed(2)}\n`;
+          message += `  🤖 Algo Trading: $${(allocation.algo_trading || 0).toFixed(2)}\n`;
+          
+          if (allocation.investment_detail) {
+            message += `\n📊 Investment Breakdown:\n`;
+            message += `  Index Funds: $${(allocation.investment_detail.index_funds || 0).toFixed(2)}\n`;
+            message += `  Bonds: $${(allocation.investment_detail.bonds || 0).toFixed(2)}\n`;
+            message += `  Crypto: $${(allocation.investment_detail.crypto || 0).toFixed(2)}\n`;
+          }
+          
+          alert(message);
+          
+          // Refresh data
+          loadCustomers();
+          loadDashboardStats();
+        } else {
+          const err = await response.json();
+          alert('Failed to allocate: ' + (err.error || 'Unknown error'));
+        }
+      } catch (err) {
+        alert('Failed to allocate savings: ' + err.message);
+      }
+    }
+    
+    // ========== BULK PIPELINE ACTIONS ==========
+    
+    // Approve all pending underwriting applications
+    async function approveAllPending() {
+      if (!confirm('⚠️ Approve ALL pending applications?\n\nThis will:\n- Approve all pending underwriting applications\n- Activate all associated policies\n- Generate billing for each policy\n- Initialize savings/hedging allocations\n\nContinue?')) return;
+      
+      try {
+        const response = await fetch('/api/underwriting', {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        
+        if (!response.ok) {
+          alert('Failed to load applications');
+          return;
+        }
+        
+        const data = await response.json();
+        const applications = Array.isArray(data) ? data : (data.applications || []);
+        const pending = applications.filter(a => a.status === 'pending');
+        
+        if (pending.length === 0) {
+          alert('No pending applications to approve');
+          return;
+        }
+        
+        let approved = 0;
+        let failed = 0;
+        
+        for (const app of pending) {
+          try {
+            const approveResponse = await fetch('/api/underwriting/approve', {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify({ id: app.id, approved_by: 'admin_bulk' })
+            });
+            
+            if (approveResponse.ok) {
+              approved++;
+            } else {
+              failed++;
+            }
+          } catch (e) {
+            failed++;
+          }
+        }
+        
+        alert(`✅ Bulk Approval Complete!\n\n${approved} applications approved\n${failed} failed\n\nPolicies activated and billing generated.`);
+        
+        // Refresh data
+        loadUnderwritingApplications();
+        loadDashboardStats();
+        loadCustomers();
+      } catch (err) {
+        alert('Failed to approve all: ' + err.message);
+      }
+    }
+    
+    // Validate all customers
+    async function validateAllCustomers() {
+      try {
+        const response = await fetch('/api/admin/customers', {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        
+        if (!response.ok) {
+          alert('Failed to load customers');
+          return;
+        }
+        
+        const data = await response.json();
+        const customers = data.customers || [];
+        
+        if (customers.length === 0) {
+          alert('No customers to validate');
+          return;
+        }
+        
+        let results = {
+          total: customers.length,
+          valid: 0,
+          needsAction: 0,
+          errors: []
+        };
+        
+        for (const customer of customers) {
+          try {
+            const validateResponse = await fetch(`/api/admin/pipeline-validate/${customer.id}`, {
+              headers: { 'Authorization': `Bearer ${token}` }
+            });
+            
+            if (validateResponse.ok) {
+              const validation = await validateResponse.json();
+              if (validation.valid) {
+                results.valid++;
+              } else {
+                results.needsAction++;
+                results.errors.push(`${customer.id}: ${(validation.next_actions || []).join(', ')}`);
+              }
+            }
+          } catch (e) {
+            results.errors.push(`${customer.id}: Validation error`);
+          }
+        }
+        
+        let message = `🔍 Validation Complete!\n\n`;
+        message += `Total Customers: ${results.total}\n`;
+        message += `✓ Valid: ${results.valid}\n`;
+        message += `⚠ Needs Action: ${results.needsAction}\n\n`;
+        
+        if (results.errors.length > 0) {
+          message += `Issues Found:\n`;
+          results.errors.slice(0, 10).forEach(e => message += `• ${e}\n`);
+          if (results.errors.length > 10) {
+            message += `... and ${results.errors.length - 10} more`;
+          }
+        }
+        
+        alert(message);
+        
+        // Offer to process all pipelines if there are issues
+        if (results.needsAction > 0) {
+          if (confirm('Would you like to process all pipelines to fix these issues?')) {
+            processAllPipelines();
+          }
+        }
+      } catch (err) {
+        alert('Failed to validate all customers: ' + err.message);
+      }
+    }
+    
+    // Process all pipelines
+    async function processAllPipelines() {
+      if (!confirm('⚡ Process all customer pipelines?\n\nThis will advance each customer through their pipeline stages automatically.\n\nContinue?')) return;
+      
+      try {
+        const response = await fetch('/api/admin/customers', {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        
+        if (!response.ok) {
+          alert('Failed to load customers');
+          return;
+        }
+        
+        const data = await response.json();
+        const customers = data.customers || [];
+        
+        let processed = 0;
+        let actionsTotal = 0;
+        
+        for (const customer of customers) {
+          try {
+            const processResponse = await fetch(`/api/admin/pipeline-process/${customer.id}`, {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify({ auto_advance: true })
+            });
+            
+            if (processResponse.ok) {
+              const result = await processResponse.json();
+              processed++;
+              actionsTotal += (result.actions_taken || []).length;
+            }
+          } catch (e) {
+            // Continue with next customer
+          }
+        }
+        
+        alert(`✅ Pipeline Processing Complete!\n\n${processed} customers processed\n${actionsTotal} total actions taken`);
+        
+        // Refresh data
+        loadUnderwritingApplications();
+        loadDashboardStats();
+        loadCustomers();
+      } catch (err) {
+        alert('Failed to process pipelines: ' + err.message);
+      }
+    }
+    
+    // Allocate all customer savings
+    async function allocateAllSavings() {
+      if (!confirm('💰 Allocate savings for ALL customers?\n\nThis will use AI to distribute available funds across:\n- Health Wallet\n- Investment Portfolio\n- Algo Trading\n\nContinue?')) return;
+      
+      try {
+        const response = await fetch('/api/admin/customers', {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        
+        if (!response.ok) {
+          alert('Failed to load customers');
+          return;
+        }
+        
+        const data = await response.json();
+        const customers = data.customers || [];
+        
+        let allocated = 0;
+        let totalAmount = 0;
+        
+        for (const customer of customers) {
+          try {
+            const allocateResponse = await fetch('/api/pipeline/allocate', {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify({
+                customer_id: customer.id,
+                use_ai: true
+              })
+            });
+            
+            if (allocateResponse.ok) {
+              const result = await allocateResponse.json();
+              if (result.success && result.amount_allocated) {
+                allocated++;
+                totalAmount += result.amount_allocated;
+              }
+            }
+          } catch (e) {
+            // Continue with next customer
+          }
+        }
+        
+        alert(`✅ Savings Allocation Complete!\n\n${allocated} customers had funds allocated\nTotal Amount: $${totalAmount.toLocaleString()}`);
+        
+        // Refresh data
+        loadDashboardStats();
+        loadCustomers();
+      } catch (err) {
+        alert('Failed to allocate savings: ' + err.message);
+      }
+    }
+    
+    // Generate missing billing records
+    async function generateMissingBilling() {
+      if (!confirm('📄 Generate missing billing records?\n\nThis will create billing records for any active policies that don\'t have one.\n\nContinue?')) return;
+      
+      try {
+        const response = await fetch('/api/policies', {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        
+        if (!response.ok) {
+          alert('Failed to load policies');
+          return;
+        }
+        
+        const data = await response.json();
+        const policies = Array.isArray(data) ? data : (data.policies || []);
+        const activePolicies = policies.filter(p => p.status === 'active');
+        
+        // Get existing billing
+        const billingResponse = await fetch('/api/billing', {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        
+        let existingBillPolicies = new Set();
+        if (billingResponse.ok) {
+          const billingData = await billingResponse.json();
+          const bills = Array.isArray(billingData) ? billingData : (billingData.bills || []);
+          bills.forEach(b => existingBillPolicies.add(b.policy_id));
+        }
+        
+        // Find policies without billing
+        const needsBilling = activePolicies.filter(p => !existingBillPolicies.has(p.id));
+        
+        if (needsBilling.length === 0) {
+          alert('✓ All active policies have billing records');
+          return;
+        }
+        
+        // Generate bills by processing pipeline
+        let generated = 0;
+        for (const policy of needsBilling) {
+          if (policy.customer_id) {
+            try {
+              const processResponse = await fetch(`/api/admin/pipeline-process/${policy.customer_id}`, {
+                method: 'POST',
+                headers: {
+                  'Authorization': `Bearer ${token}`,
+                  'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ auto_advance: true })
+              });
+              
+              if (processResponse.ok) {
+                generated++;
+              }
+            } catch (e) {
+              // Continue
+            }
+          }
+        }
+        
+        alert(`✅ Billing Generation Complete!\n\nGenerated ${generated} billing records for active policies.`);
+        
+        // Refresh data
+        loadDashboardStats();
+      } catch (err) {
+        alert('Failed to generate billing: ' + err.message);
+      }
+    }
+    
+    // ========== END BULK PIPELINE ACTIONS ==========
     
     // Load dashboard statistics
     async function loadDashboardStats() {

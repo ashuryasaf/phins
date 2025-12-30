@@ -2934,6 +2934,202 @@ For claims or questions, please contact:
             }).encode('utf-8'))
             return
         
+        # Full pipeline validation with next actions
+        if path.startswith('/api/admin/pipeline-validate/'):
+            customer_id = path.split('/')[-1]
+            
+            validation = {
+                'customer_id': customer_id,
+                'valid': True,
+                'pipeline_stage': 'unknown',
+                'checks': [],
+                'errors': [],
+                'warnings': [],
+                'next_actions': [],
+                'allocation_status': 'Not configured'
+            }
+            
+            # Check 1: Customer exists
+            customer = CUSTOMERS.get(customer_id)
+            if customer:
+                validation['checks'].append({
+                    'check': 'Customer Profile',
+                    'status': 'PASS',
+                    'details': customer.get('name', 'Unknown')
+                })
+            else:
+                validation['valid'] = False
+                validation['errors'].append('Customer profile not found')
+                validation['checks'].append({'check': 'Customer Profile', 'status': 'FAIL'})
+                validation['next_actions'].append('Create customer profile')
+                self._set_json_headers()
+                self.wfile.write(json.dumps(validation).encode('utf-8'))
+                return
+            
+            # Check 2: Underwriting Applications
+            apps = [a for a in UNDERWRITING_APPLICATIONS.values() if a.get('customer_id') == customer_id]
+            pending_apps = [a for a in apps if a.get('status') == 'pending']
+            approved_apps = [a for a in apps if a.get('status') == 'approved']
+            
+            if approved_apps:
+                validation['checks'].append({
+                    'check': 'Underwriting',
+                    'status': 'PASS',
+                    'details': f'{len(approved_apps)} approved application(s)'
+                })
+            elif pending_apps:
+                validation['checks'].append({
+                    'check': 'Underwriting',
+                    'status': 'PENDING',
+                    'details': f'{len(pending_apps)} pending review'
+                })
+                validation['next_actions'].append(f'Review underwriting application(s): {", ".join([a.get("id") for a in pending_apps])}')
+                validation['pipeline_stage'] = 'underwriting'
+            elif apps:
+                validation['checks'].append({
+                    'check': 'Underwriting',
+                    'status': 'WARN',
+                    'details': f'{len(apps)} application(s), none approved'
+                })
+                validation['warnings'].append('Applications exist but none approved')
+            else:
+                validation['checks'].append({
+                    'check': 'Underwriting',
+                    'status': 'PENDING',
+                    'details': 'No applications found'
+                })
+                validation['next_actions'].append('Submit insurance application')
+                validation['pipeline_stage'] = 'registered'
+            
+            # Check 3: Policies
+            policies = [p for p in POLICIES.values() if p.get('customer_id') == customer_id]
+            active_policies = [p for p in policies if p.get('status') == 'active']
+            pending_policies = [p for p in policies if p.get('status') == 'pending_underwriting']
+            
+            if active_policies:
+                validation['checks'].append({
+                    'check': 'Policy Status',
+                    'status': 'PASS',
+                    'details': f'{len(active_policies)} active policy(ies)'
+                })
+                validation['pipeline_stage'] = 'active_policy'
+            elif pending_policies:
+                validation['checks'].append({
+                    'check': 'Policy Status',
+                    'status': 'PENDING',
+                    'details': f'{len(pending_policies)} pending underwriting'
+                })
+                if not pending_apps:
+                    validation['next_actions'].append('Process underwriting for pending policies')
+            elif policies:
+                validation['checks'].append({
+                    'check': 'Policy Status',
+                    'status': 'WARN',
+                    'details': f'{len(policies)} policies, none active'
+                })
+            
+            # Check 4: Billing
+            bills = [b for b in BILLING.values() if b.get('customer_id') == customer_id]
+            outstanding_bills = [b for b in bills if b.get('status') == 'outstanding']
+            paid_bills = [b for b in bills if b.get('status') == 'paid']
+            
+            if active_policies and not bills:
+                validation['errors'].append('Active policy without billing record - need to generate billing')
+                validation['valid'] = False
+                validation['checks'].append({
+                    'check': 'Billing',
+                    'status': 'FAIL',
+                    'details': 'No billing records for active policy'
+                })
+                validation['next_actions'].append('Generate billing for active policy')
+            elif bills:
+                total_outstanding = sum(b.get('amount', 0) for b in outstanding_bills)
+                validation['checks'].append({
+                    'check': 'Billing',
+                    'status': 'PASS',
+                    'details': f'{len(bills)} bills, ${total_outstanding:.2f} outstanding'
+                })
+                if outstanding_bills:
+                    validation['pipeline_stage'] = 'billing_pending'
+                else:
+                    validation['pipeline_stage'] = 'fully_active'
+            
+            # Check 5: Health Wallet
+            wallet = HEALTH_WALLETS.get(customer_id)
+            if wallet:
+                validation['checks'].append({
+                    'check': 'Health Wallet',
+                    'status': 'PASS',
+                    'details': f'Balance: ${wallet.get("balance", 0):.2f}'
+                })
+            else:
+                validation['checks'].append({
+                    'check': 'Health Wallet',
+                    'status': 'WARN',
+                    'details': 'Not activated'
+                })
+                validation['warnings'].append('Health wallet not activated')
+            
+            # Check 6: Investment Account
+            investment = INVESTMENT_ACCOUNTS.get(customer_id)
+            if investment:
+                validation['checks'].append({
+                    'check': 'Investment Account',
+                    'status': 'PASS',
+                    'details': f'Balance: ${investment.get("balance", 0):.2f}'
+                })
+            else:
+                validation['checks'].append({
+                    'check': 'Investment Account',
+                    'status': 'WARN',
+                    'details': 'Not activated'
+                })
+            
+            # Check 7: Allocation Preferences
+            allocation = CUSTOMER_ALLOCATIONS.get(customer_id)
+            if allocation:
+                validation['allocation_status'] = f"Configured - Protection: {allocation.get('protection_pct', 0)}%, Growth: {allocation.get('growth_pct', 0)}%"
+                validation['checks'].append({
+                    'check': 'Allocation Preferences',
+                    'status': 'PASS',
+                    'details': validation['allocation_status']
+                })
+            else:
+                validation['checks'].append({
+                    'check': 'Allocation Preferences',
+                    'status': 'WARN',
+                    'details': 'Using default allocation'
+                })
+                validation['allocation_status'] = 'Using default allocation'
+            
+            # Check 8: Savings Pipeline Account
+            if savings_pipeline_enabled and savings_pipeline_service:
+                try:
+                    pipeline_account = savings_pipeline_service.accounts.get(customer_id)
+                    if pipeline_account:
+                        validation['checks'].append({
+                            'check': 'Savings Pipeline',
+                            'status': 'PASS',
+                            'details': f'Cash: ${pipeline_account.cash_balance:.2f}, Allocated: ${pipeline_account.total_allocated:.2f}'
+                        })
+                    else:
+                        validation['checks'].append({
+                            'check': 'Savings Pipeline',
+                            'status': 'WARN',
+                            'details': 'Not initialized'
+                        })
+                except Exception:
+                    pass
+            
+            # Determine if fully valid
+            has_errors = len(validation['errors']) > 0
+            has_pending_actions = len([c for c in validation['checks'] if c.get('status') == 'PENDING']) > 0
+            validation['valid'] = not has_errors and not has_pending_actions
+            
+            self._set_json_headers()
+            self.wfile.write(json.dumps(validation).encode('utf-8'))
+            return
+        
         # ========== END CUSTOMER DATA & PIPELINE VALIDATION API ==========
         
         # Health Wallet GET endpoints
@@ -5423,6 +5619,168 @@ For claims or questions, please contact:
             except Exception as e:
                 self._set_json_headers(400)
                 self.wfile.write(json.dumps({'error': 'Reset failed', 'details': str(e)}).encode('utf-8'))
+            return
+        
+        # Pipeline Process - Process next step for a customer
+        if path.startswith('/api/admin/pipeline-process/'):
+            customer_id = path.split('/')[-1]
+            
+            try:
+                data = json.loads(body) if body else {}
+                auto_advance = data.get('auto_advance', True)
+                
+                result = {
+                    'success': True,
+                    'customer_id': customer_id,
+                    'previous_stage': 'unknown',
+                    'new_stage': 'unknown',
+                    'actions_taken': [],
+                    'allocation_result': None
+                }
+                
+                # Get customer
+                customer = CUSTOMERS.get(customer_id)
+                if not customer:
+                    self._set_json_headers(404)
+                    self.wfile.write(json.dumps({'error': 'Customer not found'}).encode('utf-8'))
+                    return
+                
+                now = datetime.now()
+                
+                # Find pending underwriting applications
+                pending_apps = [a for a in UNDERWRITING_APPLICATIONS.values() 
+                               if a.get('customer_id') == customer_id and a.get('status') == 'pending']
+                
+                # Find pending policies (pending underwriting)
+                pending_policies = [p for p in POLICIES.values() 
+                                   if p.get('customer_id') == customer_id and p.get('status') == 'pending_underwriting']
+                
+                # Find active policies
+                active_policies = [p for p in POLICIES.values() 
+                                  if p.get('customer_id') == customer_id and p.get('status') == 'active']
+                
+                # Determine current stage and process next step
+                if pending_apps and auto_advance:
+                    result['previous_stage'] = 'underwriting'
+                    
+                    # Auto-approve pending applications
+                    for app in pending_apps:
+                        app['status'] = 'approved'
+                        app['decision_date'] = now.isoformat()
+                        app['approved_by'] = 'admin_pipeline'
+                        app['approval_notes'] = 'Auto-approved via pipeline process'
+                        
+                        # Activate associated policy
+                        policy_id = app.get('policy_id')
+                        if policy_id and policy_id in POLICIES:
+                            policy = POLICIES[policy_id]
+                            policy['status'] = 'active'
+                            policy['approval_date'] = now.isoformat()
+                            policy['effective_date'] = now.isoformat()
+                            
+                            # Generate billing
+                            bill_id = f"BILL-{now.strftime('%Y%m%d%H%M%S')}-{random.randint(1000,9999)}"
+                            monthly_premium = policy.get('monthly_premium', 0) or (policy.get('annual_premium', 0) / 12)
+                            
+                            BILLING[bill_id] = {
+                                'id': bill_id,
+                                'policy_id': policy_id,
+                                'customer_id': customer_id,
+                                'customer_name': customer.get('name', ''),
+                                'amount': round(float(monthly_premium), 2),
+                                'amount_paid': 0.0,
+                                'status': 'outstanding',
+                                'due_date': (now + timedelta(days=30)).isoformat(),
+                                'created_date': now.isoformat(),
+                                'description': f"Premium for policy {policy_id}"
+                            }
+                            
+                            result['actions_taken'].append(f'Generated billing {bill_id}')
+                            
+                            # Initialize health wallet
+                            if customer_id not in HEALTH_WALLETS:
+                                HEALTH_WALLETS[customer_id] = {
+                                    'customer_id': customer_id,
+                                    'balance': 0,
+                                    'transactions': [],
+                                    'created_at': now.isoformat()
+                                }
+                                result['actions_taken'].append('Initialized health wallet')
+                            
+                            # Initialize investment account
+                            if customer_id not in INVESTMENT_ACCOUNTS:
+                                INVESTMENT_ACCOUNTS[customer_id] = {
+                                    'balance': 0,
+                                    'index_balance': 0,
+                                    'bonds_balance': 0,
+                                    'crypto_balance': 0,
+                                    'deposits': [],
+                                    'created_at': now.isoformat()
+                                }
+                                result['actions_taken'].append('Initialized investment account')
+                            
+                            # Initialize savings pipeline for AI allocation
+                            if savings_pipeline_enabled and savings_pipeline_service:
+                                try:
+                                    pipeline_account = savings_pipeline_service.get_or_create_account(customer_id)
+                                    
+                                    # Set allocation based on customer preferences or defaults
+                                    allocation = CUSTOMER_ALLOCATIONS.get(customer_id, {})
+                                    if allocation:
+                                        from services.savings_pipeline_service import RiskLevel
+                                        protection_pct = allocation.get('protection_pct', 25)
+                                        if protection_pct >= 40:
+                                            pipeline_account.risk_level = RiskLevel.LOW
+                                        elif protection_pct >= 30:
+                                            pipeline_account.risk_level = RiskLevel.MODERATE
+                                        else:
+                                            pipeline_account.risk_level = RiskLevel.HIGH
+                                    
+                                    result['actions_taken'].append('Initialized savings pipeline with AI allocation')
+                                except Exception as e:
+                                    print(f"Pipeline init note: {e}")
+                        
+                        result['actions_taken'].append(f'Approved application {app.get("id")}')
+                        result['actions_taken'].append(f'Activated policy {policy_id}')
+                    
+                    result['new_stage'] = 'active'
+                    
+                elif pending_policies:
+                    result['previous_stage'] = 'applied'
+                    result['new_stage'] = 'underwriting'
+                    result['actions_taken'].append('Policies are pending underwriting - review required')
+                    
+                elif active_policies:
+                    result['previous_stage'] = 'active'
+                    result['new_stage'] = 'fully_active'
+                    
+                    # Process any allocations
+                    if savings_pipeline_enabled and savings_pipeline_service:
+                        try:
+                            pipeline_account = savings_pipeline_service.accounts.get(customer_id)
+                            if pipeline_account and pipeline_account.cash_balance > 0:
+                                allocation_result = savings_pipeline_service.allocate_cash_balance(customer_id)
+                                if allocation_result.get('success'):
+                                    result['allocation_result'] = allocation_result.get('allocation', {})
+                                    result['actions_taken'].append(f'Allocated ${pipeline_account.total_allocated:.2f} across accounts')
+                        except Exception as e:
+                            print(f"Allocation note: {e}")
+                    
+                    result['actions_taken'].append('Customer is fully active in pipeline')
+                else:
+                    result['previous_stage'] = 'registered'
+                    result['new_stage'] = 'registered'
+                    result['actions_taken'].append('Customer needs to submit insurance application')
+                
+                # Save data
+                save_ledger_data()
+                
+                self._set_json_headers()
+                self.wfile.write(json.dumps(result).encode('utf-8'))
+                
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
             return
         
         # Create Policy Endpoint
@@ -9328,8 +9686,19 @@ For claims or questions, please contact:
                     use_ai=use_ai
                 )
                 
-                if result['success']:
+                if result.get('success'):
                     self._set_json_headers()
+                    save_ledger_data()
+                    
+                    # Enhance response for admin interface
+                    allocation = result.get('allocation', {})
+                    total_allocated = sum([
+                        allocation.get('wallet', 0),
+                        allocation.get('investment', 0),
+                        allocation.get('algo_trading', 0)
+                    ])
+                    result['amount_allocated'] = total_allocated
+                    result['allocation'] = allocation
                 else:
                     self._set_json_headers(400)
                 
