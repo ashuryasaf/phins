@@ -287,6 +287,10 @@ try:
 except ImportError as e:
     print(f"Warning: Algo Trading service not available: {e}")
 
+# Unified Balance Service for cross-system balance management
+unified_balance_service = None
+unified_balance_enabled = False
+
 # Initialize pipeline service with data stores
 def _init_pipeline():
     global pipeline_service
@@ -302,6 +306,28 @@ def _init_pipeline():
         print("✓ Pipeline service initialized (auto-workflow enabled)")
 
 _init_pipeline()
+
+# Initialize unified balance service after data stores are available
+def _init_unified_balance():
+    global unified_balance_service, unified_balance_enabled
+    try:
+        from services.unified_balance_service import init_unified_balance_service
+        unified_balance_service = init_unified_balance_service(
+            health_wallets=HEALTH_WALLETS,
+            investment_accounts=INVESTMENT_ACCOUNTS,
+            transaction_ledger=TRANSACTION_LEDGER,
+            nft_ledger=NFT_LEDGER,
+            record_transaction_func=record_transaction,
+            generate_nft_token_func=generate_nft_token,
+            portfolio_service=portfolio_service,
+            algo_trading_service=algo_trading_service
+        )
+        unified_balance_enabled = True
+        print("✓ Unified Balance service enabled (cross-system balance management)")
+    except ImportError as e:
+        print(f"Warning: Unified Balance service not available: {e}")
+
+_init_unified_balance()
 
 # Optional: admin datasets (actuarial tables) and market data (crypto/index)
 try:
@@ -3148,6 +3174,114 @@ For claims or questions, please contact:
             return
         
         # ========== END ALGO TRADING GET API ==========
+        
+        # ========== UNIFIED BALANCE GET API ==========
+        # Get unified balance across all systems
+        if path == '/api/balance/unified':
+            if not unified_balance_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Unified balance service unavailable'}).encode('utf-8'))
+                return
+            
+            customer_id = qs.get('customer_id', [''])[0]
+            if not customer_id:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'customer_id required'}).encode('utf-8'))
+                return
+            
+            balance = unified_balance_service.get_unified_balance(customer_id)
+            self._set_json_headers()
+            self.wfile.write(json.dumps(balance).encode('utf-8'))
+            return
+        
+        # Get algo trading balance
+        if path == '/api/balance/algo-trading':
+            if not unified_balance_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Unified balance service unavailable'}).encode('utf-8'))
+                return
+            
+            customer_id = qs.get('customer_id', [''])[0]
+            if not customer_id:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'customer_id required'}).encode('utf-8'))
+                return
+            
+            balance = unified_balance_service.get_algo_trading_balance(customer_id)
+            self._set_json_headers()
+            self.wfile.write(json.dumps({
+                'customer_id': customer_id,
+                'balance': balance
+            }).encode('utf-8'))
+            return
+        
+        # Get all transactions across systems
+        if path == '/api/balance/transactions':
+            if not unified_balance_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Unified balance service unavailable'}).encode('utf-8'))
+                return
+            
+            customer_id = qs.get('customer_id', [''])[0]
+            limit = int(qs.get('limit', ['100'])[0])
+            
+            if not customer_id:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'customer_id required'}).encode('utf-8'))
+                return
+            
+            transactions = unified_balance_service.get_all_transactions(customer_id, limit)
+            self._set_json_headers()
+            self.wfile.write(json.dumps({
+                'customer_id': customer_id,
+                'transactions': transactions,
+                'count': len(transactions)
+            }).encode('utf-8'))
+            return
+        
+        # Get all NFT tokens across systems
+        if path == '/api/balance/nft-tokens':
+            if not unified_balance_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Unified balance service unavailable'}).encode('utf-8'))
+                return
+            
+            customer_id = qs.get('customer_id', [''])[0]
+            limit = int(qs.get('limit', ['100'])[0])
+            
+            if not customer_id:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'customer_id required'}).encode('utf-8'))
+                return
+            
+            tokens = unified_balance_service.get_all_nft_tokens(customer_id, limit)
+            self._set_json_headers()
+            self.wfile.write(json.dumps({
+                'customer_id': customer_id,
+                'nft_tokens': tokens,
+                'count': len(tokens)
+            }).encode('utf-8'))
+            return
+        
+        # Reconcile balances
+        if path == '/api/balance/reconcile':
+            if not unified_balance_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Unified balance service unavailable'}).encode('utf-8'))
+                return
+            
+            customer_id = qs.get('customer_id', [''])[0]
+            if not customer_id:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'customer_id required'}).encode('utf-8'))
+                return
+            
+            reconciliation = unified_balance_service.reconcile_balances(customer_id)
+            self._set_json_headers()
+            self.wfile.write(json.dumps(reconciliation).encode('utf-8'))
+            return
+        
+        # ========== END UNIFIED BALANCE GET API ==========
 
         # Investment portfolio endpoint (legacy - redirect to new API)
         if path.startswith('/api/investment-portfolio'):
@@ -6689,6 +6823,24 @@ For claims or questions, please contact:
                 data = json.loads(body)
                 bot_id = data.get('bot_id')
                 results = algo_trading_service.run_bot_cycle(bot_id)
+                
+                # Record each trade on unified balance ledgers
+                if unified_balance_enabled:
+                    bot = algo_trading_service.bots.get(bot_id)
+                    if bot:
+                        customer_id = bot.account_id
+                        for result in results:
+                            if 'order' in result:
+                                try:
+                                    ledger_result = unified_balance_service.record_algo_trade(
+                                        customer_id=customer_id,
+                                        order_data=result['order']
+                                    )
+                                    result['nft_token_id'] = ledger_result.get('nft_token_id')
+                                    result['ledger_recorded'] = True
+                                except Exception:
+                                    result['ledger_recorded'] = False
+                
                 self._set_json_headers()
                 self.wfile.write(json.dumps({
                     'success': True,
@@ -6710,6 +6862,7 @@ For claims or questions, please contact:
             try:
                 data = json.loads(body)
                 account_id = data.get('account_id')
+                customer_id = data.get('customer_id', account_id)  # Fall back to account_id for customer
                 symbol = data.get('symbol')
                 side = data.get('side')  # buy or sell
                 amount = float(data.get('amount', 100))
@@ -6732,10 +6885,25 @@ For claims or questions, please contact:
                 )
                 
                 from dataclasses import asdict
+                order_dict = asdict(order)
+                
+                # Record trade on unified balance ledgers
+                if unified_balance_enabled and customer_id:
+                    try:
+                        ledger_result = unified_balance_service.record_algo_trade(
+                            customer_id=customer_id,
+                            order_data=order_dict
+                        )
+                        order_dict['nft_token_id'] = ledger_result.get('nft_token_id')
+                        order_dict['ledger_recorded'] = True
+                    except Exception as ledger_err:
+                        order_dict['ledger_recorded'] = False
+                        order_dict['ledger_error'] = str(ledger_err)
+                
                 self._set_json_headers()
                 self.wfile.write(json.dumps({
                     'success': True,
-                    'order': asdict(order)
+                    'order': order_dict
                 }).encode('utf-8'))
             except Exception as e:
                 self._set_json_headers(400)
@@ -6768,6 +6936,107 @@ For claims or questions, please contact:
             return
         
         # ========== END ALGO TRADING API ==========
+        
+        # ========== UNIFIED BALANCE POST API ==========
+        # Transfer funds to algo trading from wallet or investment
+        if path == '/api/balance/transfer-to-algo':
+            if not unified_balance_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Unified balance service unavailable'}).encode('utf-8'))
+                return
+            
+            try:
+                data = json.loads(body)
+                customer_id = data.get('customer_id')
+                amount = float(data.get('amount', 0))
+                source = data.get('source', 'investment_account')
+                bot_id = data.get('bot_id')
+                
+                if not customer_id or amount <= 0:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'customer_id and positive amount required'}).encode('utf-8'))
+                    return
+                
+                result = unified_balance_service.transfer_to_algo_trading(
+                    customer_id=customer_id,
+                    amount=amount,
+                    source=source,
+                    bot_id=bot_id
+                )
+                
+                if result['success']:
+                    self._set_json_headers()
+                else:
+                    self._set_json_headers(400)
+                
+                self.wfile.write(json.dumps(result).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+        
+        # Withdraw funds from algo trading to wallet or investment
+        if path == '/api/balance/withdraw-from-algo':
+            if not unified_balance_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Unified balance service unavailable'}).encode('utf-8'))
+                return
+            
+            try:
+                data = json.loads(body)
+                customer_id = data.get('customer_id')
+                amount = float(data.get('amount', 0))
+                destination = data.get('destination', 'investment_account')
+                
+                if not customer_id or amount <= 0:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'customer_id and positive amount required'}).encode('utf-8'))
+                    return
+                
+                result = unified_balance_service.withdraw_from_algo_trading(
+                    customer_id=customer_id,
+                    amount=amount,
+                    destination=destination
+                )
+                
+                if result['success']:
+                    self._set_json_headers()
+                else:
+                    self._set_json_headers(400)
+                
+                self.wfile.write(json.dumps(result).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+        
+        # Record algo trade on ledgers (called internally or by admin)
+        if path == '/api/balance/record-algo-trade':
+            if not unified_balance_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Unified balance service unavailable'}).encode('utf-8'))
+                return
+            
+            try:
+                data = json.loads(body)
+                customer_id = data.get('customer_id')
+                order_data = data.get('order_data', {})
+                
+                if not customer_id:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'customer_id required'}).encode('utf-8'))
+                    return
+                
+                result = unified_balance_service.record_algo_trade(customer_id, order_data)
+                
+                self._set_json_headers()
+                self.wfile.write(json.dumps(result).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+        
+        # ========== END UNIFIED BALANCE POST API ==========
         
         # ========== END BILLING API ==========
         # Minimal billing endpoints (demo fallback when engine routes are not used)

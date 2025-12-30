@@ -759,6 +759,31 @@
                     </div>
                 </div>
 
+                <!-- Fund Trading Account -->
+                <div class="section">
+                    <div class="section-header">
+                        <h2 class="section-title">💰 Fund Account</h2>
+                    </div>
+                    <div style="background: var(--bg-hover); border-radius: 10px; padding: 1rem; margin-bottom: 1rem;">
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;">
+                            <span style="color: var(--text-secondary);">Available Balance</span>
+                            <span style="font-weight: 600; color: var(--success);" id="algoAvailableBalance">$0.00</span>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;">
+                            <span style="color: var(--text-secondary);">In Positions</span>
+                            <span style="font-weight: 600;" id="algoPositionsBalance">$0.00</span>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; border-top: 1px solid var(--border); padding-top: 0.5rem;">
+                            <span style="color: var(--text-secondary);">Total P&L</span>
+                            <span style="font-weight: 600;" id="algoTotalPnl">$0.00</span>
+                        </div>
+                    </div>
+                    <div style="display: flex; gap: 0.5rem;">
+                        <button class="btn btn-success btn-small" style="flex: 1;" onclick="showFundModal('deposit')">➕ Deposit</button>
+                        <button class="btn btn-outline btn-small" style="flex: 1;" onclick="showFundModal('withdraw')">➖ Withdraw</button>
+                    </div>
+                </div>
+
                 <!-- Auto Rebalance -->
                 <div class="section">
                     <div class="section-header">
@@ -770,6 +795,32 @@
                     <button class="btn btn-primary" style="width: 100%;" onclick="autoRebalance()">
                         🔄 Rebalance Now
                     </button>
+                </div>
+                
+                <!-- Unified Balance -->
+                <div class="section">
+                    <div class="section-header">
+                        <h2 class="section-title">📊 Unified Balance</h2>
+                    </div>
+                    <div id="unifiedBalanceDisplay" style="font-size: 0.85rem;">
+                        <div style="display: flex; justify-content: space-between; padding: 0.5rem 0; border-bottom: 1px solid var(--border);">
+                            <span style="color: var(--text-secondary);">🏥 Health Wallet</span>
+                            <span id="walletBalanceDisplay">$0.00</span>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; padding: 0.5rem 0; border-bottom: 1px solid var(--border);">
+                            <span style="color: var(--text-secondary);">📈 Investments</span>
+                            <span id="investmentBalanceDisplay">$0.00</span>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; padding: 0.5rem 0; border-bottom: 1px solid var(--border);">
+                            <span style="color: var(--text-secondary);">🤖 Algo Trading</span>
+                            <span id="algoBalanceDisplay">$0.00</span>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; padding: 0.75rem 0; font-weight: 600;">
+                            <span>💎 Total Assets</span>
+                            <span style="color: var(--success);" id="totalAssetsDisplay">$0.00</span>
+                        </div>
+                    </div>
+                    <button class="btn btn-outline btn-small" style="width: 100%; margin-top: 0.5rem;" onclick="loadUnifiedBalance()">⟳ Refresh</button>
                 </div>
             </div>
         </div>
@@ -828,20 +879,53 @@
         </div>
     </div>
 
+    <!-- Fund Account Modal -->
+    <div class="modal" id="fundModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="fundModalTitle">💰 Fund Algo Trading</h2>
+                <button class="modal-close" onclick="hideFundModal()">×</button>
+            </div>
+            <div class="form-group">
+                <label class="form-label" id="fundSourceLabel">Transfer From</label>
+                <select class="form-select" id="fundSource">
+                    <option value="investment_account">📈 Investment Account</option>
+                    <option value="health_wallet">🏥 Health Wallet</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Amount ($)</label>
+                <input type="number" class="form-input" id="fundAmount" placeholder="500" min="10">
+            </div>
+            <div id="fundAvailableInfo" style="background: var(--bg-hover); padding: 1rem; border-radius: 8px; margin-bottom: 1rem;">
+                <div style="display: flex; justify-content: space-between;">
+                    <span style="color: var(--text-secondary);">Available to transfer:</span>
+                    <span style="font-weight: 600;" id="fundAvailableAmount">$0.00</span>
+                </div>
+            </div>
+            <button class="btn btn-primary" style="width: 100%;" id="fundActionBtn" onclick="executeFundTransfer()">
+                ➕ Deposit to Algo Trading
+            </button>
+        </div>
+    </div>
+
     <!-- Toast Container -->
     <div class="toast-container" id="toastContainer"></div>
 
     <script>
         // Global state
         let accountId = null;
+        let customerId = null;
         let bots = [];
         let signals = [];
         let orders = [];
+        let unifiedBalance = null;
+        let fundMode = 'deposit';
         
         // Initialize
         document.addEventListener('DOMContentLoaded', async () => {
             const session = JSON.parse(localStorage.getItem('session') || '{}');
-            const customerId = session.customer_id || 'CUST-ASAF-001';
+            customerId = session.customer_id || 'CUST-ASAF-001';
             
             // Get account ID
             try {
@@ -860,12 +944,15 @@
                 loadSignals(),
                 loadOrders(),
                 loadMarketOverview(),
-                loadIndicators()
+                loadIndicators(),
+                loadUnifiedBalance(),
+                loadAlgoBalance()
             ]);
             
             // Refresh signals every 30 seconds
             setInterval(loadSignals, 30000);
             setInterval(loadMarketOverview, 30000);
+            setInterval(loadUnifiedBalance, 60000);
         });
         
         async function loadBots() {
@@ -1356,6 +1443,160 @@
             `;
             container.appendChild(toast);
             setTimeout(() => toast.remove(), 4000);
+        }
+        
+        // ========== UNIFIED BALANCE FUNCTIONS ==========
+        
+        async function loadUnifiedBalance() {
+            try {
+                const response = await fetch(`/api/balance/unified?customer_id=${customerId}`);
+                const data = await response.json();
+                unifiedBalance = data;
+                
+                // Update display
+                const walletBal = data.balances?.health_wallet?.balance || 0;
+                const invBal = data.balances?.investment_account?.total_balance || 0;
+                const algoBal = (data.balances?.algo_trading?.available || 0) + (data.balances?.algo_trading?.in_positions || 0);
+                const totalAssets = data.total_assets || 0;
+                
+                document.getElementById('walletBalanceDisplay').textContent = `$${walletBal.toLocaleString('en-US', {minimumFractionDigits: 2})}`;
+                document.getElementById('investmentBalanceDisplay').textContent = `$${invBal.toLocaleString('en-US', {minimumFractionDigits: 2})}`;
+                document.getElementById('algoBalanceDisplay').textContent = `$${algoBal.toLocaleString('en-US', {minimumFractionDigits: 2})}`;
+                document.getElementById('totalAssetsDisplay').textContent = `$${totalAssets.toLocaleString('en-US', {minimumFractionDigits: 2})}`;
+            } catch (e) {
+                console.error('Failed to load unified balance:', e);
+            }
+        }
+        
+        async function loadAlgoBalance() {
+            try {
+                const response = await fetch(`/api/balance/algo-trading?customer_id=${customerId}`);
+                const data = await response.json();
+                
+                const balance = data.balance || {};
+                const available = balance.available || 0;
+                const inPositions = balance.in_positions || 0;
+                const totalPnl = balance.total_pnl || 0;
+                
+                document.getElementById('algoAvailableBalance').textContent = `$${available.toLocaleString('en-US', {minimumFractionDigits: 2})}`;
+                document.getElementById('algoPositionsBalance').textContent = `$${inPositions.toLocaleString('en-US', {minimumFractionDigits: 2})}`;
+                
+                const pnlEl = document.getElementById('algoTotalPnl');
+                pnlEl.textContent = `${totalPnl >= 0 ? '+' : ''}$${totalPnl.toLocaleString('en-US', {minimumFractionDigits: 2})}`;
+                pnlEl.style.color = totalPnl >= 0 ? 'var(--success)' : 'var(--danger)';
+            } catch (e) {
+                console.error('Failed to load algo balance:', e);
+            }
+        }
+        
+        function showFundModal(mode) {
+            fundMode = mode;
+            const modal = document.getElementById('fundModal');
+            const title = document.getElementById('fundModalTitle');
+            const sourceLabel = document.getElementById('fundSourceLabel');
+            const sourceSelect = document.getElementById('fundSource');
+            const actionBtn = document.getElementById('fundActionBtn');
+            
+            if (mode === 'deposit') {
+                title.textContent = '💰 Deposit to Algo Trading';
+                sourceLabel.textContent = 'Transfer From';
+                sourceSelect.innerHTML = `
+                    <option value="investment_account">📈 Investment Account</option>
+                    <option value="health_wallet">🏥 Health Wallet</option>
+                `;
+                actionBtn.textContent = '➕ Deposit to Algo Trading';
+                actionBtn.className = 'btn btn-success';
+            } else {
+                title.textContent = '💸 Withdraw from Algo Trading';
+                sourceLabel.textContent = 'Transfer To';
+                sourceSelect.innerHTML = `
+                    <option value="investment_account">📈 Investment Account</option>
+                    <option value="health_wallet">🏥 Health Wallet</option>
+                `;
+                actionBtn.textContent = '➖ Withdraw from Algo Trading';
+                actionBtn.className = 'btn btn-primary';
+            }
+            
+            updateFundAvailable();
+            modal.classList.add('active');
+        }
+        
+        function updateFundAvailable() {
+            const source = document.getElementById('fundSource').value;
+            let available = 0;
+            
+            if (fundMode === 'deposit') {
+                if (unifiedBalance) {
+                    if (source === 'investment_account') {
+                        available = unifiedBalance.balances?.investment_account?.total_balance || 0;
+                    } else {
+                        available = unifiedBalance.balances?.health_wallet?.balance || 0;
+                    }
+                }
+            } else {
+                // Withdraw - available is algo trading available balance
+                if (unifiedBalance) {
+                    available = unifiedBalance.balances?.algo_trading?.available || 0;
+                }
+            }
+            
+            document.getElementById('fundAvailableAmount').textContent = `$${available.toLocaleString('en-US', {minimumFractionDigits: 2})}`;
+        }
+        
+        // Update available when source changes
+        document.getElementById('fundSource')?.addEventListener('change', updateFundAvailable);
+        
+        function hideFundModal() {
+            document.getElementById('fundModal').classList.remove('active');
+        }
+        
+        async function executeFundTransfer() {
+            const source = document.getElementById('fundSource').value;
+            const amount = parseFloat(document.getElementById('fundAmount').value);
+            
+            if (!amount || amount <= 0) {
+                showToast('Please enter a valid amount', 'error');
+                return;
+            }
+            
+            const endpoint = fundMode === 'deposit' 
+                ? '/api/balance/transfer-to-algo' 
+                : '/api/balance/withdraw-from-algo';
+            
+            const body = fundMode === 'deposit'
+                ? { customer_id: customerId, amount, source }
+                : { customer_id: customerId, amount, destination: source };
+            
+            try {
+                const response = await fetch(endpoint, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body)
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    showToast(
+                        fundMode === 'deposit' 
+                            ? `$${amount} deposited to Algo Trading` 
+                            : `$${amount} withdrawn from Algo Trading`,
+                        'success'
+                    );
+                    hideFundModal();
+                    loadUnifiedBalance();
+                    loadAlgoBalance();
+                    
+                    // Show NFT token confirmation
+                    if (data.nft_token_id) {
+                        showToast(`Transaction recorded on NFT Ledger: ${data.nft_token_id}`, 'info');
+                    }
+                } else {
+                    showToast(data.error || 'Transfer failed', 'error');
+                }
+            } catch (e) {
+                showToast('Transfer failed: ' + e.message, 'error');
+            }
         }
     </script>
 </body>
