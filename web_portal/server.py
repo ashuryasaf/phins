@@ -2645,11 +2645,6 @@ For claims or questions, please contact:
         if path == '/api/billing':
             customer_id = qs.get('customer_id', [None])[0]
             
-            # Debug: Print BILLING state
-            print(f"[BILLING DEBUG] GET /api/billing - BILLING has {len(BILLING)} entries")
-            for bid, b in list(BILLING.items())[:5]:
-                print(f"  {bid}: status={b.get('status')}, paid={b.get('amount_paid')}")
-            
             # Filter bills by customer if provided
             if customer_id:
                 bills_list = [b for b in BILLING.values() if b.get('customer_id') == customer_id]
@@ -7047,9 +7042,6 @@ For claims or questions, please contact:
                                     bill_id = bid
                                     break
                         
-                        # Debug: Log BILLING state
-                        print(f"[PREMIUM DEBUG] bill_id={bill_id}, BILLING keys={list(BILLING.keys())}, bill_in_billing={bill_id in BILLING if bill_id else False}")
-                        
                         if bill_id and bill_id in BILLING:
                             # Direct assignment to ensure update on the BILLING dictionary itself
                             prev_paid = BILLING[bill_id].get('amount_paid', 0)
@@ -7096,7 +7088,6 @@ For claims or questions, please contact:
                             new_balance = 0
                             payment_result['message'] = 'Premium payment recorded (no outstanding bill found)'
                             payment_result['bill_status'] = 'not_found'
-                            print(f"[PREMIUM DEBUG] Bill not found: bill_id={bill_id}, BILLING has {len(BILLING)} entries")
                     
                     elif destination == 'savings':
                         # Direct deposit to savings pipeline
@@ -9261,10 +9252,6 @@ For claims or questions, please contact:
                 bill_id = data.get('bill_id')
                 amount = float(data.get('amount', 0))
                 payment_method = data.get('payment_method', 'card')
-                
-                # Debug: Log BILLING state before
-                print(f"[PAY DEBUG] BEFORE: bill_id={bill_id}, BILLING[{bill_id}]={BILLING.get(bill_id)}")
-                
                 bill = BILLING.get(bill_id)
                 if not bill:
                     self._set_json_headers(404)
@@ -9287,10 +9274,6 @@ For claims or questions, please contact:
                 
                 # EXPLICIT: Re-assign to ensure BILLING is updated
                 BILLING[bill_id] = bill
-                
-                # Debug: Log BILLING state after update
-                print(f"[PAY DEBUG] AFTER: bill={bill}")
-                print(f"[PAY DEBUG] AFTER: BILLING[{bill_id}]={BILLING.get(bill_id)}")
                 
                 # Force save to persistence
                 save_ledger_data()
