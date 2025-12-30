@@ -5041,6 +5041,93 @@ For claims or questions, please contact:
                             'balance_after': monthly_deposit
                         })
                 
+                # ========== LEDGER RECORDING FOR APPROVAL ==========
+                # Record policy approval on TRANSACTION_LEDGER
+                approval_tx = record_transaction(
+                    customer_id=customer_id,
+                    tx_type='policy_approved',
+                    amount=policy.get('coverage_amount', 0),
+                    description=f"Policy {policy_id} approved and activated. Coverage: ${policy.get('coverage_amount', 0):,.0f}",
+                    metadata={
+                        'policy_id': policy_id,
+                        'underwriting_id': uw_id,
+                        'coverage_amount': policy.get('coverage_amount', 0),
+                        'annual_premium': policy.get('annual_premium', 0),
+                        'approved_by': data.get('approved_by', 'admin'),
+                        'billing_frequency': billing_frequency,
+                        'bill_id': bill_id
+                    }
+                )
+                
+                # Record billing creation on ledger
+                billing_tx = record_transaction(
+                    customer_id=customer_id,
+                    tx_type='billing_created',
+                    amount=bill['amount'],
+                    description=f"Billing record created for policy {policy_id}. Amount: ${bill['amount']:.2f}",
+                    metadata={
+                        'bill_id': bill_id,
+                        'policy_id': policy_id,
+                        'billing_frequency': billing_frequency,
+                        'due_date': bill['due_date'],
+                        'auto_pay': auto_pay
+                    }
+                )
+                
+                # Record health wallet activation if enabled
+                if health_wallet_info.get('enabled') and monthly_deposit > 0:
+                    wallet_tx = record_transaction(
+                        customer_id=customer_id,
+                        tx_type='health_wallet_activated',
+                        amount=monthly_deposit,
+                        description=f"Health wallet activated with initial deposit of ${monthly_deposit:.2f}",
+                        metadata={
+                            'wallet_balance': HEALTH_WALLETS[customer_id]['balance'],
+                            'monthly_deposit': monthly_deposit,
+                            'policy_id': policy_id
+                        }
+                    )
+                
+                # Initialize savings pipeline account with PHINS allocation
+                if savings_pipeline_enabled and savings_pipeline_service:
+                    try:
+                        # Check if customer has allocation preferences from application
+                        phins_allocation = app.get('phins_allocation') or CUSTOMER_ALLOCATIONS.get(customer_id)
+                        if phins_allocation:
+                            from services.savings_pipeline_service import RiskLevel
+                            
+                            protection_pct = phins_allocation.get('protection_pct', 25)
+                            if protection_pct >= 40:
+                                risk_level = RiskLevel.CONSERVATIVE
+                            elif protection_pct >= 30:
+                                risk_level = RiskLevel.MODERATE
+                            else:
+                                risk_level = RiskLevel.AGGRESSIVE
+                            
+                            # Initialize pipeline account
+                            pipeline_account = savings_pipeline_service.get_or_create_account(customer_id)
+                            pipeline_account.risk_level = risk_level
+                            
+                            dist = phins_allocation.get('distribution', {})
+                            pipeline_account.allocation_config.wallet_pct = dist.get('wallet_pct', 15)
+                            pipeline_account.allocation_config.investment_pct = dist.get('investment_pct', 60)
+                            pipeline_account.allocation_config.algo_trading_pct = dist.get('algo_trading_pct', 25)
+                            
+                            # Record pipeline initialization
+                            record_transaction(
+                                customer_id=customer_id,
+                                tx_type='pipeline_initialized',
+                                amount=0,
+                                description=f"AI/BI Savings Pipeline initialized for customer",
+                                metadata={
+                                    'policy_id': policy_id,
+                                    'risk_level': str(risk_level),
+                                    'allocation': phins_allocation
+                                }
+                            )
+                    except Exception as pipeline_err:
+                        print(f"Pipeline initialization note: {pipeline_err}")
+                
                 # Audit logging
                 if audit:
                     try:
@@ -5241,6 +5328,24 @@ For claims or questions, please contact:
                 }
                 
                 CLAIMS[claim_id] = claim
+                
+                # Record claim creation on TRANSACTION_LEDGER and NFT_LEDGER
+                claim_tx = record_transaction(
+                    customer_id=data.get('customer_id', 'unknown'),
+                    tx_type='claim_submitted',
+                    amount=float(data.get('claimed_amount', 0)),
+                    description=f"Claim {claim_id} submitted: {data.get('type', 'general')} - {data.get('description', '')[:50]}",
+                    metadata={
+                        'claim_id': claim_id,
+                        'policy_id': data.get('policy_id'),
+                        'claim_type': data.get('type', 'general'),
+                        'claimed_amount': float(data.get('claimed_amount', 0)),
+                        'description': data.get('description', '')
+                    }
+                )
+                claim['nft_token_id'] = claim_tx.get('nft_token_id')
+                claim['ledger_tx_id'] = claim_tx.get('tx_id')
+                
                 if audit:
                     actor = session.get('username') if session else 'system'
                     try:
@@ -5990,26 +6095,28 @@ For claims or questions, please contact:
                     }
                     HEALTH_WALLETS[customer_id]['transactions'].append(transaction)
                     
-                    # Generate NFT token for ledger
-                    nft_token = generate_nft_token(
+                    # Record on TRANSACTION_LEDGER and NFT_LEDGER using proper function
+                    ledger_tx = record_transaction(
                         customer_id=customer_id,
-                        transaction_type='wallet_deposit',
-                        transaction_id=transaction_id,
+                        tx_type='wallet_deposit',
                         amount=amount,
                         description=f"Health Wallet Deposit via {payment_method}",
                         metadata={
                             'payment_method': payment_method,
                             'previous_balance': prev_balance,
-                            'new_balance': HEALTH_WALLETS[customer_id]['balance']
+                            'new_balance': HEALTH_WALLETS[customer_id]['balance'],
+                            'wallet_transaction_id': transaction_id
                         }
                     )
-                    transaction['nft_token_id'] = nft_token['token_id']
+                    transaction['nft_token_id'] = ledger_tx.get('nft_token_id')
+                    transaction['ledger_tx_id'] = ledger_tx.get('tx_id')
                     
                     self._set_json_headers()
                     self.wfile.write(json.dumps({
                         'success': True,
                         'transaction': transaction,
-                        'nft_token': nft_token,
+                        'nft_token_id': ledger_tx.get('nft_token_id'),
+                        'ledger_recorded': True,
                         'new_balance': HEALTH_WALLETS[customer_id]['balance']
                     }).encode('utf-8'))
                 except Exception as e:
@@ -6061,20 +6168,21 @@ For claims or questions, please contact:
                     # Create purchase record
                     purchase_id = f"PUR-{datetime.now().strftime('%Y%m%d%H%M%S')}-{random.randint(1000, 9999)}"
                     
-                    # Generate NFT token for ledger
-                    nft_token = generate_nft_token(
+                    # Record on TRANSACTION_LEDGER and NFT_LEDGER
+                    ledger_tx = record_transaction(
                         customer_id=customer_id,
-                        transaction_type='medical_purchase',
-                        transaction_id=purchase_id,
+                        tx_type='medical_purchase',
                         amount=amount,
-                        description=f"Medical Purchase: {product_name}",
+                        description=f"Medical Purchase: {product_name} from {provider or 'provider'}",
                         metadata={
+                            'purchase_id': purchase_id,
                             'product_id': product_id,
                             'product_name': product_name,
                             'category': category,
                             'provider': provider,
                             'previous_balance': prev_balance,
-                            'new_balance': wallet['balance']
+                            'new_balance': wallet['balance'],
+                            'payment_source': 'health_wallet'
                         }
                     )
                     
@@ -6088,9 +6196,10 @@ For claims or questions, please contact:
                         'amount': amount,
                         'status': 'completed',
                         'timestamp': datetime.now().isoformat(),
-                        'nft_token_id': nft_token['token_id'],
-                        'transaction_hash': nft_token['transaction_hash'],
-                        'verification_hash': nft_token['verification_hash']
+                        'nft_token_id': ledger_tx.get('nft_token_id'),
+                        'transaction_hash': NFT_LEDGER.get(ledger_tx.get('nft_token_id'), {}).get('transaction_hash', ''),
+                        'verification_hash': NFT_LEDGER.get(ledger_tx.get('nft_token_id'), {}).get('verification_hash', ''),
+                        'ledger_tx_id': ledger_tx.get('tx_id')
                     }
                     MEDICAL_PURCHASES[purchase_id] = purchase
                     
@@ -6105,7 +6214,8 @@ For claims or questions, please contact:
                         'category': category,
                         'timestamp': datetime.now().isoformat(),
                         'balance_after': wallet['balance'],
-                        'nft_token_id': nft_token['token_id']
+                        'nft_token_id': ledger_tx.get('nft_token_id'),
+                        'ledger_tx_id': ledger_tx.get('tx_id')
                     }
                     wallet['transactions'].append(transaction)
                     
@@ -6114,7 +6224,8 @@ For claims or questions, please contact:
                         'success': True,
                         'purchase': purchase,
                         'transaction': transaction,
-                        'nft_token': nft_token,
+                        'nft_token_id': ledger_tx.get('nft_token_id'),
+                        'ledger_recorded': True,
                         'new_balance': wallet['balance']
                     }).encode('utf-8'))
                 except Exception as e:
@@ -7547,6 +7658,7 @@ For claims or questions, please contact:
                 data = json.loads(body)
                 bill_id = data.get('bill_id')
                 amount = float(data.get('amount', 0))
+                payment_method = data.get('payment_method', 'card')
                 bill = BILLING.get(bill_id)
                 if not bill:
                     self._set_json_headers(404)
@@ -7556,7 +7668,9 @@ For claims or questions, please contact:
                     self._set_json_headers(400)
                     self.wfile.write(json.dumps({'error': 'Invalid amount'}).encode('utf-8'))
                     return
-                bill['amount_paid'] = bill.get('amount_paid', 0.0) + amount
+                
+                prev_paid = bill.get('amount_paid', 0.0)
+                bill['amount_paid'] = prev_paid + amount
                 # Support both 'amount' and 'amount_due' field names for compatibility
                 amount_due = bill.get('amount', bill.get('amount_due', 0))
                 if bill['amount_paid'] >= amount_due:
@@ -7564,13 +7678,59 @@ For claims or questions, please contact:
                     bill['paid_date'] = datetime.now().isoformat()
                 else:
                     bill['status'] = 'partial'
+                
+                # Get customer_id from bill
+                customer_id = bill.get('customer_id', 'unknown')
+                policy_id = bill.get('policy_id')
+                
+                # Record payment on TRANSACTION_LEDGER and NFT_LEDGER
+                payment_tx = record_transaction(
+                    customer_id=customer_id,
+                    tx_type='bill_payment',
+                    amount=amount,
+                    description=f"Bill payment of ${amount:.2f} for bill {bill_id}",
+                    metadata={
+                        'bill_id': bill_id,
+                        'policy_id': policy_id,
+                        'payment_method': payment_method,
+                        'amount_due': amount_due,
+                        'amount_paid_total': bill['amount_paid'],
+                        'bill_status': bill['status'],
+                        'prev_paid': prev_paid
+                    }
+                )
+                
+                # If payment allocates to savings (for premium payments), route through pipeline
+                if savings_pipeline_enabled and savings_pipeline_service and policy_id:
+                    try:
+                        # Get customer's allocation preferences
+                        customer_alloc = CUSTOMER_ALLOCATIONS.get(customer_id, {})
+                        savings_pct = customer_alloc.get('savings_pct', 75)
+                        savings_amount = amount * (savings_pct / 100)
+                        
+                        if savings_amount > 0:
+                            # Deposit to pipeline for AI allocation
+                            savings_pipeline_service.deposit_to_pipeline(
+                                customer_id=customer_id,
+                                amount=savings_amount,
+                                source='premium_payment',
+                                auto_allocate=True
+                            )
+                    except Exception as pipe_err:
+                        print(f"Pipeline allocation note: {pipe_err}")
+                
                 if audit:
                     try:
                         audit.log('system', 'update', 'bill', bill_id, {'paid': amount, 'status': bill['status']})
                     except Exception:
                         pass
+                
                 self._set_json_headers(200)
-                self.wfile.write(json.dumps({'bill': bill}).encode('utf-8'))
+                self.wfile.write(json.dumps({
+                    'bill': bill,
+                    'transaction_recorded': True,
+                    'nft_token_id': payment_tx.get('nft_token_id')
+                }).encode('utf-8'))
             except Exception as e:
                 self._set_json_headers(400)
                 self.wfile.write(json.dumps({'error': 'Invalid request', 'details': str(e)}).encode('utf-8'))
