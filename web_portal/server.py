@@ -7071,6 +7071,9 @@ For claims or questions, please contact:
                             payment_result['amount_due_remaining'] = max(0, bill_amount - BILLING[bill_id]['amount_paid'])
                             new_balance = 0  # Premium payments don't add to a balance
                             
+                            # Force save to ensure persistence
+                            save_ledger_data()
+                            
                             # Route savings portion through pipeline if configured
                             if savings_pipeline_enabled and savings_pipeline_service:
                                 try:
@@ -9282,10 +9285,15 @@ For claims or questions, please contact:
                 else:
                     bill['status'] = 'partial'
                 
+                # EXPLICIT: Re-assign to ensure BILLING is updated
+                BILLING[bill_id] = bill
+                
                 # Debug: Log BILLING state after update
                 print(f"[PAY DEBUG] AFTER: bill={bill}")
                 print(f"[PAY DEBUG] AFTER: BILLING[{bill_id}]={BILLING.get(bill_id)}")
-                print(f"[PAY DEBUG] SAME OBJECT? {bill is BILLING.get(bill_id)}")
+                
+                # Force save to persistence
+                save_ledger_data()
                 
                 # Get customer_id from bill
                 customer_id = bill.get('customer_id', 'unknown')
