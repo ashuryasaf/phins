@@ -551,3 +551,314 @@ class TokenRegistry(Base):
             "created_by": self.created_by,
             "created_date": self.created_date.isoformat() if self.created_date else None,
         }
+
+
+# ============================================================================
+# Algo Trading Models
+# ============================================================================
+
+
+class TradingMode(str, enum.Enum):
+    """Trading automation modes"""
+    MANUAL = "manual"
+    SEMI_AUTO = "semi_auto"
+    FULL_AUTO = "full_auto"
+    PAUSED = "paused"
+
+
+class OrderStatus(str, enum.Enum):
+    """Order status enumeration"""
+    PENDING = "pending"
+    SUBMITTED = "submitted"
+    PARTIAL = "partial"
+    FILLED = "filled"
+    CANCELLED = "cancelled"
+    REJECTED = "rejected"
+
+
+class AlgoTradingAccount(Base):
+    """
+    Algorithmic trading account for automated 24/7 trading.
+    Linked to customer for portfolio management.
+    """
+    __tablename__ = "algo_trading_accounts"
+    
+    id = Column(String(50), primary_key=True)
+    customer_id = Column(String(50), nullable=False, index=True)
+    name = Column(String(200), default="Algo Trading Account")
+    balance = Column(Float, default=0.0)
+    equity = Column(Float, default=0.0)
+    margin_used = Column(Float, default=0.0)
+    available_margin = Column(Float, default=0.0)
+    risk_level = Column(String(50), default="moderate", index=True)  # conservative, moderate, aggressive
+    trading_mode = Column(String(50), default="paused", index=True)  # manual, semi_auto, full_auto, paused
+    max_drawdown_pct = Column(Float, default=10.0)
+    daily_loss_limit = Column(Float, default=2.0)
+    position_limit = Column(Integer, default=20)
+    active_strategies = Column(Text, nullable=True)  # JSON array of strategy IDs
+    performance_data = Column(Text, nullable=True)  # JSON performance metrics
+    created_date = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_date = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    def to_dict(self):
+        import json as json_module
+        return {
+            "id": self.id,
+            "customer_id": self.customer_id,
+            "name": self.name,
+            "balance": self.balance,
+            "equity": self.equity,
+            "margin_used": self.margin_used,
+            "available_margin": self.available_margin,
+            "risk_level": self.risk_level,
+            "trading_mode": self.trading_mode,
+            "max_drawdown_pct": self.max_drawdown_pct,
+            "daily_loss_limit": self.daily_loss_limit,
+            "position_limit": self.position_limit,
+            "active_strategies": json_module.loads(self.active_strategies) if self.active_strategies else [],
+            "performance_data": json_module.loads(self.performance_data) if self.performance_data else {},
+            "created_date": self.created_date.isoformat() if self.created_date else None,
+            "updated_date": self.updated_date.isoformat() if self.updated_date else None,
+        }
+
+
+class AlgoTradingLedger(Base):
+    """
+    Algorithmic trading ledger for complete audit trail.
+    Records all trading activities: orders, fills, deposits, withdrawals, hedges.
+    """
+    __tablename__ = "algo_trading_ledger"
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    entry_id = Column(String(50), unique=True, nullable=False, index=True)
+    account_id = Column(String(50), nullable=False, index=True)
+    customer_id = Column(String(50), nullable=True, index=True)
+    entry_type = Column(String(50), nullable=False, index=True)  # order, fill, deposit, withdrawal, hedge, pnl
+    order_id = Column(String(50), nullable=True, index=True)
+    symbol = Column(String(50), nullable=False, index=True)
+    asset_class = Column(String(50), nullable=False, index=True)  # equity, crypto, commodity, forex, etc.
+    side = Column(String(20), nullable=False)  # buy, sell, short, cover, deposit, withdrawal
+    quantity = Column(Float, nullable=False)
+    price = Column(Float, nullable=False)
+    value = Column(Float, nullable=False)
+    realized_pnl = Column(Float, default=0.0)
+    fees = Column(Float, default=0.0)
+    strategy = Column(String(100), nullable=True, index=True)
+    notes = Column(Text, nullable=True)
+    transaction_hash = Column(String(100), nullable=True)  # Blockchain-style hash for integrity
+    nft_token_id = Column(String(50), nullable=True)  # Link to NFT ledger if applicable
+    timestamp = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "entry_id": self.entry_id,
+            "account_id": self.account_id,
+            "customer_id": self.customer_id,
+            "entry_type": self.entry_type,
+            "order_id": self.order_id,
+            "symbol": self.symbol,
+            "asset_class": self.asset_class,
+            "side": self.side,
+            "quantity": self.quantity,
+            "price": self.price,
+            "value": self.value,
+            "realized_pnl": self.realized_pnl,
+            "fees": self.fees,
+            "strategy": self.strategy,
+            "notes": self.notes,
+            "transaction_hash": self.transaction_hash,
+            "nft_token_id": self.nft_token_id,
+            "timestamp": self.timestamp.isoformat() if self.timestamp else None,
+        }
+
+
+class AlgoTradingOrder(Base):
+    """
+    Algorithmic trading order record.
+    Tracks all orders: pending, filled, cancelled.
+    """
+    __tablename__ = "algo_trading_orders"
+    
+    id = Column(String(50), primary_key=True)
+    account_id = Column(String(50), nullable=False, index=True)
+    signal_id = Column(String(50), nullable=True, index=True)
+    symbol = Column(String(50), nullable=False, index=True)
+    asset_class = Column(String(50), nullable=False)
+    side = Column(String(20), nullable=False)  # buy, sell, short, cover
+    order_type = Column(String(30), nullable=False)  # market, limit, stop_loss, take_profit
+    quantity = Column(Float, nullable=False)
+    price = Column(Float, nullable=False)
+    stop_loss = Column(Float, nullable=True)
+    take_profit = Column(Float, nullable=True)
+    trailing_stop_pct = Column(Float, nullable=True)
+    filled_quantity = Column(Float, default=0.0)
+    avg_fill_price = Column(Float, default=0.0)
+    status = Column(String(30), default="pending", index=True)
+    strategy = Column(String(100), nullable=True)
+    notes = Column(Text, nullable=True)
+    created_date = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_date = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    filled_date = Column(DateTime, nullable=True)
+    
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "account_id": self.account_id,
+            "signal_id": self.signal_id,
+            "symbol": self.symbol,
+            "asset_class": self.asset_class,
+            "side": self.side,
+            "order_type": self.order_type,
+            "quantity": self.quantity,
+            "price": self.price,
+            "stop_loss": self.stop_loss,
+            "take_profit": self.take_profit,
+            "trailing_stop_pct": self.trailing_stop_pct,
+            "filled_quantity": self.filled_quantity,
+            "avg_fill_price": self.avg_fill_price,
+            "status": self.status,
+            "strategy": self.strategy,
+            "notes": self.notes,
+            "created_date": self.created_date.isoformat() if self.created_date else None,
+            "updated_date": self.updated_date.isoformat() if self.updated_date else None,
+            "filled_date": self.filled_date.isoformat() if self.filled_date else None,
+        }
+
+
+class AlgoTradingPosition(Base):
+    """
+    Current algorithmic trading position.
+    Tracks open positions with P&L.
+    """
+    __tablename__ = "algo_trading_positions"
+    
+    id = Column(String(50), primary_key=True)
+    account_id = Column(String(50), nullable=False, index=True)
+    symbol = Column(String(50), nullable=False, index=True)
+    asset_class = Column(String(50), nullable=False)
+    side = Column(String(20), nullable=False)  # long, short
+    quantity = Column(Float, nullable=False)
+    avg_cost = Column(Float, nullable=False)
+    current_price = Column(Float, default=0.0)
+    unrealized_pnl = Column(Float, default=0.0)
+    unrealized_pnl_pct = Column(Float, default=0.0)
+    stop_loss = Column(Float, nullable=True)
+    take_profit = Column(Float, nullable=True)
+    trailing_stop_pct = Column(Float, nullable=True)
+    strategy = Column(String(100), nullable=True)
+    opened_date = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_date = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "account_id": self.account_id,
+            "symbol": self.symbol,
+            "asset_class": self.asset_class,
+            "side": self.side,
+            "quantity": self.quantity,
+            "avg_cost": self.avg_cost,
+            "current_price": self.current_price,
+            "market_value": self.quantity * self.current_price,
+            "cost_basis": self.quantity * self.avg_cost,
+            "unrealized_pnl": self.unrealized_pnl,
+            "unrealized_pnl_pct": self.unrealized_pnl_pct,
+            "stop_loss": self.stop_loss,
+            "take_profit": self.take_profit,
+            "trailing_stop_pct": self.trailing_stop_pct,
+            "strategy": self.strategy,
+            "opened_date": self.opened_date.isoformat() if self.opened_date else None,
+            "updated_date": self.updated_date.isoformat() if self.updated_date else None,
+        }
+
+
+class AlgoTradingSignal(Base):
+    """
+    Trading signals generated by algorithms.
+    Tracks signal generation and execution status.
+    """
+    __tablename__ = "algo_trading_signals"
+    
+    id = Column(String(50), primary_key=True)
+    strategy = Column(String(100), nullable=False, index=True)
+    symbol = Column(String(50), nullable=False, index=True)
+    asset_class = Column(String(50), nullable=False)
+    side = Column(String(20), nullable=False)  # buy, sell, short, cover
+    strength = Column(Float, nullable=False)  # 0-1
+    confidence = Column(Float, nullable=False)  # 0-1
+    entry_price = Column(Float, nullable=False)
+    target_price = Column(Float, nullable=False)
+    stop_loss = Column(Float, nullable=False)
+    risk_reward_ratio = Column(Float, nullable=False)
+    timeframe = Column(String(20), nullable=True)
+    reasoning = Column(Text, nullable=True)
+    indicators = Column(Text, nullable=True)  # JSON
+    executed = Column(Boolean, default=False, index=True)
+    order_id = Column(String(50), nullable=True)
+    generated_date = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    expires_date = Column(DateTime, nullable=True)
+    
+    def to_dict(self):
+        import json as json_module
+        return {
+            "id": self.id,
+            "strategy": self.strategy,
+            "symbol": self.symbol,
+            "asset_class": self.asset_class,
+            "side": self.side,
+            "strength": self.strength,
+            "confidence": self.confidence,
+            "entry_price": self.entry_price,
+            "target_price": self.target_price,
+            "stop_loss": self.stop_loss,
+            "risk_reward_ratio": self.risk_reward_ratio,
+            "timeframe": self.timeframe,
+            "reasoning": self.reasoning,
+            "indicators": json_module.loads(self.indicators) if self.indicators else {},
+            "executed": self.executed,
+            "order_id": self.order_id,
+            "generated_date": self.generated_date.isoformat() if self.generated_date else None,
+            "expires_date": self.expires_date.isoformat() if self.expires_date else None,
+        }
+
+
+class AlgoTradingHedge(Base):
+    """
+    Hedging positions for risk management.
+    Tracks hedge effectiveness and exposure.
+    """
+    __tablename__ = "algo_trading_hedges"
+    
+    id = Column(String(50), primary_key=True)
+    account_id = Column(String(50), nullable=False, index=True)
+    hedge_type = Column(String(50), nullable=False, index=True)  # delta, portfolio_insurance, pairs, volatility
+    underlying_symbol = Column(String(50), nullable=False)
+    hedge_symbol = Column(String(50), nullable=False)
+    hedge_ratio = Column(Float, nullable=False)
+    quantity = Column(Float, nullable=False)
+    cost_basis = Column(Float, nullable=False)
+    current_value = Column(Float, default=0.0)
+    effectiveness = Column(Float, default=0.0)  # 0-1 hedge effectiveness
+    status = Column(String(30), default="active", index=True)  # active, closed, expired
+    created_date = Column(DateTime, default=datetime.utcnow, nullable=False)
+    expires_date = Column(DateTime, nullable=True)
+    closed_date = Column(DateTime, nullable=True)
+    
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "account_id": self.account_id,
+            "hedge_type": self.hedge_type,
+            "underlying_symbol": self.underlying_symbol,
+            "hedge_symbol": self.hedge_symbol,
+            "hedge_ratio": self.hedge_ratio,
+            "quantity": self.quantity,
+            "cost_basis": self.cost_basis,
+            "current_value": self.current_value,
+            "effectiveness": self.effectiveness,
+            "status": self.status,
+            "created_date": self.created_date.isoformat() if self.created_date else None,
+            "expires_date": self.expires_date.isoformat() if self.expires_date else None,
+            "closed_date": self.closed_date.isoformat() if self.closed_date else None,
+        }

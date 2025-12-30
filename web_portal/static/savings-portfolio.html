@@ -844,8 +844,8 @@
             <nav class="phins-nav">
                 <a href="/dashboard.html">Dashboard</a>
                 <a href="/savings-portfolio.html" class="active">📈 Investments</a>
+                <a href="/algo-trading-dashboard.html">🤖 Algo Trading</a>
                 <a href="/dashboard.html#health-wallet">🏥 Wallet</a>
-                <a href="/dashboard.html#claims">Claims</a>
                 <a href="/login.html" style="background: linear-gradient(135deg, #ef5350 0%, #e53935 100%); color: white; font-weight: 600; padding: 0.5rem 1rem; border-radius: 8px;">Logout</a>
             </nav>
         </div>
@@ -1001,6 +1001,24 @@
                         <input type="range" class="risk-slider" min="1" max="5" value="3" id="riskSlider" onchange="updateRiskProfile()">
                         <div class="current-risk" id="currentRisk">Moderate</div>
                         <button class="btn btn-outline" onclick="applyRiskProfile()">Apply Changes</button>
+                        
+                        <!-- Algo Trading Integration -->
+                        <div style="margin-top: 1.5rem; padding-top: 1rem; border-top: 1px solid var(--border);">
+                            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.75rem;">
+                                <span style="font-weight: 600; display: flex; align-items: center; gap: 0.5rem;">
+                                    🤖 Algo Trading
+                                </span>
+                                <span id="algoStatus" style="font-size: 0.75rem; padding: 0.25rem 0.5rem; background: rgba(100, 116, 139, 0.2); color: #94a3b8; border-radius: 4px;">
+                                    INACTIVE
+                                </span>
+                            </div>
+                            <p style="font-size: 0.8rem; color: var(--text-secondary); margin-bottom: 0.75rem;">
+                                Activate 24/7 automated trading with AI-powered strategies for all asset classes.
+                            </p>
+                            <a href="/algo-trading-dashboard.html" class="btn btn-primary" style="width: 100%; text-decoration: none; background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);">
+                                🚀 Open Algo Trading Dashboard
+                            </a>
+                        </div>
                     </div>
                 </div>
 
@@ -1118,7 +1136,8 @@
             await Promise.all([
                 loadMarketData(),
                 loadPortfolioData(),
-                loadRecommendations()
+                loadRecommendations(),
+                checkAlgoTradingStatus()
             ]);
             
             // Update projections
@@ -1126,7 +1145,43 @@
             
             // Start market data refresh
             setInterval(loadMarketData, 30000); // Refresh every 30 seconds
+            setInterval(checkAlgoTradingStatus, 60000); // Check algo status every minute
         });
+        
+        async function checkAlgoTradingStatus() {
+            try {
+                // Get algo trading accounts for customer
+                const response = await fetch(`/api/algo/accounts?customer_id=${customerId}`);
+                const data = await response.json();
+                
+                const statusEl = document.getElementById('algoStatus');
+                
+                if (data.accounts && data.accounts.length > 0) {
+                    const account = data.accounts[0];
+                    const mode = account.trading_mode;
+                    
+                    if (mode === 'full_auto' || mode === 'semi_auto') {
+                        statusEl.textContent = 'ACTIVE 24/7';
+                        statusEl.style.background = 'rgba(76, 175, 80, 0.2)';
+                        statusEl.style.color = '#4caf50';
+                    } else if (mode === 'paused') {
+                        statusEl.textContent = 'PAUSED';
+                        statusEl.style.background = 'rgba(255, 152, 0, 0.2)';
+                        statusEl.style.color = '#ff9800';
+                    } else {
+                        statusEl.textContent = 'MANUAL';
+                        statusEl.style.background = 'rgba(100, 116, 139, 0.2)';
+                        statusEl.style.color = '#94a3b8';
+                    }
+                } else {
+                    statusEl.textContent = 'NOT SETUP';
+                    statusEl.style.background = 'rgba(100, 116, 139, 0.2)';
+                    statusEl.style.color = '#94a3b8';
+                }
+            } catch (error) {
+                console.error('Failed to check algo trading status:', error);
+            }
+        }
         
         async function loadMarketData() {
             try {

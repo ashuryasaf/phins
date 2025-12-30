@@ -275,6 +275,25 @@ except ImportError as e:
     portfolio_enabled = False
     print(f"Warning: Investment Portfolio service not available: {e}")
 
+# Algo Trading Service for 24/7 automated trading
+algo_trading_service = None
+try:
+    from services.algo_trading_service import (
+        get_algo_trading_service, 
+        TradingMode, 
+        RiskLevel as AlgoRiskLevel,
+        OrderSide,
+        OrderType,
+        HedgeType,
+        AssetClass as AlgoAssetClass
+    )
+    algo_trading_service = get_algo_trading_service()
+    algo_trading_enabled = True
+    print("✓ Algo Trading service enabled (24/7 automated trading, hedging)")
+except ImportError as e:
+    algo_trading_enabled = False
+    print(f"Warning: Algo Trading service not available: {e}")
+
 # Initialize pipeline service with data stores
 def _init_pipeline():
     global pipeline_service
@@ -2626,6 +2645,157 @@ For claims or questions, please contact:
                 }
             }).encode('utf-8'))
             return
+        
+        # ========== ALGO TRADING API (GET) ==========
+        if algo_trading_enabled and algo_trading_service:
+            
+            # Get customer's algo trading accounts
+            if path == '/api/algo/accounts':
+                customer_id = qs.get('customer_id', [None])[0]
+                
+                if not customer_id:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'customer_id required'}).encode('utf-8'))
+                    return
+                
+                accounts = algo_trading_service.get_customer_accounts(customer_id)
+                
+                self._set_json_headers()
+                self.wfile.write(json.dumps({
+                    'success': True,
+                    'accounts': [
+                        {
+                            'account_id': acc.account_id,
+                            'name': acc.name,
+                            'balance': acc.balance,
+                            'equity': acc.equity,
+                            'risk_level': acc.risk_level.value,
+                            'trading_mode': acc.trading_mode.value,
+                            'position_count': len(acc.positions),
+                            'created_at': acc.created_at
+                        }
+                        for acc in accounts
+                    ]
+                }).encode('utf-8'))
+                return
+            
+            # Get trading status
+            if path == '/api/algo/status':
+                account_id = qs.get('account_id', [None])[0]
+                
+                if not account_id:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'account_id required'}).encode('utf-8'))
+                    return
+                
+                status = algo_trading_service.get_trading_status(account_id)
+                
+                self._set_json_headers()
+                self.wfile.write(json.dumps(status).encode('utf-8'))
+                return
+            
+            # Get portfolio analytics
+            if path == '/api/algo/analytics':
+                account_id = qs.get('account_id', [None])[0]
+                
+                if not account_id:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'account_id required'}).encode('utf-8'))
+                    return
+                
+                analytics = algo_trading_service.get_portfolio_analytics(account_id)
+                
+                self._set_json_headers()
+                self.wfile.write(json.dumps(analytics).encode('utf-8'))
+                return
+            
+            # Get trading signals
+            if path == '/api/algo/signals':
+                account_id = qs.get('account_id', [None])[0]
+                
+                signals = algo_trading_service.generate_signals(account_id)
+                
+                self._set_json_headers()
+                self.wfile.write(json.dumps({
+                    'success': True,
+                    'signals': [
+                        {
+                            'signal_id': s.signal_id,
+                            'strategy': s.strategy.value,
+                            'symbol': s.symbol,
+                            'asset_class': s.asset_class.value,
+                            'side': s.side.value,
+                            'strength': s.strength,
+                            'confidence': s.confidence,
+                            'entry_price': s.entry_price,
+                            'target_price': s.target_price,
+                            'stop_loss': s.stop_loss,
+                            'risk_reward_ratio': s.risk_reward_ratio,
+                            'reasoning': s.reasoning,
+                            'generated_at': s.generated_at
+                        }
+                        for s in signals
+                    ]
+                }).encode('utf-8'))
+                return
+            
+            # Get trading strategies
+            if path == '/api/algo/strategies':
+                performance = algo_trading_service.get_strategy_performance()
+                
+                self._set_json_headers()
+                self.wfile.write(json.dumps({
+                    'success': True,
+                    'strategies': performance.get('strategies', [])
+                }).encode('utf-8'))
+                return
+            
+            # Get hedge recommendations
+            if path == '/api/algo/hedge-recommendations':
+                account_id = qs.get('account_id', [None])[0]
+                
+                if not account_id:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'account_id required'}).encode('utf-8'))
+                    return
+                
+                recommendations = algo_trading_service.get_hedge_recommendations(account_id)
+                
+                self._set_json_headers()
+                self.wfile.write(json.dumps({
+                    'success': True,
+                    'recommendations': recommendations
+                }).encode('utf-8'))
+                return
+            
+            # Get trading ledger
+            if path == '/api/algo/ledger':
+                account_id = qs.get('account_id', [None])[0]
+                limit = int(qs.get('limit', ['100'])[0])
+                
+                if not account_id:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'account_id required'}).encode('utf-8'))
+                    return
+                
+                ledger = algo_trading_service.get_trading_ledger(account_id, limit)
+                
+                self._set_json_headers()
+                self.wfile.write(json.dumps({
+                    'success': True,
+                    'ledger': ledger
+                }).encode('utf-8'))
+                return
+            
+            # Get market overview
+            if path == '/api/algo/market-overview':
+                overview = algo_trading_service.get_market_overview()
+                
+                self._set_json_headers()
+                self.wfile.write(json.dumps(overview).encode('utf-8'))
+                return
+        
+        # ========== END ALGO TRADING API (GET) ==========
         
         # Verify specific NFT token
         if path == '/api/nft-ledger/verify':
@@ -6999,6 +7169,361 @@ For claims or questions, please contact:
                 self._set_json_headers(400)
                 self.wfile.write(json.dumps({'error': 'Action recording failed', 'details': str(e)}).encode('utf-8'))
             return
+        
+        # ========== ALGO TRADING API ==========
+        if algo_trading_enabled and algo_trading_service:
+            
+            # Create algo trading account
+            if path == '/api/algo/create-account':
+                try:
+                    data = json.loads(body) if body else {}
+                    customer_id = data.get('customer_id')
+                    initial_balance = float(data.get('initial_balance', 0))
+                    risk_level = data.get('risk_level', 'moderate')
+                    name = data.get('name', 'Algo Trading Account')
+                    
+                    if not customer_id:
+                        self._set_json_headers(400)
+                        self.wfile.write(json.dumps({'error': 'customer_id required'}).encode('utf-8'))
+                        return
+                    
+                    # Map risk level string to enum
+                    risk_enum = AlgoRiskLevel.MODERATE
+                    if risk_level == 'conservative':
+                        risk_enum = AlgoRiskLevel.CONSERVATIVE
+                    elif risk_level == 'moderate_conservative':
+                        risk_enum = AlgoRiskLevel.MODERATE_CONSERVATIVE
+                    elif risk_level == 'moderate_aggressive':
+                        risk_enum = AlgoRiskLevel.MODERATE_AGGRESSIVE
+                    elif risk_level == 'aggressive':
+                        risk_enum = AlgoRiskLevel.AGGRESSIVE
+                    
+                    account = algo_trading_service.create_account(
+                        customer_id=customer_id,
+                        initial_balance=initial_balance,
+                        risk_level=risk_enum,
+                        name=name
+                    )
+                    
+                    # Record on NFT ledger
+                    nft_token = generate_nft_token(
+                        customer_id=customer_id,
+                        transaction_type='algo_account_created',
+                        transaction_id=account.account_id,
+                        amount=initial_balance,
+                        description=f'Algo Trading Account Created: {name}',
+                        metadata={'risk_level': risk_level, 'initial_balance': initial_balance}
+                    )
+                    
+                    self._set_json_headers(200)
+                    self.wfile.write(json.dumps({
+                        'success': True,
+                        'account_id': account.account_id,
+                        'customer_id': account.customer_id,
+                        'balance': account.balance,
+                        'risk_level': account.risk_level.value,
+                        'trading_mode': account.trading_mode.value,
+                        'nft_token_id': nft_token['token_id']
+                    }).encode('utf-8'))
+                except Exception as e:
+                    self._set_json_headers(500)
+                    self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+                return
+            
+            # Activate trading
+            if path == '/api/algo/activate':
+                try:
+                    data = json.loads(body) if body else {}
+                    account_id = data.get('account_id')
+                    mode = data.get('mode', 'full_auto')
+                    
+                    if not account_id:
+                        self._set_json_headers(400)
+                        self.wfile.write(json.dumps({'error': 'account_id required'}).encode('utf-8'))
+                        return
+                    
+                    trading_mode = TradingMode.FULL_AUTO
+                    if mode == 'semi_auto':
+                        trading_mode = TradingMode.SEMI_AUTO
+                    elif mode == 'manual':
+                        trading_mode = TradingMode.MANUAL
+                    
+                    result = algo_trading_service.activate_trading(account_id, trading_mode)
+                    
+                    self._set_json_headers(200)
+                    self.wfile.write(json.dumps(result).encode('utf-8'))
+                except Exception as e:
+                    self._set_json_headers(500)
+                    self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+                return
+            
+            # Deactivate trading
+            if path == '/api/algo/deactivate':
+                try:
+                    data = json.loads(body) if body else {}
+                    account_id = data.get('account_id')
+                    
+                    if not account_id:
+                        self._set_json_headers(400)
+                        self.wfile.write(json.dumps({'error': 'account_id required'}).encode('utf-8'))
+                        return
+                    
+                    result = algo_trading_service.deactivate_trading(account_id)
+                    
+                    self._set_json_headers(200)
+                    self.wfile.write(json.dumps(result).encode('utf-8'))
+                except Exception as e:
+                    self._set_json_headers(500)
+                    self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+                return
+            
+            # Deposit funds
+            if path == '/api/algo/deposit':
+                try:
+                    data = json.loads(body) if body else {}
+                    account_id = data.get('account_id')
+                    amount = float(data.get('amount', 0))
+                    
+                    if not account_id or amount <= 0:
+                        self._set_json_headers(400)
+                        self.wfile.write(json.dumps({'error': 'account_id and positive amount required'}).encode('utf-8'))
+                        return
+                    
+                    result = algo_trading_service.deposit(account_id, amount)
+                    
+                    # Record on NFT ledger
+                    account = algo_trading_service.get_account(account_id)
+                    if account and result.get('success'):
+                        nft_token = generate_nft_token(
+                            customer_id=account.customer_id,
+                            transaction_type='algo_deposit',
+                            transaction_id=f"ALGO-DEP-{datetime.now().strftime('%Y%m%d%H%M%S')}",
+                            amount=amount,
+                            description='Algo Trading Account Deposit',
+                            metadata={'account_id': account_id, 'new_balance': result.get('new_balance')}
+                        )
+                        result['nft_token_id'] = nft_token['token_id']
+                    
+                    self._set_json_headers(200)
+                    self.wfile.write(json.dumps(result).encode('utf-8'))
+                except Exception as e:
+                    self._set_json_headers(500)
+                    self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+                return
+            
+            # Withdraw funds
+            if path == '/api/algo/withdraw':
+                try:
+                    data = json.loads(body) if body else {}
+                    account_id = data.get('account_id')
+                    amount = float(data.get('amount', 0))
+                    
+                    if not account_id or amount <= 0:
+                        self._set_json_headers(400)
+                        self.wfile.write(json.dumps({'error': 'account_id and positive amount required'}).encode('utf-8'))
+                        return
+                    
+                    result = algo_trading_service.withdraw(account_id, amount)
+                    
+                    self._set_json_headers(200)
+                    self.wfile.write(json.dumps(result).encode('utf-8'))
+                except Exception as e:
+                    self._set_json_headers(500)
+                    self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+                return
+            
+            # Update risk level
+            if path == '/api/algo/update-risk':
+                try:
+                    data = json.loads(body) if body else {}
+                    account_id = data.get('account_id')
+                    risk_level = data.get('risk_level', 'moderate')
+                    
+                    if not account_id:
+                        self._set_json_headers(400)
+                        self.wfile.write(json.dumps({'error': 'account_id required'}).encode('utf-8'))
+                        return
+                    
+                    risk_enum = AlgoRiskLevel.MODERATE
+                    if risk_level == 'conservative':
+                        risk_enum = AlgoRiskLevel.CONSERVATIVE
+                    elif risk_level == 'moderate_conservative':
+                        risk_enum = AlgoRiskLevel.MODERATE_CONSERVATIVE
+                    elif risk_level == 'moderate_aggressive':
+                        risk_enum = AlgoRiskLevel.MODERATE_AGGRESSIVE
+                    elif risk_level == 'aggressive':
+                        risk_enum = AlgoRiskLevel.AGGRESSIVE
+                    
+                    result = algo_trading_service.update_risk_level(account_id, risk_enum)
+                    
+                    self._set_json_headers(200)
+                    self.wfile.write(json.dumps(result).encode('utf-8'))
+                except Exception as e:
+                    self._set_json_headers(500)
+                    self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+                return
+            
+            # Place order
+            if path == '/api/algo/place-order':
+                try:
+                    data = json.loads(body) if body else {}
+                    account_id = data.get('account_id')
+                    symbol = data.get('symbol')
+                    side = data.get('side', 'buy')
+                    amount = float(data.get('amount', 0))
+                    order_type = data.get('order_type', 'market')
+                    stop_loss_pct = data.get('stop_loss_pct')
+                    take_profit_pct = data.get('take_profit_pct')
+                    
+                    if not account_id or not symbol or amount <= 0:
+                        self._set_json_headers(400)
+                        self.wfile.write(json.dumps({'error': 'account_id, symbol, and positive amount required'}).encode('utf-8'))
+                        return
+                    
+                    # Get current price to calculate quantity
+                    price = algo_trading_service.market_data.get_price(symbol)
+                    if not price:
+                        self._set_json_headers(400)
+                        self.wfile.write(json.dumps({'error': f'Unknown symbol: {symbol}'}).encode('utf-8'))
+                        return
+                    
+                    quantity = amount / price
+                    
+                    # Calculate stop loss and take profit prices
+                    stop_loss = None
+                    take_profit = None
+                    if stop_loss_pct:
+                        stop_loss = price * (1 - float(stop_loss_pct) / 100)
+                    if take_profit_pct:
+                        take_profit = price * (1 + float(take_profit_pct) / 100)
+                    
+                    # Map side string to enum
+                    order_side = OrderSide.BUY
+                    if side == 'sell':
+                        order_side = OrderSide.SELL
+                    elif side == 'short':
+                        order_side = OrderSide.SHORT
+                    elif side == 'cover':
+                        order_side = OrderSide.COVER
+                    
+                    result = algo_trading_service.place_order(
+                        account_id=account_id,
+                        symbol=symbol,
+                        side=order_side,
+                        quantity=quantity,
+                        order_type=OrderType.MARKET,
+                        stop_loss=stop_loss,
+                        take_profit=take_profit
+                    )
+                    
+                    self._set_json_headers(200)
+                    self.wfile.write(json.dumps(result).encode('utf-8'))
+                except Exception as e:
+                    self._set_json_headers(500)
+                    self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+                return
+            
+            # Execute signal
+            if path == '/api/algo/execute-signal':
+                try:
+                    data = json.loads(body) if body else {}
+                    account_id = data.get('account_id')
+                    signal_id = data.get('signal_id')
+                    
+                    if not account_id or not signal_id:
+                        self._set_json_headers(400)
+                        self.wfile.write(json.dumps({'error': 'account_id and signal_id required'}).encode('utf-8'))
+                        return
+                    
+                    result = algo_trading_service.execute_signal(account_id, signal_id)
+                    
+                    self._set_json_headers(200)
+                    self.wfile.write(json.dumps(result).encode('utf-8'))
+                except Exception as e:
+                    self._set_json_headers(500)
+                    self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+                return
+            
+            # Close position
+            if path == '/api/algo/close-position':
+                try:
+                    data = json.loads(body) if body else {}
+                    account_id = data.get('account_id')
+                    symbol = data.get('symbol')
+                    
+                    if not account_id or not symbol:
+                        self._set_json_headers(400)
+                        self.wfile.write(json.dumps({'error': 'account_id and symbol required'}).encode('utf-8'))
+                        return
+                    
+                    account = algo_trading_service.get_account(account_id)
+                    if not account:
+                        self._set_json_headers(404)
+                        self.wfile.write(json.dumps({'error': 'Account not found'}).encode('utf-8'))
+                        return
+                    
+                    position = account.positions.get(symbol)
+                    if not position:
+                        self._set_json_headers(404)
+                        self.wfile.write(json.dumps({'error': f'No position for {symbol}'}).encode('utf-8'))
+                        return
+                    
+                    # Close by selling
+                    result = algo_trading_service.place_order(
+                        account_id=account_id,
+                        symbol=symbol,
+                        side=OrderSide.SELL,
+                        quantity=position.quantity,
+                        order_type=OrderType.MARKET
+                    )
+                    
+                    self._set_json_headers(200)
+                    self.wfile.write(json.dumps(result).encode('utf-8'))
+                except Exception as e:
+                    self._set_json_headers(500)
+                    self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+                return
+            
+            # Apply hedge
+            if path == '/api/algo/apply-hedge':
+                try:
+                    data = json.loads(body) if body else {}
+                    account_id = data.get('account_id')
+                    hedge_type = data.get('hedge_type', 'delta_hedge')
+                    instrument = data.get('instrument')
+                    amount = float(data.get('amount', 0))
+                    
+                    if not account_id or not instrument or amount <= 0:
+                        self._set_json_headers(400)
+                        self.wfile.write(json.dumps({'error': 'account_id, instrument, and positive amount required'}).encode('utf-8'))
+                        return
+                    
+                    # Map hedge type string to enum
+                    hedge_enum = HedgeType.DELTA_HEDGE
+                    if hedge_type == 'portfolio_insurance':
+                        hedge_enum = HedgeType.PORTFOLIO_INSURANCE
+                    elif hedge_type == 'volatility_hedge':
+                        hedge_enum = HedgeType.VOLATILITY_HEDGE
+                    elif hedge_type == 'currency_hedge':
+                        hedge_enum = HedgeType.CURRENCY_HEDGE
+                    
+                    result = algo_trading_service.apply_hedge(
+                        account_id=account_id,
+                        hedge_type=hedge_enum,
+                        underlying='PORTFOLIO',
+                        hedge_instrument=instrument,
+                        hedge_ratio=1.0,
+                        amount=amount
+                    )
+                    
+                    self._set_json_headers(200)
+                    self.wfile.write(json.dumps(result).encode('utf-8'))
+                except Exception as e:
+                    self._set_json_headers(500)
+                    self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+                return
+        
+        # ========== END ALGO TRADING API ==========
         
         # Default: not found
         self.send_error(404, 'Not Found')
