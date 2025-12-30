@@ -16,6 +16,7 @@ document.addEventListener('DOMContentLoaded', () => {
     setupEventListeners();
     updateStepDisplay();
     populateExpiryYears();
+    initializePHINSCoverage();
 });
 
 function setupEventListeners() {
@@ -120,21 +121,65 @@ function setupEventListeners() {
 }
 
 function selectPolicy(e) {
-    const type = e.target.dataset.type;
+    const type = e.target.dataset.type || 'phins';
     
-    // Update UI
+    // Update UI - highlight the PHINS card
+    const phinsCard = document.getElementById('phins-coverage-card');
+    if (phinsCard) {
+        phinsCard.classList.add('selected');
+    }
+    
+    // Also handle legacy policy options if they exist
     document.querySelectorAll('.policy-option').forEach(option => {
         option.classList.remove('selected');
     });
-    e.target.closest('.policy-option').classList.add('selected');
+    if (e && e.target) {
+        const closest = e.target.closest('.policy-option, .phins-hero-card');
+        if (closest) {
+            closest.classList.add('selected');
+        }
+    }
     
-    // Set hidden input
+    // Set hidden input - PHINS Complete Coverage by default
     document.getElementById('policy-type').value = type;
     
     // Show coverage details
     document.getElementById('coverage-details').style.display = 'block';
     
+    // Mark the button as selected
+    const selectBtn = document.querySelector('.phins-select-btn');
+    if (selectBtn) {
+        selectBtn.textContent = '✓ PHINS Complete Coverage Selected';
+        selectBtn.classList.add('selected');
+    }
+    
     // Update premium estimate
+    updateCoverageDisplay();
+}
+
+/**
+ * Initialize PHINS coverage as default selection
+ */
+function initializePHINSCoverage() {
+    // Set PHINS as default policy type
+    const policyTypeInput = document.getElementById('policy-type');
+    if (policyTypeInput) {
+        policyTypeInput.value = 'phins';
+    }
+    
+    // Mark the PHINS card as selected
+    const phinsCard = document.getElementById('phins-coverage-card');
+    if (phinsCard) {
+        phinsCard.classList.add('selected');
+    }
+    
+    // Update the select button
+    const selectBtn = document.querySelector('.phins-select-btn');
+    if (selectBtn) {
+        selectBtn.addEventListener('click', selectPolicy);
+    }
+    
+    // Initialize with default coverage amount
     updateCoverageDisplay();
 }
 
@@ -148,40 +193,57 @@ function updateCoverageDisplay() {
 }
 
 function calculatePremium(coverageAmount) {
-    const policyType = document.getElementById('policy-type').value;
+    const policyType = document.getElementById('policy-type').value || 'phins';
     const dob = document.getElementById('dob').value;
     
-    if (!policyType || !dob) {
-        return;
+    // Use default age if no DOB yet
+    const age = dob ? calculateAge(dob) : 35;
+    
+    /**
+     * PHINS Actuarial Premium Model
+     * =============================
+     * Premium = Coverage Amount × (Base Risk Rate × 1.5)
+     * 
+     * Where:
+     * - Base Risk Rate = Age-adjusted actuarial risk (e.g., 0.3% for age 35)
+     * - 1.5 multiplier = 100% for risk coverage + 50% for reinsurance & operations
+     * 
+     * Risk decreases as savings grow (mortgage-style model):
+     * - Net Risk = Coverage Amount - Accumulated Savings
+     * - Effective Premium decreases over time as savings build
+     */
+    
+    // Base disability risk rate by age (actuarial table - annual probability)
+    // These are simplified rates; actual would come from actuarial tables
+    function getBaseRiskRate(age) {
+        // Risk increases with age - disability probability per year
+        if (age < 25) return 0.0015;       // 0.15%
+        if (age < 30) return 0.0020;       // 0.20%
+        if (age < 35) return 0.0025;       // 0.25%
+        if (age < 40) return 0.0030;       // 0.30%
+        if (age < 45) return 0.0038;       // 0.38%
+        if (age < 50) return 0.0048;       // 0.48%
+        if (age < 55) return 0.0062;       // 0.62%
+        if (age < 60) return 0.0080;       // 0.80%
+        if (age < 65) return 0.0105;       // 1.05%
+        if (age < 70) return 0.0140;       // 1.40%
+        return 0.0180;                      // 1.80% for 70+
     }
     
-    const age = calculateAge(dob);
+    const baseRiskRate = getBaseRiskRate(age);
     
-    // Base premium by type
-    const basePremiums = {
-        'life': 1200,
-        'health': 800,
-        'auto': 600,
-        'property': 1500,
-        'disability': 1500
-    };
+    // Reinsurance and operational cost multiplier (50% of base risk)
+    const reinsuranceMultiplier = 0.5;
     
-    const basePremium = basePremiums[policyType] || 1000;
+    // Total premium rate = base risk + 50% for reinsurance/operations = 150% of base risk
+    const totalPremiumRate = baseRiskRate * (1 + reinsuranceMultiplier);
     
-    // Age factor
-    const ageFactor = 1.0 + (Math.max(0, age - 25) * 0.02);
-    
-    // Coverage factor
-    const coverageFactor = coverageAmount / 100000;
-    
-    // Risk factor (will be determined after health assessment, using medium for now)
-    const riskFactor = 1.0;
-    
-    const annualPremium = Math.round(basePremium * ageFactor * coverageFactor * riskFactor);
+    // Calculate annual premium
+    const annualPremium = Math.round(coverageAmount * totalPremiumRate);
     const monthlyPremium = Math.round(annualPremium / 12);
     const quarterlyPremium = Math.round(annualPremium / 4);
     
-    // Update display
+    // Update premium display
     document.getElementById('monthly-premium').textContent = 
         new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(monthlyPremium);
     document.getElementById('quarterly-premium').textContent = 
@@ -189,8 +251,87 @@ function calculatePremium(coverageAmount) {
     document.getElementById('annual-premium').textContent = 
         new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(annualPremium);
     
+    // Update risk breakdown display
+    const baseRiskEl = document.getElementById('base-risk-rate');
+    const reinsuranceEl = document.getElementById('reinsurance-rate');
+    const totalRateEl = document.getElementById('total-rate');
+    
+    if (baseRiskEl) {
+        baseRiskEl.textContent = (baseRiskRate * 100).toFixed(2) + '%';
+    }
+    if (reinsuranceEl) {
+        reinsuranceEl.textContent = (baseRiskRate * reinsuranceMultiplier * 100).toFixed(2) + '%';
+    }
+    if (totalRateEl) {
+        totalRateEl.textContent = (totalPremiumRate * 100).toFixed(2) + '%';
+    }
+    
+    // Calculate 10-year projection (AI-optimized savings allocation)
+    calculateSavingsProjection(coverageAmount, annualPremium, age);
+    
     // Store for later
-    formData.premiums = { monthly: monthlyPremium, quarterly: quarterlyPremium, annual: annualPremium };
+    formData.premiums = { 
+        monthly: monthlyPremium, 
+        quarterly: quarterlyPremium, 
+        annual: annualPremium,
+        baseRiskRate: baseRiskRate,
+        totalPremiumRate: totalPremiumRate
+    };
+}
+
+/**
+ * Calculate 10-year savings projection with mortgage-style risk reduction
+ * As savings grow, net risk exposure decreases
+ */
+function calculateSavingsProjection(coverageAmount, annualPremium, age) {
+    // Assume 25% of premium goes to savings/investments (adjustable in the platform)
+    const savingsAllocationPct = 0.25;
+    const savingsPerYear = annualPremium * savingsAllocationPct;
+    
+    // Assume 7% average annual return on investments
+    const averageReturn = 0.07;
+    
+    // Calculate 10-year projections
+    let totalSavings = 0;
+    let totalInvestments = 0;
+    
+    for (let year = 1; year <= 10; year++) {
+        // Add yearly savings contribution
+        totalSavings += savingsPerYear * 0.4; // 40% guaranteed savings
+        totalInvestments += savingsPerYear * 0.6; // 60% to investments
+        
+        // Apply investment returns
+        totalInvestments *= (1 + averageReturn);
+    }
+    
+    const totalAccumulated = totalSavings + totalInvestments;
+    const netRiskExposure = Math.max(0, coverageAmount - totalAccumulated);
+    const riskReduction = ((coverageAmount - netRiskExposure) / coverageAmount) * 100;
+    
+    // Update projection display
+    const projSavingsEl = document.getElementById('proj-savings');
+    const projInvestmentsEl = document.getElementById('proj-investments');
+    const projNetRiskEl = document.getElementById('proj-net-risk');
+    const projRiskReductionEl = document.getElementById('proj-risk-reduction');
+    
+    if (projSavingsEl) {
+        projSavingsEl.textContent = new Intl.NumberFormat('en-US', { 
+            style: 'currency', currency: 'USD', maximumFractionDigits: 0 
+        }).format(totalSavings);
+    }
+    if (projInvestmentsEl) {
+        projInvestmentsEl.textContent = new Intl.NumberFormat('en-US', { 
+            style: 'currency', currency: 'USD', maximumFractionDigits: 0 
+        }).format(totalInvestments);
+    }
+    if (projNetRiskEl) {
+        projNetRiskEl.textContent = new Intl.NumberFormat('en-US', { 
+            style: 'currency', currency: 'USD', maximumFractionDigits: 0 
+        }).format(netRiskExposure);
+    }
+    if (projRiskReductionEl) {
+        projRiskReductionEl.textContent = '-' + riskReduction.toFixed(0) + '%';
+    }
 }
 
 function calculateAge(dobString) {
@@ -694,8 +835,9 @@ function populateReview() {
     `;
     document.getElementById('review-personal').innerHTML = personalHtml;
     
-    // Coverage Details
+    // Coverage Details - PHINS Complete Coverage
     const policyTypes = {
+        'phins': 'PHINS Complete Coverage',
         'life': 'Life Insurance',
         'health': 'Health Insurance',
         'disability': 'PHINS Disability + Investment',
@@ -703,15 +845,39 @@ function populateReview() {
         'property': 'Property Insurance'
     };
     
+    const policyType = formData.coverage.policyType || 'phins';
+    const isPHINS = policyType === 'phins';
+    
     const coverageHtml = `
         <div class="review-item">
             <strong>Policy Type</strong>
-            <span>${policyTypes[formData.coverage.policyType]}</span>
+            <span>${policyTypes[policyType] || 'PHINS Complete Coverage'}</span>
         </div>
         <div class="review-item">
             <strong>Coverage Amount</strong>
             <span>${new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0 }).format(formData.coverage.coverageAmount)}</span>
         </div>
+        ${isPHINS ? `
+        <div class="review-item">
+            <strong>Actuarial Risk Rate</strong>
+            <span>${((formData.premiums?.baseRiskRate || 0.003) * 100).toFixed(2)}% (age-adjusted)</span>
+        </div>
+        <div class="review-item">
+            <strong>Total Premium Rate</strong>
+            <span>${((formData.premiums?.totalPremiumRate || 0.0045) * 100).toFixed(2)}% (includes 50% reinsurance)</span>
+        </div>
+        <div class="review-item">
+            <strong>Services Included</strong>
+            <span style="display: block; font-size: 0.85rem;">
+                ✓ Permanent Disability Protection<br>
+                ✓ Adjustable Savings Account<br>
+                ✓ Healthcare Wallet<br>
+                ✓ Investment Portfolio<br>
+                ✓ AI Trading Bot Access<br>
+                ✓ Lump Sum Future Benefit
+            </span>
+        </div>
+        ` : ''}
     `;
     document.getElementById('review-coverage').innerHTML = coverageHtml;
     

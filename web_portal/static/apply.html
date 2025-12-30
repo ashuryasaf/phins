@@ -130,61 +130,92 @@
                 <!-- Step 2: Coverage Selection -->
                 <div class="form-step" data-step="2">
                     <div class="step-header">
-                        <h2>🛡️ Step 2: Choose Your Coverage</h2>
-                        <p>Select the protection level that best fits your needs and budget.</p>
+                        <h2>🛡️ Step 2: PHINS Complete Coverage</h2>
+                        <p>One unified contract that enables all PHINS AI-powered risk hedging and wealth protection services.</p>
                     </div>
 
                     <div class="form-section">
-                        <h3>Policy Type</h3>
-                        <div class="policy-cards">
-                            <div class="policy-option" data-type="life">
-                                <div class="policy-icon">💼</div>
-                                <h4>Life Insurance</h4>
-                                <p>Financial protection for your loved ones in case of death</p>
-                                <ul>
-                                    <li>Death benefit payout</li>
-                                    <li>Investment component</li>
-                                    <li>Estate planning</li>
-                                </ul>
-                                <button type="button" class="select-policy" data-type="life">Select</button>
-                            </div>
-
-                            <div class="policy-option" data-type="health">
-                                <div class="policy-icon">🏥</div>
-                                <h4>Health Insurance</h4>
-                                <p>Comprehensive medical coverage and health protection</p>
-                                <ul>
-                                    <li>Medical expenses</li>
-                                    <li>Hospitalization</li>
-                                    <li>Preventive care</li>
-                                </ul>
-                                <button type="button" class="select-policy" data-type="health">Select</button>
-                            </div>
-
-                            <div class="policy-option" data-type="disability">
-                                <div class="policy-icon recommended">♿</div>
-                                <div class="recommended-badge">Recommended</div>
-                                <h4>PHINS Disability + Investment</h4>
-                                <p>Severe disability protection with wealth building</p>
-                                <ul>
-                                    <li>ADL-based coverage</li>
-                                    <li>75% investment growth</li>
-                                    <li>25% guaranteed savings</li>
-                                    <li>Lifetime benefits</li>
-                                </ul>
-                                <button type="button" class="select-policy" data-type="disability">Select</button>
+                        <!-- Unified PHINS Coverage -->
+                        <div class="phins-unified-coverage">
+                            <div class="phins-hero-card" id="phins-coverage-card">
+                                <div class="phins-badge">🏆 MOST ADVANCED AI PLATFORM</div>
+                                <div class="phins-icon">🛡️</div>
+                                <h3>PHINS Complete Coverage</h3>
+                                <p class="phins-tagline">Personal & Financial Risk Hedging • Insured Savings • AI-Powered Wealth Management</p>
+                                
+                                <div class="phins-features-grid">
+                                    <div class="phins-feature">
+                                        <span class="feature-icon">♿</span>
+                                        <div class="feature-content">
+                                            <strong>Permanent Disability Protection</strong>
+                                            <span>ADL-based coverage with lifetime benefits</span>
+                                        </div>
+                                    </div>
+                                    <div class="phins-feature">
+                                        <span class="feature-icon">💰</span>
+                                        <div class="feature-content">
+                                            <strong>Adjustable Savings Account</strong>
+                                            <span>AI-optimized allocation (10-90% adjustable)</span>
+                                        </div>
+                                    </div>
+                                    <div class="phins-feature">
+                                        <span class="feature-icon">🏥</span>
+                                        <div class="feature-content">
+                                            <strong>Healthcare Wallet</strong>
+                                            <span>Medical expenses, devices & telemedicine</span>
+                                        </div>
+                                    </div>
+                                    <div class="phins-feature">
+                                        <span class="feature-icon">📈</span>
+                                        <div class="feature-content">
+                                            <strong>Investment Management</strong>
+                                            <span>Private AI trading bot with index/crypto/bonds</span>
+                                        </div>
+                                    </div>
+                                    <div class="phins-feature">
+                                        <span class="feature-icon">🤖</span>
+                                        <div class="feature-content">
+                                            <strong>Algo Trading Integration</strong>
+                                            <span>Transfer savings to automated trading strategies</span>
+                                        </div>
+                                    </div>
+                                    <div class="phins-feature">
+                                        <span class="feature-icon">🎯</span>
+                                        <div class="feature-content">
+                                            <strong>Lump Sum Future Benefit</strong>
+                                            <span>Mortgage-style: risk decreases as savings grow</span>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <div class="phins-actuarial-info">
+                                    <h4>📊 Actuarial Risk Model</h4>
+                                    <p>Your premium is calculated using: <strong>Premium = 150% × Age-Adjusted Risk Rate</strong></p>
+                                    <ul>
+                                        <li>✓ 100% covers your actuarial risk for disability protection</li>
+                                        <li>✓ 50% covers reinsurance + operational costs</li>
+                                        <li>✓ As your savings grow, your effective risk decreases (like a mortgage)</li>
+                                        <li>✓ The larger your lump sum, the lower your risk exposure</li>
+                                    </ul>
+                                </div>
+                                
+                                <button type="button" class="select-policy phins-select-btn" data-type="phins">
+                                    ✓ Select PHINS Complete Coverage
+                                </button>
                             </div>
                         </div>
 
-                        <input type="hidden" id="policy-type" required>
+                        <input type="hidden" id="policy-type" value="phins" required>
 
-                        <div id="coverage-details" class="coverage-details" style="display: none;">
-                            <h3>Coverage Amount</h3>
+                        <div id="coverage-details" class="coverage-details" style="display: block;">
+                            <h3>Coverage Amount (Lump Sum Target)</h3>
+                            <p class="coverage-explanation">This is your target protection amount. As you build savings through the platform, your net risk exposure decreases proportionally.</p>
+                            
                             <div class="coverage-slider-container">
-                                <input type="range" id="coverage-slider" min="50000" max="5000000" step="50000" value="250000">
+                                <input type="range" id="coverage-slider" min="50000" max="5000000" step="50000" value="500000">
                                 <div class="coverage-display">
-                                    <span class="coverage-amount" id="coverage-amount-display">$250,000</span>
-                                    <small>Slide to adjust your coverage amount</small>
+                                    <span class="coverage-amount" id="coverage-amount-display">$500,000</span>
+                                    <small>Slide to adjust your target coverage</small>
                                 </div>
                             </div>
 
@@ -199,7 +230,7 @@
                             </div>
 
                             <div class="premium-estimate" id="premium-estimate">
-                                <h4>Estimated Premium</h4>
+                                <h4>Estimated Premium (Actuarial Model)</h4>
                                 <div class="premium-breakdown">
                                     <div class="premium-item">
                                         <span>Monthly</span>
@@ -214,7 +245,47 @@
                                         <strong id="annual-premium">$1,500.00</strong>
                                     </div>
                                 </div>
-                                <small>*Final premium determined after underwriting review</small>
+                                
+                                <div class="risk-breakdown" id="risk-breakdown">
+                                    <h5>Premium Breakdown</h5>
+                                    <div class="risk-item">
+                                        <span>Base Risk Rate (age-adjusted):</span>
+                                        <strong id="base-risk-rate">0.30%</strong>
+                                    </div>
+                                    <div class="risk-item">
+                                        <span>+ Reinsurance & Operations (50%):</span>
+                                        <strong id="reinsurance-rate">0.15%</strong>
+                                    </div>
+                                    <div class="risk-item total">
+                                        <span>Total Rate Applied:</span>
+                                        <strong id="total-rate">0.45%</strong>
+                                    </div>
+                                </div>
+                                
+                                <small>*Premium = Coverage × Total Rate. Final premium confirmed after underwriting.</small>
+                            </div>
+                            
+                            <div class="savings-projection" id="savings-projection">
+                                <h4>📈 10-Year Projection (AI-Optimized)</h4>
+                                <div class="projection-grid">
+                                    <div class="projection-item">
+                                        <span class="proj-label">Projected Savings</span>
+                                        <strong class="proj-value" id="proj-savings">$85,000</strong>
+                                    </div>
+                                    <div class="projection-item">
+                                        <span class="proj-label">Projected Investments</span>
+                                        <strong class="proj-value" id="proj-investments">$125,000</strong>
+                                    </div>
+                                    <div class="projection-item">
+                                        <span class="proj-label">Net Risk Exposure</span>
+                                        <strong class="proj-value good" id="proj-net-risk">$290,000</strong>
+                                    </div>
+                                    <div class="projection-item">
+                                        <span class="proj-label">Risk Reduction</span>
+                                        <strong class="proj-value excellent" id="proj-risk-reduction">-42%</strong>
+                                    </div>
+                                </div>
+                                <small>Based on historical 7% average return. Actual results may vary.</small>
                             </div>
                         </div>
                     </div>
