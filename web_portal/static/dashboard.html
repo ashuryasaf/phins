@@ -545,15 +545,52 @@
 
     <!-- Health Wallet & Medical Products Section -->
     <section id="health-wallet" class="section-content" style="background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%); border-radius: 16px; padding: 28px; margin-bottom: 32px; border: 1px solid rgba(21, 101, 192, 0.1);">
-      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 12px;">
         <h2 style="margin: 0;">🏥 PHINS Health Wallet</h2>
-        <span style="background: #28a745; color: white; padding: 8px 16px; border-radius: 20px; font-weight: 600;">Balance: <span id="wallet-balance-display">$0.00</span></span>
+        <div style="display: flex; gap: 12px; flex-wrap: wrap;">
+          <span style="background: linear-gradient(135deg, #28a745 0%, #20c997 100%); color: white; padding: 10px 18px; border-radius: 20px; font-weight: 600; box-shadow: 0 4px 12px rgba(40, 167, 69, 0.25);">
+            💊 Wallet: <span id="wallet-balance-display">$0.00</span>
+          </span>
+          <span id="total-deposits-badge" style="background: linear-gradient(135deg, #1565c0 0%, #0d47a1 100%); color: white; padding: 10px 18px; border-radius: 20px; font-weight: 600; box-shadow: 0 4px 12px rgba(21, 101, 192, 0.25);">
+            💰 Total: <span id="total-deposits-display">$0.00</span>
+          </span>
+        </div>
       </div>
       
-      <p style="color: #555; margin-bottom: 20px;">Pay for medical products and services directly from your health wallet. Fast, easy, and covered by your PHINS policy.</p>
+      <!-- AI/BI Platform Notice -->
+      <div style="background: linear-gradient(135deg, #e8f5e9 0%, #c8e6c9 100%); border-radius: 12px; padding: 16px; margin-bottom: 20px; border-left: 4px solid #4caf50;">
+        <div style="font-weight: 600; color: #2e7d32; margin-bottom: 8px;">✨ AI-Powered Smart Payments</div>
+        <p style="color: #555; margin: 0; font-size: 0.9rem;">
+          Pay with wallet balance first • Transfer from investments automatically • All transactions secured on NFT & Transaction Ledgers • Real-time balance tracking across all accounts
+        </p>
+      </div>
+      
+      <!-- Balance Cards -->
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 20px;">
+        <div style="background: white; border-radius: 12px; padding: 14px; text-align: center; box-shadow: 0 2px 8px rgba(0,0,0,0.06);">
+          <div style="font-size: 0.75rem; color: #666; margin-bottom: 4px;">💊 Health Wallet</div>
+          <div id="balance-wallet" style="font-size: 1.3rem; font-weight: 700; color: #28a745;">$0.00</div>
+          <div style="font-size: 0.7rem; color: #4caf50; margin-top: 4px;">Instant Pay</div>
+        </div>
+        <div style="background: white; border-radius: 12px; padding: 14px; text-align: center; box-shadow: 0 2px 8px rgba(0,0,0,0.06);">
+          <div style="font-size: 0.75rem; color: #666; margin-bottom: 4px;">📈 Investments</div>
+          <div id="balance-investment" style="font-size: 1.3rem; font-weight: 700; color: #1565c0;">$0.00</div>
+          <div style="font-size: 0.7rem; color: #1976d2; margin-top: 4px;">Transfer Available</div>
+        </div>
+        <div style="background: white; border-radius: 12px; padding: 14px; text-align: center; box-shadow: 0 2px 8px rgba(0,0,0,0.06);">
+          <div style="font-size: 0.75rem; color: #666; margin-bottom: 4px;">🤖 Algo Trading</div>
+          <div id="balance-algo" style="font-size: 1.3rem; font-weight: 700; color: #7b1fa2;">$0.00</div>
+          <div style="font-size: 0.7rem; color: #9c27b0; margin-top: 4px;">Transfer Available</div>
+        </div>
+        <div onclick="addFundsToWallet()" style="background: linear-gradient(135deg, #fff3e0 0%, #ffe0b2 100%); border-radius: 12px; padding: 14px; text-align: center; box-shadow: 0 2px 8px rgba(0,0,0,0.06); cursor: pointer; border: 2px dashed #ff9800; transition: transform 0.2s;" onmouseover="this.style.transform='scale(1.03)'" onmouseout="this.style.transform='scale(1)'">
+          <div style="font-size: 0.75rem; color: #e65100; margin-bottom: 4px;">➕ Add Funds</div>
+          <div style="font-size: 1.3rem; font-weight: 700; color: #f57c00;">+$</div>
+          <div style="font-size: 0.7rem; color: #ff9800; margin-top: 4px;">Card, PayPal, Crypto</div>
+        </div>
+      </div>
       
       <!-- Quick Actions -->
-      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin-bottom: 24px;">
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin-bottom: 16px;">
         <button onclick="showMedicalCategory('consultation')" class="wallet-quick-btn" style="background: linear-gradient(135deg, #1565c0 0%, #1976d2 100%); color: white; border: none; padding: 16px; border-radius: 10px; cursor: pointer; font-size: 14px; box-shadow: 0 4px 12px rgba(21, 101, 192, 0.2);">
           🩺 Book Consultation
         </button>
@@ -569,8 +606,8 @@
         <button onclick="showMedicalCategory('homecare')" class="wallet-quick-btn" style="background: linear-gradient(135deg, #4caf50 0%, #66bb6a 100%); color: white; border: none; padding: 16px; border-radius: 10px; cursor: pointer; font-size: 14px; box-shadow: 0 4px 12px rgba(76, 175, 80, 0.2);">
           🏠 Home Care
         </button>
-        <button onclick="addFundsToWallet()" class="wallet-quick-btn" style="background: linear-gradient(135deg, #ffc107 0%, #ffca28 100%); color: #333; border: none; padding: 16px; border-radius: 10px; cursor: pointer; font-size: 14px; font-weight: 600; box-shadow: 0 4px 12px rgba(255, 193, 7, 0.2);">
-          ➕ Add Funds
+        <button onclick="showTransferModal()" class="wallet-quick-btn" style="background: linear-gradient(135deg, #7b1fa2 0%, #9c27b0 100%); color: white; border: none; padding: 16px; border-radius: 10px; cursor: pointer; font-size: 14px; font-weight: 600; box-shadow: 0 4px 12px rgba(123, 31, 162, 0.2);">
+          🔄 Transfer Funds
         </button>
       </div>
     </section>
@@ -1144,9 +1181,41 @@
     }
     
     // Load wallet balance from marketplace API
+    // Store all balances globally
+    let allBalances = { wallet: 0, investment: 0, algo: 0, total: 0 };
+    
     async function loadWalletBalance() {
+      const cid = customerId || sessionStorage.getItem('customer_id');
+      
       try {
-        const cid = customerId || sessionStorage.getItem('customer_id');
+        // First try unified balance API for all balances
+        const unifiedResponse = await fetch('/api/unified-payment/balances', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ customer_id: cid || 'CUST001' })
+        });
+        
+        if (unifiedResponse.ok) {
+          const data = await unifiedResponse.json();
+          
+          walletBalance = data.balances?.health_wallet?.balance || 0;
+          allBalances = {
+            wallet: walletBalance,
+            investment: data.balances?.investment?.balance || 0,
+            algo: data.balances?.algo_trading?.balance || 0,
+            total: data.total_assets || 0
+          };
+          
+          updateWalletDisplay();
+          updateAllBalancesDisplay();
+          return;
+        }
+      } catch (e) {
+        console.log('Unified balance API unavailable, trying marketplace API');
+      }
+      
+      // Fallback to marketplace wallet API
+      try {
         if (!cid) {
           walletBalance = 0;
           updateWalletDisplay();
@@ -1165,7 +1234,10 @@
         if (response.ok) {
           const data = await response.json();
           walletBalance = data.balance || 0;
+          allBalances.wallet = walletBalance;
+          allBalances.total = walletBalance;
           updateWalletDisplay();
+          updateAllBalancesDisplay();
         } else {
           walletBalance = 0;
           updateWalletDisplay();
@@ -1508,7 +1580,307 @@
       document.getElementById('medical-marketplace').style.display = 'none';
     }
     
+    // Smart Purchase Modal - AI-powered payment flow
     async function purchaseProduct(productId, productName, price, category = 'general', productDetails = {}) {
+      const cid = customerId || sessionStorage.getItem('customer_id') || 'CUST001';
+      
+      // Fetch all balances for smart payment options
+      let totalDeposits = { health_wallet: walletBalance, investment: 0, algo_trading: 0, total: walletBalance };
+      
+      try {
+        const balanceResponse = await fetch('/api/unified-payment/balances', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ customer_id: cid })
+        });
+        if (balanceResponse.ok) {
+          const balanceData = await balanceResponse.json();
+          totalDeposits = {
+            health_wallet: balanceData.balances?.health_wallet?.balance || 0,
+            investment: balanceData.balances?.investment?.balance || 0,
+            algo_trading: balanceData.balances?.algo_trading?.balance || 0,
+            total: balanceData.total_assets || 0
+          };
+        }
+      } catch (e) { console.log('Using local balance data'); }
+      
+      // Show smart payment modal
+      showSmartPaymentModal(productId, productName, price, category, productDetails, totalDeposits);
+    }
+    
+    // Smart Payment Modal with AI recommendations
+    function showSmartPaymentModal(productId, productName, price, category, productDetails, balances) {
+      const hasEnoughWallet = balances.health_wallet >= price;
+      const hasEnoughInvestment = balances.investment >= price;
+      const hasEnoughTotal = balances.total >= price;
+      const shortfall = price - balances.health_wallet;
+      
+      // AI Recommendation Logic
+      let aiRecommendation = '';
+      let recommendedSource = 'health_wallet';
+      
+      if (hasEnoughWallet) {
+        aiRecommendation = '✨ <strong>Recommended:</strong> Pay directly from Health Wallet - instant & no fees';
+        recommendedSource = 'health_wallet';
+      } else if (balances.health_wallet > 0 && hasEnoughTotal) {
+        aiRecommendation = '💡 <strong>Smart Split:</strong> Use wallet balance + transfer from investments';
+        recommendedSource = 'split';
+      } else if (hasEnoughInvestment) {
+        aiRecommendation = '📈 <strong>Available:</strong> Transfer from your Investment Account';
+        recommendedSource = 'investment';
+      } else if (!hasEnoughTotal) {
+        aiRecommendation = '⚠️ <strong>Notice:</strong> Add funds to complete this purchase';
+        recommendedSource = 'add_funds';
+      }
+      
+      const modalHtml = `
+        <div id="smart-payment-modal" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 3000; display: flex; justify-content: center; align-items: center; padding: 20px; box-sizing: border-box;">
+          <div style="background: white; border-radius: 20px; max-width: 500px; width: 100%; max-height: 90vh; overflow-y: auto; box-shadow: 0 20px 60px rgba(0,0,0,0.3);">
+            
+            <!-- Header -->
+            <div style="background: linear-gradient(135deg, #1565c0 0%, #0d47a1 100%); color: white; padding: 24px; border-radius: 20px 20px 0 0;">
+              <div style="display: flex; justify-content: space-between; align-items: center;">
+                <h2 style="margin: 0; font-size: 1.5rem;">🛒 Complete Purchase</h2>
+                <button onclick="closeSmartPaymentModal()" style="background: rgba(255,255,255,0.2); border: none; color: white; width: 36px; height: 36px; border-radius: 50%; font-size: 20px; cursor: pointer;">×</button>
+              </div>
+              <p style="margin: 8px 0 0 0; opacity: 0.9; font-size: 0.95rem;">${productName}</p>
+            </div>
+            
+            <!-- Purchase Summary -->
+            <div style="padding: 20px; border-bottom: 1px solid #eee;">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                <span style="color: #666;">Purchase Amount</span>
+                <span style="font-size: 1.8rem; font-weight: 700; color: #1565c0;">$${price.toFixed(2)}</span>
+              </div>
+              
+              <!-- AI Recommendation -->
+              <div style="background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%); padding: 12px 16px; border-radius: 10px; margin-bottom: 16px;">
+                <div style="font-size: 0.9rem; color: #1565c0;">${aiRecommendation}</div>
+              </div>
+              
+              <!-- Balance Overview -->
+              <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px;">
+                <div style="background: #f5f5f5; padding: 12px; border-radius: 8px; text-align: center;">
+                  <div style="font-size: 0.8rem; color: #666;">💊 Health Wallet</div>
+                  <div style="font-size: 1.2rem; font-weight: 700; color: ${hasEnoughWallet ? '#28a745' : '#666'};">$${balances.health_wallet.toFixed(2)}</div>
+                </div>
+                <div style="background: #f5f5f5; padding: 12px; border-radius: 8px; text-align: center;">
+                  <div style="font-size: 0.8rem; color: #666;">📈 Investments</div>
+                  <div style="font-size: 1.2rem; font-weight: 700; color: ${hasEnoughInvestment ? '#28a745' : '#666'};">$${balances.investment.toFixed(2)}</div>
+                </div>
+                <div style="background: #f5f5f5; padding: 12px; border-radius: 8px; text-align: center;">
+                  <div style="font-size: 0.8rem; color: #666;">🤖 Algo Trading</div>
+                  <div style="font-size: 1.2rem; font-weight: 700;">$${balances.algo_trading.toFixed(2)}</div>
+                </div>
+                <div style="background: linear-gradient(135deg, #e8f5e9 0%, #c8e6c9 100%); padding: 12px; border-radius: 8px; text-align: center;">
+                  <div style="font-size: 0.8rem; color: #2e7d32;">💰 Total Deposits</div>
+                  <div style="font-size: 1.2rem; font-weight: 700; color: #2e7d32;">$${balances.total.toFixed(2)}</div>
+                </div>
+              </div>
+            </div>
+            
+            <!-- Payment Options -->
+            <div style="padding: 20px;">
+              <h3 style="margin: 0 0 16px 0; font-size: 1rem; color: #333;">Choose Payment Method</h3>
+              
+              <!-- Option 1: Health Wallet -->
+              <div onclick="selectPaymentOption('wallet')" id="pay-option-wallet" class="payment-option" 
+                   style="border: 2px solid ${hasEnoughWallet ? '#28a745' : '#ddd'}; border-radius: 12px; padding: 16px; margin-bottom: 12px; cursor: ${hasEnoughWallet ? 'pointer' : 'not-allowed'}; opacity: ${hasEnoughWallet ? '1' : '0.6'}; transition: all 0.2s; ${recommendedSource === 'health_wallet' ? 'background: #e8f5e9;' : ''}">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                  <div>
+                    <div style="font-weight: 600; color: #333;">💊 Pay from Health Wallet</div>
+                    <div style="font-size: 0.85rem; color: #666; margin-top: 4px;">Instant payment • No fees</div>
+                  </div>
+                  <div style="text-align: right;">
+                    <div style="font-weight: 700; color: ${hasEnoughWallet ? '#28a745' : '#dc3545'};">$${balances.health_wallet.toFixed(2)}</div>
+                    ${!hasEnoughWallet ? '<div style="font-size: 0.75rem; color: #dc3545;">Need $' + shortfall.toFixed(2) + ' more</div>' : ''}
+                  </div>
+                </div>
+              </div>
+              
+              <!-- Option 2: Internal Transfer from Investments -->
+              <div onclick="selectPaymentOption('transfer_investment')" id="pay-option-transfer" class="payment-option"
+                   style="border: 2px solid ${hasEnoughInvestment || (hasEnoughTotal && !hasEnoughWallet) ? '#1565c0' : '#ddd'}; border-radius: 12px; padding: 16px; margin-bottom: 12px; cursor: ${hasEnoughTotal ? 'pointer' : 'not-allowed'}; opacity: ${hasEnoughTotal ? '1' : '0.6'}; transition: all 0.2s; ${recommendedSource === 'split' || recommendedSource === 'investment' ? 'background: #e3f2fd;' : ''}">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                  <div>
+                    <div style="font-weight: 600; color: #333;">🔄 Internal Transfer</div>
+                    <div style="font-size: 0.85rem; color: #666; margin-top: 4px;">From investments → Wallet → Purchase</div>
+                  </div>
+                  <div style="text-align: right;">
+                    <div style="font-weight: 700; color: #1565c0;">$${balances.investment.toFixed(2)}</div>
+                    <div style="font-size: 0.75rem; color: #666;">Available to transfer</div>
+                  </div>
+                </div>
+              </div>
+              
+              <!-- Option 3: Smart Split -->
+              ${!hasEnoughWallet && hasEnoughTotal && balances.health_wallet > 0 ? `
+              <div onclick="selectPaymentOption('smart_split')" id="pay-option-split" class="payment-option"
+                   style="border: 2px solid #7b1fa2; border-radius: 12px; padding: 16px; margin-bottom: 12px; cursor: pointer; background: linear-gradient(135deg, #f3e5f5 0%, #e1bee7 100%); transition: all 0.2s;">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                  <div>
+                    <div style="font-weight: 600; color: #7b1fa2;">✨ AI Smart Split</div>
+                    <div style="font-size: 0.85rem; color: #666; margin-top: 4px;">
+                      $${balances.health_wallet.toFixed(2)} wallet + $${shortfall.toFixed(2)} from investments
+                    </div>
+                  </div>
+                  <div style="text-align: right;">
+                    <span style="background: #7b1fa2; color: white; padding: 4px 8px; border-radius: 4px; font-size: 0.75rem;">RECOMMENDED</span>
+                  </div>
+                </div>
+              </div>
+              ` : ''}
+              
+              <!-- Option 4: Add Funds -->
+              <div onclick="selectPaymentOption('add_funds')" id="pay-option-add" class="payment-option"
+                   style="border: 2px dashed #667eea; border-radius: 12px; padding: 16px; margin-bottom: 12px; cursor: pointer; transition: all 0.2s;">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                  <div>
+                    <div style="font-weight: 600; color: #667eea;">➕ Add Funds First</div>
+                    <div style="font-size: 0.85rem; color: #666; margin-top: 4px;">Credit Card, Apple Pay, PayPal, Crypto</div>
+                  </div>
+                  <div style="color: #667eea; font-size: 1.5rem;">→</div>
+                </div>
+              </div>
+              
+              <!-- Selected Option Display -->
+              <input type="hidden" id="selected-payment-option" value="${recommendedSource}">
+              
+              <!-- Purchase Button -->
+              <button id="confirm-purchase-btn" onclick="executeSmartPurchase('${productId}', '${productName.replace(/'/g, "\\'")}', ${price}, '${category}')"
+                      style="width: 100%; background: linear-gradient(135deg, #28a745 0%, #20c997 100%); color: white; border: none; padding: 16px; border-radius: 12px; font-size: 1.1rem; font-weight: 700; cursor: pointer; margin-top: 16px; box-shadow: 0 4px 15px rgba(40, 167, 69, 0.3);">
+                ✓ Complete Purchase
+              </button>
+              
+              <!-- Security Notice -->
+              <div style="text-align: center; margin-top: 16px; color: #666; font-size: 0.8rem;">
+                🔒 Secured with 256-bit encryption<br>
+                📜 Transaction recorded on NFT & Transaction Ledgers
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+      
+      document.body.insertAdjacentHTML('beforeend', modalHtml);
+    }
+    
+    function closeSmartPaymentModal() {
+      const modal = document.getElementById('smart-payment-modal');
+      if (modal) modal.remove();
+    }
+    
+    function selectPaymentOption(option) {
+      document.getElementById('selected-payment-option').value = option;
+      
+      // Update UI to show selection
+      document.querySelectorAll('.payment-option').forEach(el => {
+        el.style.borderColor = '#ddd';
+        el.style.background = '';
+      });
+      
+      const selectedEl = {
+        'wallet': 'pay-option-wallet',
+        'transfer_investment': 'pay-option-transfer',
+        'smart_split': 'pay-option-split',
+        'add_funds': 'pay-option-add'
+      }[option];
+      
+      if (selectedEl) {
+        const el = document.getElementById(selectedEl);
+        if (el) {
+          el.style.borderColor = '#28a745';
+          el.style.background = '#e8f5e9';
+        }
+      }
+      
+      // If add_funds selected, open the unified payment modal
+      if (option === 'add_funds') {
+        closeSmartPaymentModal();
+        initPaymentModal();
+        if (unifiedPayment) {
+          unifiedPayment.open({ destination: 'health_wallet' });
+        } else {
+          addFundsToWallet();
+        }
+      }
+    }
+    
+    // Execute smart purchase based on selected option
+    async function executeSmartPurchase(productId, productName, price, category) {
+      const option = document.getElementById('selected-payment-option').value;
+      const cid = customerId || sessionStorage.getItem('customer_id') || 'CUST001';
+      
+      closeSmartPaymentModal();
+      showNotification('🔄 Processing payment...', 'info');
+      
+      try {
+        // Handle different payment options
+        if (option === 'transfer_investment' || option === 'smart_split') {
+          // First transfer funds from investment to wallet
+          const transferAmount = option === 'smart_split' ? (price - walletBalance) : price;
+          
+          // Transfer from investment to health wallet
+          const transferResponse = await fetch('/api/unified-payment/deposit', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              customer_id: cid,
+              amount: transferAmount,
+              destination: 'health_wallet',
+              payment_method: 'internal_transfer',
+              source_account: 'investment'
+            })
+          });
+          
+          const transferResult = await transferResponse.json();
+          if (!transferResult.success) {
+            throw new Error(transferResult.error || 'Transfer failed');
+          }
+          
+          // Update local wallet balance
+          walletBalance = transferResult.destination_new_balance || (walletBalance + transferAmount);
+          showNotification(`✓ Transferred $${transferAmount.toFixed(2)} from investments`, 'success');
+        }
+        
+        // Now make the purchase from wallet
+        const purchaseResponse = await fetch('/api/health-wallet/purchase', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
+          body: JSON.stringify({
+            customer_id: cid,
+            product_id: productId,
+            product_name: productName,
+            amount: price,
+            category: category,
+            provider: 'PHINS Marketplace'
+          })
+        });
+        
+        const purchaseResult = await purchaseResponse.json();
+        
+        if (purchaseResult.success) {
+          walletBalance = purchaseResult.new_balance;
+          updateWalletDisplay();
+          
+          // Show success notification
+          showNotification(`✅ Purchased ${productName} for $${price.toFixed(2)}!\n🔗 NFT: ${purchaseResult.nft_token_id?.substring(0, 12)}...`, 'success');
+          
+          // Refresh data
+          loadPurchaseHistory();
+          loadCustomerNFTs();
+          loadBillingDetails();
+        } else {
+          throw new Error(purchaseResult.error || 'Purchase failed');
+        }
+        
+      } catch (err) {
+        showNotification(`❌ ${err.message}`, 'error');
+      }
+    }
+    
+    // Legacy function for backwards compatibility
+    async function purchaseProductLegacy(productId, productName, price, category = 'general', productDetails = {}) {
       if (price > walletBalance) {
         const shortfall = price - walletBalance;
         if (confirm(`Insufficient balance! You need $${shortfall.toFixed(2)} more.\n\nWould you like to add funds to your wallet?`)) {
@@ -1522,8 +1894,8 @@
       }
       
       try {
-        // Use marketplace API
-        const response = await fetch('/api/marketplace/product/purchase', {
+        // Use direct health wallet purchase API
+        const response = await fetch('/api/health-wallet/purchase', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -1532,61 +1904,27 @@
           body: JSON.stringify({
             customer_id: customerId || sessionStorage.getItem('customer_id') || '',
             product_id: productId,
-            product_details: {
-              ...productDetails,
-              name: productName,
-              price: price,
-              category: category,
-              insurance_coverage_pct: productDetails.insurance_coverage_pct || 0
-            },
-            quantity: 1
+            product_name: productName,
+            amount: price,
+            category: category,
+            provider: productDetails.provider || 'PHINS Marketplace'
           })
         });
         
         const result = await response.json();
         
         if (result.success) {
-          // Update local balance
-          walletBalance = result.payment_breakdown?.new_wallet_balance || (walletBalance - price);
+          walletBalance = result.new_balance;
           updateWalletDisplay();
           
-          // Show success with NFT info
-          const notification = document.createElement('div');
-          notification.style.cssText = 'position:fixed;top:80px;right:20px;background:linear-gradient(135deg, #28a745 0%, #20c997 100%);color:#fff;padding:20px 28px;border-radius:12px;box-shadow:0 4px 20px rgba(0,0,0,0.25);z-index:1000;font-weight:600;max-width:350px;';
-          notification.innerHTML = `
-            <div style="font-size: 20px; margin-bottom: 10px;">✅ Purchase Complete!</div>
-            <div style="font-size: 15px; opacity: 0.95;">${productName}</div>
-            <div style="font-size: 15px; opacity: 0.95;">Amount: $${price.toFixed(2)}</div>
-            ${result.payment_breakdown?.insurance_covered > 0 ? `<div style="font-size: 13px; opacity: 0.85; margin-top: 4px;">Insurance covered: $${result.payment_breakdown.insurance_covered.toFixed(2)}</div>` : ''}
-            <div style="font-size: 13px; opacity: 0.85; margin-top: 8px;">New Balance: $${walletBalance.toFixed(2)}</div>
-            <div style="font-size: 11px; opacity: 0.7; margin-top: 10px; padding-top: 10px; border-top: 1px solid rgba(255,255,255,0.3);">
-              🔗 NFT Token: ${result.nft_token?.token_id || 'Generated'}
-            </div>
-          `;
-          document.body.appendChild(notification);
-          setTimeout(() => notification.remove(), 6000);
-          
-          // Refresh transaction history
-          loadTransactionHistory();
+          showNotification(`✅ Purchased ${productName}!\nNFT: ${result.nft_token_id?.substring(0, 12)}...`, 'success');
+          loadPurchaseHistory();
           loadCustomerNFTs();
         } else {
           throw new Error(result.error || 'Purchase failed');
         }
       } catch (err) {
-        // Fallback to local processing for demo
-        walletBalance -= price;
-        updateWalletDisplay();
-        
-        const notification = document.createElement('div');
-        notification.style.cssText = 'position:fixed;top:80px;right:20px;background:#28a745;color:#fff;padding:16px 24px;border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,0.2);z-index:1000;font-weight:600;max-width:300px;';
-        notification.innerHTML = `
-          <div style="font-size: 18px; margin-bottom: 8px;">✅ Purchase Complete!</div>
-          <div style="font-size: 14px; opacity: 0.9;">${productName}</div>
-          <div style="font-size: 14px; opacity: 0.9;">Amount: $${price.toFixed(2)}</div>
-          <div style="font-size: 12px; opacity: 0.8; margin-top: 8px;">New Balance: $${walletBalance.toFixed(2)}</div>
-        `;
-        document.body.appendChild(notification);
-        setTimeout(() => notification.remove(), 5000);
+        showNotification(`❌ ${err.message}`, 'error');
       }
     }
     
@@ -1703,6 +2041,164 @@
       // Also update action button
       const actionInvestment = document.getElementById('action-investment-value');
       if (actionInvestment) actionInvestment.textContent = `$${value.toFixed(2)}`;
+    }
+    
+    // Update all balance displays on the health wallet section
+    function updateAllBalancesDisplay() {
+      // Update balance cards in health wallet section
+      const walletEl = document.getElementById('balance-wallet');
+      const investEl = document.getElementById('balance-investment');
+      const algoEl = document.getElementById('balance-algo');
+      const totalEl = document.getElementById('total-deposits-display');
+      
+      if (walletEl) walletEl.textContent = `$${allBalances.wallet.toFixed(2)}`;
+      if (investEl) investEl.textContent = `$${allBalances.investment.toFixed(2)}`;
+      if (algoEl) algoEl.textContent = `$${allBalances.algo.toFixed(2)}`;
+      if (totalEl) totalEl.textContent = `$${allBalances.total.toFixed(2)}`;
+      
+      // Update investment display too
+      updateInvestmentDisplay(allBalances.investment);
+    }
+    
+    // Show transfer modal for moving funds between accounts
+    function showTransferModal() {
+      const modalHtml = `
+        <div id="transfer-modal" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 3000; display: flex; justify-content: center; align-items: center; padding: 20px; box-sizing: border-box;">
+          <div style="background: white; border-radius: 20px; max-width: 450px; width: 100%; max-height: 90vh; overflow-y: auto; box-shadow: 0 20px 60px rgba(0,0,0,0.3);">
+            
+            <!-- Header -->
+            <div style="background: linear-gradient(135deg, #7b1fa2 0%, #9c27b0 100%); color: white; padding: 24px; border-radius: 20px 20px 0 0;">
+              <div style="display: flex; justify-content: space-between; align-items: center;">
+                <h2 style="margin: 0; font-size: 1.4rem;">🔄 Transfer Funds</h2>
+                <button onclick="closeTransferModal()" style="background: rgba(255,255,255,0.2); border: none; color: white; width: 36px; height: 36px; border-radius: 50%; font-size: 20px; cursor: pointer;">×</button>
+              </div>
+              <p style="margin: 8px 0 0 0; opacity: 0.9; font-size: 0.9rem;">Move funds between your accounts instantly</p>
+            </div>
+            
+            <!-- Transfer Form -->
+            <div style="padding: 24px;">
+              <!-- From Account -->
+              <div style="margin-bottom: 20px;">
+                <label style="display: block; font-weight: 600; margin-bottom: 8px; color: #333;">From Account</label>
+                <select id="transfer-from" onchange="updateTransferAvailable()" style="width: 100%; padding: 14px; border: 1px solid #ddd; border-radius: 10px; font-size: 1rem;">
+                  <option value="investment">📈 Investment Account ($${allBalances.investment.toFixed(2)})</option>
+                  <option value="algo_trading">🤖 Algo Trading ($${allBalances.algo.toFixed(2)})</option>
+                  <option value="health_wallet">💊 Health Wallet ($${allBalances.wallet.toFixed(2)})</option>
+                </select>
+              </div>
+              
+              <!-- To Account -->
+              <div style="margin-bottom: 20px;">
+                <label style="display: block; font-weight: 600; margin-bottom: 8px; color: #333;">To Account</label>
+                <select id="transfer-to" style="width: 100%; padding: 14px; border: 1px solid #ddd; border-radius: 10px; font-size: 1rem;">
+                  <option value="health_wallet">💊 Health Wallet</option>
+                  <option value="investment">📈 Investment Account</option>
+                  <option value="algo_trading">🤖 Algo Trading</option>
+                </select>
+              </div>
+              
+              <!-- Amount -->
+              <div style="margin-bottom: 20px;">
+                <label style="display: block; font-weight: 600; margin-bottom: 8px; color: #333;">Amount</label>
+                <div style="position: relative;">
+                  <span style="position: absolute; left: 14px; top: 50%; transform: translateY(-50%); color: #666; font-size: 1.2rem;">$</span>
+                  <input type="number" id="transfer-amount" placeholder="0.00" min="1" step="0.01"
+                         style="width: 100%; padding: 14px 14px 14px 36px; border: 1px solid #ddd; border-radius: 10px; font-size: 1.2rem; box-sizing: border-box;">
+                </div>
+                <div style="display: flex; gap: 8px; margin-top: 10px;">
+                  <button onclick="setTransferAmount(50)" style="flex: 1; padding: 10px; background: #f5f5f5; border: 1px solid #ddd; border-radius: 6px; cursor: pointer; font-weight: 600;">$50</button>
+                  <button onclick="setTransferAmount(100)" style="flex: 1; padding: 10px; background: #f5f5f5; border: 1px solid #ddd; border-radius: 6px; cursor: pointer; font-weight: 600;">$100</button>
+                  <button onclick="setTransferAmount(250)" style="flex: 1; padding: 10px; background: #f5f5f5; border: 1px solid #ddd; border-radius: 6px; cursor: pointer; font-weight: 600;">$250</button>
+                  <button onclick="setTransferMax()" style="flex: 1; padding: 10px; background: #e3f2fd; border: 1px solid #1565c0; border-radius: 6px; cursor: pointer; font-weight: 600; color: #1565c0;">MAX</button>
+                </div>
+              </div>
+              
+              <!-- Transfer Button -->
+              <button onclick="executeTransfer()" 
+                      style="width: 100%; background: linear-gradient(135deg, #7b1fa2 0%, #9c27b0 100%); color: white; border: none; padding: 16px; border-radius: 12px; font-size: 1.1rem; font-weight: 700; cursor: pointer; box-shadow: 0 4px 15px rgba(123, 31, 162, 0.3);">
+                🔄 Transfer Funds
+              </button>
+              
+              <p style="text-align: center; margin-top: 16px; color: #666; font-size: 0.8rem;">
+                🔒 Instant transfer • No fees • NFT record created
+              </p>
+            </div>
+          </div>
+        </div>
+      `;
+      
+      document.body.insertAdjacentHTML('beforeend', modalHtml);
+    }
+    
+    function closeTransferModal() {
+      const modal = document.getElementById('transfer-modal');
+      if (modal) modal.remove();
+    }
+    
+    function setTransferAmount(amount) {
+      document.getElementById('transfer-amount').value = amount;
+    }
+    
+    function setTransferMax() {
+      const from = document.getElementById('transfer-from').value;
+      let max = 0;
+      if (from === 'investment') max = allBalances.investment;
+      else if (from === 'algo_trading') max = allBalances.algo;
+      else if (from === 'health_wallet') max = allBalances.wallet;
+      document.getElementById('transfer-amount').value = max.toFixed(2);
+    }
+    
+    function updateTransferAvailable() {
+      // Update display when source changes
+    }
+    
+    async function executeTransfer() {
+      const from = document.getElementById('transfer-from').value;
+      const to = document.getElementById('transfer-to').value;
+      const amount = parseFloat(document.getElementById('transfer-amount').value);
+      const cid = customerId || sessionStorage.getItem('customer_id') || 'CUST001';
+      
+      if (!amount || amount <= 0) {
+        showNotification('Please enter a valid amount', 'error');
+        return;
+      }
+      
+      if (from === to) {
+        showNotification('Source and destination must be different', 'error');
+        return;
+      }
+      
+      closeTransferModal();
+      showNotification('🔄 Processing transfer...', 'info');
+      
+      try {
+        const response = await fetch('/api/unified-payment/deposit', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            customer_id: cid,
+            amount: amount,
+            destination: to,
+            payment_method: 'internal_transfer',
+            source_account: from
+          })
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+          showNotification(`✅ Transferred $${amount.toFixed(2)} successfully!\n🔗 NFT: ${result.nft_token_id?.substring(0, 12)}...`, 'success');
+          
+          // Refresh all balances
+          await loadWalletBalance();
+          loadBillingDetails();
+          loadCustomerNFTs();
+        } else {
+          throw new Error(result.error || 'Transfer failed');
+        }
+      } catch (err) {
+        showNotification(`❌ ${err.message}`, 'error');
+      }
     }
     
     function updatePendingClaimsBadge(count) {
