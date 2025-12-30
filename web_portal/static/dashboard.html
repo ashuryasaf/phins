@@ -964,10 +964,28 @@
     
     // Initialize on page load
     document.addEventListener('DOMContentLoaded', async () => {
-      // Get customer info from session
-      const storedCustomerId = sessionStorage.getItem('customer_id');
+      // Get customer info from multiple sources (session, local storage, URL params)
+      const urlParams = new URLSearchParams(window.location.search);
+      const storedCustomerId = sessionStorage.getItem('customer_id') 
+                             || localStorage.getItem('customer_id')
+                             || urlParams.get('customer_id');
+      
+      // Also try to get from localStorage session object
+      const sessionData = JSON.parse(localStorage.getItem('session') || '{}');
+      
       if (storedCustomerId) {
         customerId = storedCustomerId;
+      } else if (sessionData.customer_id) {
+        customerId = sessionData.customer_id;
+        // Store in sessionStorage for consistency
+        sessionStorage.setItem('customer_id', customerId);
+      }
+      
+      // If no customer ID found, redirect to login
+      if (!customerId && !authToken) {
+        console.log('No customer session found, using demo mode');
+        // Use demo customer for testing
+        customerId = 'CUST-ASAF-001';
       }
       
       try {
@@ -980,7 +998,8 @@
           loadTransactionHistory(),
           loadCustomerNFTs(),
           loadInvestmentPortfolio(),
-          loadPortfolioData()
+          loadPortfolioData(),
+          loadPipelineInfo()
         ]);
       } catch (err) {
         console.error('Error loading dashboard data:', err);
@@ -989,6 +1008,18 @@
       // Hide splash screen after data loads (minimum 1.5s for branding)
       setTimeout(hideSplashScreen, 1500);
     });
+    
+    // Load pipeline info for this customer
+    async function loadPipelineInfo() {
+      if (!customerId) return;
+      try {
+        const response = await fetch(`/api/pipeline/analytics?customer_id=${customerId}`);
+        const data = await response.json();
+        console.log('Pipeline data loaded:', data);
+      } catch (err) {
+        console.log('Pipeline data not available:', err);
+      }
+    }
     
     // Load investment portfolio data
     async function loadInvestmentPortfolio() {

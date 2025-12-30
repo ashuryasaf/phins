@@ -342,7 +342,12 @@ def _init_savings_pipeline():
             portfolio_service=portfolio_service,
             algo_trading_service=algo_trading_service,
             record_transaction_func=record_transaction,
-            generate_nft_token_func=generate_nft_token
+            generate_nft_token_func=generate_nft_token,
+            # Pass global data stores for proper persistence
+            health_wallets=HEALTH_WALLETS,
+            investment_accounts=INVESTMENT_ACCOUNTS,
+            transaction_ledger=TRANSACTION_LEDGER,
+            nft_ledger=NFT_LEDGER
         )
         savings_pipeline_enabled = True
         print("✓ Savings Pipeline service enabled (AI-powered fund allocation)")
@@ -1138,6 +1143,13 @@ For claims or questions, please contact:
         parsed = urlparse.urlparse(self.path)
         path = parsed.path
         qs = urlparse.parse_qs(parsed.query)
+        
+        # Redirect deprecated client-portal.html to main dashboard
+        if path == '/client-portal.html':
+            self.send_response(301)
+            self.send_header('Location', '/dashboard.html')
+            self.end_headers()
+            return
         
         # Validate query parameters for injection attacks
         for key, values in qs.items():
@@ -3377,6 +3389,133 @@ For claims or questions, please contact:
             return
         
         # ========== END SAVINGS PIPELINE GET API ==========
+        
+        # ========== COMPREHENSIVE CUSTOMER API ==========
+        # Get all customer data in one API call for dashboard
+        if path == '/api/customer/dashboard-data':
+            customer_id = qs.get('customer_id', [''])[0]
+            
+            if not customer_id:
+                # Try to get from session
+                if session:
+                    customer_id = session.get('customer_id')
+            
+            if not customer_id:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'customer_id required'}).encode('utf-8'))
+                return
+            
+            # Gather all customer data
+            result = {
+                'customer_id': customer_id,
+                'timestamp': datetime.now().isoformat()
+            }
+            
+            # 1. Customer profile
+            customer = CUSTOMERS.get(customer_id, {})
+            result['profile'] = {
+                'name': customer.get('name', 'Customer'),
+                'email': customer.get('email'),
+                'phone': customer.get('phone'),
+                'created_at': customer.get('created_at')
+            }
+            
+            # 2. Policies
+            customer_policies = [p for p in POLICIES.values() if p.get('customer_id') == customer_id]
+            result['policies'] = {
+                'items': customer_policies,
+                'count': len(customer_policies),
+                'total_coverage': sum(float(p.get('coverage_amount', 0)) for p in customer_policies),
+                'total_premium': sum(float(p.get('monthly_premium', 0)) for p in customer_policies)
+            }
+            
+            # 3. Claims
+            customer_claims = [c for c in CLAIMS.values() if c.get('customer_id') == customer_id]
+            result['claims'] = {
+                'items': customer_claims,
+                'count': len(customer_claims),
+                'pending': len([c for c in customer_claims if c.get('status', '').lower() in ['pending', 'under review']])
+            }
+            
+            # 4. Health wallet
+            wallet = HEALTH_WALLETS.get(customer_id, {'balance': 0, 'transactions': []})
+            result['health_wallet'] = {
+                'balance': wallet.get('balance', 0),
+                'monthly_deposit': wallet.get('monthly_deposit', 0),
+                'transactions_count': len(wallet.get('transactions', []))
+            }
+            
+            # 5. Investment account
+            inv_acc = INVESTMENT_ACCOUNTS.get(customer_id, {})
+            result['investment_account'] = {
+                'balance': inv_acc.get('balance', 0),
+                'index_balance': inv_acc.get('index_balance', 0),
+                'bonds_balance': inv_acc.get('bonds_balance', 0),
+                'crypto_balance': inv_acc.get('crypto_balance', 0),
+                'deposits_count': len(inv_acc.get('deposits', []))
+            }
+            
+            # 6. Algo trading balance
+            if unified_balance_enabled:
+                algo_bal = unified_balance_service.get_algo_trading_balance(customer_id)
+                result['algo_trading'] = {
+                    'available': algo_bal.get('available', 0),
+                    'in_positions': algo_bal.get('in_positions', 0),
+                    'total_pnl': algo_bal.get('total_pnl', 0),
+                    'active_bots': algo_bal.get('active_bots', 0)
+                }
+            
+            # 7. Pipeline account
+            if savings_pipeline_enabled:
+                try:
+                    pipeline_analytics = savings_pipeline_service.get_pipeline_analytics(customer_id)
+                    result['pipeline'] = {
+                        'cash_balance': pipeline_analytics.get('balances', {}).get('cash_balance', 0),
+                        'total_balance': pipeline_analytics.get('balances', {}).get('total_balance', 0),
+                        'health_score': pipeline_analytics.get('pipeline_health', {}).get('score', 0),
+                        'projections': pipeline_analytics.get('projections', {})
+                    }
+                except Exception:
+                    result['pipeline'] = None
+            
+            # 8. NFT tokens count
+            nft_count = len([nft for nft in NFT_LEDGER.values() if nft.get('owner_id') == customer_id])
+            result['nft_tokens_count'] = nft_count
+            
+            # 9. Transaction count
+            tx_count = len([tx for tx in TRANSACTION_LEDGER.values() if tx.get('customer_id') == customer_id])
+            result['transactions_count'] = tx_count
+            
+            # 10. Total assets
+            total_assets = (
+                wallet.get('balance', 0) +
+                inv_acc.get('balance', 0) +
+                result.get('algo_trading', {}).get('available', 0) +
+                result.get('algo_trading', {}).get('in_positions', 0)
+            )
+            result['total_assets'] = total_assets
+            
+            # 11. Billing summary
+            customer_bills = [b for b in BILLING.values() if b.get('customer_id') == customer_id]
+            outstanding = sum(
+                (b.get('amount', b.get('amount_due', 0)) - b.get('amount_paid', 0))
+                for b in customer_bills
+                if b.get('status') in ['outstanding', 'pending', 'partial']
+            )
+            result['billing'] = {
+                'outstanding_amount': outstanding,
+                'bills_count': len(customer_bills),
+                'next_due': min(
+                    (b.get('due_date') for b in customer_bills if b.get('status') in ['outstanding', 'pending']),
+                    default=None
+                )
+            }
+            
+            self._set_json_headers()
+            self.wfile.write(json.dumps(result, default=str).encode('utf-8'))
+            return
+        
+        # ========== END COMPREHENSIVE CUSTOMER API ==========
 
         # Investment portfolio endpoint (legacy - redirect to new API)
         if path.startswith('/api/investment-portfolio'):

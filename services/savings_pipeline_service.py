@@ -144,6 +144,13 @@ class SavingsPipelineService:
     - Automatic fund distribution
     - BI analytics and projections
     - Real-time pipeline tracking
+    
+    NOTE: This service integrates with global data stores:
+    - HEALTH_WALLETS
+    - INVESTMENT_ACCOUNTS
+    - TRANSACTION_LEDGER
+    - NFT_LEDGER
+    All deposits and allocations are persisted to these stores.
     """
     
     def __init__(self, 
@@ -151,13 +158,23 @@ class SavingsPipelineService:
                  portfolio_service=None,
                  algo_trading_service=None,
                  record_transaction_func=None,
-                 generate_nft_token_func=None):
+                 generate_nft_token_func=None,
+                 health_wallets=None,
+                 investment_accounts=None,
+                 transaction_ledger=None,
+                 nft_ledger=None):
         
         self.unified_balance = unified_balance_service
         self.portfolio_service = portfolio_service
         self.algo_trading = algo_trading_service
         self.record_transaction = record_transaction_func
         self.generate_nft_token = generate_nft_token_func
+        
+        # Direct references to global data stores for proper persistence
+        self.health_wallets = health_wallets or {}
+        self.investment_accounts = investment_accounts or {}
+        self.transaction_ledger = transaction_ledger or {}
+        self.nft_ledger = nft_ledger or {}
         
         # Pipeline accounts
         self.accounts: Dict[str, SavingsPipelineAccount] = {}
@@ -334,80 +351,85 @@ class SavingsPipelineService:
         )
         self.transactions.append(tx)
         
-        # Transfer to actual accounts via unified balance service
+        # Transfer to actual accounts - use direct data stores for reliable persistence
         transfers_executed = []
         
-        if self.unified_balance:
-            # Transfer to health wallet
-            if wallet_amount > 0:
-                try:
-                    # Health wallet is managed directly
-                    if customer_id in self.unified_balance.health_wallets:
-                        self.unified_balance.health_wallets[customer_id]['balance'] += wallet_amount
-                    else:
-                        self.unified_balance.health_wallets[customer_id] = {
-                            'balance': wallet_amount,
-                            'transactions': []
-                        }
-                    self.unified_balance.health_wallets[customer_id]['transactions'].append({
-                        'id': tx.tx_id,
-                        'type': 'pipeline_allocation',
-                        'amount': wallet_amount,
-                        'timestamp': datetime.now().isoformat()
-                    })
-                    transfers_executed.append({'destination': 'wallet', 'amount': wallet_amount})
-                except Exception as e:
-                    print(f"Wallet transfer error: {e}")
-            
-            # Transfer to investment account
-            if investment_amount > 0:
-                try:
-                    if customer_id not in self.unified_balance.investment_accounts:
-                        self.unified_balance.investment_accounts[customer_id] = {
-                            'balance': 0,
-                            'index_balance': 0,
-                            'bonds_balance': 0,
-                            'crypto_balance': 0,
-                            'deposits': []
-                        }
-                    inv_acc = self.unified_balance.investment_accounts[customer_id]
-                    inv_acc['balance'] += investment_amount
-                    inv_acc['index_balance'] = inv_acc.get('index_balance', 0) + index_amount
-                    inv_acc['bonds_balance'] = inv_acc.get('bonds_balance', 0) + bonds_amount
-                    inv_acc['crypto_balance'] = inv_acc.get('crypto_balance', 0) + crypto_amount
-                    inv_acc['deposits'].append({
-                        'id': tx.tx_id,
-                        'type': 'pipeline_allocation',
-                        'amount': investment_amount,
-                        'index': index_amount,
-                        'bonds': bonds_amount,
-                        'crypto': crypto_amount,
-                        'timestamp': datetime.now().isoformat()
-                    })
-                    transfers_executed.append({'destination': 'investment', 'amount': investment_amount})
-                except Exception as e:
-                    print(f"Investment transfer error: {e}")
-            
-            # Transfer to algo trading
-            if algo_amount > 0:
-                try:
-                    if customer_id not in self.unified_balance.algo_trading_balances:
-                        self.unified_balance.algo_trading_balances[customer_id] = {
-                            'available': 0,
-                            'in_positions': 0,
-                            'total_pnl': 0,
-                            'transfers': []
-                        }
-                    self.unified_balance.algo_trading_balances[customer_id]['available'] += algo_amount
-                    self.unified_balance.algo_trading_balances[customer_id]['transfers'].append({
-                        'id': tx.tx_id,
-                        'type': 'pipeline_allocation',
-                        'amount': algo_amount,
-                        'timestamp': datetime.now().isoformat()
-                    })
-                    transfers_executed.append({'destination': 'algo_trading', 'amount': algo_amount})
-                except Exception as e:
-                    print(f"Algo trading transfer error: {e}")
+        # Get the appropriate data stores (prefer direct, fallback to unified_balance)
+        wallets = self.health_wallets if self.health_wallets else (self.unified_balance.health_wallets if self.unified_balance else {})
+        investments = self.investment_accounts if self.investment_accounts else (self.unified_balance.investment_accounts if self.unified_balance else {})
+        algo_balances = self.unified_balance.algo_trading_balances if self.unified_balance else {}
+        
+        # Transfer to health wallet
+        if wallet_amount > 0 and wallets is not None:
+            try:
+                if customer_id in wallets:
+                    wallets[customer_id]['balance'] = wallets[customer_id].get('balance', 0) + wallet_amount
+                else:
+                    wallets[customer_id] = {
+                        'balance': wallet_amount,
+                        'transactions': [],
+                        'monthly_deposit': 0
+                    }
+                wallets[customer_id].setdefault('transactions', []).append({
+                    'id': tx.tx_id,
+                    'type': 'pipeline_allocation',
+                    'amount': wallet_amount,
+                    'timestamp': datetime.now().isoformat()
+                })
+                transfers_executed.append({'destination': 'wallet', 'amount': wallet_amount, 'persisted': True})
+            except Exception as e:
+                print(f"Wallet transfer error: {e}")
+        
+        # Transfer to investment account
+        if investment_amount > 0 and investments is not None:
+            try:
+                if customer_id not in investments:
+                    investments[customer_id] = {
+                        'balance': 0,
+                        'index_balance': 0,
+                        'bonds_balance': 0,
+                        'crypto_balance': 0,
+                        'deposits': [],
+                        'created_at': datetime.now().isoformat()
+                    }
+                inv_acc = investments[customer_id]
+                inv_acc['balance'] = inv_acc.get('balance', 0) + investment_amount
+                inv_acc['index_balance'] = inv_acc.get('index_balance', 0) + index_amount
+                inv_acc['bonds_balance'] = inv_acc.get('bonds_balance', 0) + bonds_amount
+                inv_acc['crypto_balance'] = inv_acc.get('crypto_balance', 0) + crypto_amount
+                inv_acc.setdefault('deposits', []).append({
+                    'id': tx.tx_id,
+                    'type': 'pipeline_allocation',
+                    'amount': investment_amount,
+                    'index': index_amount,
+                    'bonds': bonds_amount,
+                    'crypto': crypto_amount,
+                    'timestamp': datetime.now().isoformat()
+                })
+                transfers_executed.append({'destination': 'investment', 'amount': investment_amount, 'persisted': True})
+            except Exception as e:
+                print(f"Investment transfer error: {e}")
+        
+        # Transfer to algo trading
+        if algo_amount > 0 and algo_balances is not None:
+            try:
+                if customer_id not in algo_balances:
+                    algo_balances[customer_id] = {
+                        'available': 0,
+                        'in_positions': 0,
+                        'total_pnl': 0,
+                        'transfers': []
+                    }
+                algo_balances[customer_id]['available'] = algo_balances[customer_id].get('available', 0) + algo_amount
+                algo_balances[customer_id].setdefault('transfers', []).append({
+                    'id': tx.tx_id,
+                    'type': 'pipeline_allocation',
+                    'amount': algo_amount,
+                    'timestamp': datetime.now().isoformat()
+                })
+                transfers_executed.append({'destination': 'algo_trading', 'amount': algo_amount, 'persisted': True})
+            except Exception as e:
+                print(f"Algo trading transfer error: {e}")
         
         # Record on ledger
         if self.record_transaction:
@@ -837,7 +859,11 @@ def init_savings_pipeline_service(unified_balance_service=None,
                                     portfolio_service=None,
                                     algo_trading_service=None,
                                     record_transaction_func=None,
-                                    generate_nft_token_func=None) -> SavingsPipelineService:
+                                    generate_nft_token_func=None,
+                                    health_wallets=None,
+                                    investment_accounts=None,
+                                    transaction_ledger=None,
+                                    nft_ledger=None) -> SavingsPipelineService:
     """Initialize the savings pipeline service with all dependencies."""
     global _savings_pipeline_service
     _savings_pipeline_service = SavingsPipelineService(
@@ -845,6 +871,10 @@ def init_savings_pipeline_service(unified_balance_service=None,
         portfolio_service=portfolio_service,
         algo_trading_service=algo_trading_service,
         record_transaction_func=record_transaction_func,
-        generate_nft_token_func=generate_nft_token_func
+        generate_nft_token_func=generate_nft_token_func,
+        health_wallets=health_wallets,
+        investment_accounts=investment_accounts,
+        transaction_ledger=transaction_ledger,
+        nft_ledger=nft_ledger
     )
     return _savings_pipeline_service
