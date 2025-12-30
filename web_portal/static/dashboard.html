@@ -411,7 +411,7 @@
   <div id="splash-screen">
     <div class="splash-logo">🛡️</div>
     <div class="splash-text">PHINS</div>
-    <div class="splash-tagline">INSURANCE & INVESTMENTS</div>
+    <div class="splash-tagline">SAFE ASSURANCE</div>
     <div class="splash-loader"></div>
   </div>
 
@@ -425,7 +425,6 @@
         <a href="/dashboard.html" class="active">Dashboard</a>
         <a href="/dashboard.html#policies">Policies</a>
         <a href="/savings-portfolio.html">📈 Investments</a>
-        <a href="/algo-trading.html">🤖 Algo Trading</a>
         <a href="/dashboard.html#billing-settings">💳 Billing</a>
         <a href="/dashboard.html#health-wallet">🏥 Wallet</a>
         <a href="/dashboard.html#claims">Claims</a>
@@ -460,17 +459,6 @@
         <div style="font-size: 20px; font-weight: 700; margin-top: 12px;">Investments</div>
         <div style="font-size: 28px; font-weight: 700; margin: 8px 0;" id="action-investment-value">$0.00</div>
         <div style="color: rgba(255,255,255,0.85); font-size: 13px;">Portfolio • Crypto • Stocks • Bonds</div>
-      </a>
-      
-      <!-- Algo Trading Button - NEW -->
-      <a href="/algo-trading.html" class="action-card" style="text-decoration: none; color: inherit; padding: 24px; border-radius: 16px; background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%); color: white; box-shadow: 0 8px 30px rgba(99, 102, 241, 0.25); transition: transform 0.2s, box-shadow 0.2s;" onmouseover="this.style.transform='translateY(-4px)';this.style.boxShadow='0 12px 40px rgba(99, 102, 241, 0.35)';" onmouseout="this.style.transform='';this.style.boxShadow='0 8px 30px rgba(99, 102, 241, 0.25)';">
-        <div style="display: flex; justify-content: space-between; align-items: flex-start;">
-          <div class="stat-icon" style="font-size: 36px;">🤖</div>
-          <span style="background: rgba(255,255,255,0.2); padding: 4px 10px; border-radius: 12px; font-size: 12px;">AI</span>
-        </div>
-        <div style="font-size: 20px; font-weight: 700; margin-top: 12px;">Algo Trading</div>
-        <div style="font-size: 14px; margin: 8px 0; color: rgba(255,255,255,0.9);">Automated Strategies</div>
-        <div style="color: rgba(255,255,255,0.85); font-size: 13px;">Bots • Signals • Auto-Execute</div>
       </a>
       
       <!-- Wallet Button -->
@@ -577,11 +565,6 @@
           <div id="balance-investment" style="font-size: 1.3rem; font-weight: 700; color: #1565c0;">$0.00</div>
           <div style="font-size: 0.7rem; color: #1976d2; margin-top: 4px;">Transfer Available</div>
         </div>
-        <div style="background: white; border-radius: 12px; padding: 14px; text-align: center; box-shadow: 0 2px 8px rgba(0,0,0,0.06);">
-          <div style="font-size: 0.75rem; color: #666; margin-bottom: 4px;">🤖 Algo Trading</div>
-          <div id="balance-algo" style="font-size: 1.3rem; font-weight: 700; color: #7b1fa2;">$0.00</div>
-          <div style="font-size: 0.7rem; color: #9c27b0; margin-top: 4px;">Transfer Available</div>
-        </div>
         <div onclick="addFundsToWallet()" style="background: linear-gradient(135deg, #fff3e0 0%, #ffe0b2 100%); border-radius: 12px; padding: 14px; text-align: center; box-shadow: 0 2px 8px rgba(0,0,0,0.06); cursor: pointer; border: 2px dashed #ff9800; transition: transform 0.2s;" onmouseover="this.style.transform='scale(1.03)'" onmouseout="this.style.transform='scale(1)'">
           <div style="font-size: 0.75rem; color: #e65100; margin-bottom: 4px;">➕ Add Funds</div>
           <div style="font-size: 1.3rem; font-weight: 700; color: #f57c00;">+$</div>
@@ -637,7 +620,6 @@
             <option value="deposit">💰 Deposits</option>
             <option value="medical_purchase">💊 Medical Purchases</option>
             <option value="investment">📈 Investments</option>
-            <option value="algo_trade">🤖 Algo Trading</option>
             <option value="billing">💳 Billing</option>
             <option value="claim">📋 Claims</option>
           </select>
@@ -658,10 +640,6 @@
         <div style="background: white; border-radius: 12px; padding: 16px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); border-left: 4px solid #2196f3;">
           <div style="font-size: 0.8rem; color: #546e7a; margin-bottom: 4px;">📈 Investments</div>
           <div id="activity-total-investments" style="font-size: 1.3rem; font-weight: 700; color: #1565c0;">$0.00</div>
-        </div>
-        <div style="background: white; border-radius: 12px; padding: 16px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); border-left: 4px solid #9c27b0;">
-          <div style="font-size: 0.8rem; color: #546e7a; margin-bottom: 4px;">🤖 Algo Trading</div>
-          <div id="activity-total-algo" style="font-size: 1.3rem; font-weight: 700; color: #7b1fa2;">$0.00</div>
         </div>
       </div>
       
@@ -1668,10 +1646,6 @@
                   <div style="font-size: 0.8rem; color: #666;">📈 Investments</div>
                   <div style="font-size: 1.2rem; font-weight: 700; color: ${hasEnoughInvestment ? '#28a745' : '#666'};">$${balances.investment.toFixed(2)}</div>
                 </div>
-                <div style="background: #f5f5f5; padding: 12px; border-radius: 8px; text-align: center;">
-                  <div style="font-size: 0.8rem; color: #666;">🤖 Algo Trading</div>
-                  <div style="font-size: 1.2rem; font-weight: 700;">$${balances.algo_trading.toFixed(2)}</div>
-                </div>
                 <div style="background: linear-gradient(135deg, #e8f5e9 0%, #c8e6c9 100%); padding: 12px; border-radius: 8px; text-align: center;">
                   <div style="font-size: 0.8rem; color: #2e7d32;">💰 Total Deposits</div>
                   <div style="font-size: 1.2rem; font-weight: 700; color: #2e7d32;">$${balances.total.toFixed(2)}</div>
@@ -1973,16 +1947,6 @@
       }
     }
     
-    // Add funds to algo trading
-    function addFundsToAlgoTrading() {
-      initPaymentModal();
-      if (unifiedPayment) {
-        unifiedPayment.open({ destination: 'algo_trading' });
-      } else {
-        alert('Algo trading deposits available through unified payment modal.');
-      }
-    }
-    
     // Fallback method for deposit
     async function addFundsToWalletFallback() {
       const amount = prompt('Enter amount to add to your Health Wallet (min $1, max $100,000):', '1000');
@@ -2048,12 +2012,10 @@
       // Update balance cards in health wallet section
       const walletEl = document.getElementById('balance-wallet');
       const investEl = document.getElementById('balance-investment');
-      const algoEl = document.getElementById('balance-algo');
       const totalEl = document.getElementById('total-deposits-display');
       
       if (walletEl) walletEl.textContent = `$${allBalances.wallet.toFixed(2)}`;
       if (investEl) investEl.textContent = `$${allBalances.investment.toFixed(2)}`;
-      if (algoEl) algoEl.textContent = `$${allBalances.algo.toFixed(2)}`;
       if (totalEl) totalEl.textContent = `$${allBalances.total.toFixed(2)}`;
       
       // Update investment display too
@@ -2082,7 +2044,6 @@
                 <label style="display: block; font-weight: 600; margin-bottom: 8px; color: #333;">From Account</label>
                 <select id="transfer-from" onchange="updateTransferAvailable()" style="width: 100%; padding: 14px; border: 1px solid #ddd; border-radius: 10px; font-size: 1rem;">
                   <option value="investment">📈 Investment Account ($${allBalances.investment.toFixed(2)})</option>
-                  <option value="algo_trading">🤖 Algo Trading ($${allBalances.algo.toFixed(2)})</option>
                   <option value="health_wallet">💊 Health Wallet ($${allBalances.wallet.toFixed(2)})</option>
                 </select>
               </div>
@@ -2093,7 +2054,6 @@
                 <select id="transfer-to" style="width: 100%; padding: 14px; border: 1px solid #ddd; border-radius: 10px; font-size: 1rem;">
                   <option value="health_wallet">💊 Health Wallet</option>
                   <option value="investment">📈 Investment Account</option>
-                  <option value="algo_trading">🤖 Algo Trading</option>
                 </select>
               </div>
               
@@ -2143,7 +2103,6 @@
       const from = document.getElementById('transfer-from').value;
       let max = 0;
       if (from === 'investment') max = allBalances.investment;
-      else if (from === 'algo_trading') max = allBalances.algo;
       else if (from === 'health_wallet') max = allBalances.wallet;
       document.getElementById('transfer-amount').value = max.toFixed(2);
     }
@@ -2388,7 +2347,6 @@
       document.getElementById('activity-total-deposits').textContent = `$${Number(summary.total_deposits || 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
       document.getElementById('activity-total-medical').textContent = `$${Number(summary.total_medical_purchases || 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
       document.getElementById('activity-total-investments').textContent = `$${Number(summary.total_investments || 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
-      document.getElementById('activity-total-algo').textContent = `$${Number(summary.total_algo_trading || 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
     }
     
     function renderActivityLog(activities) {
