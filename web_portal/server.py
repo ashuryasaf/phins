@@ -6330,6 +6330,467 @@ For claims or questions, please contact:
                 return
         # ========== END PAYMENT GATEWAY API ==========
         
+        # ========== UNIFIED BILLING & DEPOSIT API ==========
+        # Versatile payment system supporting all deposit destinations and payment methods
+        
+        if path == '/api/unified-payment/deposit':
+            try:
+                data = json.loads(body)
+                customer_id = data.get('customer_id')
+                amount = float(data.get('amount', 0))
+                destination = data.get('destination', 'health_wallet')  # health_wallet, investment, algo_trading
+                payment_method = data.get('payment_method', 'credit_card')  # credit_card, apple_pay, paypal, crypto, internal_transfer
+                source_account = data.get('source_account')  # For internal transfers: health_wallet, investment, algo_trading
+                currency = data.get('currency', 'USD')
+                description = data.get('description', '')
+                
+                # Validation
+                if not customer_id:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'customer_id required'}).encode('utf-8'))
+                    return
+                
+                if amount < 1 or amount > 1000000:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'Amount must be between $1 and $1,000,000'}).encode('utf-8'))
+                    return
+                
+                valid_destinations = ['health_wallet', 'investment', 'algo_trading', 'savings', 'premium']
+                if destination not in valid_destinations:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': f'Invalid destination. Must be one of: {valid_destinations}'}).encode('utf-8'))
+                    return
+                
+                valid_methods = ['credit_card', 'debit_card', 'apple_pay', 'google_pay', 'paypal', 'crypto_btc', 'crypto_eth', 'crypto_usdc', 'bank_transfer', 'internal_transfer']
+                if payment_method not in valid_methods:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': f'Invalid payment method. Must be one of: {valid_methods}'}).encode('utf-8'))
+                    return
+                
+                # Initialize result
+                payment_result = {
+                    'success': False,
+                    'transaction_id': f"UNIFIED-{datetime.now().strftime('%Y%m%d%H%M%S')}-{random.randint(10000, 99999)}",
+                    'amount': amount,
+                    'destination': destination,
+                    'payment_method': payment_method,
+                    'customer_id': customer_id
+                }
+                
+                # Process based on payment method
+                if payment_method == 'internal_transfer':
+                    # Internal transfer between accounts
+                    if not source_account:
+                        self._set_json_headers(400)
+                        self.wfile.write(json.dumps({'error': 'source_account required for internal transfer'}).encode('utf-8'))
+                        return
+                    
+                    if source_account == destination:
+                        self._set_json_headers(400)
+                        self.wfile.write(json.dumps({'error': 'Source and destination cannot be the same'}).encode('utf-8'))
+                        return
+                    
+                    # Get source balance
+                    source_balance = 0
+                    if source_account == 'health_wallet':
+                        wallet = HEALTH_WALLETS.get(customer_id, {})
+                        source_balance = wallet.get('balance', 0)
+                    elif source_account == 'investment':
+                        inv_acc = INVESTMENT_ACCOUNTS.get(customer_id, {})
+                        source_balance = inv_acc.get('balance', 0)
+                    elif source_account == 'algo_trading':
+                        if unified_balance_enabled:
+                            algo_bal = unified_balance_service.get_algo_trading_balance(customer_id)
+                            source_balance = algo_bal.get('available', 0)
+                    
+                    if source_balance < amount:
+                        self._set_json_headers(400)
+                        self.wfile.write(json.dumps({
+                            'error': 'Insufficient funds',
+                            'source_balance': source_balance,
+                            'required': amount
+                        }).encode('utf-8'))
+                        return
+                    
+                    # Deduct from source
+                    if source_account == 'health_wallet':
+                        HEALTH_WALLETS[customer_id]['balance'] -= amount
+                    elif source_account == 'investment':
+                        INVESTMENT_ACCOUNTS[customer_id]['balance'] -= amount
+                    elif source_account == 'algo_trading' and unified_balance_enabled:
+                        unified_balance_service.withdraw_from_algo_trading(customer_id, amount, destination)
+                    
+                    payment_result['source_account'] = source_account
+                    payment_result['source_new_balance'] = source_balance - amount
+                    payment_result['gateway'] = 'internal'
+                    payment_result['success'] = True
+                    
+                elif payment_method.startswith('crypto_'):
+                    # Crypto payment
+                    crypto_symbol = payment_method.replace('crypto_', '').upper()
+                    if payment_gateway_enabled:
+                        gateway_result = payment_gateway.crypto.create_payment_request(
+                            amount_usd=amount,
+                            crypto_symbol=crypto_symbol,
+                            customer_id=customer_id,
+                            policy_id=data.get('policy_id')
+                        )
+                        payment_result['gateway'] = 'crypto'
+                        payment_result['crypto_symbol'] = crypto_symbol
+                        payment_result['crypto_address'] = gateway_result.details.get('wallet_address')
+                        payment_result['crypto_amount'] = gateway_result.details.get('crypto_amount')
+                        payment_result['success'] = True
+                        payment_result['status'] = 'pending_confirmation'
+                    else:
+                        payment_result['gateway'] = 'crypto_simulated'
+                        payment_result['success'] = True
+                        
+                elif payment_method == 'paypal':
+                    # PayPal payment
+                    if payment_gateway_enabled:
+                        gateway_result = payment_gateway.paypal.create_order(
+                            amount=amount,
+                            currency=currency,
+                            description=description or f'PHINS {destination} deposit'
+                        )
+                        payment_result['gateway'] = 'paypal'
+                        payment_result['paypal_order_id'] = gateway_result.transaction_id
+                        payment_result['approval_url'] = gateway_result.details.get('approval_url')
+                        payment_result['success'] = True
+                        payment_result['status'] = 'pending_approval'
+                    else:
+                        payment_result['gateway'] = 'paypal_simulated'
+                        payment_result['success'] = True
+                        
+                elif payment_method in ['apple_pay', 'google_pay']:
+                    # Apple Pay / Google Pay
+                    if payment_gateway_enabled:
+                        if payment_method == 'apple_pay':
+                            gateway_result = payment_gateway.stripe.create_apple_pay_session(amount=amount, currency=currency)
+                        else:
+                            gateway_result = payment_gateway.stripe.create_google_pay_session(amount=amount, currency=currency)
+                        payment_result['gateway'] = 'stripe'
+                        payment_result['session_id'] = gateway_result.transaction_id
+                        payment_result['success'] = True
+                        payment_result['status'] = 'pending_authorization'
+                    else:
+                        payment_result['gateway'] = f'{payment_method}_simulated'
+                        payment_result['success'] = True
+                        
+                else:
+                    # Credit/Debit card or bank transfer (process immediately for simulation)
+                    if payment_gateway_enabled:
+                        gateway_result = payment_gateway.process_payment(
+                            method=payment_method,
+                            amount=amount,
+                            currency=currency,
+                            customer_id=customer_id,
+                            policy_id=data.get('policy_id'),
+                            card_token=data.get('card_token'),
+                            payment_token=data.get('payment_token'),
+                            description=description or f'PHINS {destination} deposit'
+                        )
+                        payment_result['gateway'] = gateway_result.gateway
+                        payment_result['success'] = gateway_result.success
+                        payment_result['status'] = gateway_result.status
+                    else:
+                        payment_result['gateway'] = 'simulated'
+                        payment_result['success'] = True
+                        payment_result['status'] = 'completed'
+                
+                # If payment successful (or internal transfer), add funds to destination
+                if payment_result['success'] and (payment_method == 'internal_transfer' or payment_result.get('status') == 'completed'):
+                    new_balance = 0
+                    
+                    if destination == 'health_wallet':
+                        if customer_id not in HEALTH_WALLETS:
+                            HEALTH_WALLETS[customer_id] = {
+                                'customer_id': customer_id,
+                                'balance': 0,
+                                'monthly_deposit': 0,
+                                'transactions': [],
+                                'created_at': datetime.now().isoformat()
+                            }
+                        HEALTH_WALLETS[customer_id]['balance'] += amount
+                        new_balance = HEALTH_WALLETS[customer_id]['balance']
+                        
+                        # Add transaction to wallet history
+                        HEALTH_WALLETS[customer_id]['transactions'].append({
+                            'id': payment_result['transaction_id'],
+                            'type': 'deposit',
+                            'amount': amount,
+                            'payment_method': payment_method,
+                            'source': source_account if payment_method == 'internal_transfer' else 'external',
+                            'balance_after': new_balance,
+                            'timestamp': datetime.now().isoformat()
+                        })
+                        
+                    elif destination == 'investment':
+                        if customer_id not in INVESTMENT_ACCOUNTS:
+                            INVESTMENT_ACCOUNTS[customer_id] = {
+                                'customer_id': customer_id,
+                                'balance': 0,
+                                'index_balance': 0,
+                                'bonds_balance': 0,
+                                'crypto_balance': 0,
+                                'deposits': [],
+                                'created_at': datetime.now().isoformat()
+                            }
+                        INVESTMENT_ACCOUNTS[customer_id]['balance'] += amount
+                        new_balance = INVESTMENT_ACCOUNTS[customer_id]['balance']
+                        
+                        # Add to deposits history
+                        INVESTMENT_ACCOUNTS[customer_id]['deposits'].append({
+                            'id': payment_result['transaction_id'],
+                            'amount': amount,
+                            'payment_method': payment_method,
+                            'source': source_account if payment_method == 'internal_transfer' else 'external',
+                            'timestamp': datetime.now().isoformat()
+                        })
+                        
+                    elif destination == 'algo_trading':
+                        if unified_balance_enabled:
+                            unified_balance_service.transfer_to_algo_trading(
+                                customer_id=customer_id,
+                                amount=amount,
+                                source='external' if payment_method != 'internal_transfer' else source_account
+                            )
+                            algo_bal = unified_balance_service.get_algo_trading_balance(customer_id)
+                            new_balance = algo_bal.get('available', 0)
+                        else:
+                            # Fallback: store in algo_trading_balances dict
+                            if 'algo_trading_balances' not in globals():
+                                global algo_trading_balances
+                                algo_trading_balances = {}
+                            if customer_id not in algo_trading_balances:
+                                algo_trading_balances[customer_id] = 0
+                            algo_trading_balances[customer_id] += amount
+                            new_balance = algo_trading_balances[customer_id]
+                    
+                    payment_result['destination_new_balance'] = new_balance
+                    
+                    # Record on all ledgers
+                    tx_type = 'internal_transfer' if payment_method == 'internal_transfer' else f'{destination}_deposit'
+                    ledger_tx = record_transaction(
+                        customer_id=customer_id,
+                        tx_type=tx_type,
+                        amount=amount,
+                        description=description or f'{destination.replace("_", " ").title()} deposit via {payment_method}',
+                        metadata={
+                            'transaction_id': payment_result['transaction_id'],
+                            'destination': destination,
+                            'payment_method': payment_method,
+                            'source_account': source_account,
+                            'gateway': payment_result.get('gateway'),
+                            'new_balance': new_balance
+                        }
+                    )
+                    payment_result['nft_token_id'] = ledger_tx.get('nft_token_id')
+                    payment_result['ledger_tx_id'] = ledger_tx.get('id')
+                    payment_result['ledger_recorded'] = True
+                
+                self._set_json_headers()
+                self.wfile.write(json.dumps(payment_result, default=str).encode('utf-8'))
+                
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+        
+        # Get available balances for transfer
+        if path == '/api/unified-payment/balances':
+            try:
+                data = json.loads(body) if body else {}
+                customer_id = data.get('customer_id')
+                
+                if not customer_id:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'customer_id required'}).encode('utf-8'))
+                    return
+                
+                # Get all account balances
+                wallet = HEALTH_WALLETS.get(customer_id, {})
+                inv_acc = INVESTMENT_ACCOUNTS.get(customer_id, {})
+                
+                algo_balance = 0
+                if unified_balance_enabled:
+                    algo_bal = unified_balance_service.get_algo_trading_balance(customer_id)
+                    algo_balance = algo_bal.get('available', 0)
+                
+                pipeline_cash = 0
+                if savings_pipeline_enabled:
+                    try:
+                        analytics = savings_pipeline_service.get_pipeline_analytics(customer_id)
+                        pipeline_cash = analytics.get('balances', {}).get('cash_balance', 0)
+                    except:
+                        pass
+                
+                balances = {
+                    'health_wallet': {
+                        'balance': wallet.get('balance', 0),
+                        'name': 'Health Wallet',
+                        'icon': '💊',
+                        'can_deposit': True,
+                        'can_withdraw': True
+                    },
+                    'investment': {
+                        'balance': inv_acc.get('balance', 0),
+                        'index_balance': inv_acc.get('index_balance', 0),
+                        'bonds_balance': inv_acc.get('bonds_balance', 0),
+                        'crypto_balance': inv_acc.get('crypto_balance', 0),
+                        'name': 'Investment Account',
+                        'icon': '📈',
+                        'can_deposit': True,
+                        'can_withdraw': True
+                    },
+                    'algo_trading': {
+                        'balance': algo_balance,
+                        'name': 'Algo Trading',
+                        'icon': '🤖',
+                        'can_deposit': True,
+                        'can_withdraw': True
+                    },
+                    'pipeline_cash': {
+                        'balance': pipeline_cash,
+                        'name': 'Pipeline Cash',
+                        'icon': '💰',
+                        'can_deposit': False,
+                        'can_withdraw': True
+                    }
+                }
+                
+                total_assets = sum(b['balance'] for b in balances.values())
+                
+                self._set_json_headers()
+                self.wfile.write(json.dumps({
+                    'success': True,
+                    'customer_id': customer_id,
+                    'balances': balances,
+                    'total_assets': total_assets,
+                    'payment_methods': [
+                        {'id': 'credit_card', 'name': 'Credit Card', 'icon': '💳', 'enabled': True},
+                        {'id': 'debit_card', 'name': 'Debit Card', 'icon': '💳', 'enabled': True},
+                        {'id': 'apple_pay', 'name': 'Apple Pay', 'icon': '🍎', 'enabled': True},
+                        {'id': 'google_pay', 'name': 'Google Pay', 'icon': '🔵', 'enabled': True},
+                        {'id': 'paypal', 'name': 'PayPal', 'icon': '🅿️', 'enabled': True},
+                        {'id': 'crypto_btc', 'name': 'Bitcoin', 'icon': '₿', 'enabled': True},
+                        {'id': 'crypto_eth', 'name': 'Ethereum', 'icon': 'Ξ', 'enabled': True},
+                        {'id': 'crypto_usdc', 'name': 'USDC', 'icon': '💵', 'enabled': True},
+                        {'id': 'bank_transfer', 'name': 'Bank Transfer', 'icon': '🏦', 'enabled': True},
+                        {'id': 'internal_transfer', 'name': 'Internal Transfer', 'icon': '🔄', 'enabled': True}
+                    ],
+                    'destinations': [
+                        {'id': 'health_wallet', 'name': 'Health Wallet', 'icon': '💊'},
+                        {'id': 'investment', 'name': 'Investment Account', 'icon': '📈'},
+                        {'id': 'algo_trading', 'name': 'Algo Trading', 'icon': '🤖'}
+                    ]
+                }).encode('utf-8'))
+                
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+        
+        # Validate transfer before processing
+        if path == '/api/unified-payment/validate':
+            try:
+                data = json.loads(body)
+                customer_id = data.get('customer_id')
+                amount = float(data.get('amount', 0))
+                destination = data.get('destination')
+                payment_method = data.get('payment_method')
+                source_account = data.get('source_account')
+                
+                validation = {
+                    'valid': True,
+                    'errors': [],
+                    'warnings': []
+                }
+                
+                if not customer_id:
+                    validation['valid'] = False
+                    validation['errors'].append('Customer ID required')
+                
+                if amount <= 0:
+                    validation['valid'] = False
+                    validation['errors'].append('Amount must be positive')
+                
+                if amount > 1000000:
+                    validation['valid'] = False
+                    validation['errors'].append('Amount exceeds maximum ($1,000,000)')
+                
+                if payment_method == 'internal_transfer':
+                    if not source_account:
+                        validation['valid'] = False
+                        validation['errors'].append('Source account required for internal transfer')
+                    elif source_account == destination:
+                        validation['valid'] = False
+                        validation['errors'].append('Source and destination cannot be the same')
+                    else:
+                        # Check balance
+                        source_balance = 0
+                        if source_account == 'health_wallet':
+                            source_balance = HEALTH_WALLETS.get(customer_id, {}).get('balance', 0)
+                        elif source_account == 'investment':
+                            source_balance = INVESTMENT_ACCOUNTS.get(customer_id, {}).get('balance', 0)
+                        elif source_account == 'algo_trading' and unified_balance_enabled:
+                            source_balance = unified_balance_service.get_algo_trading_balance(customer_id).get('available', 0)
+                        
+                        if source_balance < amount:
+                            validation['valid'] = False
+                            validation['errors'].append(f'Insufficient balance. Available: ${source_balance:.2f}')
+                        
+                        validation['source_balance'] = source_balance
+                
+                if amount > 10000:
+                    validation['warnings'].append('Large transaction - may require additional verification')
+                
+                self._set_json_headers()
+                self.wfile.write(json.dumps(validation).encode('utf-8'))
+                
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+        
+        # Get unified transaction history
+        if path == '/api/unified-payment/history':
+            try:
+                data = json.loads(body) if body else {}
+                customer_id = data.get('customer_id')
+                limit = int(data.get('limit', 50))
+                tx_type = data.get('type')  # Optional filter
+                
+                if not customer_id:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'customer_id required'}).encode('utf-8'))
+                    return
+                
+                # Get all transactions for customer
+                transactions = []
+                for tx in TRANSACTION_LEDGER.values():
+                    if tx.get('customer_id') == customer_id:
+                        if tx_type and tx.get('tx_type') != tx_type:
+                            continue
+                        transactions.append(tx)
+                
+                # Sort by timestamp descending
+                transactions.sort(key=lambda x: x.get('timestamp', x.get('created_at', '')), reverse=True)
+                
+                self._set_json_headers()
+                self.wfile.write(json.dumps({
+                    'success': True,
+                    'transactions': transactions[:limit],
+                    'total_count': len(transactions)
+                }, default=str).encode('utf-8'))
+                
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+        
+        # ========== END UNIFIED BILLING & DEPOSIT API ==========
+        
         # ========== HEALTH WALLET API ==========
             
             # Get or create health wallet

@@ -403,6 +403,8 @@
       50% { opacity: 0.8; }
     }
   </style>
+  <!-- Unified Payment Modal -->
+  <script src="/unified-payment.js"></script>
 </head>
 <body>
   <!-- Splash Screen / Loading Screen -->
@@ -1577,7 +1579,63 @@
       }
     }
     
-    async function addFundsToWallet() {
+    // Initialize unified payment modal
+    function initPaymentModal() {
+      if (typeof UnifiedPaymentModal !== 'undefined' && !unifiedPayment) {
+        unifiedPayment = new UnifiedPaymentModal({
+          customerId: customerId || sessionStorage.getItem('customer_id') || 'CUST001',
+          authToken: authToken,
+          defaultDestination: 'health_wallet',
+          onSuccess: (result) => {
+            // Refresh data after successful payment
+            if (result.destination === 'health_wallet') {
+              walletBalance = result.destination_new_balance || walletBalance;
+              updateWalletDisplay();
+            }
+            loadActivityLog();
+            loadNFTLedger();
+            loadPurchaseHistory();
+          },
+          onError: (err) => {
+            console.error('Payment error:', err);
+          }
+        });
+      }
+    }
+    
+    // Add funds using unified payment modal
+    function addFundsToWallet() {
+      initPaymentModal();
+      if (unifiedPayment) {
+        unifiedPayment.open({ destination: 'health_wallet' });
+      } else {
+        // Fallback to simple deposit
+        addFundsToWalletFallback();
+      }
+    }
+    
+    // Add funds to investments
+    function addFundsToInvestments() {
+      initPaymentModal();
+      if (unifiedPayment) {
+        unifiedPayment.open({ destination: 'investment' });
+      } else {
+        alert('Investment deposits available through unified payment modal.');
+      }
+    }
+    
+    // Add funds to algo trading
+    function addFundsToAlgoTrading() {
+      initPaymentModal();
+      if (unifiedPayment) {
+        unifiedPayment.open({ destination: 'algo_trading' });
+      } else {
+        alert('Algo trading deposits available through unified payment modal.');
+      }
+    }
+    
+    // Fallback method for deposit
+    async function addFundsToWalletFallback() {
       const amount = prompt('Enter amount to add to your Health Wallet (min $1, max $100,000):', '1000');
       if (amount === null) return;
       
@@ -1587,12 +1645,8 @@
         return;
       }
       
-      if (!confirm(`Add $${numAmount.toFixed(2)} to your Health Wallet?\n\nThis will be charged to your payment method on file.\nAn NFT token will be issued for this deposit.`)) {
-        return;
-      }
-      
       try {
-        const response = await fetch('/api/marketplace/wallet/deposit', {
+        const response = await fetch('/api/unified-payment/deposit', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -1601,28 +1655,18 @@
           body: JSON.stringify({
             customer_id: customerId || sessionStorage.getItem('customer_id') || '',
             amount: numAmount,
-            source: 'card_payment'
+            destination: 'health_wallet',
+            payment_method: 'credit_card'
           })
         });
         
         const result = await response.json();
         
         if (result.success) {
-          walletBalance = result.new_balance;
+          walletBalance = result.destination_new_balance || (walletBalance + numAmount);
           updateWalletDisplay();
-          
-          const notification = document.createElement('div');
-          notification.style.cssText = 'position:fixed;top:80px;right:20px;background:linear-gradient(135deg, #667eea 0%, #764ba2 100%);color:#fff;padding:20px 28px;border-radius:12px;box-shadow:0 4px 20px rgba(0,0,0,0.25);z-index:1000;font-weight:600;';
-          notification.innerHTML = `
-            <div style="font-size: 18px; margin-bottom: 8px;">✅ Deposit Successful!</div>
-            <div>Added: $${numAmount.toFixed(2)}</div>
-            <div>New Balance: $${walletBalance.toFixed(2)}</div>
-            <div style="font-size: 11px; opacity: 0.8; margin-top: 8px;">🔗 NFT: ${result.nft_token?.token_id || 'Generated'}</div>
-          `;
-          document.body.appendChild(notification);
-          setTimeout(() => notification.remove(), 4000);
-          
-          loadCustomerNFTs();
+          showNotification(`Added $${numAmount.toFixed(2)} to Health Wallet!`, 'success');
+          loadActivityLog();
         } else {
           throw new Error(result.error || 'Deposit failed');
         }
@@ -1630,12 +1674,7 @@
         // Fallback for demo
         walletBalance += numAmount;
         updateWalletDisplay();
-        
-        const notification = document.createElement('div');
-        notification.style.cssText = 'position:fixed;top:80px;right:20px;background:#28a745;color:#fff;padding:16px 24px;border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,0.2);z-index:1000;font-weight:600;';
-        notification.innerHTML = `✅ Added $${numAmount.toFixed(2)} to wallet!<br>New Balance: $${walletBalance.toFixed(2)}`;
-        document.body.appendChild(notification);
-        setTimeout(() => notification.remove(), 4000);
+        showNotification(`Added $${numAmount.toFixed(2)} to wallet!`, 'success');
       }
     }
     
