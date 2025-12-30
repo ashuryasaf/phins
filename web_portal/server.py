@@ -2645,6 +2645,11 @@ For claims or questions, please contact:
         if path == '/api/billing':
             customer_id = qs.get('customer_id', [None])[0]
             
+            # Debug: Print BILLING state
+            print(f"[BILLING DEBUG] GET /api/billing - BILLING has {len(BILLING)} entries")
+            for bid, b in list(BILLING.items())[:5]:
+                print(f"  {bid}: status={b.get('status')}, paid={b.get('amount_paid')}")
+            
             # Filter bills by customer if provided
             if customer_id:
                 bills_list = [b for b in BILLING.values() if b.get('customer_id') == customer_id]
@@ -9253,6 +9258,10 @@ For claims or questions, please contact:
                 bill_id = data.get('bill_id')
                 amount = float(data.get('amount', 0))
                 payment_method = data.get('payment_method', 'card')
+                
+                # Debug: Log BILLING state before
+                print(f"[PAY DEBUG] BEFORE: bill_id={bill_id}, BILLING[{bill_id}]={BILLING.get(bill_id)}")
+                
                 bill = BILLING.get(bill_id)
                 if not bill:
                     self._set_json_headers(404)
@@ -9272,6 +9281,11 @@ For claims or questions, please contact:
                     bill['paid_date'] = datetime.now().isoformat()
                 else:
                     bill['status'] = 'partial'
+                
+                # Debug: Log BILLING state after update
+                print(f"[PAY DEBUG] AFTER: bill={bill}")
+                print(f"[PAY DEBUG] AFTER: BILLING[{bill_id}]={BILLING.get(bill_id)}")
+                print(f"[PAY DEBUG] SAME OBJECT? {bill is BILLING.get(bill_id)}")
                 
                 # Get customer_id from bill
                 customer_id = bill.get('customer_id', 'unknown')
