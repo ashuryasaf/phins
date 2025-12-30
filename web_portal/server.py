@@ -7042,6 +7042,9 @@ For claims or questions, please contact:
                                     bill_id = bid
                                     break
                         
+                        # Debug: Log BILLING state
+                        print(f"[PREMIUM DEBUG] bill_id={bill_id}, BILLING keys={list(BILLING.keys())}, bill_in_billing={bill_id in BILLING if bill_id else False}")
+                        
                         if bill_id and bill_id in BILLING:
                             # Direct assignment to ensure update on the BILLING dictionary itself
                             prev_paid = BILLING[bill_id].get('amount_paid', 0)
@@ -7084,6 +7087,8 @@ For claims or questions, please contact:
                             # No bill found, just record as premium payment
                             new_balance = 0
                             payment_result['message'] = 'Premium payment recorded (no outstanding bill found)'
+                            payment_result['bill_status'] = 'not_found'
+                            print(f"[PREMIUM DEBUG] Bill not found: bill_id={bill_id}, BILLING has {len(BILLING)} entries")
                     
                     elif destination == 'savings':
                         # Direct deposit to savings pipeline
