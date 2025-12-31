@@ -6623,6 +6623,9 @@ For claims or questions, please contact:
                 customer['password_hash'] = pwd_hash['hash']
                 customer['password_salt'] = pwd_hash['salt']
                 
+                # Write back to database/storage to persist the change
+                CUSTOMERS[customer_id] = customer
+                
                 # Log the action
                 record_transaction(
                     customer_id=customer_id,
