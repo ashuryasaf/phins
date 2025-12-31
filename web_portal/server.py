@@ -11626,7 +11626,7 @@ For claims or questions, please contact:
                     
                     if profit_engine and customer_id:
                         # Simulate trade outcome using the profit engine's strategy edge
-                        import random
+                        # Note: random is imported at the top of the file (line 19)
                         
                         # Get strategy edge (default to 60% win rate)
                         win_rate = profit_engine.strategy_edge.get(TradingStrategy.AI_ADAPTIVE, 0.60)
