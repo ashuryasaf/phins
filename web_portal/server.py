@@ -6223,8 +6223,9 @@ For claims or questions, please contact:
                         import traceback
                         traceback.print_exc()
                 
-                # 3. Fallback: Check in-memory CUSTOMERS (for non-DB mode)
-                if not user and not database_enabled:
+                # 3. Fallback: Check in-memory CUSTOMERS dictionary
+                # This runs for both DB and non-DB modes to catch passwords set via admin endpoint
+                if not user:
                     for cust_id, cust in CUSTOMERS.items():
                         if cust.get('email', '').lower() == username.lower():
                             if cust.get('password_hash') and cust.get('password_salt'):
@@ -6634,6 +6635,9 @@ For claims or questions, please contact:
                         'user_action': action
                     }
                 )
+                
+                # Persist the change to JSON file
+                threading.Thread(target=save_ledger_data, daemon=True).start()
                 
                 self._set_json_headers()
                 self.wfile.write(json.dumps({
