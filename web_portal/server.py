@@ -1861,33 +1861,159 @@ def generate_customer_id() -> str:
     return f"CUST-{random.randint(10000, 99999)}"
 
 def calculate_premium(policy_data: Dict[str, Any]) -> Dict[str, float]:
-    """Calculate premium based on policy type and customer data"""
-    base_premium = {
-        'life': 1200,
-        'health': 800,
-        'auto': 600,
-        'property': 1500,
-        'business': 3000
-    }.get(policy_data.get('type', 'life'), 1000)
+    """
+    Calculate premium based on policy type and customer data using ACTUARIAL TABLES.
     
-    # Age factor
+    This function uses the SAME actuarial basis as:
+    - calculate_age_adjusted_premium() in this file
+    - FinancialReportingService.calculate_premium() 
+    - apply.js frontend calculateBasePremium()
+    
+    Data Source: PHINS_ACTUARIAL_TABLES_V1
+    
+    Components:
+    - Risk premium: Based on mortality rates × ADL multiplier × coverage
+    - Savings premium: Based on savings allocation target / term
+    - Expense loading: 15% of risk premium (industry standard)
+    """
+    policy_type = policy_data.get('type', 'life')
     age = policy_data.get('age', 30)
-    age_factor = 1.0 + (max(0, age - 25) * 0.02)
-    
-    # Coverage factor
     coverage = policy_data.get('coverage_amount', 100000)
-    coverage_factor = coverage / 100000
-    
-    # Risk factor based on underwriting
     risk_score = policy_data.get('risk_score', 'medium')
-    risk_factors = {'low': 0.8, 'medium': 1.0, 'high': 1.3, 'very_high': 1.6}
-    risk_factor = risk_factors.get(risk_score, 1.0)
+    term_years = policy_data.get('coverage_years', 20)
+    savings_pct = policy_data.get('savings_pct', 0.5)  # Default 50% savings
     
-    annual_premium = base_premium * age_factor * coverage_factor * risk_factor
+    # Get actuarial data from submitted form if available
+    actuarial_data = policy_data.get('actuarial_data', {})
+    
+    # ========== ACTUARIAL TABLES (Same as calculate_age_adjusted_premium) ==========
+    
+    # Mortality rates by age bracket (per 1000 lives per year)
+    MORTALITY_RATES = {
+        (0, 30): 0.5,
+        (30, 40): 1.2,
+        (40, 50): 2.5,
+        (50, 60): 5.0,
+        (60, 70): 12.0,
+        (70, 80): 30.0,
+        (80, 100): 75.0,
+    }
+    
+    # ADL Risk multipliers (1-10 scale, 5 is baseline medium risk)
+    ADL_RISK_MULTIPLIERS = {
+        1: 0.6,   # Very low risk - fully independent
+        2: 0.75,
+        3: 0.85,
+        4: 0.95,
+        5: 1.0,   # Medium risk (baseline)
+        6: 1.15,
+        7: 1.35,
+        8: 1.6,
+        9: 1.9,
+        10: 2.5,  # Very high risk - total dependence
+    }
+    
+    # Risk score to ADL level mapping (consistent across platform)
+    RISK_TO_ADL_MAP = {
+        'low': 3,
+        'medium': 5,
+        'high': 7,
+        'very_high': 9,
+    }
+    
+    # Age adjustment factors by policy type (derived from mortality tables)
+    AGE_FACTORS = {
+        'life': {
+            (0, 30): 0.7,
+            (30, 40): 0.85,
+            (40, 45): 1.0,
+            (45, 50): 1.15,
+            (50, 55): 1.30,
+            (55, 60): 1.60,
+            (60, 65): 2.0,
+            (65, 70): 2.5,
+            (70, 100): 3.2
+        },
+        'health': {
+            (0, 30): 0.6,
+            (30, 40): 0.8,
+            (40, 50): 1.0,
+            (50, 60): 1.4,
+            (60, 70): 1.9,
+            (70, 100): 2.6
+        },
+        'auto': {
+            (0, 25): 1.3,
+            (25, 65): 1.0,
+            (65, 100): 1.2
+        },
+        'property': {
+            (0, 100): 1.0
+        }
+    }
+    
+    # Get age factor from actuarial tables
+    factors = AGE_FACTORS.get(policy_type, AGE_FACTORS['life'])
+    age_factor = 1.0
+    for (min_age, max_age), factor in factors.items():
+        if min_age <= age < max_age:
+            age_factor = factor
+            break
+    
+    # Get mortality rate from actuarial tables
+    mortality_rate = 0.0025  # Default
+    for (min_age, max_age), rate in MORTALITY_RATES.items():
+        if min_age <= age < max_age:
+            mortality_rate = rate / 1000.0
+            break
+    
+    # Get ADL level from risk score (or from actuarial_data if provided)
+    adl_level = actuarial_data.get('adl_level') or RISK_TO_ADL_MAP.get(risk_score, 5)
+    adl_level = max(1, min(10, adl_level))  # Clamp to 1-10
+    adl_multiplier = ADL_RISK_MULTIPLIERS.get(adl_level, 1.0)
+    
+    # ========== PREMIUM CALCULATION (Actuarial Basis) ==========
+    
+    if policy_type in ['life', 'health']:
+        # Full actuarial calculation for life/health policies
+        # Combined factor = age_factor × adl_multiplier
+        combined_factor = age_factor * adl_multiplier
+        
+        # Risk component calculation using actuarial basis:
+        # Risk = PV(Mortality Rate × ADL Multiplier × Coverage) spread over term
+        risk_base = coverage * mortality_rate * adl_multiplier * term_years
+        risk_premium_annual = risk_base / term_years
+        
+        # Savings component (based on savings allocation - doesn't depend on risk)
+        savings_target = coverage * savings_pct
+        savings_premium_annual = savings_target / term_years
+        
+        # Expense loading (15% of risk premium - industry standard)
+        expense_loading = risk_premium_annual * 0.15
+        
+        # Total annual premium
+        annual_premium = risk_premium_annual + savings_premium_annual + expense_loading
+    else:
+        # Simple calculation for auto/property
+        base_premium = {
+            'auto': 600,
+            'property': 1500,
+            'business': 3000
+        }.get(policy_type, 1000)
+        
+        coverage_factor = coverage / 100000
+        annual_premium = base_premium * age_factor * coverage_factor
+    
     return {
         'annual': round(annual_premium, 2),
         'monthly': round(annual_premium / 12, 2),
-        'quarterly': round(annual_premium / 4, 2)
+        'quarterly': round(annual_premium / 4, 2),
+        # Include actuarial metadata for data integrity verification
+        'actuarial_source': 'PHINS_ACTUARIAL_TABLES_V1',
+        'age_factor': round(age_factor, 3),
+        'adl_level': adl_level,
+        'adl_multiplier': round(adl_multiplier, 3),
+        'mortality_rate': round(mortality_rate, 6)
     }
 
 def get_bi_data_actuary() -> Dict[str, Any]:

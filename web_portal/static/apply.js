@@ -219,27 +219,213 @@ function updateAllocationDisplay() {
     if (summaryCoverage) summaryCoverage.textContent = formatCurrency(coverage, false);
     if (summaryYears) summaryYears.textContent = phinsAllocation.coverageYears;
     
-    // Store premiums
+    // Store premiums with actuarial data
     formData.premiums = {
         monthly: monthlyPremium,
         quarterly: quarterlyPremium,
-        annual: annualPremium
+        annual: annualPremium,
+        // Include actuarial breakdown for data integrity
+        actuarialBreakdown: formData.actuarialData ? {
+            riskComponent: formData.actuarialData.riskPremiumAnnual / 12,
+            savingsComponent: formData.actuarialData.savingsPremiumAnnual / 12,
+            expenseLoading: formData.actuarialData.expenseLoading / 12,
+            dataSource: formData.actuarialData.dataSource,
+            ageFactor: formData.actuarialData.ageFactor,
+            adlLevel: formData.actuarialData.adlLevel,
+            adlMultiplier: formData.actuarialData.adlMultiplier
+        } : null
     };
+    
+    // Update actuarial info display if element exists
+    const actuarialInfoEl = document.getElementById('actuarial-info');
+    if (actuarialInfoEl && formData.actuarialData) {
+        actuarialInfoEl.innerHTML = `
+            <div style="font-size: 0.75rem; color: #28a745; margin-top: 8px;">
+                ✓ Actuarially Sourced (${formData.actuarialData.dataSource})
+            </div>
+            <div style="font-size: 0.7rem; color: #666; margin-top: 4px;">
+                Age Factor: ${formData.actuarialData.ageFactor.toFixed(2)} | 
+                ADL Level: ${formData.actuarialData.adlLevel} (×${formData.actuarialData.adlMultiplier.toFixed(2)}) |
+                Risk Premium: ${formatCurrency(formData.actuarialData.riskPremiumAnnual / 12)}/mo
+            </div>
+        `;
+    }
 }
 
-// Calculate base premium based on coverage
+// ==============================================================================
+// ACTUARIAL TABLES (Same as server.py and FinancialReportingService)
+// Data Source: PHINS_ACTUARIAL_TABLES_V1
+// ==============================================================================
+
+// Mortality rates by age bracket (per 1000 lives per year)
+const MORTALITY_RATES = {
+    '0-30': 0.5,
+    '30-40': 1.2,
+    '40-50': 2.5,
+    '50-60': 5.0,
+    '60-70': 12.0,
+    '70-80': 30.0,
+    '80-100': 75.0,
+};
+
+// ADL Risk multipliers (1-10 scale, 5 is baseline medium risk)
+const ADL_RISK_MULTIPLIERS = {
+    1: 0.6,   // Very low risk - fully independent
+    2: 0.75,
+    3: 0.85,
+    4: 0.95,
+    5: 1.0,   // Medium risk (baseline)
+    6: 1.15,
+    7: 1.35,
+    8: 1.6,
+    9: 1.9,
+    10: 2.5,  // Very high risk - total dependence
+};
+
+// Age adjustment factors by policy type (derived from mortality tables)
+const AGE_FACTORS = {
+    'life': {
+        '0-30': 0.7,
+        '30-40': 0.85,
+        '40-45': 1.0,
+        '45-50': 1.15,
+        '50-55': 1.30,
+        '55-60': 1.60,
+        '60-65': 2.0,
+        '65-70': 2.5,
+        '70-100': 3.2
+    },
+    'health': {
+        '0-30': 0.6,
+        '30-40': 0.8,
+        '40-50': 1.0,
+        '50-60': 1.4,
+        '60-70': 1.9,
+        '70-100': 2.6
+    }
+};
+
+// Discount rate for present value calculations
+const DISCOUNT_RATE = 0.035; // 3.5% annual
+
+// Get age factor from actuarial tables
+function getAgeFactor(age, policyType = 'life') {
+    const factors = AGE_FACTORS[policyType] || AGE_FACTORS['life'];
+    for (const [range, factor] of Object.entries(factors)) {
+        const [min, max] = range.split('-').map(Number);
+        if (age >= min && age < max) {
+            return factor;
+        }
+    }
+    return 1.0; // Default
+}
+
+// Get mortality rate from actuarial tables
+function getMortalityRate(age) {
+    for (const [range, rate] of Object.entries(MORTALITY_RATES)) {
+        const [min, max] = range.split('-').map(Number);
+        if (age >= min && age < max) {
+            return rate / 1000.0;
+        }
+    }
+    return 0.075; // Default for very old ages
+}
+
+// Get ADL multiplier from actuarial tables
+function getAdlMultiplier(adlLevel) {
+    adlLevel = Math.max(1, Math.min(10, adlLevel));
+    return ADL_RISK_MULTIPLIERS[adlLevel] || 1.0;
+}
+
+// Map risk score to ADL level (consistent with server.py)
+function riskScoreToAdlLevel(riskScore) {
+    const mapping = {
+        'low': 3,
+        'medium': 5,
+        'high': 7,
+        'very_high': 9
+    };
+    return mapping[riskScore] || 5;
+}
+
+// Calculate base premium based on coverage using ACTUARIAL TABLES
+// This ensures data integrity with Long-Term Projection Calculator
 function calculateBasePremium(coverage) {
     const dob = document.getElementById('dob')?.value;
-    let ageFactor = 1.0;
+    let age = 35; // Default age
     
     if (dob) {
-        const age = calculateAge(dob);
-        ageFactor = 1.0 + (Math.max(0, age - 25) * 0.015);
+        age = calculateAge(dob);
     }
     
-    // Base: $0.25 per $1000 coverage per month
-    const basePremium = (coverage / 1000) * 0.25 * ageFactor;
-    return Math.round(basePremium);
+    // Get actuarial-based factors
+    const ageFactor = getAgeFactor(age, 'life');
+    const mortalityRate = getMortalityRate(age);
+    
+    // Estimate ADL level from health questionnaire (if available)
+    // Default to ADL 5 (medium risk) for new applications
+    let adlLevel = 5;
+    if (formData.health) {
+        // Adjust ADL based on health factors
+        let riskPoints = 0;
+        if (formData.health.tobacco === 'yes') riskPoints += 2;
+        else if (formData.health.tobacco === 'former') riskPoints += 1;
+        if (formData.health.medicalConditions === 'yes') riskPoints += 2;
+        if (formData.health.surgery === 'yes') riskPoints += 1;
+        if (formData.health.hazardous === 'regular') riskPoints += 2;
+        else if (formData.health.hazardous === 'occasional') riskPoints += 1;
+        
+        // Map risk points to ADL level
+        if (riskPoints <= 1) adlLevel = 3;      // Low risk
+        else if (riskPoints <= 3) adlLevel = 5; // Medium risk
+        else if (riskPoints <= 5) adlLevel = 7; // High risk
+        else adlLevel = 9;                       // Very high risk
+    }
+    
+    const adlMultiplier = getAdlMultiplier(adlLevel);
+    
+    // Combined factor = age_factor × adl_multiplier (same as server.py)
+    const combinedFactor = ageFactor * adlMultiplier;
+    
+    // Calculate risk component (50% of base goes to risk coverage)
+    // Base rate: Coverage × mortality-derived factor / term
+    const termYears = phinsAllocation.coverageYears || 20;
+    
+    // Risk premium calculation using actuarial basis:
+    // Risk = PV(Mortality Rate × ADL Multiplier × Coverage) spread over term
+    // Simplified: (coverage × mortalityRate × adlMultiplier × termYears) / termYears
+    const riskBase = coverage * mortalityRate * adlMultiplier * termYears;
+    const riskPremiumAnnual = riskBase / termYears;
+    
+    // Savings component (based on savings allocation - doesn't depend on risk)
+    const savingsPct = phinsAllocation.savingsPct / 100;
+    const savingsTarget = coverage * savingsPct;
+    const savingsPremiumAnnual = savingsTarget / termYears;
+    
+    // Expense loading (15% of risk premium - industry standard)
+    const expenseLoading = riskPremiumAnnual * 0.15;
+    
+    // Total annual premium
+    const totalAnnualPremium = riskPremiumAnnual + savingsPremiumAnnual + expenseLoading;
+    
+    // Monthly premium
+    const monthlyPremium = totalAnnualPremium / 12;
+    
+    // Store actuarial data for display/debugging
+    formData.actuarialData = {
+        age: age,
+        ageFactor: ageFactor,
+        adlLevel: adlLevel,
+        adlMultiplier: adlMultiplier,
+        combinedFactor: combinedFactor,
+        mortalityRate: mortalityRate,
+        riskPremiumAnnual: Math.round(riskPremiumAnnual * 100) / 100,
+        savingsPremiumAnnual: Math.round(savingsPremiumAnnual * 100) / 100,
+        expenseLoading: Math.round(expenseLoading * 100) / 100,
+        dataSource: 'PHINS_ACTUARIAL_TABLES_V1'
+    };
+    
+    return Math.round(monthlyPremium);
 }
 
 // Format currency
@@ -858,6 +1044,10 @@ function saveStepData(step) {
                 weight: document.getElementById('weight').value,
                 medications: document.getElementById('medications').value
             };
+            
+            // Recalculate premium with updated health/ADL data for actuarial accuracy
+            // This ensures risk cover is properly adjusted based on health questionnaire
+            updateAllocationDisplay();
             break;
             
         case 4:
@@ -919,6 +1109,7 @@ function populateReview() {
     // Coverage Details - PHINS Unified Contract
     const alloc = formData.coverage?.allocation || {};
     const dist = alloc.distribution || {};
+    const actuarial = formData.actuarialData || {};
     
     const coverageHtml = `
         <div class="review-item">
@@ -941,6 +1132,28 @@ function populateReview() {
             <strong>Savings Distribution</strong>
             <span>🏥 ${dist.walletPct || 15}% Wallet | 📈 ${dist.investmentPct || 60}% Investment | 🤖 ${dist.algoPct || 25}% Algo Trading</span>
         </div>
+        ${actuarial.dataSource ? `
+        <div class="review-item" style="background: linear-gradient(135deg, #e8f4fd 0%, #d4edda 100%); padding: 12px; border-radius: 8px; margin-top: 12px;">
+            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+                <span style="font-size: 1.1rem;">📊</span>
+                <strong style="color: #155724;">Risk Cover - Actuarially Sourced</strong>
+            </div>
+            <div style="font-size: 0.85rem; color: #333;">
+                <div style="margin-bottom: 4px;"><strong>Data Source:</strong> ${actuarial.dataSource}</div>
+                <div style="margin-bottom: 4px;"><strong>Age Factor:</strong> ${actuarial.ageFactor?.toFixed(2) || 'N/A'} (Age ${actuarial.age || 'N/A'})</div>
+                <div style="margin-bottom: 4px;"><strong>ADL Risk Level:</strong> ${actuarial.adlLevel || 5} (Multiplier: ×${actuarial.adlMultiplier?.toFixed(2) || '1.00'})</div>
+                <div style="margin-bottom: 4px;"><strong>Mortality Rate:</strong> ${((actuarial.mortalityRate || 0) * 1000).toFixed(2)} per 1,000 lives</div>
+                <div style="border-top: 1px solid rgba(0,0,0,0.1); margin-top: 8px; padding-top: 8px;">
+                    <strong>Monthly Premium Breakdown:</strong>
+                    <div style="margin-top: 4px;">
+                        🛡️ Risk Cover: ${formatCurrency((actuarial.riskPremiumAnnual || 0) / 12)} | 
+                        💰 Savings: ${formatCurrency((actuarial.savingsPremiumAnnual || 0) / 12)} | 
+                        📋 Expenses: ${formatCurrency((actuarial.expenseLoading || 0) / 12)}
+                    </div>
+                </div>
+            </div>
+        </div>
+        ` : ''}
     `;
     document.getElementById('review-coverage').innerHTML = coverageHtml;
     
@@ -1125,7 +1338,19 @@ async function handleSubmit(e) {
             },
             // AI/BI Pipeline integration
             pipeline_enabled: true,
-            savings_pipeline_enabled: true
+            savings_pipeline_enabled: true,
+            // Actuarial data for premium calculation integrity
+            actuarial_data: formData.actuarialData ? {
+                data_source: formData.actuarialData.dataSource,
+                age_factor: formData.actuarialData.ageFactor,
+                adl_level: formData.actuarialData.adlLevel,
+                adl_multiplier: formData.actuarialData.adlMultiplier,
+                mortality_rate: formData.actuarialData.mortalityRate,
+                combined_factor: formData.actuarialData.combinedFactor,
+                risk_premium_annual: formData.actuarialData.riskPremiumAnnual,
+                savings_premium_annual: formData.actuarialData.savingsPremiumAnnual,
+                expense_loading: formData.actuarialData.expenseLoading
+            } : null
         };
     } catch (dataError) {
         alert('Error preparing application data. Please review your information and try again.');
@@ -1222,9 +1447,22 @@ function calculateRiskScore() {
         if (bmi > 35) riskPoints += 2;
     }
     
-    // Convert points to risk level
-    if (riskPoints <= 2) return 'low';
-    if (riskPoints <= 5) return 'medium';
-    if (riskPoints <= 8) return 'high';
-    return 'very_high';
+    // Convert points to risk level (consistent with ADL level mapping)
+    // Risk Score -> ADL Level mapping (same as server.py):
+    //   low -> ADL 3, medium -> ADL 5, high -> ADL 7, very_high -> ADL 9
+    let riskScore;
+    if (riskPoints <= 2) riskScore = 'low';           // ADL 3
+    else if (riskPoints <= 5) riskScore = 'medium';   // ADL 5
+    else if (riskPoints <= 8) riskScore = 'high';     // ADL 7
+    else riskScore = 'very_high';                     // ADL 9
+    
+    // Store the ADL level for actuarial calculations
+    const adlLevel = riskScoreToAdlLevel(riskScore);
+    if (formData.actuarialData) {
+        formData.actuarialData.calculatedAdlLevel = adlLevel;
+        formData.actuarialData.riskScore = riskScore;
+        formData.actuarialData.riskPoints = riskPoints;
+    }
+    
+    return riskScore;
 }
