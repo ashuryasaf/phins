@@ -1244,8 +1244,24 @@
         
         // Initialize
         document.addEventListener('DOMContentLoaded', async () => {
+            // Get customer ID from multiple sources - NO HARDCODED FALLBACK
             const session = JSON.parse(localStorage.getItem('session') || '{}');
-            customerId = session.customer_id || 'CUST-ASAF-001';
+            const urlParams = new URLSearchParams(window.location.search);
+            
+            customerId = session.customer_id 
+                      || sessionStorage.getItem('customer_id')
+                      || localStorage.getItem('customer_id')
+                      || urlParams.get('customer_id');
+            
+            // If no customer ID found, show error and redirect to login
+            if (!customerId) {
+                console.error('No customer ID found in session');
+                alert('Session expired or not logged in. Please log in again.');
+                window.location.href = '/login.html';
+                return;
+            }
+            
+            console.log('Algo Trading loaded for customer:', customerId);
             
             // Get account ID
             try {

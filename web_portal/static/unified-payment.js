@@ -19,7 +19,17 @@
 
 class UnifiedPaymentModal {
   constructor(options = {}) {
-    this.customerId = options.customerId || sessionStorage.getItem('customer_id') || 'CUST001';
+    // Get customer ID from multiple sources - NO HARDCODED FALLBACK
+    this.customerId = options.customerId 
+                   || sessionStorage.getItem('customer_id') 
+                   || localStorage.getItem('customer_id')
+                   || '';
+    
+    if (!this.customerId) {
+      console.error('UnifiedPaymentModal: No customer ID provided');
+      throw new Error('Customer ID is required for payment operations');
+    }
+    
     this.authToken = options.authToken || localStorage.getItem('phins_token');
     this.onSuccess = options.onSuccess || (() => {});
     this.onError = options.onError || (() => {});

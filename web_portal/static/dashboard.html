@@ -1109,11 +1109,17 @@
         sessionStorage.setItem('customer_id', customerId);
       }
       
-      // If no customer ID found, redirect to login
-      if (!customerId && !authToken) {
-        console.log('No customer session found, using demo mode');
-        // Use demo customer for testing
-        customerId = 'CUST-ASAF-001';
+      // If no customer ID found, show error and redirect to login
+      // NO HARDCODED FALLBACK - each customer must see only their own data
+      if (!customerId) {
+        console.error('No customer ID found in session');
+        if (!authToken) {
+          alert('Please log in to view your dashboard.');
+          window.location.href = '/login.html';
+          return;
+        }
+        // If we have auth token but no customer_id, try to get it from the server
+        console.log('Auth token present but no customer_id, attempting to fetch...');
       }
       
       try {
@@ -1270,7 +1276,7 @@
         const unifiedResponse = await fetch('/api/unified-payment/balances', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ customer_id: cid || 'CUST001' })
+          body: JSON.stringify({ customer_id: cid || '' })
         });
         
         if (unifiedResponse.ok) {
@@ -1430,7 +1436,7 @@
     // Load portfolio data
     async function loadPortfolioData() {
       try {
-        const cid = customerId || sessionStorage.getItem('customer_id') || 'CUST-ASAF-001';
+        const cid = customerId || sessionStorage.getItem('customer_id') || '';
         const accountsResponse = await fetch(`/api/savings/accounts?customer_id=${cid}`);
         const accountsData = await accountsResponse.json();
         
@@ -1660,7 +1666,7 @@
     
     // Smart Purchase Modal - AI-powered payment flow
     async function purchaseProduct(productId, productName, price, category = 'general', productDetails = {}) {
-      const cid = customerId || sessionStorage.getItem('customer_id') || 'CUST001';
+      const cid = customerId || sessionStorage.getItem('customer_id') || '';
       
       // Fetch all balances for smart payment options
       let totalDeposits = { health_wallet: walletBalance, investment: 0, algo_trading: 0, total: walletBalance };
@@ -1883,7 +1889,7 @@
     // Execute smart purchase based on selected option
     async function executeSmartPurchase(productId, productName, price, category) {
       const option = document.getElementById('selected-payment-option').value;
-      const cid = customerId || sessionStorage.getItem('customer_id') || 'CUST001';
+      const cid = customerId || sessionStorage.getItem('customer_id') || '';
       
       closeSmartPaymentModal();
       showNotification('🔄 Processing payment...', 'info');
@@ -2006,7 +2012,7 @@
     function initPaymentModal() {
       if (typeof UnifiedPaymentModal !== 'undefined' && !unifiedPayment) {
         unifiedPayment = new UnifiedPaymentModal({
-          customerId: customerId || sessionStorage.getItem('customer_id') || 'CUST001',
+          customerId: customerId || sessionStorage.getItem('customer_id') || '',
           authToken: authToken,
           defaultDestination: 'health_wallet',
           onSuccess: (result) => {
@@ -2215,7 +2221,7 @@
       const from = document.getElementById('transfer-from').value;
       const to = document.getElementById('transfer-to').value;
       const amount = parseFloat(document.getElementById('transfer-amount').value);
-      const cid = customerId || sessionStorage.getItem('customer_id') || 'CUST001';
+      const cid = customerId || sessionStorage.getItem('customer_id') || '';
       
       if (!amount || amount <= 0) {
         showNotification('Please enter a valid amount', 'error');
@@ -2424,7 +2430,7 @@
     let allActivities = [];  // Store all activities for filtering
     
     async function loadActivityLog() {
-      const cid = customerId || sessionStorage.getItem('customer_id') || 'CUST001';
+      const cid = customerId || sessionStorage.getItem('customer_id') || '';
       try {
         const response = await fetch(`/api/customer/activity-log?customer_id=${cid}&limit=100`);
         const data = await response.json();
@@ -2545,7 +2551,7 @@
     // ========== MEDICAL PURCHASES FUNCTIONS ==========
     
     async function loadPurchaseHistory() {
-      const cid = customerId || sessionStorage.getItem('customer_id') || 'CUST001';
+      const cid = customerId || sessionStorage.getItem('customer_id') || '';
       try {
         const response = await fetch(`/api/health-wallet/purchases?customer_id=${cid}`);
         const data = await response.json();
@@ -2616,7 +2622,7 @@
     
     // Validate a single purchase on all ledgers
     async function validatePurchase(purchaseId) {
-      const cid = customerId || sessionStorage.getItem('customer_id') || 'CUST001';
+      const cid = customerId || sessionStorage.getItem('customer_id') || '';
       showNotification('🔄 Validating purchase on all ledgers...', 'info');
       
       try {
@@ -2660,7 +2666,7 @@
       
       showNotification(`🔄 Validating ${medicalPurchases.length} purchases...`, 'info');
       
-      const cid = customerId || sessionStorage.getItem('customer_id') || 'CUST001';
+      const cid = customerId || sessionStorage.getItem('customer_id') || '';
       
       try {
         // Get NFT and transaction ledgers
@@ -2712,7 +2718,7 @@
     }
     
     function exportPurchases() {
-      const cid = customerId || sessionStorage.getItem('customer_id') || 'CUST001';
+      const cid = customerId || sessionStorage.getItem('customer_id') || '';
       // Create CSV from current data
       const rows = [['Date', 'Product', 'Category', 'Provider', 'Amount', 'NFT Token', 'Ledger Status', 'Status']];
       const tbody = document.getElementById('purchase-history-table');
@@ -2745,7 +2751,7 @@
     // ========== NFT LEDGER FUNCTIONS ==========
     
     async function loadNFTLedger() {
-      const cid = customerId || sessionStorage.getItem('customer_id') || 'CUST001';
+      const cid = customerId || sessionStorage.getItem('customer_id') || '';
       try {
         const response = await fetch(`/api/nft-ledger?customer_id=${cid}`);
         const data = await response.json();
@@ -2843,7 +2849,7 @@
     }
     
     function exportLedger() {
-      const cid = customerId || sessionStorage.getItem('customer_id') || 'CUST001';
+      const cid = customerId || sessionStorage.getItem('customer_id') || '';
       const rows = [['Token ID', 'Type', 'Description', 'Amount', 'Tx Hash', 'Block #', 'Timestamp', 'Status']];
       const tbody = document.getElementById('nft-ledger-table');
       tbody.querySelectorAll('tr').forEach(row => {
@@ -2874,7 +2880,7 @@
     
     async function verifyAllTokens() {
       showNotification('Verifying all tokens...', 'info');
-      const cid = customerId || sessionStorage.getItem('customer_id') || 'CUST001';
+      const cid = customerId || sessionStorage.getItem('customer_id') || '';
       
       try {
         const response = await fetch(`/api/nft-ledger?customer_id=${cid}`);
