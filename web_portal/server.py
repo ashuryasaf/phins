@@ -6252,6 +6252,218 @@ For claims or questions, please contact:
                 self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
             return
         
+        # Admin: Reset customer account (remove policies, applications, claims, bills)
+        # Keeps customer profile and ledger history for audit trail
+        if path == '/api/admin/reset-customer-account':
+            try:
+                data = json.loads(body or '{}')
+                customer_id = data.get('customer_id', 'CUST-ASAF-001')
+                keep_ledger = data.get('keep_ledger', True)  # Always keep ledger by default
+                
+                result = {
+                    'success': True,
+                    'customer_id': customer_id,
+                    'removed': {
+                        'policies': 0,
+                        'applications': 0,
+                        'claims': 0,
+                        'bills': 0
+                    },
+                    'ledger_preserved': keep_ledger,
+                    'ready_for': ['new_applications', 'increase_coverage', 'new_deposits']
+                }
+                
+                # Check customer exists
+                customer = CUSTOMERS.get(customer_id)
+                if not customer:
+                    self._set_json_headers(404)
+                    self.wfile.write(json.dumps({'error': 'Customer not found'}).encode('utf-8'))
+                    return
+                
+                with STATE_LOCK:
+                    # 1. Remove all policies for this customer
+                    policies_to_remove = [pid for pid, p in POLICIES.items() if p.get('customer_id') == customer_id]
+                    for pid in policies_to_remove:
+                        # Record policy removal on ledger before deleting
+                        policy = POLICIES[pid]
+                        record_transaction(
+                            customer_id=customer_id,
+                            tx_type='policy_terminated',
+                            amount=0,
+                            description=f'Policy {pid} ({policy.get("type", "unknown")}) terminated - account reset',
+                            metadata={
+                                'policy_id': pid,
+                                'policy_type': policy.get('type'),
+                                'coverage_amount': policy.get('coverage_amount'),
+                                'reason': 'customer_account_reset'
+                            }
+                        )
+                        del POLICIES[pid]
+                        result['removed']['policies'] += 1
+                    
+                    # 2. Remove all underwriting applications for this customer
+                    apps_to_remove = [aid for aid, a in UNDERWRITING_APPLICATIONS.items() if a.get('customer_id') == customer_id]
+                    for aid in apps_to_remove:
+                        app = UNDERWRITING_APPLICATIONS[aid]
+                        record_transaction(
+                            customer_id=customer_id,
+                            tx_type='application_cancelled',
+                            amount=0,
+                            description=f'Application {aid} cancelled - account reset',
+                            metadata={
+                                'application_id': aid,
+                                'status': app.get('status'),
+                                'reason': 'customer_account_reset'
+                            }
+                        )
+                        del UNDERWRITING_APPLICATIONS[aid]
+                        result['removed']['applications'] += 1
+                    
+                    # 3. Remove all claims for this customer
+                    claims_to_remove = [cid for cid, c in CLAIMS.items() if c.get('customer_id') == customer_id]
+                    for cid in claims_to_remove:
+                        claim = CLAIMS[cid]
+                        record_transaction(
+                            customer_id=customer_id,
+                            tx_type='claim_cancelled',
+                            amount=0,
+                            description=f'Claim {cid} cancelled - account reset',
+                            metadata={
+                                'claim_id': cid,
+                                'status': claim.get('status'),
+                                'claimed_amount': claim.get('claimed_amount'),
+                                'reason': 'customer_account_reset'
+                            }
+                        )
+                        del CLAIMS[cid]
+                        result['removed']['claims'] += 1
+                    
+                    # 4. Remove all bills for this customer
+                    bills_to_remove = [bid for bid, b in BILLING.items() if b.get('customer_id') == customer_id]
+                    for bid in bills_to_remove:
+                        del BILLING[bid]
+                        result['removed']['bills'] += 1
+                    
+                    # 5. Reset investment accounts (set balance to 0)
+                    if customer_id in INVESTMENT_ACCOUNTS:
+                        old_balance = INVESTMENT_ACCOUNTS[customer_id].get('balance', 0)
+                        if old_balance > 0:
+                            record_transaction(
+                                customer_id=customer_id,
+                                tx_type='account_reset',
+                                amount=-old_balance,
+                                description=f'Investment account reset to $0',
+                                metadata={
+                                    'old_balance': old_balance,
+                                    'reason': 'customer_account_reset'
+                                }
+                            )
+                        INVESTMENT_ACCOUNTS[customer_id] = {
+                            'customer_id': customer_id,
+                            'balance': 0,
+                            'index_balance': 0,
+                            'bonds_balance': 0,
+                            'crypto_balance': 0,
+                            'deposits': [],
+                            'created_at': datetime.now().isoformat()
+                        }
+                        result['investment_reset'] = True
+                    
+                    # 6. Reset health wallet (set balance to 0)
+                    if customer_id in HEALTH_WALLETS:
+                        old_balance = HEALTH_WALLETS[customer_id].get('balance', 0)
+                        if old_balance > 0:
+                            record_transaction(
+                                customer_id=customer_id,
+                                tx_type='wallet_reset',
+                                amount=-old_balance,
+                                description=f'Health wallet reset to $0',
+                                metadata={
+                                    'old_balance': old_balance,
+                                    'reason': 'customer_account_reset'
+                                }
+                            )
+                        HEALTH_WALLETS[customer_id] = {
+                            'customer_id': customer_id,
+                            'balance': 0,
+                            'monthly_deposit': 0,
+                            'transactions': [],
+                            'created_at': datetime.now().isoformat()
+                        }
+                        result['wallet_reset'] = True
+                    
+                    # 7. Reset algo trading balances
+                    if unified_balance_enabled and customer_id in unified_balance_service.algo_trading_balances:
+                        old_balance = unified_balance_service.algo_trading_balances[customer_id].get('available', 0)
+                        old_positions = unified_balance_service.algo_trading_balances[customer_id].get('in_positions', 0)
+                        if old_balance > 0 or old_positions > 0:
+                            record_transaction(
+                                customer_id=customer_id,
+                                tx_type='algo_reset',
+                                amount=-(old_balance + old_positions),
+                                description=f'Algo trading account reset to $0',
+                                metadata={
+                                    'old_available': old_balance,
+                                    'old_positions': old_positions,
+                                    'reason': 'customer_account_reset'
+                                }
+                            )
+                        unified_balance_service.algo_trading_balances[customer_id] = {
+                            'available': 0,
+                            'in_positions': 0,
+                            'total_pnl': 0
+                        }
+                        result['algo_reset'] = True
+                    
+                    if portfolio_tracker_enabled and customer_id in portfolio_tracker_service.algo_balances:
+                        portfolio_tracker_service.algo_balances[customer_id] = {
+                            'available': 0,
+                            'in_positions': 0,
+                            'total_pnl': 0
+                        }
+                    
+                    # 8. Update customer pipeline stage
+                    if customer_id in CUSTOMERS:
+                        CUSTOMERS[customer_id]['pipeline_stage'] = 'registered'
+                        CUSTOMERS[customer_id]['updated_at'] = datetime.now().isoformat()
+                    
+                    # Record final reset transaction on NFT ledger
+                    nft = generate_nft_token(
+                        customer_id=customer_id,
+                        transaction_type='account_reset',
+                        transaction_id=f'RESET-{datetime.now().strftime("%Y%m%d%H%M%S")}',
+                        amount=0,
+                        description='Customer account reset - ready for new applications',
+                        metadata={
+                            'policies_removed': result['removed']['policies'],
+                            'applications_removed': result['removed']['applications'],
+                            'claims_removed': result['removed']['claims'],
+                            'bills_removed': result['removed']['bills']
+                        }
+                    )
+                    result['nft_token_id'] = nft['token_id']
+                    result['block_number'] = nft['block_number']
+                    
+                    # Save all changes
+                    save_ledger_data()
+                
+                # Get ledger count for this customer
+                customer_ledger = [t for t in TRANSACTION_LEDGER.values() if t.get('customer_id') == customer_id]
+                customer_nfts = [n for n in NFT_LEDGER.values() if n.get('owner_id') == customer_id]
+                result['ledger_entries'] = {
+                    'transactions': len(customer_ledger),
+                    'nft_tokens': len(customer_nfts)
+                }
+                
+                result['message'] = f'Account reset complete. Customer is now ready for new applications and deposits.'
+                
+                self._set_json_headers(200)
+                self.wfile.write(json.dumps(result, default=str).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+        
         # Pipeline Process - Process next step for a customer
         if path.startswith('/api/admin/pipeline-process/'):
             customer_id = path.split('/')[-1]
