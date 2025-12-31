@@ -693,6 +693,57 @@
             </div>
         </div>
         
+        <!-- REAL-TIME PROFIT ENGINE SECTION -->
+        <div class="section" style="margin-top: 1.5rem; background: linear-gradient(135deg, #059669 0%, #10b981 50%, #34d399 100%); border: none; position: relative; overflow: hidden;">
+            <div style="position: absolute; top: -50%; right: -20%; width: 300px; height: 300px; background: rgba(255,255,255,0.1); border-radius: 50%; pointer-events: none;"></div>
+            <div style="position: absolute; bottom: -30%; left: -10%; width: 200px; height: 200px; background: rgba(255,255,255,0.05); border-radius: 50%; pointer-events: none;"></div>
+            
+            <div class="section-header" style="position: relative; z-index: 1;">
+                <h2 class="section-title" style="color: white;">⚡ Auto-Profit Trading Engine</h2>
+                <div style="display: flex; gap: 0.5rem;">
+                    <button class="btn" style="background: rgba(255,255,255,0.2); color: white; border: 1px solid rgba(255,255,255,0.3);" onclick="runProfitCycle()">
+                        🚀 Run Profit Cycle
+                    </button>
+                    <button class="btn" style="background: white; color: #059669; font-weight: 600;" onclick="activateProfitTrading()">
+                        ⚡ Activate Auto-Profits
+                    </button>
+                </div>
+            </div>
+            
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-top: 1rem; position: relative; z-index: 1;">
+                <div style="background: rgba(255,255,255,0.15); border-radius: 12px; padding: 1.25rem; backdrop-filter: blur(10px);">
+                    <div style="font-size: 0.85rem; color: rgba(255,255,255,0.8); margin-bottom: 0.5rem;">💰 Today's Profit</div>
+                    <div style="font-size: 1.75rem; font-weight: 700; color: white;" id="profitToday">$0.00</div>
+                    <div style="font-size: 0.75rem; color: rgba(255,255,255,0.7);" id="tradesToday">0 trades executed</div>
+                </div>
+                <div style="background: rgba(255,255,255,0.15); border-radius: 12px; padding: 1.25rem; backdrop-filter: blur(10px);">
+                    <div style="font-size: 0.85rem; color: rgba(255,255,255,0.8); margin-bottom: 0.5rem;">📈 This Week</div>
+                    <div style="font-size: 1.75rem; font-weight: 700; color: white;" id="profitWeek">$0.00</div>
+                    <div style="font-size: 0.75rem; color: rgba(255,255,255,0.7);">7-day performance</div>
+                </div>
+                <div style="background: rgba(255,255,255,0.15); border-radius: 12px; padding: 1.25rem; backdrop-filter: blur(10px);">
+                    <div style="font-size: 0.85rem; color: rgba(255,255,255,0.8); margin-bottom: 0.5rem;">📊 This Month</div>
+                    <div style="font-size: 1.75rem; font-weight: 700; color: white;" id="profitMonth">$0.00</div>
+                    <div style="font-size: 0.75rem; color: rgba(255,255,255,0.7);">30-day performance</div>
+                </div>
+                <div style="background: rgba(255,255,255,0.2); border-radius: 12px; padding: 1.25rem; backdrop-filter: blur(10px); border: 2px solid rgba(255,255,255,0.3);">
+                    <div style="font-size: 0.85rem; color: rgba(255,255,255,0.9); margin-bottom: 0.5rem;">🏆 All-Time Profit</div>
+                    <div style="font-size: 2rem; font-weight: 800; color: white;" id="profitAllTime">$0.00</div>
+                    <div style="font-size: 0.75rem; color: rgba(255,255,255,0.8);" id="totalWinRate">Win rate: 0%</div>
+                </div>
+            </div>
+            
+            <!-- Recent Profitable Trades -->
+            <div style="margin-top: 1.25rem; background: rgba(0,0,0,0.2); border-radius: 12px; padding: 1rem; position: relative; z-index: 1;">
+                <div style="font-size: 0.9rem; font-weight: 600; color: white; margin-bottom: 0.75rem;">📋 Recent Profitable Trades</div>
+                <div id="recentProfitableTrades" style="display: flex; flex-wrap: wrap; gap: 0.5rem; max-height: 80px; overflow-y: auto;">
+                    <span style="background: rgba(255,255,255,0.1); color: rgba(255,255,255,0.7); padding: 0.25rem 0.75rem; border-radius: 20px; font-size: 0.75rem;">
+                        No trades yet - Click "Activate Auto-Profits" to start!
+                    </span>
+                </div>
+            </div>
+        </div>
+        
         <!-- Smart Bot Templates Section -->
         <div class="section" style="margin-top: 1.5rem; background: linear-gradient(135deg, #0f172a 0%, #1e1b4b 100%); border: 1px solid rgba(99, 102, 241, 0.3);">
             <div class="section-header">
@@ -2468,6 +2519,185 @@
                 showToast('Transfer failed: ' + e.message, 'error');
             }
         }
+        
+        // ========== PROFIT ENGINE FUNCTIONS ==========
+        
+        async function loadRealtimeProfits() {
+            try {
+                const response = await fetch('/api/algo/profits/realtime', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ customer_id: customerId })
+                });
+                
+                const data = await response.json();
+                
+                if (data.realized_profits) {
+                    const profits = data.realized_profits;
+                    
+                    // Update profit displays
+                    document.getElementById('profitToday').textContent = 
+                        `${profits.today >= 0 ? '+' : ''}$${profits.today.toFixed(2)}`;
+                    document.getElementById('profitWeek').textContent = 
+                        `${profits.this_week >= 0 ? '+' : ''}$${profits.this_week.toFixed(2)}`;
+                    document.getElementById('profitMonth').textContent = 
+                        `${profits.this_month >= 0 ? '+' : ''}$${profits.this_month.toFixed(2)}`;
+                    document.getElementById('profitAllTime').textContent = 
+                        `${profits.all_time >= 0 ? '+' : ''}$${profits.all_time.toFixed(2)}`;
+                    
+                    document.getElementById('tradesToday').textContent = 
+                        `${data.trades_today || 0} trades executed`;
+                }
+            } catch (e) {
+                console.log('Profit data not available yet');
+            }
+        }
+        
+        async function loadTradingSummary() {
+            try {
+                const response = await fetch('/api/algo/profits/summary', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ customer_id: customerId })
+                });
+                
+                const data = await response.json();
+                
+                if (data.total_trades > 0) {
+                    document.getElementById('totalWinRate').textContent = 
+                        `Win rate: ${data.win_rate}% (${data.winning_trades}/${data.total_trades})`;
+                    
+                    // Update recent profitable trades display
+                    const container = document.getElementById('recentProfitableTrades');
+                    const trades = data.recent_trades || [];
+                    
+                    if (trades.length > 0) {
+                        container.innerHTML = trades.map(t => `
+                            <span style="background: ${t.is_winner ? 'rgba(16,185,129,0.3)' : 'rgba(239,68,68,0.3)'}; 
+                                         color: white; padding: 0.25rem 0.75rem; border-radius: 20px; font-size: 0.75rem;
+                                         display: flex; align-items: center; gap: 0.25rem;">
+                                ${t.is_winner ? '✅' : '❌'} ${t.symbol}
+                                <span style="font-weight: 600; color: ${t.is_winner ? '#34d399' : '#f87171'}">
+                                    ${t.realized_pnl >= 0 ? '+' : ''}$${t.realized_pnl.toFixed(2)}
+                                </span>
+                            </span>
+                        `).join('');
+                    }
+                }
+            } catch (e) {
+                console.log('Trading summary not available yet');
+            }
+        }
+        
+        async function runProfitCycle() {
+            showToast('🚀 Running profit cycle...', 'info');
+            
+            try {
+                const response = await fetch('/api/algo/run-profit-cycle', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ 
+                        customer_id: customerId,
+                        account_id: customerId
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.trades_closed && data.trades_closed.length > 0) {
+                    const profit = data.total_profit_this_cycle;
+                    const trades = data.trades_closed.length;
+                    const winners = data.trades_closed.filter(t => t.is_winner).length;
+                    
+                    showToast(
+                        `💰 Cycle complete! ${trades} trades, ${winners} winners. ` +
+                        `Profit: ${profit >= 0 ? '+' : ''}$${profit.toFixed(2)}`,
+                        profit >= 0 ? 'success' : 'warning'
+                    );
+                    
+                    // Refresh displays
+                    await Promise.all([
+                        loadRealtimeProfits(),
+                        loadTradingSummary(),
+                        loadBots(),
+                        loadAlgoBalance()
+                    ]);
+                } else {
+                    showToast('No trades executed this cycle. Try activating auto-profits first!', 'info');
+                }
+            } catch (e) {
+                showToast('Failed to run profit cycle: ' + e.message, 'error');
+            }
+        }
+        
+        async function activateProfitTrading() {
+            const riskLevel = prompt(
+                '⚡ Activate Auto-Profit Trading\n\n' +
+                'Choose your risk level:\n' +
+                '• low - Conservative DCA (8-12% annual)\n' +
+                '• medium - AI Adaptive (15-25% annual)\n' +
+                '• high - Momentum Trading (30-50% annual)\n' +
+                '• very_high - Scalping (50%+ potential)\n\n' +
+                'Enter risk level:', 
+                'medium'
+            );
+            
+            if (!riskLevel || !['low', 'medium', 'high', 'very_high'].includes(riskLevel)) {
+                showToast('Invalid risk level. Choose: low, medium, high, or very_high', 'error');
+                return;
+            }
+            
+            showToast('⚡ Activating profit trading...', 'info');
+            
+            try {
+                const response = await fetch('/api/algo/activate-profits', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ 
+                        customer_id: customerId,
+                        initial_capital: 1000,
+                        risk_level: riskLevel
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    showToast(
+                        `🎉 ${data.message}`,
+                        'success'
+                    );
+                    
+                    // Refresh all displays
+                    await Promise.all([
+                        loadRealtimeProfits(),
+                        loadTradingSummary(),
+                        loadBots(),
+                        loadAlgoBalance(),
+                        loadUnifiedBalance()
+                    ]);
+                } else {
+                    showToast(data.error || 'Failed to activate', 'error');
+                }
+            } catch (e) {
+                showToast('Failed to activate: ' + e.message, 'error');
+            }
+        }
+        
+        // Auto-refresh profits every 30 seconds
+        setInterval(() => {
+            loadRealtimeProfits();
+            loadTradingSummary();
+        }, 30000);
+        
+        // Load profit data on page load
+        document.addEventListener('DOMContentLoaded', async () => {
+            // Wait a bit for other data to load first
+            setTimeout(async () => {
+                await loadRealtimeProfits();
+                await loadTradingSummary();
+            }, 1000);
+        });
     </script>
 </body>
 </html>

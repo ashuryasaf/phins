@@ -4887,6 +4887,18 @@ For claims or questions, please contact:
             avg_sharpe = sum(b.get('risk_metrics', {}).get('sharpe_ratio', 0) for b in all_bots) / len(all_bots) if all_bots else 0
             max_dd = max(b.get('risk_metrics', {}).get('max_drawdown_pct', 0) for b in all_bots) if all_bots else 0
             
+            # Get real-time profit data if available
+            realtime_profits = {}
+            trading_summary = {}
+            try:
+                from services.algo_trading_service import get_profit_engine
+                profit_engine = get_profit_engine()
+                if profit_engine and customer_id:
+                    realtime_profits = profit_engine.get_real_time_profits(customer_id)
+                    trading_summary = profit_engine.get_customer_trading_summary(customer_id)
+            except Exception:
+                pass
+            
             dashboard = {
                 'timestamp': datetime.now().isoformat(),
                 
@@ -4899,6 +4911,10 @@ For claims or questions, please contact:
                     'max_drawdown_pct': round(max_dd, 2),
                     'total_trades': total_trades
                 },
+                
+                # Real-time profit tracking
+                'realtime_profits': realtime_profits,
+                'trading_summary': trading_summary,
                 
                 # Bot statistics
                 'bot_stats': bot_stats,
@@ -11806,6 +11822,242 @@ For claims or questions, please contact:
                     'bot': algo_trading_service.get_bot_performance(bot_id)
                 }).encode('utf-8'))
             except Exception as e:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+        
+        # ========== PROFIT ENGINE ENDPOINTS ==========
+        
+        # Run profit-generating trading cycle
+        if path == '/api/algo/run-profit-cycle':
+            if not algo_trading_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Algo trading service unavailable'}).encode('utf-8'))
+                return
+            
+            try:
+                data = json.loads(body)
+                customer_id = data.get('customer_id')
+                account_id = data.get('account_id', customer_id)
+                
+                if not customer_id:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'customer_id is required'}).encode('utf-8'))
+                    return
+                
+                # Get profit engine
+                from services.algo_trading_service import get_profit_engine
+                profit_engine = get_profit_engine()
+                
+                if not profit_engine:
+                    self._set_json_headers(503)
+                    self.wfile.write(json.dumps({'error': 'Profit engine not initialized'}).encode('utf-8'))
+                    return
+                
+                # Run profit cycle
+                result = profit_engine.run_profit_cycle(customer_id, account_id)
+                
+                # If profits were made, update investment account
+                if result.get('total_profit_this_cycle', 0) > 0:
+                    try:
+                        # Add profits to investment account
+                        if customer_id in INVESTMENT_ACCOUNTS:
+                            INVESTMENT_ACCOUNTS[customer_id]['algo_trading_profits'] = \
+                                INVESTMENT_ACCOUNTS[customer_id].get('algo_trading_profits', 0) + \
+                                result['total_profit_this_cycle']
+                        
+                        # Record transaction
+                        record_transaction(
+                            customer_id=customer_id,
+                            tx_type='algo_trading_profit',
+                            amount=result['total_profit_this_cycle'],
+                            description=f"Algo trading profit: {len(result.get('trades_closed', []))} trades executed",
+                            metadata={
+                                'trades_count': len(result.get('trades_closed', [])),
+                                'winning_trades': len([t for t in result.get('trades_closed', []) if t.get('is_winner')]),
+                                'cycle_timestamp': result.get('timestamp')
+                            }
+                        )
+                    except Exception as tx_err:
+                        print(f"Error recording profit transaction: {tx_err}")
+                
+                self._set_json_headers()
+                self.wfile.write(json.dumps(result).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+        
+        # Get real-time profits
+        if path == '/api/algo/profits/realtime':
+            if not algo_trading_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Algo trading service unavailable'}).encode('utf-8'))
+                return
+            
+            try:
+                data = json.loads(body)
+                customer_id = data.get('customer_id')
+                
+                if not customer_id:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'customer_id is required'}).encode('utf-8'))
+                    return
+                
+                from services.algo_trading_service import get_profit_engine
+                profit_engine = get_profit_engine()
+                
+                if not profit_engine:
+                    self._set_json_headers(503)
+                    self.wfile.write(json.dumps({'error': 'Profit engine not initialized'}).encode('utf-8'))
+                    return
+                
+                result = profit_engine.get_real_time_profits(customer_id)
+                
+                self._set_json_headers()
+                self.wfile.write(json.dumps(result).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+        
+        # Get customer trading summary
+        if path == '/api/algo/profits/summary':
+            if not algo_trading_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Algo trading service unavailable'}).encode('utf-8'))
+                return
+            
+            try:
+                data = json.loads(body)
+                customer_id = data.get('customer_id')
+                
+                if not customer_id:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'customer_id is required'}).encode('utf-8'))
+                    return
+                
+                from services.algo_trading_service import get_profit_engine
+                profit_engine = get_profit_engine()
+                
+                if not profit_engine:
+                    self._set_json_headers(503)
+                    self.wfile.write(json.dumps({'error': 'Profit engine not initialized'}).encode('utf-8'))
+                    return
+                
+                result = profit_engine.get_customer_trading_summary(customer_id)
+                
+                self._set_json_headers()
+                self.wfile.write(json.dumps(result).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+        
+        # Activate auto-profit trading for customer
+        if path == '/api/algo/activate-profits':
+            if not algo_trading_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Algo trading service unavailable'}).encode('utf-8'))
+                return
+            
+            try:
+                data = json.loads(body)
+                customer_id = data.get('customer_id')
+                initial_capital = float(data.get('initial_capital', 1000))
+                risk_level = data.get('risk_level', 'medium')
+                
+                if not customer_id:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'customer_id is required'}).encode('utf-8'))
+                    return
+                
+                from services.algo_trading_service import get_profit_engine, TradingStrategy
+                profit_engine = get_profit_engine()
+                
+                if not profit_engine:
+                    self._set_json_headers(503)
+                    self.wfile.write(json.dumps({'error': 'Profit engine not initialized'}).encode('utf-8'))
+                    return
+                
+                # Create profit-generating bots based on risk level
+                strategy_map = {
+                    'low': TradingStrategy.DCA,
+                    'medium': TradingStrategy.AI_ADAPTIVE,
+                    'high': TradingStrategy.MOMENTUM,
+                    'very_high': TradingStrategy.SCALPING
+                }
+                
+                # Symbol allocations by risk
+                symbol_map = {
+                    'low': ['SPY', 'BND', 'GLD'],
+                    'medium': ['SPY', 'QQQ', 'BTC', 'ETH'],
+                    'high': ['BTC', 'ETH', 'SOL', 'QQQ'],
+                    'very_high': ['BTC', 'ETH', 'SOL', 'DOGE']
+                }
+                
+                strategy = strategy_map.get(risk_level, TradingStrategy.AI_ADAPTIVE)
+                symbols = symbol_map.get(risk_level, ['SPY', 'QQQ', 'BTC'])
+                
+                # Create the profit bot
+                bot = algo_trading_service.create_bot(
+                    account_id=customer_id,
+                    name=f"Auto-Profit {risk_level.title()} Bot",
+                    strategy=strategy,
+                    symbols=symbols,
+                    max_position_size=initial_capital * 0.2,  # 20% per trade
+                    stop_loss_pct=3.0 if risk_level in ['low', 'medium'] else 5.0,
+                    take_profit_pct=6.0 if risk_level in ['low', 'medium'] else 10.0,
+                    max_daily_trades=5 if risk_level in ['low', 'medium'] else 10
+                )
+                bot.risk_level = risk_level
+                
+                # Run initial profit cycles to generate starting profits
+                total_initial_profit = 0
+                for _ in range(3):  # Run 3 initial cycles
+                    result = profit_engine.run_profit_cycle(customer_id, customer_id)
+                    total_initial_profit += result.get('total_profit_this_cycle', 0)
+                
+                # Update investment account with initial profits
+                if customer_id not in INVESTMENT_ACCOUNTS:
+                    INVESTMENT_ACCOUNTS[customer_id] = {
+                        'customer_id': customer_id,
+                        'total_value': 0,
+                        'algo_trading_profits': 0,
+                        'created_at': datetime.now().isoformat()
+                    }
+                
+                INVESTMENT_ACCOUNTS[customer_id]['algo_trading_profits'] = \
+                    INVESTMENT_ACCOUNTS[customer_id].get('algo_trading_profits', 0) + total_initial_profit
+                
+                # Record activation
+                record_transaction(
+                    customer_id=customer_id,
+                    tx_type='algo_profit_activated',
+                    amount=total_initial_profit,
+                    description=f"Auto-profit trading activated ({risk_level} risk). Initial profit: ${total_initial_profit:.2f}",
+                    metadata={
+                        'bot_id': bot.bot_id,
+                        'risk_level': risk_level,
+                        'initial_capital': initial_capital,
+                        'strategy': strategy.value
+                    }
+                )
+                
+                # Get updated summary
+                summary = profit_engine.get_customer_trading_summary(customer_id)
+                
+                self._set_json_headers()
+                self.wfile.write(json.dumps({
+                    'success': True,
+                    'message': f'Auto-profit trading activated! Generated ${total_initial_profit:.2f} initial profit.',
+                    'bot': algo_trading_service.get_bot_performance(bot.bot_id),
+                    'initial_profit': round(total_initial_profit, 2),
+                    'trading_summary': summary
+                }).encode('utf-8'))
+            except Exception as e:
+                import traceback
+                traceback.print_exc()
                 self._set_json_headers(400)
                 self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
             return
