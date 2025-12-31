@@ -9550,6 +9550,73 @@ For claims or questions, please contact:
                 self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
             return
         
+        # Reset/Delete savings accounts for a customer
+        if path == '/api/savings/reset-account':
+            if not portfolio_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Investment service unavailable'}).encode('utf-8'))
+                return
+            
+            try:
+                data = json.loads(body)
+                customer_id = data.get('customer_id')
+                
+                if not customer_id:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'customer_id required'}).encode('utf-8'))
+                    return
+                
+                # Get all accounts for this customer
+                accounts = portfolio_service.get_customer_accounts(customer_id)
+                removed_count = 0
+                
+                for acc in accounts:
+                    # Remove from portfolio service
+                    if acc.account_id in portfolio_service.accounts:
+                        del portfolio_service.accounts[acc.account_id]
+                        removed_count += 1
+                
+                # Also reset INVESTMENT_ACCOUNTS
+                if customer_id in INVESTMENT_ACCOUNTS:
+                    old_balance = INVESTMENT_ACCOUNTS[customer_id].get('balance', 0)
+                    INVESTMENT_ACCOUNTS[customer_id] = {
+                        'customer_id': customer_id,
+                        'balance': 0,
+                        'index_balance': 0,
+                        'bonds_balance': 0,
+                        'crypto_balance': 0,
+                        'deposits': [],
+                        'created_at': datetime.now().isoformat()
+                    }
+                    
+                    # Record on ledger
+                    if old_balance > 0:
+                        record_transaction(
+                            customer_id=customer_id,
+                            tx_type='savings_account_reset',
+                            amount=-old_balance,
+                            description=f'Savings account reset - previous balance: ${old_balance:,.2f}',
+                            metadata={
+                                'accounts_removed': removed_count,
+                                'old_balance': old_balance
+                            }
+                        )
+                
+                save_ledger_data()
+                
+                self._set_json_headers()
+                self.wfile.write(json.dumps({
+                    'success': True,
+                    'customer_id': customer_id,
+                    'accounts_removed': removed_count,
+                    'investment_balance_reset': True,
+                    'message': 'Savings accounts reset successfully'
+                }).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+        
         # Deposit funds into savings account (syncs with INVESTMENT_ACCOUNTS)
         if path == '/api/savings/deposit':
             if not portfolio_enabled:
