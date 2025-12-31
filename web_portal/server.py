@@ -3228,6 +3228,146 @@ For claims or questions, please contact:
             }).encode('utf-8'))
             return
         
+        # Lookup NFT by block number
+        if path == '/api/nft-ledger/block':
+            block_number = qs.get('block', [None])[0]
+            customer_id = qs.get('customer_id', [None])[0]
+            
+            if not block_number:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'Block number required'}).encode('utf-8'))
+                return
+            
+            try:
+                block_num = int(block_number.replace('#', ''))
+            except:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'Invalid block number format'}).encode('utf-8'))
+                return
+            
+            # Search for NFT with this block number
+            found_nft = None
+            for token_id, nft in NFT_LEDGER.items():
+                if nft.get('block_number') == block_num:
+                    if customer_id and nft.get('owner_id') != customer_id:
+                        continue
+                    found_nft = nft
+                    break
+            
+            if not found_nft:
+                # Block not found in current ledger - might be from previous session
+                self._set_json_headers(404)
+                self.wfile.write(json.dumps({
+                    'found': False,
+                    'block_number': block_num,
+                    'error': 'Block not found in current ledger',
+                    'note': 'This block may be from a previous server session. In-memory data is volatile and lost on server restart.',
+                    'suggestion': 'To re-create this deposit, use the deposit feature on the algo trading dashboard',
+                    'current_ledger_blocks': sorted([nft.get('block_number') for nft in NFT_LEDGER.values()])[-10:] if NFT_LEDGER else []
+                }).encode('utf-8'))
+                return
+            
+            self._set_json_headers()
+            self.wfile.write(json.dumps({
+                'found': True,
+                'block_number': block_num,
+                'token': found_nft,
+                'status': found_nft.get('status', 'unknown'),
+                'activated': found_nft.get('status') == 'confirmed'
+            }).encode('utf-8'))
+            return
+        
+        # Reactivate/reprocess a deposit by block number (admin tool)
+        if path == '/api/nft-ledger/reactivate':
+            block_number = qs.get('block', [None])[0]
+            customer_id = qs.get('customer_id', [None])[0]
+            
+            if not block_number or not customer_id:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'block and customer_id required'}).encode('utf-8'))
+                return
+            
+            try:
+                block_num = int(block_number.replace('#', ''))
+            except:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'Invalid block number format'}).encode('utf-8'))
+                return
+            
+            # Search for NFT with this block number
+            found_nft = None
+            for token_id, nft in NFT_LEDGER.items():
+                if nft.get('block_number') == block_num and nft.get('owner_id') == customer_id:
+                    found_nft = nft
+                    break
+            
+            if not found_nft:
+                self._set_json_headers(404)
+                self.wfile.write(json.dumps({
+                    'success': False,
+                    'error': 'Block not found in ledger for this customer',
+                    'note': 'The block may be from a previous session. Use deposit to create a new transaction.'
+                }).encode('utf-8'))
+                return
+            
+            # Check if this is a deposit type transaction
+            tx_type = found_nft.get('transaction_type', '')
+            if 'deposit' not in tx_type.lower() and 'transfer' not in tx_type.lower():
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({
+                    'success': False,
+                    'error': f'Block #{block_num} is not a deposit transaction (type: {tx_type})',
+                    'token': found_nft
+                }).encode('utf-8'))
+                return
+            
+            # Reactivate the deposit - sync balance
+            amount = found_nft.get('amount', 0)
+            if amount <= 0:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({
+                    'success': False,
+                    'error': 'No amount found for this transaction'
+                }).encode('utf-8'))
+                return
+            
+            # Update algo trading balance
+            if unified_balance_enabled:
+                if customer_id not in unified_balance_service.algo_trading_balances:
+                    unified_balance_service.algo_trading_balances[customer_id] = {
+                        'available': amount,
+                        'in_positions': 0,
+                        'total_pnl': 0
+                    }
+                else:
+                    unified_balance_service.algo_trading_balances[customer_id]['available'] += amount
+            
+            if portfolio_tracker_enabled:
+                if customer_id not in portfolio_tracker_service.algo_balances:
+                    portfolio_tracker_service.algo_balances[customer_id] = {
+                        'available': amount,
+                        'in_positions': 0,
+                        'total_pnl': 0
+                    }
+                else:
+                    portfolio_tracker_service.algo_balances[customer_id]['available'] += amount
+            
+            # Mark as reactivated
+            found_nft['reactivated_at'] = datetime.now().isoformat()
+            found_nft['status'] = 'reactivated'
+            
+            save_ledger_data()
+            
+            self._set_json_headers()
+            self.wfile.write(json.dumps({
+                'success': True,
+                'block_number': block_num,
+                'amount_reactivated': amount,
+                'new_algo_balance': unified_balance_service.algo_trading_balances.get(customer_id, {}) if unified_balance_enabled else {},
+                'token': found_nft
+            }).encode('utf-8'))
+            return
+        
         if path.startswith('/api/health-wallet'):
             customer_id = qs.get('customer_id', ['CUST001'])[0]
             
