@@ -5791,6 +5791,258 @@ For claims or questions, please contact:
                 self.wfile.write(json.dumps({'error': 'Reset failed', 'details': str(e)}).encode('utf-8'))
             return
         
+        # Admin: Cleanup customer pipeline and data
+        if path == '/api/admin/cleanup-customer-pipeline':
+            try:
+                data = json.loads(body or '{}')
+                customer_email = data.get('customer_email', 'asaf@assurance.co.il')
+                customer_id = data.get('customer_id', 'CUST-ASAF-001')
+                cutoff_date_str = data.get('cutoff_date', '2025-12-30')
+                investment_adjustment = float(data.get('investment_adjustment', 0))
+                create_new_application = data.get('create_new_application', True)
+                
+                # Parse cutoff date
+                try:
+                    cutoff_date = datetime.strptime(cutoff_date_str, '%Y-%m-%d')
+                except:
+                    cutoff_date = datetime(2025, 12, 30)
+                
+                result = {
+                    'success': True,
+                    'customer_id': customer_id,
+                    'customer_email': customer_email,
+                    'cutoff_date': cutoff_date.isoformat(),
+                    'removed': {
+                        'applications': 0,
+                        'claims': 0,
+                        'policies': 0,
+                        'customers': 0
+                    },
+                    'new_application': None,
+                    'investment_adjustment': None
+                }
+                
+                def parse_date(date_str):
+                    if not date_str:
+                        return None
+                    try:
+                        if 'T' in str(date_str):
+                            return datetime.fromisoformat(str(date_str).replace('Z', '+00:00').split('+')[0])
+                        return datetime.strptime(str(date_str)[:10], '%Y-%m-%d')
+                    except:
+                        return None
+                
+                with STATE_LOCK:
+                    # 1. Remove old applications (before cutoff or test data not for this customer)
+                    apps_to_remove = []
+                    for app_id, app in list(UNDERWRITING_APPLICATIONS.items()):
+                        created = parse_date(app.get('submitted_date', app.get('created_at', '')))
+                        is_test = 'TEST' in app_id.upper() or 'TEST' in str(app.get('customer_id', '')).upper()
+                        
+                        if created and created < cutoff_date and app.get('customer_id') != customer_id:
+                            apps_to_remove.append(app_id)
+                        elif is_test and app.get('customer_id') != customer_id:
+                            apps_to_remove.append(app_id)
+                    
+                    for app_id in apps_to_remove:
+                        del UNDERWRITING_APPLICATIONS[app_id]
+                        result['removed']['applications'] += 1
+                    
+                    # 2. Remove old claims (before cutoff or test data)
+                    claims_to_remove = []
+                    for claim_id, claim in list(CLAIMS.items()):
+                        created = parse_date(claim.get('filed_date', claim.get('submitted_at', claim.get('created_at', ''))))
+                        is_test = 'TEST' in claim_id.upper()
+                        
+                        if created and created < cutoff_date and claim.get('customer_id') != customer_id:
+                            claims_to_remove.append(claim_id)
+                        elif is_test and claim.get('customer_id') != customer_id:
+                            claims_to_remove.append(claim_id)
+                    
+                    for claim_id in claims_to_remove:
+                        del CLAIMS[claim_id]
+                        result['removed']['claims'] += 1
+                    
+                    # 3. Remove test policies (not for this customer)
+                    policies_to_remove = []
+                    for pol_id, pol in list(POLICIES.items()):
+                        created = parse_date(pol.get('created_at', pol.get('start_date', '')))
+                        is_test = 'TEST' in pol_id.upper()
+                        cust = pol.get('customer_id', '')
+                        is_test_customer = 'TEST' in str(cust).upper()
+                        
+                        if (is_test or is_test_customer) and cust != customer_id:
+                            policies_to_remove.append(pol_id)
+                        elif created and created < cutoff_date and cust != customer_id:
+                            policies_to_remove.append(pol_id)
+                    
+                    for pol_id in policies_to_remove:
+                        del POLICIES[pol_id]
+                        result['removed']['policies'] += 1
+                    
+                    # 4. Remove test customers
+                    customers_to_remove = [cid for cid in CUSTOMERS.keys() 
+                                           if 'TEST' in cid.upper() and cid != customer_id]
+                    for cust_id in customers_to_remove:
+                        del CUSTOMERS[cust_id]
+                        result['removed']['customers'] += 1
+                    
+                    # 5. Adjust investment balance
+                    if investment_adjustment != 0:
+                        if customer_id not in INVESTMENT_ACCOUNTS:
+                            INVESTMENT_ACCOUNTS[customer_id] = {
+                                'customer_id': customer_id,
+                                'balance': 0,
+                                'deposits': [],
+                                'created_at': datetime.now().isoformat()
+                            }
+                        
+                        old_balance = INVESTMENT_ACCOUNTS[customer_id].get('balance', 0)
+                        new_balance = max(0, old_balance + investment_adjustment)
+                        INVESTMENT_ACCOUNTS[customer_id]['balance'] = new_balance
+                        
+                        INVESTMENT_ACCOUNTS[customer_id].setdefault('deposits', []).append({
+                            'id': f"ADJ-{datetime.now().strftime('%Y%m%d%H%M%S')}",
+                            'type': 'admin_adjustment',
+                            'amount': investment_adjustment,
+                            'description': 'Admin pipeline cleanup adjustment',
+                            'timestamp': datetime.now().isoformat(),
+                            'balance_after': new_balance
+                        })
+                        
+                        result['investment_adjustment'] = {
+                            'old_balance': old_balance,
+                            'adjustment': investment_adjustment,
+                            'new_balance': new_balance
+                        }
+                        
+                        # Record on ledger
+                        record_transaction(
+                            customer_id=customer_id,
+                            tx_type='admin_adjustment',
+                            amount=investment_adjustment,
+                            description=f'Pipeline cleanup - investment adjustment',
+                            metadata={
+                                'old_balance': old_balance,
+                                'new_balance': new_balance,
+                                'reason': 'Admin pipeline cleanup'
+                            }
+                        )
+                    
+                    # 6. Create new application for underwriting pipeline
+                    if create_new_application:
+                        now = datetime.now()
+                        new_app_id = f"UW-ASAF-{now.strftime('%Y%m%d%H%M%S')}"
+                        new_policy_id = f"POL-ASAF-NEW-{now.strftime('%Y%m%d')}"
+                        
+                        # Ensure customer exists
+                        if customer_id not in CUSTOMERS:
+                            CUSTOMERS[customer_id] = {
+                                'id': customer_id,
+                                'name': 'Asaf Assurance',
+                                'email': customer_email,
+                                'phone': '+972-50-1234567',
+                                'created_date': now.isoformat()
+                            }
+                        
+                        # Create underwriting application
+                        UNDERWRITING_APPLICATIONS[new_app_id] = {
+                            'id': new_app_id,
+                            'customer_id': customer_id,
+                            'policy_id': new_policy_id,
+                            'status': 'pending',
+                            'risk_assessment': 'low',
+                            'submitted_date': now.isoformat(),
+                            'created_at': now.isoformat(),
+                            'applicant_name': CUSTOMERS[customer_id].get('name', 'Asaf Assurance'),
+                            'applicant_email': customer_email,
+                            'policy_type': 'comprehensive',
+                            'coverage_amount': 500000,
+                            'annual_premium': 6000,
+                            'monthly_premium': 500,
+                            'medical_exam_required': False,
+                            'health_wallet': {'enabled': True, 'monthly_deposit': 500}
+                        }
+                        
+                        # Create associated policy
+                        POLICIES[new_policy_id] = {
+                            'id': new_policy_id,
+                            'customer_id': customer_id,
+                            'underwriting_id': new_app_id,
+                            'type': 'comprehensive',
+                            'status': 'pending_underwriting',
+                            'coverage_amount': 500000,
+                            'annual_premium': 6000,
+                            'monthly_premium': 500,
+                            'risk_score': 'low',
+                            'created_at': now.isoformat(),
+                            'start_date': now.isoformat()
+                        }
+                        
+                        # Record on NFT ledger
+                        nft = generate_nft_token(
+                            customer_id=customer_id,
+                            transaction_type='application_submission',
+                            transaction_id=new_app_id,
+                            amount=500000,
+                            description='New insurance application submitted via pipeline cleanup',
+                            metadata={
+                                'application_id': new_app_id,
+                                'policy_id': new_policy_id
+                            }
+                        )
+                        
+                        # Record on transaction ledger
+                        tx = record_transaction(
+                            customer_id=customer_id,
+                            tx_type='application_submitted',
+                            amount=0,
+                            description=f'Insurance application {new_app_id} submitted for underwriting',
+                            metadata={
+                                'application_id': new_app_id,
+                                'policy_id': new_policy_id,
+                                'policy_type': 'comprehensive',
+                                'coverage_amount': 500000
+                            }
+                        )
+                        
+                        result['new_application'] = {
+                            'application_id': new_app_id,
+                            'policy_id': new_policy_id,
+                            'status': 'pending',
+                            'nft_token_id': nft['token_id'],
+                            'block_number': nft['block_number'],
+                            'ledger_tx_id': tx['id']
+                        }
+                    
+                    # 7. Save all changes
+                    save_ledger_data()
+                
+                # Add final state summary
+                result['final_state'] = {
+                    'customers': len(CUSTOMERS),
+                    'applications': len(UNDERWRITING_APPLICATIONS),
+                    'policies': len(POLICIES),
+                    'claims': len(CLAIMS),
+                    'customer_applications': [
+                        {'id': a['id'], 'status': a.get('status')} 
+                        for a in UNDERWRITING_APPLICATIONS.values() 
+                        if a.get('customer_id') == customer_id
+                    ],
+                    'customer_policies': [
+                        {'id': p['id'], 'status': p.get('status')} 
+                        for p in POLICIES.values() 
+                        if p.get('customer_id') == customer_id
+                    ]
+                }
+                
+                self._set_json_headers(200)
+                self.wfile.write(json.dumps(result, default=str).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+        
         # Pipeline Process - Process next step for a customer
         if path.startswith('/api/admin/pipeline-process/'):
             customer_id = path.split('/')[-1]
