@@ -260,26 +260,52 @@ class PortfolioTrackerService:
     
     def deposit_to_algo(self, customer_id: str, amount: float, source: str = 'investment') -> Dict:
         """Deposit funds to algo trading from source account"""
-        # Validate source
+        # Validate source and check balance
         if source == 'investment':
-            inv_acc = self.investment_accounts.get(customer_id, {})
-            if inv_acc.get('balance', 0) < amount:
-                return {'success': False, 'error': 'Insufficient investment balance'}
+            # Initialize investment account if not exists
+            if customer_id not in self.investment_accounts:
+                self.investment_accounts[customer_id] = {
+                    'balance': 0,
+                    'deposits': [],
+                    'created_at': datetime.now().isoformat()
+                }
+            
+            inv_acc = self.investment_accounts[customer_id]
+            current_balance = inv_acc.get('balance', 0)
+            
+            if current_balance < amount:
+                return {
+                    'success': False, 
+                    'error': f'Insufficient investment balance. Available: ${current_balance:.2f}, Requested: ${amount:.2f}'
+                }
             
             # Deduct from investment
-            self.investment_accounts[customer_id]['balance'] -= amount
+            self.investment_accounts[customer_id]['balance'] = current_balance - amount
             source_balance = self.investment_accounts[customer_id]['balance']
             
         elif source == 'health_wallet':
-            wallet = self.health_wallets.get(customer_id, {})
-            if wallet.get('balance', 0) < amount:
-                return {'success': False, 'error': 'Insufficient wallet balance'}
+            # Initialize wallet if not exists
+            if customer_id not in self.health_wallets:
+                self.health_wallets[customer_id] = {
+                    'balance': 0,
+                    'transactions': [],
+                    'created_at': datetime.now().isoformat()
+                }
+            
+            wallet = self.health_wallets[customer_id]
+            current_balance = wallet.get('balance', 0)
+            
+            if current_balance < amount:
+                return {
+                    'success': False, 
+                    'error': f'Insufficient wallet balance. Available: ${current_balance:.2f}, Requested: ${amount:.2f}'
+                }
             
             # Deduct from wallet
-            self.health_wallets[customer_id]['balance'] -= amount
+            self.health_wallets[customer_id]['balance'] = current_balance - amount
             source_balance = self.health_wallets[customer_id]['balance']
         else:
-            return {'success': False, 'error': 'Invalid source account'}
+            return {'success': False, 'error': f'Invalid source account: {source}'}
         
         # Add to algo trading
         if customer_id not in self.algo_balances:

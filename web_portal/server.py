@@ -3402,6 +3402,23 @@ For claims or questions, please contact:
                 accounts = portfolio_service.get_customer_accounts(customer_id)
                 if accounts:
                     result = portfolio_service.get_portfolio_summary(accounts[0].account_id)
+                    
+                    # ========== SYNC INVESTMENT BALANCE TO PORTFOLIO TRACKER ==========
+                    # This ensures transfer operations have the correct balance
+                    if portfolio_tracker_enabled and result.get('cash_balance') is not None:
+                        try:
+                            cash_balance = result['cash_balance']
+                            if customer_id not in portfolio_tracker_service.investment_accounts:
+                                portfolio_tracker_service.investment_accounts[customer_id] = {
+                                    'balance': cash_balance,
+                                    'deposits': [],
+                                    'created_at': datetime.now().isoformat()
+                                }
+                            else:
+                                portfolio_tracker_service.investment_accounts[customer_id]['balance'] = cash_balance
+                        except Exception as sync_err:
+                            print(f"Portfolio sync note: {sync_err}")
+                    # ========== END SYNC ==========
                 else:
                     result = {'error': 'No savings account found', 'customer_id': customer_id}
             else:
@@ -9162,15 +9179,74 @@ For claims or questions, please contact:
                     self.wfile.write(json.dumps({'error': 'customer_id and positive amount required'}).encode('utf-8'))
                     return
                 
+                # ========== SYNC ALL ACCOUNTS BEFORE TRANSFER ==========
                 # Sync algo_balances with unified_balance_service if available
                 if unified_balance_enabled:
                     portfolio_tracker_service.algo_balances = unified_balance_service.algo_trading_balances
                 
+                # Sync investment_accounts from investment_portfolio_service
+                if portfolio_enabled and portfolio_service:
+                    try:
+                        # Get customer's savings accounts from portfolio service
+                        accounts = portfolio_service.get_customer_accounts(customer_id)
+                        if accounts:
+                            total_cash = sum(acc.balance for acc in accounts)
+                            if customer_id not in portfolio_tracker_service.investment_accounts:
+                                portfolio_tracker_service.investment_accounts[customer_id] = {
+                                    'balance': total_cash,
+                                    'deposits': [],
+                                    'created_at': datetime.now().isoformat()
+                                }
+                            else:
+                                portfolio_tracker_service.investment_accounts[customer_id]['balance'] = total_cash
+                    except Exception as sync_err:
+                        print(f"Investment sync note: {sync_err}")
+                
+                # Also sync from global INVESTMENT_ACCOUNTS
+                if customer_id in INVESTMENT_ACCOUNTS:
+                    inv_bal = INVESTMENT_ACCOUNTS[customer_id].get('balance', 0)
+                    if customer_id not in portfolio_tracker_service.investment_accounts:
+                        portfolio_tracker_service.investment_accounts[customer_id] = INVESTMENT_ACCOUNTS[customer_id].copy()
+                    else:
+                        # Use the higher of the two balances (more accurate)
+                        current_bal = portfolio_tracker_service.investment_accounts[customer_id].get('balance', 0)
+                        portfolio_tracker_service.investment_accounts[customer_id]['balance'] = max(current_bal, inv_bal)
+                
+                # Sync health_wallets from global HEALTH_WALLETS
+                if customer_id in HEALTH_WALLETS:
+                    portfolio_tracker_service.health_wallets[customer_id] = HEALTH_WALLETS[customer_id]
+                # ========== END SYNC ==========
+                
                 result = portfolio_tracker_service.deposit_to_algo(customer_id, amount, source)
                 
-                # Sync back
-                if unified_balance_enabled and result.get('success'):
-                    unified_balance_service.algo_trading_balances = portfolio_tracker_service.algo_balances
+                # ========== SYNC BACK AFTER TRANSFER ==========
+                if result.get('success'):
+                    # Sync algo_balances back
+                    if unified_balance_enabled:
+                        unified_balance_service.algo_trading_balances = portfolio_tracker_service.algo_balances
+                    
+                    # Sync investment accounts back to global store and portfolio service
+                    if customer_id in portfolio_tracker_service.investment_accounts:
+                        new_balance = portfolio_tracker_service.investment_accounts[customer_id].get('balance', 0)
+                        
+                        # Update global INVESTMENT_ACCOUNTS
+                        if customer_id in INVESTMENT_ACCOUNTS:
+                            INVESTMENT_ACCOUNTS[customer_id]['balance'] = new_balance
+                        
+                        # Update portfolio service accounts
+                        if portfolio_enabled and portfolio_service:
+                            try:
+                                accounts = portfolio_service.get_customer_accounts(customer_id)
+                                if accounts:
+                                    # Deduct proportionally from accounts
+                                    accounts[0].balance = new_balance
+                            except Exception as sync_err:
+                                print(f"Portfolio sync back note: {sync_err}")
+                    
+                    # Sync health wallets back
+                    if source == 'health_wallet' and customer_id in portfolio_tracker_service.health_wallets:
+                        HEALTH_WALLETS[customer_id] = portfolio_tracker_service.health_wallets[customer_id]
+                # ========== END SYNC BACK ==========
                 
                 if result.get('success'):
                     self._set_json_headers()
