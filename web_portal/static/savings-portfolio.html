@@ -1224,28 +1224,10 @@
                     data = await response.json();
                     accountId = data.account_id;
                     
-                    // Seed with initial deposit based on unified balance
-                    const initialDeposit = unifiedData.total_value > 0 ? unifiedData.total_value : 25000;
-                    await fetch('/api/savings/deposit', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            account_id: accountId,
-                            amount: initialDeposit,
-                            source: 'initial_deposit'
-                        })
-                    });
-                    
-                    // Make some initial investments if no existing invested assets
-                    if (unifiedData.invested_assets === 0 || !unifiedData.invested_assets) {
-                        await Promise.all([
-                            investInAsset('SPY', 10000),
-                            investInAsset('BTC', 3000),
-                            investInAsset('BND', 5000),
-                            investInAsset('ETH', 2000),
-                            investInAsset('GLD', 2000)
-                        ]);
-                    }
+                    // NOTE: Removed auto-seeding of $25,000 deposit
+                    // Users should make deposits manually via the Deposit button
+                    // This ensures clean account state after reset
+                    console.log('New savings account created:', accountId);
                 }
                 
                 // STEP 3: Load detailed portfolio summary
