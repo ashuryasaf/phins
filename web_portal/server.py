@@ -9616,6 +9616,48 @@ For claims or questions, please contact:
                     self.wfile.write(json.dumps({'error': 'customer_id and positive amount required'}).encode('utf-8'))
                     return
                 
+                # ========== PRE-TRANSFER SYNC ==========
+                # Sync balances from all sources to unified_balance_service before transfer
+                
+                # 1. Sync investment balance from portfolio_service
+                if portfolio_enabled and portfolio_service:
+                    try:
+                        accounts = portfolio_service.get_customer_accounts(customer_id)
+                        if accounts:
+                            portfolio_cash = sum(acc.balance for acc in accounts)
+                            # Use the maximum of portfolio_service and INVESTMENT_ACCOUNTS
+                            inv_acc_bal = INVESTMENT_ACCOUNTS.get(customer_id, {}).get('balance', 0)
+                            best_balance = max(portfolio_cash, inv_acc_bal)
+                            
+                            # Update unified_balance_service's investment_accounts
+                            if customer_id not in unified_balance_service.investment_accounts:
+                                unified_balance_service.investment_accounts[customer_id] = {
+                                    'balance': best_balance,
+                                    'deposits': [],
+                                    'created_at': datetime.now().isoformat()
+                                }
+                            else:
+                                unified_balance_service.investment_accounts[customer_id]['balance'] = best_balance
+                            
+                            # Also update global INVESTMENT_ACCOUNTS
+                            if customer_id not in INVESTMENT_ACCOUNTS:
+                                INVESTMENT_ACCOUNTS[customer_id] = unified_balance_service.investment_accounts[customer_id].copy()
+                            else:
+                                INVESTMENT_ACCOUNTS[customer_id]['balance'] = best_balance
+                    except Exception as sync_err:
+                        print(f"Pre-transfer investment sync note: {sync_err}")
+                
+                # 2. Sync health wallet balance
+                if customer_id in HEALTH_WALLETS:
+                    unified_balance_service.health_wallets[customer_id] = HEALTH_WALLETS[customer_id]
+                
+                # 3. Sync algo trading balances from portfolio_tracker if available
+                if portfolio_tracker_enabled:
+                    if customer_id in portfolio_tracker_service.algo_balances:
+                        unified_balance_service.algo_trading_balances[customer_id] = portfolio_tracker_service.algo_balances[customer_id].copy()
+                # ========== END PRE-TRANSFER SYNC ==========
+                
+                # Now perform the transfer with synced balances
                 result = unified_balance_service.transfer_to_algo_trading(
                     customer_id=customer_id,
                     amount=amount,
@@ -9624,14 +9666,72 @@ For claims or questions, please contact:
                 )
                 
                 if result['success']:
+                    # ========== POST-TRANSFER SYNC ==========
+                    # Sync all changes back to global stores and other services
+                    
+                    # 1. Sync investment balance back
+                    if source == 'investment_account':
+                        new_inv_balance = unified_balance_service.investment_accounts.get(customer_id, {}).get('balance', 0)
+                        INVESTMENT_ACCOUNTS[customer_id]['balance'] = new_inv_balance
+                        
+                        # Also update portfolio_service
+                        if portfolio_enabled and portfolio_service:
+                            try:
+                                accounts = portfolio_service.get_customer_accounts(customer_id)
+                                if accounts:
+                                    accounts[0].balance = new_inv_balance
+                            except Exception:
+                                pass
+                        
+                        # Update portfolio_tracker_service investment_accounts
+                        if portfolio_tracker_enabled:
+                            if customer_id not in portfolio_tracker_service.investment_accounts:
+                                portfolio_tracker_service.investment_accounts[customer_id] = {'balance': new_inv_balance}
+                            else:
+                                portfolio_tracker_service.investment_accounts[customer_id]['balance'] = new_inv_balance
+                    
+                    # 2. Sync health wallet back
+                    elif source == 'health_wallet':
+                        HEALTH_WALLETS[customer_id] = unified_balance_service.health_wallets.get(customer_id, HEALTH_WALLETS.get(customer_id, {}))
+                        if portfolio_tracker_enabled:
+                            portfolio_tracker_service.health_wallets[customer_id] = HEALTH_WALLETS[customer_id]
+                    
+                    # 3. Sync algo trading balance to portfolio_tracker_service
+                    if portfolio_tracker_enabled:
+                        algo_bal = unified_balance_service.algo_trading_balances.get(customer_id, {})
+                        portfolio_tracker_service.algo_balances[customer_id] = {
+                            'available': algo_bal.get('available', 0),
+                            'in_positions': algo_bal.get('in_positions', 0),
+                            'total_pnl': algo_bal.get('total_pnl', 0)
+                        }
+                    
+                    # 4. Persist changes
+                    save_ledger_data()
+                    
+                    # Add sync confirmation to result
+                    result['synced'] = True
+                    result['block_number'] = result.get('transaction', {}).get('nft_token_id', '').split('-')[-1] if result.get('transaction') else None
+                    # ========== END POST-TRANSFER SYNC ==========
+                    
                     self._set_json_headers()
                 else:
+                    # Transfer failed - provide detailed error
                     self._set_json_headers(400)
+                    
+                    # Add debug info about available balances
+                    if source == 'investment_account':
+                        inv_bal = unified_balance_service.investment_accounts.get(customer_id, {}).get('balance', 0)
+                        result['available_balance'] = inv_bal
+                        result['requested_amount'] = amount
+                    elif source == 'health_wallet':
+                        wallet_bal = unified_balance_service.health_wallets.get(customer_id, {}).get('balance', 0)
+                        result['available_balance'] = wallet_bal
+                        result['requested_amount'] = amount
                 
-                self.wfile.write(json.dumps(result).encode('utf-8'))
+                self.wfile.write(json.dumps(result, default=str).encode('utf-8'))
             except Exception as e:
                 self._set_json_headers(400)
-                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+                self.wfile.write(json.dumps({'error': str(e), 'type': type(e).__name__}).encode('utf-8'))
             return
         
         # Withdraw funds from algo trading to wallet or investment
@@ -9652,6 +9752,24 @@ For claims or questions, please contact:
                     self.wfile.write(json.dumps({'error': 'customer_id and positive amount required'}).encode('utf-8'))
                     return
                 
+                # ========== PRE-WITHDRAWAL SYNC ==========
+                # Sync algo trading balance from portfolio_tracker_service
+                if portfolio_tracker_enabled and customer_id in portfolio_tracker_service.algo_balances:
+                    tracker_algo = portfolio_tracker_service.algo_balances[customer_id]
+                    if customer_id not in unified_balance_service.algo_trading_balances:
+                        unified_balance_service.algo_trading_balances[customer_id] = {
+                            'available': tracker_algo.get('available', 0),
+                            'in_positions': tracker_algo.get('in_positions', 0),
+                            'total_pnl': tracker_algo.get('total_pnl', 0),
+                            'transfers': []
+                        }
+                    else:
+                        # Use max available (more accurate)
+                        current = unified_balance_service.algo_trading_balances[customer_id].get('available', 0)
+                        tracker = tracker_algo.get('available', 0)
+                        unified_balance_service.algo_trading_balances[customer_id]['available'] = max(current, tracker)
+                # ========== END PRE-WITHDRAWAL SYNC ==========
+                
                 result = unified_balance_service.withdraw_from_algo_trading(
                     customer_id=customer_id,
                     amount=amount,
@@ -9659,14 +9777,65 @@ For claims or questions, please contact:
                 )
                 
                 if result['success']:
+                    # ========== POST-WITHDRAWAL SYNC ==========
+                    # Sync destination balance back to global stores
+                    
+                    if destination == 'investment_account':
+                        new_inv_balance = unified_balance_service.investment_accounts.get(customer_id, {}).get('balance', 0)
+                        if customer_id in INVESTMENT_ACCOUNTS:
+                            INVESTMENT_ACCOUNTS[customer_id]['balance'] = new_inv_balance
+                        else:
+                            INVESTMENT_ACCOUNTS[customer_id] = {'balance': new_inv_balance, 'deposits': []}
+                        
+                        # Update portfolio_service
+                        if portfolio_enabled and portfolio_service:
+                            try:
+                                accounts = portfolio_service.get_customer_accounts(customer_id)
+                                if accounts:
+                                    accounts[0].balance = new_inv_balance
+                            except Exception:
+                                pass
+                        
+                        # Update portfolio_tracker_service
+                        if portfolio_tracker_enabled:
+                            if customer_id not in portfolio_tracker_service.investment_accounts:
+                                portfolio_tracker_service.investment_accounts[customer_id] = {'balance': new_inv_balance}
+                            else:
+                                portfolio_tracker_service.investment_accounts[customer_id]['balance'] = new_inv_balance
+                    
+                    elif destination == 'health_wallet':
+                        HEALTH_WALLETS[customer_id] = unified_balance_service.health_wallets.get(customer_id, HEALTH_WALLETS.get(customer_id, {}))
+                        if portfolio_tracker_enabled:
+                            portfolio_tracker_service.health_wallets[customer_id] = HEALTH_WALLETS[customer_id]
+                    
+                    # Sync algo trading balance to portfolio_tracker_service
+                    if portfolio_tracker_enabled:
+                        algo_bal = unified_balance_service.algo_trading_balances.get(customer_id, {})
+                        portfolio_tracker_service.algo_balances[customer_id] = {
+                            'available': algo_bal.get('available', 0),
+                            'in_positions': algo_bal.get('in_positions', 0),
+                            'total_pnl': algo_bal.get('total_pnl', 0)
+                        }
+                    
+                    # Persist changes
+                    save_ledger_data()
+                    
+                    result['synced'] = True
+                    # ========== END POST-WITHDRAWAL SYNC ==========
+                    
                     self._set_json_headers()
                 else:
                     self._set_json_headers(400)
+                    # Add debug info
+                    algo_bal = unified_balance_service.algo_trading_balances.get(customer_id, {})
+                    result['available_balance'] = algo_bal.get('available', 0)
+                    result['in_positions'] = algo_bal.get('in_positions', 0)
+                    result['requested_amount'] = amount
                 
-                self.wfile.write(json.dumps(result).encode('utf-8'))
+                self.wfile.write(json.dumps(result, default=str).encode('utf-8'))
             except Exception as e:
                 self._set_json_headers(400)
-                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+                self.wfile.write(json.dumps({'error': str(e), 'type': type(e).__name__}).encode('utf-8'))
             return
         
         # Record algo trade on ledgers (called internally or by admin)
