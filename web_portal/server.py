@@ -8449,6 +8449,218 @@ For claims or questions, please contact:
                 self.wfile.write(json.dumps({'error': 'Invalid request', 'details': str(e)}).encode('utf-8'))
             return
         
+        # Update Policy Endpoint - For customer dashboard policy management
+        if path == '/api/policy/update':
+            try:
+                data = json.loads(body)
+                policy_id = data.get('policy_id')
+                
+                if not policy_id:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'policy_id is required'}).encode('utf-8'))
+                    return
+                
+                policy = POLICIES.get(policy_id)
+                if not policy:
+                    self._set_json_headers(404)
+                    self.wfile.write(json.dumps({'error': 'Policy not found'}).encode('utf-8'))
+                    return
+                
+                # Verify ownership if customer role
+                user = get_session_user(session) or {} if session else {}
+                role = (user.get('role') or '').lower()
+                session_customer_id = user.get('customer_id') or (session.get('customer_id') if session else None)
+                
+                if role == 'customer' and policy.get('customer_id') != session_customer_id:
+                    self._set_json_headers(403)
+                    self.wfile.write(json.dumps({'error': 'Access denied. You can only edit your own policies.'}).encode('utf-8'))
+                    return
+                
+                # Track changes for audit
+                changes = {}
+                old_status = policy.get('status')
+                
+                # Update allowed fields
+                if 'type' in data:
+                    changes['type'] = {'old': policy.get('type'), 'new': data['type']}
+                    policy['type'] = data['type']
+                    policy['policy_type'] = data['type']
+                
+                if 'coverage_amount' in data:
+                    new_amount = float(data['coverage_amount'])
+                    if validate_amount(new_amount):
+                        changes['coverage_amount'] = {'old': policy.get('coverage_amount'), 'new': new_amount}
+                        policy['coverage_amount'] = new_amount
+                        # Recalculate premium
+                        premium_data = calculate_premium({
+                            'type': policy.get('type', 'standard'),
+                            'coverage_amount': new_amount,
+                            'age': policy.get('age', 35),
+                            'risk_score': policy.get('risk_score', 'medium')
+                        })
+                        policy['monthly_premium'] = premium_data['monthly']
+                        policy['annual_premium'] = premium_data['annual']
+                
+                if 'monthly_premium' in data:
+                    new_premium = float(data['monthly_premium'])
+                    if new_premium > 0:
+                        changes['monthly_premium'] = {'old': policy.get('monthly_premium'), 'new': new_premium}
+                        policy['monthly_premium'] = new_premium
+                        policy['annual_premium'] = new_premium * 12
+                
+                if 'status' in data:
+                    new_status = data['status']
+                    valid_statuses = ['draft', 'pending_underwriting', 'approved', 'active', 'suspended', 'cancelled', 'expired']
+                    if new_status in valid_statuses:
+                        changes['status'] = {'old': old_status, 'new': new_status}
+                        policy['status'] = new_status
+                        
+                        # Handle status-specific logic
+                        if new_status == 'active' and old_status != 'active':
+                            policy['activation_date'] = datetime.now().isoformat()
+                            if not policy.get('start_date'):
+                                policy['start_date'] = datetime.now().isoformat()
+                        elif new_status == 'cancelled':
+                            policy['cancellation_date'] = datetime.now().isoformat()
+                        elif new_status == 'suspended':
+                            policy['suspension_date'] = datetime.now().isoformat()
+                
+                if 'start_date' in data:
+                    policy['start_date'] = data['start_date']
+                
+                if 'beneficiary' in data:
+                    policy['beneficiary'] = data['beneficiary']
+                    policy['beneficiary_name'] = data['beneficiary']
+                
+                if 'notes' in data:
+                    policy['notes'] = data['notes']
+                
+                # Update timestamp
+                policy['updated_at'] = datetime.now().isoformat()
+                policy['updated_by'] = session_customer_id or 'system'
+                
+                # Save to POLICIES
+                POLICIES[policy_id] = policy
+                
+                # Record transaction for audit
+                if changes:
+                    record_transaction(
+                        customer_id=policy.get('customer_id', ''),
+                        tx_type='policy_update',
+                        amount=0,
+                        description=f"Policy {policy_id} updated. Status: {policy.get('status')}",
+                        metadata={'policy_id': policy_id, 'changes': changes}
+                    )
+                
+                # Audit log
+                if audit:
+                    try:
+                        actor = session_customer_id or 'unknown'
+                        audit.log(actor, 'update', 'policy', policy_id, changes)
+                    except Exception:
+                        pass
+                
+                self._set_json_headers()
+                self.wfile.write(json.dumps({
+                    'success': True,
+                    'policy_id': policy_id,
+                    'policy': policy,
+                    'changes': changes,
+                    'message': 'Policy updated successfully'
+                }).encode('utf-8'))
+                
+            except Exception as e:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+        
+        # Create Policy (Simple) - For customer dashboard
+        if path == '/api/policy/create':
+            try:
+                data = json.loads(body)
+                customer_id = data.get('customer_id')
+                
+                if not customer_id:
+                    # Try to get from session
+                    user = get_session_user(session) or {} if session else {}
+                    customer_id = user.get('customer_id') or (session.get('customer_id') if session else None)
+                
+                if not customer_id:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'customer_id is required'}).encode('utf-8'))
+                    return
+                
+                policy_type = data.get('type', 'standard')
+                coverage_amount = float(data.get('coverage_amount', 100000))
+                
+                if not validate_amount(coverage_amount):
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'Invalid coverage amount (must be between $10,000 and $10,000,000)'}).encode('utf-8'))
+                    return
+                
+                # Generate policy ID
+                policy_id = generate_policy_id()
+                
+                # Calculate premium
+                premium_data = calculate_premium({
+                    'type': policy_type,
+                    'coverage_amount': coverage_amount,
+                    'age': data.get('age', 35),
+                    'risk_score': data.get('risk_score', 'medium')
+                })
+                
+                # Create policy
+                policy = {
+                    'id': policy_id,
+                    'customer_id': customer_id,
+                    'type': policy_type,
+                    'policy_type': policy_type,
+                    'coverage_amount': coverage_amount,
+                    'monthly_premium': data.get('monthly_premium') or premium_data['monthly'],
+                    'annual_premium': premium_data['annual'],
+                    'status': data.get('status', 'draft'),
+                    'beneficiary': data.get('beneficiary', ''),
+                    'beneficiary_name': data.get('beneficiary', ''),
+                    'notes': data.get('notes', ''),
+                    'investment_value': 0,
+                    'risk_allocation': 75,
+                    'savings_allocation': 25,
+                    'created_at': datetime.now().isoformat(),
+                    'created_date': datetime.now().isoformat()
+                }
+                
+                # Save policy
+                POLICIES[policy_id] = policy
+                
+                # Record transaction
+                record_transaction(
+                    customer_id=customer_id,
+                    tx_type='policy_created',
+                    amount=0,
+                    description=f"New policy created: {policy_id} ({policy_type})",
+                    metadata={'policy_id': policy_id, 'coverage_amount': coverage_amount}
+                )
+                
+                # Audit log
+                if audit:
+                    try:
+                        audit.log(customer_id, 'create', 'policy', policy_id, {'type': policy_type, 'coverage': coverage_amount})
+                    except Exception:
+                        pass
+                
+                self._set_json_headers()
+                self.wfile.write(json.dumps({
+                    'success': True,
+                    'policy_id': policy_id,
+                    'policy': policy,
+                    'message': 'Policy created successfully'
+                }).encode('utf-8'))
+                
+            except Exception as e:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+        
         # Approve Underwriting Endpoint - Full Pipeline Validation
         if path == '/api/underwriting/approve':
             try:
