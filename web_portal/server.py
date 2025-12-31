@@ -12364,6 +12364,53 @@ For claims or questions, please contact:
                     self.wfile.write(json.dumps({'error': 'Invalid amount'}).encode('utf-8'))
                     return
                 
+                # Get customer_id from bill
+                customer_id = bill.get('customer_id', 'unknown')
+                policy_id = bill.get('policy_id')
+                
+                # Handle health_wallet payment method
+                wallet_deduction_info = None
+                if payment_method == 'health_wallet':
+                    # Check if customer has sufficient health wallet balance
+                    wallet = HEALTH_WALLETS.get(customer_id, {})
+                    wallet_balance = wallet.get('balance', 0)
+                    
+                    if wallet_balance < amount:
+                        self._set_json_headers(400)
+                        self.wfile.write(json.dumps({
+                            'error': 'Insufficient health wallet balance',
+                            'wallet_balance': wallet_balance,
+                            'amount_required': amount,
+                            'shortfall': amount - wallet_balance
+                        }).encode('utf-8'))
+                        return
+                    
+                    # Deduct from health wallet
+                    prev_wallet_balance = wallet_balance
+                    HEALTH_WALLETS[customer_id]['balance'] -= amount
+                    new_wallet_balance = HEALTH_WALLETS[customer_id]['balance']
+                    
+                    # Record wallet withdrawal transaction
+                    wallet_tx = {
+                        'id': f"WAL-PAY-{datetime.now().strftime('%Y%m%d%H%M%S')}-{random.randint(1000, 9999)}",
+                        'type': 'premium_payment',
+                        'amount': -amount,
+                        'bill_id': bill_id,
+                        'policy_id': policy_id,
+                        'description': f"Premium payment for bill {bill_id}",
+                        'previous_balance': prev_wallet_balance,
+                        'balance_after': new_wallet_balance,
+                        'timestamp': datetime.now().isoformat()
+                    }
+                    HEALTH_WALLETS[customer_id]['transactions'].append(wallet_tx)
+                    
+                    wallet_deduction_info = {
+                        'previous_balance': prev_wallet_balance,
+                        'amount_deducted': amount,
+                        'new_balance': new_wallet_balance,
+                        'wallet_tx_id': wallet_tx['id']
+                    }
+                
                 prev_paid = bill.get('amount_paid', 0.0)
                 bill['amount_paid'] = prev_paid + amount
                 # Support both 'amount' and 'amount_due' field names for compatibility
@@ -12374,22 +12421,31 @@ For claims or questions, please contact:
                 else:
                     bill['status'] = 'partial'
                 
+                bill['payment_method'] = payment_method
+                
                 # EXPLICIT: Re-assign to ensure BILLING is updated
                 BILLING[bill_id] = bill
+                
+                # Record premium revenue on PHINS Balance Sheet
+                try:
+                    record_premium_revenue(
+                        customer_id=customer_id,
+                        policy_id=policy_id,
+                        amount=amount,
+                        description=f"Premium payment for {bill_id} via {payment_method}"
+                    )
+                except Exception as bs_err:
+                    print(f"[BALANCE_SHEET] Error recording premium revenue: {bs_err}")
                 
                 # Force save to persistence
                 save_ledger_data()
                 
-                # Get customer_id from bill
-                customer_id = bill.get('customer_id', 'unknown')
-                policy_id = bill.get('policy_id')
-                
                 # Record payment on TRANSACTION_LEDGER and NFT_LEDGER
                 payment_tx = record_transaction(
                     customer_id=customer_id,
-                    tx_type='bill_payment',
+                    tx_type='premium_payment' if payment_method == 'health_wallet' else 'bill_payment',
                     amount=amount,
-                    description=f"Bill payment of ${amount:.2f} for bill {bill_id}",
+                    description=f"Bill payment of ${amount:.2f} for bill {bill_id} via {payment_method}",
                     metadata={
                         'bill_id': bill_id,
                         'policy_id': policy_id,
@@ -12397,7 +12453,8 @@ For claims or questions, please contact:
                         'amount_due': amount_due,
                         'amount_paid_total': bill['amount_paid'],
                         'bill_status': bill['status'],
-                        'prev_paid': prev_paid
+                        'prev_paid': prev_paid,
+                        'wallet_deduction': wallet_deduction_info
                     }
                 )
                 
@@ -12422,22 +12479,185 @@ For claims or questions, please contact:
                 
                 if audit:
                     try:
-                        audit.log('system', 'update', 'bill', bill_id, {'paid': amount, 'status': bill['status']})
+                        audit.log('system', 'update', 'bill', bill_id, {'paid': amount, 'status': bill['status'], 'method': payment_method})
                     except Exception:
                         pass
                 
-                self._set_json_headers(200)
-                self.wfile.write(json.dumps({
+                response_data = {
+                    'success': True,
                     'bill': bill,
                     'transaction_recorded': True,
-                    'nft_token_id': payment_tx.get('nft_token_id')
-                }).encode('utf-8'))
+                    'nft_token_id': payment_tx.get('nft_token_id'),
+                    'payment_method': payment_method,
+                    'amount_paid': amount,
+                    'revenue_recorded': True
+                }
+                
+                # Include wallet deduction info if paid from health wallet
+                if wallet_deduction_info:
+                    response_data['wallet_deduction'] = wallet_deduction_info
+                    response_data['message'] = f'Bill paid from health wallet. New wallet balance: ${wallet_deduction_info["new_balance"]:,.2f}'
+                
+                self._set_json_headers(200)
+                self.wfile.write(json.dumps(response_data, default=str).encode('utf-8'))
             except Exception as e:
                 self._set_json_headers(400)
                 self.wfile.write(json.dumps({'error': 'Invalid request', 'details': str(e)}).encode('utf-8'))
             return
         
         # ========== CUSTOMER BILLING & SETTINGS ENDPOINTS ==========
+        
+        # Pay all outstanding bills from health wallet
+        if path == '/api/billing/pay-all-from-wallet':
+            try:
+                data = json.loads(body)
+                customer_id = data.get('customer_id')
+                
+                if not customer_id:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'customer_id required'}).encode('utf-8'))
+                    return
+                
+                # Get customer's health wallet
+                wallet = HEALTH_WALLETS.get(customer_id, {})
+                wallet_balance = wallet.get('balance', 0)
+                
+                # Get all outstanding bills for this customer
+                customer_bills = [
+                    (bid, b) for bid, b in BILLING.items() 
+                    if b.get('customer_id') == customer_id and b.get('status') in ['outstanding', 'partial', 'overdue']
+                ]
+                
+                if not customer_bills:
+                    self._set_json_headers(200)
+                    self.wfile.write(json.dumps({
+                        'success': True,
+                        'message': 'No outstanding bills to pay',
+                        'bills_paid': 0,
+                        'wallet_balance': wallet_balance
+                    }).encode('utf-8'))
+                    return
+                
+                # Calculate total outstanding
+                total_outstanding = sum(
+                    (b.get('amount', b.get('amount_due', 0)) - b.get('amount_paid', 0))
+                    for _, b in customer_bills
+                )
+                
+                # Determine how much can be paid
+                amount_to_pay = min(wallet_balance, total_outstanding)
+                
+                if amount_to_pay <= 0:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({
+                        'error': 'Insufficient wallet balance or no amount due',
+                        'wallet_balance': wallet_balance,
+                        'total_outstanding': total_outstanding
+                    }).encode('utf-8'))
+                    return
+                
+                # Process payments for each bill
+                payments_made = []
+                remaining_to_pay = amount_to_pay
+                prev_wallet_balance = wallet_balance
+                
+                for bill_id, bill in customer_bills:
+                    if remaining_to_pay <= 0:
+                        break
+                    
+                    amount_due = bill.get('amount', bill.get('amount_due', 0))
+                    amount_paid = bill.get('amount_paid', 0)
+                    bill_remaining = amount_due - amount_paid
+                    
+                    if bill_remaining <= 0:
+                        continue
+                    
+                    # Pay this bill (full or partial)
+                    payment_amount = min(remaining_to_pay, bill_remaining)
+                    
+                    bill['amount_paid'] = amount_paid + payment_amount
+                    if bill['amount_paid'] >= amount_due:
+                        bill['status'] = 'paid'
+                        bill['paid_date'] = datetime.now().isoformat()
+                    else:
+                        bill['status'] = 'partial'
+                    bill['payment_method'] = 'health_wallet'
+                    BILLING[bill_id] = bill
+                    
+                    # Record premium revenue on balance sheet
+                    try:
+                        record_premium_revenue(
+                            customer_id=customer_id,
+                            policy_id=bill.get('policy_id'),
+                            amount=payment_amount,
+                            description=f"Premium payment for {bill_id} from health wallet"
+                        )
+                    except Exception as bs_err:
+                        print(f"[BALANCE_SHEET] Error: {bs_err}")
+                    
+                    payments_made.append({
+                        'bill_id': bill_id,
+                        'policy_id': bill.get('policy_id'),
+                        'amount_paid': payment_amount,
+                        'bill_status': bill['status'],
+                        'amount_due': amount_due,
+                        'total_paid': bill['amount_paid']
+                    })
+                    
+                    remaining_to_pay -= payment_amount
+                
+                # Deduct total from health wallet
+                total_paid = amount_to_pay - remaining_to_pay
+                HEALTH_WALLETS[customer_id]['balance'] -= total_paid
+                new_wallet_balance = HEALTH_WALLETS[customer_id]['balance']
+                
+                # Record wallet transaction
+                wallet_tx = {
+                    'id': f"WAL-BULK-{datetime.now().strftime('%Y%m%d%H%M%S')}-{random.randint(1000, 9999)}",
+                    'type': 'bulk_premium_payment',
+                    'amount': -total_paid,
+                    'bills_paid': len(payments_made),
+                    'description': f"Bulk premium payment for {len(payments_made)} bills",
+                    'previous_balance': prev_wallet_balance,
+                    'balance_after': new_wallet_balance,
+                    'timestamp': datetime.now().isoformat()
+                }
+                HEALTH_WALLETS[customer_id]['transactions'].append(wallet_tx)
+                
+                # Record on transaction ledger
+                payment_tx = record_transaction(
+                    customer_id=customer_id,
+                    tx_type='bulk_premium_payment',
+                    amount=-total_paid,
+                    description=f"Bulk premium payment of ${total_paid:.2f} for {len(payments_made)} bills from health wallet",
+                    metadata={
+                        'bills_paid': payments_made,
+                        'total_paid': total_paid,
+                        'wallet_previous_balance': prev_wallet_balance,
+                        'wallet_new_balance': new_wallet_balance,
+                        'remaining_outstanding': total_outstanding - total_paid
+                    }
+                )
+                
+                save_ledger_data()
+                
+                self._set_json_headers(200)
+                self.wfile.write(json.dumps({
+                    'success': True,
+                    'message': f'Paid {len(payments_made)} bills totaling ${total_paid:,.2f} from health wallet',
+                    'total_paid': total_paid,
+                    'bills_paid': len(payments_made),
+                    'payment_details': payments_made,
+                    'wallet_previous_balance': prev_wallet_balance,
+                    'wallet_new_balance': new_wallet_balance,
+                    'remaining_outstanding': total_outstanding - total_paid,
+                    'nft_token_id': payment_tx.get('nft_token_id'),
+                    'wallet_tx_id': wallet_tx['id']
+                }, default=str).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
         
         # Customer premium payment with NFT recording and CUSTOM investment allocation
         if path == '/api/customer/payment':
