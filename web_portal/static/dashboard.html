@@ -2623,7 +2623,53 @@
     
     // View policy details
     function viewPolicy(policyId) {
-      alert(`Policy Details: ${policyId}\n\nFull policy management coming soon.\nContact support for immediate assistance.`);
+      const policy = allPolicies.find(p => p.id === policyId);
+      if (!policy) {
+        alert(`Policy ${policyId} not found`);
+        return;
+      }
+      
+      const statusIcons = {
+        'active': '✅ Active', 'draft': '📝 Draft', 'pending_underwriting': '⏳ Pending Underwriting',
+        'approved': '✓ Approved', 'cancelled': '❌ Cancelled', 'expired': '⏰ Expired', 'suspended': '⚠️ Suspended'
+      };
+      
+      const startDate = policy.start_date ? new Date(policy.start_date).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) : 'Not Started';
+      const createdDate = policy.created_at || policy.created_date ? new Date(policy.created_at || policy.created_date).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) : 'N/A';
+      
+      const details = `
+━━━ POLICY DETAILS ━━━
+
+📋 Policy ID: ${policyId}
+📑 Type: PHINS ${(policy.type || policy.policy_type || 'Standard').charAt(0).toUpperCase() + (policy.type || 'standard').slice(1)}
+
+💰 COVERAGE & PREMIUMS
+   Coverage Amount: $${Number(policy.coverage_amount || 0).toLocaleString()}
+   Monthly Premium: $${Number(policy.monthly_premium || 0).toFixed(0)}/mo
+   Annual Premium: $${Number(policy.annual_premium || 0).toLocaleString()}/yr
+   Investment Value: $${Number(policy.investment_value || 0).toLocaleString()}
+
+📊 ALLOCATION
+   Risk Coverage: ${policy.risk_allocation || 75}%
+   Savings Component: ${policy.savings_allocation || 25}%
+
+📅 DATES
+   Created: ${createdDate}
+   Start Date: ${startDate}
+
+📌 STATUS
+   ${statusIcons[policy.status] || policy.status || 'Unknown'}
+
+👤 BENEFICIARY
+   ${policy.beneficiary || policy.beneficiary_name || 'Not specified'}
+
+📝 NOTES
+   ${policy.notes || 'No additional notes'}
+
+━━━━━━━━━━━━━━━━━━━━━
+      `.trim();
+      
+      alert(details);
     }
     
     // View NFT tokens
