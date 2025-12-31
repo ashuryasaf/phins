@@ -405,6 +405,90 @@
         </div>
       </div>
     </div>
+    
+    <!-- PHINS Balance Sheet / General Reserves Section -->
+    <div id="balance-sheet-section" class="section-content" style="margin-top: 24px; background: linear-gradient(135deg, #0d47a1 0%, #1565c0 100%); border-radius: 12px; padding: 20px; color: white;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+        <h3 style="color: white; margin: 0;">🏦 PHINS General Reserves (Balance Sheet)</h3>
+        <button onclick="loadBalanceSheet()" class="btn" style="background: rgba(255,255,255,0.2); color: white; border: 1px solid rgba(255,255,255,0.3); padding: 8px 16px; border-radius: 8px; cursor: pointer;">🔄 Refresh</button>
+      </div>
+      
+      <!-- Reserve Balances -->
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 20px;">
+        <div style="background: rgba(255,255,255,0.15); border-radius: 12px; padding: 16px; text-align: center;">
+          <div style="font-size: 12px; color: rgba(255,255,255,0.8); margin-bottom: 4px;">💰 Claims Reserve</div>
+          <div style="font-size: 28px; font-weight: bold;" id="bs-claims-reserve">$0</div>
+          <div style="font-size: 11px; color: rgba(255,255,255,0.7);">Available for Claims</div>
+        </div>
+        <div style="background: rgba(255,255,255,0.15); border-radius: 12px; padding: 16px; text-align: center;">
+          <div style="font-size: 12px; color: rgba(255,255,255,0.8); margin-bottom: 4px;">🏢 Operating Reserve</div>
+          <div style="font-size: 28px; font-weight: bold;" id="bs-operating-reserve">$0</div>
+          <div style="font-size: 11px; color: rgba(255,255,255,0.7);">Operating Funds</div>
+        </div>
+        <div style="background: rgba(255,255,255,0.15); border-radius: 12px; padding: 16px; text-align: center;">
+          <div style="font-size: 12px; color: rgba(255,255,255,0.8); margin-bottom: 4px;">📊 Total Revenue</div>
+          <div style="font-size: 28px; font-weight: bold; color: #81c784;" id="bs-total-revenue">$0</div>
+          <div style="font-size: 11px; color: rgba(255,255,255,0.7);">All-time Earnings</div>
+        </div>
+        <div style="background: rgba(255,255,255,0.15); border-radius: 12px; padding: 16px; text-align: center;">
+          <div style="font-size: 12px; color: rgba(255,255,255,0.8); margin-bottom: 4px;">📉 Claims Paid</div>
+          <div style="font-size: 28px; font-weight: bold; color: #ef9a9a;" id="bs-claims-paid">$0</div>
+          <div style="font-size: 11px; color: rgba(255,255,255,0.7);">Total Paid Out</div>
+        </div>
+      </div>
+      
+      <!-- Revenue & Expense Breakdown -->
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px;">
+        <!-- Revenue Breakdown -->
+        <div style="background: rgba(255,255,255,0.1); border-radius: 10px; padding: 16px;">
+          <h4 style="color: #81c784; margin-bottom: 12px; font-size: 14px;">📈 Revenue Breakdown</h4>
+          <div id="bs-revenue-breakdown" style="font-size: 13px;">
+            <div style="display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid rgba(255,255,255,0.1);">
+              <span>Premium Income</span><span id="bs-premium-income">$0</span>
+            </div>
+            <div style="display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid rgba(255,255,255,0.1);">
+              <span>Management Fees</span><span id="bs-management-fees">$0</span>
+            </div>
+            <div style="display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid rgba(255,255,255,0.1);">
+              <span>Underwriting Fees</span><span id="bs-underwriting-fees">$0</span>
+            </div>
+            <div style="display: flex; justify-content: space-between; padding: 6px 0;">
+              <span>Other Income</span><span id="bs-other-income">$0</span>
+            </div>
+          </div>
+        </div>
+        
+        <!-- Expense Breakdown -->
+        <div style="background: rgba(255,255,255,0.1); border-radius: 10px; padding: 16px;">
+          <h4 style="color: #ef9a9a; margin-bottom: 12px; font-size: 14px;">📉 Expense Breakdown</h4>
+          <div id="bs-expense-breakdown" style="font-size: 13px;">
+            <div style="display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid rgba(255,255,255,0.1);">
+              <span>Claims Paid</span><span id="bs-exp-claims-paid">$0</span>
+            </div>
+            <div style="display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid rgba(255,255,255,0.1);">
+              <span>Supplier Payments</span><span id="bs-supplier-payments">$0</span>
+            </div>
+            <div style="display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid rgba(255,255,255,0.1);">
+              <span>Operating Costs</span><span id="bs-operating-costs">$0</span>
+            </div>
+            <div style="display: flex; justify-content: space-between; padding: 6px 0;">
+              <span>Reinsurance</span><span id="bs-reinsurance">$0</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      
+      <!-- Net Income Summary -->
+      <div style="margin-top: 16px; background: rgba(255,255,255,0.2); border-radius: 10px; padding: 16px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 16px;">
+        <div>
+          <span style="font-size: 14px; color: rgba(255,255,255,0.8);">Net Position:</span>
+          <span style="font-size: 24px; font-weight: bold; margin-left: 12px;" id="bs-net-income">$0</span>
+        </div>
+        <div style="font-size: 12px; color: rgba(255,255,255,0.7);">
+          Last Updated: <span id="bs-last-updated">-</span>
+        </div>
+      </div>
+    </div>
 
     <!-- Division-Specific Sections -->
     
@@ -1035,6 +1119,7 @@
     // Initialize dashboard with dynamic data
     document.addEventListener('DOMContentLoaded', () => {
       loadDashboardStats();
+      loadBalanceSheet();  // Load PHINS Balance Sheet
       loadCustomerList();
       loadUnderwritingApplications();
       loadPolicies();
@@ -2056,6 +2141,71 @@
         }
       } catch (err) {
         console.error('Failed to load pipeline stats:', err);
+      }
+    }
+    
+    // Load PHINS Balance Sheet (General Reserves)
+    async function loadBalanceSheet() {
+      try {
+        const response = await fetch('/api/admin/balance-sheet', {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        
+        if (response.ok) {
+          const data = await response.json();
+          const bs = data.balance_sheet || {};
+          
+          // Format currency
+          const fmt = (val) => {
+            const num = Number(val) || 0;
+            if (num >= 1000000) return `$${(num/1000000).toFixed(2)}M`;
+            if (num >= 1000) return `$${(num/1000).toFixed(1)}K`;
+            return `$${num.toLocaleString()}`;
+          };
+          
+          // Update reserve balances
+          document.getElementById('bs-claims-reserve').textContent = fmt(bs.claims_reserve);
+          document.getElementById('bs-operating-reserve').textContent = fmt(bs.operating_reserve);
+          document.getElementById('bs-total-revenue').textContent = fmt(bs.total_revenue);
+          document.getElementById('bs-claims-paid').textContent = fmt(bs.expense_breakdown?.claims_paid || 0);
+          
+          // Revenue breakdown
+          if (bs.revenue_breakdown) {
+            document.getElementById('bs-premium-income').textContent = fmt(bs.revenue_breakdown.premium_income);
+            document.getElementById('bs-management-fees').textContent = fmt(bs.revenue_breakdown.management_fees);
+            document.getElementById('bs-underwriting-fees').textContent = fmt(bs.revenue_breakdown.underwriting_fees);
+            document.getElementById('bs-other-income').textContent = fmt(bs.revenue_breakdown.other_income + bs.revenue_breakdown.late_fees + bs.revenue_breakdown.investment_earnings);
+          }
+          
+          // Expense breakdown
+          if (bs.expense_breakdown) {
+            document.getElementById('bs-exp-claims-paid').textContent = fmt(bs.expense_breakdown.claims_paid);
+            document.getElementById('bs-supplier-payments').textContent = fmt(bs.expense_breakdown.supplier_payments);
+            document.getElementById('bs-operating-costs').textContent = fmt(bs.expense_breakdown.operating_costs);
+            document.getElementById('bs-reinsurance').textContent = fmt(bs.expense_breakdown.reinsurance);
+          }
+          
+          // Net income
+          const netIncome = bs.net_income || 0;
+          const netIncomeEl = document.getElementById('bs-net-income');
+          netIncomeEl.textContent = fmt(netIncome);
+          netIncomeEl.style.color = netIncome >= 0 ? '#81c784' : '#ef9a9a';
+          
+          // Last updated
+          if (bs.last_updated) {
+            const date = new Date(bs.last_updated);
+            document.getElementById('bs-last-updated').textContent = date.toLocaleString();
+          }
+          
+          console.log('Balance sheet loaded:', bs);
+        } else if (response.status === 403) {
+          // User doesn't have permission - hide the section
+          document.getElementById('balance-sheet-section').style.display = 'none';
+        } else {
+          console.error('Failed to load balance sheet:', response.status);
+        }
+      } catch (err) {
+        console.error('Failed to load balance sheet:', err);
       }
     }
     
