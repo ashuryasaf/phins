@@ -8451,6 +8451,20 @@ For claims or questions, please contact:
         
         # Update Policy Endpoint - For customer dashboard policy management
         if path == '/api/policy/update':
+            # Extract session from auth header
+            auth_header = self.headers.get('Authorization', '')
+            token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+            session = validate_session(token) if token else None
+            
+            if not session:
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Unauthorized. Please login.'}).encode('utf-8'))
+                return
+            
+            user = get_session_user(session) or {}
+            role = (user.get('role') or '').lower()
+            session_customer_id = user.get('customer_id') or session.get('customer_id')
+            
             try:
                 data = json.loads(body)
                 policy_id = data.get('policy_id')
@@ -8467,10 +8481,6 @@ For claims or questions, please contact:
                     return
                 
                 # Verify ownership if customer role
-                user = get_session_user(session) or {} if session else {}
-                role = (user.get('role') or '').lower()
-                session_customer_id = user.get('customer_id') or (session.get('customer_id') if session else None)
-                
                 if role == 'customer' and policy.get('customer_id') != session_customer_id:
                     self._set_json_headers(403)
                     self.wfile.write(json.dumps({'error': 'Access denied. You can only edit your own policies.'}).encode('utf-8'))
@@ -8576,14 +8586,17 @@ For claims or questions, please contact:
         
         # Create Policy (Simple) - For customer dashboard
         if path == '/api/policy/create':
+            # Extract session from auth header
+            auth_header = self.headers.get('Authorization', '')
+            token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+            session = validate_session(token) if token else None
+            
+            user = get_session_user(session) or {} if session else {}
+            session_customer_id = user.get('customer_id') or (session.get('customer_id') if session else None)
+            
             try:
                 data = json.loads(body)
-                customer_id = data.get('customer_id')
-                
-                if not customer_id:
-                    # Try to get from session
-                    user = get_session_user(session) or {} if session else {}
-                    customer_id = user.get('customer_id') or (session.get('customer_id') if session else None)
+                customer_id = data.get('customer_id') or session_customer_id
                 
                 if not customer_id:
                     self._set_json_headers(400)
