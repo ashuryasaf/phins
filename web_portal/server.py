@@ -6558,6 +6558,97 @@ For claims or questions, please contact:
                 self.wfile.write(json.dumps({'error': 'User creation failed'}).encode('utf-8'))
             return
 
+        # Admin: Set password for existing customer (enables login for customers created without passwords)
+        if path == '/api/admin/set-customer-password':
+            auth_header = self.headers.get('Authorization', '')
+            token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+            session = validate_session(token) if token else None
+            
+            if not require_role(session, ['admin']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Unauthorized. Admin access required.'}).encode('utf-8'))
+                return
+            
+            try:
+                data = json.loads(body)
+                customer_id = sanitize_input(data.get('customer_id', ''), 50)
+                password = data.get('password', '')
+                
+                # Validation
+                if not customer_id or not password:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'Customer ID and password are required'}).encode('utf-8'))
+                    return
+                
+                if len(password) < 8:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'Password must be at least 8 characters'}).encode('utf-8'))
+                    return
+                
+                # Find customer
+                customer = CUSTOMERS.get(customer_id)
+                if not customer:
+                    self._set_json_headers(404)
+                    self.wfile.write(json.dumps({'error': 'Customer not found'}).encode('utf-8'))
+                    return
+                
+                email = customer.get('email', '').lower()
+                if not email:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'Customer has no email address'}).encode('utf-8'))
+                    return
+                
+                # Create/update user record with password
+                pwd_hash = hash_password(password)
+                
+                # Check if user record exists
+                if email in USERS:
+                    # Update existing user password
+                    USERS[email]['hash'] = pwd_hash['hash']
+                    USERS[email]['salt'] = pwd_hash['salt']
+                    action = 'updated'
+                else:
+                    # Create new user record
+                    USERS[email] = {
+                        'hash': pwd_hash['hash'],
+                        'salt': pwd_hash['salt'],
+                        'role': 'customer',
+                        'name': customer.get('name', 'Customer'),
+                        'customer_id': customer_id
+                    }
+                    action = 'created'
+                
+                # Also store password hash in customer record for backup auth
+                customer['password_hash'] = pwd_hash['hash']
+                customer['password_salt'] = pwd_hash['salt']
+                
+                # Log the action
+                record_transaction({
+                    'type': 'admin_action',
+                    'action': 'set_customer_password',
+                    'customer_id': customer_id,
+                    'email': email,
+                    'user_action': action,
+                    'admin': session.get('username', 'admin'),
+                    'timestamp': datetime.now().isoformat()
+                })
+                
+                self._set_json_headers()
+                self.wfile.write(json.dumps({
+                    'success': True,
+                    'customer_id': customer_id,
+                    'email': email,
+                    'action': action,
+                    'message': f'Password {action} successfully. Customer can now login with email: {email}'
+                }).encode('utf-8'))
+            except json.JSONDecodeError:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'Invalid JSON payload'}).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': f'Failed to set password: {str(e)}'}).encode('utf-8'))
+            return
+
         # Admin: Upload actuarial table (JSON or CSV)
         if path == '/api/admin/actuarial-tables/upload':
             auth_header = self.headers.get('Authorization', '')
