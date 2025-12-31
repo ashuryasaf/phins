@@ -531,6 +531,16 @@ class AlgoTradingService:
             signal_type, confidence, reasoning = self._trend_following_strategy(indicators)
         elif strategy == TradingStrategy.BREAKOUT:
             signal_type, confidence, reasoning = self._breakout_strategy(indicators)
+        elif strategy == TradingStrategy.AI_ADAPTIVE:
+            signal_type, confidence, reasoning = self._ai_adaptive_strategy(indicators)
+        elif strategy == TradingStrategy.DCA:
+            signal_type, confidence, reasoning = self._dca_strategy(indicators)
+        elif strategy == TradingStrategy.SCALPING:
+            signal_type, confidence, reasoning = self._scalping_strategy(indicators)
+        elif strategy == TradingStrategy.SWING_TRADING:
+            signal_type, confidence, reasoning = self._swing_trading_strategy(indicators)
+        elif strategy == TradingStrategy.GRID_TRADING:
+            signal_type, confidence, reasoning = self._grid_trading_strategy(indicators)
         
         # Calculate price targets
         current = indicators.current_price
@@ -686,6 +696,126 @@ class AlgoTradingService:
             return SignalType.SELL, 0.70, f"Breakdown below support ${support:.2f}."
         else:
             return SignalType.HOLD, 0.50, f"Price within range. Support: ${support:.2f}, Resistance: ${resistance:.2f}"
+    
+    def _ai_adaptive_strategy(self, ind: TechnicalIndicators) -> Tuple[SignalType, float, str]:
+        """AI Adaptive strategy - combines multiple indicators intelligently"""
+        # Collect signals from multiple strategies
+        rsi_signal, rsi_conf, _ = self._rsi_strategy(ind)
+        macd_signal, macd_conf, _ = self._macd_strategy(ind)
+        momentum_signal, momentum_conf, _ = self._momentum_strategy(ind)
+        trend_signal, trend_conf, _ = self._trend_following_strategy(ind)
+        
+        # Convert signals to scores
+        signal_scores = {
+            SignalType.STRONG_BUY: 2,
+            SignalType.BUY: 1,
+            SignalType.HOLD: 0,
+            SignalType.SELL: -1,
+            SignalType.STRONG_SELL: -2
+        }
+        
+        # Calculate weighted average
+        total_score = (
+            signal_scores[rsi_signal] * rsi_conf +
+            signal_scores[macd_signal] * macd_conf +
+            signal_scores[momentum_signal] * momentum_conf +
+            signal_scores[trend_signal] * trend_conf
+        )
+        total_weight = rsi_conf + macd_conf + momentum_conf + trend_conf
+        avg_score = total_score / total_weight if total_weight > 0 else 0
+        
+        # Determine signal based on average score
+        if avg_score >= 1.5:
+            return SignalType.STRONG_BUY, 0.85, f"AI: Strong bullish consensus (score: {avg_score:.2f})"
+        elif avg_score >= 0.5:
+            return SignalType.BUY, 0.75, f"AI: Bullish signal detected (score: {avg_score:.2f})"
+        elif avg_score <= -1.5:
+            return SignalType.STRONG_SELL, 0.85, f"AI: Strong bearish consensus (score: {avg_score:.2f})"
+        elif avg_score <= -0.5:
+            return SignalType.SELL, 0.75, f"AI: Bearish signal detected (score: {avg_score:.2f})"
+        else:
+            return SignalType.HOLD, 0.50, f"AI: Mixed signals, staying neutral (score: {avg_score:.2f})"
+    
+    def _dca_strategy(self, ind: TechnicalIndicators) -> Tuple[SignalType, float, str]:
+        """Dollar Cost Averaging - always buy, more aggressive on dips"""
+        rsi = ind.rsi_14
+        price_change = ind.price_change_7d
+        
+        # DCA always buys, but confidence varies
+        if rsi < 30 or price_change < -10:
+            return SignalType.STRONG_BUY, 0.90, f"DCA: Excellent entry point, RSI={rsi:.1f}, 7d change={price_change:.1f}%"
+        elif rsi < 40 or price_change < -5:
+            return SignalType.BUY, 0.80, f"DCA: Good entry point, RSI={rsi:.1f}"
+        elif rsi < 50:
+            return SignalType.BUY, 0.75, f"DCA: Regular buy, favorable conditions"
+        elif rsi < 70:
+            return SignalType.BUY, 0.70, f"DCA: Regular scheduled buy"
+        else:
+            return SignalType.BUY, 0.65, f"DCA: Buying despite overbought (RSI={rsi:.1f})"
+    
+    def _scalping_strategy(self, ind: TechnicalIndicators) -> Tuple[SignalType, float, str]:
+        """Scalping - quick trades based on short-term momentum"""
+        rsi = ind.rsi_14
+        macd_hist = ind.macd_histogram
+        price_change = ind.price_change_24h
+        
+        # Very short-term signals
+        if rsi < 25 and macd_hist > 0:
+            return SignalType.STRONG_BUY, 0.80, f"Scalp: Oversold bounce (RSI={rsi:.1f})"
+        elif rsi > 75 and macd_hist < 0:
+            return SignalType.STRONG_SELL, 0.80, f"Scalp: Overbought reversal (RSI={rsi:.1f})"
+        elif price_change > 2 and macd_hist > 0:
+            return SignalType.BUY, 0.72, f"Scalp: Riding momentum up (+{price_change:.1f}%)"
+        elif price_change < -2 and macd_hist < 0:
+            return SignalType.SELL, 0.72, f"Scalp: Riding momentum down ({price_change:.1f}%)"
+        elif abs(price_change) > 1:
+            return SignalType.BUY if price_change > 0 else SignalType.SELL, 0.68, f"Scalp: Quick move ({price_change:+.1f}%)"
+        else:
+            return SignalType.HOLD, 0.50, "Scalp: Waiting for volatility"
+    
+    def _swing_trading_strategy(self, ind: TechnicalIndicators) -> Tuple[SignalType, float, str]:
+        """Swing trading - capture medium-term moves"""
+        price = ind.current_price
+        sma_20 = ind.sma_20
+        sma_50 = ind.sma_50
+        rsi = ind.rsi_14
+        bb_position = (price - ind.bb_lower) / (ind.bb_upper - ind.bb_lower) if ind.bb_upper != ind.bb_lower else 0.5
+        
+        # Look for swing entry points
+        if bb_position < 0.2 and price > sma_50 and rsi < 40:
+            return SignalType.STRONG_BUY, 0.82, f"Swing: Pullback to lower BB in uptrend (BB pos: {bb_position:.2f})"
+        elif bb_position < 0.3 and sma_20 > sma_50:
+            return SignalType.BUY, 0.75, f"Swing: Buying dip in uptrend"
+        elif bb_position > 0.8 and price < sma_50 and rsi > 60:
+            return SignalType.STRONG_SELL, 0.82, f"Swing: Rally to upper BB in downtrend (BB pos: {bb_position:.2f})"
+        elif bb_position > 0.7 and sma_20 < sma_50:
+            return SignalType.SELL, 0.75, f"Swing: Selling rally in downtrend"
+        else:
+            return SignalType.HOLD, 0.50, "Swing: No clear entry point"
+    
+    def _grid_trading_strategy(self, ind: TechnicalIndicators) -> Tuple[SignalType, float, str]:
+        """Grid trading - buy low, sell high within range"""
+        price = ind.current_price
+        support = ind.support_level
+        resistance = ind.resistance_level
+        range_size = resistance - support
+        
+        if range_size <= 0:
+            return SignalType.HOLD, 0.50, "Grid: Invalid range"
+        
+        price_position = (price - support) / range_size
+        
+        # Grid levels
+        if price_position < 0.2:
+            return SignalType.STRONG_BUY, 0.82, f"Grid: Near support, strong buy zone ({price_position*100:.0f}%)"
+        elif price_position < 0.35:
+            return SignalType.BUY, 0.75, f"Grid: Lower grid, buy zone ({price_position*100:.0f}%)"
+        elif price_position > 0.8:
+            return SignalType.STRONG_SELL, 0.82, f"Grid: Near resistance, strong sell zone ({price_position*100:.0f}%)"
+        elif price_position > 0.65:
+            return SignalType.SELL, 0.75, f"Grid: Upper grid, sell zone ({price_position*100:.0f}%)"
+        else:
+            return SignalType.HOLD, 0.50, f"Grid: Mid-range, wait ({price_position*100:.0f}%)"
     
     def create_bot(self, account_id: str, name: str, strategy: TradingStrategy,
                    symbols: List[str], **kwargs) -> TradingBot:
