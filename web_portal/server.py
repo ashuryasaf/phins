@@ -97,6 +97,322 @@ INVESTMENT_ACCOUNTS: Dict[str, Dict[str, Any]] = {}  # customer_id -> {balance, 
 # Transaction ledger - master ledger for all financial transactions
 TRANSACTION_LEDGER: Dict[str, Dict[str, Any]] = {}  # tx_id -> transaction data
 
+# ========== PHINS MAIN BALANCE SHEET (GENERAL RESERVES) ==========
+# Central company balance sheet for all financial operations
+# Accessible by: admin, accountant, underwriter, claims_adjuster
+PHINS_BALANCE_SHEET: Dict[str, Any] = {
+    'account_id': 'PHINS-MAIN-001',
+    'name': 'PHINS General Reserves',
+    'created_at': None,  # Set on first use
+    'last_updated': None,
+    
+    # Main account balances
+    'claims_reserve': 3500000.00,      # $3.5M for claims payments
+    'operating_reserve': 0.00,          # General operating funds
+    'supplier_reserve': 0.00,           # Funds for supplier payments
+    'investment_reserve': 0.00,         # Company investment funds
+    
+    # Revenue tracking
+    'total_revenue': 0.00,
+    'revenue_breakdown': {
+        'premium_income': 0.00,         # Premium payments from customers
+        'management_fees': 0.00,        # Management fees charged
+        'underwriting_fees': 0.00,      # Underwriting service fees
+        'investment_earnings': 0.00,    # Returns from company investments
+        'late_fees': 0.00,              # Late payment penalties
+        'other_income': 0.00            # Miscellaneous income
+    },
+    
+    # Expense tracking
+    'total_expenses': 0.00,
+    'expense_breakdown': {
+        'claims_paid': 0.00,            # Claims paid to customers
+        'supplier_payments': 0.00,      # Payments to suppliers
+        'operating_costs': 0.00,        # Operating expenses
+        'commissions': 0.00,            # Agent commissions
+        'reinsurance': 0.00,            # Reinsurance premiums
+        'other_expenses': 0.00          # Miscellaneous expenses
+    },
+    
+    # Transaction history
+    'transactions': [],  # List of all balance sheet transactions
+    
+    # Audit trail
+    'audit_log': []  # List of all changes with timestamps and actors
+}
+
+def initialize_balance_sheet():
+    """Initialize the PHINS balance sheet with default values if not already set"""
+    global PHINS_BALANCE_SHEET
+    if PHINS_BALANCE_SHEET.get('created_at') is None:
+        PHINS_BALANCE_SHEET['created_at'] = datetime.now().isoformat()
+        PHINS_BALANCE_SHEET['last_updated'] = datetime.now().isoformat()
+        
+        # Record initial capital deposit
+        initial_deposit_tx = {
+            'tx_id': f"BS-INIT-{datetime.now().strftime('%Y%m%d%H%M%S')}",
+            'type': 'capital_deposit',
+            'category': 'claims_reserve',
+            'amount': 3500000.00,
+            'description': 'Initial claims reserve capital - PHINS General Reserves Fund',
+            'balance_after': 3500000.00,
+            'actor': 'SYSTEM',
+            'timestamp': datetime.now().isoformat()
+        }
+        PHINS_BALANCE_SHEET['transactions'].append(initial_deposit_tx)
+        PHINS_BALANCE_SHEET['audit_log'].append({
+            'action': 'initialize',
+            'actor': 'SYSTEM',
+            'timestamp': datetime.now().isoformat(),
+            'details': 'Balance sheet initialized with $3,500,000 claims reserve'
+        })
+        print(f"✓ PHINS Balance Sheet initialized with $3,500,000 claims reserve")
+
+def record_balance_sheet_transaction(
+    tx_type: str,
+    category: str,
+    amount: float,
+    description: str,
+    actor: str = 'SYSTEM',
+    metadata: Dict[str, Any] = None,
+    customer_id: str = None,
+    claim_id: str = None
+) -> Dict[str, Any]:
+    """
+    Record a transaction on the PHINS main balance sheet.
+    
+    tx_type: 'revenue', 'expense', 'transfer', 'adjustment'
+    category: 'claims_reserve', 'premium_income', 'claims_paid', etc.
+    """
+    global PHINS_BALANCE_SHEET
+    
+    tx_id = f"BS-{tx_type.upper()[:3]}-{datetime.now().strftime('%Y%m%d%H%M%S')}-{random.randint(1000, 9999)}"
+    
+    # Update the appropriate balance
+    if tx_type == 'revenue':
+        if category in PHINS_BALANCE_SHEET['revenue_breakdown']:
+            PHINS_BALANCE_SHEET['revenue_breakdown'][category] += amount
+        PHINS_BALANCE_SHEET['total_revenue'] += amount
+        PHINS_BALANCE_SHEET['operating_reserve'] += amount
+    elif tx_type == 'expense':
+        if category in PHINS_BALANCE_SHEET['expense_breakdown']:
+            PHINS_BALANCE_SHEET['expense_breakdown'][category] += amount
+        PHINS_BALANCE_SHEET['total_expenses'] += amount
+        
+        # Deduct from appropriate reserve
+        if category == 'claims_paid':
+            PHINS_BALANCE_SHEET['claims_reserve'] -= amount
+        elif category == 'supplier_payments':
+            PHINS_BALANCE_SHEET['supplier_reserve'] -= amount
+        else:
+            PHINS_BALANCE_SHEET['operating_reserve'] -= amount
+    elif tx_type == 'transfer':
+        # Internal transfer between reserves - handled by caller
+        pass
+    elif tx_type == 'adjustment':
+        # Manual adjustment - handled by caller
+        pass
+    
+    # Calculate total balance
+    total_balance = (
+        PHINS_BALANCE_SHEET['claims_reserve'] +
+        PHINS_BALANCE_SHEET['operating_reserve'] +
+        PHINS_BALANCE_SHEET['supplier_reserve'] +
+        PHINS_BALANCE_SHEET['investment_reserve']
+    )
+    
+    transaction = {
+        'tx_id': tx_id,
+        'type': tx_type,
+        'category': category,
+        'amount': amount,
+        'description': description,
+        'customer_id': customer_id,
+        'claim_id': claim_id,
+        'metadata': metadata or {},
+        'actor': actor,
+        'balance_after': total_balance,
+        'claims_reserve_after': PHINS_BALANCE_SHEET['claims_reserve'],
+        'timestamp': datetime.now().isoformat()
+    }
+    
+    PHINS_BALANCE_SHEET['transactions'].append(transaction)
+    PHINS_BALANCE_SHEET['last_updated'] = datetime.now().isoformat()
+    
+    # Add audit entry
+    PHINS_BALANCE_SHEET['audit_log'].append({
+        'action': tx_type,
+        'tx_id': tx_id,
+        'actor': actor,
+        'timestamp': datetime.now().isoformat(),
+        'amount': amount,
+        'category': category
+    })
+    
+    # Also record on the main transaction ledger with PHINS owner
+    nft_token = generate_nft_token(
+        customer_id='PHINS-CORPORATE',
+        transaction_type=f'balance_sheet_{tx_type}',
+        transaction_id=tx_id,
+        amount=amount if tx_type == 'revenue' else -amount,
+        description=description,
+        metadata={
+            'balance_sheet_category': category,
+            'customer_id': customer_id,
+            'claim_id': claim_id,
+            **(metadata or {})
+        }
+    )
+    
+    # Trigger save
+    threading.Thread(target=save_ledger_data, daemon=True).start()
+    
+    return {**transaction, 'nft_token_id': nft_token['token_id']}
+
+def process_claim_payment_to_wallet(
+    claim_id: str,
+    customer_id: str,
+    amount: float,
+    processed_by: str = 'accountant'
+) -> Dict[str, Any]:
+    """
+    Process an approved claim payment by:
+    1. Deducting from PHINS claims reserve
+    2. Transferring directly to customer's health wallet
+    3. Recording all transactions on ledger
+    """
+    global PHINS_BALANCE_SHEET, HEALTH_WALLETS
+    
+    # Check sufficient reserves
+    if PHINS_BALANCE_SHEET['claims_reserve'] < amount:
+        return {
+            'success': False,
+            'error': 'Insufficient claims reserve',
+            'available': PHINS_BALANCE_SHEET['claims_reserve'],
+            'required': amount
+        }
+    
+    # Generate payment reference
+    payment_ref = f"CLAIM-PAY-{datetime.now().strftime('%Y%m%d')}-{random.randint(10000, 99999)}"
+    
+    # 1. Record expense on balance sheet (deduct from claims reserve)
+    bs_tx = record_balance_sheet_transaction(
+        tx_type='expense',
+        category='claims_paid',
+        amount=amount,
+        description=f"Claim payment {claim_id} to customer {customer_id}",
+        actor=processed_by,
+        customer_id=customer_id,
+        claim_id=claim_id,
+        metadata={
+            'payment_reference': payment_ref,
+            'destination': 'health_wallet'
+        }
+    )
+    
+    # 2. Ensure customer has health wallet
+    if customer_id not in HEALTH_WALLETS:
+        HEALTH_WALLETS[customer_id] = {
+            'customer_id': customer_id,
+            'balance': 0.00,
+            'monthly_deposit': 0.00,
+            'transactions': [],
+            'created_at': datetime.now().isoformat()
+        }
+    
+    # 3. Credit customer's health wallet
+    prev_balance = HEALTH_WALLETS[customer_id]['balance']
+    HEALTH_WALLETS[customer_id]['balance'] += amount
+    new_balance = HEALTH_WALLETS[customer_id]['balance']
+    
+    # 4. Record wallet transaction
+    wallet_tx = {
+        'id': payment_ref,
+        'type': 'claim_payment',
+        'amount': amount,
+        'source': 'PHINS_CLAIMS_RESERVE',
+        'claim_id': claim_id,
+        'description': f"Claim payment received - {claim_id}",
+        'previous_balance': prev_balance,
+        'balance_after': new_balance,
+        'timestamp': datetime.now().isoformat()
+    }
+    HEALTH_WALLETS[customer_id]['transactions'].append(wallet_tx)
+    
+    # 5. Record on customer's transaction ledger
+    customer_tx = record_transaction(
+        customer_id=customer_id,
+        tx_type='claim_payment_received',
+        amount=amount,
+        description=f"Claim {claim_id} payment deposited to Health Wallet",
+        metadata={
+            'claim_id': claim_id,
+            'payment_reference': payment_ref,
+            'source': 'PHINS_CLAIMS_RESERVE',
+            'previous_balance': prev_balance,
+            'new_balance': new_balance,
+            'balance_sheet_tx_id': bs_tx['tx_id']
+        }
+    )
+    
+    wallet_tx['nft_token_id'] = customer_tx.get('nft_token_id')
+    wallet_tx['ledger_tx_id'] = customer_tx.get('id')
+    
+    return {
+        'success': True,
+        'payment_reference': payment_ref,
+        'amount_paid': amount,
+        'customer_id': customer_id,
+        'claim_id': claim_id,
+        'destination': 'health_wallet',
+        'new_wallet_balance': new_balance,
+        'balance_sheet_tx': bs_tx,
+        'customer_tx': customer_tx,
+        'claims_reserve_remaining': PHINS_BALANCE_SHEET['claims_reserve']
+    }
+
+def record_premium_revenue(
+    customer_id: str,
+    policy_id: str,
+    amount: float,
+    description: str = None
+) -> Dict[str, Any]:
+    """Record premium payment as revenue on the balance sheet"""
+    return record_balance_sheet_transaction(
+        tx_type='revenue',
+        category='premium_income',
+        amount=amount,
+        description=description or f"Premium payment for policy {policy_id}",
+        actor='billing_system',
+        customer_id=customer_id,
+        metadata={'policy_id': policy_id}
+    )
+
+def record_fee_revenue(
+    fee_type: str,
+    amount: float,
+    description: str,
+    customer_id: str = None,
+    actor: str = 'SYSTEM'
+) -> Dict[str, Any]:
+    """Record various fees as revenue"""
+    category_map = {
+        'management': 'management_fees',
+        'underwriting': 'underwriting_fees',
+        'late': 'late_fees',
+        'other': 'other_income'
+    }
+    category = category_map.get(fee_type, 'other_income')
+    
+    return record_balance_sheet_transaction(
+        tx_type='revenue',
+        category=category,
+        amount=amount,
+        description=description,
+        actor=actor,
+        customer_id=customer_id
+    )
+
 # ========== DATA PERSISTENCE LAYER ==========
 # Path for persistent storage file
 LEDGER_PERSISTENCE_FILE = os.environ.get('LEDGER_PERSISTENCE_FILE', '/tmp/phins_ledger_data.json')
@@ -131,7 +447,7 @@ def save_ledger_data():
             
             data = {
                 'saved_at': datetime.now().isoformat(),
-                'version': '1.2',
+                'version': '1.3',
                 'health_wallets': HEALTH_WALLETS,
                 'medical_purchases': MEDICAL_PURCHASES,
                 'nft_ledger': NFT_LEDGER,
@@ -144,7 +460,9 @@ def save_ledger_data():
                 'underwriting_applications': UNDERWRITING_APPLICATIONS,
                 # v1.2 additions - algo trading data
                 'algo_trading_balances': algo_balances,
-                'trading_bots': trading_bots
+                'trading_bots': trading_bots,
+                # v1.3 additions - PHINS Main Balance Sheet
+                'phins_balance_sheet': PHINS_BALANCE_SHEET
             }
             
             # Write to temp file first, then rename for atomic operation
@@ -163,7 +481,7 @@ def save_ledger_data():
 def load_ledger_data():
     """Load ledger data from persistent storage on startup"""
     global HEALTH_WALLETS, MEDICAL_PURCHASES, NFT_LEDGER, CUSTOMER_ALLOCATIONS, INVESTMENT_ACCOUNTS, TRANSACTION_LEDGER
-    global BILLING, POLICIES, CUSTOMERS, UNDERWRITING_APPLICATIONS
+    global BILLING, POLICIES, CUSTOMERS, UNDERWRITING_APPLICATIONS, PHINS_BALANCE_SHEET
     global _loaded_algo_balances, _loaded_trading_bots
     
     # Temporary storage for algo data until services are initialized
@@ -201,6 +519,13 @@ def load_ledger_data():
         if data.get('version', '1.0') >= '1.2':
             _loaded_algo_balances = data.get('algo_trading_balances', {})
             _loaded_trading_bots = data.get('trading_bots', {})
+        
+        # Load PHINS Balance Sheet (v1.3+)
+        if data.get('version', '1.0') >= '1.3':
+            loaded_bs = data.get('phins_balance_sheet', {})
+            if loaded_bs:
+                PHINS_BALANCE_SHEET.update(loaded_bs)
+                print(f"  - PHINS Balance Sheet: Claims Reserve ${PHINS_BALANCE_SHEET.get('claims_reserve', 0):,.2f}")
         
         print(f"[PERSISTENCE] Loaded ledger data from {LEDGER_PERSISTENCE_FILE}")
         print(f"  - Health Wallets: {len(HEALTH_WALLETS)}")
@@ -5358,6 +5683,152 @@ For claims or questions, please contact:
             return
         
         # ========== END PLATFORM ANALYTICS API ==========
+        
+        # ========== PHINS BALANCE SHEET API (ADMIN) ==========
+        # Company balance sheet for claims reserves, revenue, and expenses
+        # Accessible by: admin, accountant, underwriter, claims_adjuster
+        
+        if path == '/api/admin/balance-sheet':
+            # Check authorization
+            if not require_role(session, ['admin', 'accountant', 'underwriter', 'claims']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Unauthorized. Admin, Accountant, Underwriter, or Claims Adjuster access required.'}).encode('utf-8'))
+                return
+            
+            # Initialize balance sheet if needed
+            initialize_balance_sheet()
+            
+            # Calculate totals
+            total_balance = (
+                PHINS_BALANCE_SHEET['claims_reserve'] +
+                PHINS_BALANCE_SHEET['operating_reserve'] +
+                PHINS_BALANCE_SHEET['supplier_reserve'] +
+                PHINS_BALANCE_SHEET['investment_reserve']
+            )
+            
+            self._set_json_headers()
+            self.wfile.write(json.dumps({
+                'success': True,
+                'balance_sheet': {
+                    'account_id': PHINS_BALANCE_SHEET['account_id'],
+                    'name': PHINS_BALANCE_SHEET['name'],
+                    'created_at': PHINS_BALANCE_SHEET['created_at'],
+                    'last_updated': PHINS_BALANCE_SHEET['last_updated'],
+                    
+                    # Balances
+                    'total_balance': total_balance,
+                    'claims_reserve': PHINS_BALANCE_SHEET['claims_reserve'],
+                    'operating_reserve': PHINS_BALANCE_SHEET['operating_reserve'],
+                    'supplier_reserve': PHINS_BALANCE_SHEET['supplier_reserve'],
+                    'investment_reserve': PHINS_BALANCE_SHEET['investment_reserve'],
+                    
+                    # Revenue
+                    'total_revenue': PHINS_BALANCE_SHEET['total_revenue'],
+                    'revenue_breakdown': PHINS_BALANCE_SHEET['revenue_breakdown'],
+                    
+                    # Expenses
+                    'total_expenses': PHINS_BALANCE_SHEET['total_expenses'],
+                    'expense_breakdown': PHINS_BALANCE_SHEET['expense_breakdown'],
+                    
+                    # Net position
+                    'net_income': PHINS_BALANCE_SHEET['total_revenue'] - PHINS_BALANCE_SHEET['total_expenses'],
+                    
+                    # Transaction count
+                    'transaction_count': len(PHINS_BALANCE_SHEET['transactions'])
+                },
+                'timestamp': datetime.now().isoformat()
+            }, default=str).encode('utf-8'))
+            return
+        
+        if path == '/api/admin/balance-sheet/transactions':
+            # Check authorization
+            if not require_role(session, ['admin', 'accountant', 'underwriter', 'claims']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Unauthorized.'}).encode('utf-8'))
+                return
+            
+            # Get pagination params
+            limit = int(qs.get('limit', [50])[0])
+            offset = int(qs.get('offset', [0])[0])
+            tx_type = qs.get('type', [None])[0]
+            
+            # Filter and sort transactions (most recent first)
+            transactions = PHINS_BALANCE_SHEET.get('transactions', [])
+            if tx_type:
+                transactions = [tx for tx in transactions if tx.get('type') == tx_type]
+            
+            transactions = sorted(transactions, key=lambda x: x.get('timestamp', ''), reverse=True)
+            paginated = transactions[offset:offset + limit]
+            
+            self._set_json_headers()
+            self.wfile.write(json.dumps({
+                'success': True,
+                'transactions': paginated,
+                'total': len(transactions),
+                'limit': limit,
+                'offset': offset,
+                'timestamp': datetime.now().isoformat()
+            }, default=str).encode('utf-8'))
+            return
+        
+        if path == '/api/admin/balance-sheet/audit-log':
+            # Check authorization - only admin and accountant
+            if not require_role(session, ['admin', 'accountant']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Unauthorized. Admin or Accountant access required.'}).encode('utf-8'))
+                return
+            
+            # Get pagination params
+            limit = int(qs.get('limit', [100])[0])
+            offset = int(qs.get('offset', [0])[0])
+            
+            audit_log = PHINS_BALANCE_SHEET.get('audit_log', [])
+            audit_log = sorted(audit_log, key=lambda x: x.get('timestamp', ''), reverse=True)
+            paginated = audit_log[offset:offset + limit]
+            
+            self._set_json_headers()
+            self.wfile.write(json.dumps({
+                'success': True,
+                'audit_log': paginated,
+                'total': len(audit_log),
+                'limit': limit,
+                'offset': offset,
+                'timestamp': datetime.now().isoformat()
+            }, default=str).encode('utf-8'))
+            return
+        
+        if path == '/api/admin/balance-sheet/summary':
+            # Quick summary for dashboard widgets - slightly less restricted
+            if not require_role(session, ['admin', 'accountant', 'underwriter', 'claims']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Unauthorized.'}).encode('utf-8'))
+                return
+            
+            initialize_balance_sheet()
+            
+            # Recent claims paid
+            recent_claims = [
+                tx for tx in PHINS_BALANCE_SHEET.get('transactions', [])
+                if tx.get('category') == 'claims_paid'
+            ][-10:]
+            
+            self._set_json_headers()
+            self.wfile.write(json.dumps({
+                'success': True,
+                'summary': {
+                    'claims_reserve': PHINS_BALANCE_SHEET['claims_reserve'],
+                    'total_claims_paid': PHINS_BALANCE_SHEET['expense_breakdown']['claims_paid'],
+                    'total_premium_income': PHINS_BALANCE_SHEET['revenue_breakdown']['premium_income'],
+                    'net_position': PHINS_BALANCE_SHEET['total_revenue'] - PHINS_BALANCE_SHEET['total_expenses'],
+                    'recent_claims_count': len(recent_claims),
+                    'last_updated': PHINS_BALANCE_SHEET['last_updated']
+                },
+                'recent_claims': recent_claims,
+                'timestamp': datetime.now().isoformat()
+            }, default=str).encode('utf-8'))
+            return
+        
+        # ========== END PHINS BALANCE SHEET API ==========
 
         # Investment portfolio endpoint (legacy - redirect to new API)
         if path.startswith('/api/investment-portfolio'):
@@ -6814,6 +7285,299 @@ For claims or questions, please contact:
                 self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
             return
         
+        # ========== PHINS BALANCE SHEET MANAGEMENT API (POST) ==========
+        
+        # Deposit funds to balance sheet reserves
+        if path == '/api/admin/balance-sheet/deposit':
+            if not require_role(session, ['admin', 'accountant']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Unauthorized. Admin or Accountant access required.'}).encode('utf-8'))
+                return
+            
+            try:
+                data = json.loads(body or '{}')
+                amount = float(data.get('amount', 0))
+                reserve_type = data.get('reserve_type', 'claims_reserve')  # claims_reserve, operating_reserve, supplier_reserve, investment_reserve
+                description = data.get('description', 'Capital deposit')
+                actor = data.get('actor', session.get('username', 'admin'))
+                
+                if amount <= 0:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'Amount must be greater than 0'}).encode('utf-8'))
+                    return
+                
+                valid_reserves = ['claims_reserve', 'operating_reserve', 'supplier_reserve', 'investment_reserve']
+                if reserve_type not in valid_reserves:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': f'Invalid reserve type. Must be one of: {valid_reserves}'}).encode('utf-8'))
+                    return
+                
+                initialize_balance_sheet()
+                
+                # Update the reserve
+                PHINS_BALANCE_SHEET[reserve_type] += amount
+                PHINS_BALANCE_SHEET['last_updated'] = datetime.now().isoformat()
+                
+                # Record transaction
+                tx_id = f"BS-DEP-{datetime.now().strftime('%Y%m%d%H%M%S')}-{random.randint(1000, 9999)}"
+                transaction = {
+                    'tx_id': tx_id,
+                    'type': 'deposit',
+                    'category': reserve_type,
+                    'amount': amount,
+                    'description': description,
+                    'actor': actor,
+                    'balance_after': PHINS_BALANCE_SHEET[reserve_type],
+                    'timestamp': datetime.now().isoformat()
+                }
+                PHINS_BALANCE_SHEET['transactions'].append(transaction)
+                PHINS_BALANCE_SHEET['audit_log'].append({
+                    'action': 'deposit',
+                    'tx_id': tx_id,
+                    'actor': actor,
+                    'amount': amount,
+                    'reserve_type': reserve_type,
+                    'timestamp': datetime.now().isoformat()
+                })
+                
+                # Record on NFT ledger
+                nft = generate_nft_token(
+                    customer_id='PHINS-CORPORATE',
+                    transaction_type='balance_sheet_deposit',
+                    transaction_id=tx_id,
+                    amount=amount,
+                    description=description,
+                    metadata={'reserve_type': reserve_type, 'actor': actor}
+                )
+                
+                save_ledger_data()
+                
+                self._set_json_headers(200)
+                self.wfile.write(json.dumps({
+                    'success': True,
+                    'tx_id': tx_id,
+                    'amount': amount,
+                    'reserve_type': reserve_type,
+                    'new_balance': PHINS_BALANCE_SHEET[reserve_type],
+                    'nft_token_id': nft['token_id'],
+                    'block_number': nft['block_number'],
+                    'message': f'${amount:,.2f} deposited to {reserve_type}'
+                }, default=str).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+        
+        # Transfer between reserves
+        if path == '/api/admin/balance-sheet/transfer':
+            if not require_role(session, ['admin', 'accountant']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Unauthorized. Admin or Accountant access required.'}).encode('utf-8'))
+                return
+            
+            try:
+                data = json.loads(body or '{}')
+                amount = float(data.get('amount', 0))
+                from_reserve = data.get('from_reserve')
+                to_reserve = data.get('to_reserve')
+                description = data.get('description', 'Internal transfer')
+                actor = data.get('actor', session.get('username', 'admin'))
+                
+                valid_reserves = ['claims_reserve', 'operating_reserve', 'supplier_reserve', 'investment_reserve']
+                
+                if not from_reserve or not to_reserve:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'from_reserve and to_reserve are required'}).encode('utf-8'))
+                    return
+                
+                if from_reserve not in valid_reserves or to_reserve not in valid_reserves:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': f'Invalid reserve type. Must be one of: {valid_reserves}'}).encode('utf-8'))
+                    return
+                
+                if amount <= 0:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'Amount must be greater than 0'}).encode('utf-8'))
+                    return
+                
+                initialize_balance_sheet()
+                
+                if PHINS_BALANCE_SHEET[from_reserve] < amount:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({
+                        'error': 'Insufficient funds',
+                        'available': PHINS_BALANCE_SHEET[from_reserve],
+                        'requested': amount
+                    }).encode('utf-8'))
+                    return
+                
+                # Perform transfer
+                PHINS_BALANCE_SHEET[from_reserve] -= amount
+                PHINS_BALANCE_SHEET[to_reserve] += amount
+                PHINS_BALANCE_SHEET['last_updated'] = datetime.now().isoformat()
+                
+                # Record transaction
+                tx_id = f"BS-TRF-{datetime.now().strftime('%Y%m%d%H%M%S')}-{random.randint(1000, 9999)}"
+                transaction = {
+                    'tx_id': tx_id,
+                    'type': 'transfer',
+                    'from_reserve': from_reserve,
+                    'to_reserve': to_reserve,
+                    'amount': amount,
+                    'description': description,
+                    'actor': actor,
+                    'from_balance_after': PHINS_BALANCE_SHEET[from_reserve],
+                    'to_balance_after': PHINS_BALANCE_SHEET[to_reserve],
+                    'timestamp': datetime.now().isoformat()
+                }
+                PHINS_BALANCE_SHEET['transactions'].append(transaction)
+                PHINS_BALANCE_SHEET['audit_log'].append({
+                    'action': 'transfer',
+                    'tx_id': tx_id,
+                    'actor': actor,
+                    'amount': amount,
+                    'from_reserve': from_reserve,
+                    'to_reserve': to_reserve,
+                    'timestamp': datetime.now().isoformat()
+                })
+                
+                # Record on NFT ledger
+                nft = generate_nft_token(
+                    customer_id='PHINS-CORPORATE',
+                    transaction_type='balance_sheet_transfer',
+                    transaction_id=tx_id,
+                    amount=amount,
+                    description=description,
+                    metadata={'from_reserve': from_reserve, 'to_reserve': to_reserve, 'actor': actor}
+                )
+                
+                save_ledger_data()
+                
+                self._set_json_headers(200)
+                self.wfile.write(json.dumps({
+                    'success': True,
+                    'tx_id': tx_id,
+                    'amount': amount,
+                    'from_reserve': from_reserve,
+                    'to_reserve': to_reserve,
+                    'from_balance': PHINS_BALANCE_SHEET[from_reserve],
+                    'to_balance': PHINS_BALANCE_SHEET[to_reserve],
+                    'nft_token_id': nft['token_id'],
+                    'message': f'${amount:,.2f} transferred from {from_reserve} to {to_reserve}'
+                }, default=str).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+        
+        # Record revenue manually
+        if path == '/api/admin/balance-sheet/record-revenue':
+            if not require_role(session, ['admin', 'accountant']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Unauthorized. Admin or Accountant access required.'}).encode('utf-8'))
+                return
+            
+            try:
+                data = json.loads(body or '{}')
+                amount = float(data.get('amount', 0))
+                category = data.get('category', 'other_income')
+                description = data.get('description', 'Revenue entry')
+                customer_id = data.get('customer_id')
+                actor = data.get('actor', session.get('username', 'admin'))
+                
+                valid_categories = list(PHINS_BALANCE_SHEET['revenue_breakdown'].keys())
+                
+                if category not in valid_categories:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': f'Invalid category. Must be one of: {valid_categories}'}).encode('utf-8'))
+                    return
+                
+                if amount <= 0:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'Amount must be greater than 0'}).encode('utf-8'))
+                    return
+                
+                initialize_balance_sheet()
+                
+                tx = record_balance_sheet_transaction(
+                    tx_type='revenue',
+                    category=category,
+                    amount=amount,
+                    description=description,
+                    actor=actor,
+                    customer_id=customer_id
+                )
+                
+                self._set_json_headers(200)
+                self.wfile.write(json.dumps({
+                    'success': True,
+                    'tx_id': tx['tx_id'],
+                    'amount': amount,
+                    'category': category,
+                    'total_revenue': PHINS_BALANCE_SHEET['total_revenue'],
+                    'nft_token_id': tx.get('nft_token_id'),
+                    'message': f'${amount:,.2f} recorded as {category}'
+                }, default=str).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+        
+        # Record expense manually (for suppliers, etc.)
+        if path == '/api/admin/balance-sheet/record-expense':
+            if not require_role(session, ['admin', 'accountant']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Unauthorized. Admin or Accountant access required.'}).encode('utf-8'))
+                return
+            
+            try:
+                data = json.loads(body or '{}')
+                amount = float(data.get('amount', 0))
+                category = data.get('category', 'other_expenses')
+                description = data.get('description', 'Expense entry')
+                supplier_id = data.get('supplier_id')
+                actor = data.get('actor', session.get('username', 'admin'))
+                
+                valid_categories = list(PHINS_BALANCE_SHEET['expense_breakdown'].keys())
+                
+                if category not in valid_categories:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': f'Invalid category. Must be one of: {valid_categories}'}).encode('utf-8'))
+                    return
+                
+                if amount <= 0:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'Amount must be greater than 0'}).encode('utf-8'))
+                    return
+                
+                initialize_balance_sheet()
+                
+                tx = record_balance_sheet_transaction(
+                    tx_type='expense',
+                    category=category,
+                    amount=amount,
+                    description=description,
+                    actor=actor,
+                    metadata={'supplier_id': supplier_id} if supplier_id else None
+                )
+                
+                self._set_json_headers(200)
+                self.wfile.write(json.dumps({
+                    'success': True,
+                    'tx_id': tx['tx_id'],
+                    'amount': amount,
+                    'category': category,
+                    'total_expenses': PHINS_BALANCE_SHEET['total_expenses'],
+                    'nft_token_id': tx.get('nft_token_id'),
+                    'message': f'${amount:,.2f} recorded as {category}'
+                }, default=str).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+        
+        # ========== END PHINS BALANCE SHEET MANAGEMENT API ==========
+        
         # Pipeline Process - Process next step for a customer
         if path.startswith('/api/admin/pipeline-process/'):
             customer_id = path.split('/')[-1]
@@ -7943,7 +8707,7 @@ For claims or questions, please contact:
                 self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
             return
         
-        # Pay Claim Endpoint
+        # Pay Claim Endpoint - Transfers from PHINS Balance Sheet to Customer Health Wallet
         if path == '/api/claims/pay':
             try:
                 data = json.loads(body)
@@ -7953,38 +8717,50 @@ For claims or questions, please contact:
                 # Check if claim is approved (case-insensitive)
                 if claim and claim.get('status', '').lower() == 'approved':
                     paid_amount = claim.get('approved_amount', claim['claimed_amount'])
-                    payment_reference = f"PAY-{datetime.now().strftime('%Y%m%d')}-{random.randint(1000, 9999)}"
+                    customer_id = claim.get('customer_id', 'unknown')
+                    processed_by = data.get('processed_by', 'accountant')
                     
+                    # Process payment through PHINS Balance Sheet to Health Wallet
+                    payment_result = process_claim_payment_to_wallet(
+                        claim_id=claim_id,
+                        customer_id=customer_id,
+                        amount=paid_amount,
+                        processed_by=processed_by
+                    )
+                    
+                    if not payment_result['success']:
+                        self._set_json_headers(400)
+                        self.wfile.write(json.dumps({
+                            'error': payment_result.get('error', 'Payment failed'),
+                            'available_reserve': payment_result.get('available', 0),
+                            'required_amount': payment_result.get('required', paid_amount)
+                        }).encode('utf-8'))
+                        return
+                    
+                    # Update claim status
                     claim['status'] = 'Paid'
                     claim['payment_date'] = datetime.now().isoformat()
-                    claim['payment_method'] = data.get('payment_method', 'bank_transfer')
-                    claim['payment_reference'] = payment_reference
+                    claim['payment_method'] = 'health_wallet_transfer'
+                    claim['payment_reference'] = payment_result['payment_reference']
                     claim['paid_amount'] = paid_amount
-                    claim['processed_by'] = data.get('processed_by', 'accountant')
+                    claim['processed_by'] = processed_by
+                    claim['destination'] = 'health_wallet'
+                    claim['balance_sheet_tx_id'] = payment_result['balance_sheet_tx']['tx_id']
+                    claim['customer_tx_id'] = payment_result['customer_tx']['id']
+                    claim['nft_token_id'] = payment_result['customer_tx'].get('nft_token_id')
                     
                     # Persist to database
                     CLAIMS[claim_id] = claim
-                    
-                    # Record payment in transaction ledger
-                    record_transaction(
-                        customer_id=claim.get('customer_id', 'unknown'),
-                        tx_type='claim_paid',
-                        amount=paid_amount,
-                        description=f"Claim {claim_id} payment processed - ${paid_amount:.2f}",
-                        metadata={
-                            'claim_id': claim_id,
-                            'policy_id': claim.get('policy_id'),
-                            'paid_amount': paid_amount,
-                            'payment_method': claim['payment_method'],
-                            'payment_reference': payment_reference,
-                            'processed_by': data.get('processed_by', 'accountant')
-                        }
-                    )
+                    save_ledger_data()
                     
                     if audit:
-                        actor = data.get('processed_by', 'accountant')
                         try:
-                            audit.log(actor, 'pay', 'claim', claim_id, {'paid_amount': claim['paid_amount'], 'payment_method': claim['payment_method']})
+                            audit.log(processed_by, 'pay', 'claim', claim_id, {
+                                'paid_amount': paid_amount,
+                                'destination': 'health_wallet',
+                                'payment_reference': payment_result['payment_reference'],
+                                'balance_sheet_tx': payment_result['balance_sheet_tx']['tx_id']
+                            })
                         except Exception:
                             pass
                     
@@ -7992,8 +8768,16 @@ For claims or questions, please contact:
                     self.wfile.write(json.dumps({
                         'success': True, 
                         'claim': claim,
-                        'message': f'Payment of ${paid_amount:.2f} processed successfully.',
-                        'payment_reference': payment_reference
+                        'message': f'Payment of ${paid_amount:.2f} transferred to customer health wallet.',
+                        'payment_reference': payment_result['payment_reference'],
+                        'destination': 'health_wallet',
+                        'new_wallet_balance': payment_result['new_wallet_balance'],
+                        'claims_reserve_remaining': payment_result['claims_reserve_remaining'],
+                        'balance_sheet_tx': payment_result['balance_sheet_tx'],
+                        'customer_tx': {
+                            'id': payment_result['customer_tx']['id'],
+                            'nft_token_id': payment_result['customer_tx'].get('nft_token_id')
+                        }
                     }).encode('utf-8'))
                 else:
                     self._set_json_headers(400)
@@ -8351,6 +9135,17 @@ For claims or questions, please contact:
                                 bill['payment_method'] = method
                                 bill['transaction_id'] = result.transaction_id
                                 bill['updated_date'] = datetime.now().isoformat()
+                                
+                                # Record premium revenue on PHINS Balance Sheet
+                                try:
+                                    record_premium_revenue(
+                                        customer_id=customer_id,
+                                        policy_id=policy_id,
+                                        amount=amount,
+                                        description=f"Premium payment for policy {policy_id} - Bill {bill_id}"
+                                    )
+                                except Exception as rev_err:
+                                    print(f"[REVENUE] Error recording premium: {rev_err}")
                                 break
                     
                     self._set_json_headers()
@@ -12383,6 +13178,12 @@ def run_server(port: int = PORT) -> None:
         print("✓ Ledger data restored from persistent storage")
     else:
         print("ℹ️  Starting with fresh ledger data")
+    
+    # Initialize PHINS Balance Sheet (General Reserves)
+    print("💰 Initializing PHINS Balance Sheet...")
+    initialize_balance_sheet()
+    print(f"   Claims Reserve: ${PHINS_BALANCE_SHEET['claims_reserve']:,.2f}")
+    print(f"   Operating Reserve: ${PHINS_BALANCE_SHEET['operating_reserve']:,.2f}")
     
     # Start periodic save thread
     schedule_periodic_save()
