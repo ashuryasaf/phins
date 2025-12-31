@@ -5126,6 +5126,22 @@ For claims or questions, please contact:
                             })
                 recent_transactions = recent_transactions[-10:]  # Limit to 10 most recent
                 
+                # Get algo trading profits
+                algo_trading_profits = float(inv_account.get('algo_trading_profits', 0))
+                
+                # Also try to get from profit engine if available
+                try:
+                    from services.algo_trading_service import get_profit_engine
+                    profit_engine = get_profit_engine()
+                    if profit_engine:
+                        engine_profits = profit_engine.customer_profits.get(customer_id, 0)
+                        algo_trading_profits = max(algo_trading_profits, engine_profits)
+                except Exception:
+                    pass
+                
+                # Include algo profits in total value
+                total_value = cash_balance + invested_assets + algo_trading_profits
+                
                 # Build comprehensive response
                 result = {
                     'customer_id': customer_id,
@@ -5135,6 +5151,7 @@ For claims or questions, please contact:
                     'total_value': total_value,
                     'cash_balance': cash_balance,
                     'invested_assets': invested_assets,
+                    'algo_trading_profits': algo_trading_profits,
                     'monthly_contribution': monthly_contribution,
                     
                     # Monthly distribution breakdown (connected to pipeline)
@@ -5149,7 +5166,8 @@ For claims or questions, please contact:
                         'index_funds': index_balance,
                         'bonds': bonds_balance,
                         'crypto': crypto_balance,
-                        'cash': cash_balance
+                        'cash': cash_balance,
+                        'algo_profits': algo_trading_profits
                     },
                     
                     # Allocation percentages
@@ -11858,13 +11876,21 @@ For claims or questions, please contact:
                 result = profit_engine.run_profit_cycle(customer_id, account_id)
                 
                 # If profits were made, update investment account
-                if result.get('total_profit_this_cycle', 0) > 0:
+                if result.get('total_profit_this_cycle', 0) != 0:
                     try:
+                        # Ensure investment account exists
+                        if customer_id not in INVESTMENT_ACCOUNTS:
+                            INVESTMENT_ACCOUNTS[customer_id] = {
+                                'customer_id': customer_id,
+                                'balance': 0,
+                                'algo_trading_profits': 0,
+                                'created_at': datetime.now().isoformat()
+                            }
+                        
                         # Add profits to investment account
-                        if customer_id in INVESTMENT_ACCOUNTS:
-                            INVESTMENT_ACCOUNTS[customer_id]['algo_trading_profits'] = \
-                                INVESTMENT_ACCOUNTS[customer_id].get('algo_trading_profits', 0) + \
-                                result['total_profit_this_cycle']
+                        INVESTMENT_ACCOUNTS[customer_id]['algo_trading_profits'] = \
+                            INVESTMENT_ACCOUNTS[customer_id].get('algo_trading_profits', 0) + \
+                            result['total_profit_this_cycle']
                         
                         # Record transaction
                         record_transaction(
