@@ -2260,28 +2260,51 @@
         }
         
         async function executeSignal(signalId, symbol, side) {
+            // Use customerId as fallback if accountId is not available
+            const effectiveAccountId = accountId || customerId;
+            
+            if (!effectiveAccountId) {
+                showToast('Please log in to execute trades', 'error');
+                return;
+            }
+            
             try {
+                showToast(`Executing ${side.toUpperCase()} ${symbol}...`, 'info');
+                
                 const response = await fetch('/api/algo/trade', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
-                        account_id: accountId,
+                        account_id: effectiveAccountId,
+                        customer_id: customerId,
                         symbol,
                         side,
                         amount: 500,
-                        signal_id: signalId
+                        signal_id: signalId,
+                        stop_loss_pct: 5,
+                        take_profit_pct: 10
                     })
                 });
                 
                 const data = await response.json();
                 if (data.success) {
-                    showToast('Signal executed!', 'success');
-                    loadOrders();
+                    const order = data.order || {};
+                    const price = order.price ? `@ $${order.price.toFixed(2)}` : '';
+                    showToast(`✅ ${side.toUpperCase()} ${symbol} ${price} executed!`, 'success');
+                    
+                    // Refresh orders and other data
+                    await Promise.all([
+                        loadOrders(),
+                        loadRealtimeProfits(),
+                        loadTradingSummary(),
+                        loadAlgoBalance()
+                    ]);
                 } else {
                     showToast(data.error || 'Execution failed', 'error');
                 }
             } catch (e) {
-                showToast('Execution failed', 'error');
+                console.error('Execute signal error:', e);
+                showToast('Execution failed: ' + e.message, 'error');
             }
         }
         
