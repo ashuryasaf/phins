@@ -110,9 +110,28 @@ def save_ledger_data():
     
     try:
         with _persistence_lock:
+            # Collect algo trading balances from services if available
+            algo_balances = {}
+            try:
+                if 'unified_balance_service' in globals() and unified_balance_service:
+                    algo_balances = dict(unified_balance_service.algo_trading_balances)
+                elif 'portfolio_tracker_service' in globals() and portfolio_tracker_service:
+                    algo_balances = dict(portfolio_tracker_service.algo_balances)
+            except:
+                pass
+            
+            # Collect trading bots data
+            trading_bots = {}
+            try:
+                if 'algo_trading_service' in globals() and algo_trading_service:
+                    trading_bots = {k: v.__dict__ if hasattr(v, '__dict__') else v 
+                                   for k, v in algo_trading_service.bots.items()}
+            except:
+                pass
+            
             data = {
                 'saved_at': datetime.now().isoformat(),
-                'version': '1.1',
+                'version': '1.2',
                 'health_wallets': HEALTH_WALLETS,
                 'medical_purchases': MEDICAL_PURCHASES,
                 'nft_ledger': NFT_LEDGER,
@@ -122,7 +141,10 @@ def save_ledger_data():
                 'billing': BILLING,
                 'policies': POLICIES,
                 'customers': CUSTOMERS,
-                'underwriting_applications': UNDERWRITING_APPLICATIONS
+                'underwriting_applications': UNDERWRITING_APPLICATIONS,
+                # v1.2 additions - algo trading data
+                'algo_trading_balances': algo_balances,
+                'trading_bots': trading_bots
             }
             
             # Write to temp file first, then rename for atomic operation
@@ -133,6 +155,8 @@ def save_ledger_data():
             # Atomic rename
             os.rename(temp_file, LEDGER_PERSISTENCE_FILE)
             print(f"[PERSISTENCE] Saved ledger data to {LEDGER_PERSISTENCE_FILE}")
+            if algo_balances:
+                print(f"  - Algo Trading Balances: {len(algo_balances)} accounts")
     except Exception as e:
         print(f"[PERSISTENCE] Error saving ledger data: {e}")
 
@@ -140,6 +164,11 @@ def load_ledger_data():
     """Load ledger data from persistent storage on startup"""
     global HEALTH_WALLETS, MEDICAL_PURCHASES, NFT_LEDGER, CUSTOMER_ALLOCATIONS, INVESTMENT_ACCOUNTS, TRANSACTION_LEDGER
     global BILLING, POLICIES, CUSTOMERS, UNDERWRITING_APPLICATIONS
+    global _loaded_algo_balances, _loaded_trading_bots
+    
+    # Temporary storage for algo data until services are initialized
+    _loaded_algo_balances = {}
+    _loaded_trading_bots = {}
     
     if not PERSISTENCE_ENABLED:
         print("[PERSISTENCE] Persistence disabled, using in-memory storage only")
@@ -168,6 +197,11 @@ def load_ledger_data():
             CUSTOMERS.update(data.get('customers', {}))
             UNDERWRITING_APPLICATIONS.update(data.get('underwriting_applications', {}))
         
+        # Load algo trading data (v1.2+)
+        if data.get('version', '1.0') >= '1.2':
+            _loaded_algo_balances = data.get('algo_trading_balances', {})
+            _loaded_trading_bots = data.get('trading_bots', {})
+        
         print(f"[PERSISTENCE] Loaded ledger data from {LEDGER_PERSISTENCE_FILE}")
         print(f"  - Health Wallets: {len(HEALTH_WALLETS)}")
         print(f"  - Medical Purchases: {len(MEDICAL_PURCHASES)}")
@@ -179,11 +213,37 @@ def load_ledger_data():
         print(f"  - Policies: {len(POLICIES)}")
         print(f"  - Customers: {len(CUSTOMERS)}")
         print(f"  - Underwriting: {len(UNDERWRITING_APPLICATIONS)}")
+        if _loaded_algo_balances:
+            print(f"  - Algo Trading Balances: {len(_loaded_algo_balances)} accounts (pending sync)")
+        if _loaded_trading_bots:
+            print(f"  - Trading Bots: {len(_loaded_trading_bots)} bots (pending sync)")
         print(f"  - Saved at: {data.get('saved_at', 'unknown')}")
         return True
     except Exception as e:
         print(f"[PERSISTENCE] Error loading ledger data: {e}")
         return False
+
+def sync_loaded_algo_data():
+    """Sync loaded algo trading data to services after they're initialized"""
+    global _loaded_algo_balances, _loaded_trading_bots
+    
+    try:
+        if _loaded_algo_balances:
+            if 'unified_balance_service' in globals() and unified_balance_service:
+                unified_balance_service.algo_trading_balances.update(_loaded_algo_balances)
+                print(f"[PERSISTENCE] Synced {len(_loaded_algo_balances)} algo balances to unified_balance_service")
+            if 'portfolio_tracker_service' in globals() and portfolio_tracker_service:
+                portfolio_tracker_service.algo_balances.update(_loaded_algo_balances)
+                print(f"[PERSISTENCE] Synced {len(_loaded_algo_balances)} algo balances to portfolio_tracker_service")
+            _loaded_algo_balances = {}
+        
+        # Note: Trading bots would need more complex reconstruction
+        # For now, just log that they were available
+        if _loaded_trading_bots:
+            print(f"[PERSISTENCE] {len(_loaded_trading_bots)} trading bots available for restoration")
+            _loaded_trading_bots = {}
+    except Exception as e:
+        print(f"[PERSISTENCE] Error syncing algo data: {e}")
 
 def schedule_periodic_save():
     """Schedule periodic saves of ledger data"""
@@ -615,6 +675,12 @@ def _init_portfolio_tracker():
         print(f"Warning: Portfolio Tracker service not available: {e}")
 
 _init_portfolio_tracker()
+
+# Sync any loaded algo trading data to the newly initialized services
+try:
+    sync_loaded_algo_data()
+except Exception as e:
+    print(f"Note: Could not sync loaded algo data: {e}")
 
 # Optional: admin datasets (actuarial tables) and market data (crypto/index)
 try:
