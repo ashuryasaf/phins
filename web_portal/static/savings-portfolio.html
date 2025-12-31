@@ -879,10 +879,17 @@
                 <div class="card-value" id="investedValue">$0.00</div>
                 <div class="card-change" id="unrealizedGain">$0.00 unrealized</div>
             </div>
-            <div class="summary-card">
-                <div class="card-label">&#128197; Monthly Contribution</div>
+            <div class="summary-card" style="position: relative;">
+                <div class="card-label">&#128197; Monthly Savings</div>
                 <div class="card-value" id="monthlyContribution">$0.00</div>
-                <div class="card-change">Auto-invested monthly</div>
+                <div class="card-change" id="monthlyBreakdown" style="font-size: 0.7rem; line-height: 1.4;">
+                    From active policies
+                </div>
+                <!-- Distribution tooltip -->
+                <div id="distributionTooltip" style="display: none; position: absolute; top: 100%; left: 0; right: 0; background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px; padding: 12px; margin-top: 8px; z-index: 100; box-shadow: 0 4px 12px rgba(0,0,0,0.15);">
+                    <div style="font-weight: 600; margin-bottom: 8px; font-size: 0.85rem;">Monthly Distribution</div>
+                    <div id="distributionDetails" style="font-size: 0.75rem;"></div>
+                </div>
             </div>
             <div class="summary-card" style="background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%); border: none;">
                 <div class="card-label" style="color: rgba(255,255,255,0.9);">🤖 Algo Trading Portfolio</div>
@@ -1299,6 +1306,43 @@
             document.getElementById('cashBalance').textContent = formatCurrency(cashBalance);
             document.getElementById('investedValue').textContent = formatCurrency(investedAssets);
             document.getElementById('monthlyContribution').textContent = formatCurrency(monthlyContrib);
+            
+            // Update monthly distribution breakdown
+            const dist = unified.monthly_distribution || {};
+            if (dist.total_premium) {
+                const breakdownEl = document.getElementById('monthlyBreakdown');
+                const alloc = dist.allocation_pct || {};
+                breakdownEl.innerHTML = `
+                    <span style="color: var(--success);">💰 ${alloc.savings_pct || 50}% of $${(dist.total_premium || 0).toLocaleString()}</span>
+                `;
+                
+                // Populate distribution tooltip
+                const tooltipEl = document.getElementById('distributionDetails');
+                tooltipEl.innerHTML = `
+                    <div style="margin-bottom: 6px;"><strong>Premium Split:</strong></div>
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+                        <span>Total Premium:</span>
+                        <span style="font-weight: 600;">${formatCurrency(dist.total_premium)}</span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 8px; color: var(--text-secondary);">
+                        <span>→ Risk Coverage (${alloc.risk_pct || 50}%):</span>
+                        <span>${formatCurrency(dist.risk_coverage || 0)}</span>
+                    </div>
+                    <div style="margin-bottom: 6px;"><strong>Savings Distribution (${alloc.savings_pct || 50}%):</strong></div>
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 2px;">
+                        <span>🏥 Health Wallet (${alloc.wallet_pct || 30}%):</span>
+                        <span style="color: #10b981;">${formatCurrency(dist.to_wallet || 0)}</span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 2px;">
+                        <span>📈 Investment (${alloc.investment_pct || 65}%):</span>
+                        <span style="color: #3b82f6;">${formatCurrency(dist.to_investment || 0)}</span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between;">
+                        <span>🤖 Algo Trading (${alloc.algo_pct || 5}%):</span>
+                        <span style="color: #8b5cf6;">${formatCurrency(dist.to_algo || 0)}</span>
+                    </div>
+                `;
+            }
             
             // P&L from unified data or portfolio
             const returnPct = unified.return_pct || portfolioData.return_pct || 0;
