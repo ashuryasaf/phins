@@ -521,20 +521,31 @@
       <div style="background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%); padding: 16px; border-radius: 12px; margin-bottom: 20px; border: 1px solid rgba(59, 130, 246, 0.2);">
         <h4 style="margin: 0 0 12px 0; display: flex; align-items: center; gap: 8px;">
           <span>⚡</span> Quick Pipeline Actions
+          <span id="pipeline-status" style="font-size: 12px; font-weight: normal; margin-left: auto; color: #666;"></span>
         </h4>
         <div style="display: flex; gap: 12px; flex-wrap: wrap;">
-          <button class="btn btn-small" style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: white;" onclick="processAllPipelines()">
+          <button id="btn-process-pipelines" class="btn btn-small" style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: white;" onclick="processAllPipelines()">
             🔄 Process All Pipelines
           </button>
-          <button class="btn btn-small" style="background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%); color: white;" onclick="allocateAllSavings()">
+          <button id="btn-allocate-savings" class="btn btn-small" style="background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%); color: white;" onclick="allocateAllSavings()">
             💰 Allocate All Savings
           </button>
-          <button class="btn btn-small" style="background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); color: white;" onclick="generateMissingBilling()">
+          <button id="btn-generate-bills" class="btn btn-small" style="background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); color: white;" onclick="generateMissingBilling()">
             📄 Generate Missing Bills
+          </button>
+          <button id="btn-refresh-all" class="btn btn-small" style="background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%); color: white;" onclick="refreshAllData()">
+            🔃 Refresh All Data
           </button>
           <a href="/underwriter-dashboard.html" class="btn btn-small" style="background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%); color: white; text-decoration: none;">
             📋 Full Underwriter Dashboard
           </a>
+        </div>
+        <!-- Progress indicator -->
+        <div id="pipeline-progress" style="display: none; margin-top: 12px;">
+          <div style="background: #e5e7eb; border-radius: 4px; height: 6px; overflow: hidden;">
+            <div id="pipeline-progress-bar" style="background: linear-gradient(90deg, #10b981, #3b82f6); height: 100%; width: 0%; transition: width 0.3s;"></div>
+          </div>
+          <div id="pipeline-progress-text" style="font-size: 12px; color: #666; margin-top: 4px;"></div>
         </div>
       </div>
       
@@ -1427,7 +1438,7 @@
           alert(message);
           
           // Refresh data
-          loadCustomers();
+          loadCustomerList();
           loadDashboardStats();
           closeCustomerModal();
         } else {
@@ -1497,7 +1508,7 @@
           alert(message);
           
           // Refresh data
-          loadCustomers();
+          loadCustomerList();
           loadDashboardStats();
         } else {
           const err = await response.json();
@@ -1562,7 +1573,7 @@
         // Refresh data
         loadUnderwritingApplications();
         loadDashboardStats();
-        loadCustomers();
+        loadCustomerList();
       } catch (err) {
         alert('Failed to approve all: ' + err.message);
       }
@@ -1641,9 +1652,71 @@
       }
     }
     
+    // Helper function to show/hide progress
+    function showProgress(show, text = '') {
+      const progressDiv = document.getElementById('pipeline-progress');
+      const progressBar = document.getElementById('pipeline-progress-bar');
+      const progressText = document.getElementById('pipeline-progress-text');
+      const statusSpan = document.getElementById('pipeline-status');
+      
+      if (show) {
+        progressDiv.style.display = 'block';
+        progressText.textContent = text;
+        statusSpan.innerHTML = '<span style="color: #f59e0b;">⏳ Processing...</span>';
+      } else {
+        progressDiv.style.display = 'none';
+        progressBar.style.width = '0%';
+        statusSpan.innerHTML = '<span style="color: #10b981;">✓ Ready</span>';
+      }
+    }
+    
+    function updateProgress(current, total, text) {
+      const progressBar = document.getElementById('pipeline-progress-bar');
+      const progressText = document.getElementById('pipeline-progress-text');
+      const pct = Math.round((current / total) * 100);
+      progressBar.style.width = pct + '%';
+      progressText.textContent = text || `Processing ${current} of ${total}...`;
+    }
+    
+    function setButtonLoading(btnId, loading) {
+      const btn = document.getElementById(btnId);
+      if (btn) {
+        btn.disabled = loading;
+        btn.style.opacity = loading ? '0.6' : '1';
+      }
+    }
+    
+    // Refresh all data
+    async function refreshAllData() {
+      setButtonLoading('btn-refresh-all', true);
+      showProgress(true, 'Refreshing all data...');
+      
+      try {
+        await Promise.all([
+          loadDashboardStats(),
+          loadCustomerList(),
+          loadUnderwritingApplications(),
+          loadPolicies(),
+          loadClaims(),
+          loadBillingData(),
+          loadPipelineStats()
+        ]);
+        showProgress(false);
+        document.getElementById('pipeline-status').innerHTML = '<span style="color: #10b981;">✓ Data refreshed</span>';
+      } catch (err) {
+        showProgress(false);
+        document.getElementById('pipeline-status').innerHTML = '<span style="color: #dc3545;">⚠ Refresh failed</span>';
+      } finally {
+        setButtonLoading('btn-refresh-all', false);
+      }
+    }
+    
     // Process all pipelines
     async function processAllPipelines() {
       if (!confirm('⚡ Process all customer pipelines?\n\nThis will advance each customer through their pipeline stages automatically.\n\nContinue?')) return;
+      
+      setButtonLoading('btn-process-pipelines', true);
+      showProgress(true, 'Loading customers...');
       
       try {
         const response = await fetch('/api/admin/customers', {
@@ -1651,17 +1724,26 @@
         });
         
         if (!response.ok) {
-          alert('Failed to load customers');
-          return;
+          throw new Error('Failed to load customers');
         }
         
         const data = await response.json();
         const customers = data.customers || [];
         
+        if (customers.length === 0) {
+          showProgress(false);
+          alert('No customers found to process');
+          return;
+        }
+        
         let processed = 0;
         let actionsTotal = 0;
+        let errors = [];
         
-        for (const customer of customers) {
+        for (let i = 0; i < customers.length; i++) {
+          const customer = customers[i];
+          updateProgress(i + 1, customers.length, `Processing ${customer.name || customer.id}...`);
+          
           try {
             const processResponse = await fetch(`/api/admin/pipeline-process/${customer.id}`, {
               method: 'POST',
@@ -1676,20 +1758,30 @@
               const result = await processResponse.json();
               processed++;
               actionsTotal += (result.actions_taken || []).length;
+            } else {
+              const errData = await processResponse.json().catch(() => ({}));
+              errors.push(`${customer.id}: ${errData.error || 'Unknown error'}`);
             }
           } catch (e) {
-            // Continue with next customer
+            errors.push(`${customer.id}: ${e.message}`);
           }
         }
         
-        alert(`✅ Pipeline Processing Complete!\n\n${processed} customers processed\n${actionsTotal} total actions taken`);
+        showProgress(false);
+        
+        let message = `✅ Pipeline Processing Complete!\n\n${processed}/${customers.length} customers processed\n${actionsTotal} total actions taken`;
+        if (errors.length > 0) {
+          message += `\n\n⚠ ${errors.length} errors occurred`;
+        }
+        alert(message);
         
         // Refresh data
-        loadUnderwritingApplications();
-        loadDashboardStats();
-        loadCustomers();
+        await refreshAllData();
       } catch (err) {
+        showProgress(false);
         alert('Failed to process pipelines: ' + err.message);
+      } finally {
+        setButtonLoading('btn-process-pipelines', false);
       }
     }
     
@@ -1697,23 +1789,35 @@
     async function allocateAllSavings() {
       if (!confirm('💰 Allocate savings for ALL customers?\n\nThis will use AI to distribute available funds across:\n- Health Wallet\n- Investment Portfolio\n- Algo Trading\n\nContinue?')) return;
       
+      setButtonLoading('btn-allocate-savings', true);
+      showProgress(true, 'Loading customers...');
+      
       try {
         const response = await fetch('/api/admin/customers', {
           headers: { 'Authorization': `Bearer ${token}` }
         });
         
         if (!response.ok) {
-          alert('Failed to load customers');
-          return;
+          throw new Error('Failed to load customers');
         }
         
         const data = await response.json();
         const customers = data.customers || [];
         
+        if (customers.length === 0) {
+          showProgress(false);
+          alert('No customers found');
+          return;
+        }
+        
         let allocated = 0;
         let totalAmount = 0;
+        let skipped = 0;
         
-        for (const customer of customers) {
+        for (let i = 0; i < customers.length; i++) {
+          const customer = customers[i];
+          updateProgress(i + 1, customers.length, `Allocating for ${customer.name || customer.id}...`);
+          
           try {
             const allocateResponse = await fetch('/api/pipeline/allocate', {
               method: 'POST',
@@ -1732,20 +1836,32 @@
               if (result.success && result.amount_allocated) {
                 allocated++;
                 totalAmount += result.amount_allocated;
+              } else {
+                skipped++;
               }
+            } else {
+              skipped++;
             }
           } catch (e) {
-            // Continue with next customer
+            skipped++;
           }
         }
         
-        alert(`✅ Savings Allocation Complete!\n\n${allocated} customers had funds allocated\nTotal Amount: $${totalAmount.toLocaleString()}`);
+        showProgress(false);
+        
+        let message = `✅ Savings Allocation Complete!\n\n${allocated} customers had funds allocated\nTotal Amount: $${totalAmount.toLocaleString()}`;
+        if (skipped > 0) {
+          message += `\n${skipped} customers skipped (no funds or error)`;
+        }
+        alert(message);
         
         // Refresh data
-        loadDashboardStats();
-        loadCustomers();
+        await refreshAllData();
       } catch (err) {
+        showProgress(false);
         alert('Failed to allocate savings: ' + err.message);
+      } finally {
+        setButtonLoading('btn-allocate-savings', false);
       }
     }
     
@@ -1753,69 +1869,99 @@
     async function generateMissingBilling() {
       if (!confirm('📄 Generate missing billing records?\n\nThis will create billing records for any active policies that don\'t have one.\n\nContinue?')) return;
       
+      setButtonLoading('btn-generate-bills', true);
+      showProgress(true, 'Loading policies...');
+      
       try {
-        const response = await fetch('/api/policies', {
+        // Get policies from admin customers endpoint (which includes policies)
+        const response = await fetch('/api/admin/customers', {
           headers: { 'Authorization': `Bearer ${token}` }
         });
         
         if (!response.ok) {
-          alert('Failed to load policies');
-          return;
+          throw new Error('Failed to load customer data');
         }
         
         const data = await response.json();
-        const policies = Array.isArray(data) ? data : (data.policies || []);
-        const activePolicies = policies.filter(p => p.status === 'active');
+        const customers = data.customers || [];
         
-        // Get existing billing
-        const billingResponse = await fetch('/api/billing', {
-          headers: { 'Authorization': `Bearer ${token}` }
+        // Collect all active policies and existing bills
+        let activePolicies = [];
+        let existingBillPolicies = new Set();
+        
+        customers.forEach(c => {
+          (c.policies || []).forEach(p => {
+            if (p.status === 'active') {
+              activePolicies.push({ ...p, customer_id: c.id });
+            }
+          });
+          (c.bills || []).forEach(b => {
+            existingBillPolicies.add(b.policy_id);
+          });
         });
         
-        let existingBillPolicies = new Set();
-        if (billingResponse.ok) {
-          const billingData = await billingResponse.json();
-          const bills = Array.isArray(billingData) ? billingData : (billingData.bills || []);
-          bills.forEach(b => existingBillPolicies.add(b.policy_id));
-        }
+        updateProgress(1, 3, 'Analyzing policies...');
         
         // Find policies without billing
         const needsBilling = activePolicies.filter(p => !existingBillPolicies.has(p.id));
         
         if (needsBilling.length === 0) {
+          showProgress(false);
           alert('✓ All active policies have billing records');
           return;
         }
         
-        // Generate bills by processing pipeline
+        updateProgress(2, 3, `Generating ${needsBilling.length} billing records...`);
+        
+        // Generate bills by processing pipeline for each customer with missing bills
+        const customersToProcess = [...new Set(needsBilling.map(p => p.customer_id))];
         let generated = 0;
-        for (const policy of needsBilling) {
-          if (policy.customer_id) {
-            try {
-              const processResponse = await fetch(`/api/admin/pipeline-process/${policy.customer_id}`, {
-                method: 'POST',
-                headers: {
-                  'Authorization': `Bearer ${token}`,
-                  'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({ auto_advance: true })
-              });
-              
-              if (processResponse.ok) {
-                generated++;
-              }
-            } catch (e) {
-              // Continue
+        let errors = 0;
+        
+        for (let i = 0; i < customersToProcess.length; i++) {
+          const customerId = customersToProcess[i];
+          updateProgress(i + 1, customersToProcess.length, `Processing billing for customer ${i + 1}/${customersToProcess.length}...`);
+          
+          try {
+            const processResponse = await fetch(`/api/admin/pipeline-process/${customerId}`, {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify({ auto_advance: true })
+            });
+            
+            if (processResponse.ok) {
+              const result = await processResponse.json();
+              // Count billing-related actions
+              const billingActions = (result.actions_taken || []).filter(a => 
+                a.toLowerCase().includes('billing') || a.toLowerCase().includes('bill')
+              );
+              generated += billingActions.length || 1;
+            } else {
+              errors++;
             }
+          } catch (e) {
+            errors++;
           }
         }
         
-        alert(`✅ Billing Generation Complete!\n\nGenerated ${generated} billing records for active policies.`);
+        showProgress(false);
+        
+        let message = `✅ Billing Generation Complete!\n\nProcessed ${customersToProcess.length} customers\n${generated} billing records generated/updated`;
+        if (errors > 0) {
+          message += `\n⚠ ${errors} errors occurred`;
+        }
+        alert(message);
         
         // Refresh data
-        loadDashboardStats();
+        await refreshAllData();
       } catch (err) {
+        showProgress(false);
         alert('Failed to generate billing: ' + err.message);
+      } finally {
+        setButtonLoading('btn-generate-bills', false);
       }
     }
     
