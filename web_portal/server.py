@@ -483,28 +483,132 @@ def update_customer_allocation(customer_id: str, allocations: Dict[str, float]) 
     return allocation_record
 
 
+def calculate_age_adjusted_premium(base_premium: float, age: int, policy_type: str = 'life') -> Dict[str, float]:
+    """
+    Calculate age-adjusted premium based on actuarial tables.
+    
+    Age Premium Ratio Examples:
+    - Age 45: base × 1.0 (200, 230, 260 annual for different coverage levels)
+    - Age 48: base × 1.15 (230, 265, 300)
+    - Age 50: base × 1.30 (260, 300, 340)
+    - Age 55: base × 1.60 (320, 370, 420)
+    
+    Returns monthly and annual premium amounts.
+    """
+    # Age adjustment factors (simplified actuarial model)
+    age_factors = {
+        'life': {
+            # Age ranges and multipliers
+            (0, 30): 0.7,
+            (30, 40): 0.85,
+            (40, 45): 1.0,
+            (45, 50): 1.15,
+            (50, 55): 1.30,
+            (55, 60): 1.60,
+            (60, 65): 2.0,
+            (65, 70): 2.5,
+            (70, 100): 3.2
+        },
+        'health': {
+            (0, 30): 0.6,
+            (30, 40): 0.8,
+            (40, 50): 1.0,
+            (50, 60): 1.4,
+            (60, 70): 1.9,
+            (70, 100): 2.6
+        },
+        'auto': {
+            (0, 25): 1.3,  # Young drivers higher risk
+            (25, 65): 1.0,
+            (65, 100): 1.2
+        },
+        'property': {
+            (0, 100): 1.0  # Property doesn't depend on age
+        }
+    }
+    
+    # Get age factor for policy type
+    factors = age_factors.get(policy_type, age_factors['life'])
+    age_factor = 1.0
+    for (min_age, max_age), factor in factors.items():
+        if min_age <= age < max_age:
+            age_factor = factor
+            break
+    
+    # Calculate adjusted premiums
+    annual_premium = base_premium * age_factor
+    monthly_premium = annual_premium / 12
+    
+    return {
+        'base_premium': base_premium,
+        'age': age,
+        'age_factor': age_factor,
+        'annual_premium': round(annual_premium, 2),
+        'monthly_premium': round(monthly_premium, 2)
+    }
+
+
 def calculate_monthly_distribution(customer_id: str) -> Dict[str, Any]:
-    """Calculate monthly contribution distribution based on active policies and allocations"""
+    """
+    Calculate monthly contribution distribution based on active policies and allocations.
+    
+    This function:
+    1. Sums ALL active policies' monthly premiums
+    2. Applies the customer's allocation preferences
+    3. Distributes savings across wallet, investment, and algo trading
+    4. Supports multiple policies added over time
+    
+    Example:
+    - Customer age 45 with Life policy: $1000/mo
+    - 3 years later adds Health policy: $500/mo
+    - Total monthly premium: $1500/mo
+    - With 50% savings allocation: $750/mo to savings
+    - Distribution: Wallet $225, Investment $487.50, Algo $37.50
+    """
     allocation = get_customer_allocation(customer_id)
     
-    # Get total monthly premium from active policies
+    # Get customer info for age-based calculations
+    customer = CUSTOMERS.get(customer_id, {})
+    customer_age = customer.get('age', 40)
+    if not customer_age and customer.get('dob'):
+        try:
+            dob = datetime.strptime(customer.get('dob', '1985-01-01')[:10], '%Y-%m-%d')
+            customer_age = (datetime.now() - dob).days // 365
+        except:
+            customer_age = 40
+    
+    # Get total monthly premium from ALL active policies
     total_monthly_premium = 0
+    total_annual_premium = 0
     active_policies = []
+    
     for policy in POLICIES.values():
         if policy.get('customer_id') == customer_id and policy.get('status') == 'active':
             monthly_premium = float(policy.get('monthly_premium', 0))
+            annual_premium = float(policy.get('annual_premium', monthly_premium * 12))
+            policy_type = policy.get('type', 'life')
+            
+            # Calculate age-adjusted premium info
+            age_info = calculate_age_adjusted_premium(annual_premium, customer_age, policy_type)
+            
             total_monthly_premium += monthly_premium
+            total_annual_premium += annual_premium
+            
             active_policies.append({
                 'policy_id': policy.get('id'),
-                'type': policy.get('type'),
-                'monthly_premium': monthly_premium
+                'type': policy_type,
+                'monthly_premium': monthly_premium,
+                'annual_premium': annual_premium,
+                'coverage_amount': policy.get('coverage_amount', 0),
+                'start_date': policy.get('start_date', ''),
+                'age_factor': age_info['age_factor']
             })
     
-    # Calculate savings portion
+    # Calculate savings portion (cumulative from all policies)
     savings_amount = total_monthly_premium * (allocation['savings_pct'] / 100)
     risk_amount = total_monthly_premium * (allocation['risk_pct'] / 100)
     
-    # Distribute savings
+    # Distribute savings to destinations
     wallet_amount = savings_amount * (allocation['wallet_pct'] / 100)
     investment_amount = savings_amount * (allocation['investment_pct'] / 100)
     algo_amount = savings_amount * (allocation['algo_pct'] / 100)
@@ -514,10 +618,19 @@ def calculate_monthly_distribution(customer_id: str) -> Dict[str, Any]:
     bonds_amount = investment_amount * (allocation['bonds_pct'] / 100)
     crypto_amount = investment_amount * (allocation['crypto_pct'] / 100)
     
+    # Annual projections
+    annual_savings = savings_amount * 12
+    annual_to_wallet = wallet_amount * 12
+    annual_to_investment = investment_amount * 12
+    annual_to_algo = algo_amount * 12
+    
     return {
         'customer_id': customer_id,
+        'customer_age': customer_age,
         'total_monthly_premium': total_monthly_premium,
+        'total_annual_premium': total_annual_premium,
         'active_policies': active_policies,
+        'policy_count': len(active_policies),
         'allocation': allocation,
         'distribution': {
             'risk_coverage': risk_amount,
@@ -530,6 +643,22 @@ def calculate_monthly_distribution(customer_id: str) -> Dict[str, Any]:
                 'bonds': bonds_amount,
                 'crypto': crypto_amount
             }
+        },
+        # Annual projections (for financial planning)
+        'annual_projection': {
+            'total_savings': annual_savings,
+            'to_wallet': annual_to_wallet,
+            'to_investment': annual_to_investment,
+            'to_algo': annual_to_algo,
+            'total_premium': total_annual_premium
+        },
+        # Multi-year projection (assuming constant premiums)
+        'five_year_projection': {
+            'total_savings': annual_savings * 5,
+            'to_wallet': annual_to_wallet * 5,
+            'to_investment': annual_to_investment * 5,
+            'to_algo': annual_to_algo * 5,
+            'note': 'Assumes constant premiums; actual may vary with age adjustments'
         }
     }
 
@@ -3115,6 +3244,114 @@ For claims or questions, please contact:
                         'index_pct': 'Percentage of investment to Index Funds',
                         'bonds_pct': 'Percentage of investment to Bonds',
                         'crypto_pct': 'Percentage of investment to Crypto'
+                    }
+                }, default=str).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+        
+        # Simulate coverage increase - shows impact on savings distribution
+        if path == '/api/customer/simulate-coverage':
+            customer_id = qs.get('customer_id', [''])[0]
+            additional_coverage = float(qs.get('additional_coverage', ['500000'])[0])
+            policy_type = qs.get('policy_type', ['life'])[0]
+            
+            if not customer_id:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'customer_id required'}).encode('utf-8'))
+                return
+            
+            try:
+                # Get current distribution
+                current_distribution = calculate_monthly_distribution(customer_id)
+                current_allocation = get_customer_allocation(customer_id)
+                
+                # Get customer age
+                customer = CUSTOMERS.get(customer_id, {})
+                customer_age = customer.get('age', 45)
+                if not customer_age and customer.get('dob'):
+                    try:
+                        dob = datetime.strptime(customer.get('dob', '1985-01-01')[:10], '%Y-%m-%d')
+                        customer_age = (datetime.now() - dob).days // 365
+                    except:
+                        customer_age = 45
+                
+                # Calculate premium for new coverage based on age
+                # Base rate: ~1.2% of coverage for life, 1.0% for health
+                base_rates = {'life': 0.012, 'health': 0.010, 'auto': 0.024, 'property': 0.008}
+                base_rate = base_rates.get(policy_type, 0.012)
+                
+                # Get age-adjusted premium
+                base_annual_premium = additional_coverage * base_rate
+                age_adjusted = calculate_age_adjusted_premium(base_annual_premium, customer_age, policy_type)
+                
+                new_monthly_premium = age_adjusted['monthly_premium']
+                new_annual_premium = age_adjusted['annual_premium']
+                
+                # Calculate new totals
+                new_total_monthly = current_distribution['total_monthly_premium'] + new_monthly_premium
+                new_total_annual = current_distribution['total_annual_premium'] + new_annual_premium
+                
+                # Calculate new savings distribution
+                savings_pct = current_allocation['savings_pct'] / 100
+                wallet_pct = current_allocation['wallet_pct'] / 100
+                investment_pct = current_allocation['investment_pct'] / 100
+                algo_pct = current_allocation['algo_pct'] / 100
+                
+                new_monthly_savings = new_total_monthly * savings_pct
+                new_to_wallet = new_monthly_savings * wallet_pct
+                new_to_investment = new_monthly_savings * investment_pct
+                new_to_algo = new_monthly_savings * algo_pct
+                
+                # Changes from current
+                savings_increase = new_monthly_savings - current_distribution['distribution']['total_savings']
+                wallet_increase = new_to_wallet - current_distribution['distribution']['health_wallet']
+                investment_increase = new_to_investment - current_distribution['distribution']['investment']
+                algo_increase = new_to_algo - current_distribution['distribution']['algo_trading']
+                
+                self._set_json_headers()
+                self.wfile.write(json.dumps({
+                    'customer_id': customer_id,
+                    'customer_age': customer_age,
+                    'simulation': {
+                        'new_coverage_amount': additional_coverage,
+                        'policy_type': policy_type,
+                        'age_factor': age_adjusted['age_factor'],
+                        'new_monthly_premium': new_monthly_premium,
+                        'new_annual_premium': new_annual_premium
+                    },
+                    'current': {
+                        'total_monthly_premium': current_distribution['total_monthly_premium'],
+                        'monthly_savings': current_distribution['distribution']['total_savings'],
+                        'to_wallet': current_distribution['distribution']['health_wallet'],
+                        'to_investment': current_distribution['distribution']['investment'],
+                        'to_algo': current_distribution['distribution']['algo_trading'],
+                        'policy_count': current_distribution['policy_count']
+                    },
+                    'projected': {
+                        'total_monthly_premium': new_total_monthly,
+                        'total_annual_premium': new_total_annual,
+                        'monthly_savings': new_monthly_savings,
+                        'to_wallet': new_to_wallet,
+                        'to_investment': new_to_investment,
+                        'to_algo': new_to_algo,
+                        'policy_count': current_distribution['policy_count'] + 1
+                    },
+                    'increase': {
+                        'monthly_premium': new_monthly_premium,
+                        'monthly_savings': savings_increase,
+                        'to_wallet': wallet_increase,
+                        'to_investment': investment_increase,
+                        'to_algo': algo_increase
+                    },
+                    'age_premium_progression': {
+                        'note': 'Estimated annual premiums at different ages for this coverage',
+                        'age_45': calculate_age_adjusted_premium(base_annual_premium, 45, policy_type)['annual_premium'],
+                        'age_48': calculate_age_adjusted_premium(base_annual_premium, 48, policy_type)['annual_premium'],
+                        'age_50': calculate_age_adjusted_premium(base_annual_premium, 50, policy_type)['annual_premium'],
+                        'age_55': calculate_age_adjusted_premium(base_annual_premium, 55, policy_type)['annual_premium'],
+                        'age_60': calculate_age_adjusted_premium(base_annual_premium, 60, policy_type)['annual_premium']
                     }
                 }, default=str).encode('utf-8'))
             except Exception as e:
