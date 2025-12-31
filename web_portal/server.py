@@ -3712,7 +3712,160 @@ For claims or questions, please contact:
                 self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
             return
         
-        # ========== END ALGO TRADING GET API ==========
+        # ========== ADVANCED ALGO TRADING API ==========
+        # Smart bots, extended market data, and advanced metrics
+        
+        # Get smart bot templates
+        if path == '/api/algo/smart-bots/templates':
+            if not algo_trading_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Algo trading service unavailable'}).encode('utf-8'))
+                return
+            
+            risk_level = qs.get('risk_level', [''])[0]
+            templates = algo_trading_service.get_smart_bot_templates(risk_level if risk_level else None)
+            
+            self._set_json_headers()
+            self.wfile.write(json.dumps({
+                'templates': templates,
+                'risk_levels': ['low', 'medium', 'high', 'very_high'],
+                'total_templates': len(templates)
+            }).encode('utf-8'))
+            return
+        
+        # Get aggregated bot statistics
+        if path == '/api/algo/bots/stats':
+            if not algo_trading_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Algo trading service unavailable'}).encode('utf-8'))
+                return
+            
+            account_id = qs.get('account_id', [''])[0]
+            stats = algo_trading_service.get_all_bot_stats(account_id if account_id else None)
+            
+            self._set_json_headers()
+            self.wfile.write(json.dumps(stats).encode('utf-8'))
+            return
+        
+        # Get extended market data (multi-asset)
+        if path == '/api/algo/market/extended':
+            if not algo_trading_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Algo trading service unavailable'}).encode('utf-8'))
+                return
+            
+            asset_class = qs.get('asset_class', [''])[0]
+            market_data = algo_trading_service.get_extended_market_data(
+                asset_class=asset_class if asset_class else None
+            )
+            
+            self._set_json_headers()
+            self.wfile.write(json.dumps(market_data).encode('utf-8'))
+            return
+        
+        # Get Bloomberg-style data feed
+        if path == '/api/algo/feed/bloomberg':
+            if not algo_trading_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Algo trading service unavailable'}).encode('utf-8'))
+                return
+            
+            symbols_param = qs.get('symbols', ['SPY,QQQ,BTC,GLD'])[0]
+            symbols = [s.strip() for s in symbols_param.split(',')]
+            
+            feed = algo_trading_service.get_bloomberg_feed(symbols)
+            self._set_json_headers()
+            self.wfile.write(json.dumps(feed).encode('utf-8'))
+            return
+        
+        # Get Reuters-style data feed
+        if path == '/api/algo/feed/reuters':
+            if not algo_trading_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Algo trading service unavailable'}).encode('utf-8'))
+                return
+            
+            symbols_param = qs.get('symbols', ['EURUSD,GBPUSD,USDJPY'])[0]
+            symbols = [s.strip() for s in symbols_param.split(',')]
+            
+            feed = algo_trading_service.get_reuters_feed(symbols)
+            self._set_json_headers()
+            self.wfile.write(json.dumps(feed).encode('utf-8'))
+            return
+        
+        # Get dashboard metrics for algo trading
+        if path == '/api/algo/dashboard':
+            if not algo_trading_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Algo trading service unavailable'}).encode('utf-8'))
+                return
+            
+            customer_id = qs.get('customer_id', [''])[0]
+            
+            # Get comprehensive dashboard data
+            bot_stats = algo_trading_service.get_all_bot_stats(customer_id if customer_id else None)
+            market_overview = algo_trading_service.get_market_overview()
+            
+            # Get top performing bots
+            all_bots = []
+            for bot_id in algo_trading_service.bots:
+                perf = algo_trading_service.get_bot_performance(bot_id)
+                if not perf.get('error'):
+                    all_bots.append(perf)
+            
+            # Sort by total P&L
+            all_bots.sort(key=lambda x: x.get('performance', {}).get('total_pnl', 0), reverse=True)
+            
+            # Aggregate metrics for dashboard display
+            total_pnl = sum(b.get('performance', {}).get('total_pnl', 0) for b in all_bots)
+            total_trades = sum(b.get('trade_stats', {}).get('total_trades', 0) for b in all_bots)
+            avg_win_rate = sum(b.get('trade_stats', {}).get('win_rate', 0) for b in all_bots) / len(all_bots) if all_bots else 0
+            avg_sharpe = sum(b.get('risk_metrics', {}).get('sharpe_ratio', 0) for b in all_bots) / len(all_bots) if all_bots else 0
+            max_dd = max(b.get('risk_metrics', {}).get('max_drawdown_pct', 0) for b in all_bots) if all_bots else 0
+            
+            dashboard = {
+                'timestamp': datetime.now().isoformat(),
+                
+                # Key metrics for dashboard indicators
+                'metrics': {
+                    'total_pnl': round(total_pnl, 2),
+                    'total_pnl_pct': round((total_pnl / 10000) * 100, 2) if total_pnl else 0,
+                    'win_rate': round(avg_win_rate, 1),
+                    'sharpe_ratio': round(avg_sharpe, 2),
+                    'max_drawdown_pct': round(max_dd, 2),
+                    'total_trades': total_trades
+                },
+                
+                # Bot statistics
+                'bot_stats': bot_stats,
+                
+                # Market overview
+                'market': market_overview,
+                
+                # Active bots (top 5)
+                'active_bots': [b for b in all_bots[:5] if b.get('status') == 'running'],
+                
+                # All bots summary
+                'all_bots_count': len(all_bots),
+                'running_bots_count': len([b for b in all_bots if b.get('status') == 'running']),
+                
+                # Available strategies
+                'available_strategies': [
+                    'momentum', 'mean_reversion', 'trend_following', 
+                    'dollar_cost_averaging', 'grid_trading', 'rsi_strategy',
+                    'macd_crossover', 'breakout', 'arbitrage', 'scalping',
+                    'swing_trading', 'ai_adaptive'
+                ],
+                
+                # Asset classes
+                'asset_classes': ['equity', 'crypto', 'commodity', 'forex', 'bond', 'index', 'etf']
+            }
+            
+            self._set_json_headers()
+            self.wfile.write(json.dumps(dashboard).encode('utf-8'))
+            return
+        
+        # ========== END ADVANCED ALGO TRADING API ==========
         
         # ========== UNIFIED BALANCE GET API ==========
         # Get unified balance across all systems
@@ -9260,6 +9413,186 @@ For claims or questions, please contact:
                 self._set_json_headers(400)
                 self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
             return
+        
+        # ========== ADVANCED ALGO TRADING POST API ==========
+        # Smart bot creation, simulation, and advanced features
+        
+        # Create a smart bot from template
+        if path == '/api/algo/smart-bots/create':
+            if not algo_trading_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Algo trading service unavailable'}).encode('utf-8'))
+                return
+            
+            try:
+                data = json.loads(body)
+                account_id = data.get('account_id')
+                template_id = data.get('template_id')
+                custom_settings = data.get('settings', {})
+                
+                if not account_id or not template_id:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'account_id and template_id are required'}).encode('utf-8'))
+                    return
+                
+                result = algo_trading_service.create_smart_bot(
+                    account_id=account_id,
+                    template_id=template_id,
+                    custom_settings=custom_settings
+                )
+                
+                # Record bot creation in ledger
+                if result.get('success') and unified_balance_enabled:
+                    try:
+                        customer_id = account_id
+                        record_transaction(
+                            customer_id=customer_id,
+                            tx_type='algo_bot_created',
+                            amount=0,
+                            description=f"Smart bot created: {result.get('bot', {}).get('name', template_id)}",
+                            metadata={
+                                'bot_id': result.get('bot', {}).get('bot_id'),
+                                'template_id': template_id,
+                                'settings': custom_settings
+                            }
+                        )
+                    except Exception:
+                        pass
+                
+                self._set_json_headers(200 if result.get('success') else 400)
+                self.wfile.write(json.dumps(result).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+        
+        # Simulate bot trades for testing/demo
+        if path == '/api/algo/bots/simulate':
+            if not algo_trading_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Algo trading service unavailable'}).encode('utf-8'))
+                return
+            
+            try:
+                data = json.loads(body)
+                bot_id = data.get('bot_id')
+                days = int(data.get('days', 30))
+                
+                if not bot_id:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'bot_id is required'}).encode('utf-8'))
+                    return
+                
+                result = algo_trading_service.simulate_bot_trades(bot_id, days)
+                
+                self._set_json_headers(200 if not result.get('error') else 400)
+                self.wfile.write(json.dumps(result).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+        
+        # Activate demo data for algo trading (for showcase)
+        if path == '/api/algo/activate-demo':
+            if not algo_trading_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Algo trading service unavailable'}).encode('utf-8'))
+                return
+            
+            try:
+                data = json.loads(body)
+                customer_id = data.get('customer_id')
+                
+                if not customer_id:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'customer_id is required'}).encode('utf-8'))
+                    return
+                
+                # Create demo bots with different strategies
+                demo_templates = ['conservative_dca', 'balanced_momentum', 'crypto_swing']
+                created_bots = []
+                
+                for template_id in demo_templates:
+                    result = algo_trading_service.create_smart_bot(
+                        account_id=customer_id,
+                        template_id=template_id
+                    )
+                    if result.get('success'):
+                        bot_id = result.get('bot', {}).get('bot_id')
+                        # Simulate historical trades
+                        algo_trading_service.simulate_bot_trades(bot_id, 30)
+                        created_bots.append(result.get('bot'))
+                
+                # Get aggregated stats
+                all_stats = algo_trading_service.get_all_bot_stats(customer_id)
+                
+                self._set_json_headers()
+                self.wfile.write(json.dumps({
+                    'success': True,
+                    'message': f'Created {len(created_bots)} demo bots with simulated history',
+                    'bots_created': created_bots,
+                    'aggregated_stats': all_stats
+                }).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+        
+        # Update bot settings
+        if path == '/api/algo/bots/update':
+            if not algo_trading_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Algo trading service unavailable'}).encode('utf-8'))
+                return
+            
+            try:
+                data = json.loads(body)
+                bot_id = data.get('bot_id')
+                
+                if not bot_id:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'bot_id is required'}).encode('utf-8'))
+                    return
+                
+                bot = algo_trading_service.bots.get(bot_id)
+                if not bot:
+                    self._set_json_headers(404)
+                    self.wfile.write(json.dumps({'error': 'Bot not found'}).encode('utf-8'))
+                    return
+                
+                # Update allowed fields
+                if 'name' in data:
+                    bot.name = data['name']
+                if 'max_position_size' in data:
+                    bot.max_position_size = float(data['max_position_size'])
+                if 'max_daily_trades' in data:
+                    bot.max_daily_trades = int(data['max_daily_trades'])
+                if 'stop_loss_pct' in data:
+                    bot.stop_loss_pct = float(data['stop_loss_pct'])
+                if 'take_profit_pct' in data:
+                    bot.take_profit_pct = float(data['take_profit_pct'])
+                if 'trailing_stop_pct' in data:
+                    bot.trailing_stop_pct = float(data['trailing_stop_pct'])
+                if 'symbols' in data:
+                    bot.symbols = data['symbols']
+                if 'asset_allocation' in data:
+                    bot.asset_allocation = data['asset_allocation']
+                if 'risk_level' in data:
+                    bot.risk_level = data['risk_level']
+                
+                bot.updated_at = datetime.now().isoformat()
+                
+                self._set_json_headers()
+                self.wfile.write(json.dumps({
+                    'success': True,
+                    'bot': algo_trading_service.get_bot_performance(bot_id)
+                }).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+        
+        # ========== END ADVANCED ALGO TRADING POST API ==========
         
         # ========== END ALGO TRADING API ==========
         

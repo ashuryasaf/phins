@@ -10,6 +10,8 @@ Features:
 - Risk management with position sizing and stop-loss
 - Real-time performance tracking
 - Trading bot management
+- Advanced metrics: Sharpe Ratio, Sortino Ratio, Max Drawdown, Calmar Ratio
+- Multi-asset support: Equities, Crypto, Commodities, Forex, Bonds
 
 This integrates with PHINS investment portfolio for automated trading.
 """
@@ -24,6 +26,16 @@ from enum import Enum
 from collections import deque
 import json
 
+# Import advanced market data service
+try:
+    from services.advanced_market_data import (
+        get_advanced_market_service, EXTENDED_MARKET_DATA, SMART_BOT_TEMPLATES,
+        AdvancedMetrics, AssetClass, DataProvider
+    )
+    ADVANCED_MARKET_AVAILABLE = True
+except ImportError:
+    ADVANCED_MARKET_AVAILABLE = False
+
 
 class TradingStrategy(str, Enum):
     """Available trading strategies"""
@@ -35,6 +47,10 @@ class TradingStrategy(str, Enum):
     RSI_STRATEGY = "rsi_strategy"
     MACD_CROSSOVER = "macd_crossover"
     BREAKOUT = "breakout"
+    ARBITRAGE = "arbitrage"
+    SCALPING = "scalping"
+    SWING_TRADING = "swing_trading"
+    AI_ADAPTIVE = "ai_adaptive"
 
 
 class SignalType(str, Enum):
@@ -174,17 +190,53 @@ class TradingBot:
     max_drawdown_pct: float = 10.0  # Stop bot if drawdown exceeds
     stop_loss_pct: float = 5.0
     take_profit_pct: float = 10.0
+    trailing_stop_pct: float = 0.0  # 0 = disabled
     
     # DCA specific
     dca_interval_hours: int = 24
     dca_amount: float = 100.0
     
-    # Performance tracking
+    # Advanced Performance Metrics
     total_trades: int = 0
     winning_trades: int = 0
+    losing_trades: int = 0
     total_pnl: float = 0.0
+    realized_pnl: float = 0.0
+    unrealized_pnl: float = 0.0
+    
+    # Risk Metrics
     max_drawdown: float = 0.0
+    max_drawdown_pct: float = 0.0
+    current_drawdown: float = 0.0
     sharpe_ratio: float = 0.0
+    sortino_ratio: float = 0.0
+    calmar_ratio: float = 0.0
+    profit_factor: float = 0.0
+    
+    # Trade Quality Metrics
+    avg_win: float = 0.0
+    avg_loss: float = 0.0
+    best_trade: float = 0.0
+    worst_trade: float = 0.0
+    avg_trade_duration: str = "0h"
+    longest_winning_streak: int = 0
+    longest_losing_streak: int = 0
+    current_streak: int = 0
+    
+    # Volatility Metrics
+    daily_volatility: float = 0.0
+    annualized_volatility: float = 0.0
+    beta: float = 1.0
+    alpha: float = 0.0
+    
+    # Portfolio allocation
+    asset_allocation: Dict[str, float] = field(default_factory=dict)
+    risk_level: str = "medium"  # low, medium, high, very_high
+    
+    # Trade history for metrics calculation
+    trade_returns: List[float] = field(default_factory=list)
+    equity_curve: List[float] = field(default_factory=list)
+    peak_equity: float = 0.0
     
     # State
     last_trade_at: str = ""
@@ -196,12 +248,94 @@ class TradingBot:
         if not self.created_at:
             self.created_at = datetime.now().isoformat()
         self.updated_at = datetime.now().isoformat()
+        if not self.equity_curve:
+            self.equity_curve = [0.0]
     
     @property
     def win_rate(self) -> float:
         if self.total_trades == 0:
             return 0.0
         return (self.winning_trades / self.total_trades) * 100
+    
+    def update_metrics(self, trade_pnl: float, trade_return_pct: float):
+        """Update all metrics after a trade"""
+        self.total_trades += 1
+        self.total_pnl += trade_pnl
+        self.trade_returns.append(trade_return_pct)
+        
+        # Update win/loss counts
+        if trade_pnl > 0:
+            self.winning_trades += 1
+            self.avg_win = ((self.avg_win * (self.winning_trades - 1)) + trade_pnl) / self.winning_trades
+            if trade_pnl > self.best_trade:
+                self.best_trade = trade_pnl
+            self.current_streak = max(1, self.current_streak + 1) if self.current_streak >= 0 else 1
+            self.longest_winning_streak = max(self.longest_winning_streak, self.current_streak)
+        elif trade_pnl < 0:
+            self.losing_trades += 1
+            self.avg_loss = ((self.avg_loss * (self.losing_trades - 1)) + trade_pnl) / self.losing_trades
+            if trade_pnl < self.worst_trade:
+                self.worst_trade = trade_pnl
+            self.current_streak = min(-1, self.current_streak - 1) if self.current_streak <= 0 else -1
+            self.longest_losing_streak = max(self.longest_losing_streak, abs(self.current_streak))
+        
+        # Update equity curve
+        new_equity = self.equity_curve[-1] + trade_pnl
+        self.equity_curve.append(new_equity)
+        
+        # Update peak and drawdown
+        if new_equity > self.peak_equity:
+            self.peak_equity = new_equity
+        self.current_drawdown = self.peak_equity - new_equity
+        if self.current_drawdown > self.max_drawdown:
+            self.max_drawdown = self.current_drawdown
+            self.max_drawdown_pct = (self.current_drawdown / self.peak_equity * 100) if self.peak_equity > 0 else 0
+        
+        # Recalculate advanced metrics
+        self._recalculate_ratios()
+        self.updated_at = datetime.now().isoformat()
+    
+    def _recalculate_ratios(self):
+        """Recalculate Sharpe, Sortino, Calmar, and profit factor"""
+        if len(self.trade_returns) < 2:
+            return
+        
+        returns = self.trade_returns
+        mean_return = sum(returns) / len(returns)
+        
+        # Daily volatility and annualized
+        variance = sum((r - mean_return) ** 2 for r in returns) / (len(returns) - 1)
+        self.daily_volatility = math.sqrt(variance) * 100
+        self.annualized_volatility = self.daily_volatility * math.sqrt(252)
+        
+        # Sharpe Ratio (5% risk-free rate annualized)
+        risk_free_daily = 0.05 / 252
+        excess_return = mean_return - risk_free_daily
+        if self.daily_volatility > 0:
+            self.sharpe_ratio = round((excess_return / (self.daily_volatility / 100)) * math.sqrt(252), 2)
+        
+        # Sortino Ratio (downside deviation)
+        negative_returns = [r for r in returns if r < 0]
+        if negative_returns:
+            downside_variance = sum(r ** 2 for r in negative_returns) / len(negative_returns)
+            downside_deviation = math.sqrt(downside_variance)
+            if downside_deviation > 0:
+                self.sortino_ratio = round((excess_return / downside_deviation) * math.sqrt(252), 2)
+        else:
+            self.sortino_ratio = self.sharpe_ratio * 1.5
+        
+        # Calmar Ratio
+        annualized_return = mean_return * 252 * 100
+        if self.max_drawdown_pct > 0:
+            self.calmar_ratio = round(annualized_return / self.max_drawdown_pct, 2)
+        
+        # Profit Factor
+        gross_profit = sum(r for r in returns if r > 0)
+        gross_loss = abs(sum(r for r in returns if r < 0))
+        if gross_loss > 0:
+            self.profit_factor = round(gross_profit / gross_loss, 2)
+        elif gross_profit > 0:
+            self.profit_factor = 99.99  # Cap at high value
 
 
 class AlgoTradingService:
@@ -745,7 +879,7 @@ class AlgoTradingService:
             return {"success": False, "error": str(e)}
     
     def get_bot_performance(self, bot_id: str) -> Dict:
-        """Get bot performance metrics"""
+        """Get comprehensive bot performance metrics"""
         bot = self.bots.get(bot_id)
         if not bot:
             return {"error": "Bot not found"}
@@ -755,27 +889,333 @@ class AlgoTradingService:
             "name": bot.name,
             "strategy": bot.strategy.value,
             "status": "running" if bot.is_active else "stopped",
+            "risk_level": bot.risk_level,
+            
+            # Core Performance Metrics
             "performance": {
+                "total_pnl": round(bot.total_pnl, 2),
+                "realized_pnl": round(bot.realized_pnl, 2),
+                "unrealized_pnl": round(bot.unrealized_pnl, 2),
+                "total_return_pct": round((bot.total_pnl / 10000) * 100, 2) if bot.total_pnl else 0,
+            },
+            
+            # Trade Statistics
+            "trade_stats": {
                 "total_trades": bot.total_trades,
                 "winning_trades": bot.winning_trades,
-                "win_rate": bot.win_rate,
-                "total_pnl": bot.total_pnl,
-                "max_drawdown": bot.max_drawdown,
-                "sharpe_ratio": bot.sharpe_ratio
+                "losing_trades": bot.losing_trades,
+                "win_rate": round(bot.win_rate, 1),
+                "profit_factor": bot.profit_factor,
+                "avg_win": round(bot.avg_win, 2),
+                "avg_loss": round(bot.avg_loss, 2),
+                "best_trade": round(bot.best_trade, 2),
+                "worst_trade": round(bot.worst_trade, 2),
             },
+            
+            # Risk Metrics (Dashboard Indicators)
+            "risk_metrics": {
+                "sharpe_ratio": bot.sharpe_ratio,
+                "sortino_ratio": bot.sortino_ratio,
+                "calmar_ratio": bot.calmar_ratio,
+                "max_drawdown": round(bot.max_drawdown, 2),
+                "max_drawdown_pct": round(bot.max_drawdown_pct, 2),
+                "current_drawdown": round(bot.current_drawdown, 2),
+                "daily_volatility": round(bot.daily_volatility, 2),
+                "annualized_volatility": round(bot.annualized_volatility, 2),
+                "beta": bot.beta,
+                "alpha": round(bot.alpha, 2),
+            },
+            
+            # Streaks
+            "streaks": {
+                "current_streak": bot.current_streak,
+                "longest_winning_streak": bot.longest_winning_streak,
+                "longest_losing_streak": bot.longest_losing_streak,
+                "avg_trade_duration": bot.avg_trade_duration,
+            },
+            
+            # Settings
             "settings": {
                 "symbols": bot.symbols,
+                "asset_allocation": bot.asset_allocation,
                 "max_position_size": bot.max_position_size,
                 "max_daily_trades": bot.max_daily_trades,
                 "stop_loss_pct": bot.stop_loss_pct,
-                "take_profit_pct": bot.take_profit_pct
+                "take_profit_pct": bot.take_profit_pct,
+                "trailing_stop_pct": bot.trailing_stop_pct,
             },
+            
+            # Activity
             "activity": {
                 "daily_trades": bot.daily_trades_count,
-                "last_trade": bot.last_trade_at
+                "last_trade": bot.last_trade_at,
             },
+            
+            # Equity curve for charting
+            "equity_curve": bot.equity_curve[-100:] if len(bot.equity_curve) > 100 else bot.equity_curve,
+            
             "created_at": bot.created_at,
             "updated_at": bot.updated_at
+        }
+    
+    def get_smart_bot_templates(self, risk_level: str = None) -> List[Dict]:
+        """Get available smart bot templates with pre-configured strategies"""
+        if ADVANCED_MARKET_AVAILABLE:
+            service = get_advanced_market_service()
+            return service.get_smart_bot_templates(risk_level)
+        
+        # Fallback templates
+        templates = [
+            {
+                "bot_id": "conservative_dca",
+                "name": "Conservative DCA Bot",
+                "description": "Dollar-cost averaging into blue-chip assets",
+                "strategy": "dollar_cost_averaging",
+                "risk_level": "low",
+                "expected_return": "8-12% annually",
+                "symbols": ["SPY", "BND", "GLD"],
+                "settings": {"max_drawdown_pct": 8, "stop_loss_pct": 5}
+            },
+            {
+                "bot_id": "balanced_momentum",
+                "name": "Balanced Momentum Trader",
+                "description": "Momentum-based trading with balanced risk",
+                "strategy": "momentum",
+                "risk_level": "medium",
+                "expected_return": "15-25% annually",
+                "symbols": ["QQQ", "AAPL", "MSFT"],
+                "settings": {"max_drawdown_pct": 12, "stop_loss_pct": 7}
+            },
+            {
+                "bot_id": "crypto_swing",
+                "name": "Crypto Swing Trader",
+                "description": "Swing trading top cryptocurrencies",
+                "strategy": "mean_reversion",
+                "risk_level": "high",
+                "expected_return": "30-60% annually",
+                "symbols": ["BTC", "ETH", "SOL"],
+                "settings": {"max_drawdown_pct": 20, "stop_loss_pct": 10}
+            }
+        ]
+        
+        if risk_level:
+            return [t for t in templates if t["risk_level"] == risk_level]
+        return templates
+    
+    def create_smart_bot(self, account_id: str, template_id: str, 
+                         custom_settings: Dict = None) -> Dict:
+        """Create a bot from a smart template"""
+        templates = self.get_smart_bot_templates()
+        template = next((t for t in templates if t["bot_id"] == template_id), None)
+        
+        if not template:
+            return {"success": False, "error": f"Template '{template_id}' not found"}
+        
+        # Merge custom settings
+        settings = template.get("settings", {}).copy()
+        if custom_settings:
+            settings.update(custom_settings)
+        
+        # Create bot
+        bot_id = f"BOT-{template_id.upper()}-{datetime.now().strftime('%Y%m%d%H%M%S')}"
+        
+        try:
+            strategy = TradingStrategy(template["strategy"])
+        except ValueError:
+            strategy = TradingStrategy.MOMENTUM
+        
+        bot = TradingBot(
+            bot_id=bot_id,
+            account_id=account_id,
+            name=template["name"],
+            strategy=strategy,
+            symbols=template.get("symbols", []),
+            is_active=True,
+            max_position_size=settings.get("max_position_size", 1000),
+            max_daily_trades=settings.get("max_daily_trades", 10),
+            max_drawdown_pct=settings.get("max_drawdown_pct", 10),
+            stop_loss_pct=settings.get("stop_loss_pct", 5),
+            take_profit_pct=settings.get("take_profit_pct", 15),
+            dca_interval_hours=settings.get("dca_interval_hours", 24),
+            dca_amount=settings.get("dca_amount", 100),
+            risk_level=template.get("risk_level", "medium"),
+            asset_allocation=template.get("allocation", {})
+        )
+        
+        self.bots[bot_id] = bot
+        
+        return {
+            "success": True,
+            "bot": self.get_bot_performance(bot_id),
+            "template_used": template_id,
+            "message": f"Smart bot '{template['name']}' created successfully"
+        }
+    
+    def get_extended_market_data(self, symbols: List[str] = None, 
+                                  asset_class: str = None) -> Dict:
+        """Get extended market data from all asset classes"""
+        if ADVANCED_MARKET_AVAILABLE:
+            service = get_advanced_market_service()
+            if asset_class:
+                try:
+                    ac = AssetClass(asset_class)
+                    return service.get_market_overview(ac)
+                except ValueError:
+                    pass
+            return service.get_market_overview()
+        
+        # Return basic market data if advanced service not available
+        return self.get_market_overview()
+    
+    def get_bloomberg_feed(self, symbols: List[str]) -> Dict:
+        """Get Bloomberg-style market data feed"""
+        if ADVANCED_MARKET_AVAILABLE:
+            service = get_advanced_market_service()
+            return service.get_bloomberg_feed(symbols)
+        
+        return {"error": "Advanced market data service not available"}
+    
+    def get_reuters_feed(self, symbols: List[str]) -> Dict:
+        """Get Reuters-style market data feed"""
+        if ADVANCED_MARKET_AVAILABLE:
+            service = get_advanced_market_service()
+            return service.get_reuters_feed(symbols)
+        
+        return {"error": "Advanced market data service not available"}
+    
+    def get_all_bot_stats(self, account_id: str = None) -> Dict:
+        """Get aggregated statistics for all bots"""
+        bots = list(self.bots.values())
+        if account_id:
+            bots = [b for b in bots if b.account_id == account_id]
+        
+        if not bots:
+            return {
+                "total_bots": 0,
+                "active_bots": 0,
+                "total_pnl": 0,
+                "total_trades": 0,
+                "avg_win_rate": 0,
+                "avg_sharpe": 0
+            }
+        
+        active_bots = [b for b in bots if b.is_active]
+        total_pnl = sum(b.total_pnl for b in bots)
+        total_trades = sum(b.total_trades for b in bots)
+        avg_win_rate = sum(b.win_rate for b in bots) / len(bots)
+        avg_sharpe = sum(b.sharpe_ratio for b in bots) / len(bots)
+        max_dd = max(b.max_drawdown_pct for b in bots) if bots else 0
+        
+        return {
+            "total_bots": len(bots),
+            "active_bots": len(active_bots),
+            "stopped_bots": len(bots) - len(active_bots),
+            "aggregated_metrics": {
+                "total_pnl": round(total_pnl, 2),
+                "total_trades": total_trades,
+                "avg_win_rate": round(avg_win_rate, 1),
+                "avg_sharpe_ratio": round(avg_sharpe, 2),
+                "max_drawdown_pct": round(max_dd, 2)
+            },
+            "by_strategy": self._group_bots_by_strategy(bots),
+            "by_risk_level": self._group_bots_by_risk(bots),
+            "top_performers": self._get_top_performers(bots, 3),
+            "timestamp": datetime.now().isoformat()
+        }
+    
+    def _group_bots_by_strategy(self, bots: List[TradingBot]) -> Dict:
+        """Group bot performance by strategy"""
+        groups = {}
+        for bot in bots:
+            strategy = bot.strategy.value
+            if strategy not in groups:
+                groups[strategy] = {"count": 0, "total_pnl": 0, "avg_win_rate": 0}
+            groups[strategy]["count"] += 1
+            groups[strategy]["total_pnl"] += bot.total_pnl
+            groups[strategy]["avg_win_rate"] += bot.win_rate
+        
+        for strategy in groups:
+            count = groups[strategy]["count"]
+            groups[strategy]["avg_win_rate"] = round(groups[strategy]["avg_win_rate"] / count, 1)
+            groups[strategy]["total_pnl"] = round(groups[strategy]["total_pnl"], 2)
+        
+        return groups
+    
+    def _group_bots_by_risk(self, bots: List[TradingBot]) -> Dict:
+        """Group bot performance by risk level"""
+        groups = {}
+        for bot in bots:
+            risk = bot.risk_level
+            if risk not in groups:
+                groups[risk] = {"count": 0, "total_pnl": 0, "avg_sharpe": 0}
+            groups[risk]["count"] += 1
+            groups[risk]["total_pnl"] += bot.total_pnl
+            groups[risk]["avg_sharpe"] += bot.sharpe_ratio
+        
+        for risk in groups:
+            count = groups[risk]["count"]
+            groups[risk]["avg_sharpe"] = round(groups[risk]["avg_sharpe"] / count, 2)
+            groups[risk]["total_pnl"] = round(groups[risk]["total_pnl"], 2)
+        
+        return groups
+    
+    def _get_top_performers(self, bots: List[TradingBot], limit: int) -> List[Dict]:
+        """Get top performing bots"""
+        sorted_bots = sorted(bots, key=lambda b: b.total_pnl, reverse=True)
+        return [
+            {
+                "bot_id": b.bot_id,
+                "name": b.name,
+                "strategy": b.strategy.value,
+                "total_pnl": round(b.total_pnl, 2),
+                "win_rate": round(b.win_rate, 1),
+                "sharpe_ratio": b.sharpe_ratio
+            }
+            for b in sorted_bots[:limit]
+        ]
+    
+    def simulate_bot_trades(self, bot_id: str, days: int = 30) -> Dict:
+        """Simulate historical trades for a bot to generate realistic metrics"""
+        bot = self.bots.get(bot_id)
+        if not bot:
+            return {"error": "Bot not found"}
+        
+        # Generate simulated trades based on strategy risk level
+        risk_multipliers = {
+            "low": (0.5, 0.015, 0.6),      # avg return %, volatility, win rate
+            "medium": (0.8, 0.025, 0.55),
+            "high": (1.2, 0.04, 0.50),
+            "very_high": (1.8, 0.06, 0.45)
+        }
+        
+        avg_return, volatility, base_win_rate = risk_multipliers.get(
+            bot.risk_level, (0.8, 0.025, 0.55)
+        )
+        
+        trades_per_day = min(bot.max_daily_trades, 3)
+        total_simulated_trades = days * trades_per_day
+        
+        for _ in range(total_simulated_trades):
+            # Generate trade outcome
+            is_winner = random.random() < base_win_rate
+            
+            if is_winner:
+                # Winning trade
+                return_pct = abs(random.gauss(avg_return, volatility))
+                pnl = bot.max_position_size * (return_pct / 100)
+            else:
+                # Losing trade (limited by stop loss)
+                return_pct = -min(abs(random.gauss(avg_return * 0.8, volatility)), bot.stop_loss_pct)
+                pnl = bot.max_position_size * (return_pct / 100)
+            
+            bot.update_metrics(pnl, return_pct / 100)
+        
+        bot.last_trade_at = datetime.now().isoformat()
+        
+        return {
+            "success": True,
+            "trades_simulated": total_simulated_trades,
+            "performance": self.get_bot_performance(bot_id)
         }
     
     def get_all_signals(self, symbol: str = None, limit: int = 50) -> List[Dict]:

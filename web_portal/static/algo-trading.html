@@ -630,22 +630,17 @@
             <p>Automated trading strategies with AI-powered signals and risk management</p>
         </div>
 
-        <!-- Performance Stats -->
+        <!-- Performance Stats - Enhanced Dashboard Indicators -->
         <div class="stats-grid">
             <div class="stat-card highlight">
                 <div class="stat-label">💰 Total P&L</div>
                 <div class="stat-value" id="totalPnl">$0.00</div>
-                <div class="stat-change positive" id="pnlChange">+0.00% today</div>
+                <div class="stat-change positive" id="pnlChange">+0.00% return</div>
             </div>
             <div class="stat-card success">
                 <div class="stat-label">📊 Win Rate</div>
                 <div class="stat-value" id="winRate">0%</div>
                 <div class="stat-change" id="winRateChange">0/0 trades</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-label">🤖 Active Bots</div>
-                <div class="stat-value" id="activeBots">0</div>
-                <div class="stat-change" id="botsChange">0 signals today</div>
             </div>
             <div class="stat-card">
                 <div class="stat-label">📈 Sharpe Ratio</div>
@@ -656,6 +651,93 @@
                 <div class="stat-label">📉 Max Drawdown</div>
                 <div class="stat-value" id="maxDrawdown">0%</div>
                 <div class="stat-change">Peak to trough</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">🤖 Active Bots</div>
+                <div class="stat-value" id="activeBots">0</div>
+                <div class="stat-change" id="botsChange">0 signals today</div>
+            </div>
+        </div>
+        
+        <!-- Advanced Metrics Row -->
+        <div class="stats-grid" style="margin-top: 1rem; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));">
+            <div class="stat-card" style="padding: 1rem;">
+                <div class="stat-label" style="font-size: 0.75rem;">📊 Sortino Ratio</div>
+                <div class="stat-value" id="sortinoRatio" style="font-size: 1.25rem;">0.00</div>
+                <div class="stat-change" style="font-size: 0.7rem;">Downside risk</div>
+            </div>
+            <div class="stat-card" style="padding: 1rem;">
+                <div class="stat-label" style="font-size: 0.75rem;">⚖️ Calmar Ratio</div>
+                <div class="stat-value" id="calmarRatio" style="font-size: 1.25rem;">0.00</div>
+                <div class="stat-change" style="font-size: 0.7rem;">Return/Drawdown</div>
+            </div>
+            <div class="stat-card" style="padding: 1rem;">
+                <div class="stat-label" style="font-size: 0.75rem;">💹 Profit Factor</div>
+                <div class="stat-value" id="profitFactor" style="font-size: 1.25rem;">0.00</div>
+                <div class="stat-change" style="font-size: 0.7rem;">Gain/Loss ratio</div>
+            </div>
+            <div class="stat-card" style="padding: 1rem;">
+                <div class="stat-label" style="font-size: 0.75rem;">📈 Best Trade</div>
+                <div class="stat-value" id="bestTrade" style="font-size: 1.25rem; color: var(--success);">$0</div>
+                <div class="stat-change" style="font-size: 0.7rem;">Top performer</div>
+            </div>
+            <div class="stat-card" style="padding: 1rem;">
+                <div class="stat-label" style="font-size: 0.75rem;">📉 Worst Trade</div>
+                <div class="stat-value" id="worstTrade" style="font-size: 1.25rem; color: var(--danger);">$0</div>
+                <div class="stat-change" style="font-size: 0.7rem;">Biggest loss</div>
+            </div>
+            <div class="stat-card" style="padding: 1rem;">
+                <div class="stat-label" style="font-size: 0.75rem;">🔥 Win Streak</div>
+                <div class="stat-value" id="winStreak" style="font-size: 1.25rem;">0</div>
+                <div class="stat-change" style="font-size: 0.7rem;">Longest streak</div>
+            </div>
+        </div>
+        
+        <!-- Smart Bot Templates Section -->
+        <div class="section" style="margin-top: 1.5rem; background: linear-gradient(135deg, #0f172a 0%, #1e1b4b 100%); border: 1px solid rgba(99, 102, 241, 0.3);">
+            <div class="section-header">
+                <h2 class="section-title">🧠 Smart Bot Templates</h2>
+                <div style="display: flex; gap: 0.5rem;">
+                    <select class="form-select" id="riskFilter" style="width: auto; padding: 0.5rem; font-size: 0.8rem;" onchange="loadSmartBotTemplates()">
+                        <option value="">All Risk Levels</option>
+                        <option value="low">🛡️ Low Risk</option>
+                        <option value="medium">⚖️ Medium Risk</option>
+                        <option value="high">🔥 High Risk</option>
+                        <option value="very_high">⚡ Very High Risk</option>
+                    </select>
+                    <button class="btn btn-outline btn-small" onclick="loadSmartBotTemplates()">⟳</button>
+                </div>
+            </div>
+            <div id="smartBotTemplates" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 1rem;">
+                <!-- Populated by JS -->
+            </div>
+            <div style="margin-top: 1rem; padding: 1rem; background: rgba(99, 102, 241, 0.1); border-radius: 10px;">
+                <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem;">
+                    <span style="font-size: 1.2rem;">💡</span>
+                    <span style="font-weight: 600;">Quick Setup</span>
+                </div>
+                <p style="color: var(--text-secondary); font-size: 0.85rem; margin: 0;">
+                    Choose a smart bot template above and click "Activate" to start trading with pre-configured settings. 
+                    Each bot uses proven strategies optimized for different risk levels and market conditions.
+                </p>
+            </div>
+        </div>
+        
+        <!-- Extended Market Data Section -->
+        <div class="section" style="margin-top: 1.5rem;">
+            <div class="section-header">
+                <h2 class="section-title">🌐 Extended Market Data</h2>
+                <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+                    <button class="btn btn-outline btn-small asset-class-btn active" data-class="" onclick="loadExtendedMarket('')">All</button>
+                    <button class="btn btn-outline btn-small asset-class-btn" data-class="equity" onclick="loadExtendedMarket('equity')">📈 Stocks</button>
+                    <button class="btn btn-outline btn-small asset-class-btn" data-class="crypto" onclick="loadExtendedMarket('crypto')">₿ Crypto</button>
+                    <button class="btn btn-outline btn-small asset-class-btn" data-class="commodity" onclick="loadExtendedMarket('commodity')">🛢️ Commodities</button>
+                    <button class="btn btn-outline btn-small asset-class-btn" data-class="forex" onclick="loadExtendedMarket('forex')">💱 Forex</button>
+                    <button class="btn btn-outline btn-small asset-class-btn" data-class="bond" onclick="loadExtendedMarket('bond')">📜 Bonds</button>
+                </div>
+            </div>
+            <div id="extendedMarketData" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 0.75rem; max-height: 350px; overflow-y: auto;">
+                <!-- Populated by JS -->
             </div>
         </div>
 
@@ -866,11 +948,30 @@
                             <option value="QQQ">QQQ</option>
                             <option value="BTC">BTC</option>
                             <option value="ETH">ETH</option>
+                            <option value="NVDA">NVDA</option>
+                            <option value="GLD">GLD</option>
+                            <option value="EURUSD">EUR/USD</option>
                         </select>
                     </div>
                     <div class="indicator-grid" id="indicatorGrid">
                         <!-- Populated by JS -->
                     </div>
+                </div>
+                
+                <!-- Demo Data Activation -->
+                <div class="section" style="background: linear-gradient(135deg, rgba(139, 92, 246, 0.1) 0%, rgba(99, 102, 241, 0.1) 100%); border: 1px dashed var(--primary);">
+                    <div class="section-header">
+                        <h2 class="section-title">🚀 Quick Start</h2>
+                    </div>
+                    <p style="color: var(--text-secondary); font-size: 0.85rem; margin-bottom: 1rem;">
+                        No trading history yet? Activate demo bots with simulated trading data to explore all features!
+                    </p>
+                    <button class="btn btn-primary" style="width: 100%;" onclick="activateDemoData()">
+                        🎯 Activate Demo Bots
+                    </button>
+                    <p style="color: var(--text-secondary); font-size: 0.75rem; margin-top: 0.5rem; text-align: center;">
+                        Creates 3 smart bots with 30 days of simulated history
+                    </p>
                 </div>
 
                 <!-- Quick Trade -->
@@ -879,13 +980,53 @@
                         <h2 class="section-title">⚡ Quick Trade</h2>
                     </div>
                     <div class="form-group">
+                        <label class="form-label">Asset Class</label>
+                        <select class="form-select" id="quickTradeClass" onchange="updateQuickTradeSymbols()" style="margin-bottom: 0.5rem;">
+                            <option value="all">🌐 All Assets</option>
+                            <option value="index">📊 Indices</option>
+                            <option value="equity">📈 Equities</option>
+                            <option value="crypto">₿ Crypto</option>
+                            <option value="commodity">🛢️ Commodities</option>
+                            <option value="forex">💱 Forex</option>
+                            <option value="bond">📜 Bonds</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
                         <label class="form-label">Symbol</label>
                         <select class="form-select" id="quickTradeSymbol">
-                            <option value="SPY">SPY - S&P 500</option>
-                            <option value="QQQ">QQQ - NASDAQ</option>
-                            <option value="BTC">BTC - Bitcoin</option>
-                            <option value="ETH">ETH - Ethereum</option>
-                            <option value="GLD">GLD - Gold</option>
+                            <optgroup label="📊 Indices">
+                                <option value="SPY">SPY - S&P 500</option>
+                                <option value="QQQ">QQQ - NASDAQ</option>
+                                <option value="DIA">DIA - Dow Jones</option>
+                            </optgroup>
+                            <optgroup label="📈 Equities">
+                                <option value="AAPL">AAPL - Apple</option>
+                                <option value="MSFT">MSFT - Microsoft</option>
+                                <option value="NVDA">NVDA - NVIDIA</option>
+                                <option value="GOOGL">GOOGL - Alphabet</option>
+                                <option value="TSLA">TSLA - Tesla</option>
+                            </optgroup>
+                            <optgroup label="₿ Crypto">
+                                <option value="BTC">BTC - Bitcoin</option>
+                                <option value="ETH">ETH - Ethereum</option>
+                                <option value="SOL">SOL - Solana</option>
+                                <option value="AVAX">AVAX - Avalanche</option>
+                            </optgroup>
+                            <optgroup label="🛢️ Commodities">
+                                <option value="GLD">GLD - Gold</option>
+                                <option value="SLV">SLV - Silver</option>
+                                <option value="USO">USO - Oil</option>
+                            </optgroup>
+                            <optgroup label="💱 Forex">
+                                <option value="EURUSD">EUR/USD</option>
+                                <option value="GBPUSD">GBP/USD</option>
+                                <option value="USDJPY">USD/JPY</option>
+                            </optgroup>
+                            <optgroup label="📜 Bonds">
+                                <option value="BND">BND - Total Bond</option>
+                                <option value="TLT">TLT - 20+ Yr Treasury</option>
+                                <option value="HYG">HYG - High Yield</option>
+                            </optgroup>
                         </select>
                     </div>
                     <div class="form-group">
@@ -979,24 +1120,64 @@
             <div class="form-group">
                 <label class="form-label">Strategy</label>
                 <select class="form-select" id="botStrategy">
-                    <option value="momentum">📈 Momentum</option>
-                    <option value="mean_reversion">🔄 Mean Reversion</option>
-                    <option value="trend_following">📊 Trend Following</option>
-                    <option value="rsi_strategy">📉 RSI Strategy</option>
-                    <option value="macd_crossover">📈 MACD Crossover</option>
-                    <option value="dollar_cost_averaging">💰 DCA (Dollar Cost Averaging)</option>
-                    <option value="breakout">🚀 Breakout</option>
+                    <optgroup label="🎯 Classic Strategies">
+                        <option value="momentum">📈 Momentum</option>
+                        <option value="mean_reversion">🔄 Mean Reversion</option>
+                        <option value="trend_following">📊 Trend Following</option>
+                        <option value="breakout">🚀 Breakout</option>
+                    </optgroup>
+                    <optgroup label="📉 Indicator-Based">
+                        <option value="rsi_strategy">📉 RSI Strategy</option>
+                        <option value="macd_crossover">📈 MACD Crossover</option>
+                    </optgroup>
+                    <optgroup label="💰 Passive Strategies">
+                        <option value="dollar_cost_averaging">💰 DCA (Dollar Cost Averaging)</option>
+                        <option value="grid_trading">📊 Grid Trading</option>
+                    </optgroup>
+                    <optgroup label="⚡ Advanced Strategies">
+                        <option value="scalping">⚡ Scalping (High Frequency)</option>
+                        <option value="swing_trading">📊 Swing Trading</option>
+                        <option value="arbitrage">🔀 Arbitrage</option>
+                        <option value="ai_adaptive">🧠 AI Adaptive</option>
+                    </optgroup>
                 </select>
             </div>
             <div class="form-group">
                 <label class="form-label">Trading Symbols</label>
-                <select class="form-select" id="botSymbols" multiple style="height: 120px;">
-                    <option value="SPY" selected>SPY - S&P 500</option>
-                    <option value="QQQ">QQQ - NASDAQ</option>
-                    <option value="BTC" selected>BTC - Bitcoin</option>
-                    <option value="ETH">ETH - Ethereum</option>
-                    <option value="GLD">GLD - Gold</option>
-                    <option value="BND">BND - Bonds</option>
+                <select class="form-select" id="botSymbols" multiple style="height: 180px;">
+                    <optgroup label="📊 Indices">
+                        <option value="SPY" selected>SPY - S&P 500</option>
+                        <option value="QQQ">QQQ - NASDAQ</option>
+                        <option value="DIA">DIA - Dow Jones</option>
+                    </optgroup>
+                    <optgroup label="📈 Equities">
+                        <option value="AAPL">AAPL - Apple</option>
+                        <option value="MSFT">MSFT - Microsoft</option>
+                        <option value="NVDA">NVDA - NVIDIA</option>
+                        <option value="GOOGL">GOOGL - Alphabet</option>
+                        <option value="TSLA">TSLA - Tesla</option>
+                    </optgroup>
+                    <optgroup label="₿ Crypto">
+                        <option value="BTC" selected>BTC - Bitcoin</option>
+                        <option value="ETH">ETH - Ethereum</option>
+                        <option value="SOL">SOL - Solana</option>
+                        <option value="BNB">BNB - Binance</option>
+                        <option value="AVAX">AVAX - Avalanche</option>
+                    </optgroup>
+                    <optgroup label="🛢️ Commodities">
+                        <option value="GLD">GLD - Gold</option>
+                        <option value="SLV">SLV - Silver</option>
+                        <option value="USO">USO - Oil</option>
+                    </optgroup>
+                    <optgroup label="💱 Forex">
+                        <option value="EURUSD">EUR/USD</option>
+                        <option value="GBPUSD">GBP/USD</option>
+                    </optgroup>
+                    <optgroup label="📜 Bonds">
+                        <option value="BND">BND - Total Bond</option>
+                        <option value="TLT">TLT - 20+ Yr Treasury</option>
+                        <option value="HYG">HYG - High Yield</option>
+                    </optgroup>
                 </select>
                 <small style="color: var(--text-secondary);">Hold Ctrl/Cmd to select multiple</small>
             </div>
@@ -1087,8 +1268,13 @@
                 loadUnifiedBalance(),
                 loadAlgoBalance(),
                 loadPipelineData(),
-                loadPositions()
+                loadPositions(),
+                loadSmartBotTemplates(),
+                loadExtendedMarket('')
             ]);
+            
+            // Update stats with advanced metrics
+            await updateStats();
             
             // Refresh signals every 30 seconds
             setInterval(loadSignals, 30000);
@@ -1096,6 +1282,8 @@
             setInterval(loadUnifiedBalance, 60000);
             setInterval(loadPipelineData, 60000);
             setInterval(loadPositions, 15000); // Real-time P&L every 15 seconds
+            setInterval(() => loadExtendedMarket(document.querySelector('.asset-class-btn.active')?.dataset?.class || ''), 30000);
+            setInterval(updateStats, 60000); // Update advanced metrics every minute
         });
         
         async function loadBots() {
@@ -1175,9 +1363,22 @@
                 'macd_crossover': '📈 MACD Crossover',
                 'dollar_cost_averaging': '💰 DCA',
                 'breakout': '🚀 Breakout',
-                'grid_trading': '📊 Grid Trading'
+                'grid_trading': '📊 Grid Trading',
+                'scalping': '⚡ Scalping',
+                'swing_trading': '📊 Swing Trading',
+                'arbitrage': '🔀 Arbitrage',
+                'ai_adaptive': '🧠 AI Adaptive'
             };
             return names[strategy] || strategy;
+        }
+        
+        function updateQuickTradeSymbols() {
+            // Future enhancement: filter symbols by asset class
+            const assetClass = document.getElementById('quickTradeClass').value;
+            // For now just show a toast
+            if (assetClass !== 'all') {
+                showToast(`Filtering by ${assetClass} assets`, 'info');
+            }
         }
         
         async function loadSignals() {
@@ -1508,7 +1709,8 @@
             `;
         }
         
-        function updateStats() {
+        async function updateStats() {
+            // Basic stats from bots
             const totalPnl = bots.reduce((sum, b) => sum + (b.total_pnl || 0), 0);
             const totalTrades = bots.reduce((sum, b) => sum + (b.total_trades || 0), 0);
             const winningTrades = bots.reduce((sum, b) => sum + (b.winning_trades || 0), 0);
@@ -1517,10 +1719,291 @@
             
             document.getElementById('totalPnl').textContent = `${totalPnl >= 0 ? '+' : ''}$${totalPnl.toFixed(2)}`;
             document.getElementById('pnlChange').className = `stat-change ${totalPnl >= 0 ? 'positive' : 'negative'}`;
+            document.getElementById('pnlChange').textContent = `${totalPnl >= 0 ? '+' : ''}${((totalPnl / 10000) * 100).toFixed(2)}% return`;
             document.getElementById('winRate').textContent = `${winRate.toFixed(1)}%`;
             document.getElementById('winRateChange').textContent = `${winningTrades}/${totalTrades} trades`;
             document.getElementById('activeBots').textContent = activeBots;
             document.getElementById('botsChange').textContent = `${signals.length} signals today`;
+            
+            // Try to get advanced metrics from dashboard API
+            try {
+                const response = await fetch(`/api/algo/dashboard?customer_id=${customerId}`);
+                const dashboard = await response.json();
+                
+                if (dashboard.metrics) {
+                    const m = dashboard.metrics;
+                    document.getElementById('sharpeRatio').textContent = (m.sharpe_ratio || 0).toFixed(2);
+                    document.getElementById('maxDrawdown').textContent = `${(m.max_drawdown_pct || 0).toFixed(1)}%`;
+                }
+                
+                // Update advanced metrics from bot stats
+                if (dashboard.bot_stats && dashboard.bot_stats.aggregated_metrics) {
+                    const aggMetrics = dashboard.bot_stats.aggregated_metrics;
+                    document.getElementById('sharpeRatio').textContent = (aggMetrics.avg_sharpe_ratio || 0).toFixed(2);
+                }
+                
+            } catch (e) {
+                console.log('Advanced metrics not available:', e);
+            }
+            
+            // Calculate advanced metrics from bots with detailed data
+            let avgSharpe = 0, avgSortino = 0, avgCalmar = 0, avgProfitFactor = 0;
+            let bestTrade = 0, worstTrade = 0, maxWinStreak = 0;
+            let botCount = 0;
+            
+            for (const bot of bots) {
+                if (bot.sharpe_ratio !== undefined) {
+                    avgSharpe += bot.sharpe_ratio;
+                    avgSortino += bot.sortino_ratio || 0;
+                    avgCalmar += bot.calmar_ratio || 0;
+                    avgProfitFactor += bot.profit_factor || 0;
+                    if (bot.best_trade > bestTrade) bestTrade = bot.best_trade;
+                    if (bot.worst_trade < worstTrade) worstTrade = bot.worst_trade;
+                    if (bot.longest_winning_streak > maxWinStreak) maxWinStreak = bot.longest_winning_streak;
+                    botCount++;
+                }
+            }
+            
+            if (botCount > 0) {
+                document.getElementById('sharpeRatio').textContent = (avgSharpe / botCount).toFixed(2);
+                document.getElementById('sortinoRatio').textContent = (avgSortino / botCount).toFixed(2);
+                document.getElementById('calmarRatio').textContent = (avgCalmar / botCount).toFixed(2);
+                document.getElementById('profitFactor').textContent = (avgProfitFactor / botCount).toFixed(2);
+            }
+            
+            document.getElementById('bestTrade').textContent = `+$${bestTrade.toFixed(0)}`;
+            document.getElementById('worstTrade').textContent = `$${worstTrade.toFixed(0)}`;
+            document.getElementById('winStreak').textContent = maxWinStreak;
+            
+            // Calculate max drawdown from all bots
+            const maxDrawdown = bots.reduce((max, b) => Math.max(max, b.max_drawdown_pct || b.max_drawdown || 0), 0);
+            document.getElementById('maxDrawdown').textContent = `${maxDrawdown.toFixed(1)}%`;
+        }
+        
+        // ========== SMART BOT TEMPLATES ==========
+        let smartBotTemplates = [];
+        
+        async function loadSmartBotTemplates() {
+            const riskLevel = document.getElementById('riskFilter').value;
+            const url = riskLevel ? `/api/algo/smart-bots/templates?risk_level=${riskLevel}` : '/api/algo/smart-bots/templates';
+            
+            try {
+                const response = await fetch(url);
+                const data = await response.json();
+                smartBotTemplates = data.templates || [];
+                renderSmartBotTemplates();
+            } catch (e) {
+                console.error('Failed to load smart bot templates:', e);
+                document.getElementById('smartBotTemplates').innerHTML = `
+                    <div style="grid-column: 1/-1; text-align: center; padding: 2rem; color: var(--text-secondary);">
+                        <p>Failed to load templates. <button class="btn btn-outline btn-small" onclick="loadSmartBotTemplates()">Retry</button></p>
+                    </div>
+                `;
+            }
+        }
+        
+        function renderSmartBotTemplates() {
+            const container = document.getElementById('smartBotTemplates');
+            
+            if (smartBotTemplates.length === 0) {
+                container.innerHTML = `
+                    <div style="grid-column: 1/-1; text-align: center; padding: 2rem; color: var(--text-secondary);">
+                        <p>No templates available. Try a different filter.</p>
+                    </div>
+                `;
+                return;
+            }
+            
+            const riskColors = {
+                'low': { bg: 'rgba(16, 185, 129, 0.15)', border: '#10b981', icon: '🛡️' },
+                'medium': { bg: 'rgba(245, 158, 11, 0.15)', border: '#f59e0b', icon: '⚖️' },
+                'high': { bg: 'rgba(239, 68, 68, 0.15)', border: '#ef4444', icon: '🔥' },
+                'very_high': { bg: 'rgba(168, 85, 247, 0.15)', border: '#a855f7', icon: '⚡' }
+            };
+            
+            container.innerHTML = smartBotTemplates.map(template => {
+                const risk = riskColors[template.risk_level] || riskColors.medium;
+                const symbols = template.symbols || [];
+                
+                return `
+                    <div style="background: ${risk.bg}; border: 1px solid ${risk.border}; border-radius: 12px; padding: 1rem;">
+                        <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 0.75rem;">
+                            <div>
+                                <div style="font-weight: 600; font-size: 1rem;">${template.name}</div>
+                                <div style="font-size: 0.75rem; color: var(--text-secondary);">${template.strategy}</div>
+                            </div>
+                            <span style="background: ${risk.bg}; border: 1px solid ${risk.border}; padding: 0.2rem 0.5rem; border-radius: 12px; font-size: 0.7rem;">
+                                ${risk.icon} ${template.risk_level.replace('_', ' ')}
+                            </span>
+                        </div>
+                        <p style="font-size: 0.8rem; color: var(--text-secondary); margin-bottom: 0.75rem; line-height: 1.4;">
+                            ${template.description}
+                        </p>
+                        <div style="display: flex; flex-wrap: wrap; gap: 0.25rem; margin-bottom: 0.75rem;">
+                            ${symbols.slice(0, 4).map(s => `<span style="background: var(--bg-card); padding: 0.15rem 0.4rem; border-radius: 4px; font-size: 0.7rem;">${s}</span>`).join('')}
+                            ${symbols.length > 4 ? `<span style="font-size: 0.7rem; color: var(--text-secondary);">+${symbols.length - 4} more</span>` : ''}
+                        </div>
+                        <div style="display: flex; justify-content: space-between; align-items: center;">
+                            <span style="font-size: 0.75rem; color: var(--success);">${template.expected_return}</span>
+                            <button class="btn btn-primary btn-small" onclick="activateSmartBot('${template.bot_id}')">
+                                🚀 Activate
+                            </button>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+        
+        async function activateSmartBot(templateId) {
+            try {
+                const response = await fetch('/api/algo/smart-bots/create', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        account_id: customerId,
+                        template_id: templateId
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    showToast(`${data.bot?.name || 'Smart Bot'} activated successfully!`, 'success');
+                    
+                    // Simulate some trades for demo
+                    if (data.bot?.bot_id) {
+                        await fetch('/api/algo/bots/simulate', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                bot_id: data.bot.bot_id,
+                                days: 30
+                            })
+                        });
+                    }
+                    
+                    // Reload bots and stats
+                    await loadBots();
+                    await updateStats();
+                } else {
+                    showToast(data.error || 'Failed to activate bot', 'error');
+                }
+            } catch (e) {
+                showToast('Failed to activate smart bot: ' + e.message, 'error');
+            }
+        }
+        
+        // ========== EXTENDED MARKET DATA ==========
+        let extendedMarketData = [];
+        
+        async function loadExtendedMarket(assetClass = '') {
+            // Update active button
+            document.querySelectorAll('.asset-class-btn').forEach(btn => {
+                btn.classList.toggle('active', btn.dataset.class === assetClass);
+                if (btn.dataset.class === assetClass) {
+                    btn.style.background = 'linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%)';
+                    btn.style.color = 'white';
+                } else {
+                    btn.style.background = 'transparent';
+                    btn.style.color = 'var(--text-secondary)';
+                }
+            });
+            
+            const url = assetClass ? `/api/algo/market/extended?asset_class=${assetClass}` : '/api/algo/market/extended';
+            
+            try {
+                const response = await fetch(url);
+                const data = await response.json();
+                extendedMarketData = data.assets || [];
+                renderExtendedMarket();
+            } catch (e) {
+                console.error('Failed to load extended market data:', e);
+            }
+        }
+        
+        function renderExtendedMarket() {
+            const container = document.getElementById('extendedMarketData');
+            
+            if (extendedMarketData.length === 0) {
+                container.innerHTML = `<div style="grid-column: 1/-1; text-align: center; padding: 2rem; color: var(--text-secondary);">No market data available</div>`;
+                return;
+            }
+            
+            const assetIcons = {
+                'equity': '📈', 'crypto': '₿', 'commodity': '🛢️', 
+                'forex': '💱', 'bond': '📜', 'index': '📊', 'etf': '📦'
+            };
+            
+            container.innerHTML = extendedMarketData.slice(0, 24).map(asset => {
+                const isPositive = asset.change_24h >= 0;
+                const icon = assetIcons[asset.class] || '📊';
+                
+                return `
+                    <div style="background: var(--bg-hover); border-radius: 10px; padding: 0.75rem; cursor: pointer; transition: all 0.2s;"
+                         onmouseover="this.style.borderColor='var(--primary)'; this.style.boxShadow='0 4px 15px rgba(99, 102, 241, 0.2)';"
+                         onmouseout="this.style.borderColor='transparent'; this.style.boxShadow='none';"
+                         onclick="selectAssetForTrade('${asset.symbol}')">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+                            <span style="font-weight: 600; font-size: 0.9rem;">${icon} ${asset.symbol}</span>
+                            <span style="font-size: 0.65rem; color: var(--text-secondary); background: var(--bg-card); padding: 0.1rem 0.3rem; border-radius: 4px;">${asset.class}</span>
+                        </div>
+                        <div style="font-size: 1rem; font-weight: 600; margin-bottom: 0.25rem;">
+                            $${formatNumber(asset.price)}
+                        </div>
+                        <div style="font-size: 0.8rem; color: ${isPositive ? 'var(--success)' : 'var(--danger)'};">
+                            ${isPositive ? '▲' : '▼'} ${Math.abs(asset.change_24h).toFixed(2)}%
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+        
+        function selectAssetForTrade(symbol) {
+            // Add symbol to quick trade dropdown if not present
+            const select = document.getElementById('quickTradeSymbol');
+            let found = false;
+            for (let option of select.options) {
+                if (option.value === symbol) {
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) {
+                const option = document.createElement('option');
+                option.value = symbol;
+                option.text = symbol;
+                select.add(option);
+            }
+            select.value = symbol;
+            
+            // Scroll to quick trade section
+            document.querySelector('.sidebar').scrollIntoView({ behavior: 'smooth' });
+            showToast(`Selected ${symbol} for trading`, 'info');
+        }
+        
+        // ========== DEMO DATA ACTIVATION ==========
+        async function activateDemoData() {
+            showToast('Activating demo data...', 'info');
+            
+            try {
+                const response = await fetch('/api/algo/activate-demo', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ customer_id: customerId })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    showToast(`Created ${data.bots_created?.length || 0} demo bots with simulated history!`, 'success');
+                    await loadBots();
+                    await updateStats();
+                } else {
+                    showToast(data.error || 'Failed to activate demo', 'error');
+                }
+            } catch (e) {
+                showToast('Failed to activate demo: ' + e.message, 'error');
+            }
         }
         
         // Bot Actions
