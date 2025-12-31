@@ -6623,15 +6623,17 @@ For claims or questions, please contact:
                 customer['password_salt'] = pwd_hash['salt']
                 
                 # Log the action
-                record_transaction({
-                    'type': 'admin_action',
-                    'action': 'set_customer_password',
-                    'customer_id': customer_id,
-                    'email': email,
-                    'user_action': action,
-                    'admin': session.get('username', 'admin'),
-                    'timestamp': datetime.now().isoformat()
-                })
+                record_transaction(
+                    customer_id=customer_id,
+                    tx_type='admin_action',
+                    amount=0.0,
+                    description=f'Password {action} by admin: {session.get("username", "admin")}',
+                    metadata={
+                        'action': 'set_customer_password',
+                        'email': email,
+                        'user_action': action
+                    }
+                )
                 
                 self._set_json_headers()
                 self.wfile.write(json.dumps({
