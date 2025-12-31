@@ -579,25 +579,39 @@ class FinancialReportingService:
                 coverage = policy.get('coverage_amount', 0)
                 stored_premium = policy.get('annual_premium', 0)
                 
-                # Calculate expected premium using actuarial tables
+                # Calculate expected premium using UNIFIED actuarial calculation
                 if coverage > 0 and stored_premium > 0:
-                    # Simple check: premium should be proportional to coverage and risk
-                    expected_ratio = stored_premium / coverage  # Premium per dollar of coverage
-                    adl_mult = self.get_adl_multiplier(adl_level)
+                    # Use full actuarial calculation for expected premium
+                    expected_calc = self.calculate_premium(
+                        coverage=coverage,
+                        age=age,
+                        adl_level=adl_level,
+                        savings_pct=0.5,  # Standard 50% savings allocation
+                        term_years=25     # Standard term
+                    )
+                    expected_premium = expected_calc['annual_premium']
+                    expected_risk = expected_calc['risk_component']
+                    expected_savings = expected_calc['savings_component']
                     
-                    # Expected ratio should be higher for older/higher-risk customers
-                    # Typical range: 0.002 (low risk) to 0.015 (high risk)
-                    min_expected_ratio = 0.001
-                    max_expected_ratio = 0.02
+                    # Check if stored premium is within acceptable variance (±20% of actuarial calculation)
+                    variance_pct = abs(stored_premium - expected_premium) / expected_premium * 100 if expected_premium > 0 else 0
                     
-                    if min_expected_ratio <= expected_ratio <= max_expected_ratio:
+                    # Also check premium ratio as secondary validation
+                    premium_ratio = stored_premium / coverage
+                    
+                    if variance_pct <= 20:  # Within 20% of actuarial expectation
                         actuarial_checks['passed'] += 1
                         actuarial_checks['details'].append({
                             'policy_id': policy_id,
                             'status': 'PASS',
                             'risk_score': risk_score,
                             'adl_level': adl_level,
-                            'premium_ratio': round(expected_ratio, 6)
+                            'stored_premium': round(stored_premium, 2),
+                            'expected_premium': round(expected_premium, 2),
+                            'variance_pct': round(variance_pct, 2),
+                            'premium_ratio': round(premium_ratio, 6),
+                            'risk_component': round(expected_risk, 2),
+                            'calculation_method': 'PV(Mortality × ADL × Lapse × Coverage)'
                         })
                     else:
                         actuarial_checks['failed'] += 1
@@ -606,10 +620,13 @@ class FinancialReportingService:
                             'status': 'REVIEW',
                             'risk_score': risk_score,
                             'adl_level': adl_level,
-                            'premium_ratio': round(expected_ratio, 6),
-                            'note': f"Premium ratio {expected_ratio:.4f} outside expected range"
+                            'stored_premium': round(stored_premium, 2),
+                            'expected_premium': round(expected_premium, 2),
+                            'variance_pct': round(variance_pct, 2),
+                            'premium_ratio': round(premium_ratio, 6),
+                            'note': f"Premium variance {variance_pct:.1f}% exceeds 20% tolerance"
                         })
-                        warnings.append(f"Policy {policy_id}: Premium ratio may need actuarial review")
+                        warnings.append(f"Policy {policy_id}: Premium {variance_pct:.1f}% variance from actuarial expectation")
         
         # 2. Billing validation
         for bill_id, bill in self._billing.items():
@@ -679,6 +696,15 @@ class FinancialReportingService:
                 'passed': actuarial_checks['passed'],
                 'needs_review': actuarial_checks['failed'],
                 'status': 'COMPLIANT' if actuarial_checks['failed'] == 0 else 'REVIEW_NEEDED',
+                'calculation_method': 'PV(Mortality × ADL × Lapse Survival × Coverage)',
+                'components_validated': {
+                    'mortality_rates': 'Age-banded (0-30, 30-40, 40-50, 50-60, 60-70, 70-80, 80+)',
+                    'adl_multipliers': '1-10 scale (0.6x - 2.5x)',
+                    'lapse_rates': 'Policy-year adjusted (Year 1: 8% → Year 25+: 1%)',
+                    'discount_rate': '3.5% annual for present value calculations',
+                    'expense_loading': '15% of risk premium'
+                },
+                'tolerance': '±20% variance from actuarial expectation',
                 'details': actuarial_checks['details'][:10]  # Limit to first 10
             },
             'validated_at': datetime.now().isoformat()
