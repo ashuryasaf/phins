@@ -391,13 +391,30 @@ def get_real_time_status() -> Dict[str, Any]:
 
 
 def get_customer_allocation(customer_id: str) -> Dict[str, float]:
-    """Get customer's allocation preferences or return defaults"""
+    """Get customer's allocation preferences or return defaults
+    
+    Allocation Model:
+    1. Premium Split: savings_pct % goes to savings, rest to risk coverage
+    2. Savings Distribution: wallet_pct + investment_pct + algo_pct = 100%
+       - wallet_pct: % of savings to Health Wallet
+       - investment_pct: % of savings to Investment Portfolio
+       - algo_pct: % of savings to Algo Trading
+    3. Investment Sub-allocation: index_pct + bonds_pct + crypto_pct = 100%
+    """
     default_allocation = {
-        'savings_pct': 25.0,  # % of premium to savings/investments
-        'risk_pct': 75.0,     # % of premium to risk coverage
-        'index_pct': 60.0,    # % of savings to index funds
-        'bonds_pct': 30.0,    # % of savings to bonds
-        'crypto_pct': 10.0,   # % of savings to crypto
+        # Premium split
+        'savings_pct': 50.0,      # % of premium to savings (default 50%)
+        'risk_pct': 50.0,         # % of premium to risk coverage (default 50%)
+        
+        # Savings distribution (must sum to 100%)
+        'wallet_pct': 30.0,       # % of savings to Health Wallet
+        'investment_pct': 65.0,   # % of savings to Investment Portfolio
+        'algo_pct': 5.0,          # % of savings to Algo Trading
+        
+        # Investment sub-allocation (must sum to 100%)
+        'index_pct': 60.0,        # % of investment to index funds
+        'bonds_pct': 30.0,        # % of investment to bonds
+        'crypto_pct': 10.0,       # % of investment to crypto
     }
     
     if customer_id in CUSTOMER_ALLOCATIONS:
@@ -407,42 +424,114 @@ def get_customer_allocation(customer_id: str) -> Dict[str, float]:
 
 def update_customer_allocation(customer_id: str, allocations: Dict[str, float]) -> Dict[str, Any]:
     """Update customer's allocation preferences with validation"""
-    # Validate percentages
-    savings_pct = allocations.get('savings_pct', 25.0)
-    risk_pct = allocations.get('risk_pct', 75.0)
+    # Get current or default allocation
+    current = get_customer_allocation(customer_id)
+    
+    # Premium split validation
+    savings_pct = allocations.get('savings_pct', current['savings_pct'])
+    risk_pct = allocations.get('risk_pct', current['risk_pct'])
     
     # Savings + Risk must equal 100%
     if abs((savings_pct + risk_pct) - 100.0) > 0.01:
         raise ValueError("Savings + Risk percentages must equal 100%")
     
-    # Investment allocation (of savings) must equal 100%
-    index_pct = allocations.get('index_pct', 60.0)
-    bonds_pct = allocations.get('bonds_pct', 30.0)
-    crypto_pct = allocations.get('crypto_pct', 10.0)
+    # Savings distribution validation
+    wallet_pct = allocations.get('wallet_pct', current['wallet_pct'])
+    investment_pct = allocations.get('investment_pct', current['investment_pct'])
+    algo_pct = allocations.get('algo_pct', current['algo_pct'])
+    
+    if abs((wallet_pct + investment_pct + algo_pct) - 100.0) > 0.01:
+        raise ValueError("Wallet + Investment + Algo percentages must equal 100%")
+    
+    # Investment sub-allocation validation
+    index_pct = allocations.get('index_pct', current['index_pct'])
+    bonds_pct = allocations.get('bonds_pct', current['bonds_pct'])
+    crypto_pct = allocations.get('crypto_pct', current['crypto_pct'])
     
     if abs((index_pct + bonds_pct + crypto_pct) - 100.0) > 0.01:
         raise ValueError("Index + Bonds + Crypto percentages must equal 100%")
     
-    # Crypto max 30%
+    # Constraints
     if crypto_pct > 30.0:
         raise ValueError("Crypto allocation cannot exceed 30%")
     
-    # Savings must be at least 10% (regulatory requirement)
     if savings_pct < 10.0:
         raise ValueError("Savings allocation must be at least 10%")
     
+    if algo_pct > 20.0:
+        raise ValueError("Algo trading allocation cannot exceed 20%")
+    
     allocation_record = {
+        # Premium split
         'savings_pct': savings_pct,
         'risk_pct': risk_pct,
+        # Savings distribution
+        'wallet_pct': wallet_pct,
+        'investment_pct': investment_pct,
+        'algo_pct': algo_pct,
+        # Investment sub-allocation
         'index_pct': index_pct,
         'bonds_pct': bonds_pct,
         'crypto_pct': crypto_pct,
+        # Metadata
         'updated_at': datetime.now().isoformat(),
         'customer_id': customer_id
     }
     
     CUSTOMER_ALLOCATIONS[customer_id] = allocation_record
+    save_ledger_data()
     return allocation_record
+
+
+def calculate_monthly_distribution(customer_id: str) -> Dict[str, Any]:
+    """Calculate monthly contribution distribution based on active policies and allocations"""
+    allocation = get_customer_allocation(customer_id)
+    
+    # Get total monthly premium from active policies
+    total_monthly_premium = 0
+    active_policies = []
+    for policy in POLICIES.values():
+        if policy.get('customer_id') == customer_id and policy.get('status') == 'active':
+            monthly_premium = float(policy.get('monthly_premium', 0))
+            total_monthly_premium += monthly_premium
+            active_policies.append({
+                'policy_id': policy.get('id'),
+                'type': policy.get('type'),
+                'monthly_premium': monthly_premium
+            })
+    
+    # Calculate savings portion
+    savings_amount = total_monthly_premium * (allocation['savings_pct'] / 100)
+    risk_amount = total_monthly_premium * (allocation['risk_pct'] / 100)
+    
+    # Distribute savings
+    wallet_amount = savings_amount * (allocation['wallet_pct'] / 100)
+    investment_amount = savings_amount * (allocation['investment_pct'] / 100)
+    algo_amount = savings_amount * (allocation['algo_pct'] / 100)
+    
+    # Investment sub-distribution
+    index_amount = investment_amount * (allocation['index_pct'] / 100)
+    bonds_amount = investment_amount * (allocation['bonds_pct'] / 100)
+    crypto_amount = investment_amount * (allocation['crypto_pct'] / 100)
+    
+    return {
+        'customer_id': customer_id,
+        'total_monthly_premium': total_monthly_premium,
+        'active_policies': active_policies,
+        'allocation': allocation,
+        'distribution': {
+            'risk_coverage': risk_amount,
+            'total_savings': savings_amount,
+            'health_wallet': wallet_amount,
+            'investment': investment_amount,
+            'algo_trading': algo_amount,
+            'investment_breakdown': {
+                'index_funds': index_amount,
+                'bonds': bonds_amount,
+                'crypto': crypto_amount
+            }
+        }
+    }
 
 
 def record_transaction(
@@ -3000,6 +3089,39 @@ For claims or questions, please contact:
             }).encode('utf-8'))
             return
         
+        # Customer allocation preferences (GET)
+        if path == '/api/customer/allocation':
+            customer_id = qs.get('customer_id', [''])[0]
+            if not customer_id:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'customer_id required'}).encode('utf-8'))
+                return
+            
+            try:
+                allocation = get_customer_allocation(customer_id)
+                distribution = calculate_monthly_distribution(customer_id)
+                
+                self._set_json_headers()
+                self.wfile.write(json.dumps({
+                    'customer_id': customer_id,
+                    'allocation': allocation,
+                    'monthly_distribution': distribution,
+                    'description': {
+                        'savings_pct': 'Percentage of premium going to savings',
+                        'risk_pct': 'Percentage of premium for risk coverage',
+                        'wallet_pct': 'Percentage of savings to Health Wallet',
+                        'investment_pct': 'Percentage of savings to Investment Portfolio',
+                        'algo_pct': 'Percentage of savings to Algo Trading',
+                        'index_pct': 'Percentage of investment to Index Funds',
+                        'bonds_pct': 'Percentage of investment to Bonds',
+                        'crypto_pct': 'Percentage of investment to Crypto'
+                    }
+                }, default=str).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+        
         # Full pipeline validation with next actions
         if path.startswith('/api/admin/pipeline-validate/'):
             customer_id = path.split('/')[-1]
@@ -4184,32 +4306,20 @@ For claims or questions, please contact:
                 crypto_balance = float(inv_account.get('crypto_balance', 0))
                 invested_assets = index_balance + bonds_balance + crypto_balance
                 
-                # Get monthly premium contribution from customer's policies
-                monthly_contribution = 0
-                active_policy_count = 0
-                for policy in POLICIES.values():
-                    if policy.get('customer_id') == customer_id and policy.get('status') == 'active':
-                        active_policy_count += 1
-                        # Get savings allocation percentage (default 75% for PHINS contracts)
-                        customer_alloc = CUSTOMER_ALLOCATIONS.get(customer_id, {})
-                        savings_pct = customer_alloc.get('savings_pct', 75) / 100
-                        monthly_premium = float(policy.get('monthly_premium', 0))
-                        monthly_contribution += monthly_premium * savings_pct
+                # Get monthly premium contribution using the new allocation system
+                distribution = calculate_monthly_distribution(customer_id)
+                monthly_contribution = distribution['distribution']['total_savings']
                 
-                # If no customer allocation but has active policy, use policy's allocation if set
-                if monthly_contribution == 0 and active_policy_count > 0:
-                    for policy in POLICIES.values():
-                        if policy.get('customer_id') == customer_id and policy.get('status') == 'active':
-                            monthly_premium = float(policy.get('monthly_premium', 0))
-                            # Use allocation from underwriting if available
-                            uw_id = policy.get('underwriting_id')
-                            if uw_id and uw_id in UNDERWRITING_APPLICATIONS:
-                                hw_config = UNDERWRITING_APPLICATIONS[uw_id].get('health_wallet', {})
-                                if hw_config.get('enabled'):
-                                    # Health wallet monthly deposit as baseline
-                                    monthly_contribution = float(hw_config.get('monthly_deposit', 0))
-                                    # Plus 75% of premium as default savings
-                                    monthly_contribution += monthly_premium * 0.75
+                # Include distribution breakdown
+                monthly_distribution = {
+                    'total_premium': distribution['total_monthly_premium'],
+                    'savings_amount': distribution['distribution']['total_savings'],
+                    'risk_coverage': distribution['distribution']['risk_coverage'],
+                    'to_wallet': distribution['distribution']['health_wallet'],
+                    'to_investment': distribution['distribution']['investment'],
+                    'to_algo': distribution['distribution']['algo_trading'],
+                    'allocation_pct': distribution['allocation']
+                }
                 
                 # Total portfolio value
                 total_value = cash_balance + invested_assets
@@ -4274,6 +4384,9 @@ For claims or questions, please contact:
                     'cash_balance': cash_balance,
                     'invested_assets': invested_assets,
                     'monthly_contribution': monthly_contribution,
+                    
+                    # Monthly distribution breakdown (connected to pipeline)
+                    'monthly_distribution': monthly_distribution,
                     
                     # P&L data
                     'unrealized_gain': unrealized_gain,
@@ -9922,6 +10035,65 @@ For claims or questions, please contact:
                 self.wfile.write(json.dumps(result).encode('utf-8'))
             except Exception as e:
                 self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+        
+        # Update customer allocation preferences
+        if path == '/api/customer/allocation':
+            try:
+                data = json.loads(body)
+                customer_id = data.get('customer_id')
+                
+                if not customer_id:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'customer_id required'}).encode('utf-8'))
+                    return
+                
+                # Extract allocation parameters
+                allocations = {
+                    'savings_pct': data.get('savings_pct'),
+                    'risk_pct': data.get('risk_pct'),
+                    'wallet_pct': data.get('wallet_pct'),
+                    'investment_pct': data.get('investment_pct'),
+                    'algo_pct': data.get('algo_pct'),
+                    'index_pct': data.get('index_pct'),
+                    'bonds_pct': data.get('bonds_pct'),
+                    'crypto_pct': data.get('crypto_pct')
+                }
+                # Remove None values
+                allocations = {k: v for k, v in allocations.items() if v is not None}
+                
+                # Update allocation
+                updated = update_customer_allocation(customer_id, allocations)
+                
+                # Calculate new distribution
+                distribution = calculate_monthly_distribution(customer_id)
+                
+                # Record on ledger
+                record_transaction(
+                    customer_id=customer_id,
+                    tx_type='allocation_updated',
+                    amount=0,
+                    description=f'Customer allocation preferences updated',
+                    metadata={
+                        'allocation': updated,
+                        'new_distribution': distribution['distribution']
+                    }
+                )
+                
+                self._set_json_headers()
+                self.wfile.write(json.dumps({
+                    'success': True,
+                    'customer_id': customer_id,
+                    'allocation': updated,
+                    'monthly_distribution': distribution,
+                    'message': 'Allocation preferences updated successfully'
+                }, default=str).encode('utf-8'))
+            except ValueError as e:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
                 self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
             return
         
