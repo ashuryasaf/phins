@@ -442,9 +442,43 @@
   </header>
 
   <main class="container" style="padding-top:32px">
-    <div class="welcome-section">
-      <h1>Welcome back, <span id="username">Customer</span>! 👋</h1>
-      <p class="muted-text">Manage your policies, claims, and account information</p>
+    <!-- Customer Account Info Panel -->
+    <div id="customer-info-panel" style="background: linear-gradient(135deg, #1a237e 0%, #283593 50%, #303f9f 100%); border-radius: 16px; padding: 24px; margin-bottom: 24px; color: white; box-shadow: 0 8px 32px rgba(26, 35, 126, 0.3);">
+      <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 16px;">
+        <div>
+          <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 8px;">
+            <div style="width: 48px; height: 48px; background: linear-gradient(135deg, #4fc3f7 0%, #29b6f6 100%); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 1.5rem;">👤</div>
+            <div>
+              <h1 style="margin: 0; font-size: 1.6rem; font-weight: 700;">Welcome back, <span id="username">Customer</span>! 👋</h1>
+              <p style="margin: 4px 0 0 0; opacity: 0.85; font-size: 0.95rem;">Your personal insurance dashboard</p>
+            </div>
+          </div>
+        </div>
+        <div style="background: rgba(255,255,255,0.15); border-radius: 12px; padding: 12px 16px; text-align: right;">
+          <div style="font-size: 0.75rem; opacity: 0.8; text-transform: uppercase; letter-spacing: 1px;">Account ID</div>
+          <div id="customer-account-id" style="font-size: 1rem; font-weight: 600; font-family: monospace;">Loading...</div>
+        </div>
+      </div>
+      
+      <!-- Customer Quick Stats -->
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin-top: 20px; padding-top: 16px; border-top: 1px solid rgba(255,255,255,0.2);">
+        <div style="text-align: center;">
+          <div style="font-size: 0.7rem; opacity: 0.8; text-transform: uppercase; letter-spacing: 0.5px;">My Policies</div>
+          <div id="customer-policies-count" style="font-size: 1.4rem; font-weight: 700;">0</div>
+        </div>
+        <div style="text-align: center;">
+          <div style="font-size: 0.7rem; opacity: 0.8; text-transform: uppercase; letter-spacing: 0.5px;">My Claims</div>
+          <div id="customer-claims-count" style="font-size: 1.4rem; font-weight: 700;">0</div>
+        </div>
+        <div style="text-align: center;">
+          <div style="font-size: 0.7rem; opacity: 0.8; text-transform: uppercase; letter-spacing: 0.5px;">Total Coverage</div>
+          <div id="customer-total-coverage" style="font-size: 1.4rem; font-weight: 700;">$0</div>
+        </div>
+        <div style="text-align: center;">
+          <div style="font-size: 0.7rem; opacity: 0.8; text-transform: uppercase; letter-spacing: 0.5px;">Member Since</div>
+          <div id="customer-member-since" style="font-size: 1.1rem; font-weight: 600;">-</div>
+        </div>
+      </div>
     </div>
 
     <!-- Quick Actions - 5 Main Buttons -->
@@ -534,7 +568,7 @@
     <!-- Health Wallet & Medical Products Section -->
     <section id="health-wallet" class="section-content" style="background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%); border-radius: 16px; padding: 28px; margin-bottom: 32px; border: 1px solid rgba(21, 101, 192, 0.1);">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 12px;">
-        <h2 style="margin: 0;">🏥 PHINS Health Wallet</h2>
+        <h2 style="margin: 0;">🏥 My Health Wallet</h2>
         <div style="display: flex; gap: 12px; flex-wrap: wrap;">
           <span style="background: linear-gradient(135deg, #28a745 0%, #20c997 100%); color: white; padding: 10px 18px; border-radius: 20px; font-weight: 600; box-shadow: 0 4px 12px rgba(40, 167, 69, 0.25);">
             💊 Wallet: <span id="wallet-balance-display">$0.00</span>
@@ -611,8 +645,8 @@
     <section id="activity-log" class="section-content" style="background: linear-gradient(135deg, #fafafa 0%, #f5f5f5 100%); border-radius: 16px; padding: 28px; margin-bottom: 32px; border: 1px solid rgba(0,0,0,0.08);">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
         <div>
-          <h2 style="margin: 0; color: #1a237e;">📋 Unified Activity Log</h2>
-          <p style="margin: 4px 0 0 0; color: #546e7a; font-size: 0.9rem;">All your transactions: deposits, purchases, investments & trading</p>
+          <h2 style="margin: 0; color: #1a237e;">📋 My Activity Log</h2>
+          <p style="margin: 4px 0 0 0; color: #546e7a; font-size: 0.9rem;">Your personal transactions: deposits, purchases, investments & trading</p>
         </div>
         <div style="display: flex; gap: 12px; align-items: center;">
           <select id="activity-filter" onchange="filterActivities(this.value)" style="padding: 8px 16px; border-radius: 8px; border: 1px solid #ddd; font-size: 0.9rem;">
@@ -672,8 +706,8 @@
     <section id="purchase-history" class="section-content" style="background: linear-gradient(135deg, #fff8e1 0%, #ffecb3 100%); border-radius: 16px; padding: 28px; margin-bottom: 32px; border: 1px solid rgba(255, 193, 7, 0.2);">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
         <div>
-          <h2 style="margin: 0; color: #f57c00;">🧾 Recent Medical Purchases</h2>
-          <p style="margin: 4px 0 0 0; color: #666; font-size: 0.9rem;">All purchases validated and stored on NFT & Transaction Ledgers</p>
+          <h2 style="margin: 0; color: #f57c00;">🧾 My Medical Purchases</h2>
+          <p style="margin: 4px 0 0 0; color: #666; font-size: 0.9rem;">Your purchases validated and stored on your personal NFT & Transaction Ledgers</p>
         </div>
         <div id="purchase-validation-badge" style="background: linear-gradient(135deg, #4caf50 0%, #66bb6a 100%); color: white; padding: 8px 16px; border-radius: 20px; font-size: 0.85rem; font-weight: 600;">
           ✓ Ledger Verified
@@ -712,8 +746,8 @@
     <section id="nft-ledger" class="section-content" style="background: linear-gradient(135deg, #f5f9fc 0%, #e8f4fc 100%); border-radius: 16px; padding: 28px; margin-bottom: 32px; border: 1px solid rgba(21, 101, 192, 0.15);">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
         <div>
-          <h2 style="margin: 0; color: #0d47a1;">🔗 Customer Transaction Ledger (NFT)</h2>
-          <p style="margin: 4px 0 0 0; color: #546e7a; font-size: 0.9rem;">Immutable record of all your health wallet transactions on PHINS-CHAIN</p>
+          <h2 style="margin: 0; color: #0d47a1;">🔗 My Transaction Ledger (NFT)</h2>
+          <p style="margin: 4px 0 0 0; color: #546e7a; font-size: 0.9rem;">Your immutable blockchain record of all transactions on PHINS-CHAIN</p>
         </div>
         <div style="display: flex; gap: 12px; align-items: center;">
           <span id="ledger-chain-badge" style="background: linear-gradient(135deg, #1565c0 0%, #1976d2 100%); color: white; padding: 8px 16px; border-radius: 20px; font-size: 0.85rem; font-weight: 600;">
@@ -805,7 +839,7 @@
 
     <!-- Premium Statement -->
     <section class="section-content">
-      <h2>Premium Statement</h2>
+      <h2>My Premium Statement</h2>
       <div class="card">
         <div id="summary" class="summary-grid">
           <div class="summary-item">
@@ -858,8 +892,8 @@
     <section id="billing-settings" class="section-content" style="background: linear-gradient(135deg, #f3e5f5 0%, #e1bee7 100%); border-radius: 16px; padding: 28px; margin-bottom: 32px; border: 1px solid rgba(123, 31, 162, 0.15);">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
         <div>
-          <h2 style="margin: 0; color: #7b1fa2;">💳 Billing & Account Settings</h2>
-          <p style="margin: 4px 0 0 0; color: #546e7a; font-size: 0.9rem;">Manage payments, premium allocations, and account settings</p>
+          <h2 style="margin: 0; color: #7b1fa2;">💳 My Billing & Settings</h2>
+          <p style="margin: 4px 0 0 0; color: #546e7a; font-size: 0.9rem;">Your payments, premium allocations, and account settings</p>
         </div>
         <div style="display: flex; gap: 12px;">
           <span id="billing-status-badge" style="background: linear-gradient(135deg, #7b1fa2 0%, #9c27b0 100%); color: white; padding: 8px 16px; border-radius: 20px; font-size: 0.85rem; font-weight: 600;">
@@ -990,7 +1024,7 @@
 
     <!-- Original Simple Billing Section (kept for reference but hidden) -->
     <section id="billing" class="section-content" style="display: none;">
-      <h2>Billing & Payments</h2>
+      <h2>My Billing & Payments</h2>
       <div class="billing-grid">
         <div class="card">
           <h3>Current Balance</h3>
@@ -1010,7 +1044,7 @@
 
     <!-- Investment Portfolio -->
     <section class="section-content">
-      <h2>Investment Portfolio</h2>
+      <h2>My Investment Portfolio</h2>
       <div class="card">
         <div class="portfolio-summary">
           <div class="portfolio-item">
@@ -1083,6 +1117,9 @@
       }
       
       try {
+        // Load customer info first, then other data
+        await loadCustomerInfo();
+        
         // Load wallet balance and data
         await Promise.all([
           loadWalletBalance(),
@@ -1102,6 +1139,60 @@
       // Hide splash screen after data loads (minimum 1.5s for branding)
       setTimeout(hideSplashScreen, 1500);
     });
+    
+    // Load customer info and update the info panel
+    async function loadCustomerInfo() {
+      if (!customerId) return;
+      
+      try {
+        // Load customer details
+        const response = await fetch(`/api/customers?id=${customerId}`, {
+          headers: { 'Authorization': `Bearer ${authToken}` }
+        });
+        
+        if (response.ok) {
+          const customer = await response.json();
+          
+          // Update customer name in welcome section
+          const customerName = customer.name || customer.customer_name || 
+                              sessionStorage.getItem('username') || 'Customer';
+          document.getElementById('username').textContent = customerName;
+          sessionStorage.setItem('username', customerName);
+          
+          // Update account ID
+          document.getElementById('customer-account-id').textContent = customerId;
+          
+          // Update member since date
+          const createdDate = customer.created_date || customer.created_at;
+          if (createdDate) {
+            const memberSince = new Date(createdDate).toLocaleDateString('en-US', { 
+              month: 'short', year: 'numeric' 
+            });
+            document.getElementById('customer-member-since').textContent = memberSince;
+          }
+          
+          console.log('Customer info loaded:', customer);
+        }
+        
+        // Load customer summary stats (policies, claims, coverage)
+        const summaryResponse = await fetch(`/api/customer/summary?customer_id=${customerId}`, {
+          headers: { 'Authorization': `Bearer ${authToken}` }
+        });
+        
+        if (summaryResponse.ok) {
+          const summary = await summaryResponse.json();
+          document.getElementById('customer-policies-count').textContent = summary.policies_count || '0';
+          document.getElementById('customer-claims-count').textContent = summary.claims_count || '0';
+          document.getElementById('customer-total-coverage').textContent = 
+            '$' + (summary.total_coverage || 0).toLocaleString();
+        }
+        
+      } catch (err) {
+        console.log('Customer info load (non-critical):', err);
+        // Set defaults
+        document.getElementById('customer-account-id').textContent = customerId;
+      }
+    }
     
     // Load pipeline info for this customer
     async function loadPipelineInfo() {

@@ -3386,6 +3386,44 @@ For claims or questions, please contact:
             self.wfile.write(json.dumps(payload).encode('utf-8'))
             return
 
+        # Customer summary endpoint - dashboard quick stats
+        if path == '/api/customer/summary':
+            customer_id = qs.get('customer_id', [None])[0]
+            
+            if not customer_id:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'customer_id required'}).encode('utf-8'))
+                return
+            
+            # Get customer's policies
+            customer_policies = [p for p in POLICIES.values() if p.get('customer_id') == customer_id]
+            active_policies = [p for p in customer_policies if p.get('status') == 'active']
+            
+            # Get customer's claims
+            customer_claims = [c for c in CLAIMS.values() 
+                             if c.get('customer_id') == customer_id or 
+                             any(p.get('id') == c.get('policy_id') for p in customer_policies)]
+            
+            # Calculate totals
+            total_coverage = sum(p.get('coverage_amount', 0) for p in active_policies)
+            total_premium = sum(p.get('annual_premium', 0) for p in active_policies)
+            pending_claims = len([c for c in customer_claims if c.get('status') in ['pending', 'under_review']])
+            
+            summary = {
+                'customer_id': customer_id,
+                'policies_count': len(active_policies),
+                'total_policies': len(customer_policies),
+                'claims_count': len(customer_claims),
+                'pending_claims': pending_claims,
+                'total_coverage': total_coverage,
+                'total_annual_premium': total_premium,
+                'monthly_premium': round(total_premium / 12, 2) if total_premium > 0 else 0
+            }
+            
+            self._set_json_headers()
+            self.wfile.write(json.dumps(summary).encode('utf-8'))
+            return
+
         # Customer billing list - GET /api/billing?customer_id=XXX
         if path == '/api/billing':
             customer_id = qs.get('customer_id', [None])[0]
