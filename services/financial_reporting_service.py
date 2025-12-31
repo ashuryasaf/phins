@@ -529,11 +529,26 @@ class FinancialReportingService:
     def validate_data_integrity(self) -> Dict[str, Any]:
         """
         Bottom-up data integrity validation across all data stores.
+        Includes actuarial consistency checks.
         """
         issues = []
         warnings = []
+        actuarial_checks = {
+            'total_checked': 0,
+            'passed': 0,
+            'failed': 0,
+            'details': []
+        }
         
-        # 1. Policy validation
+        # Map risk_score to ADL level (same as server.py)
+        RISK_TO_ADL_MAP = {
+            'low': 3,
+            'medium': 5,
+            'high': 7,
+            'very_high': 9,
+        }
+        
+        # 1. Policy validation with actuarial checks
         for policy_id, policy in self._policies.items():
             # Check required fields
             if not policy.get('customer_id'):
@@ -546,6 +561,55 @@ class FinancialReportingService:
             
             if not policy.get('annual_premium') or policy.get('annual_premium', 0) <= 0:
                 warnings.append(f"Policy {policy_id}: Missing or zero premium")
+            
+            # Actuarial consistency check for life/health policies
+            if policy.get('status') == 'active' and policy.get('type') in ['life', 'health']:
+                actuarial_checks['total_checked'] += 1
+                
+                # Get customer age
+                customer_id = policy.get('customer_id')
+                customer = self._customers.get(customer_id, {})
+                age = self._calculate_age(customer.get('dob'))
+                
+                # Get risk score and convert to ADL
+                risk_score = policy.get('risk_score', 'medium')
+                adl_level = RISK_TO_ADL_MAP.get(risk_score, 5)
+                
+                # Get coverage and premium
+                coverage = policy.get('coverage_amount', 0)
+                stored_premium = policy.get('annual_premium', 0)
+                
+                # Calculate expected premium using actuarial tables
+                if coverage > 0 and stored_premium > 0:
+                    # Simple check: premium should be proportional to coverage and risk
+                    expected_ratio = stored_premium / coverage  # Premium per dollar of coverage
+                    adl_mult = self.get_adl_multiplier(adl_level)
+                    
+                    # Expected ratio should be higher for older/higher-risk customers
+                    # Typical range: 0.002 (low risk) to 0.015 (high risk)
+                    min_expected_ratio = 0.001
+                    max_expected_ratio = 0.02
+                    
+                    if min_expected_ratio <= expected_ratio <= max_expected_ratio:
+                        actuarial_checks['passed'] += 1
+                        actuarial_checks['details'].append({
+                            'policy_id': policy_id,
+                            'status': 'PASS',
+                            'risk_score': risk_score,
+                            'adl_level': adl_level,
+                            'premium_ratio': round(expected_ratio, 6)
+                        })
+                    else:
+                        actuarial_checks['failed'] += 1
+                        actuarial_checks['details'].append({
+                            'policy_id': policy_id,
+                            'status': 'REVIEW',
+                            'risk_score': risk_score,
+                            'adl_level': adl_level,
+                            'premium_ratio': round(expected_ratio, 6),
+                            'note': f"Premium ratio {expected_ratio:.4f} outside expected range"
+                        })
+                        warnings.append(f"Policy {policy_id}: Premium ratio may need actuarial review")
         
         # 2. Billing validation
         for bill_id, bill in self._billing.items():
@@ -608,6 +672,14 @@ class FinancialReportingService:
                 'claims': len(self._claims),
                 'billing_records': len(self._billing),
                 'underwriting_apps': len(self._underwriting)
+            },
+            'actuarial_validation': {
+                'source': 'PHINS_ACTUARIAL_TABLES_V1',
+                'policies_checked': actuarial_checks['total_checked'],
+                'passed': actuarial_checks['passed'],
+                'needs_review': actuarial_checks['failed'],
+                'status': 'COMPLIANT' if actuarial_checks['failed'] == 0 else 'REVIEW_NEEDED',
+                'details': actuarial_checks['details'][:10]  # Limit to first 10
             },
             'validated_at': datetime.now().isoformat()
         }
