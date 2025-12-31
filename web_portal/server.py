@@ -5848,15 +5848,18 @@ For claims or questions, please contact:
                         del UNDERWRITING_APPLICATIONS[app_id]
                         result['removed']['applications'] += 1
                     
-                    # 2. Remove old claims (before cutoff or test data)
+                    # 2. Remove old claims (before cutoff - including customer's own old claims)
                     claims_to_remove = []
                     for claim_id, claim in list(CLAIMS.items()):
                         created = parse_date(claim.get('filed_date', claim.get('submitted_at', claim.get('created_at', ''))))
                         is_test = 'TEST' in claim_id.upper()
+                        claim_customer = claim.get('customer_id', '')
                         
-                        if created and created < cutoff_date and claim.get('customer_id') != customer_id:
+                        # Remove claims before cutoff date (for any customer including the primary one)
+                        if created and created < cutoff_date:
                             claims_to_remove.append(claim_id)
-                        elif is_test and claim.get('customer_id') != customer_id:
+                        # Also remove test claims not belonging to this customer
+                        elif is_test and claim_customer != customer_id:
                             claims_to_remove.append(claim_id)
                     
                     for claim_id in claims_to_remove:
