@@ -344,7 +344,12 @@
                     </div>
                 </div>
                 
-                <button class="btn btn-primary" onclick="calculateProjection()">Calculate Projection</button>
+                <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                    <button class="btn btn-primary" onclick="calculateProjection()">📊 Calculate Projection</button>
+                    <button class="btn btn-secondary" onclick="exportProjection('csv')" title="Export as CSV">📊 Export CSV</button>
+                    <button class="btn btn-secondary" onclick="exportProjection('pdf')" title="Export as PDF">📄 Export PDF</button>
+                    <button class="btn btn-secondary" onclick="printReport('projection-results')" title="Print Report">🖨️ Print</button>
+                </div>
                 
                 <div id="projection-results" style="margin-top: 30px;"></div>
             </div>
@@ -353,17 +358,18 @@
         <!-- 25-Year Forecast Tab -->
         <div id="forecast-tab" class="tab-content">
             <div class="section">
-                <h2>25-Year Portfolio Forecast</h2>
-                <p>Long-term revenue, claims, and profitability projections for the entire portfolio.</p>
+                <h2>📈 Long-Term Portfolio Forecast</h2>
+                <p>Actuarial projections for revenue, claims, and profitability based on PHINS mortality tables and risk models.</p>
                 
-                <div class="form-row" style="max-width: 400px;">
-                    <div class="form-group">
+                <div style="display: flex; gap: 15px; flex-wrap: wrap; align-items: flex-end; margin-bottom: 20px;">
+                    <div class="form-group" style="min-width: 120px;">
                         <label>Forecast Years</label>
                         <input type="number" id="forecast-years" value="25" min="5" max="50" step="5">
                     </div>
-                    <div class="form-group" style="justify-content: flex-end;">
-                        <button class="btn btn-primary" onclick="loadForecast()">Generate Forecast</button>
-                    </div>
+                    <button class="btn btn-primary" onclick="loadForecast()">📈 Generate Forecast</button>
+                    <button class="btn btn-secondary" onclick="exportForecast('csv')" title="Export as CSV">📊 Export CSV</button>
+                    <button class="btn btn-secondary" onclick="exportForecast('pdf')" title="Export as PDF">📄 Export PDF</button>
+                    <button class="btn btn-secondary" onclick="printReport('forecast-results')" title="Print Report">🖨️ Print</button>
                 </div>
                 
                 <div id="forecast-results"></div>
@@ -374,7 +380,12 @@
         <div id="portfolio-tab" class="tab-content">
             <div class="section">
                 <h2>Portfolio Summary Report</h2>
-                <button class="btn btn-primary" onclick="loadPortfolioReport()" style="margin-bottom: 20px;">Refresh Report</button>
+                <div style="display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 20px;">
+                    <button class="btn btn-primary" onclick="loadPortfolioReport()">🔄 Refresh Report</button>
+                    <button class="btn btn-secondary" onclick="exportPortfolio('csv')" title="Export as CSV">📊 Export CSV</button>
+                    <button class="btn btn-secondary" onclick="exportPortfolio('pdf')" title="Export as PDF">📄 Export PDF</button>
+                    <button class="btn btn-secondary" onclick="printReport('portfolio-results')" title="Print Report">🖨️ Print</button>
+                </div>
                 <div id="portfolio-results"><div class="loading">Loading portfolio report...</div></div>
             </div>
         </div>
@@ -397,7 +408,12 @@
                     </ul>
                 </div>
                 
-                <button class="btn btn-primary" onclick="loadIntegrityReport()" style="margin-bottom: 20px;">Run Validation</button>
+                <div style="display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 20px;">
+                    <button class="btn btn-primary" onclick="loadIntegrityReport()">✅ Run Validation</button>
+                    <button class="btn btn-secondary" onclick="exportIntegrity('csv')" title="Export as CSV">📊 Export CSV</button>
+                    <button class="btn btn-secondary" onclick="exportIntegrity('pdf')" title="Export as PDF">📄 Export PDF</button>
+                    <button class="btn btn-secondary" onclick="printReport('integrity-results')" title="Print Report">🖨️ Print</button>
+                </div>
                 <div id="integrity-results"><div class="loading">Click "Run Validation" to check data integrity...</div></div>
             </div>
         </div>
@@ -408,7 +424,7 @@
                 <h2>📊 Cross-Dashboard Data View</h2>
                 <p>View and compare data summaries from all dashboards for reconciliation and data integrity validation.</p>
                 
-                <div class="tabs" style="margin-top: 20px;">
+                <div style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-bottom: 15px;">
                     <button class="tab" onclick="loadDashboardView('accountant')">💰 Accountant</button>
                     <button class="tab" onclick="loadDashboardView('underwriter')">📋 Underwriter</button>
                     <button class="tab" onclick="loadDashboardView('claims')">🏥 Claims</button>
@@ -416,6 +432,10 @@
                     <button class="tab active" onclick="loadAllDashboards()" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white;">
                         🔄 Compare All
                     </button>
+                    <span style="flex-grow: 1;"></span>
+                    <button class="btn btn-secondary" onclick="exportCrossDashboard('csv')" title="Export as CSV">📊 Export CSV</button>
+                    <button class="btn btn-secondary" onclick="exportCrossDashboard('pdf')" title="Export as PDF">📄 Export PDF</button>
+                    <button class="btn btn-secondary" onclick="printReport('dashboard-view-results')" title="Print Report">🖨️ Print</button>
                 </div>
                 
                 <div id="dashboard-view-results" style="margin-top: 20px;">
@@ -1117,6 +1137,9 @@
                     }).then(r => r.json()))
                 );
                 
+                // Store for export
+                lastCrossDashboardData = results;
+                
                 let html = `<h3>📊 Cross-Dashboard Comparison</h3>
                     <div style="overflow-x: auto;">
                     <table style="width: 100%; min-width: 600px;">
@@ -1183,6 +1206,800 @@
                 resultsDiv.innerHTML = `<div class="error">Error loading comparison: ${err.message}</div>`;
             }
         }
+        
+        // ========== EXPORT FUNCTIONS ==========
+        
+        // Store last loaded data for exports
+        let lastPortfolioData = null;
+        let lastForecastData = null;
+        let lastProjectionData = null;
+        let lastIntegrityData = null;
+        let lastCrossDashboardData = null;
+        
+        // Print report
+        function printReport(elementId) {
+            const content = document.getElementById(elementId);
+            if (!content) {
+                alert('No report content to print. Please generate the report first.');
+                return;
+            }
+            const printWindow = window.open('', '_blank');
+            printWindow.document.write(`
+                <html>
+                <head>
+                    <title>PHINS Financial Report</title>
+                    <style>
+                        body { font-family: Arial, sans-serif; padding: 20px; }
+                        table { width: 100%; border-collapse: collapse; margin: 15px 0; }
+                        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+                        th { background: #f5f5f5; }
+                        h1, h2, h3, h4 { color: #333; }
+                        .stat-card { padding: 15px; margin: 10px; border: 1px solid #ddd; display: inline-block; }
+                        @media print { body { padding: 0; } }
+                    </style>
+                </head>
+                <body>
+                    <h1>💰 PHINS Financial Report</h1>
+                    <p>Generated: ${new Date().toLocaleString()}</p>
+                    <hr>
+                    ${content.innerHTML}
+                </body>
+                </html>
+            `);
+            printWindow.document.close();
+            printWindow.print();
+        }
+        
+        // Export to CSV
+        function exportToCSV(data, filename) {
+            if (!data || !Array.isArray(data) || data.length === 0) {
+                alert('No data to export. Please generate the report first.');
+                return;
+            }
+            const headers = Object.keys(data[0]);
+            const csvContent = [
+                headers.join(','),
+                ...data.map(row => headers.map(h => {
+                    const val = row[h];
+                    if (typeof val === 'string' && val.includes(',')) return `"${val}"`;
+                    return val;
+                }).join(','))
+            ].join('\n');
+            
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = `${filename}_${new Date().toISOString().split('T')[0]}.csv`;
+            link.click();
+        }
+        
+        // Export to PDF (using browser print)
+        function exportToPDF(title, content) {
+            const printWindow = window.open('', '_blank');
+            printWindow.document.write(`
+                <html>
+                <head>
+                    <title>${title}</title>
+                    <style>
+                        body { font-family: Arial, sans-serif; padding: 40px; max-width: 800px; margin: 0 auto; }
+                        table { width: 100%; border-collapse: collapse; margin: 15px 0; page-break-inside: auto; }
+                        th, td { border: 1px solid #333; padding: 8px; text-align: left; font-size: 11px; }
+                        th { background: #f0f0f0; font-weight: bold; }
+                        h1 { color: #1a1f36; border-bottom: 2px solid #28a745; padding-bottom: 10px; }
+                        h2, h3 { color: #333; margin-top: 20px; }
+                        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+                        .logo { font-size: 24px; font-weight: bold; color: #1a1f36; }
+                        .date { color: #666; }
+                        .summary-box { background: #f8f9fa; padding: 15px; border-radius: 8px; margin: 15px 0; }
+                        .metric { display: inline-block; margin: 10px 20px 10px 0; }
+                        .metric-value { font-size: 18px; font-weight: bold; color: #28a745; }
+                        .metric-label { font-size: 11px; color: #666; }
+                        @page { margin: 1cm; }
+                    </style>
+                </head>
+                <body>
+                    <div class="header">
+                        <div class="logo">🛡️ PHINS Insurance</div>
+                        <div class="date">${new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</div>
+                    </div>
+                    <h1>${title}</h1>
+                    ${content}
+                    <hr style="margin-top: 40px;">
+                    <p style="font-size: 10px; color: #666;">
+                        Generated by PHINS AI BI Platform | Data Source: PHINS_ACTUARIAL_TABLES_V1 | 
+                        Report ID: RPT-${Date.now().toString(36).toUpperCase()}
+                    </p>
+                </body>
+                </html>
+            `);
+            printWindow.document.close();
+            setTimeout(() => {
+                printWindow.print();
+            }, 500);
+        }
+        
+        // Export Portfolio Report
+        function exportPortfolio(format) {
+            if (!lastPortfolioData) {
+                alert('Please load the portfolio report first by clicking "Refresh Report".');
+                return;
+            }
+            
+            if (format === 'csv') {
+                const data = [
+                    { Metric: 'Total Policies', Value: lastPortfolioData.summary?.total_policies || 0 },
+                    { Metric: 'Total Coverage', Value: lastPortfolioData.summary?.total_coverage || 0 },
+                    { Metric: 'Annual Premiums', Value: lastPortfolioData.summary?.total_annual_premiums || 0 },
+                    { Metric: 'Claims Liability', Value: lastPortfolioData.summary?.total_claims_liability || 0 },
+                    { Metric: 'Savings Liability', Value: lastPortfolioData.summary?.total_savings_liability || 0 },
+                    { Metric: 'Reserve Requirement', Value: lastPortfolioData.summary?.reserve_requirement || 0 },
+                    { Metric: 'Solvency Ratio', Value: lastPortfolioData.summary?.solvency_ratio || 0 },
+                ];
+                
+                // Add risk distribution
+                if (lastPortfolioData.risk_distribution) {
+                    Object.entries(lastPortfolioData.risk_distribution).forEach(([risk, count]) => {
+                        data.push({ Metric: `Risk Level: ${risk}`, Value: count });
+                    });
+                }
+                
+                // Add coverage by type
+                if (lastPortfolioData.coverage_by_type) {
+                    Object.entries(lastPortfolioData.coverage_by_type).forEach(([type, amount]) => {
+                        data.push({ Metric: `Coverage: ${type}`, Value: amount });
+                    });
+                }
+                
+                exportToCSV(data, 'PHINS_Portfolio_Report');
+            } else if (format === 'pdf') {
+                const s = lastPortfolioData.summary || {};
+                const content = `
+                    <div class="summary-box">
+                        <h3>Portfolio Summary</h3>
+                        <div class="metric"><span class="metric-value">${s.total_policies || 0}</span><br><span class="metric-label">Total Policies</span></div>
+                        <div class="metric"><span class="metric-value">${formatCurrency(s.total_coverage)}</span><br><span class="metric-label">Total Coverage</span></div>
+                        <div class="metric"><span class="metric-value">${formatCurrency(s.total_annual_premiums)}</span><br><span class="metric-label">Annual Premiums</span></div>
+                        <div class="metric"><span class="metric-value">${(s.solvency_ratio || 0).toFixed(2)}</span><br><span class="metric-label">Solvency Ratio</span></div>
+                    </div>
+                    <h3>Risk Distribution</h3>
+                    <table>
+                        <tr><th>Risk Level</th><th>Policy Count</th></tr>
+                        ${Object.entries(lastPortfolioData.risk_distribution || {}).map(([r, c]) => `<tr><td>${r}</td><td>${c}</td></tr>`).join('')}
+                    </table>
+                    <h3>Coverage by Type</h3>
+                    <table>
+                        <tr><th>Policy Type</th><th>Coverage Amount</th></tr>
+                        ${Object.entries(lastPortfolioData.coverage_by_type || {}).map(([t, a]) => `<tr><td>${t}</td><td>${formatCurrency(a)}</td></tr>`).join('')}
+                    </table>
+                `;
+                exportToPDF('Portfolio Summary Report', content);
+            }
+        }
+        
+        // Export Forecast
+        function exportForecast(format) {
+            if (!lastForecastData || !lastForecastData.projections) {
+                alert('Please generate the forecast first.');
+                return;
+            }
+            
+            if (format === 'csv') {
+                const data = lastForecastData.projections.map(p => ({
+                    Year: p.year,
+                    Date: p.projected_date,
+                    Active_Policies: p.active_policies,
+                    Annual_Revenue: p.annual_premium_revenue,
+                    Expected_Claims: p.expected_claims,
+                    Net_Income: p.net_income,
+                    Cumulative_Revenue: p.cumulative_revenue,
+                    Cumulative_Claims: p.cumulative_claims,
+                    Cumulative_Profit: p.cumulative_profit
+                }));
+                exportToCSV(data, 'PHINS_Forecast');
+            } else if (format === 'pdf') {
+                const a = lastForecastData.assumptions || {};
+                const content = `
+                    <div class="summary-box">
+                        <h3>Forecast Assumptions</h3>
+                        <p><strong>Growth Rate:</strong> ${a.new_policy_growth_rate} | <strong>Inflation:</strong> ${a.premium_inflation_rate} | <strong>Claim Rate:</strong> ${a.claim_rate}</p>
+                    </div>
+                    <h3>${lastForecastData.forecast_years}-Year Projections</h3>
+                    <table>
+                        <tr><th>Year</th><th>Policies</th><th>Revenue</th><th>Claims</th><th>Net Income</th><th>Cumulative Profit</th></tr>
+                        ${lastForecastData.projections.map(p => `
+                            <tr>
+                                <td>${p.year}</td>
+                                <td>${p.active_policies}</td>
+                                <td>${formatCurrency(p.annual_premium_revenue)}</td>
+                                <td>${formatCurrency(p.expected_claims)}</td>
+                                <td>${formatCurrency(p.net_income)}</td>
+                                <td>${formatCurrency(p.cumulative_profit)}</td>
+                            </tr>
+                        `).join('')}
+                    </table>
+                `;
+                exportToPDF(`${lastForecastData.forecast_years}-Year Portfolio Forecast`, content);
+            }
+        }
+        
+        // Export Customer Projection
+        function exportProjection(format) {
+            if (!lastProjectionData) {
+                alert('Please calculate a projection first.');
+                return;
+            }
+            
+            if (format === 'csv') {
+                const data = (lastProjectionData.yearly_projections || []).map(p => ({
+                    Year: p.year,
+                    Age: p.age,
+                    Cumulative_Premiums: p.cumulative_premiums,
+                    Savings_Balance: p.savings_fund_balance,
+                    Cash_Value: p.total_cash_value,
+                    Death_Benefit: p.death_benefit,
+                    ADL_Benefit: p.adl_claim_benefit,
+                    Surrender_Value: p.surrender_value
+                }));
+                exportToCSV(data, 'PHINS_Customer_Projection');
+            } else if (format === 'pdf') {
+                const s = lastProjectionData.scenario || {};
+                const pb = lastProjectionData.premium_breakdown || {};
+                const content = `
+                    <div class="summary-box">
+                        <h3>Scenario Parameters</h3>
+                        <p><strong>Coverage:</strong> ${formatCurrency(s.coverage)} | <strong>Term:</strong> ${s.term_years} years | <strong>Age:</strong> ${s.customer_age}</p>
+                        <p><strong>ADL Level:</strong> ${s.adl_level} (${s.adl_risk}) | <strong>Savings:</strong> ${s.savings_allocation}</p>
+                    </div>
+                    <div class="summary-box">
+                        <h3>Premium Breakdown</h3>
+                        <div class="metric"><span class="metric-value">${formatCurrency(pb.annual_premium)}</span><br><span class="metric-label">Annual Premium</span></div>
+                        <div class="metric"><span class="metric-value">${formatCurrency(pb.monthly_premium)}</span><br><span class="metric-label">Monthly Premium</span></div>
+                        <div class="metric"><span class="metric-value">${formatCurrency(pb.risk_component)}</span><br><span class="metric-label">Risk Component</span></div>
+                        <div class="metric"><span class="metric-value">${formatCurrency(pb.savings_component)}</span><br><span class="metric-label">Savings Component</span></div>
+                    </div>
+                    <h3>Yearly Projections (First 10 Years)</h3>
+                    <table>
+                        <tr><th>Year</th><th>Age</th><th>Premiums Paid</th><th>Savings Balance</th><th>Cash Value</th><th>Death Benefit</th></tr>
+                        ${(lastProjectionData.yearly_projections || []).slice(0, 10).map(p => `
+                            <tr>
+                                <td>${p.year}</td>
+                                <td>${p.age}</td>
+                                <td>${formatCurrency(p.cumulative_premiums)}</td>
+                                <td>${formatCurrency(p.savings_fund_balance)}</td>
+                                <td>${formatCurrency(p.total_cash_value)}</td>
+                                <td>${formatCurrency(p.death_benefit)}</td>
+                            </tr>
+                        `).join('')}
+                    </table>
+                `;
+                exportToPDF('Customer Projection Report', content);
+            }
+        }
+        
+        // Export Integrity Report
+        function exportIntegrity(format) {
+            if (!lastIntegrityData) {
+                alert('Please run validation first.');
+                return;
+            }
+            
+            if (format === 'csv') {
+                const data = [
+                    { Category: 'Status', Item: 'Overall', Value: lastIntegrityData.status },
+                    { Category: 'Counts', Item: 'Issues', Value: lastIntegrityData.issues_count },
+                    { Category: 'Counts', Item: 'Warnings', Value: lastIntegrityData.warnings_count },
+                ];
+                
+                // Add data counts
+                Object.entries(lastIntegrityData.data_counts || {}).forEach(([k, v]) => {
+                    data.push({ Category: 'Data Counts', Item: k, Value: v });
+                });
+                
+                // Add financial reconciliation
+                Object.entries(lastIntegrityData.financial_reconciliation || {}).forEach(([k, v]) => {
+                    data.push({ Category: 'Financial', Item: k, Value: v });
+                });
+                
+                // Add issues
+                (lastIntegrityData.issues || []).forEach((issue, i) => {
+                    data.push({ Category: 'Issue', Item: `Issue ${i + 1}`, Value: issue });
+                });
+                
+                // Add warnings
+                (lastIntegrityData.warnings || []).forEach((warning, i) => {
+                    data.push({ Category: 'Warning', Item: `Warning ${i + 1}`, Value: warning });
+                });
+                
+                exportToCSV(data, 'PHINS_Data_Integrity');
+            } else if (format === 'pdf') {
+                const fr = lastIntegrityData.financial_reconciliation || {};
+                const av = lastIntegrityData.actuarial_validation || {};
+                const statusColor = lastIntegrityData.status === 'healthy' ? '#28a745' : '#dc3545';
+                const content = `
+                    <div class="summary-box" style="border-left: 4px solid ${statusColor};">
+                        <h3>Validation Status: ${lastIntegrityData.status?.toUpperCase()}</h3>
+                        <p><strong>Issues:</strong> ${lastIntegrityData.issues_count} | <strong>Warnings:</strong> ${lastIntegrityData.warnings_count}</p>
+                    </div>
+                    <h3>Data Counts</h3>
+                    <table>
+                        <tr><th>Entity</th><th>Count</th></tr>
+                        ${Object.entries(lastIntegrityData.data_counts || {}).map(([k, v]) => `<tr><td>${k}</td><td>${v}</td></tr>`).join('')}
+                    </table>
+                    <h3>Financial Reconciliation</h3>
+                    <table>
+                        <tr><th>Metric</th><th>Value</th></tr>
+                        <tr><td>Expected Premiums</td><td>${formatCurrency(fr.total_expected_premiums)}</td></tr>
+                        <tr><td>Total Billed</td><td>${formatCurrency(fr.total_billed)}</td></tr>
+                        <tr><td>Total Collected</td><td>${formatCurrency(fr.total_collected)}</td></tr>
+                        <tr><td>Collection Rate</td><td>${fr.collection_rate}%</td></tr>
+                        <tr><td>Claims Approved</td><td>${formatCurrency(fr.total_claims_approved)}</td></tr>
+                        <tr><td>Loss Ratio</td><td>${fr.loss_ratio}%</td></tr>
+                    </table>
+                    <h3>Actuarial Validation</h3>
+                    <p><strong>Source:</strong> ${av.source} | <strong>Status:</strong> ${av.status}</p>
+                    <p><strong>Policies Checked:</strong> ${av.policies_checked} | <strong>Passed:</strong> ${av.passed} | <strong>Needs Review:</strong> ${av.needs_review}</p>
+                    ${lastIntegrityData.warnings?.length > 0 ? `
+                        <h3>Warnings</h3>
+                        <ul>${lastIntegrityData.warnings.map(w => `<li>${w}</li>`).join('')}</ul>
+                    ` : ''}
+                    ${lastIntegrityData.issues?.length > 0 ? `
+                        <h3>Issues</h3>
+                        <ul style="color: red;">${lastIntegrityData.issues.map(i => `<li>${i}</li>`).join('')}</ul>
+                    ` : ''}
+                `;
+                exportToPDF('Data Integrity Validation Report', content);
+            }
+        }
+        
+        // Export Cross-Dashboard Report
+        function exportCrossDashboard(format) {
+            if (!lastCrossDashboardData || lastCrossDashboardData.length === 0) {
+                alert('Please load cross-dashboard data first by clicking "Compare All".');
+                return;
+            }
+            
+            if (format === 'csv') {
+                const headers = ['Metric', 'Accountant', 'Underwriter', 'Claims', 'Admin'];
+                const rows = [
+                    ['Total Policies', ...lastCrossDashboardData.map(d => d.total_policies || '-')],
+                    ['Active Policies', ...lastCrossDashboardData.map(d => d.active_policies || '-')],
+                    ['Total Customers', ...lastCrossDashboardData.map(d => d.total_customers || '-')],
+                    ['Total Revenue', lastCrossDashboardData[0]?.total_revenue || '-', '-', '-', lastCrossDashboardData[3]?.financial_summary?.total_billed || '-'],
+                    ['Outstanding AR', lastCrossDashboardData[0]?.outstanding_ar || '-', '-', '-', '-'],
+                    ['Pending Applications', '-', lastCrossDashboardData[1]?.pending_applications || '-', '-', '-'],
+                    ['Pending Claims', '-', '-', lastCrossDashboardData[2]?.pending_claims || '-', '-'],
+                    ['Approved Claims', '-', '-', lastCrossDashboardData[2]?.approved_claims || '-', '-'],
+                    ['Paid Claims', lastCrossDashboardData[0]?.claims_paid || '-', '-', lastCrossDashboardData[2]?.paid_claims || '-', '-'],
+                ];
+                
+                const csvContent = [
+                    headers.join(','),
+                    ...rows.map(r => r.join(','))
+                ].join('\n');
+                
+                const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+                const link = document.createElement('a');
+                link.href = URL.createObjectURL(blob);
+                link.download = `PHINS_Cross_Dashboard_${new Date().toISOString().split('T')[0]}.csv`;
+                link.click();
+            } else if (format === 'pdf') {
+                const content = `
+                    <div class="summary-box">
+                        <h3>Cross-Dashboard Data Reconciliation</h3>
+                        <p>Comprehensive view of data integrity across all system dashboards.</p>
+                    </div>
+                    <table style="width: 100%;">
+                        <thead>
+                            <tr style="background: #1a1f36; color: white;">
+                                <th>Metric</th>
+                                <th>💰 Accountant</th>
+                                <th>📋 Underwriter</th>
+                                <th>🏥 Claims</th>
+                                <th>👑 Admin</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><strong>Total Policies</strong></td>
+                                ${lastCrossDashboardData.map(d => `<td>${d.total_policies || '-'}</td>`).join('')}
+                            </tr>
+                            <tr style="background: #f9f9f9;">
+                                <td><strong>Active Policies</strong></td>
+                                ${lastCrossDashboardData.map(d => `<td>${d.active_policies || '-'}</td>`).join('')}
+                            </tr>
+                            <tr>
+                                <td><strong>Total Customers</strong></td>
+                                ${lastCrossDashboardData.map(d => `<td>${d.total_customers || '-'}</td>`).join('')}
+                            </tr>
+                            <tr style="background: #f9f9f9;">
+                                <td><strong>Revenue/Billed</strong></td>
+                                <td>${formatCurrency(lastCrossDashboardData[0]?.total_revenue)}</td>
+                                <td>-</td>
+                                <td>-</td>
+                                <td>${lastCrossDashboardData[3]?.financial_summary ? formatCurrency(lastCrossDashboardData[3].financial_summary.total_billed) : '-'}</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Pending Items</strong></td>
+                                <td>-</td>
+                                <td>${lastCrossDashboardData[1]?.pending_applications || 0} apps</td>
+                                <td>${lastCrossDashboardData[2]?.pending_claims || 0} claims</td>
+                                <td>${lastCrossDashboardData[3]?.issues_count || 0} issues</td>
+                            </tr>
+                            <tr style="background: #f9f9f9;">
+                                <td><strong>Claims Status</strong></td>
+                                <td>Paid: ${formatCurrency(lastCrossDashboardData[0]?.claims_paid)}</td>
+                                <td>-</td>
+                                <td>Paid: ${lastCrossDashboardData[2]?.paid_claims || 0} / ${formatCurrency(lastCrossDashboardData[2]?.total_paid_amount || 0)}</td>
+                                <td>-</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                    <p style="margin-top: 20px; color: #666;">
+                        ✅ Data synchronized across all dashboards. Generated: ${new Date().toLocaleString()}
+                    </p>
+                `;
+                exportToPDF('Cross-Dashboard Data Reconciliation Report', content);
+            }
+        }
+        
+        // Override load functions to store data for exports
+        const originalLoadPortfolioReport = loadPortfolioReport;
+        loadPortfolioReport = async function() {
+            const resultsDiv = document.getElementById('portfolio-results');
+            resultsDiv.innerHTML = '<div class="loading">Loading portfolio report...</div>';
+            
+            try {
+                const response = await fetch('/api/financial/portfolio-report', {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                const data = await response.json();
+                lastPortfolioData = data; // Store for export
+                
+                if (data.error) {
+                    resultsDiv.innerHTML = `<div class="error">${data.error}</div>`;
+                    return;
+                }
+                
+                const s = data.summary || {};
+                let html = `
+                    <div class="stats-grid">
+                        <div class="stat-card"><div class="stat-value">${s.total_policies || 0}</div><div class="stat-label">Total Policies</div></div>
+                        <div class="stat-card"><div class="stat-value">${formatCurrency(s.total_coverage)}</div><div class="stat-label">Total Coverage</div></div>
+                        <div class="stat-card"><div class="stat-value">${formatCurrency(s.total_annual_premiums)}</div><div class="stat-label">Annual Premiums</div></div>
+                        <div class="stat-card"><div class="stat-value">${formatCurrency(s.reserve_requirement)}</div><div class="stat-label">Reserve Requirement</div></div>
+                        <div class="stat-card" style="background: linear-gradient(135deg, ${s.solvency_ratio >= 1 ? '#d4edda' : '#f8d7da'} 0%, #f8f9fa 100%);">
+                            <div class="stat-value" style="color: ${s.solvency_ratio >= 1 ? '#28a745' : '#dc3545'};">${(s.solvency_ratio || 0).toFixed(2)}</div>
+                            <div class="stat-label">Solvency Ratio</div>
+                        </div>
+                    </div>
+                    
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; margin-top: 20px;">
+                        <div class="report-section">
+                            <h3>Risk Distribution</h3>
+                            <div class="chart-container">
+                                <div class="bar-chart" style="justify-content: center; padding-bottom: 30px;">
+                                    ${Object.entries(data.risk_distribution || {}).map(([risk, count]) => {
+                                        const colors = { low: '#28a745', medium: '#ffc107', high: '#fd7e14', very_high: '#dc3545' };
+                                        const height = Math.max(count * 30, 20);
+                                        return `<div class="bar" style="height: ${height}px; background: ${colors[risk] || '#6c757d'}; min-width: 60px;">
+                                            <span class="bar-value">${count}</span>
+                                            <span class="bar-label">${risk}</span>
+                                        </div>`;
+                                    }).join('')}
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="report-section">
+                            <h3>Coverage by Type</h3>
+                            <table>
+                                <thead><tr><th>Type</th><th>Coverage Amount</th></tr></thead>
+                                <tbody>
+                                    ${Object.entries(data.coverage_by_type || {}).map(([type, amount]) => 
+                                        `<tr><td style="text-transform: capitalize;">${type}</td><td>${formatCurrency(amount)}</td></tr>`
+                                    ).join('')}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                    
+                    <p style="color: #666; margin-top: 20px;">Report generated: ${data.generated_at}</p>
+                `;
+                
+                resultsDiv.innerHTML = html;
+            } catch (err) {
+                resultsDiv.innerHTML = `<div class="error">Error: ${err.message}</div>`;
+            }
+        };
+        
+        // Store forecast data
+        const originalLoadForecast = loadForecast;
+        loadForecast = async function() {
+            const years = document.getElementById('forecast-years').value;
+            const resultsDiv = document.getElementById('forecast-results');
+            resultsDiv.innerHTML = '<div class="loading">Generating forecast...</div>';
+            
+            try {
+                const response = await fetch(`/api/financial/forecast?years=${years}`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                const data = await response.json();
+                lastForecastData = data; // Store for export
+                
+                if (data.error) {
+                    resultsDiv.innerHTML = `<div class="error">${data.error}</div>`;
+                    return;
+                }
+                
+                const a = data.assumptions || {};
+                let html = `
+                    <div class="report-section" style="background: #f8f9fa; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
+                        <h4 style="margin: 0 0 10px 0;">Forecast Assumptions</h4>
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px;">
+                            <div><strong>Growth Rate:</strong> ${a.new_policy_growth_rate}</div>
+                            <div><strong>Inflation:</strong> ${a.premium_inflation_rate}</div>
+                            <div><strong>Claim Rate:</strong> ${a.claim_rate}</div>
+                            <div><strong>Avg Claim:</strong> ${formatCurrency(a.avg_claim_amount)}</div>
+                        </div>
+                    </div>
+                    
+                    <div class="chart-container" style="height: 200px;">
+                        <div class="bar-chart" style="align-items: flex-end; justify-content: space-around;">
+                            ${data.projections.slice(0, 10).map(p => {
+                                const maxProfit = Math.max(...data.projections.map(x => x.cumulative_profit));
+                                const height = Math.max((p.cumulative_profit / maxProfit) * 150, 10);
+                                const color = p.cumulative_profit >= 0 ? '#28a745' : '#dc3545';
+                                return `<div class="bar" style="height: ${height}px; background: ${color}; min-width: 30px;">
+                                    <span class="bar-value" style="font-size: 0.7rem;">${formatCurrency(p.cumulative_profit).replace('$', '')}</span>
+                                    <span class="bar-label">Yr ${p.year}</span>
+                                </div>`;
+                            }).join('')}
+                        </div>
+                    </div>
+                    
+                    <div class="projection-table" style="margin-top: 20px;">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Year</th>
+                                    <th>Policies</th>
+                                    <th>Revenue</th>
+                                    <th>Claims</th>
+                                    <th>Net Income</th>
+                                    <th>Cumulative Profit</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${data.projections.map((p, i) => `
+                                    <tr class="${i % 5 === 4 ? 'highlight-row' : ''}">
+                                        <td><strong>${p.year}</strong></td>
+                                        <td>${p.active_policies}</td>
+                                        <td>${formatCurrency(p.annual_premium_revenue)}</td>
+                                        <td style="color: #dc3545;">${formatCurrency(p.expected_claims)}</td>
+                                        <td style="color: ${p.net_income >= 0 ? '#28a745' : '#dc3545'};">${formatCurrency(p.net_income)}</td>
+                                        <td style="font-weight: 600; color: ${p.cumulative_profit >= 0 ? '#28a745' : '#dc3545'};">${formatCurrency(p.cumulative_profit)}</td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+                    
+                    <p style="color: #666; margin-top: 20px;">Forecast generated: ${data.generated_at}</p>
+                `;
+                
+                resultsDiv.innerHTML = html;
+            } catch (err) {
+                resultsDiv.innerHTML = `<div class="error">Error: ${err.message}</div>`;
+            }
+        };
+        
+        // Store projection data
+        const originalCalculateProjection = calculateProjection;
+        calculateProjection = async function() {
+            const coverage = document.getElementById('proj-coverage').value;
+            const savingsPct = document.getElementById('proj-savings').value / 100;
+            const adlLevel = document.getElementById('proj-adl').value;
+            const termYears = document.getElementById('proj-term').value;
+            const age = document.getElementById('proj-age').value;
+            
+            const resultsDiv = document.getElementById('projection-results');
+            resultsDiv.innerHTML = '<div class="loading">Calculating projection...</div>';
+            
+            try {
+                const response = await fetch(
+                    `/api/financial/customer-projection?coverage=${coverage}&savings_pct=${savingsPct}&adl_level=${adlLevel}&term_years=${termYears}&age=${age}`,
+                    { headers: { 'Authorization': `Bearer ${token}` } }
+                );
+                const data = await response.json();
+                lastProjectionData = data; // Store for export
+                
+                if (data.error) {
+                    resultsDiv.innerHTML = `<div class="error">${data.error}</div>`;
+                    return;
+                }
+                
+                // Render results with actuarial source information
+                let html = `
+                    <div style="background: #f8f9fa; border-radius: 8px; padding: 15px; margin-bottom: 20px; border: 1px solid #dee2e6;">
+                        <h4 style="margin: 0 0 10px 0; color: #495057;">📋 Scenario Summary</h4>
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; font-size: 0.9rem;">
+                            <div><strong>Coverage:</strong> ${formatCurrency(data.scenario.coverage)}</div>
+                            <div><strong>Savings:</strong> ${data.scenario.savings_allocation}</div>
+                            <div><strong>ADL Level:</strong> ${data.scenario.adl_level} - ${data.scenario.adl_risk}</div>
+                            <div><strong>Term:</strong> ${data.scenario.term_years} years</div>
+                            <div><strong>Start Age:</strong> ${data.scenario.customer_age}</div>
+                        </div>
+                    </div>
+                    
+                    <div class="lump-sum-grid">
+                        <div class="lump-sum-card">
+                            <h4>💰 Annual Premium</h4>
+                            <div class="lump-sum-value">${formatCurrency(data.premium_breakdown.annual_premium)}</div>
+                            <div style="font-size: 0.85rem; color: #666; margin-top: 5px;">Monthly: ${formatCurrency(data.premium_breakdown.monthly_premium)}</div>
+                        </div>
+                        <div class="lump-sum-card" style="border-color: #dc3545;">
+                            <h4>🛡️ Risk Component</h4>
+                            <div class="lump-sum-value" style="color: #dc3545;">${formatCurrency(data.premium_breakdown.risk_component)}</div>
+                            <div style="font-size: 0.85rem; color: #666;">Mortality + ADL Risk</div>
+                        </div>
+                        <div class="lump-sum-card" style="border-color: #007bff;">
+                            <h4>📈 Savings Component</h4>
+                            <div class="lump-sum-value" style="color: #007bff;">${formatCurrency(data.premium_breakdown.savings_component)}</div>
+                            <div style="font-size: 0.85rem; color: #666;">Target: ${formatCurrency(data.premium_breakdown.savings_target)}</div>
+                        </div>
+                    </div>
+                `;
+                
+                // Add yearly projections table
+                if (data.yearly_projections && data.yearly_projections.length > 0) {
+                    html += `
+                        <h3 style="margin-top: 30px;">📊 Yearly Projections</h3>
+                        <div class="projection-table">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>Year</th>
+                                        <th>Age</th>
+                                        <th>Premiums Paid</th>
+                                        <th>Savings Balance</th>
+                                        <th>Cash Value</th>
+                                        <th>Death Benefit</th>
+                                        <th>ADL Benefit</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    ${data.yearly_projections.map((p, i) => `
+                                        <tr class="${i % 5 === 4 ? 'highlight-row' : ''}">
+                                            <td><strong>${p.year}</strong></td>
+                                            <td>${p.age}</td>
+                                            <td>${formatCurrency(p.cumulative_premiums)}</td>
+                                            <td style="color: #007bff;">${formatCurrency(p.savings_fund_balance)}</td>
+                                            <td>${formatCurrency(p.total_cash_value)}</td>
+                                            <td style="color: #28a745;">${formatCurrency(p.death_benefit)}</td>
+                                            <td>${formatCurrency(p.adl_claim_benefit)}</td>
+                                        </tr>
+                                    `).join('')}
+                                </tbody>
+                            </table>
+                        </div>
+                    `;
+                }
+                
+                resultsDiv.innerHTML = html;
+            } catch (err) {
+                resultsDiv.innerHTML = `<div class="error">Error: ${err.message}</div>`;
+            }
+        };
+        
+        // Store integrity data
+        const originalLoadIntegrityReport = loadIntegrityReport;
+        loadIntegrityReport = async function() {
+            const resultsDiv = document.getElementById('integrity-results');
+            resultsDiv.innerHTML = '<div class="loading">Running validation...</div>';
+            
+            try {
+                const response = await fetch('/api/financial/data-integrity', {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                const data = await response.json();
+                lastIntegrityData = data; // Store for export
+                
+                // Use original rendering logic from before
+                const statusClass = data.status === 'healthy' ? 'integrity-healthy' : 
+                                   data.issues_count > 0 ? 'integrity-issues' : 'integrity-warnings';
+                const statusIcon = data.status === 'healthy' ? '✅' : data.issues_count > 0 ? '❌' : '⚠️';
+                
+                let html = `
+                    <div class="integrity-status ${statusClass}">
+                        <h3>${statusIcon} Data Integrity: ${data.status?.toUpperCase()}</h3>
+                        <p>Issues: ${data.issues_count} | Warnings: ${data.warnings_count}</p>
+                    </div>
+                    
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin: 20px 0;">
+                        ${Object.entries(data.data_counts || {}).map(([key, value]) => `
+                            <div class="stat-card">
+                                <div class="stat-value">${value}</div>
+                                <div class="stat-label">${key.replace(/_/g, ' ')}</div>
+                            </div>
+                        `).join('')}
+                    </div>
+                    
+                    <h3>Financial Reconciliation</h3>
+                    <table>
+                        <tr><th>Metric</th><th>Value</th></tr>
+                        ${Object.entries(data.financial_reconciliation || {}).map(([key, value]) => `
+                            <tr>
+                                <td>${key.replace(/_/g, ' ')}</td>
+                                <td>${typeof value === 'number' && key.includes('rate') ? value + '%' : 
+                                      typeof value === 'number' ? formatCurrency(value) : value}</td>
+                            </tr>
+                        `).join('')}
+                    </table>
+                `;
+                
+                // Actuarial validation section
+                if (data.actuarial_validation) {
+                    const av = data.actuarial_validation;
+                    html += `
+                        <h3>Actuarial Validation</h3>
+                        <div style="background: ${av.status === 'COMPLIANT' ? '#d4edda' : '#fff3cd'}; padding: 15px; border-radius: 8px; margin-bottom: 15px;">
+                            <p><strong>Source:</strong> ${av.source} | <strong>Status:</strong> ${av.status}</p>
+                            <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; margin-top: 10px;">
+                                <div class="stat-card">
+                                    <div class="stat-value">${av.policies_checked}</div>
+                                    <div class="stat-label">Policies Checked</div>
+                                </div>
+                                <div class="stat-card" style="background: linear-gradient(135deg, #d4edda 0%, #c3e6cb 100%);">
+                                    <div class="stat-value">${av.passed}</div>
+                                    <div class="stat-label">✓ Actuarially Sound</div>
+                                </div>
+                                <div class="stat-card" style="background: ${av.needs_review > 0 ? 'linear-gradient(135deg, #fff3cd 0%, #ffeeba 100%)' : '#f8f9fa'};">
+                                    <div class="stat-value">${av.needs_review}</div>
+                                    <div class="stat-label">⚠️ Needs Review</div>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                    
+                    if (av.details && av.details.length > 0) {
+                        html += `<h4>Policy Actuarial Details</h4>
+                        <div style="max-height: 200px; overflow-y: auto; border: 1px solid #dee2e6; border-radius: 8px;">
+                            <table style="margin: 0;">
+                                <thead><tr><th>Policy ID</th><th>Risk Score</th><th>ADL Level</th><th>Premium Ratio</th><th>Status</th></tr></thead>
+                                <tbody>`;
+                        av.details.forEach(d => {
+                            const statusColor = d.status === 'PASS' ? '#28a745' : '#ffc107';
+                            html += `<tr>
+                                <td>${d.policy_id}</td>
+                                <td>${d.risk_score}</td>
+                                <td>${d.adl_level}</td>
+                                <td>${(d.premium_ratio * 100).toFixed(4)}%</td>
+                                <td style="color: ${statusColor}; font-weight: 600;">${d.status}</td>
+                            </tr>`;
+                        });
+                        html += `</tbody></table></div>`;
+                    }
+                }
+                
+                if (data.issues?.length > 0) {
+                    html += `<h3>Issues (${data.issues_count})</h3><ul style="color: #721c24;">`;
+                    data.issues.forEach(issue => html += `<li>${issue}</li>`);
+                    html += '</ul>';
+                }
+                
+                if (data.warnings?.length > 0) {
+                    html += `<h3>Warnings (${data.warnings_count})</h3><ul style="color: #856404;">`;
+                    data.warnings.forEach(warning => html += `<li>${warning}</li>`);
+                    html += '</ul>';
+                }
+                
+                html += `<p style="color: #666; margin-top: 20px;">Validated at: ${data.validated_at}</p>`;
+                
+                resultsDiv.innerHTML = html;
+            } catch (err) {
+                resultsDiv.innerHTML = `<div class="error">Error: ${err.message}</div>`;
+            }
+        };
         
         // Initial load
         loadQuickStats();
