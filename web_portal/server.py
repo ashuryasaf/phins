@@ -2496,10 +2496,18 @@ For claims or questions, please contact:
             pending_claims = len([c for c in CLAIMS.values() if c.get('status') in ['pending', 'under_review', 'medical_assessment']])
             approved_claims = len([c for c in CLAIMS.values() if c.get('status') == 'approved'])
             
-            # Billing stats
-            total_revenue = sum(b.get('amount', 0) for b in BILLING.values() if b.get('status') == 'paid')
-            total_premium_collected = sum(b.get('amount', 0) for b in BILLING.values())
-            outstanding_balance = sum(b.get('amount', 0) for b in BILLING.values() if b.get('status') == 'outstanding')
+            # Billing stats - fixed naming for clarity
+            # Total annual revenue from active policies (expected revenue)
+            total_annual_revenue = sum(p.get('annual_premium', 0) for p in POLICIES.values() if p.get('status') == 'active')
+            # Total amount actually collected (paid bills)
+            total_collected = sum(b.get('amount_paid', 0) for b in BILLING.values())
+            # Total amount billed
+            total_billed = sum(b.get('amount', 0) for b in BILLING.values())
+            # Outstanding balance (billed but not paid)
+            outstanding_balance = sum(b.get('amount', 0) - b.get('amount_paid', 0) for b in BILLING.values() if b.get('status') in ('outstanding', 'pending', 'overdue'))
+            # Legacy compatibility
+            total_revenue = total_annual_revenue
+            total_premium_collected = total_billed
             
             # Health wallet stats
             total_wallet_balance = sum(w.get('balance', 0) for w in HEALTH_WALLETS.values())
@@ -3517,6 +3525,94 @@ For claims or questions, please contact:
             
             self._set_json_headers()
             self.wfile.write(json.dumps({'bills': bills_list}).encode('utf-8'))
+            return
+        
+        # Billing stats for admin dashboard (fallback when billing_engine unavailable)
+        if path == '/api/billing/stats':
+            bills = list(BILLING.values())
+            
+            # Calculate comprehensive stats
+            total_billed = sum(float(b.get('amount', 0)) for b in bills)
+            total_collected = sum(float(b.get('amount_paid', 0)) for b in bills)
+            outstanding = sum(float(b.get('amount', 0)) - float(b.get('amount_paid', 0)) 
+                             for b in bills if b.get('status') not in ('paid',))
+            
+            paid_bills = [b for b in bills if b.get('status') == 'paid']
+            pending_bills = [b for b in bills if b.get('status') in ('outstanding', 'pending')]
+            overdue_bills = [b for b in bills if b.get('status') == 'overdue']
+            
+            # Calculate revenue from policies
+            active_policies = [p for p in POLICIES.values() if p.get('status') == 'active']
+            total_annual_revenue = sum(float(p.get('annual_premium', 0)) for p in active_policies)
+            monthly_revenue = total_annual_revenue / 12
+            
+            # Claims paid
+            claims_paid = sum(float(c.get('approved_amount', 0)) for c in CLAIMS.values() 
+                            if c.get('status') in ('paid', 'approved', 'Paid', 'Approved'))
+            
+            self._set_json_headers()
+            self.wfile.write(json.dumps({
+                'total_revenue': round(total_annual_revenue, 2),
+                'monthly_premium_income': round(monthly_revenue, 2),
+                'total_billed': round(total_billed, 2),
+                'total_collected': round(total_collected, 2),
+                'outstanding_balance': round(outstanding, 2),
+                'outstanding_receivables': round(outstanding, 2),
+                'claims_paid': round(claims_paid, 2),
+                'claims_paid_this_month': round(claims_paid, 2),
+                'investment_returns': 0,
+                'total_transactions': len(bills),
+                'paid_count': len(paid_bills),
+                'pending_count': len(pending_bills),
+                'overdue_count': len(overdue_bills),
+                'collection_rate': round((total_collected / total_billed * 100) if total_billed > 0 else 0, 1)
+            }).encode('utf-8'))
+            return
+        
+        # Billing transactions for admin dashboard (fallback)
+        if path == '/api/billing/transactions':
+            transactions = []
+            
+            # Get bills as transactions
+            for bill_id, bill in BILLING.items():
+                # Get customer name
+                customer = CUSTOMERS.get(bill.get('customer_id', ''), {})
+                customer_name = customer.get('name', bill.get('customer_id', 'N/A'))
+                
+                transactions.append({
+                    'id': bill_id,
+                    'transaction_id': bill_id,
+                    'customer_id': bill.get('customer_id', 'N/A'),
+                    'customer_name': customer_name,
+                    'type': 'premium',
+                    'amount': float(bill.get('amount', 0)),
+                    'status': 'paid' if bill.get('status') == 'paid' else bill.get('status', 'pending'),
+                    'date': bill.get('created_date', datetime.now().isoformat()),
+                    'payment_method': bill.get('payment_method', 'N/A')
+                })
+            
+            # Add any claims payments as negative transactions
+            for claim_id, claim in CLAIMS.items():
+                if claim.get('status') in ('paid', 'Paid', 'approved', 'Approved') and claim.get('approved_amount'):
+                    customer = CUSTOMERS.get(claim.get('customer_id', ''), {})
+                    transactions.append({
+                        'id': claim_id,
+                        'transaction_id': claim_id,
+                        'customer_id': claim.get('customer_id', 'N/A'),
+                        'customer_name': customer.get('name', claim.get('customer_id', 'N/A')),
+                        'type': 'claim_payout',
+                        'amount': -float(claim.get('approved_amount', 0)),
+                        'status': 'completed',
+                        'date': claim.get('approval_date', claim.get('filed_date', datetime.now().isoformat())),
+                        'payment_method': 'Bank Transfer'
+                    })
+            
+            # Sort by date desc and limit
+            transactions.sort(key=lambda x: x.get('date', ''), reverse=True)
+            transactions = transactions[:100]
+            
+            self._set_json_headers()
+            self.wfile.write(json.dumps({'transactions': transactions}).encode('utf-8'))
             return
         
         # Customer billing "next due" (portal convenience)
