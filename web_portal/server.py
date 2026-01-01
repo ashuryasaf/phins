@@ -12746,20 +12746,49 @@ For claims or questions, please contact:
                         unified_balance_service.algo_trading_balances = portfolio_tracker_service.algo_balances
                     
                     # Sync investment accounts back to global store and portfolio service
-                    if customer_id in portfolio_tracker_service.investment_accounts:
-                        new_balance = portfolio_tracker_service.investment_accounts[customer_id].get('balance', 0)
+                    if source == 'investment' and customer_id in INVESTMENT_ACCOUNTS:
+                        inv_account = INVESTMENT_ACCOUNTS[customer_id]
                         
-                        # Update global INVESTMENT_ACCOUNTS
-                        if customer_id in INVESTMENT_ACCOUNTS:
-                            INVESTMENT_ACCOUNTS[customer_id]['balance'] = new_balance
+                        # Calculate current values
+                        total_balance = float(inv_account.get('balance', 0))
+                        index_bal = float(inv_account.get('index_balance', 0))
+                        bonds_bal = float(inv_account.get('bonds_balance', 0))
+                        crypto_bal = float(inv_account.get('crypto_balance', 0))
+                        invested_total = index_bal + bonds_bal + crypto_bal
+                        cash_available = total_balance - invested_total
+                        
+                        # Deduct from cash first, then proportionally from investments
+                        remaining_to_deduct = amount
+                        
+                        if cash_available > 0:
+                            cash_deduction = min(cash_available, remaining_to_deduct)
+                            remaining_to_deduct -= cash_deduction
+                        
+                        # If we need to deduct from investments, do it proportionally
+                        if remaining_to_deduct > 0 and invested_total > 0:
+                            ratio = remaining_to_deduct / invested_total
+                            index_deduction = index_bal * ratio
+                            bonds_deduction = bonds_bal * ratio
+                            crypto_deduction = crypto_bal * ratio
+                            
+                            inv_account['index_balance'] = index_bal - index_deduction
+                            inv_account['bonds_balance'] = bonds_bal - bonds_deduction
+                            inv_account['crypto_balance'] = crypto_bal - crypto_deduction
+                        
+                        # Update total balance
+                        inv_account['balance'] = total_balance - amount
+                        
+                        # Track algo trading profits from this transfer
+                        inv_account['algo_trading_profits'] = inv_account.get('algo_trading_profits', 0) + amount
+                        
+                        INVESTMENT_ACCOUNTS[customer_id] = inv_account
                         
                         # Update portfolio service accounts
                         if portfolio_enabled and portfolio_service:
                             try:
                                 accounts = portfolio_service.get_customer_accounts(customer_id)
                                 if accounts:
-                                    # Deduct proportionally from accounts
-                                    accounts[0].balance = new_balance
+                                    accounts[0].balance = inv_account['balance']
                             except Exception as sync_err:
                                 print(f"Portfolio sync back note: {sync_err}")
                     
