@@ -11852,8 +11852,12 @@ For claims or questions, please contact:
                 return
             
             try:
+                from services.algo_trading_service import TradingStrategy
+                from dataclasses import asdict
+                
                 data = json.loads(body)
                 account_id = data.get('account_id')
+                customer_id = data.get('customer_id', account_id)
                 name = data.get('name', 'My Trading Bot')
                 strategy = data.get('strategy', 'momentum')
                 symbols = data.get('symbols', ['SPY', 'BTC'])
@@ -11863,10 +11867,13 @@ For claims or questions, please contact:
                     self.wfile.write(json.dumps({'error': 'account_id is required'}).encode('utf-8'))
                     return
                 
+                # Map strategy string to enum
+                strategy_enum = TradingStrategy(strategy)
+                
                 bot = algo_trading_service.create_bot(
                     account_id=account_id,
                     name=name,
-                    strategy=TradingStrategy(strategy),
+                    strategy=strategy_enum,
                     symbols=symbols,
                     max_position_size=float(data.get('max_position_size', 1000)),
                     max_daily_trades=int(data.get('max_daily_trades', 10)),
@@ -11876,11 +11883,20 @@ For claims or questions, please contact:
                     dca_amount=float(data.get('dca_amount', 100))
                 )
                 
+                # Store customer_id in bot for tracking
+                bot.customer_id = customer_id
+                
+                # Auto-start if requested
+                if data.get('auto_start', False):
+                    algo_trading_service.start_bot(bot.bot_id)
+                
                 self._set_json_headers(201)
-                from dataclasses import asdict
+                bot_dict = asdict(bot)
+                bot_dict['bot_id'] = bot.bot_id
                 self.wfile.write(json.dumps({
                     'success': True,
-                    'bot': asdict(bot)
+                    'bot_id': bot.bot_id,
+                    'bot': bot_dict
                 }).encode('utf-8'))
             except Exception as e:
                 self._set_json_headers(400)
