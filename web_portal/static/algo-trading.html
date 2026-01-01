@@ -604,6 +604,66 @@
             .stats-grid { grid-template-columns: repeat(2, 1fr); }
             .nav { display: none; }
         }
+        
+        /* Real-time Animations */
+        @keyframes pulse {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.5; transform: scale(1.2); }
+        }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(-5px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        
+        @keyframes slideIn {
+            from { opacity: 0; transform: translateX(-10px); }
+            to { opacity: 1; transform: translateX(0); }
+        }
+        
+        /* Signal filter buttons */
+        .signal-filter-btn {
+            background: transparent;
+            border: 1px solid var(--border);
+            padding: 0.35rem 0.75rem;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.2s;
+            font-size: 0.8rem;
+        }
+        .signal-filter-btn:hover {
+            background: var(--bg-hover);
+        }
+        .signal-filter-btn.active {
+            background: var(--primary);
+            color: white;
+            border-color: var(--primary);
+        }
+        
+        /* Enhanced signal badges */
+        .signal-badge {
+            padding: 0.25rem 0.5rem;
+            border-radius: 4px;
+            font-size: 0.7rem;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+        .signal-badge.strong_buy, .signal-badge.buy { background: rgba(16, 185, 129, 0.2); color: #10b981; }
+        .signal-badge.strong_sell, .signal-badge.sell { background: rgba(239, 68, 68, 0.2); color: #ef4444; }
+        .signal-badge.hold { background: rgba(245, 158, 11, 0.2); color: #f59e0b; }
+        
+        /* Price flash animation */
+        .price-up { animation: priceFlashGreen 0.5s ease; }
+        .price-down { animation: priceFlashRed 0.5s ease; }
+        
+        @keyframes priceFlashGreen {
+            0%, 100% { background: transparent; }
+            50% { background: rgba(16, 185, 129, 0.3); }
+        }
+        @keyframes priceFlashRed {
+            0%, 100% { background: transparent; }
+            50% { background: rgba(239, 68, 68, 0.3); }
+        }
     </style>
     <!-- Unified Payment Modal -->
     <script src="/unified-payment.js"></script>
@@ -898,12 +958,29 @@
                     </div>
                 </div>
 
-                <!-- Active Signals -->
+                <!-- Active Signals - Enhanced with Real-time Updates -->
                 <div class="section">
                     <div class="section-header">
                         <h2 class="section-title">📡 Live Trading Signals</h2>
-                        <button class="btn btn-outline btn-small" onclick="refreshSignals()">⟳ Refresh</button>
+                        <div style="display: flex; align-items: center; gap: 0.75rem;">
+                            <span id="signalUpdateTime" style="font-size: 0.75rem; color: var(--text-secondary);">Updated just now</span>
+                            <div id="signalLiveIndicator" style="display: flex; align-items: center; gap: 0.35rem; padding: 0.25rem 0.5rem; background: rgba(16, 185, 129, 0.15); border-radius: 6px;">
+                                <span style="width: 8px; height: 8px; background: var(--success); border-radius: 50%; animation: pulse 2s infinite;"></span>
+                                <span style="font-size: 0.7rem; color: var(--success); font-weight: 600;">LIVE</span>
+                            </div>
+                            <button class="btn btn-outline btn-small" onclick="refreshSignals()">⟳ Refresh</button>
+                        </div>
                     </div>
+                    
+                    <!-- Signal Filters -->
+                    <div style="display: flex; gap: 0.5rem; margin-bottom: 1rem; flex-wrap: wrap;">
+                        <button class="btn btn-small signal-filter-btn active" data-filter="all" onclick="filterSignals('all')">All Signals</button>
+                        <button class="btn btn-small signal-filter-btn" data-filter="strong_buy" onclick="filterSignals('strong_buy')" style="color: #10b981;">🟢 Strong Buy</button>
+                        <button class="btn btn-small signal-filter-btn" data-filter="buy" onclick="filterSignals('buy')" style="color: #34d399;">📈 Buy</button>
+                        <button class="btn btn-small signal-filter-btn" data-filter="sell" onclick="filterSignals('sell')" style="color: #f87171;">📉 Sell</button>
+                        <button class="btn btn-small signal-filter-btn" data-filter="strong_sell" onclick="filterSignals('strong_sell')" style="color: #ef4444;">🔴 Strong Sell</button>
+                    </div>
+                    
                     <table class="signals-table">
                         <thead>
                             <tr>
@@ -911,8 +988,10 @@
                                 <th>Signal</th>
                                 <th>Strategy</th>
                                 <th>Confidence</th>
+                                <th>Current Price</th>
                                 <th>Target</th>
                                 <th>Stop Loss</th>
+                                <th>Risk/Reward</th>
                                 <th>Action</th>
                             </tr>
                         </thead>
@@ -920,6 +999,26 @@
                             <!-- Populated by JS -->
                         </tbody>
                     </table>
+                    
+                    <!-- Signal Stats Summary -->
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 1rem; margin-top: 1rem; padding: 1rem; background: var(--bg-hover); border-radius: 10px;">
+                        <div style="text-align: center;">
+                            <div style="font-size: 1.25rem; font-weight: 700; color: var(--success);" id="buySignalCount">0</div>
+                            <div style="font-size: 0.75rem; color: var(--text-secondary);">Buy Signals</div>
+                        </div>
+                        <div style="text-align: center;">
+                            <div style="font-size: 1.25rem; font-weight: 700; color: var(--danger);" id="sellSignalCount">0</div>
+                            <div style="font-size: 0.75rem; color: var(--text-secondary);">Sell Signals</div>
+                        </div>
+                        <div style="text-align: center;">
+                            <div style="font-size: 1.25rem; font-weight: 700; color: var(--primary);" id="avgConfidence">0%</div>
+                            <div style="font-size: 0.75rem; color: var(--text-secondary);">Avg Confidence</div>
+                        </div>
+                        <div style="text-align: center;">
+                            <div style="font-size: 1.25rem; font-weight: 700; color: var(--warning);" id="highConfidenceCount">0</div>
+                            <div style="font-size: 0.75rem; color: var(--text-secondary);">High Confidence (>80%)</div>
+                        </div>
+                    </div>
                 </div>
 
                 <!-- Active Positions with Real-time P&L -->
@@ -1157,56 +1256,86 @@
         </div>
     </main>
 
-    <!-- Create Bot Modal -->
+    <!-- Create Bot Modal - Enhanced -->
     <div class="modal" id="createBotModal">
-        <div class="modal-content">
+        <div class="modal-content" style="max-width: 600px;">
             <div class="modal-header">
                 <h2>🤖 Create Trading Bot</h2>
                 <button class="modal-close" onclick="hideCreateBotModal()">×</button>
             </div>
-            <div class="form-group">
-                <label class="form-label">Bot Name</label>
-                <input type="text" class="form-input" id="botName" placeholder="My Trading Bot">
+            
+            <!-- Bot Status Preview -->
+            <div id="botPreview" style="background: linear-gradient(135deg, rgba(99, 102, 241, 0.1) 0%, rgba(139, 92, 246, 0.1) 100%); border-radius: 12px; padding: 1rem; margin-bottom: 1rem; border: 1px solid rgba(99, 102, 241, 0.3);">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <div>
+                        <div id="botPreviewName" style="font-weight: 600; font-size: 1.1rem;">New Trading Bot</div>
+                        <div id="botPreviewStrategy" style="color: var(--text-secondary); font-size: 0.85rem;">📈 Momentum Strategy</div>
+                    </div>
+                    <div style="text-align: right;">
+                        <div style="color: var(--success); font-weight: 600;">Ready to Deploy</div>
+                        <div style="font-size: 0.75rem; color: var(--text-secondary);">Est. Daily Signals: ~10-15</div>
+                    </div>
+                </div>
             </div>
+            
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                <div class="form-group">
+                    <label class="form-label">Bot Name</label>
+                    <input type="text" class="form-input" id="botName" placeholder="My Trading Bot" oninput="updateBotPreview()">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Risk Level</label>
+                    <select class="form-select" id="botRiskLevel" onchange="updateBotPreview()">
+                        <option value="conservative">🛡️ Conservative (Low Risk)</option>
+                        <option value="moderate" selected>⚖️ Moderate (Balanced)</option>
+                        <option value="aggressive">🔥 Aggressive (High Risk)</option>
+                    </select>
+                </div>
+            </div>
+            
             <div class="form-group">
                 <label class="form-label">Strategy</label>
-                <select class="form-select" id="botStrategy">
+                <select class="form-select" id="botStrategy" onchange="updateBotPreview()">
                     <optgroup label="🎯 Classic Strategies">
-                        <option value="momentum">📈 Momentum</option>
-                        <option value="mean_reversion">🔄 Mean Reversion</option>
-                        <option value="trend_following">📊 Trend Following</option>
-                        <option value="breakout">🚀 Breakout</option>
+                        <option value="momentum">📈 Momentum - Follow price trends</option>
+                        <option value="mean_reversion">🔄 Mean Reversion - Buy dips, sell rallies</option>
+                        <option value="trend_following">📊 Trend Following - Ride long trends</option>
+                        <option value="breakout">🚀 Breakout - Trade key levels</option>
                     </optgroup>
                     <optgroup label="📉 Indicator-Based">
-                        <option value="rsi_strategy">📉 RSI Strategy</option>
-                        <option value="macd_crossover">📈 MACD Crossover</option>
+                        <option value="rsi_strategy">📉 RSI Strategy - Overbought/Oversold</option>
+                        <option value="macd_crossover">📈 MACD Crossover - Momentum shifts</option>
                     </optgroup>
                     <optgroup label="💰 Passive Strategies">
-                        <option value="dollar_cost_averaging">💰 DCA (Dollar Cost Averaging)</option>
-                        <option value="grid_trading">📊 Grid Trading</option>
+                        <option value="dollar_cost_averaging">💰 DCA - Regular investments</option>
+                        <option value="grid_trading">📊 Grid Trading - Range bound</option>
                     </optgroup>
                     <optgroup label="⚡ Advanced Strategies">
-                        <option value="scalping">⚡ Scalping (High Frequency)</option>
-                        <option value="swing_trading">📊 Swing Trading</option>
-                        <option value="arbitrage">🔀 Arbitrage</option>
-                        <option value="ai_adaptive">🧠 AI Adaptive</option>
+                        <option value="scalping">⚡ Scalping - Quick profits</option>
+                        <option value="swing_trading">📊 Swing Trading - Multi-day holds</option>
+                        <option value="arbitrage">🔀 Arbitrage - Price differences</option>
+                        <option value="ai_adaptive">🧠 AI Adaptive - ML-powered</option>
                     </optgroup>
                 </select>
             </div>
+            
             <div class="form-group">
-                <label class="form-label">Trading Symbols</label>
-                <select class="form-select" id="botSymbols" multiple style="height: 180px;">
+                <label class="form-label">Trading Symbols <span style="color: var(--text-secondary); font-size: 0.8rem;">(Hold Ctrl/Cmd to select multiple)</span></label>
+                <select class="form-select" id="botSymbols" multiple style="height: 150px;">
                     <optgroup label="📊 Indices">
                         <option value="SPY" selected>SPY - S&P 500</option>
-                        <option value="QQQ">QQQ - NASDAQ</option>
+                        <option value="QQQ">QQQ - NASDAQ 100</option>
                         <option value="DIA">DIA - Dow Jones</option>
+                        <option value="IWM">IWM - Russell 2000</option>
                     </optgroup>
-                    <optgroup label="📈 Equities">
+                    <optgroup label="📈 Tech Equities">
                         <option value="AAPL">AAPL - Apple</option>
                         <option value="MSFT">MSFT - Microsoft</option>
                         <option value="NVDA">NVDA - NVIDIA</option>
                         <option value="GOOGL">GOOGL - Alphabet</option>
                         <option value="TSLA">TSLA - Tesla</option>
+                        <option value="META">META - Meta</option>
+                        <option value="AMZN">AMZN - Amazon</option>
                     </optgroup>
                     <optgroup label="₿ Crypto">
                         <option value="BTC" selected>BTC - Bitcoin</option>
@@ -1214,15 +1343,18 @@
                         <option value="SOL">SOL - Solana</option>
                         <option value="BNB">BNB - Binance</option>
                         <option value="AVAX">AVAX - Avalanche</option>
+                        <option value="ADA">ADA - Cardano</option>
                     </optgroup>
                     <optgroup label="🛢️ Commodities">
                         <option value="GLD">GLD - Gold</option>
                         <option value="SLV">SLV - Silver</option>
                         <option value="USO">USO - Oil</option>
+                        <option value="UNG">UNG - Natural Gas</option>
                     </optgroup>
                     <optgroup label="💱 Forex">
                         <option value="EURUSD">EUR/USD</option>
                         <option value="GBPUSD">GBP/USD</option>
+                        <option value="USDJPY">USD/JPY</option>
                     </optgroup>
                     <optgroup label="📜 Bonds">
                         <option value="BND">BND - Total Bond</option>
@@ -1230,23 +1362,38 @@
                         <option value="HYG">HYG - High Yield</option>
                     </optgroup>
                 </select>
-                <small style="color: var(--text-secondary);">Hold Ctrl/Cmd to select multiple</small>
             </div>
-            <div class="form-group">
-                <label class="form-label">Max Position Size ($)</label>
-                <input type="number" class="form-input" id="botMaxPosition" value="1000" min="100">
+            
+            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem;">
+                <div class="form-group">
+                    <label class="form-label">Max Position ($)</label>
+                    <input type="number" class="form-input" id="botMaxPosition" value="1000" min="100" step="100">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Stop Loss (%)</label>
+                    <input type="number" class="form-input" id="botStopLoss" value="5" min="1" max="20" step="0.5">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Take Profit (%)</label>
+                    <input type="number" class="form-input" id="botTakeProfit" value="10" min="1" max="50" step="0.5">
+                </div>
             </div>
-            <div class="form-group">
-                <label class="form-label">Stop Loss (%)</label>
-                <input type="number" class="form-input" id="botStopLoss" value="5" min="1" max="20">
+            
+            <!-- Auto-start option -->
+            <div class="form-group" style="display: flex; align-items: center; gap: 0.75rem; padding: 0.75rem; background: var(--bg-hover); border-radius: 8px;">
+                <input type="checkbox" id="botAutoStart" checked style="width: 18px; height: 18px;">
+                <label for="botAutoStart" style="cursor: pointer;">
+                    <strong>Auto-start bot</strong>
+                    <span style="color: var(--text-secondary); font-size: 0.85rem;"> - Begin trading immediately after creation</span>
+                </label>
             </div>
-            <div class="form-group">
-                <label class="form-label">Take Profit (%)</label>
-                <input type="number" class="form-input" id="botTakeProfit" value="10" min="1" max="50">
+            
+            <div style="display: flex; gap: 1rem; margin-top: 1rem;">
+                <button class="btn btn-outline" style="flex: 1;" onclick="hideCreateBotModal()">Cancel</button>
+                <button class="btn btn-primary" style="flex: 2;" onclick="createBot()" id="createBotBtn">
+                    🚀 Launch Trading Bot
+                </button>
             </div>
-            <button class="btn btn-primary" style="width: 100%;" onclick="createBot()">
-                🚀 Launch Bot
-            </button>
         </div>
     </div>
 
@@ -1343,15 +1490,58 @@
             // Update stats with advanced metrics
             await updateStats();
             
-            // Refresh signals every 30 seconds
-            setInterval(loadSignals, 30000);
-            setInterval(loadMarketOverview, 30000);
-            setInterval(loadUnifiedBalance, 60000);
-            setInterval(loadPipelineData, 60000);
-            setInterval(loadPositions, 15000); // Real-time P&L every 15 seconds
-            setInterval(() => loadExtendedMarket(document.querySelector('.asset-class-btn.active')?.dataset?.class || ''), 30000);
-            setInterval(updateStats, 60000); // Update advanced metrics every minute
+            // ========== REAL-TIME UPDATE INTERVALS ==========
+            // Fast updates (10-15 seconds) - Critical data
+            setInterval(loadPositions, 10000);      // Real-time P&L every 10 seconds
+            setInterval(updatePriceDisplay, 10000); // Update prices every 10 seconds
+            
+            // Medium updates (20-30 seconds) - Market data
+            setInterval(loadSignals, 20000);        // Signals every 20 seconds
+            setInterval(loadMarketOverview, 20000); // Market every 20 seconds
+            setInterval(() => loadExtendedMarket(document.querySelector('.asset-class-btn.active')?.dataset?.class || ''), 25000);
+            
+            // Slow updates (45-60 seconds) - Analytics
+            setInterval(updateStats, 45000);        // Stats every 45 seconds
+            setInterval(loadUnifiedBalance, 45000); // Balance every 45 seconds
+            setInterval(loadPipelineData, 60000);   // Pipeline every 60 seconds
+            setInterval(loadOrders, 30000);         // Orders every 30 seconds
+            
+            console.log('✅ Real-time updates initialized');
         });
+        
+        // Real-time price update function
+        async function updatePriceDisplay() {
+            try {
+                // Update signal update time indicator
+                const indicator = document.getElementById('signalLiveIndicator');
+                if (indicator) {
+                    indicator.style.opacity = '0.5';
+                    setTimeout(() => indicator.style.opacity = '1', 300);
+                }
+                
+                // Fetch latest prices for positions
+                if (positions && positions.length > 0) {
+                    const symbols = positions.map(p => p.symbol).join(',');
+                    const response = await fetch(`/api/algo/prices?symbols=${symbols}`);
+                    const data = await response.json();
+                    
+                    if (data.prices) {
+                        // Update position prices in memory
+                        positions.forEach(pos => {
+                            if (data.prices[pos.symbol]) {
+                                pos.current_price = data.prices[pos.symbol];
+                                pos.market_value = pos.quantity * pos.current_price;
+                                pos.unrealized_pnl = (pos.current_price - pos.avg_cost) * pos.quantity;
+                            }
+                        });
+                        // Re-render positions with updated prices
+                        renderPositions();
+                    }
+                }
+            } catch (e) {
+                // Silent fail for price updates
+            }
+        }
         
         async function loadBots() {
             try {
@@ -1448,51 +1638,122 @@
             }
         }
         
+        let currentSignalFilter = 'all';
+        let signalUpdateInterval = null;
+        
         async function loadSignals() {
             try {
-                const response = await fetch('/api/algo/signals?limit=20');
+                const response = await fetch('/api/algo/signals?limit=30');
                 const data = await response.json();
                 signals = data.signals || [];
                 renderSignals();
+                updateSignalStats();
+                updateSignalTime();
             } catch (e) {
                 console.error('Failed to load signals:', e);
             }
         }
         
+        function filterSignals(filter) {
+            currentSignalFilter = filter;
+            // Update active button
+            document.querySelectorAll('.signal-filter-btn').forEach(btn => {
+                btn.classList.toggle('active', btn.dataset.filter === filter);
+                if (btn.dataset.filter === filter) {
+                    btn.style.background = 'var(--primary)';
+                    btn.style.color = 'white';
+                } else {
+                    btn.style.background = 'transparent';
+                    btn.style.color = '';
+                }
+            });
+            renderSignals();
+        }
+        
+        function updateSignalStats() {
+            const buySignals = signals.filter(s => s.signal_type.includes('buy'));
+            const sellSignals = signals.filter(s => s.signal_type.includes('sell'));
+            const avgConf = signals.length > 0 ? signals.reduce((sum, s) => sum + (s.confidence || 0), 0) / signals.length : 0;
+            const highConf = signals.filter(s => s.confidence >= 0.8).length;
+            
+            document.getElementById('buySignalCount').textContent = buySignals.length;
+            document.getElementById('sellSignalCount').textContent = sellSignals.length;
+            document.getElementById('avgConfidence').textContent = `${(avgConf * 100).toFixed(0)}%`;
+            document.getElementById('highConfidenceCount').textContent = highConf;
+        }
+        
+        function updateSignalTime() {
+            document.getElementById('signalUpdateTime').textContent = `Updated ${new Date().toLocaleTimeString()}`;
+        }
+        
         function renderSignals() {
             const table = document.getElementById('signalsTable');
             
-            if (signals.length === 0) {
+            // Filter signals
+            let filteredSignals = signals;
+            if (currentSignalFilter !== 'all') {
+                filteredSignals = signals.filter(s => s.signal_type === currentSignalFilter);
+            }
+            
+            if (filteredSignals.length === 0) {
                 table.innerHTML = `
                     <tr>
-                        <td colspan="7" style="text-align: center; color: var(--text-secondary); padding: 2rem;">
-                            No signals yet. Create a bot to generate trading signals.
+                        <td colspan="9" style="text-align: center; color: var(--text-secondary); padding: 2rem;">
+                            ${currentSignalFilter === 'all' ? 'No signals yet. Create a bot or run a profit cycle to generate trading signals.' : `No ${currentSignalFilter.replace('_', ' ')} signals found.`}
                         </td>
                     </tr>
                 `;
                 return;
             }
             
-            table.innerHTML = signals.slice(0, 10).map(signal => {
+            table.innerHTML = filteredSignals.slice(0, 15).map(signal => {
                 const confidenceColor = signal.confidence >= 0.8 ? 'var(--success)' : signal.confidence >= 0.6 ? 'var(--warning)' : 'var(--text-secondary)';
+                const isBuy = signal.signal_type.includes('buy');
+                const signalIcon = signal.signal_type === 'strong_buy' ? '🟢' : signal.signal_type === 'buy' ? '📈' : signal.signal_type === 'strong_sell' ? '🔴' : '📉';
+                
+                // Calculate risk/reward ratio
+                const currentPrice = signal.current_price || signal.price_target * 0.98;
+                const targetGain = Math.abs(signal.price_target - currentPrice);
+                const stopLossRisk = Math.abs(currentPrice - signal.stop_loss);
+                const riskReward = stopLossRisk > 0 ? (targetGain / stopLossRisk).toFixed(1) : 'N/A';
+                const riskRewardColor = riskReward >= 2 ? 'var(--success)' : riskReward >= 1 ? 'var(--warning)' : 'var(--danger)';
                 
                 return `
-                    <tr>
-                        <td><strong>${signal.symbol}</strong></td>
-                        <td><span class="signal-badge ${signal.signal_type}">${signal.signal_type.replace('_', ' ').toUpperCase()}</span></td>
-                        <td>${formatStrategy(signal.strategy)}</td>
+                    <tr style="animation: fadeIn 0.3s ease;">
                         <td>
                             <div style="display: flex; align-items: center; gap: 0.5rem;">
-                                <div class="confidence-bar">
-                                    <div class="confidence-fill" style="width: ${signal.confidence * 100}%; background: ${confidenceColor};"></div>
-                                </div>
-                                <span>${(signal.confidence * 100).toFixed(0)}%</span>
+                                <span style="font-weight: 700; font-size: 1rem;">${signal.symbol}</span>
+                                <span style="font-size: 0.65rem; color: var(--text-secondary); background: var(--bg-card); padding: 0.1rem 0.3rem; border-radius: 3px;">${signal.asset_class || 'equity'}</span>
                             </div>
                         </td>
-                        <td>$${signal.price_target.toFixed(2)}</td>
-                        <td>$${signal.stop_loss.toFixed(2)}</td>
                         <td>
-                            <button class="btn btn-success btn-small" onclick="executeSignal('${signal.signal_id}', '${signal.symbol}', 'buy')">Execute</button>
+                            <span class="signal-badge ${signal.signal_type}" style="display: inline-flex; align-items: center; gap: 0.25rem;">
+                                ${signalIcon} ${signal.signal_type.replace('_', ' ').toUpperCase()}
+                            </span>
+                        </td>
+                        <td style="font-size: 0.85rem;">${formatStrategy(signal.strategy)}</td>
+                        <td>
+                            <div style="display: flex; align-items: center; gap: 0.5rem;">
+                                <div class="confidence-bar" style="width: 60px;">
+                                    <div class="confidence-fill" style="width: ${signal.confidence * 100}%; background: ${confidenceColor};"></div>
+                                </div>
+                                <span style="font-weight: 600; color: ${confidenceColor};">${(signal.confidence * 100).toFixed(0)}%</span>
+                            </div>
+                        </td>
+                        <td style="font-weight: 500;">$${(currentPrice).toFixed(2)}</td>
+                        <td style="color: var(--success); font-weight: 500;">$${signal.price_target.toFixed(2)}</td>
+                        <td style="color: var(--danger); font-weight: 500;">$${signal.stop_loss.toFixed(2)}</td>
+                        <td>
+                            <span style="color: ${riskRewardColor}; font-weight: 600;">${riskReward}:1</span>
+                        </td>
+                        <td>
+                            <div style="display: flex; gap: 0.25rem;">
+                                <button class="btn ${isBuy ? 'btn-success' : 'btn-danger'} btn-small" 
+                                        onclick="executeSignal('${signal.signal_id}', '${signal.symbol}', '${isBuy ? 'buy' : 'sell'}')"
+                                        style="font-size: 0.75rem; padding: 0.35rem 0.6rem;">
+                                    ${isBuy ? '📈 Buy' : '📉 Sell'}
+                                </button>
+                            </div>
                         </td>
                     </tr>
                 `;
@@ -2094,23 +2355,54 @@
             }
         }
         
-        // Bot Actions
+        // Bot Actions - Enhanced
         function showCreateBotModal() {
             document.getElementById('createBotModal').classList.add('active');
+            updateBotPreview();
         }
         
         function hideCreateBotModal() {
             document.getElementById('createBotModal').classList.remove('active');
         }
         
+        function updateBotPreview() {
+            const name = document.getElementById('botName').value || 'New Trading Bot';
+            const strategy = document.getElementById('botStrategy');
+            const strategyText = strategy.options[strategy.selectedIndex].text;
+            const riskLevel = document.getElementById('botRiskLevel').value;
+            
+            const riskInfo = {
+                'conservative': { color: '#10b981', signals: '5-8', label: '🛡️ Low Risk' },
+                'moderate': { color: '#f59e0b', signals: '10-15', label: '⚖️ Balanced' },
+                'aggressive': { color: '#ef4444', signals: '20-30', label: '🔥 High Risk' }
+            };
+            
+            document.getElementById('botPreviewName').textContent = name;
+            document.getElementById('botPreviewStrategy').innerHTML = `${strategyText} <span style="color: ${riskInfo[riskLevel].color}; margin-left: 0.5rem;">${riskInfo[riskLevel].label}</span>`;
+        }
+        
         async function createBot() {
+            const btn = document.getElementById('createBotBtn');
+            btn.disabled = true;
+            btn.innerHTML = '⏳ Creating Bot...';
+            
             const name = document.getElementById('botName').value || 'My Trading Bot';
             const strategy = document.getElementById('botStrategy').value;
+            const riskLevel = document.getElementById('botRiskLevel').value;
             const symbolsSelect = document.getElementById('botSymbols');
             const symbols = Array.from(symbolsSelect.selectedOptions).map(o => o.value);
             const maxPosition = parseFloat(document.getElementById('botMaxPosition').value) || 1000;
             const stopLoss = parseFloat(document.getElementById('botStopLoss').value) || 5;
             const takeProfit = parseFloat(document.getElementById('botTakeProfit').value) || 10;
+            const autoStart = document.getElementById('botAutoStart').checked;
+            
+            // Validation
+            if (symbols.length === 0) {
+                showToast('Please select at least one trading symbol', 'error');
+                btn.disabled = false;
+                btn.innerHTML = '🚀 Launch Trading Bot';
+                return;
+            }
             
             try {
                 const response = await fetch('/api/algo/bots/create', {
@@ -2118,26 +2410,46 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         account_id: accountId,
+                        customer_id: customerId,
                         name,
                         strategy,
+                        risk_level: riskLevel,
                         symbols,
                         max_position_size: maxPosition,
                         stop_loss_pct: stopLoss,
-                        take_profit_pct: takeProfit
+                        take_profit_pct: takeProfit,
+                        auto_start: autoStart
                     })
                 });
                 
                 const data = await response.json();
                 
-                if (data.success) {
-                    showToast(`Bot "${name}" created successfully!`, 'success');
+                if (data.success || data.bot_id) {
+                    showToast(`🤖 Bot "${name}" created successfully!`, 'success');
                     hideCreateBotModal();
-                    loadBots();
+                    
+                    // Reset form
+                    document.getElementById('botName').value = '';
+                    
+                    // Reload bots and signals
+                    await loadBots();
+                    
+                    // If auto-start, also run a profit cycle
+                    if (autoStart) {
+                        setTimeout(() => {
+                            runProfitCycle();
+                            showToast('Bot is now trading! First signals generating...', 'info');
+                        }, 1000);
+                    }
                 } else {
                     showToast(data.error || 'Failed to create bot', 'error');
                 }
             } catch (e) {
-                showToast('Failed to create bot', 'error');
+                console.error('Create bot error:', e);
+                showToast('Failed to create bot: ' + e.message, 'error');
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = '🚀 Launch Trading Bot';
             }
         }
         
@@ -2329,10 +2641,28 @@
             }
         }
         
-        function refreshSignals() {
-            loadSignals();
-            loadMarketOverview();
-            showToast('Signals refreshed', 'info');
+        async function refreshSignals() {
+            const btn = document.querySelector('[onclick="refreshSignals()"]');
+            if (btn) {
+                btn.disabled = true;
+                btn.innerHTML = '⏳ Loading...';
+            }
+            
+            try {
+                await Promise.all([
+                    loadSignals(),
+                    loadMarketOverview(),
+                    updateStats()
+                ]);
+                showToast('📡 Signals & market data refreshed', 'success');
+            } catch (e) {
+                showToast('Refresh failed', 'error');
+            } finally {
+                if (btn) {
+                    btn.disabled = false;
+                    btn.innerHTML = '⟳ Refresh';
+                }
+            }
         }
         
         function formatNumber(num) {
