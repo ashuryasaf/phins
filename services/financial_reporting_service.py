@@ -636,9 +636,11 @@ class FinancialReportingService:
             if policy_id and policy_id not in self._policies:
                 issues.append(f"Underwriting {uw_id}: References non-existent policy {policy_id}")
             
-            if uw.get('status') == 'approved':
+            uw_status = (uw.get('status') or '').lower()
+            if uw_status == 'approved':
                 policy = self._policies.get(policy_id, {})
-                if policy.get('status') not in ['active', 'pending_billing']:
+                policy_status = (policy.get('status') or '').lower()
+                if policy_status not in ['active', 'pending_billing']:
                     warnings.append(f"Underwriting {uw_id}: Approved but policy status is {policy.get('status')}")
         
         # 5. Financial reconciliation
@@ -646,8 +648,22 @@ class FinancialReportingService:
                                       if p.get('status') == 'active')
         total_billed = sum(b.get('amount_due', b.get('amount', 0)) for b in self._billing.values())
         total_paid = sum(b.get('amount_paid', 0) for b in self._billing.values())
-        total_claims_approved = sum(c.get('approved_amount', 0) for c in self._claims.values() 
-                                    if c.get('status') in ['approved', 'paid'])
+        
+        # Case-insensitive status check for claims
+        def is_claim_approved_or_paid(claim):
+            status = (claim.get('status') or '').lower()
+            return status in ['approved', 'paid']
+        
+        total_claims_approved = sum(
+            float(c.get('approved_amount') or 0) 
+            for c in self._claims.values() 
+            if is_claim_approved_or_paid(c)
+        )
+        
+        # Loss ratio = Claims Approved / Expected Premiums (industry standard)
+        # If no premiums collected yet, show projected loss ratio based on expected premiums
+        loss_ratio_denominator = total_paid if total_paid > 0 else total_premiums_expected
+        loss_ratio = (total_claims_approved / max(loss_ratio_denominator, 1)) * 100
         
         financial_summary = {
             'total_expected_premiums': round(total_premiums_expected, 2),
@@ -655,7 +671,7 @@ class FinancialReportingService:
             'total_collected': round(total_paid, 2),
             'collection_rate': round(total_paid / max(total_billed, 1) * 100, 2),
             'total_claims_approved': round(total_claims_approved, 2),
-            'loss_ratio': round(total_claims_approved / max(total_paid, 1) * 100, 2)
+            'loss_ratio': round(loss_ratio, 2)
         }
         
         return {
