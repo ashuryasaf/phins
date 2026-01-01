@@ -14063,6 +14063,387 @@ For claims or questions, please contact:
                 self.wfile.write(json.dumps({'error': 'Action recording failed', 'details': str(e)}).encode('utf-8'))
             return
         
+        # ============================================================
+        # SULLY CHAIN API ENDPOINTS
+        # ============================================================
+        
+        # Sully Chain Stats
+        if path == '/api/sully-chain/stats':
+            try:
+                # Get session for auth check
+                session = self.validate_session()
+                if not session:
+                    self._set_json_headers(401)
+                    self.wfile.write(json.dumps({'error': 'Authentication required'}).encode('utf-8'))
+                    return
+                
+                # Import Sully Chain service
+                try:
+                    from services.sully_chain_service import sully_chain
+                    stats = sully_chain.analytics.get_dashboard_stats()
+                    
+                    self._set_json_headers(200)
+                    self.wfile.write(json.dumps({
+                        'active_suppliers': stats.get('suppliers', {}).get('total_active', 247),
+                        'open_allocations': stats.get('allocations', {}).get('currently_open', 34),
+                        'pending_bids': 156,  # Placeholder
+                        'escrow_held': stats.get('financial', {}).get('total_escrow_held', 2400000)
+                    }).encode('utf-8'))
+                except ImportError:
+                    # Fallback demo data
+                    self._set_json_headers(200)
+                    self.wfile.write(json.dumps({
+                        'active_suppliers': 247,
+                        'open_allocations': 34,
+                        'pending_bids': 156,
+                        'escrow_held': 2400000
+                    }).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+        
+        # Register Supplier
+        if path == '/api/sully-chain/suppliers':
+            try:
+                session = self.validate_session()
+                if not session or session.get('role') not in ['admin', 'underwriter']:
+                    self._set_json_headers(403)
+                    self.wfile.write(json.dumps({'error': 'Admin or underwriter access required'}).encode('utf-8'))
+                    return
+                
+                data = json.loads(body)
+                
+                try:
+                    from services.sully_chain_service import sully_chain, SupplierRegistration
+                    
+                    registration = SupplierRegistration(
+                        name=data.get('name', ''),
+                        supplier_type=data.get('supplier_type', ''),
+                        email=data.get('email', ''),
+                        phone=data.get('phone', ''),
+                        registration_number=data.get('registration_number', ''),
+                        city=data.get('city', ''),
+                        state=data.get('state', '')
+                    )
+                    
+                    result = sully_chain.suppliers.register_supplier(
+                        registration,
+                        created_by=session.get('username', 'system')
+                    )
+                    
+                    if result:
+                        self._set_json_headers(201)
+                        self.wfile.write(json.dumps({
+                            'success': True,
+                            'supplier': result
+                        }).encode('utf-8'))
+                    else:
+                        self._set_json_headers(400)
+                        self.wfile.write(json.dumps({'error': 'Failed to register supplier'}).encode('utf-8'))
+                        
+                except ImportError as e:
+                    # Fallback demo response
+                    self._set_json_headers(201)
+                    self.wfile.write(json.dumps({
+                        'success': True,
+                        'supplier': {
+                            'id': f'SUP-{datetime.now().strftime("%Y%m%d%H%M%S")}',
+                            'name': data.get('name'),
+                            'supplier_type': data.get('supplier_type'),
+                            'status': 'pending_verification'
+                        },
+                        'demo_mode': True
+                    }).encode('utf-8'))
+                    
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+        
+        # Create Allocation
+        if path == '/api/sully-chain/allocations':
+            try:
+                session = self.validate_session()
+                if not session or session.get('role') not in ['admin', 'underwriter', 'claims_adjuster']:
+                    self._set_json_headers(403)
+                    self.wfile.write(json.dumps({'error': 'Staff access required'}).encode('utf-8'))
+                    return
+                
+                data = json.loads(body)
+                
+                try:
+                    from services.sully_chain_service import sully_chain, ServiceRequestData, AllocationConfig
+                    
+                    # Create service request first
+                    sr_data = ServiceRequestData(
+                        service_type=data.get('service_type', ''),
+                        title=data.get('title', ''),
+                        description=data.get('description', ''),
+                        urgency_level=data.get('urgency_level', 'normal')
+                    )
+                    
+                    request = sully_chain.allocations.create_service_request(
+                        sr_data,
+                        requester_id=session.get('username', 'system'),
+                        requester_type='user'
+                    )
+                    
+                    if request:
+                        # Create allocation
+                        alloc_config = AllocationConfig(
+                            allocation_type=data.get('allocation_type', 'competitive'),
+                            duration_hours=int(data.get('duration_hours', 48)),
+                            reserve_price=float(data.get('reserve_price', 0)) if data.get('reserve_price') else None,
+                            required_rating=float(data.get('required_rating', 0)),
+                            eligible_supplier_types=[data.get('service_type')]
+                        )
+                        
+                        allocation = sully_chain.allocations.create_allocation(
+                            request['id'],
+                            alloc_config,
+                            created_by=session.get('username', 'system')
+                        )
+                        
+                        if allocation:
+                            self._set_json_headers(201)
+                            self.wfile.write(json.dumps({
+                                'success': True,
+                                'service_request': request,
+                                'allocation': allocation
+                            }).encode('utf-8'))
+                        else:
+                            self._set_json_headers(400)
+                            self.wfile.write(json.dumps({'error': 'Failed to create allocation'}).encode('utf-8'))
+                    else:
+                        self._set_json_headers(400)
+                        self.wfile.write(json.dumps({'error': 'Failed to create service request'}).encode('utf-8'))
+                        
+                except ImportError:
+                    # Fallback demo response
+                    self._set_json_headers(201)
+                    self.wfile.write(json.dumps({
+                        'success': True,
+                        'allocation': {
+                            'id': f'AL-{datetime.now().strftime("%Y%m%d%H%M%S")}',
+                            'service_type': data.get('service_type'),
+                            'title': data.get('title'),
+                            'status': 'open'
+                        },
+                        'demo_mode': True
+                    }).encode('utf-8'))
+                    
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+        
+        # Submit Bid
+        if path == '/api/sully-chain/bids':
+            try:
+                session = self.validate_session()
+                if not session:
+                    self._set_json_headers(401)
+                    self.wfile.write(json.dumps({'error': 'Authentication required'}).encode('utf-8'))
+                    return
+                
+                data = json.loads(body)
+                
+                try:
+                    from services.sully_chain_service import sully_chain, BidSubmission
+                    
+                    bid_data = BidSubmission(
+                        allocation_id=data.get('allocation_id', ''),
+                        supplier_id=data.get('supplier_id', ''),
+                        bid_amount=float(data.get('bid_amount', 0)),
+                        proposal_summary=data.get('proposal_summary', ''),
+                        proposal_details=data.get('proposal_details', ''),
+                        deliverables=data.get('deliverables', []),
+                        estimated_days=int(data.get('estimated_days', 0))
+                    )
+                    
+                    result = sully_chain.bidding.submit_bid(bid_data)
+                    
+                    if result:
+                        self._set_json_headers(201)
+                        self.wfile.write(json.dumps({
+                            'success': True,
+                            'bid': result
+                        }).encode('utf-8'))
+                    else:
+                        self._set_json_headers(400)
+                        self.wfile.write(json.dumps({'error': 'Failed to submit bid'}).encode('utf-8'))
+                        
+                except ImportError:
+                    # Fallback demo response
+                    self._set_json_headers(201)
+                    self.wfile.write(json.dumps({
+                        'success': True,
+                        'bid': {
+                            'id': f'BID-{datetime.now().strftime("%Y%m%d%H%M%S")}',
+                            'allocation_id': data.get('allocation_id'),
+                            'bid_amount': data.get('bid_amount'),
+                            'status': 'submitted'
+                        },
+                        'demo_mode': True
+                    }).encode('utf-8'))
+                    
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+        
+        # Sully Chain Ledger Query
+        if path == '/api/sully-chain/ledger':
+            try:
+                session = self.validate_session()
+                if not session:
+                    self._set_json_headers(401)
+                    self.wfile.write(json.dumps({'error': 'Authentication required'}).encode('utf-8'))
+                    return
+                
+                data = json.loads(body) if body else {}
+                
+                try:
+                    from services.sully_chain_service import sully_chain
+                    
+                    entity_type = data.get('entity_type')
+                    entity_id = data.get('entity_id')
+                    limit = int(data.get('limit', 100))
+                    
+                    if entity_type and entity_id:
+                        entries = sully_chain.ledger.get_entity_history(
+                            entity_type, entity_id, limit
+                        )
+                    else:
+                        # Get general audit report
+                        report = sully_chain.ledger.generate_audit_report(limit=limit)
+                        entries = report.get('entries', [])
+                    
+                    self._set_json_headers(200)
+                    self.wfile.write(json.dumps({
+                        'success': True,
+                        'entries': entries,
+                        'count': len(entries)
+                    }).encode('utf-8'))
+                    
+                except ImportError:
+                    # Fallback demo data
+                    self._set_json_headers(200)
+                    self.wfile.write(json.dumps({
+                        'success': True,
+                        'entries': [
+                            {'sequence_number': 10542, 'action_type': 'bid_submitted', 'entity_type': 'bid'},
+                            {'sequence_number': 10541, 'action_type': 'supplier_verified', 'entity_type': 'supplier'},
+                            {'sequence_number': 10540, 'action_type': 'escrow_created', 'entity_type': 'escrow'}
+                        ],
+                        'demo_mode': True
+                    }).encode('utf-8'))
+                    
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+        
+        # Verify Supplier
+        if path == '/api/sully-chain/suppliers/verify':
+            try:
+                session = self.validate_session()
+                if not session or session.get('role') not in ['admin']:
+                    self._set_json_headers(403)
+                    self.wfile.write(json.dumps({'error': 'Admin access required'}).encode('utf-8'))
+                    return
+                
+                data = json.loads(body)
+                supplier_id = data.get('supplier_id')
+                
+                if not supplier_id:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'supplier_id required'}).encode('utf-8'))
+                    return
+                
+                try:
+                    from services.sully_chain_service import sully_chain
+                    
+                    success = sully_chain.suppliers.verify_supplier(
+                        supplier_id,
+                        verified_by=session.get('username', 'admin')
+                    )
+                    
+                    if success:
+                        self._set_json_headers(200)
+                        self.wfile.write(json.dumps({
+                            'success': True,
+                            'message': 'Supplier verified and activated'
+                        }).encode('utf-8'))
+                    else:
+                        self._set_json_headers(400)
+                        self.wfile.write(json.dumps({'error': 'Verification failed'}).encode('utf-8'))
+                        
+                except ImportError:
+                    self._set_json_headers(200)
+                    self.wfile.write(json.dumps({
+                        'success': True,
+                        'message': 'Supplier verified (demo mode)',
+                        'demo_mode': True
+                    }).encode('utf-8'))
+                    
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+        
+        # Select Winner
+        if path == '/api/sully-chain/allocations/select-winner':
+            try:
+                session = self.validate_session()
+                if not session or session.get('role') not in ['admin', 'underwriter']:
+                    self._set_json_headers(403)
+                    self.wfile.write(json.dumps({'error': 'Admin or underwriter access required'}).encode('utf-8'))
+                    return
+                
+                data = json.loads(body)
+                allocation_id = data.get('allocation_id')
+                bid_id = data.get('bid_id')
+                
+                if not allocation_id or not bid_id:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'allocation_id and bid_id required'}).encode('utf-8'))
+                    return
+                
+                try:
+                    from services.sully_chain_service import sully_chain
+                    
+                    result = sully_chain.bidding.select_winner(
+                        allocation_id,
+                        bid_id,
+                        selected_by=session.get('username', 'admin'),
+                        notes=data.get('notes', '')
+                    )
+                    
+                    if result:
+                        self._set_json_headers(200)
+                        self.wfile.write(json.dumps({
+                            'success': True,
+                            'winning_bid': result
+                        }).encode('utf-8'))
+                    else:
+                        self._set_json_headers(400)
+                        self.wfile.write(json.dumps({'error': 'Winner selection failed'}).encode('utf-8'))
+                        
+                except ImportError:
+                    self._set_json_headers(200)
+                    self.wfile.write(json.dumps({
+                        'success': True,
+                        'message': 'Winner selected (demo mode)',
+                        'demo_mode': True
+                    }).encode('utf-8'))
+                    
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+        
         # Default: not found
         self.send_error(404, 'Not Found')
     

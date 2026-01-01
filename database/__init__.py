@@ -14,6 +14,19 @@ import logging
 from .config import DatabaseConfig
 from .models import Base
 
+# Import Sully Chain models to ensure they're registered with Base.metadata
+try:
+    from .sully_chain_models import (
+        Supplier, SupplierSpecialty, SupplierCredential,
+        ServiceRequest, Allocation, Bid,
+        ServiceFulfillment, ServiceMilestone,
+        SullyLedger, ClientInteraction,
+        SupplierTransaction, EscrowAccount,
+        SupplierScore, AllocationAnalytics
+    )
+except ImportError:
+    pass  # Sully Chain models not yet created
+
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)

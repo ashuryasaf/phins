@@ -17,8 +17,28 @@ from .audit_repository import AuditRepository
 from .actuarial_repository import ActuarialRepository
 from .token_repository import TokenRepository
 
+# Sully Chain repositories
+from .sully_chain_repository import (
+    SupplierRepository,
+    SupplierSpecialtyRepository,
+    SupplierCredentialRepository,
+    ServiceRequestRepository,
+    AllocationRepository,
+    BidRepository,
+    ServiceFulfillmentRepository,
+    ServiceMilestoneRepository,
+    SullyLedgerRepository,
+    ClientInteractionRepository,
+    SupplierTransactionRepository,
+    EscrowAccountRepository,
+    SupplierScoreRepository,
+    AllocationAnalyticsRepository,
+)
+
 __all__ = [
+    # Base
     'BaseRepository',
+    # PHINS Core
     'CustomerRepository',
     'PolicyRepository',
     'ClaimRepository',
@@ -29,4 +49,19 @@ __all__ = [
     'AuditRepository',
     'ActuarialRepository',
     'TokenRepository',
+    # Sully Chain
+    'SupplierRepository',
+    'SupplierSpecialtyRepository',
+    'SupplierCredentialRepository',
+    'ServiceRequestRepository',
+    'AllocationRepository',
+    'BidRepository',
+    'ServiceFulfillmentRepository',
+    'ServiceMilestoneRepository',
+    'SullyLedgerRepository',
+    'ClientInteractionRepository',
+    'SupplierTransactionRepository',
+    'EscrowAccountRepository',
+    'SupplierScoreRepository',
+    'AllocationAnalyticsRepository',
 ]
