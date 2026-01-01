@@ -698,6 +698,16 @@ class FinancialReportingService:
         }
         
         if dashboard_type == 'accountant':
+            # Helper for case-insensitive status check
+            def claim_status(c, *statuses):
+                s = (c.get('status') or '').lower()
+                return s in [st.lower() for st in statuses]
+            
+            claims_paid_amt = sum(c.get('paid_amount', c.get('approved_amount', 0)) 
+                                  for c in self._claims.values() if claim_status(c, 'paid', 'Paid'))
+            claims_pending_amt = sum(c.get('claimed_amount', 0) for c in self._claims.values() 
+                                     if claim_status(c, 'pending', 'under_review', 'approved', 'Pending', 'Under Review', 'Approved'))
+            
             return {
                 **base_data,
                 'total_revenue': sum(p.get('annual_premium', 0) for p in self._policies.values() 
@@ -705,35 +715,39 @@ class FinancialReportingService:
                 'total_billed': sum(b.get('amount_due', b.get('amount', 0)) for b in self._billing.values()),
                 'total_collected': sum(b.get('amount_paid', 0) for b in self._billing.values()),
                 'outstanding_ar': sum((b.get('amount_due', b.get('amount', 0)) - b.get('amount_paid', 0)) 
-                                     for b in self._billing.values() if b.get('status') != 'paid'),
-                'claims_paid': sum(c.get('paid_amount', c.get('approved_amount', 0)) 
-                                  for c in self._claims.values() if c.get('status') == 'paid'),
-                'claims_pending': sum(c.get('claimed_amount', 0) for c in self._claims.values() 
-                                     if c.get('status') in ['pending', 'under_review', 'approved']),
+                                     for b in self._billing.values() if (b.get('status') or '').lower() != 'paid'),
+                'claims_paid': claims_paid_amt,
+                'claims_pending': claims_pending_amt,
             }
         
         elif dashboard_type == 'underwriter':
+            def uw_status(u, status):
+                return (u.get('status') or '').lower() == status.lower()
+            
             return {
                 **base_data,
-                'pending_applications': len([u for u in self._underwriting.values() 
-                                            if u.get('status') == 'pending']),
-                'approved_count': len([u for u in self._underwriting.values() 
-                                      if u.get('status') == 'approved']),
-                'rejected_count': len([u for u in self._underwriting.values() 
-                                      if u.get('status') == 'rejected']),
+                'pending_applications': len([u for u in self._underwriting.values() if uw_status(u, 'pending')]),
+                'approved_count': len([u for u in self._underwriting.values() if uw_status(u, 'approved')]),
+                'rejected_count': len([u for u in self._underwriting.values() if uw_status(u, 'rejected')]),
                 'total_coverage_pending': sum(self._policies.get(u.get('policy_id'), {}).get('coverage_amount', 0)
-                                             for u in self._underwriting.values() if u.get('status') == 'pending'),
+                                             for u in self._underwriting.values() if uw_status(u, 'pending')),
             }
         
         elif dashboard_type == 'claims':
+            def claim_status(c, *statuses):
+                s = (c.get('status') or '').lower()
+                return s in [st.lower() for st in statuses]
+            
             return {
                 **base_data,
-                'pending_claims': len([c for c in self._claims.values() if c.get('status') == 'pending']),
-                'under_review': len([c for c in self._claims.values() if c.get('status') == 'under_review']),
-                'approved_unpaid': len([c for c in self._claims.values() if c.get('status') == 'approved']),
-                'paid_claims': len([c for c in self._claims.values() if c.get('status') == 'paid']),
+                'pending_claims': len([c for c in self._claims.values() if claim_status(c, 'pending', 'Pending')]),
+                'under_review': len([c for c in self._claims.values() if claim_status(c, 'under_review', 'Under Review', 'medical_assessment')]),
+                'approved_unpaid': len([c for c in self._claims.values() if claim_status(c, 'approved', 'Approved')]),
+                'paid_claims': len([c for c in self._claims.values() if claim_status(c, 'paid', 'Paid')]),
                 'total_pending_amount': sum(c.get('claimed_amount', 0) for c in self._claims.values() 
-                                           if c.get('status') in ['pending', 'under_review']),
+                                           if claim_status(c, 'pending', 'under_review', 'Pending', 'Under Review')),
+                'total_paid_amount': sum(c.get('approved_amount', c.get('paid_amount', 0)) for c in self._claims.values() 
+                                        if claim_status(c, 'paid', 'Paid')),
             }
         
         elif dashboard_type == 'admin':
