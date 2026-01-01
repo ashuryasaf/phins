@@ -1379,10 +1379,21 @@ FAILED_LOGINS: Dict[str, Dict[str, Any]] = {}  # IP -> {count, lockout_until}
 BLOCKED_IPS: Dict[str, Dict[str, Any]] = {}  # IP -> {reason, blocked_at, attempts}
 MALICIOUS_ATTEMPTS: list[Dict[str, Any]] = []  # Log of all malicious attempts
 SUSPICIOUS_PATTERNS: Dict[str, Dict[str, Any]] = {}  # IP -> {pattern_type, count, first_seen}
-MAX_REQUESTS_PER_MINUTE = 60
+MAX_REQUESTS_PER_MINUTE = 300  # Increased for dashboard with multiple API calls
 MAX_LOGIN_ATTEMPTS = 5
 LOCKOUT_DURATION = 900  # 15 minutes in seconds
-MAX_MALICIOUS_ATTEMPTS = 10  # Permanent block after this many attempts
+MAX_MALICIOUS_ATTEMPTS = 50  # Increased - don't block too quickly
+
+# Trusted IPs - Railway internal IPs, localhost, and common proxies
+# These IPs get higher rate limits and won't be permanently blocked
+TRUSTED_IP_PREFIXES = ['100.64.', '10.', '172.16.', '172.17.', '172.18.', '172.19.', 
+                       '172.20.', '172.21.', '172.22.', '172.23.', '172.24.', '172.25.',
+                       '172.26.', '172.27.', '172.28.', '172.29.', '172.30.', '172.31.',
+                       '192.168.', '127.', 'localhost']
+
+def is_trusted_ip(ip: str) -> bool:
+    """Check if IP is from trusted internal network"""
+    return any(ip.startswith(prefix) for prefix in TRUSTED_IP_PREFIXES)
 MAX_REQUEST_SIZE = 10 * 1024 * 1024  # 10MB max request size
 SESSION_TIMEOUT = 3600  # 1 hour session timeout
 CONNECTION_TIMEOUT = 30  # 30 seconds connection timeout
@@ -1435,6 +1446,9 @@ def validate_session(token: str) -> dict[str, str] | None:
 def check_rate_limit(client_ip: str) -> bool:
     """Check if client has exceeded rate limit"""
     now = datetime.now().timestamp()
+    
+    # Trusted IPs get 5x higher rate limit
+    max_requests = MAX_REQUESTS_PER_MINUTE * 5 if is_trusted_ip(client_ip) else MAX_REQUESTS_PER_MINUTE
 
     with STATE_LOCK:
         if client_ip in RATE_LIMIT:
@@ -1443,7 +1457,7 @@ def check_rate_limit(client_ip: str) -> bool:
             if now > limit_data['reset_time']:
                 RATE_LIMIT[client_ip] = {'count': 1, 'reset_time': now + 60}
                 return True
-            elif limit_data['count'] < MAX_REQUESTS_PER_MINUTE:
+            elif limit_data['count'] < max_requests:
                 limit_data['count'] += 1
                 return True
             else:
@@ -1503,6 +1517,12 @@ def get_session_user(session: dict[str, str] | None) -> Dict[str, Any] | None:
 
 def log_malicious_attempt(client_ip: str, reason: str, details: Dict[str, Any] | None = None):
     """Log a malicious attempt for monitoring and analysis"""
+    # Don't log rate limit exceeded for trusted IPs - it's normal for dashboards
+    if is_trusted_ip(client_ip) and 'Rate Limit' in reason:
+        # Just print a warning, don't log as malicious
+        print(f"⚠️ Rate limit warning for trusted IP {client_ip}: {reason}")
+        return
+    
     attempt: Dict[str, Any] = {
         'timestamp': datetime.now().isoformat(),
         'ip': client_ip,
@@ -1516,10 +1536,11 @@ def log_malicious_attempt(client_ip: str, reason: str, details: Dict[str, Any] |
         if len(MALICIOUS_ATTEMPTS) > 1000:
             MALICIOUS_ATTEMPTS.pop(0)
 
-        # Check if IP should be permanently blocked
-        ip_attempts = sum(1 for a in MALICIOUS_ATTEMPTS if a['ip'] == client_ip)
-        if ip_attempts >= MAX_MALICIOUS_ATTEMPTS:
-            block_ip(client_ip, f"Exceeded {MAX_MALICIOUS_ATTEMPTS} malicious attempts", permanent=True)
+        # Check if IP should be permanently blocked - NEVER block trusted IPs
+        if not is_trusted_ip(client_ip):
+            ip_attempts = sum(1 for a in MALICIOUS_ATTEMPTS if a['ip'] == client_ip)
+            if ip_attempts >= MAX_MALICIOUS_ATTEMPTS:
+                block_ip(client_ip, f"Exceeded {MAX_MALICIOUS_ATTEMPTS} malicious attempts", permanent=True)
 
     # Print to console for real-time monitoring
     print(f"🚨 SECURITY ALERT: {client_ip} - {reason}")
@@ -1527,7 +1548,12 @@ def log_malicious_attempt(client_ip: str, reason: str, details: Dict[str, Any] |
         print(f"   Details: {json.dumps(details, indent=2)}")
 
 def block_ip(client_ip: str, reason: str, permanent: bool = False):
-    """Block an IP address"""
+    """Block an IP address - NEVER blocks trusted IPs"""
+    # Never block trusted internal IPs (Railway, localhost, etc.)
+    if is_trusted_ip(client_ip):
+        print(f"⚠️ Attempted to block trusted IP {client_ip} - IGNORED")
+        return
+    
     with STATE_LOCK:
         BLOCKED_IPS[client_ip] = {
             'reason': reason,
@@ -1539,6 +1565,10 @@ def block_ip(client_ip: str, reason: str, permanent: bool = False):
 
 def is_ip_blocked(client_ip: str) -> tuple[bool, str]:
     """Check if IP is blocked, returns (is_blocked, reason)"""
+    # Trusted IPs are NEVER blocked
+    if is_trusted_ip(client_ip):
+        return (False, "")
+    
     with STATE_LOCK:
         if client_ip in BLOCKED_IPS:
             block_data = BLOCKED_IPS[client_ip]
