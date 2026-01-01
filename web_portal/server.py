@@ -26,6 +26,30 @@ import csv
 import io
 from typing import Dict, Any
 
+# ==============================================================================
+# CASE-INSENSITIVE STATUS HELPERS (for data integrity across pipeline)
+# ==============================================================================
+def status_eq(item: Dict, *statuses: str) -> bool:
+    """
+    Case-insensitive status check for an item.
+    Handles both exact matches and space/underscore variations.
+    Example: status_eq(claim, 'approved', 'paid') checks if status is 'Approved', 'approved', 'APPROVED', etc.
+    """
+    item_status = (item.get('status') or '').lower().replace(' ', '_')
+    return item_status in [s.lower().replace(' ', '_') for s in statuses]
+
+def status_in(item: Dict, statuses: list) -> bool:
+    """
+    Case-insensitive check if item's status is in a list of statuses.
+    Example: status_in(claim, ['pending', 'under_review'])
+    """
+    item_status = (item.get('status') or '').lower().replace(' ', '_')
+    return item_status in [s.lower().replace(' ', '_') for s in statuses]
+
+def get_status_lower(item: Dict) -> str:
+    """Get item's status in lowercase with spaces converted to underscores."""
+    return (item.get('status') or '').lower().replace(' ', '_')
+
 # Import billing engine
 try:
     sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
@@ -1016,7 +1040,7 @@ def calculate_monthly_distribution(customer_id: str) -> Dict[str, Any]:
     active_policies = []
     
     for policy in POLICIES.values():
-        if policy.get('customer_id') == customer_id and policy.get('status') == 'active':
+        if policy.get('customer_id') == customer_id and status_eq(policy, 'active'):
             monthly_premium = float(policy.get('monthly_premium', 0))
             annual_premium = float(policy.get('annual_premium', monthly_premium * 12))
             policy_type = policy.get('type', 'life')
@@ -1872,9 +1896,9 @@ else:
 
 def get_mock_statement(customer_id: str) -> Dict[str, Any]:
     """Generate premium statement from actual policy data"""
-    # Get customer's active policies
+    # Get customer's active policies (case-insensitive)
     customer_policies = [p for p in POLICIES.values() 
-                        if p.get('customer_id') == customer_id and p.get('status') == 'active']
+                        if p.get('customer_id') == customer_id and status_eq(p, 'active')]
     
     # Calculate total monthly premium
     total_premium = sum(p.get('monthly_premium', 0) for p in customer_policies)
@@ -1977,7 +2001,7 @@ def get_bi_data_actuary() -> Dict[str, Any]:
             'very_high': sum(1 for p in POLICIES.values() if p.get('risk_score') == 'very_high')
         },
         'claims_ratio': len(CLAIMS) / max(len(POLICIES), 1),
-        'loss_ratio': sum(c.get('approved_amount', 0) for c in CLAIMS.values() if c.get('status') == 'paid') / max(sum(p.get('annual_premium', 0) for p in POLICIES.values()), 1),
+        'loss_ratio': sum(c.get('approved_amount', 0) for c in CLAIMS.values() if status_eq(c, 'paid')) / max(sum(p.get('annual_premium', 0) for p in POLICIES.values()), 1),
         'policy_by_type': {
             'life': sum(1 for p in POLICIES.values() if p.get('type') == 'life'),
             'health': sum(1 for p in POLICIES.values() if p.get('type') == 'health'),
@@ -1993,9 +2017,9 @@ def get_bi_data_actuary() -> Dict[str, Any]:
 def get_bi_data_underwriting() -> Dict[str, Any]:
     """Generate underwriting BI data"""
     return {
-        'pending_applications': sum(1 for u in UNDERWRITING_APPLICATIONS.values() if u.get('status') == 'pending'),
-        'approved_this_month': sum(1 for u in UNDERWRITING_APPLICATIONS.values() if u.get('status') == 'approved' and u.get('decision_date', '').startswith(datetime.now().strftime('%Y-%m'))),
-        'rejection_rate': sum(1 for u in UNDERWRITING_APPLICATIONS.values() if u.get('status') == 'rejected') / max(len(UNDERWRITING_APPLICATIONS), 1),
+        'pending_applications': sum(1 for u in UNDERWRITING_APPLICATIONS.values() if status_eq(u, 'pending')),
+        'approved_this_month': sum(1 for u in UNDERWRITING_APPLICATIONS.values() if status_eq(u, 'approved') and u.get('decision_date', '').startswith(datetime.now().strftime('%Y-%m'))),
+        'rejection_rate': sum(1 for u in UNDERWRITING_APPLICATIONS.values() if status_eq(u, 'rejected')) / max(len(UNDERWRITING_APPLICATIONS), 1),
         'average_processing_time': 3.5,  # days
         'risk_assessment_distribution': {
             'low': sum(1 for u in UNDERWRITING_APPLICATIONS.values() if u.get('risk_assessment') == 'low'),
@@ -2008,15 +2032,15 @@ def get_bi_data_underwriting() -> Dict[str, Any]:
 
 def get_bi_data_accounting() -> Dict[str, Any]:
     """Generate accounting BI data"""
-    total_premium_collected = sum(p.get('annual_premium', 0) for p in POLICIES.values() if p.get('status') == 'active')
-    total_claims_paid = sum(c.get('approved_amount', 0) for c in CLAIMS.values() if c.get('status') == 'paid')
+    total_premium_collected = sum(p.get('annual_premium', 0) for p in POLICIES.values() if status_eq(p, 'active'))
+    total_claims_paid = sum(c.get('approved_amount', 0) for c in CLAIMS.values() if status_eq(c, 'paid'))
     
     return {
         'total_revenue': total_premium_collected,
         'total_claims_paid': total_claims_paid,
         'net_income': total_premium_collected - total_claims_paid,
         'outstanding_premiums': sum(p.get('annual_premium', 0) * 0.1 for p in POLICIES.values()),  # Mock 10% outstanding
-        'pending_claims_liability': sum(c.get('claimed_amount', 0) for c in CLAIMS.values() if c.get('status') in ['pending', 'under_review']),
+        'pending_claims_liability': sum(c.get('claimed_amount', 0) for c in CLAIMS.values() if status_in(c, ['pending', 'under_review'])),
         'profit_margin': ((total_premium_collected - total_claims_paid) / max(total_premium_collected, 1)) * 100,
         'monthly_breakdown': [
             {'month': (datetime.now() - timedelta(days=30*i)).strftime('%Y-%m'), 
@@ -2487,24 +2511,24 @@ For claims or questions, please contact:
             # Calculate comprehensive dashboard stats
             total_customers = len(CUSTOMERS)
             total_policies = len(POLICIES)
-            active_policies = len([p for p in POLICIES.values() if p.get('status') == 'active'])
-            pending_applications = len([a for a in UNDERWRITING_APPLICATIONS.values() if a.get('status') == 'pending'])
-            approved_applications = len([a for a in UNDERWRITING_APPLICATIONS.values() if a.get('status') == 'approved'])
+            active_policies = len([p for p in POLICIES.values() if status_eq(p, 'active')])
+            pending_applications = len([a for a in UNDERWRITING_APPLICATIONS.values() if status_eq(a, 'pending')])
+            approved_applications = len([a for a in UNDERWRITING_APPLICATIONS.values() if status_eq(a, 'approved')])
             
-            # Claims stats
+            # Claims stats (case-insensitive for data integrity)
             total_claims = len(CLAIMS)
-            pending_claims = len([c for c in CLAIMS.values() if c.get('status') in ['pending', 'under_review', 'medical_assessment']])
-            approved_claims = len([c for c in CLAIMS.values() if c.get('status') == 'approved'])
+            pending_claims = len([c for c in CLAIMS.values() if status_in(c, ['pending', 'under_review', 'medical_assessment'])])
+            approved_claims = len([c for c in CLAIMS.values() if status_eq(c, 'approved')])
             
             # Billing stats - fixed naming for clarity
             # Total annual revenue from active policies (expected revenue)
-            total_annual_revenue = sum(p.get('annual_premium', 0) for p in POLICIES.values() if p.get('status') == 'active')
+            total_annual_revenue = sum(p.get('annual_premium', 0) for p in POLICIES.values() if status_eq(p, 'active'))
             # Total amount actually collected (paid bills)
             total_collected = sum(b.get('amount_paid', 0) for b in BILLING.values())
             # Total amount billed
             total_billed = sum(b.get('amount', 0) for b in BILLING.values())
             # Outstanding balance (billed but not paid)
-            outstanding_balance = sum(b.get('amount', 0) - b.get('amount_paid', 0) for b in BILLING.values() if b.get('status') in ('outstanding', 'pending', 'overdue'))
+            outstanding_balance = sum(b.get('amount', 0) - b.get('amount_paid', 0) for b in BILLING.values() if status_in(b, ['outstanding', 'pending', 'overdue']))
             # Legacy compatibility
             total_revenue = total_annual_revenue
             total_premium_collected = total_billed
@@ -2515,10 +2539,10 @@ For claims or questions, please contact:
             
             # Investment stats
             total_investment_value = sum(p.get('investment_value', 0) for p in POLICIES.values())
-            total_coverage_amount = sum(p.get('coverage_amount', 0) for p in POLICIES.values() if p.get('status') == 'active')
+            total_coverage_amount = sum(p.get('coverage_amount', 0) for p in POLICIES.values() if status_eq(p, 'active'))
             
-            # Claims payment stats
-            claims_paid = sum(c.get('amount_approved', 0) for c in CLAIMS.values() if c.get('status') == 'approved')
+            # Claims payment stats (case-insensitive)
+            claims_paid = sum(c.get('amount_approved', c.get('approved_amount', 0)) for c in CLAIMS.values() if status_eq(c, 'approved'))
             
             dashboard_data = {
                 'success': True,
@@ -2529,19 +2553,19 @@ For claims or questions, please contact:
                 # Policy metrics
                 'total_policies': total_policies,
                 'active_policies': active_policies,
-                'pending_policies': len([p for p in POLICIES.values() if p.get('status') == 'pending_underwriting']),
+                'pending_policies': len([p for p in POLICIES.values() if status_eq(p, 'pending_underwriting')]),
                 
                 # Underwriting metrics
                 'total_applications': len(UNDERWRITING_APPLICATIONS),
                 'pending_applications': pending_applications,
                 'approved_applications': approved_applications,
-                'rejected_applications': len([a for a in UNDERWRITING_APPLICATIONS.values() if a.get('status') == 'rejected']),
+                'rejected_applications': len([a for a in UNDERWRITING_APPLICATIONS.values() if status_eq(a, 'rejected')]),
                 
-                # Claims metrics
+                # Claims metrics (case-insensitive)
                 'total_claims': total_claims,
                 'pending_claims': pending_claims,
                 'approved_claims': approved_claims,
-                'rejected_claims': len([c for c in CLAIMS.values() if c.get('status') == 'rejected']),
+                'rejected_claims': len([c for c in CLAIMS.values() if status_eq(c, 'rejected')]),
                 'claims_paid_amount': claims_paid,
                 
                 # Financial metrics
@@ -2564,7 +2588,7 @@ For claims or questions, please contact:
                     'underwriting': pending_applications,
                     'approved': approved_applications,
                     'active': active_policies,
-                    'billing': len([b for b in BILLING.values() if b.get('status') == 'outstanding']),
+                    'billing': len([b for b in BILLING.values() if status_eq(b, 'outstanding')]),
                     'claims': pending_claims
                 },
                 
@@ -2703,11 +2727,11 @@ For claims or questions, please contact:
                 data = ms.summary()
             except Exception:
                 data = {
-                    'policies': {'total': len(POLICIES), 'active': sum(1 for p in POLICIES.values() if p.get('status') == 'active')},
-                    'claims': {'pending': sum(1 for c in CLAIMS.values() if c.get('status') in ['pending', 'under_review']),
-                               'approved': sum(1 for c in CLAIMS.values() if c.get('status') == 'approved')},
-                    'billing': {'overdue': sum(1 for b in BILLING.values() if b.get('status') == 'overdue'),
-                                'outstanding': sum(1 for b in BILLING.values() if b.get('status') in ['outstanding', 'partial'])}
+                    'policies': {'total': len(POLICIES), 'active': sum(1 for p in POLICIES.values() if status_eq(p, 'active'))},
+                    'claims': {'pending': sum(1 for c in CLAIMS.values() if status_in(c, ['pending', 'under_review'])),
+                               'approved': sum(1 for c in CLAIMS.values() if status_eq(c, 'approved'))},
+                    'billing': {'overdue': sum(1 for b in BILLING.values() if status_eq(b, 'overdue')),
+                                'outstanding': sum(1 for b in BILLING.values() if status_in(b, ['outstanding', 'partial']))}
                 }
             self._set_json_headers()
             self.wfile.write(json.dumps({'metrics': data, 'ts': datetime.now().isoformat()}).encode('utf-8'))
@@ -3224,11 +3248,11 @@ For claims or questions, please contact:
                 story.append(Paragraph("📈 SECTION 8: ACCOUNT STATISTICS", section_style))
                 story.append(HRFlowable(width="100%", thickness=1, color=colors.HexColor('#e3f2fd')))
                 
-                # Calculate statistics
-                total_premiums_paid = sum(b.get('amount_paid', 0) for b in customer_bills if b.get('status') == 'paid')
+                # Calculate statistics (case-insensitive)
+                total_premiums_paid = sum(b.get('amount_paid', 0) for b in customer_bills if status_eq(b, 'paid'))
                 total_claims_filed = len(customer_claims)
-                total_claims_approved = len([c for c in customer_claims if c.get('status', '').lower() in ('approved', 'paid')])
-                total_claims_amount = sum(c.get('approved_amount', 0) for c in customer_claims if c.get('status', '').lower() in ('approved', 'paid'))
+                total_claims_approved = len([c for c in customer_claims if status_in(c, ['approved', 'paid'])])
+                total_claims_amount = sum(c.get('approved_amount', 0) for c in customer_claims if status_in(c, ['approved', 'paid']))
                 
                 # Get all customer policies
                 customer_policies = [p for p in POLICIES.values() if p.get('customer_id') == customer_id]
@@ -3332,7 +3356,9 @@ For claims or questions, please contact:
             else:
                 claims_list = list(CLAIMS.values())
                 if status:
-                    claims_list = [c for c in claims_list if c.get('status') == status]
+                    # Case-insensitive status filter
+                    status_lower = status.lower().replace(' ', '_')
+                    claims_list = [c for c in claims_list if get_status_lower(c) == status_lower]
                 if role == 'customer' and session_customer_id:
                     def _belongs(c: Dict[str, Any]) -> bool:
                         if c.get('customer_id') == session_customer_id:
@@ -3447,11 +3473,11 @@ For claims or questions, please contact:
                 if overall == 'approved':
                     # Check if policy is active
                     linked = next((p for p in policies if p.get('underwriting_id') == most_recent.get('id')), None)
-                    if linked and linked.get('status') == 'active':
+                    if linked and status_eq(linked, 'active'):
                         overall = 'active_policy'
             
-            # Calculate billing summary
-            outstanding_bills = [b for b in bills if b.get('status') == 'outstanding']
+            # Calculate billing summary (case-insensitive)
+            outstanding_bills = [b for b in bills if status_eq(b, 'outstanding')]
             total_outstanding = sum(b.get('amount', 0) or b.get('amount_due', 0) for b in outstanding_bills)
 
             payload = {
@@ -3484,9 +3510,9 @@ For claims or questions, please contact:
                 self.wfile.write(json.dumps({'error': 'customer_id required'}).encode('utf-8'))
                 return
             
-            # Get customer's policies
+            # Get customer's policies (case-insensitive status check)
             customer_policies = [p for p in POLICIES.values() if p.get('customer_id') == customer_id]
-            active_policies = [p for p in customer_policies if p.get('status') == 'active']
+            active_policies = [p for p in customer_policies if status_eq(p, 'active')]
             
             # Get customer's claims
             customer_claims = [c for c in CLAIMS.values() 
@@ -3496,7 +3522,7 @@ For claims or questions, please contact:
             # Calculate totals
             total_coverage = sum(p.get('coverage_amount', 0) for p in active_policies)
             total_premium = sum(p.get('annual_premium', 0) for p in active_policies)
-            pending_claims = len([c for c in customer_claims if c.get('status') in ['pending', 'under_review']])
+            pending_claims = len([c for c in customer_claims if status_in(c, ['pending', 'under_review'])])
             
             summary = {
                 'customer_id': customer_id,
@@ -3535,20 +3561,20 @@ For claims or questions, please contact:
             total_billed = sum(float(b.get('amount', 0)) for b in bills)
             total_collected = sum(float(b.get('amount_paid', 0)) for b in bills)
             outstanding = sum(float(b.get('amount', 0)) - float(b.get('amount_paid', 0)) 
-                             for b in bills if b.get('status') not in ('paid',))
+                             for b in bills if not status_eq(b, 'paid'))
             
-            paid_bills = [b for b in bills if b.get('status') == 'paid']
-            pending_bills = [b for b in bills if b.get('status') in ('outstanding', 'pending')]
-            overdue_bills = [b for b in bills if b.get('status') == 'overdue']
+            paid_bills = [b for b in bills if status_eq(b, 'paid')]
+            pending_bills = [b for b in bills if status_in(b, ['outstanding', 'pending'])]
+            overdue_bills = [b for b in bills if status_eq(b, 'overdue')]
             
             # Calculate revenue from policies
-            active_policies = [p for p in POLICIES.values() if p.get('status') == 'active']
+            active_policies = [p for p in POLICIES.values() if status_eq(p, 'active')]
             total_annual_revenue = sum(float(p.get('annual_premium', 0)) for p in active_policies)
             monthly_revenue = total_annual_revenue / 12
             
-            # Claims paid
+            # Claims paid (case-insensitive)
             claims_paid = sum(float(c.get('approved_amount', 0)) for c in CLAIMS.values() 
-                            if c.get('status') in ('paid', 'approved', 'Paid', 'Approved'))
+                            if status_in(c, ['paid', 'approved']))
             
             self._set_json_headers()
             self.wfile.write(json.dumps({
@@ -3588,7 +3614,7 @@ For claims or questions, please contact:
                             'customer_name': customer_name,
                             'type': 'premium',
                             'amount': float(bill.get('amount', 0) or 0),
-                            'status': 'paid' if bill.get('status') == 'paid' else (bill.get('status') or 'pending'),
+                            'status': 'paid' if status_eq(bill, 'paid') else (bill.get('status') or 'pending'),
                             'date': bill.get('created_date') or now_str,
                             'payment_method': bill.get('payment_method') or 'N/A'
                         })
@@ -3598,7 +3624,7 @@ For claims or questions, please contact:
                 # Add any claims payments as negative transactions
                 for claim_id, claim in list(CLAIMS.items()):
                     try:
-                        if claim.get('status') in ('paid', 'Paid', 'approved', 'Approved') and claim.get('approved_amount'):
+                        if status_in(claim, ['paid', 'approved']) and claim.get('approved_amount'):
                             customer = CUSTOMERS.get(claim.get('customer_id', ''), {})
                             transactions.append({
                                 'id': claim_id,
@@ -3644,9 +3670,9 @@ For claims or questions, please contact:
             if role == 'customer':
                 policy_ids = {p.get('id') for p in POLICIES.values() if p.get('customer_id') == session_customer_id}
                 bills = [b for b in BILLING.values()
-                         if b.get('policy_id') in policy_ids and b.get('status') not in ('paid',)]
+                         if b.get('policy_id') in policy_ids and not status_eq(b, 'paid')]
             else:
-                bills = [b for b in BILLING.values() if b.get('status') not in ('paid',)]
+                bills = [b for b in BILLING.values() if not status_eq(b, 'paid')]
 
             def _due_ts(b: Dict[str, Any]) -> float:
                 try:
@@ -3686,24 +3712,24 @@ For claims or questions, please contact:
                 # Get health wallet
                 wallet = HEALTH_WALLETS.get(cust_id, {})
                 
-                # Determine pipeline stage
+                # Determine pipeline stage (case-insensitive status checks)
                 pipeline_stage = 'registered'
                 if customer_apps:
-                    pending_apps = [a for a in customer_apps if a.get('status') == 'pending']
-                    approved_apps = [a for a in customer_apps if a.get('status') == 'approved']
+                    pending_apps = [a for a in customer_apps if status_eq(a, 'pending')]
+                    approved_apps = [a for a in customer_apps if status_eq(a, 'approved')]
                     if pending_apps:
                         pipeline_stage = 'underwriting'
                     elif approved_apps:
                         pipeline_stage = 'approved'
                 
                 if customer_policies:
-                    active_policies = [p for p in customer_policies if p.get('status') == 'active']
+                    active_policies = [p for p in customer_policies if status_eq(p, 'active')]
                     if active_policies:
                         pipeline_stage = 'active_policy'
                 
                 if customer_bills:
-                    outstanding_bills = [b for b in customer_bills if b.get('status') == 'outstanding']
-                    paid_bills = [b for b in customer_bills if b.get('status') == 'paid']
+                    outstanding_bills = [b for b in customer_bills if status_eq(b, 'outstanding')]
+                    paid_bills = [b for b in customer_bills if status_eq(b, 'paid')]
                     if outstanding_bills:
                         pipeline_stage = 'billing_pending'
                     elif paid_bills:
@@ -3717,10 +3743,10 @@ For claims or questions, please contact:
                     'created_date': customer.get('created_date', 'N/A'),
                     'pipeline_stage': pipeline_stage,
                     'policies_count': len(customer_policies),
-                    'active_policies': len([p for p in customer_policies if p.get('status') == 'active']),
-                    'pending_applications': len([a for a in customer_apps if a.get('status') == 'pending']),
-                    'outstanding_bills': len([b for b in customer_bills if b.get('status') == 'outstanding']),
-                    'total_premium_due': sum(b.get('amount_due', 0) for b in customer_bills if b.get('status') == 'outstanding'),
+                    'active_policies': len([p for p in customer_policies if status_eq(p, 'active')]),
+                    'pending_applications': len([a for a in customer_apps if status_eq(a, 'pending')]),
+                    'outstanding_bills': len([b for b in customer_bills if status_eq(b, 'outstanding')]),
+                    'total_premium_due': sum(b.get('amount_due', 0) for b in customer_bills if status_eq(b, 'outstanding')),
                     'wallet_balance': wallet.get('balance', 0),
                     'policies': customer_policies,
                     'applications': customer_apps,
@@ -3820,7 +3846,7 @@ For claims or questions, please contact:
             
             # Check 5: Billing
             bills = [b for b in BILLING.values() if b.get('customer_id') == customer_id]
-            active_policies = [p for p in policies if p.get('status') == 'active']
+            active_policies = [p for p in policies if status_eq(p, 'active')]
             
             if active_policies and not bills:
                 validation_results['errors'].append('Active policy without billing record')
@@ -3831,7 +3857,7 @@ For claims or questions, please contact:
                     'details': 'Active policy found but no billing record'
                 })
             elif bills:
-                total_due = sum(b.get('amount_due', 0) for b in bills if b.get('status') == 'outstanding')
+                total_due = sum(b.get('amount_due', 0) for b in bills if status_eq(b, 'outstanding'))
                 validation_results['checks'].append({
                     'check': 'billing_status',
                     'status': 'PASS',
@@ -4077,10 +4103,10 @@ For claims or questions, please contact:
                 self.wfile.write(json.dumps(validation).encode('utf-8'))
                 return
             
-            # Check 2: Underwriting Applications
+            # Check 2: Underwriting Applications (case-insensitive)
             apps = [a for a in UNDERWRITING_APPLICATIONS.values() if a.get('customer_id') == customer_id]
-            pending_apps = [a for a in apps if a.get('status') == 'pending']
-            approved_apps = [a for a in apps if a.get('status') == 'approved']
+            pending_apps = [a for a in apps if status_eq(a, 'pending')]
+            approved_apps = [a for a in apps if status_eq(a, 'approved')]
             
             if approved_apps:
                 validation['checks'].append({
@@ -4112,10 +4138,10 @@ For claims or questions, please contact:
                 validation['next_actions'].append('Submit insurance application')
                 validation['pipeline_stage'] = 'registered'
             
-            # Check 3: Policies
+            # Check 3: Policies (case-insensitive)
             policies = [p for p in POLICIES.values() if p.get('customer_id') == customer_id]
-            active_policies = [p for p in policies if p.get('status') == 'active']
-            pending_policies = [p for p in policies if p.get('status') == 'pending_underwriting']
+            active_policies = [p for p in policies if status_eq(p, 'active')]
+            pending_policies = [p for p in policies if status_eq(p, 'pending_underwriting')]
             
             if active_policies:
                 validation['checks'].append({
@@ -4139,10 +4165,10 @@ For claims or questions, please contact:
                     'details': f'{len(policies)} policies, none active'
                 })
             
-            # Check 4: Billing
+            # Check 4: Billing (case-insensitive)
             bills = [b for b in BILLING.values() if b.get('customer_id') == customer_id]
-            outstanding_bills = [b for b in bills if b.get('status') == 'outstanding']
-            paid_bills = [b for b in bills if b.get('status') == 'paid']
+            outstanding_bills = [b for b in bills if status_eq(b, 'outstanding')]
+            paid_bills = [b for b in bills if status_eq(b, 'paid')]
             
             if active_policies and not bills:
                 validation['errors'].append('Active policy without billing record - need to generate billing')
@@ -5931,18 +5957,18 @@ For claims or questions, please contact:
             )
             result['total_assets'] = total_assets
             
-            # 11. Billing summary
+            # 11. Billing summary (case-insensitive)
             customer_bills = [b for b in BILLING.values() if b.get('customer_id') == customer_id]
             outstanding = sum(
                 (b.get('amount', b.get('amount_due', 0)) - b.get('amount_paid', 0))
                 for b in customer_bills
-                if b.get('status') in ['outstanding', 'pending', 'partial']
+                if status_in(b, ['outstanding', 'pending', 'partial'])
             )
             result['billing'] = {
                 'outstanding_amount': outstanding,
                 'bills_count': len(customer_bills),
                 'next_due': min(
-                    (b.get('due_date') for b in customer_bills if b.get('status') in ['outstanding', 'pending']),
+                    (b.get('due_date') for b in customer_bills if status_in(b, ['outstanding', 'pending'])),
                     default=None
                 )
             }
@@ -8408,17 +8434,17 @@ For claims or questions, please contact:
                 
                 now = datetime.now()
                 
-                # Find pending underwriting applications
+                # Find pending underwriting applications (case-insensitive)
                 pending_apps = [a for a in UNDERWRITING_APPLICATIONS.values() 
-                               if a.get('customer_id') == customer_id and a.get('status') == 'pending']
+                               if a.get('customer_id') == customer_id and status_eq(a, 'pending')]
                 
                 # Find pending policies (pending underwriting)
                 pending_policies = [p for p in POLICIES.values() 
-                                   if p.get('customer_id') == customer_id and p.get('status') == 'pending_underwriting']
+                                   if p.get('customer_id') == customer_id and status_eq(p, 'pending_underwriting')]
                 
                 # Find active policies
                 active_policies = [p for p in POLICIES.values() 
-                                  if p.get('customer_id') == customer_id and p.get('status') == 'active']
+                                  if p.get('customer_id') == customer_id and status_eq(p, 'active')]
                 
                 # Determine current stage and process next step
                 if pending_apps and auto_advance:
@@ -9182,13 +9208,13 @@ For claims or questions, please contact:
                     self.wfile.write(json.dumps({'error': 'Application not found'}).encode('utf-8'))
                     return
                 
-                # VALIDATION 1: Check application status
-                if app.get('status') == 'approved':
+                # VALIDATION 1: Check application status (case-insensitive)
+                if status_eq(app, 'approved'):
                     self._set_json_headers(400)
                     self.wfile.write(json.dumps({'error': 'Application already approved'}).encode('utf-8'))
                     return
                 
-                if app.get('status') == 'rejected':
+                if status_eq(app, 'rejected'):
                     self._set_json_headers(400)
                     self.wfile.write(json.dumps({'error': 'Cannot approve a rejected application'}).encode('utf-8'))
                     return
@@ -9213,8 +9239,8 @@ For claims or questions, please contact:
                 
                 policy = POLICIES[policy_id]
                 
-                # VALIDATION 4: Check policy not already active
-                if policy.get('status') == 'active':
+                # VALIDATION 4: Check policy not already active (case-insensitive)
+                if status_eq(policy, 'active'):
                     self._set_json_headers(400)
                     self.wfile.write(json.dumps({'error': 'Policy is already active'}).encode('utf-8'))
                     return
@@ -10049,11 +10075,11 @@ For claims or questions, please contact:
             # Get billing stats for dashboard
             if path == '/api/billing/stats':
                 try:
-                    # Calculate real stats from BILLING data
+                    # Calculate real stats from BILLING data (case-insensitive)
                     bills = list(BILLING.values())
                     total_transactions = len(bills)
-                    successful = len([b for b in bills if b.get('status') in ['paid', 'partial']])
-                    failed = len([b for b in bills if b.get('status') == 'failed'])
+                    successful = len([b for b in bills if status_in(b, ['paid', 'partial'])])
+                    failed = len([b for b in bills if status_eq(b, 'failed')])
                     total_revenue = sum(float(b.get('amount_paid', 0)) for b in bills)
                     
                     self._set_json_headers()
@@ -10079,7 +10105,7 @@ For claims or questions, please contact:
                             'transaction_id': bill_id,
                             'customer_id': bill.get('customer_id', 'N/A'),
                             'amount': float(bill.get('amount_due', 0)),
-                            'status': 'success' if bill.get('status') == 'paid' else bill.get('status', 'pending'),
+                            'status': 'success' if status_eq(bill, 'paid') else bill.get('status', 'pending'),
                             'timestamp': bill.get('created_date', datetime.now().isoformat()),
                             'payment_method': bill.get('payment_method', '****-****-****-****')
                         })
@@ -10153,9 +10179,9 @@ For claims or questions, please contact:
                     
                     # If successful card/PayPal payment, update billing record
                     if result.success and result.status == 'completed' and policy_id:
-                        # Find and update billing record
+                        # Find and update billing record (case-insensitive)
                         for bill_id, bill in BILLING.items():
-                            if bill.get('policy_id') == policy_id and bill.get('status') in ['outstanding', 'partial']:
+                            if bill.get('policy_id') == policy_id and status_in(bill, ['outstanding', 'partial']):
                                 bill['amount_paid'] = float(bill.get('amount_paid', 0)) + amount
                                 if bill['amount_paid'] >= float(bill.get('amount_due', 0)):
                                     bill['status'] = 'paid'
@@ -10563,10 +10589,10 @@ For claims or questions, please contact:
                         # Premium payment - update the bill and record on ledger
                         bill_id = data.get('bill_id')
                         
-                        # Find outstanding bill if not specified
+                        # Find outstanding bill if not specified (case-insensitive)
                         if not bill_id:
                             for bid, bill in BILLING.items():
-                                if bill.get('customer_id') == customer_id and bill.get('status') == 'outstanding':
+                                if bill.get('customer_id') == customer_id and status_eq(bill, 'outstanding'):
                                     bill_id = bid
                                     break
                         
@@ -13921,10 +13947,10 @@ For claims or questions, please contact:
                 wallet = HEALTH_WALLETS.get(customer_id, {})
                 wallet_balance = wallet.get('balance', 0)
                 
-                # Get all outstanding bills for this customer
+                # Get all outstanding bills for this customer (case-insensitive)
                 customer_bills = [
                     (bid, b) for bid, b in BILLING.items() 
-                    if b.get('customer_id') == customer_id and b.get('status') in ['outstanding', 'partial', 'overdue']
+                    if b.get('customer_id') == customer_id and status_in(b, ['outstanding', 'partial', 'overdue'])
                 ]
                 
                 if not customer_bills:
@@ -14165,7 +14191,7 @@ For claims or questions, please contact:
                 for bill_id, bill in list(BILLING.items()):
                     if remaining_amount <= 0:
                         break
-                    if bill.get('customer_id') == customer_id and bill.get('status') in ['outstanding', 'pending']:
+                    if bill.get('customer_id') == customer_id and status_in(bill, ['outstanding', 'pending']):
                         bill_due = bill.get('amount', bill.get('amount_due', 0))
                         bill_paid_so_far = bill.get('amount_paid', 0)
                         outstanding = bill_due - bill_paid_so_far

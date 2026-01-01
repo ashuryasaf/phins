@@ -26,6 +26,20 @@ logger = logging.getLogger(__name__)
 
 
 # ==============================================================================
+# CASE-INSENSITIVE STATUS HELPERS (for data integrity)
+# ==============================================================================
+def _status_eq(item: Dict, *statuses: str) -> bool:
+    """Case-insensitive status check for an item."""
+    item_status = (item.get('status') or '').lower().replace(' ', '_')
+    return item_status in [s.lower().replace(' ', '_') for s in statuses]
+
+def _status_in(item: Dict, statuses: list) -> bool:
+    """Case-insensitive check if item's status is in a list of statuses."""
+    item_status = (item.get('status') or '').lower().replace(' ', '_')
+    return item_status in [s.lower().replace(' ', '_') for s in statuses]
+
+
+# ==============================================================================
 # ACTUARIAL CONSTANTS & TABLES
 # ==============================================================================
 
@@ -346,14 +360,14 @@ class FinancialReportingService:
                 'age': age
             })
         
-        # Claims liability
+        # Claims liability (case-insensitive)
         for claim_id, claim in self._claims.items():
-            if claim.get('status') in ['pending', 'under_review', 'approved']:
+            if _status_in(claim, ['pending', 'under_review', 'approved']):
                 total_claims_liability += claim.get('claimed_amount', 0)
         
         return {
             'summary': {
-                'total_policies': len([p for p in self._policies.values() if p.get('status') == 'active']),
+                'total_policies': len([p for p in self._policies.values() if _status_eq(p, 'active')]),
                 'total_coverage': round(total_coverage, 2),
                 'total_annual_premiums': round(total_premiums, 2),
                 'total_claims_liability': round(total_claims_liability, 2),
@@ -369,11 +383,11 @@ class FinancialReportingService:
     
     def generate_forecast_report(self, years: int = 25) -> Dict[str, Any]:
         """
-        Generate long-term forecast for the portfolio.
+        Generate long-term forecast for the portfolio (case-insensitive status checks).
         """
         current_premiums = sum(p.get('annual_premium', 0) for p in self._policies.values() 
-                               if p.get('status') == 'active')
-        current_policies = len([p for p in self._policies.values() if p.get('status') == 'active'])
+                               if _status_eq(p, 'active'))
+        current_policies = len([p for p in self._policies.values() if _status_eq(p, 'active')])
         
         # Growth assumptions
         new_policy_growth = 0.10  # 10% annual new policy growth
@@ -447,9 +461,9 @@ class FinancialReportingService:
             if customer:
                 age = self._calculate_age(customer.get('dob')) or age
                 
-                # Get their policy data if exists
+                # Get their policy data if exists (case-insensitive)
                 for policy in self._policies.values():
-                    if policy.get('customer_id') == customer_id and policy.get('status') == 'active':
+                    if policy.get('customer_id') == customer_id and _status_eq(policy, 'active'):
                         coverage = policy.get('coverage_amount', coverage)
                         # Extract savings_pct from policy if available
                         break
@@ -562,8 +576,8 @@ class FinancialReportingService:
             if not policy.get('annual_premium') or policy.get('annual_premium', 0) <= 0:
                 warnings.append(f"Policy {policy_id}: Missing or zero premium")
             
-            # Actuarial consistency check for life/health policies
-            if policy.get('status') == 'active' and policy.get('type') in ['life', 'health']:
+            # Actuarial consistency check for life/health policies (case-insensitive)
+            if _status_eq(policy, 'active') and policy.get('type') in ['life', 'health']:
                 actuarial_checks['total_checked'] += 1
                 
                 # Get customer age
@@ -643,9 +657,9 @@ class FinancialReportingService:
                 if policy_status not in ['active', 'pending_billing']:
                     warnings.append(f"Underwriting {uw_id}: Approved but policy status is {policy.get('status')}")
         
-        # 5. Financial reconciliation
+        # 5. Financial reconciliation (case-insensitive)
         total_premiums_expected = sum(p.get('annual_premium', 0) for p in self._policies.values() 
-                                      if p.get('status') == 'active')
+                                      if _status_eq(p, 'active'))
         total_billed = sum(b.get('amount_due', b.get('amount', 0)) for b in self._billing.values())
         total_paid = sum(b.get('amount_paid', 0) for b in self._billing.values())
         
@@ -683,7 +697,7 @@ class FinancialReportingService:
             'financial_reconciliation': financial_summary,
             'data_counts': {
                 'policies': len(self._policies),
-                'active_policies': len([p for p in self._policies.values() if p.get('status') == 'active']),
+                'active_policies': len([p for p in self._policies.values() if _status_eq(p, 'active')]),
                 'customers': len(self._customers),
                 'claims': len(self._claims),
                 'billing_records': len(self._billing),
@@ -708,26 +722,21 @@ class FinancialReportingService:
         """
         base_data = {
             'total_policies': len(self._policies),
-            'active_policies': len([p for p in self._policies.values() if p.get('status') == 'active']),
+            'active_policies': len([p for p in self._policies.values() if _status_eq(p, 'active')]),
             'total_customers': len(self._customers),
             'generated_at': datetime.now().isoformat()
         }
         
         if dashboard_type == 'accountant':
-            # Helper for case-insensitive status check
-            def claim_status(c, *statuses):
-                s = (c.get('status') or '').lower()
-                return s in [st.lower() for st in statuses]
-            
             claims_paid_amt = sum(c.get('paid_amount', c.get('approved_amount', 0)) 
-                                  for c in self._claims.values() if claim_status(c, 'paid', 'Paid'))
+                                  for c in self._claims.values() if _status_eq(c, 'paid'))
             claims_pending_amt = sum(c.get('claimed_amount', 0) for c in self._claims.values() 
-                                     if claim_status(c, 'pending', 'under_review', 'approved', 'Pending', 'Under Review', 'Approved'))
+                                     if _status_in(c, ['pending', 'under_review', 'approved']))
             
             return {
                 **base_data,
                 'total_revenue': sum(p.get('annual_premium', 0) for p in self._policies.values() 
-                                    if p.get('status') == 'active'),
+                                    if _status_eq(p, 'active')),
                 'total_billed': sum(b.get('amount_due', b.get('amount', 0)) for b in self._billing.values()),
                 'total_collected': sum(b.get('amount_paid', 0) for b in self._billing.values()),
                 'outstanding_ar': sum((b.get('amount_due', b.get('amount', 0)) - b.get('amount_paid', 0)) 
