@@ -9,6 +9,11 @@ Provides comprehensive financial reporting with:
 - Data integrity validation (bottom-up)
 - Cross-dashboard data validation
 
+ACTUARIAL SOURCE: PHINS_ACTUARIAL_TABLES_V1
+
+All actuarial calculations use the unified actuarial_tables module
+to ensure consistent premium calculations across the platform.
+
 ADL Levels (Activities of Daily Living):
 - Level 1: Independent (lowest risk)
 - Level 2-3: Mild impairment
@@ -26,53 +31,27 @@ logger = logging.getLogger(__name__)
 
 
 # ==============================================================================
-# ACTUARIAL CONSTANTS & TABLES
+# IMPORT FROM UNIFIED ACTUARIAL TABLES MODULE
+# This ensures ALL premium calculations use the SAME actuarial source
 # ==============================================================================
 
-# Mortality rates by age bracket (per 1000 lives per year)
-MORTALITY_RATES = {
-    (0, 30): 0.5,
-    (30, 40): 1.2,
-    (40, 50): 2.5,
-    (50, 60): 5.0,
-    (60, 70): 12.0,
-    (70, 80): 30.0,
-    (80, 100): 75.0,
-}
-
-# ADL Risk multipliers (1-10 scale, 5 is baseline medium risk)
-ADL_RISK_MULTIPLIERS = {
-    1: 0.6,   # Very low risk - fully independent
-    2: 0.75,
-    3: 0.85,
-    4: 0.95,
-    5: 1.0,   # Medium risk (baseline)
-    6: 1.15,
-    7: 1.35,
-    8: 1.6,
-    9: 1.9,
-    10: 2.5,  # Very high risk - total dependence
-}
-
-# Lapse rates by policy year
-LAPSE_RATES = {
-    1: 0.08,   # 8% lapse in year 1
-    2: 0.05,
-    3: 0.04,
-    (4, 10): 0.03,
-    (11, 25): 0.02,
-    (26, 100): 0.01,
-}
-
-# Investment return assumptions (annual)
-INVESTMENT_RETURNS = {
-    'conservative': 0.04,   # 4% annual
-    'moderate': 0.06,       # 6% annual
-    'aggressive': 0.08,     # 8% annual
-}
-
-# Discount rate for present value calculations
-DISCOUNT_RATE = 0.035  # 3.5% annual
+from services.actuarial_tables import (
+    # Constants
+    ACTUARIAL_SOURCE,
+    MORTALITY_RATES,
+    ADL_RISK_MULTIPLIERS,
+    RISK_SCORE_TO_ADL,
+    LAPSE_RATES,
+    INVESTMENT_RETURNS,
+    DISCOUNT_RATE,
+    EXPENSE_LOADING_PCT,
+    # Functions
+    get_mortality_rate,
+    get_adl_multiplier,
+    get_adl_from_risk_score,
+    get_lapse_rate,
+    get_adl_description,
+)
 
 
 class FinancialReportingService:
@@ -90,28 +69,23 @@ class FinancialReportingService:
     
     # ==========================================================================
     # ACTUARIAL CALCULATIONS
+    # Uses unified actuarial_tables module for consistent data source
     # ==========================================================================
     
     def get_mortality_rate(self, age: int) -> float:
         """Get mortality rate per 1000 lives for given age"""
-        for (low, high), rate in MORTALITY_RATES.items():
-            if low <= age < high:
-                return rate / 1000.0
-        return 0.075  # Default for very old ages
+        # Delegate to unified module function
+        return get_mortality_rate(age)
     
     def get_adl_multiplier(self, adl_level: int) -> float:
         """Get risk multiplier based on ADL level (1-10)"""
-        adl_level = max(1, min(10, adl_level))
-        return ADL_RISK_MULTIPLIERS.get(adl_level, 1.0)
+        # Delegate to unified module function
+        return get_adl_multiplier(adl_level)
     
     def get_lapse_rate(self, policy_year: int) -> float:
         """Get lapse rate for given policy year"""
-        if policy_year in LAPSE_RATES:
-            return LAPSE_RATES[policy_year]
-        for key, rate in LAPSE_RATES.items():
-            if isinstance(key, tuple) and key[0] <= policy_year <= key[1]:
-                return rate
-        return 0.01
+        # Delegate to unified module function
+        return get_lapse_rate(policy_year)
     
     def calculate_premium(self, coverage: float, age: int, adl_level: int,
                          savings_pct: float, term_years: int) -> Dict[str, float]:
@@ -153,8 +127,8 @@ class FinancialReportingService:
         savings_allocation = coverage * savings_pct
         savings_premium_annual = savings_allocation / term_years
         
-        # Expense loading (15% of risk premium)
-        expense_loading = risk_premium_annual * 0.15
+        # Expense loading (15% of risk premium) - from unified actuarial tables
+        expense_loading = risk_premium_annual * EXPENSE_LOADING_PCT
         
         # Total annual premium
         total_annual = risk_premium_annual + savings_premium_annual + expense_loading
@@ -169,7 +143,8 @@ class FinancialReportingService:
             'savings_target': round(savings_allocation, 2),
             'term_years': term_years,
             'adl_level': adl_level,
-            'customer_age': age
+            'customer_age': age,
+            'actuarial_source': ACTUARIAL_SOURCE
         }
     
     def project_policy_value(self, coverage: float, age: int, adl_level: int,
@@ -493,20 +468,8 @@ class FinancialReportingService:
         }
     
     def _get_adl_description(self, adl_level: int) -> str:
-        """Get human-readable ADL description"""
-        descriptions = {
-            1: 'Fully Independent (Very Low Risk)',
-            2: 'Independent with Supervision (Low Risk)',
-            3: 'Minimal Assistance (Low-Medium Risk)',
-            4: 'Moderate Assistance (Medium Risk)',
-            5: 'Significant Assistance (Medium Risk)',
-            6: 'Extensive Assistance (Medium-High Risk)',
-            7: 'Maximum Assistance (High Risk)',
-            8: 'Total Dependence - Some Areas (High Risk)',
-            9: 'Total Dependence - Most Areas (Very High Risk)',
-            10: 'Complete Dependence (Highest Risk)'
-        }
-        return descriptions.get(adl_level, 'Unknown')
+        """Get human-readable ADL description - delegates to unified module"""
+        return get_adl_description(adl_level)
     
     def _calculate_age(self, dob: str) -> int:
         """Calculate age from date of birth string"""
@@ -540,13 +503,7 @@ class FinancialReportingService:
             'details': []
         }
         
-        # Map risk_score to ADL level (same as server.py)
-        RISK_TO_ADL_MAP = {
-            'low': 3,
-            'medium': 5,
-            'high': 7,
-            'very_high': 9,
-        }
+        # Use unified RISK_SCORE_TO_ADL mapping from actuarial_tables module
         
         # 1. Policy validation with actuarial checks
         for policy_id, policy in self._policies.items():
@@ -571,9 +528,9 @@ class FinancialReportingService:
                 customer = self._customers.get(customer_id, {})
                 age = self._calculate_age(customer.get('dob'))
                 
-                # Get risk score and convert to ADL
+                # Get risk score and convert to ADL using unified mapping
                 risk_score = policy.get('risk_score', 'medium')
-                adl_level = RISK_TO_ADL_MAP.get(risk_score, 5)
+                adl_level = get_adl_from_risk_score(risk_score)
                 
                 # Get coverage and premium
                 coverage = policy.get('coverage_amount', 0)
@@ -690,7 +647,7 @@ class FinancialReportingService:
                 'underwriting_apps': len(self._underwriting)
             },
             'actuarial_validation': {
-                'source': 'PHINS_ACTUARIAL_TABLES_V1',
+                'source': ACTUARIAL_SOURCE,
                 'policies_checked': actuarial_checks['total_checked'],
                 'passed': actuarial_checks['passed'],
                 'needs_review': actuarial_checks['failed'],
