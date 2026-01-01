@@ -1106,13 +1106,47 @@
       document.getElementById('mobile-nav').classList.toggle('open');
     }
     
-    // Set admin username
+    // Validate admin access - check role, not just username
     const storedUser = sessionStorage.getItem('username');
     const token = localStorage.getItem('phins_token');
+    const storedSession = localStorage.getItem('session');
     
-    if (storedUser !== 'admin') {
-      // Redirect non-admin users
-      alert('Admin access required');
+    // Check if user has admin role (from session object or known admin usernames)
+    let isAdmin = false;
+    
+    // Check session object for role
+    if (storedSession) {
+      try {
+        const sessionObj = JSON.parse(storedSession);
+        if (sessionObj.role === 'admin') {
+          isAdmin = true;
+        }
+      } catch (e) {}
+    }
+    
+    // Also allow known admin usernames (backwards compatibility)
+    const adminUsernames = ['admin', 'asaf@phins.ai', 'underwriter', 'claims_adjuster', 'accountant'];
+    if (adminUsernames.includes(storedUser)) {
+      isAdmin = true;
+    }
+    
+    // Validate token with server if not already confirmed as admin
+    if (!isAdmin && token) {
+      // Quick async check - don't block page load
+      fetch('/api/session/validate', {
+        headers: { 'Authorization': `Bearer ${token}` }
+      }).then(r => r.json()).then(data => {
+        if (data.valid && data.role === 'admin') {
+          // Store role for future checks
+          const session = { username: storedUser, role: 'admin', token: token };
+          localStorage.setItem('session', JSON.stringify(session));
+        } else if (!adminUsernames.includes(storedUser)) {
+          alert('Admin access required');
+          window.location.href = '/login.html';
+        }
+      }).catch(() => {});
+    } else if (!isAdmin && !token) {
+      alert('Admin access required. Please login.');
       window.location.href = '/login.html';
     }
     

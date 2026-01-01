@@ -24,22 +24,26 @@ document.addEventListener('DOMContentLoaded', function () {
           localStorage.setItem('phins_token', data.token);
           sessionStorage.setItem('username', username);
           
-          // Store customer_id in ALL expected locations for data isolation
+          // Store session object for ALL users (admin, customer, etc.)
+          const sessionObj = {
+            customer_id: data.customer_id || null,
+            username: username,
+            role: data.role || 'customer',
+            name: data.name || username,
+            token: data.token,
+            login_time: new Date().toISOString()
+          };
+          localStorage.setItem('session', JSON.stringify(sessionObj));
+          sessionStorage.setItem('user_role', data.role || 'customer');
+          
+          console.log('Session stored:', { username, role: data.role });
+          
+          // Store customer_id in ALL expected locations for data isolation (customers only)
           if (data.customer_id) {
             // Primary storage locations
             localStorage.setItem('customer_id', data.customer_id);
             sessionStorage.setItem('customer_id', data.customer_id);
             localStorage.setItem('phins_customer_id', data.customer_id);
-            
-            // Store session object for components that expect it
-            const sessionObj = {
-              customer_id: data.customer_id,
-              username: username,
-              role: data.role || 'customer',
-              token: data.token,
-              login_time: new Date().toISOString()
-            };
-            localStorage.setItem('session', JSON.stringify(sessionObj));
             
             console.log('Customer session stored:', data.customer_id);
           }
