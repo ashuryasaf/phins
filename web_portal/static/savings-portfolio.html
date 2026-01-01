@@ -1308,13 +1308,15 @@
             // Get unified data for consistency with Dashboard
             const unified = window.unifiedInvestment || {};
             
-            // Calculate total value: Cash + Invested Assets + Monthly Premium Allocation
+            // Calculate total value: Cash + Invested Assets + Algo Trading
             const cashBalance = unified.cash_balance || portfolioData.cash_balance || 0;
             const investedAssets = portfolioData.total_market_value || unified.invested_assets || 0;
+            const algoTradingProfits = unified.algo_trading_profits || 0;
             const monthlyContrib = unified.monthly_contribution || portfolioData.monthly_contribution || 0;
             
-            // Total = Cash Balance + Invested Assets (market value)
-            const totalValue = cashBalance + investedAssets;
+            // Total = Cash Balance + Invested Assets + Algo Trading Portfolio
+            // This matches the unified API calculation for consistency
+            const totalValue = unified.total_value || (cashBalance + investedAssets + algoTradingProfits);
             
             // Update summary cards
             document.getElementById('totalValue').textContent = formatCurrency(totalValue);
@@ -1915,20 +1917,43 @@
                 const response = await fetch(`/api/portfolio/algo?customer_id=${customerId}`);
                 const data = await response.json();
                 
+                let totalValue = 0;
+                let totalPnl = 0;
+                
                 if (data.balance) {
                     const available = data.balance.available || 0;
                     const inPositions = data.balance.in_positions || 0;
-                    const totalPnl = data.balance.total_pnl || 0;
-                    const totalValue = available + inPositions;
-                    
-                    document.getElementById('algoPortfolioValue').textContent = formatCurrency(totalValue);
-                    
-                    const pnlEl = document.getElementById('algoPnl');
+                    totalPnl = data.balance.total_pnl || 0;
+                    totalValue = available + inPositions;
+                }
+                
+                // Fallback to unified data if algo service has no data
+                if (totalValue === 0 && window.unifiedInvestment) {
+                    const unified = window.unifiedInvestment;
+                    totalValue = unified.algo_trading_profits || 0;
+                    // Also check breakdown
+                    if (totalValue === 0 && unified.breakdown) {
+                        totalValue = unified.breakdown.algo_profits || 0;
+                    }
+                }
+                
+                document.getElementById('algoPortfolioValue').textContent = formatCurrency(totalValue);
+                
+                const pnlEl = document.getElementById('algoPnl');
+                if (totalPnl !== 0 || totalValue > 0) {
                     pnlEl.innerHTML = `<span>${totalPnl >= 0 ? '📈' : '📉'}</span> ${totalPnl >= 0 ? '+' : ''}${formatCurrency(totalPnl)} P&L`;
                     pnlEl.style.color = totalPnl >= 0 ? '#4caf50' : '#ef5350';
+                } else {
+                    pnlEl.innerHTML = '<span>📊</span> Real-time P&L tracking';
+                    pnlEl.style.color = 'rgba(255,255,255,0.8)';
                 }
             } catch (e) {
                 console.error('Failed to load algo portfolio:', e);
+                // Fallback to unified data on error
+                if (window.unifiedInvestment && window.unifiedInvestment.algo_trading_profits > 0) {
+                    document.getElementById('algoPortfolioValue').textContent = 
+                        formatCurrency(window.unifiedInvestment.algo_trading_profits);
+                }
             }
         }
         
