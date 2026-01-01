@@ -5049,14 +5049,18 @@ For claims or questions, please contact:
                 # Get INVESTMENT_ACCOUNTS data (master record)
                 inv_account = INVESTMENT_ACCOUNTS.get(customer_id, {})
                 
-                # Cash balance = raw balance in investment account
-                cash_balance = float(inv_account.get('balance', 0))
+                # Total balance (all deposits)
+                total_balance = float(inv_account.get('balance', 0))
                 
-                # Invested assets breakdown
+                # Invested assets breakdown (allocated to investments)
                 index_balance = float(inv_account.get('index_balance', 0))
                 bonds_balance = float(inv_account.get('bonds_balance', 0))
                 crypto_balance = float(inv_account.get('crypto_balance', 0))
                 invested_assets = index_balance + bonds_balance + crypto_balance
+                
+                # Cash balance = Total deposits - Invested assets
+                # This represents uninvested funds available for new investments
+                cash_balance = total_balance - invested_assets
                 
                 # Get monthly premium contribution using the new allocation system
                 distribution = calculate_monthly_distribution(customer_id)
@@ -5160,6 +5164,12 @@ For claims or questions, please contact:
                     # P&L data
                     'unrealized_gain': unrealized_gain,
                     'return_pct': return_pct,
+                    
+                    # Individual asset balances (for detailed views)
+                    'index_balance': index_balance,
+                    'bonds_balance': bonds_balance,
+                    'crypto_balance': crypto_balance,
+                    'total_deposits': total_balance,
                     
                     # Breakdown
                     'breakdown': {
