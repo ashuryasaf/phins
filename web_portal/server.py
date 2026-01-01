@@ -3571,48 +3571,58 @@ For claims or questions, please contact:
         
         # Billing transactions for admin dashboard (fallback)
         if path == '/api/billing/transactions':
-            transactions = []
-            
-            # Get bills as transactions
-            for bill_id, bill in BILLING.items():
-                # Get customer name
-                customer = CUSTOMERS.get(bill.get('customer_id', ''), {})
-                customer_name = customer.get('name', bill.get('customer_id', 'N/A'))
+            try:
+                transactions = []
+                now_str = datetime.now().isoformat()
                 
-                transactions.append({
-                    'id': bill_id,
-                    'transaction_id': bill_id,
-                    'customer_id': bill.get('customer_id', 'N/A'),
-                    'customer_name': customer_name,
-                    'type': 'premium',
-                    'amount': float(bill.get('amount', 0)),
-                    'status': 'paid' if bill.get('status') == 'paid' else bill.get('status', 'pending'),
-                    'date': bill.get('created_date', datetime.now().isoformat()),
-                    'payment_method': bill.get('payment_method', 'N/A')
-                })
-            
-            # Add any claims payments as negative transactions
-            for claim_id, claim in CLAIMS.items():
-                if claim.get('status') in ('paid', 'Paid', 'approved', 'Approved') and claim.get('approved_amount'):
-                    customer = CUSTOMERS.get(claim.get('customer_id', ''), {})
-                    transactions.append({
-                        'id': claim_id,
-                        'transaction_id': claim_id,
-                        'customer_id': claim.get('customer_id', 'N/A'),
-                        'customer_name': customer.get('name', claim.get('customer_id', 'N/A')),
-                        'type': 'claim_payout',
-                        'amount': -float(claim.get('approved_amount', 0)),
-                        'status': 'completed',
-                        'date': claim.get('approval_date', claim.get('filed_date', datetime.now().isoformat())),
-                        'payment_method': 'Bank Transfer'
-                    })
-            
-            # Sort by date desc and limit
-            transactions.sort(key=lambda x: x.get('date', ''), reverse=True)
-            transactions = transactions[:100]
-            
-            self._set_json_headers()
-            self.wfile.write(json.dumps({'transactions': transactions}).encode('utf-8'))
+                # Get bills as transactions
+                for bill_id, bill in list(BILLING.items()):
+                    try:
+                        customer = CUSTOMERS.get(bill.get('customer_id', ''), {})
+                        customer_name = customer.get('name', bill.get('customer_id', 'N/A'))
+                        
+                        transactions.append({
+                            'id': bill_id,
+                            'transaction_id': bill_id,
+                            'customer_id': bill.get('customer_id', 'N/A'),
+                            'customer_name': customer_name,
+                            'type': 'premium',
+                            'amount': float(bill.get('amount', 0) or 0),
+                            'status': 'paid' if bill.get('status') == 'paid' else (bill.get('status') or 'pending'),
+                            'date': bill.get('created_date') or now_str,
+                            'payment_method': bill.get('payment_method') or 'N/A'
+                        })
+                    except Exception:
+                        continue
+                
+                # Add any claims payments as negative transactions
+                for claim_id, claim in list(CLAIMS.items()):
+                    try:
+                        if claim.get('status') in ('paid', 'Paid', 'approved', 'Approved') and claim.get('approved_amount'):
+                            customer = CUSTOMERS.get(claim.get('customer_id', ''), {})
+                            transactions.append({
+                                'id': claim_id,
+                                'transaction_id': claim_id,
+                                'customer_id': claim.get('customer_id', 'N/A'),
+                                'customer_name': customer.get('name', claim.get('customer_id', 'N/A')),
+                                'type': 'claim_payout',
+                                'amount': -float(claim.get('approved_amount', 0) or 0),
+                                'status': 'completed',
+                                'date': claim.get('approval_date') or claim.get('filed_date') or now_str,
+                                'payment_method': 'Bank Transfer'
+                            })
+                    except Exception:
+                        continue
+                
+                # Sort by date desc and limit
+                transactions.sort(key=lambda x: x.get('date', ''), reverse=True)
+                transactions = transactions[:100]
+                
+                self._set_json_headers()
+                self.wfile.write(json.dumps({'transactions': transactions}).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e), 'transactions': []}).encode('utf-8'))
             return
         
         # Customer billing "next due" (portal convenience)
