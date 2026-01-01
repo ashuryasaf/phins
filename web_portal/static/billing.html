@@ -378,7 +378,13 @@
 
     <!-- Statistics Overview -->
     <section class="card">
-      <h2>Payment Statistics</h2>
+      <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 15px;">
+        <h2 style="margin: 0;">Payment Statistics</h2>
+        <div style="display: flex; gap: 8px;">
+          <button class="btn btn-small" onclick="exportBillingStats('csv')" title="Export Statistics as CSV">📊 CSV</button>
+          <button class="btn btn-small" onclick="exportBillingStats('pdf')" title="Export Statistics as PDF">📄 PDF</button>
+        </div>
+      </div>
       <div class="stats-grid" id="stats-grid"></div>
     </section>
 
@@ -399,8 +405,16 @@
 
     <!-- Marketplace Transactions Section -->
     <section class="card">
-      <h2>🛒 Marketplace & Service Transactions</h2>
-      <p style="color: #666; margin-bottom: 1rem;">Health services, medical products, and NFT-verified transactions</p>
+      <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 10px;">
+        <div>
+          <h2 style="margin: 0 0 5px 0;">🛒 Marketplace & Service Transactions</h2>
+          <p style="color: #666; margin: 0;">Health services, medical products, and NFT-verified transactions</p>
+        </div>
+        <div style="display: flex; gap: 8px;">
+          <button class="btn btn-small" onclick="exportMarketplace('csv')" title="Export Marketplace as CSV">📊 CSV</button>
+          <button class="btn btn-small" onclick="exportMarketplace('pdf')" title="Export Marketplace as PDF">📄 PDF</button>
+        </div>
+      </div>
       
       <div class="stats-grid" style="margin-bottom: 1.5rem;">
         <div class="stat-card" style="background: linear-gradient(135deg, #28a745 0%, #20c997 100%);">
@@ -443,7 +457,14 @@
 
     <!-- Recent Transactions -->
     <section class="card">
-      <h2>Recent Transactions</h2>
+      <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 15px;">
+        <h2 style="margin: 0;">Recent Transactions</h2>
+        <div style="display: flex; gap: 8px;">
+          <button class="btn btn-small" onclick="exportTransactions('csv')" title="Export Transactions as CSV">📊 Export CSV</button>
+          <button class="btn btn-small" onclick="exportTransactions('pdf')" title="Export Transactions as PDF">📄 Export PDF</button>
+          <button class="btn btn-small" onclick="printTransactions()" title="Print Transactions">🖨️ Print</button>
+        </div>
+      </div>
       <div class="transaction-list" id="transaction-list">
         <p class="muted">Loading transactions...</p>
       </div>
