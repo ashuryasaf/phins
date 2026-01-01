@@ -2176,6 +2176,26 @@ For claims or questions, please contact:
         session = validate_session(token) if token else None
         is_authenticated = session is not None
         
+        # Session validation endpoint (GET) - validates token and returns user info
+        if path == '/api/session/validate':
+            if not session:
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({
+                    'valid': False,
+                    'error': 'Invalid or expired token'
+                }).encode('utf-8'))
+                return
+            
+            self._set_json_headers(200)
+            self.wfile.write(json.dumps({
+                'valid': True,
+                'username': session.get('username'),
+                'role': session.get('role'),
+                'customer_id': session.get('customer_id'),
+                'expires': session.get('expires')
+            }).encode('utf-8'))
+            return
+        
         # Security monitoring endpoint (Admin only)
         if path == '/api/security/threats':
             if not require_role(session, ['admin']):
@@ -6495,6 +6515,57 @@ For claims or questions, please contact:
                 traceback.print_exc()
                 self._set_json_headers(500)
                 self.wfile.write(json.dumps({'error': 'Internal server error', 'debug': str(e)}).encode('utf-8'))
+            return
+        
+        # Session Validation Endpoint - validates token and returns user info
+        if path == '/api/session/validate':
+            auth_header = self.headers.get('Authorization', '')
+            token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+            
+            if not token:
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({
+                    'valid': False,
+                    'error': 'No token provided'
+                }).encode('utf-8'))
+                return
+            
+            # Check if session exists and is valid
+            with STATE_LOCK:
+                session = SESSIONS.get(token)
+            
+            if not session:
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({
+                    'valid': False,
+                    'error': 'Invalid or expired token'
+                }).encode('utf-8'))
+                return
+            
+            # Check if session has expired
+            try:
+                expires = datetime.fromisoformat(session['expires'])
+                if datetime.now() > expires:
+                    with STATE_LOCK:
+                        del SESSIONS[token]
+                    self._set_json_headers(401)
+                    self.wfile.write(json.dumps({
+                        'valid': False,
+                        'error': 'Session expired'
+                    }).encode('utf-8'))
+                    return
+            except Exception:
+                pass
+            
+            # Session is valid - return user info
+            self._set_json_headers(200)
+            self.wfile.write(json.dumps({
+                'valid': True,
+                'username': session.get('username'),
+                'role': session.get('role'),
+                'customer_id': session.get('customer_id'),
+                'expires': session.get('expires')
+            }).encode('utf-8'))
             return
         
         # User Registration Endpoint
