@@ -1871,16 +1871,44 @@ else:
 
 
 def get_mock_statement(customer_id: str) -> Dict[str, Any]:
+    """Generate premium statement from actual policy data"""
+    # Get customer's active policies
+    customer_policies = [p for p in POLICIES.values() 
+                        if p.get('customer_id') == customer_id and p.get('status') == 'active']
+    
+    # Calculate total monthly premium
+    total_premium = sum(p.get('monthly_premium', 0) for p in customer_policies)
+    
+    # Standard allocation: 75% risk, 25% savings
+    risk_pct = 0.75
+    savings_pct = 0.25
+    
+    risk_total = total_premium * risk_pct
+    savings_total = total_premium * savings_pct
+    
+    # Create allocation entries for each policy
+    allocations = []
+    for i, policy in enumerate(customer_policies, 1):
+        monthly = policy.get('monthly_premium', 0)
+        policy_type = policy.get('type', 'unknown').title()
+        allocations.append({
+            "allocation_id": f"ALLOC-{policy.get('id', f'{i:06d}')}",
+            "policy_id": policy.get('id'),
+            "policy_type": policy_type,
+            "amount": monthly,
+            "risk_amount": round(monthly * risk_pct, 2),
+            "savings_amount": round(monthly * savings_pct, 2)
+        })
+    
     return {
         "customer_id": customer_id,
-        "total_premium": 300.0,
-        "risk_total": 225.0,
-        "savings_total": 75.0,
-        "allocations": [
-            {"allocation_id": "ALLOC-000001", "amount": 100.0, "risk_amount": 75.0, "savings_amount": 25.0},
-            {"allocation_id": "ALLOC-000002", "amount": 100.0, "risk_amount": 75.0, "savings_amount": 25.0},
-            {"allocation_id": "ALLOC-000003", "amount": 100.0, "risk_amount": 75.0, "savings_amount": 25.0},
-        ],
+        "total_premium": round(total_premium, 2),
+        "risk_total": round(risk_total, 2),
+        "savings_total": round(savings_total, 2),
+        "risk_pct": risk_pct * 100,
+        "savings_pct": savings_pct * 100,
+        "allocations": allocations,
+        "policies_count": len(customer_policies)
     }
 
 

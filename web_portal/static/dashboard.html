@@ -2791,29 +2791,43 @@
         
         document.getElementById('summary').innerHTML = `
           <div class="summary-item">
-            <div class="summary-label">Total Premium</div>
-            <div class="summary-value">$${Number(data.total_premium || 0).toFixed(2)}</div>
+            <div class="summary-label">Total Monthly Premium</div>
+            <div class="summary-value">$${formatNumber(data.total_premium || 0, 2)}</div>
           </div>
           <div class="summary-item">
-            <div class="summary-label">Risk Allocation (75%)</div>
-            <div class="summary-value">$${Number(data.risk_total || 0).toFixed(2)}</div>
+            <div class="summary-label">🛡️ Risk Allocation (${data.risk_pct || 75}%)</div>
+            <div class="summary-value" style="color: #ef6c00;">$${formatNumber(data.risk_total || 0, 2)}</div>
           </div>
           <div class="summary-item">
-            <div class="summary-label">Savings Allocation (25%)</div>
-            <div class="summary-value">$${Number(data.savings_total || 0).toFixed(2)}</div>
+            <div class="summary-label">💰 Savings Allocation (${data.savings_pct || 25}%)</div>
+            <div class="summary-value" style="color: #2e7d32;">$${formatNumber(data.savings_total || 0, 2)}</div>
           </div>
         `;
+        
+        // Also update billing section totals to match
+        const billingTotalEl = document.getElementById('billing-total-premium');
+        if (billingTotalEl) billingTotalEl.textContent = '$' + formatNumber(data.total_premium || 0, 2);
+        
+        const billingSavingsEl = document.getElementById('billing-savings-allocation');
+        if (billingSavingsEl) billingSavingsEl.textContent = '$' + formatNumber(data.savings_total || 0, 2);
+        
+        const billingRiskEl = document.getElementById('billing-risk-allocation');
+        if (billingRiskEl) billingRiskEl.textContent = '$' + formatNumber(data.risk_total || 0, 2);
         
         const list = document.getElementById('alloc-list');
         if (data.allocations && data.allocations.length > 0) {
           list.innerHTML = data.allocations.map(a => `
-            <li>
-              <span><strong>${a.allocation_id}</strong></span>
-              <span>Total: $${Number(a.amount || 0).toFixed(2)} | Risk: $${Number(a.risk_amount || 0).toFixed(2)} | Savings: $${Number(a.savings_amount || 0).toFixed(2)}</span>
+            <li style="display: flex; justify-content: space-between; padding: 12px; background: #f8f9fa; border-radius: 8px; margin-bottom: 8px;">
+              <span><strong>${a.policy_type || 'Policy'}</strong> <small style="color:#666;">(${a.policy_id || a.allocation_id})</small></span>
+              <span>
+                <span style="color:#1565c0;">$${formatNumber(a.amount || 0, 2)}</span> |
+                <span style="color:#ef6c00;">Risk: $${formatNumber(a.risk_amount || 0, 2)}</span> |
+                <span style="color:#2e7d32;">Savings: $${formatNumber(a.savings_amount || 0, 2)}</span>
+              </span>
             </li>
           `).join('');
         } else {
-          list.innerHTML = '<li style="color:#666;">No allocations found</li>';
+          list.innerHTML = '<li style="color:#666; padding: 20px; text-align: center;">No active policies. <a href="/#quote">Get a quote</a> to start.</li>';
         }
       } catch (err) {
         console.error('Error loading statement:', err);
