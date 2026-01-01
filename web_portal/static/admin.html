@@ -1101,6 +1101,23 @@
   </footer>
 
   <script>
+    // Global number formatter with commas
+    function formatNumber(num, decimals = 2) {
+      const n = Number(num) || 0;
+      return n.toLocaleString('en-US', { 
+        minimumFractionDigits: decimals, 
+        maximumFractionDigits: decimals 
+      });
+    }
+    
+    // Format currency with commas
+    function formatCurrency(num, decimals = 0) {
+      const n = Number(num) || 0;
+      if (n >= 1000000) return '$' + (n / 1000000).toFixed(1) + 'M';
+      if (n >= 100000) return '$' + formatNumber(n, decimals);
+      return '$' + formatNumber(n, decimals);
+    }
+    
     // Mobile menu toggle
     function toggleMobileMenu() {
       document.getElementById('mobile-nav').classList.toggle('open');
@@ -2097,33 +2114,30 @@
           const data = await response.json();
           
           // Row 1 - Primary Stats
-          document.getElementById('stat-customers').textContent = Number(data.total_customers || 0).toLocaleString();
-          document.getElementById('stat-customers-new').textContent = `+${data.new_customers_this_month || 0} this month`;
+          document.getElementById('stat-customers').textContent = formatNumber(data.total_customers || 0, 0);
+          document.getElementById('stat-customers-new').textContent = `+${formatNumber(data.new_customers_this_month || 0, 0)} this month`;
           
-          document.getElementById('stat-policies').textContent = Number(data.active_policies || 0).toLocaleString();
-          document.getElementById('stat-policies-pending').textContent = `${data.pending_policies || 0} pending`;
+          document.getElementById('stat-policies').textContent = formatNumber(data.active_policies || 0, 0);
+          document.getElementById('stat-policies-pending').textContent = `${formatNumber(data.pending_policies || 0, 0)} pending`;
           
-          document.getElementById('stat-applications').textContent = Number(data.pending_applications || 0);
-          document.getElementById('stat-applications-approved').textContent = `${data.approved_applications || 0} approved`;
+          document.getElementById('stat-applications').textContent = formatNumber(data.pending_applications || 0, 0);
+          document.getElementById('stat-applications-approved').textContent = `${formatNumber(data.approved_applications || 0, 0)} approved`;
           
-          const aum = data.total_aum || 0;
-          document.getElementById('stat-aum').textContent = aum >= 1000000 ? `$${(aum/1000000).toFixed(1)}M` : `$${aum.toLocaleString()}`;
-          document.getElementById('stat-premium').textContent = `$${Number(data.total_premium_collected || 0).toLocaleString()} collected`;
+          document.getElementById('stat-aum').textContent = formatCurrency(data.total_aum || 0);
+          document.getElementById('stat-premium').textContent = `$${formatNumber(data.total_premium_collected || 0, 0)} collected`;
           
           // Row 2 - Secondary Stats
-          document.getElementById('stat-claims').textContent = Number(data.pending_claims || 0);
-          document.getElementById('stat-claims-approved').textContent = `${data.approved_claims || 0} approved`;
+          document.getElementById('stat-claims').textContent = formatNumber(data.pending_claims || 0, 0);
+          document.getElementById('stat-claims-approved').textContent = `${formatNumber(data.approved_claims || 0, 0)} approved`;
           
-          const revenue = data.total_revenue || 0;
-          document.getElementById('stat-revenue').textContent = revenue >= 1000000 ? `$${(revenue/1000000).toFixed(1)}M` : `$${revenue.toLocaleString()}`;
-          document.getElementById('stat-outstanding').textContent = `$${Number(data.outstanding_balance || 0).toLocaleString()} outstanding`;
+          document.getElementById('stat-revenue').textContent = formatCurrency(data.total_revenue || 0);
+          document.getElementById('stat-outstanding').textContent = `$${formatNumber(data.outstanding_balance || 0, 0)} outstanding`;
           
-          document.getElementById('stat-deposits').textContent = `$${Number(data.total_deposits || 0).toLocaleString()}`;
-          document.getElementById('stat-wallets').textContent = `${data.active_wallets || 0} active wallets`;
+          document.getElementById('stat-deposits').textContent = `$${formatNumber(data.total_deposits || 0, 0)}`;
+          document.getElementById('stat-wallets').textContent = `${formatNumber(data.active_wallets || 0, 0)} active wallets`;
           
-          const investment = data.total_investment_value || 0;
-          document.getElementById('stat-investment').textContent = investment >= 1000000 ? `$${(investment/1000000).toFixed(1)}M` : `$${investment.toLocaleString()}`;
-          document.getElementById('stat-coverage').textContent = `$${Number(data.total_coverage_amount || 0).toLocaleString()} coverage`;
+          document.getElementById('stat-investment').textContent = formatCurrency(data.total_investment_value || 0);
+          document.getElementById('stat-coverage').textContent = `$${formatNumber(data.total_coverage_amount || 0, 0)} coverage`;
           
           // Pipeline Stats
           if (data.pipeline) {
@@ -2189,12 +2203,11 @@
           const data = await response.json();
           const bs = data.balance_sheet || {};
           
-          // Format currency
+          // Format currency with commas
           const fmt = (val) => {
             const num = Number(val) || 0;
-            if (num >= 1000000) return `$${(num/1000000).toFixed(2)}M`;
-            if (num >= 1000) return `$${(num/1000).toFixed(1)}K`;
-            return `$${num.toLocaleString()}`;
+            if (num >= 1000000) return `$${formatNumber(num/1000000, 2)}M`;
+            return `$${formatNumber(num, 0)}`;
           };
           
           // Update reserve balances
@@ -2553,11 +2566,11 @@
         if (response.ok) {
           const data = await response.json();
           
-          // Update revenue stats
-          document.getElementById('revenue-premium').textContent = '$' + Number(data.total_revenue || data.monthly_premium_income || 0).toLocaleString();
-          document.getElementById('revenue-outstanding').textContent = '$' + Number(data.outstanding_balance || data.outstanding_receivables || 0).toLocaleString();
-          document.getElementById('revenue-claims').textContent = '$' + Number(data.claims_paid || data.claims_paid_this_month || 0).toLocaleString();
-          document.getElementById('revenue-investment').textContent = '+$' + Number(data.investment_returns || 0).toLocaleString();
+          // Update revenue stats with comma formatting
+          document.getElementById('revenue-premium').textContent = '$' + formatNumber(data.total_revenue || data.monthly_premium_income || 0, 0);
+          document.getElementById('revenue-outstanding').textContent = '$' + formatNumber(data.outstanding_balance || data.outstanding_receivables || 0, 0);
+          document.getElementById('revenue-claims').textContent = '$' + formatNumber(data.claims_paid || data.claims_paid_this_month || 0, 0);
+          document.getElementById('revenue-investment').textContent = '+$' + formatNumber(data.investment_returns || 0, 0);
         }
       } catch (err) {
         console.error('Failed to load billing data:', err);
@@ -2597,7 +2610,7 @@
                 <td>${txn.id || txn.transaction_id || 'N/A'}</td>
                 <td>${txn.customer_name || txn.customer_id || 'N/A'}</td>
                 <td>${txn.type || 'Payment'}</td>
-                <td class="${amountClass}">${amountPrefix}$${Number(txn.amount || 0).toLocaleString()}</td>
+                <td class="${amountClass}">${amountPrefix}$${formatNumber(txn.amount || 0, 2)}</td>
                 <td><span class="badge ${statusClass}">${txn.status || 'Pending'}</span></td>
                 <td>${txn.date ? new Date(txn.date).toLocaleDateString() : 'N/A'}</td>
               </tr>

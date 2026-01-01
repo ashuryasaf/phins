@@ -1221,6 +1221,20 @@
   </footer>
 
   <script>
+    // Global number formatter with commas
+    function formatNumber(num, decimals = 2) {
+      const n = Number(num) || 0;
+      return n.toLocaleString('en-US', { 
+        minimumFractionDigits: decimals, 
+        maximumFractionDigits: decimals 
+      });
+    }
+    
+    // Format currency with commas
+    function formatCurrency(num, decimals = 2) {
+      return '$' + formatNumber(num, decimals);
+    }
+    
     // Customer state
     let customerId = null;
     let authToken = localStorage.getItem('phins_token');
@@ -1337,7 +1351,7 @@
           document.getElementById('customer-policies-count').textContent = summary.policies_count || '0';
           document.getElementById('customer-claims-count').textContent = summary.claims_count || '0';
           document.getElementById('customer-total-coverage').textContent = 
-            '$' + (summary.total_coverage || 0).toLocaleString();
+            '$' + formatNumber(summary.total_coverage || 0, 0);
         }
         
       } catch (err) {
@@ -1597,9 +1611,9 @@
           const returns = totalValue - contributions;
           const returnPct = contributions > 0 ? ((returns / contributions) * 100).toFixed(1) : 0;
           
-          document.getElementById('portfolio-value').textContent = '$' + totalValue.toLocaleString('en-US', {minimumFractionDigits: 2});
-          document.getElementById('portfolio-contributions').textContent = '$' + contributions.toLocaleString('en-US', {minimumFractionDigits: 2});
-          document.getElementById('portfolio-returns').textContent = (returns >= 0 ? '+' : '') + '$' + returns.toLocaleString('en-US', {minimumFractionDigits: 2}) + ' (' + returnPct + '%)';
+          document.getElementById('portfolio-value').textContent = '$' + formatNumber(totalValue, 2);
+          document.getElementById('portfolio-contributions').textContent = '$' + formatNumber(contributions, 2);
+          document.getElementById('portfolio-returns').textContent = (returns >= 0 ? '+' : '') + '$' + formatNumber(returns, 2) + ' (' + returnPct + '%)';
           
           if (returns < 0) {
             document.getElementById('portfolio-returns').classList.remove('text-success');
@@ -1636,7 +1650,7 @@
           // Update total premium (only from active policies)
           const activePolicies = allPolicies.filter(p => p.status === 'active');
           const totalMonthly = activePolicies.reduce((sum, p) => sum + (p.monthly_premium || 0), 0);
-          document.getElementById('total-premium').textContent = `$${totalMonthly.toFixed(0)}`;
+          document.getElementById('total-premium').textContent = `$${formatNumber(totalMonthly, 0)}`;
           
           // Display policies
           displayPolicies(allPolicies);
