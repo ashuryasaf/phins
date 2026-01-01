@@ -71,6 +71,15 @@ def seed_default_users(session=None):
                 'role': 'customer',
                 'name': 'Asaf Assurance',
                 'email': 'asaf@assurance.co.il'
+            },
+            # Admin account for asaf@phins.ai - PERSISTENT ACCOUNT
+            # This account is always seeded and should never be deleted
+            {
+                'username': 'asaf@phins.ai',
+                'password': 'PHINSadmin2024!',
+                'role': 'admin',
+                'name': 'Asaf PHINS',
+                'email': 'asaf@phins.ai'
             }
         ]
         

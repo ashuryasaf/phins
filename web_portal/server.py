@@ -1833,7 +1833,10 @@ else:
         'admin': {**hash_password('PDadmin123@'), 'role': 'admin', 'name': 'Admin User'},
         'underwriter': {**hash_password('PDadmin123@'), 'role': 'underwriter', 'name': 'John Underwriter'},
         'claims_adjuster': {**hash_password('PDadmin123@'), 'role': 'claims', 'name': 'Jane Claims'},
-        'accountant': {**hash_password('PDadmin123@'), 'role': 'accountant', 'name': 'Bob Accountant'}
+        'accountant': {**hash_password('PDadmin123@'), 'role': 'accountant', 'name': 'Bob Accountant'},
+        # Permanent admin accounts - NEVER DELETE
+        'asaf@phins.ai': {**hash_password('PHINSadmin2024!'), 'role': 'admin', 'name': 'Asaf PHINS'},
+        'asaf@assurance.co.il': {**hash_password('Assurance2024!'), 'role': 'customer', 'name': 'Asaf Assurance'}
     }
 
 
@@ -7231,6 +7234,7 @@ For claims or questions, please contact:
             return
 
         # Admin: reset demo dataset (in-memory only)
+        # ⚠️ PROTECTED: This endpoint preserves permanent accounts and ledger data
         if path == '/api/admin/reset-demo-data':
             auth_header = self.headers.get('Authorization', '')
             token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
@@ -7243,9 +7247,19 @@ For claims or questions, please contact:
             try:
                 data = json.loads(body or '{}')
                 confirm = str(data.get('confirm') or '').lower() in ('true', '1', 'yes')
+                preserve_accounts = str(data.get('preserve_accounts', 'true')).lower() in ('true', '1', 'yes')
+                preserve_ledger = str(data.get('preserve_ledger', 'true')).lower() in ('true', '1', 'yes')
+                
                 if not confirm:
                     self._set_json_headers(400)
-                    self.wfile.write(json.dumps({'error': 'confirm=true required'}).encode('utf-8'))
+                    self.wfile.write(json.dumps({
+                        'error': 'confirm=true required',
+                        'warning': '⚠️ This will reset demo data. Permanent accounts (asaf@phins.ai, asaf@assurance.co.il) will be preserved by default.',
+                        'options': {
+                            'preserve_accounts': 'Set to false to also reset permanent customer accounts (NOT RECOMMENDED)',
+                            'preserve_ledger': 'Set to false to also reset transaction ledger (NOT RECOMMENDED)'
+                        }
+                    }).encode('utf-8'))
                     return
 
                 if USE_DATABASE and database_enabled:
@@ -7253,7 +7267,53 @@ For claims or questions, please contact:
                     self.wfile.write(json.dumps({'error': 'DB reset is disabled by default. Use init_database(drop_existing=True) offline.'}).encode('utf-8'))
                     return
 
+                # Define permanent accounts that should NEVER be deleted
+                PERMANENT_CUSTOMER_IDS = ['CUST-ASAF-001']
+                PERMANENT_CUSTOMER_EMAILS = ['asaf@phins.ai', 'asaf@assurance.co.il']
+                
                 with STATE_LOCK:
+                    # Preserve permanent customers if requested
+                    preserved_customers = {}
+                    preserved_policies = {}
+                    preserved_claims = {}
+                    preserved_billing = {}
+                    preserved_wallets = {}
+                    preserved_uw = {}
+                    
+                    if preserve_accounts:
+                        for cust_id, cust in CUSTOMERS.items():
+                            if cust_id in PERMANENT_CUSTOMER_IDS or cust.get('email') in PERMANENT_CUSTOMER_EMAILS:
+                                preserved_customers[cust_id] = cust
+                        
+                        # Preserve related data for permanent customers
+                        for pol_id, pol in POLICIES.items():
+                            if pol.get('customer_id') in preserved_customers:
+                                preserved_policies[pol_id] = pol
+                        
+                        for claim_id, claim in CLAIMS.items():
+                            if claim.get('customer_id') in preserved_customers:
+                                preserved_claims[claim_id] = claim
+                        
+                        for bill_id, bill in BILLING.items():
+                            if bill.get('customer_id') in preserved_customers:
+                                preserved_billing[bill_id] = bill
+                        
+                        for uw_id, uw in UNDERWRITING_APPLICATIONS.items():
+                            if uw.get('customer_id') in preserved_customers:
+                                preserved_uw[uw_id] = uw
+                        
+                        for wallet_id, wallet in HEALTH_WALLETS.items():
+                            if wallet_id in preserved_customers or wallet.get('customer_id') in preserved_customers:
+                                preserved_wallets[wallet_id] = wallet
+                    
+                    # Preserve ledger data if requested
+                    preserved_ledger = {}
+                    preserved_nft = {}
+                    if preserve_ledger:
+                        preserved_ledger = dict(TRANSACTION_LEDGER)
+                        preserved_nft = dict(NFT_LEDGER)
+                    
+                    # Clear data stores
                     POLICIES.clear()
                     CLAIMS.clear()
                     CUSTOMERS.clear()
@@ -7261,43 +7321,67 @@ For claims or questions, please contact:
                     BILLING.clear()
                     ACTUARIAL_TABLES.clear()
                     TOKEN_REGISTRY.clear()
+                    
+                    # Restore preserved data
+                    CUSTOMERS.update(preserved_customers)
+                    POLICIES.update(preserved_policies)
+                    CLAIMS.update(preserved_claims)
+                    BILLING.update(preserved_billing)
+                    UNDERWRITING_APPLICATIONS.update(preserved_uw)
+                    HEALTH_WALLETS.update(preserved_wallets)
+                    
+                    if preserve_ledger:
+                        TRANSACTION_LEDGER.update(preserved_ledger)
+                        NFT_LEDGER.update(preserved_nft)
 
-                    # Seed a minimal working dataset
-                    cust_id = generate_customer_id()
-                    CUSTOMERS[cust_id] = {'id': cust_id, 'name': 'Demo Customer', 'email': 'demo.customer@phins.ai', 'phone': '555-0100', 'dob': '1990-01-01', 'created_date': datetime.now().isoformat()}
-                    pol_id = generate_policy_id()
-                    prem = calculate_premium({'type': 'life', 'age': 35, 'coverage_amount': 250000, 'risk_score': 'medium'})
-                    POLICIES[pol_id] = {
-                        'id': pol_id,
-                        'customer_id': cust_id,
-                        'type': 'life',
-                        'coverage_amount': 250000,
-                        'annual_premium': prem['annual'],
-                        'monthly_premium': prem['monthly'],
-                        'status': 'active',
-                        'risk_score': 'medium',
-                        'created_date': datetime.now().isoformat(),
-                        'start_date': datetime.now().isoformat(),
-                    }
-                    uw_id = f"UW-{datetime.now().strftime('%Y%m%d')}-{random.randint(1000,9999)}"
-                    UNDERWRITING_APPLICATIONS[uw_id] = {
-                        'id': uw_id,
-                        'policy_id': pol_id,
-                        'customer_id': cust_id,
-                        'status': 'approved',
-                        'risk_assessment': 'medium',
-                        'submitted_date': datetime.now().isoformat(),
-                        'decision_date': datetime.now().isoformat(),
-                    }
-                    bill_id = f"BILL-{datetime.now().strftime('%Y%m%d')}-{random.randint(1000,9999)}"
-                    BILLING[bill_id] = {'id': bill_id, 'policy_id': pol_id, 'amount': prem['monthly'], 'amount_paid': 0.0, 'status': 'outstanding', 'created_date': datetime.now().isoformat(), 'due_date': (datetime.now() + timedelta(days=30)).isoformat()}
+                    # Seed a minimal working dataset (only if no customers preserved)
+                    if not preserved_customers:
+                        cust_id = generate_customer_id()
+                        CUSTOMERS[cust_id] = {'id': cust_id, 'name': 'Demo Customer', 'email': 'demo.customer@phins.ai', 'phone': '555-0100', 'dob': '1990-01-01', 'created_date': datetime.now().isoformat()}
+                        pol_id = generate_policy_id()
+                        prem = calculate_premium({'type': 'life', 'age': 35, 'coverage_amount': 250000, 'risk_score': 'medium'})
+                        POLICIES[pol_id] = {
+                            'id': pol_id,
+                            'customer_id': cust_id,
+                            'type': 'life',
+                            'coverage_amount': 250000,
+                            'annual_premium': prem['annual'],
+                            'monthly_premium': prem['monthly'],
+                            'status': 'active',
+                            'risk_score': 'medium',
+                            'created_date': datetime.now().isoformat(),
+                            'start_date': datetime.now().isoformat(),
+                        }
+                        uw_id = f"UW-{datetime.now().strftime('%Y%m%d')}-{random.randint(1000,9999)}"
+                        UNDERWRITING_APPLICATIONS[uw_id] = {
+                            'id': uw_id,
+                            'policy_id': pol_id,
+                            'customer_id': cust_id,
+                            'status': 'approved',
+                            'risk_assessment': 'medium',
+                            'submitted_date': datetime.now().isoformat(),
+                            'decision_date': datetime.now().isoformat(),
+                        }
+                        bill_id = f"BILL-{datetime.now().strftime('%Y%m%d')}-{random.randint(1000,9999)}"
+                        BILLING[bill_id] = {'id': bill_id, 'policy_id': pol_id, 'amount': prem['monthly'], 'amount_paid': 0.0, 'status': 'outstanding', 'created_date': datetime.now().isoformat(), 'due_date': (datetime.now() + timedelta(days=30)).isoformat()}
 
                     # Seed a basic token registry
                     TOKEN_REGISTRY['TK-BTC'] = {'id': 'TK-BTC', 'symbol': 'BTC', 'name': 'Bitcoin', 'asset_type': 'currency', 'enabled': True, 'classification': 'internal', 'created_by': 'system', 'created_date': datetime.now().isoformat()}
                     TOKEN_REGISTRY['TK-ETH'] = {'id': 'TK-ETH', 'symbol': 'ETH', 'name': 'Ethereum', 'asset_type': 'currency', 'enabled': True, 'classification': 'internal', 'created_by': 'system', 'created_date': datetime.now().isoformat()}
 
                 self._set_json_headers(200)
-                self.wfile.write(json.dumps({'success': True}).encode('utf-8'))
+                self.wfile.write(json.dumps({
+                    'success': True,
+                    'preserved': {
+                        'customers': len(preserved_customers),
+                        'policies': len(preserved_policies),
+                        'claims': len(preserved_claims),
+                        'billing': len(preserved_billing),
+                        'ledger_transactions': len(preserved_ledger) if preserve_ledger else 0,
+                        'nft_tokens': len(preserved_nft) if preserve_ledger else 0
+                    },
+                    'message': 'Demo data reset. Permanent accounts and ledger data preserved.'
+                }).encode('utf-8'))
             except Exception as e:
                 self._set_json_headers(400)
                 self.wfile.write(json.dumps({'error': 'Reset failed', 'details': str(e)}).encode('utf-8'))
