@@ -4945,6 +4945,173 @@ For claims or questions, please contact:
             self.wfile.write(json.dumps(dashboard).encode('utf-8'))
             return
         
+        # Comprehensive trading statistics for mini tabs
+        if path == '/api/algo/stats':
+            customer_id = qs.get('customer_id', [''])[0]
+            
+            try:
+                # Initialize stats with defaults
+                stats = {
+                    'timestamp': datetime.now().isoformat(),
+                    'customer_id': customer_id,
+                    
+                    # Primary metrics
+                    'total_pnl': 0.0,
+                    'return_pct': 0.0,
+                    'win_rate': 0.0,
+                    'total_trades': 0,
+                    'winning_trades': 0,
+                    'losing_trades': 0,
+                    
+                    # Risk metrics
+                    'sharpe_ratio': 0.0,
+                    'sortino_ratio': 0.0,
+                    'calmar_ratio': 0.0,
+                    'max_drawdown_pct': 0.0,
+                    'profit_factor': 0.0,
+                    
+                    # Trade statistics
+                    'best_trade': 0.0,
+                    'worst_trade': 0.0,
+                    'avg_trade': 0.0,
+                    'win_streak': 0,
+                    'lose_streak': 0,
+                    'current_streak': 0,
+                    
+                    # Activity
+                    'active_bots': 0,
+                    'signals_today': 0,
+                    'trades_today': 0,
+                    
+                    # Position info
+                    'open_positions': 0,
+                    'unrealized_pnl': 0.0
+                }
+                
+                # Get data from ProfitEngine if available
+                try:
+                    from services.algo_trading_service import get_profit_engine, get_algo_trading_service
+                    profit_engine = get_profit_engine()
+                    algo_service = get_algo_trading_service() if algo_trading_enabled else None
+                    
+                    if profit_engine and customer_id:
+                        # Get trading summary
+                        summary = profit_engine.get_customer_trading_summary(customer_id)
+                        realtime = profit_engine.get_real_time_profits(customer_id)
+                        
+                        stats['total_pnl'] = summary.get('total_realized_profit', 0)
+                        stats['total_trades'] = summary.get('total_trades', 0)
+                        stats['winning_trades'] = summary.get('winning_trades', 0)
+                        stats['losing_trades'] = summary.get('losing_trades', 0)
+                        stats['win_rate'] = summary.get('win_rate', 0)
+                        stats['best_trade'] = summary.get('best_trade', 0)
+                        stats['worst_trade'] = summary.get('worst_trade', 0)
+                        stats['avg_trade'] = summary.get('avg_profit_per_trade', 0)
+                        stats['open_positions'] = summary.get('active_positions', 0)
+                        stats['unrealized_pnl'] = realtime.get('unrealized_pnl', 0)
+                        stats['trades_today'] = realtime.get('trades_today', 0)
+                        
+                        # Calculate return percentage
+                        if customer_id in INVESTMENT_ACCOUNTS:
+                            algo_capital = INVESTMENT_ACCOUNTS[customer_id].get('algo_trading_profits', 0)
+                            if algo_capital > 0:
+                                stats['return_pct'] = (stats['total_pnl'] / algo_capital) * 100
+                        
+                        # Calculate risk metrics from trade history
+                        customer_trades = [t for t in profit_engine.trade_history if t.get('customer_id') == customer_id]
+                        
+                        if customer_trades:
+                            pnl_list = [t.get('realized_pnl', 0) for t in customer_trades]
+                            winning_pnls = [p for p in pnl_list if p > 0]
+                            losing_pnls = [p for p in pnl_list if p < 0]
+                            
+                            # Profit Factor = Sum(Wins) / |Sum(Losses)|
+                            total_wins = sum(winning_pnls) if winning_pnls else 0
+                            total_losses = abs(sum(losing_pnls)) if losing_pnls else 0
+                            stats['profit_factor'] = round(total_wins / total_losses, 2) if total_losses > 0 else total_wins
+                            
+                            # Calculate Sharpe-like ratio (simplified)
+                            import statistics
+                            if len(pnl_list) > 1:
+                                avg_return = statistics.mean(pnl_list)
+                                std_dev = statistics.stdev(pnl_list)
+                                stats['sharpe_ratio'] = round(avg_return / std_dev, 2) if std_dev > 0 else 0
+                                
+                                # Sortino (uses only downside deviation)
+                                downside_returns = [p for p in pnl_list if p < 0]
+                                if downside_returns:
+                                    downside_dev = statistics.stdev(downside_returns)
+                                    stats['sortino_ratio'] = round(avg_return / downside_dev, 2) if downside_dev > 0 else 0
+                            
+                            # Max Drawdown
+                            peak = 0
+                            max_dd = 0
+                            running_pnl = 0
+                            for pnl in pnl_list:
+                                running_pnl += pnl
+                                peak = max(peak, running_pnl)
+                                dd = (peak - running_pnl) / peak * 100 if peak > 0 else 0
+                                max_dd = max(max_dd, dd)
+                            stats['max_drawdown_pct'] = round(max_dd, 1)
+                            
+                            # Calmar Ratio = Return / Max Drawdown
+                            if max_dd > 0:
+                                stats['calmar_ratio'] = round(stats['return_pct'] / max_dd, 2)
+                            
+                            # Win/Lose streaks
+                            current_streak = 0
+                            max_win_streak = 0
+                            max_lose_streak = 0
+                            win_streak = 0
+                            lose_streak = 0
+                            
+                            for t in customer_trades:
+                                if t.get('is_winner'):
+                                    win_streak += 1
+                                    lose_streak = 0
+                                    max_win_streak = max(max_win_streak, win_streak)
+                                else:
+                                    lose_streak += 1
+                                    win_streak = 0
+                                    max_lose_streak = max(max_lose_streak, lose_streak)
+                            
+                            stats['win_streak'] = max_win_streak
+                            stats['lose_streak'] = max_lose_streak
+                            stats['current_streak'] = win_streak if win_streak > 0 else -lose_streak
+                    
+                    # Get bot and signal counts
+                    if algo_service and customer_id:
+                        customer_bots = [b for b in algo_service.bots.values() 
+                                        if b.customer_id == customer_id and b.is_active]
+                        stats['active_bots'] = len(customer_bots)
+                        
+                        # Count signals generated today
+                        today_start = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+                        stats['signals_today'] = len([s for s in algo_service.signals 
+                                                     if s.timestamp >= today_start])
+                    
+                except Exception as e:
+                    print(f"Error loading profit engine stats: {e}")
+                
+                # Also check ledger for algo trades
+                algo_tx_types = ['algo_trade', 'algo_manual_trade', 'algo_profit', 'algo_deposit']
+                ledger_trades = [tx for tx in TRANSACTION_LEDGER.values() 
+                               if tx.get('customer_id') == customer_id and tx.get('tx_type') in algo_tx_types]
+                
+                if ledger_trades and stats['total_trades'] == 0:
+                    stats['total_trades'] = len(ledger_trades)
+                    total_from_ledger = sum(tx.get('amount', 0) for tx in ledger_trades)
+                    if total_from_ledger != 0:
+                        stats['total_pnl'] = total_from_ledger
+                
+                self._set_json_headers()
+                self.wfile.write(json.dumps(stats).encode('utf-8'))
+                
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+        
         # ========== END ADVANCED ALGO TRADING API ==========
         
         # ========== UNIFIED BALANCE GET API ==========

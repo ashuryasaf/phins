@@ -1777,7 +1777,49 @@
         }
         
         async function updateStats() {
-            // Basic stats from bots
+            // Fetch comprehensive stats from unified API
+            try {
+                const response = await fetch(`/api/algo/stats?customer_id=${customerId}`);
+                const stats = await response.json();
+                
+                if (!stats.error) {
+                    // Primary metrics - Top row
+                    const totalPnl = stats.total_pnl || 0;
+                    document.getElementById('totalPnl').textContent = `${totalPnl >= 0 ? '+' : ''}$${totalPnl.toFixed(2)}`;
+                    document.getElementById('pnlChange').className = `stat-change ${totalPnl >= 0 ? 'positive' : 'negative'}`;
+                    document.getElementById('pnlChange').textContent = `${stats.return_pct >= 0 ? '+' : ''}${(stats.return_pct || 0).toFixed(2)}% return`;
+                    
+                    document.getElementById('winRate').textContent = `${(stats.win_rate || 0).toFixed(1)}%`;
+                    document.getElementById('winRateChange').textContent = `${stats.winning_trades || 0}/${stats.total_trades || 0} trades`;
+                    
+                    document.getElementById('sharpeRatio').textContent = (stats.sharpe_ratio || 0).toFixed(2);
+                    document.getElementById('maxDrawdown').textContent = `${(stats.max_drawdown_pct || 0).toFixed(1)}%`;
+                    
+                    document.getElementById('activeBots').textContent = stats.active_bots || 0;
+                    document.getElementById('botsChange').textContent = `${stats.signals_today || 0} signals today`;
+                    
+                    // Advanced metrics - Second row
+                    document.getElementById('sortinoRatio').textContent = (stats.sortino_ratio || 0).toFixed(2);
+                    document.getElementById('calmarRatio').textContent = (stats.calmar_ratio || 0).toFixed(2);
+                    document.getElementById('profitFactor').textContent = (stats.profit_factor || 0).toFixed(2);
+                    
+                    const bestTrade = stats.best_trade || 0;
+                    const worstTrade = stats.worst_trade || 0;
+                    document.getElementById('bestTrade').textContent = `${bestTrade >= 0 ? '+' : ''}$${Math.abs(bestTrade).toFixed(0)}`;
+                    document.getElementById('worstTrade').textContent = `${worstTrade < 0 ? '-' : ''}$${Math.abs(worstTrade).toFixed(0)}`;
+                    document.getElementById('winStreak').textContent = stats.win_streak || 0;
+                    
+                    // Store for other uses
+                    window.algoStats = stats;
+                    
+                    console.log('Algo stats updated:', stats);
+                    return;
+                }
+            } catch (e) {
+                console.log('Stats API error, falling back to local calculation:', e);
+            }
+            
+            // Fallback: Calculate from local bots array
             const totalPnl = bots.reduce((sum, b) => sum + (b.total_pnl || 0), 0);
             const totalTrades = bots.reduce((sum, b) => sum + (b.total_trades || 0), 0);
             const winningTrades = bots.reduce((sum, b) => sum + (b.winning_trades || 0), 0);
@@ -1791,27 +1833,6 @@
             document.getElementById('winRateChange').textContent = `${winningTrades}/${totalTrades} trades`;
             document.getElementById('activeBots').textContent = activeBots;
             document.getElementById('botsChange').textContent = `${signals.length} signals today`;
-            
-            // Try to get advanced metrics from dashboard API
-            try {
-                const response = await fetch(`/api/algo/dashboard?customer_id=${customerId}`);
-                const dashboard = await response.json();
-                
-                if (dashboard.metrics) {
-                    const m = dashboard.metrics;
-                    document.getElementById('sharpeRatio').textContent = (m.sharpe_ratio || 0).toFixed(2);
-                    document.getElementById('maxDrawdown').textContent = `${(m.max_drawdown_pct || 0).toFixed(1)}%`;
-                }
-                
-                // Update advanced metrics from bot stats
-                if (dashboard.bot_stats && dashboard.bot_stats.aggregated_metrics) {
-                    const aggMetrics = dashboard.bot_stats.aggregated_metrics;
-                    document.getElementById('sharpeRatio').textContent = (aggMetrics.avg_sharpe_ratio || 0).toFixed(2);
-                }
-                
-            } catch (e) {
-                console.log('Advanced metrics not available:', e);
-            }
             
             // Calculate advanced metrics from bots with detailed data
             let avgSharpe = 0, avgSortino = 0, avgCalmar = 0, avgProfitFactor = 0;
