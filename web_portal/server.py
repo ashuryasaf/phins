@@ -9875,6 +9875,26 @@ For claims or questions, please contact:
                     except Exception:
                         pass
                 
+                # CRITICAL: Persist all changes to storage
+                # This ensures policy activation, billing, and wallet updates are saved
+                save_ledger_data()
+                
+                # Also record approval in transaction ledger for audit trail
+                record_transaction(
+                    customer_id=customer_id,
+                    tx_type='policy_activated',
+                    amount=bill['amount'],
+                    description=f"Policy {policy_id} activated - underwriting approved",
+                    metadata={
+                        'underwriting_id': uw_id,
+                        'policy_id': policy_id,
+                        'bill_id': bill_id,
+                        'coverage_amount': policy.get('coverage_amount', 0),
+                        'monthly_premium': policy.get('monthly_premium', 0),
+                        'approved_by': data.get('approved_by', 'admin')
+                    }
+                )
+                
                 # Build comprehensive response
                 response = {
                     'success': True,
