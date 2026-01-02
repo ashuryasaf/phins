@@ -2472,17 +2472,65 @@
       }
     }
     
-    // Load policies dynamically
+    // Load policies dynamically - uses admin/customers to get enriched data
     async function loadPolicies() {
       try {
-        const response = await fetch('/api/policies', {
+        // Use admin/customers endpoint which has policies with customer info
+        const response = await fetch('/api/admin/customers', {
           headers: { 'Authorization': `Bearer ${token}` }
         });
         
         if (response.ok) {
           const data = await response.json();
-          const policies = Array.isArray(data) ? data : data.policies || [];
-          displayPolicies(policies);
+          const customers = data.customers || [];
+          
+          // Extract all policies with customer info
+          let allPolicies = [];
+          for (const customer of customers) {
+            const custPolicies = customer.policies || [];
+            for (const policy of custPolicies) {
+              // Enrich with customer name
+              policy.customer_name = customer.name || 'N/A';
+              policy.customer_email = customer.email || '';
+              policy.customer_id = customer.id;
+              allPolicies.push(policy);
+            }
+          }
+          
+          // Try to get investment values
+          try {
+            const investRes = await fetch('/api/investment-portfolio', {
+              headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (investRes.ok) {
+              const investData = await investRes.json();
+              const portfolio = investData.portfolio || investData.accounts || [];
+              
+              // Map investment values to policies
+              for (const policy of allPolicies) {
+                const custId = policy.customer_id;
+                const custInvest = portfolio.find(p => p.customer_id === custId);
+                if (custInvest) {
+                  policy.investment_value = custInvest.total_value || custInvest.invested_assets || 0;
+                }
+              }
+            }
+          } catch (investErr) {
+            console.log('Investment data not available:', investErr);
+          }
+          
+          displayPolicies(allPolicies);
+          updatePolicyBadges();
+        } else {
+          // Fallback to direct policies endpoint
+          const fallbackRes = await fetch('/api/policies', {
+            headers: { 'Authorization': `Bearer ${token}` }
+          });
+          if (fallbackRes.ok) {
+            const data = await fallbackRes.json();
+            const policies = Array.isArray(data) ? data : data.policies || [];
+            displayPolicies(policies);
+          }
         }
       } catch (err) {
         console.error('Failed to load policies:', err);
@@ -3479,28 +3527,56 @@
       statusEl.innerHTML = '<span style="color: #3b82f6;">⏳ Activating...</span>';
       
       try {
-        const response = await fetch('/api/policies', {
+        // Use admin/customers to get all policies
+        const response = await fetch('/api/admin/customers', {
           headers: { 'Authorization': `Bearer ${token}` }
         });
         
         if (!response.ok) throw new Error('Failed to load policies');
         const data = await response.json();
-        const policies = Array.isArray(data) ? data : data.policies || [];
+        const customers = data.customers || [];
+        
+        // Extract all policies
+        let allPolicies = [];
+        customers.forEach(c => {
+          (c.policies || []).forEach(p => {
+            p.customer_id = c.id;
+            allPolicies.push(p);
+          });
+        });
         
         let activated = 0;
-        let pending = policies.filter(p => p.status && p.status.toLowerCase() === 'pending');
+        let pending = allPolicies.filter(p => {
+          const status = (p.status || '').toLowerCase();
+          return status === 'pending' || status === 'pending_underwriting';
+        });
         
+        // For pending_underwriting, use underwriting approve endpoint
         for (const policy of pending) {
-          const activateRes = await fetch(`/api/policy/${policy.id}/activate`, {
-            method: 'POST',
-            headers: { 
-              'Authorization': `Bearer ${token}`,
-              'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({ status: 'active' })
-          });
-          
-          if (activateRes.ok) activated++;
+          // Try to find matching underwriting application
+          const uwId = policy.underwriting_id;
+          if (uwId) {
+            const approveRes = await fetch('/api/underwriting/approve', {
+              method: 'POST',
+              headers: { 
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify({ id: uwId, approved_by: 'admin_bulk' })
+            });
+            if (approveRes.ok) activated++;
+          } else {
+            // Direct policy activation
+            const activateRes = await fetch(`/api/policy/${policy.id}/activate`, {
+              method: 'POST',
+              headers: { 
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify({ status: 'active' })
+            });
+            if (activateRes.ok) activated++;
+          }
         }
         
         statusEl.innerHTML = `<span style="color: #10b981;">✓ ${activated} policies activated</span>`;
@@ -3520,26 +3596,39 @@
       statusEl.innerHTML = '<span style="color: #3b82f6;">⏳ Calculating...</span>';
       
       try {
-        const response = await fetch('/api/policies', {
+        const response = await fetch('/api/admin/customers', {
           headers: { 'Authorization': `Bearer ${token}` }
         });
         
         if (!response.ok) throw new Error('Failed to load policies');
         const data = await response.json();
-        const policies = Array.isArray(data) ? data : data.policies || [];
+        const customers = data.customers || [];
         
-        let totalPremium = 0;
+        let totalMonthlyPremium = 0;
+        let totalAnnualPremium = 0;
+        let totalCoverage = 0;
         let activePolicies = 0;
+        let allPolicies = 0;
         
-        policies.forEach(p => {
-          if (p.status && p.status.toLowerCase() === 'active') {
-            totalPremium += parseFloat(p.monthly_premium || p.premium || 0);
-            activePolicies++;
-          }
+        customers.forEach(c => {
+          (c.policies || []).forEach(p => {
+            allPolicies++;
+            totalCoverage += parseFloat(p.coverage_amount || 0);
+            if (p.status && p.status.toLowerCase() === 'active') {
+              totalMonthlyPremium += parseFloat(p.monthly_premium || 0);
+              totalAnnualPremium += parseFloat(p.annual_premium || 0);
+              activePolicies++;
+            }
+          });
         });
         
-        statusEl.innerHTML = `<span style="color: #10b981;">✓ ${activePolicies} premiums calculated</span>`;
-        alert(`💰 Premium Calculation Complete!\n\n${activePolicies} active policies\nTotal Monthly Premium: ${formatCurrency(totalPremium)}\nTotal Annual Premium: ${formatCurrency(totalPremium * 12)}`);
+        statusEl.innerHTML = `<span style="color: #10b981;">✓ ${allPolicies} policies calculated</span>`;
+        alert(`💰 Premium Calculation Complete!\n\n` +
+          `Total Policies: ${allPolicies}\n` +
+          `Active Policies: ${activePolicies}\n` +
+          `Total Coverage: ${formatCurrency(totalCoverage)}\n` +
+          `Monthly Premium (active): ${formatCurrency(totalMonthlyPremium)}\n` +
+          `Annual Premium (active): ${formatCurrency(totalAnnualPremium)}`);
         
       } catch (err) {
         statusEl.innerHTML = '<span style="color: #dc3545;">⚠ Calculation failed</span>';
@@ -3583,32 +3672,44 @@
       statusEl.innerHTML = '<span style="color: #3b82f6;">⏳ Generating report...</span>';
       
       try {
-        const response = await fetch('/api/policies', {
+        const response = await fetch('/api/admin/customers', {
           headers: { 'Authorization': `Bearer ${token}` }
         });
         
         if (!response.ok) throw new Error('Failed to load policies');
         const data = await response.json();
-        const policies = Array.isArray(data) ? data : data.policies || [];
+        const customers = data.customers || [];
+        
+        // Extract all policies with customer info
+        let policies = [];
+        customers.forEach(c => {
+          (c.policies || []).forEach(p => {
+            p.customer_name = c.name || 'N/A';
+            p.customer_email = c.email || '';
+            policies.push(p);
+          });
+        });
         
         // Calculate stats
         let active = 0, pending = 0, cancelled = 0;
-        let totalCoverage = 0, totalPremium = 0;
+        let totalCoverage = 0, totalMonthlyPremium = 0, totalAnnualPremium = 0, totalInvestment = 0;
         
         policies.forEach(p => {
           const status = (p.status || '').toLowerCase();
           if (status === 'active') active++;
-          else if (status === 'pending') pending++;
+          else if (status === 'pending' || status === 'pending_underwriting') pending++;
           else if (status === 'cancelled') cancelled++;
           
           totalCoverage += parseFloat(p.coverage_amount || 0);
-          totalPremium += parseFloat(p.monthly_premium || p.premium || 0);
+          totalMonthlyPremium += parseFloat(p.monthly_premium || 0);
+          totalAnnualPremium += parseFloat(p.annual_premium || 0);
+          totalInvestment += parseFloat(p.investment_value || 0);
         });
         
         // Generate CSV report
-        let csv = 'Policy ID,Customer,Type,Coverage,Premium,Status,Start Date\\n';
+        let csv = 'Policy ID,Customer,Email,Type,Coverage,Monthly Premium,Annual Premium,Investment Value,Status,Start Date\\n';
         policies.forEach(p => {
-          csv += `${p.id},${p.customer_name || p.customer_id || 'N/A'},${p.coverage_level || p.type || 'N/A'},${p.coverage_amount || 0},${p.monthly_premium || p.premium || 0},${p.status || 'N/A'},${p.start_date || 'N/A'}\\n`;
+          csv += `${p.id},${p.customer_name || 'N/A'},${p.customer_email || 'N/A'},${p.type || 'N/A'},${p.coverage_amount || 0},${p.monthly_premium || 0},${p.annual_premium || 0},${p.investment_value || 0},${p.status || 'N/A'},${p.start_date || 'N/A'}\\n`;
         });
         
         // Download
@@ -3621,7 +3722,15 @@
         URL.revokeObjectURL(url);
         
         statusEl.innerHTML = `<span style="color: #10b981;">✓ Report generated</span>`;
-        alert(`📊 Policy Report Generated!\n\nTotal Policies: ${policies.length}\nActive: ${active}\nPending: ${pending}\nCancelled: ${cancelled}\n\nTotal Coverage: ${formatCurrency(totalCoverage)}\nMonthly Premium: ${formatCurrency(totalPremium)}`);
+        alert(`📊 Policy Report Generated!\n\n` +
+          `Total Policies: ${policies.length}\n` +
+          `Active: ${active}\n` +
+          `Pending: ${pending}\n` +
+          `Cancelled: ${cancelled}\n\n` +
+          `Total Coverage: ${formatCurrency(totalCoverage)}\n` +
+          `Monthly Premium: ${formatCurrency(totalMonthlyPremium)}\n` +
+          `Annual Premium: ${formatCurrency(totalAnnualPremium)}\n` +
+          `Investment Value: ${formatCurrency(totalInvestment)}`);
         
       } catch (err) {
         statusEl.innerHTML = '<span style="color: #dc3545;">⚠ Report failed</span>';
@@ -3655,19 +3764,23 @@
       });
     }
     
-    // Update policy badges
+    // Update policy badges - uses admin/customers for accurate counts
     function updatePolicyBadges() {
-      fetch('/api/policies', {
+      fetch('/api/admin/customers', {
         headers: { 'Authorization': `Bearer ${token}` }
       })
       .then(res => res.json())
       .then(data => {
-        const policies = Array.isArray(data) ? data : data.policies || [];
-        let active = 0, pending = 0;
-        policies.forEach(p => {
-          const status = (p.status || '').toLowerCase();
-          if (status === 'active') active++;
-          else if (status === 'pending') pending++;
+        const customers = data.customers || [];
+        let active = 0, pending = 0, totalInvestment = 0;
+        
+        customers.forEach(c => {
+          (c.policies || []).forEach(p => {
+            const status = (p.status || '').toLowerCase();
+            if (status === 'active') active++;
+            else if (status === 'pending' || status === 'pending_underwriting') pending++;
+            totalInvestment += parseFloat(p.investment_value || 0);
+          });
         });
         
         const activeBadge = document.getElementById('policy-active-badge');
