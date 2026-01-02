@@ -10021,6 +10021,64 @@ For claims or questions, please contact:
                 # This ensures policy activation, billing, and wallet updates are saved
                 save_ledger_data()
                 
+                # ========== DATABASE PERSISTENCE (if enabled) ==========
+                # Persist changes to database for reliable multi-worker consistency
+                if USE_DATABASE and database_enabled:
+                    try:
+                        from database.manager import DatabaseManager
+                        with DatabaseManager() as db:
+                            # Update policy in database
+                            db_policy = db.policies.get_by_id(policy_id)
+                            if db_policy:
+                                db.policies.update(policy_id, 
+                                    status='active',
+                                    approval_date=now,
+                                    updated_date=now
+                                )
+                            else:
+                                # Create policy in database if not exists
+                                db.policies.create(
+                                    id=policy_id,
+                                    customer_id=customer_id,
+                                    type=policy.get('type', 'phins_unified'),
+                                    coverage_amount=policy.get('coverage_amount', 0),
+                                    annual_premium=policy.get('annual_premium', 0),
+                                    monthly_premium=policy.get('monthly_premium', 0),
+                                    status='active',
+                                    underwriting_id=uw_id,
+                                    risk_score=app.get('risk_score', 'medium'),
+                                    start_date=policy.get('start_date'),
+                                    end_date=policy.get('end_date'),
+                                    approval_date=now
+                                )
+                            
+                            # Update underwriting application in database
+                            db_app = db.underwriting.get_by_id(uw_id)
+                            if db_app:
+                                db.underwriting.update(uw_id,
+                                    status='approved',
+                                    decision_date=now,
+                                    approved_by=data.get('approved_by', 'admin')
+                                )
+                            
+                            # Create billing record in database
+                            db.billing.create(
+                                id=bill_id,
+                                policy_id=policy_id,
+                                customer_id=customer_id,
+                                amount=bill['amount'],
+                                amount_paid=0.0,
+                                status='outstanding',
+                                due_date=bill['due_date'],
+                                created_date=now,
+                                description=bill.get('description', '')
+                            )
+                            
+                            print(f"[DB] Persisted approval: Policy {policy_id} -> active, UW {uw_id} -> approved, Bill {bill_id} created")
+                    except Exception as db_err:
+                        print(f"[DB] Warning: Database persistence failed: {db_err}")
+                        # Continue - in-memory state is already updated
+                
                 # Also record approval in transaction ledger for audit trail
                 record_transaction(
                     customer_id=customer_id,
