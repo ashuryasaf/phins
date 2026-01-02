@@ -3040,6 +3040,40 @@ For claims or questions, please contact:
             self.wfile.write(json.dumps({'items': rows}).encode('utf-8'))
             return
         
+        # Individual Policy by ID: /api/policy/{id}
+        if path.startswith('/api/policy/') and not path.endswith('/activate') and '/api/policy/update' not in path and '/api/policy/create' not in path:
+            policy_id = path.replace('/api/policy/', '').split('/')[0]
+            if policy_id:
+                policy = POLICIES.get(policy_id)
+                if policy:
+                    # Enrich with customer name if available
+                    customer = CUSTOMERS.get(policy.get('customer_id'))
+                    if customer:
+                        policy['customer_name'] = customer.get('name', 'N/A')
+                    self._set_json_headers()
+                    self.wfile.write(json.dumps(policy).encode('utf-8'))
+                else:
+                    self._set_json_headers(404)
+                    self.wfile.write(json.dumps({'error': f'Policy {policy_id} not found'}).encode('utf-8'))
+                return
+        
+        # Individual Claim by ID: /api/claim/{id}
+        if path.startswith('/api/claim/') and not any(x in path for x in ['/approve', '/reject', '/pay', '/process']):
+            claim_id = path.replace('/api/claim/', '').split('/')[0]
+            if claim_id:
+                claim = CLAIMS.get(claim_id)
+                if claim:
+                    # Enrich with customer name if available
+                    customer = CUSTOMERS.get(claim.get('customer_id'))
+                    if customer:
+                        claim['customer_name'] = customer.get('name', 'N/A')
+                    self._set_json_headers()
+                    self.wfile.write(json.dumps(claim).encode('utf-8'))
+                else:
+                    self._set_json_headers(404)
+                    self.wfile.write(json.dumps({'error': f'Claim {claim_id} not found'}).encode('utf-8'))
+                return
+        
         # Policy Management Endpoints
         if path == '/api/policies':
             if not session:
@@ -10244,6 +10278,234 @@ For claims or questions, please contact:
                     self.wfile.write(json.dumps({'error': 'Claim not approved or not found'}).encode('utf-8'))
             except Exception as e:
                 self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+        
+        # ========== INDIVIDUAL CLAIM ACTIONS ==========
+        # Approve individual claim by ID: /api/claim/{id}/approve
+        if path.startswith('/api/claim/') and path.endswith('/approve'):
+            claim_id = path.replace('/api/claim/', '').replace('/approve', '')
+            claim = CLAIMS.get(claim_id)
+            
+            if claim:
+                data = json.loads(body) if body else {}
+                approved_amount = data.get('approved_amount', claim.get('claimed_amount', claim.get('amount', 0)))
+                
+                claim['status'] = 'Approved'
+                claim['approved_amount'] = float(approved_amount)
+                claim['approved_date'] = datetime.now().isoformat()
+                CLAIMS[claim_id] = claim
+                save_ledger_data()
+                
+                self._set_json_headers()
+                self.wfile.write(json.dumps({
+                    'success': True,
+                    'claim_id': claim_id,
+                    'status': 'Approved',
+                    'approved_amount': claim['approved_amount']
+                }).encode('utf-8'))
+            else:
+                self._set_json_headers(404)
+                self.wfile.write(json.dumps({'error': f'Claim {claim_id} not found'}).encode('utf-8'))
+            return
+        
+        # Reject individual claim by ID: /api/claim/{id}/reject
+        if path.startswith('/api/claim/') and path.endswith('/reject'):
+            claim_id = path.replace('/api/claim/', '').replace('/reject', '')
+            claim = CLAIMS.get(claim_id)
+            
+            if claim:
+                data = json.loads(body) if body else {}
+                reason = data.get('reason', 'Not covered by policy')
+                
+                claim['status'] = 'Rejected'
+                claim['rejection_reason'] = reason
+                claim['rejected_date'] = datetime.now().isoformat()
+                CLAIMS[claim_id] = claim
+                save_ledger_data()
+                
+                self._set_json_headers()
+                self.wfile.write(json.dumps({
+                    'success': True,
+                    'claim_id': claim_id,
+                    'status': 'Rejected',
+                    'reason': reason
+                }).encode('utf-8'))
+            else:
+                self._set_json_headers(404)
+                self.wfile.write(json.dumps({'error': f'Claim {claim_id} not found'}).encode('utf-8'))
+            return
+        
+        # Pay individual claim by ID: /api/claim/{id}/pay
+        if path.startswith('/api/claim/') and path.endswith('/pay'):
+            claim_id = path.replace('/api/claim/', '').replace('/pay', '')
+            claim = CLAIMS.get(claim_id)
+            
+            if claim and claim.get('status', '').lower() == 'approved':
+                paid_amount = claim.get('approved_amount', claim.get('claimed_amount', 0))
+                
+                claim['status'] = 'Paid'
+                claim['paid_amount'] = float(paid_amount)
+                claim['payment_date'] = datetime.now().isoformat()
+                CLAIMS[claim_id] = claim
+                save_ledger_data()
+                
+                self._set_json_headers()
+                self.wfile.write(json.dumps({
+                    'success': True,
+                    'claim_id': claim_id,
+                    'status': 'Paid',
+                    'paid_amount': claim['paid_amount']
+                }).encode('utf-8'))
+            elif claim:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'Claim must be approved before payment'}).encode('utf-8'))
+            else:
+                self._set_json_headers(404)
+                self.wfile.write(json.dumps({'error': f'Claim {claim_id} not found'}).encode('utf-8'))
+            return
+        
+        # ========== INDIVIDUAL POLICY ACTIONS ==========
+        # Activate policy by ID: /api/policy/{id}/activate
+        if path.startswith('/api/policy/') and path.endswith('/activate'):
+            policy_id = path.replace('/api/policy/', '').replace('/activate', '')
+            policy = POLICIES.get(policy_id)
+            
+            if policy:
+                policy['status'] = 'active'
+                policy['activation_date'] = datetime.now().isoformat()
+                POLICIES[policy_id] = policy
+                save_ledger_data()
+                
+                self._set_json_headers()
+                self.wfile.write(json.dumps({
+                    'success': True,
+                    'policy_id': policy_id,
+                    'status': 'active',
+                    'activation_date': policy['activation_date']
+                }).encode('utf-8'))
+            else:
+                self._set_json_headers(404)
+                self.wfile.write(json.dumps({'error': f'Policy {policy_id} not found'}).encode('utf-8'))
+            return
+        
+        # ========== LEDGER SYNC API ==========
+        # Sync entities (customers, policies, claims) to transaction ledger
+        if path == '/api/ledger/sync':
+            try:
+                data = json.loads(body)
+                entity_type = data.get('entity_type', '')  # customer, policy, claim
+                entity_id = data.get('entity_id', '')
+                action = data.get('action', 'sync')
+                
+                if not entity_id:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'entity_id required'}).encode('utf-8'))
+                    return
+                
+                timestamp = datetime.now().isoformat()
+                ledger_entry = None
+                message = ''
+                
+                if entity_type == 'customer':
+                    # Sync customer to ledger
+                    customer = CUSTOMERS.get(entity_id)
+                    if customer:
+                        # Find or create ledger entry for customer registration
+                        existing = [e for e in TRANSACTION_LEDGER.values() if e.get('customer_id') == entity_id and e.get('type') == 'customer_registration']
+                        if existing:
+                            ledger_entry = existing[0]
+                            message = f'Customer {entity_id} already in ledger'
+                        else:
+                            tx_id = f'TX-CUST-{entity_id}-{timestamp[:10]}'
+                            ledger_entry = {
+                                'id': tx_id,
+                                'type': 'customer_registration',
+                                'customer_id': entity_id,
+                                'customer_name': customer.get('name', 'N/A'),
+                                'timestamp': timestamp,
+                                'status': 'verified',
+                                'nft_token_id': f'NFT-{tx_id}'
+                            }
+                            TRANSACTION_LEDGER[tx_id] = ledger_entry
+                            message = f'Customer {entity_id} synced to ledger'
+                    else:
+                        self._set_json_headers(404)
+                        self.wfile.write(json.dumps({'error': f'Customer {entity_id} not found'}).encode('utf-8'))
+                        return
+                        
+                elif entity_type == 'policy':
+                    # Sync policy to ledger
+                    policy = POLICIES.get(entity_id)
+                    if policy:
+                        existing = [e for e in TRANSACTION_LEDGER.values() if e.get('policy_id') == entity_id and e.get('type') == 'policy_approval']
+                        if existing:
+                            ledger_entry = existing[0]
+                            message = f'Policy {entity_id} already in ledger'
+                        else:
+                            tx_id = f'TX-POL-{entity_id}-{timestamp[:10]}'
+                            ledger_entry = {
+                                'id': tx_id,
+                                'type': 'policy_approval',
+                                'policy_id': entity_id,
+                                'customer_id': policy.get('customer_id', 'unknown'),
+                                'coverage_amount': policy.get('coverage_amount', 0),
+                                'monthly_premium': policy.get('monthly_premium', 0),
+                                'timestamp': timestamp,
+                                'status': 'verified',
+                                'nft_token_id': f'NFT-{tx_id}'
+                            }
+                            TRANSACTION_LEDGER[tx_id] = ledger_entry
+                            message = f'Policy {entity_id} synced to ledger'
+                    else:
+                        self._set_json_headers(404)
+                        self.wfile.write(json.dumps({'error': f'Policy {entity_id} not found'}).encode('utf-8'))
+                        return
+                        
+                elif entity_type == 'claim':
+                    # Sync claim to ledger
+                    claim = CLAIMS.get(entity_id)
+                    if claim:
+                        existing = [e for e in TRANSACTION_LEDGER.values() if e.get('claim_id') == entity_id]
+                        if existing:
+                            ledger_entry = existing[0]
+                            message = f'Claim {entity_id} already in ledger'
+                        else:
+                            tx_id = f'TX-CLM-{entity_id}-{timestamp[:10]}'
+                            ledger_entry = {
+                                'id': tx_id,
+                                'type': 'claim_submission',
+                                'claim_id': entity_id,
+                                'policy_id': claim.get('policy_id', 'unknown'),
+                                'customer_id': claim.get('customer_id', 'unknown'),
+                                'amount_claimed': claim.get('claimed_amount', claim.get('amount', 0)),
+                                'amount_approved': claim.get('approved_amount', 0),
+                                'status': claim.get('status', 'pending'),
+                                'timestamp': timestamp,
+                                'nft_token_id': f'NFT-{tx_id}'
+                            }
+                            TRANSACTION_LEDGER[tx_id] = ledger_entry
+                            message = f'Claim {entity_id} synced to ledger'
+                    else:
+                        self._set_json_headers(404)
+                        self.wfile.write(json.dumps({'error': f'Claim {entity_id} not found'}).encode('utf-8'))
+                        return
+                else:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'Invalid entity_type. Use: customer, policy, or claim'}).encode('utf-8'))
+                    return
+                
+                # Save ledger data
+                save_ledger_data()
+                
+                self._set_json_headers()
+                self.wfile.write(json.dumps({
+                    'success': True,
+                    'message': message,
+                    'ledger_entry': ledger_entry
+                }).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
                 self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
             return
         
