@@ -2533,13 +2533,44 @@ For claims or questions, please contact:
             total_revenue = total_annual_revenue
             total_premium_collected = total_billed
             
-            # Health wallet stats
-            total_wallet_balance = sum(w.get('balance', 0) for w in HEALTH_WALLETS.values())
+            # ========== UNIFIED WALLET BALANCE CALCULATION ==========
+            # Health wallet balance
+            total_health_wallet = sum(float(w.get('balance', 0) or 0) for w in HEALTH_WALLETS.values())
             total_deposits = sum(t.get('amount', 0) for w in HEALTH_WALLETS.values() for t in w.get('transactions', []) if t.get('type') == 'deposit')
             
+            # Investment account balance
+            total_investment_balance = sum(float(acc.get('balance', 0) or 0) for acc in INVESTMENT_ACCOUNTS.values())
+            
+            # Algo trading balance (from unified service if available)
+            total_algo_balance = 0
+            try:
+                if unified_balance_enabled and unified_balance_service:
+                    for cust_id, algo_data in unified_balance_service.algo_trading_balances.items():
+                        total_algo_balance += float(algo_data.get('balance', 0) or 0)
+            except:
+                pass
+            
+            # Pipeline cash balance (from savings pipeline if available)
+            total_pipeline_cash = 0
+            try:
+                if savings_pipeline_enabled and savings_pipeline_service:
+                    for account in savings_pipeline_service.accounts.values():
+                        total_pipeline_cash += float(account.cash_balance or 0)
+            except:
+                pass
+            
+            # Total unified wallet balance (sum of all wallet types)
+            total_wallet_balance = total_health_wallet + total_investment_balance + total_algo_balance + total_pipeline_cash
+            
+            # Customer allocations total (as a cross-check)
+            total_allocation_balance = sum(
+                float(alloc.get('distribution', {}).get('total_balance', 0) or 0)
+                for alloc in CUSTOMER_ALLOCATIONS.values()
+            )
+            
             # Investment stats
-            total_investment_value = sum(p.get('investment_value', 0) for p in POLICIES.values())
-            total_coverage_amount = sum(p.get('coverage_amount', 0) for p in POLICIES.values() if status_eq(p, 'active'))
+            total_investment_value = sum(float(p.get('investment_value', 0) or 0) for p in POLICIES.values())
+            total_coverage_amount = sum(float(p.get('coverage_amount', 0) or 0) for p in POLICIES.values() if status_eq(p, 'active'))
             
             # Claims payment stats (case-insensitive)
             claims_paid = sum(c.get('amount_approved', c.get('approved_amount', 0)) for c in CLAIMS.values() if status_eq(c, 'approved'))
@@ -2576,10 +2607,17 @@ For claims or questions, please contact:
                 'total_coverage_amount': total_coverage_amount,
                 'total_aum': total_investment_value + total_wallet_balance,
                 
-                # Wallet metrics
-                'total_wallet_balance': total_wallet_balance,
+                # Wallet metrics (unified across all wallet types)
+                'total_wallet_balance': round(total_wallet_balance, 2),
                 'total_deposits': total_deposits,
-                'active_wallets': len([w for w in HEALTH_WALLETS.values() if w.get('balance', 0) > 0]),
+                'active_wallets': len([w for w in HEALTH_WALLETS.values() if float(w.get('balance', 0) or 0) > 0]),
+                'wallet_breakdown': {
+                    'health_wallet': round(total_health_wallet, 2),
+                    'investment': round(total_investment_balance, 2),
+                    'algo_trading': round(total_algo_balance, 2),
+                    'pipeline_cash': round(total_pipeline_cash, 2),
+                    'allocation_total': round(total_allocation_balance, 2)
+                },
                 
                 # Pipeline summary
                 'pipeline': {
@@ -2667,6 +2705,24 @@ For claims or questions, please contact:
                 ledger_health = 'HEALTHY' if len(TRANSACTION_LEDGER) > 0 else 'EMPTY'
                 nft_verification = len(NFT_LEDGER) > 0
                 
+                # ========== UNIFIED WALLET CALCULATION FOR AI BI ==========
+                # Calculate all wallet types
+                total_health = sum(float(w.get('balance', 0) or 0) for w in HEALTH_WALLETS.values())
+                total_invest = sum(float(a.get('balance', 0) or 0) for a in INVESTMENT_ACCOUNTS.values())
+                total_algo = 0
+                try:
+                    if unified_balance_enabled and unified_balance_service:
+                        total_algo = sum(float(d.get('balance', 0) or 0) for d in unified_balance_service.algo_trading_balances.values())
+                except:
+                    pass
+                total_pipeline = 0
+                try:
+                    if savings_pipeline_enabled and savings_pipeline_service:
+                        total_pipeline = sum(float(acc.cash_balance or 0) for acc in savings_pipeline_service.accounts.values())
+                except:
+                    pass
+                total_aum = total_health + total_invest + total_algo + total_pipeline
+                
                 analytics = {
                     'success': True,
                     'platform': 'PHINS AI BI Analytics',
@@ -2679,8 +2735,13 @@ For claims or questions, please contact:
                         'total_customers': len(CUSTOMERS),
                         'total_premium': round(total_premium, 2),
                         'total_coverage': round(total_coverage, 2),
-                        'assets_under_management': round(sum(w.get('balance', 0) for w in HEALTH_WALLETS.values()) + 
-                                                        sum(a.get('balance', 0) for a in INVESTMENT_ACCOUNTS.values()), 2)
+                        'assets_under_management': round(total_aum, 2),
+                        'wallet_breakdown': {
+                            'health_wallet': round(total_health, 2),
+                            'investment': round(total_invest, 2),
+                            'algo_trading': round(total_algo, 2),
+                            'pipeline_cash': round(total_pipeline, 2)
+                        }
                     },
                     
                     # Risk metrics
@@ -4117,8 +4178,49 @@ For claims or questions, please contact:
                 # Find associated bills
                 customer_bills = [b for b in BILLING.values() if b.get('customer_id') == cust_id]
                 
-                # Get health wallet
-                wallet = HEALTH_WALLETS.get(cust_id, {})
+                # ========== UNIFIED WALLET BALANCE CALCULATION ==========
+                # Sum ALL wallet types: health wallet, investment, algo trading, pipeline cash
+                
+                # Health Wallet
+                health_wallet = HEALTH_WALLETS.get(cust_id, {})
+                health_balance = float(health_wallet.get('balance', 0) or 0)
+                
+                # Investment Account
+                investment_account = INVESTMENT_ACCOUNTS.get(cust_id, {})
+                investment_balance = float(investment_account.get('balance', 0) or 0)
+                
+                # Customer Allocations (used for unified balance)
+                allocation = CUSTOMER_ALLOCATIONS.get(cust_id, {})
+                
+                # Calculate total from allocation distribution if available
+                allocation_total = 0
+                dist = allocation.get('distribution', {})
+                if dist:
+                    allocation_total = float(dist.get('total_balance', 0) or 0)
+                
+                # Algo Trading Balance (from unified_balance_service if available)
+                algo_balance = 0
+                try:
+                    if unified_balance_enabled and unified_balance_service:
+                        algo_data = unified_balance_service.algo_trading_balances.get(cust_id, {})
+                        algo_balance = float(algo_data.get('balance', 0) or 0)
+                except:
+                    pass
+                
+                # Pipeline Cash (from savings_pipeline_service if available)
+                pipeline_cash = 0
+                try:
+                    if savings_pipeline_enabled and savings_pipeline_service:
+                        pipeline_account = savings_pipeline_service.accounts.get(cust_id)
+                        if pipeline_account:
+                            pipeline_cash = float(pipeline_account.cash_balance or 0)
+                except:
+                    pass
+                
+                # TOTAL WALLET BALANCE = Sum of all sources
+                total_wallet_balance = health_balance + investment_balance + algo_balance + pipeline_cash
+                if allocation_total > total_wallet_balance:
+                    total_wallet_balance = allocation_total  # Use allocation if higher
                 
                 # Determine pipeline stage (case-insensitive status checks)
                 pipeline_stage = 'registered'
@@ -4130,10 +4232,17 @@ For claims or questions, please contact:
                     elif approved_apps:
                         pipeline_stage = 'approved'
                 
+                # Get policy activation date for display
+                policy_activation_date = None
                 if customer_policies:
                     active_policies = [p for p in customer_policies if status_eq(p, 'active')]
                     if active_policies:
                         pipeline_stage = 'active_policy'
+                        # Get most recent activation date
+                        for p in active_policies:
+                            act_date = p.get('approval_date') or p.get('effective_date') or p.get('start_date')
+                            if act_date and (not policy_activation_date or act_date > policy_activation_date):
+                                policy_activation_date = act_date
                 
                 if customer_bills:
                     outstanding_bills = [b for b in customer_bills if status_eq(b, 'outstanding')]
@@ -4143,19 +4252,34 @@ For claims or questions, please contact:
                     elif paid_bills:
                         pipeline_stage = 'fully_active'
                 
+                # Use policy activation date if available, otherwise customer created date
+                display_date = policy_activation_date or customer.get('created_date', 'N/A')
+                
                 customer_list.append({
                     'id': cust_id,
                     'name': customer.get('name', 'N/A'),
                     'email': customer.get('email', 'N/A'),
                     'phone': customer.get('phone', 'N/A'),
-                    'created_date': customer.get('created_date', 'N/A'),
+                    'created_date': display_date,
+                    'created_at': display_date,  # Alias for frontend
+                    'customer_since': customer.get('created_date', 'N/A'),  # Original registration
+                    'policy_activation_date': policy_activation_date,
                     'pipeline_stage': pipeline_stage,
                     'policies_count': len(customer_policies),
                     'active_policies': len([p for p in customer_policies if status_eq(p, 'active')]),
                     'pending_applications': len([a for a in customer_apps if status_eq(a, 'pending')]),
                     'outstanding_bills': len([b for b in customer_bills if status_eq(b, 'outstanding')]),
                     'total_premium_due': sum(b.get('amount_due', 0) for b in customer_bills if status_eq(b, 'outstanding')),
-                    'wallet_balance': wallet.get('balance', 0),
+                    # Unified wallet balance (sum of all wallets)
+                    'wallet_balance': round(total_wallet_balance, 2),
+                    # Individual wallet breakdown for AI BI platform
+                    'wallet_breakdown': {
+                        'health_wallet': round(health_balance, 2),
+                        'investment': round(investment_balance, 2),
+                        'algo_trading': round(algo_balance, 2),
+                        'pipeline_cash': round(pipeline_cash, 2),
+                        'total': round(total_wallet_balance, 2)
+                    },
                     'policies': customer_policies,
                     'applications': customer_apps,
                     'bills': customer_bills

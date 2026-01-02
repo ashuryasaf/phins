@@ -1317,7 +1317,22 @@
         const stage = (c.pipeline_stage || 'unknown').toLowerCase();
         const stageColor = stageColors[stage] || '#6c757d';
         const walletBalance = c.wallet_balance || 0;
-        const createdDate = c.created_at ? new Date(c.created_at).toLocaleDateString() : 'N/A';
+        
+        // Format date with time for policy activation
+        let createdDate = 'N/A';
+        let dateTitle = '';
+        const dateStr = c.created_at || c.created_date || c.policy_activation_date;
+        if (dateStr) {
+          const d = new Date(dateStr);
+          createdDate = d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+          if (c.policy_activation_date) {
+            dateTitle = 'Policy activated: ' + new Date(c.policy_activation_date).toISOString();
+          }
+        }
+        
+        // Build wallet breakdown tooltip
+        const wb = c.wallet_breakdown || {};
+        const walletTooltip = `Health: $${(wb.health_wallet || 0).toLocaleString()}&#10;Investment: $${(wb.investment || 0).toLocaleString()}&#10;Algo: $${(wb.algo_trading || 0).toLocaleString()}&#10;Pipeline: $${(wb.pipeline_cash || 0).toLocaleString()}`;
         
         return `
           <tr data-stage="${stage}">
@@ -1325,9 +1340,9 @@
             <td><strong>${c.name || 'N/A'}</strong></td>
             <td>${c.email || 'N/A'}</td>
             <td><span class="badge" style="background:${stageColor};color:white;">${(c.pipeline_stage || 'unknown').replace('_', ' ')}</span></td>
-            <td>${c.active_policies || 0} / ${c.total_policies || 0}</td>
-            <td>$${walletBalance.toLocaleString()}</td>
-            <td>${createdDate}</td>
+            <td>${c.active_policies || 0} / ${c.policies_count || c.total_policies || 0}</td>
+            <td title="${walletTooltip}" style="cursor:help;"><strong>$${walletBalance.toLocaleString()}</strong></td>
+            <td title="${dateTitle}">${createdDate}</td>
             <td>
               <div style="display: flex; gap: 6px;">
                 <button class="action-btn view" title="View Details" onclick="viewCustomer('${c.id}')">
@@ -1423,11 +1438,34 @@
           </div>
           <div style="background:#f8f9fa;padding:16px;border-radius:10px;text-align:center;">
             <div style="font-size:2rem;font-weight:700;color:#28a745;">$${(customer.wallet_balance || 0).toLocaleString()}</div>
-            <div style="font-size:0.85rem;color:#666;">Wallet Balance</div>
+            <div style="font-size:0.85rem;color:#666;">Total Wallet Balance</div>
           </div>
           <div style="background:#f8f9fa;padding:16px;border-radius:10px;text-align:center;">
             <div style="font-size:2rem;font-weight:700;color:#dc3545;">${claims.filter(c => c.status === 'Pending' || c.status === 'Under Review').length}</div>
             <div style="font-size:0.85rem;color:#666;">Pending Claims</div>
+          </div>
+        </div>
+        
+        <!-- Wallet Breakdown Section -->
+        <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 16px; border-radius: 12px; margin-bottom: 24px; color: white;">
+          <h4 style="margin: 0 0 12px 0;">💰 Wallet Breakdown</h4>
+          <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px;">
+            <div style="background:rgba(255,255,255,0.1);padding:10px;border-radius:8px;text-align:center;">
+              <div style="font-size:1.2rem;font-weight:700;">$${((customer.wallet_breakdown?.health_wallet || 0)).toLocaleString()}</div>
+              <div style="font-size:0.75rem;opacity:0.9;">💊 Health</div>
+            </div>
+            <div style="background:rgba(255,255,255,0.1);padding:10px;border-radius:8px;text-align:center;">
+              <div style="font-size:1.2rem;font-weight:700;">$${((customer.wallet_breakdown?.investment || 0)).toLocaleString()}</div>
+              <div style="font-size:0.75rem;opacity:0.9;">📈 Investment</div>
+            </div>
+            <div style="background:rgba(255,255,255,0.1);padding:10px;border-radius:8px;text-align:center;">
+              <div style="font-size:1.2rem;font-weight:700;">$${((customer.wallet_breakdown?.algo_trading || 0)).toLocaleString()}</div>
+              <div style="font-size:0.75rem;opacity:0.9;">🤖 Algo</div>
+            </div>
+            <div style="background:rgba(255,255,255,0.1);padding:10px;border-radius:8px;text-align:center;">
+              <div style="font-size:1.2rem;font-weight:700;">$${((customer.wallet_breakdown?.pipeline_cash || 0)).toLocaleString()}</div>
+              <div style="font-size:0.75rem;opacity:0.9;">💵 Pipeline</div>
+            </div>
           </div>
         </div>
         
@@ -1436,8 +1474,9 @@
           <table style="width:100%;border-collapse:collapse;">
             <tr><td style="padding:8px 0;color:#666;">Customer ID:</td><td style="padding:8px 0;font-weight:600;">${customer.id}</td></tr>
             <tr><td style="padding:8px 0;color:#666;">Phone:</td><td style="padding:8px 0;">${customer.phone || 'N/A'}</td></tr>
-            <tr><td style="padding:8px 0;color:#666;">Created:</td><td style="padding:8px 0;">${customer.created_at ? new Date(customer.created_at).toLocaleDateString() : 'N/A'}</td></tr>
-            <tr><td style="padding:8px 0;color:#666;">Total Policies:</td><td style="padding:8px 0;">${customer.total_policies || policies.length}</td></tr>
+            <tr><td style="padding:8px 0;color:#666;">Customer Since:</td><td style="padding:8px 0;">${customer.customer_since ? new Date(customer.customer_since).toLocaleDateString() : (customer.created_at ? new Date(customer.created_at).toLocaleDateString() : 'N/A')}</td></tr>
+            <tr><td style="padding:8px 0;color:#666;">Policy Activated:</td><td style="padding:8px 0;">${customer.policy_activation_date ? new Date(customer.policy_activation_date).toLocaleString() : 'N/A'}</td></tr>
+            <tr><td style="padding:8px 0;color:#666;">Total Policies:</td><td style="padding:8px 0;">${customer.policies_count || customer.total_policies || policies.length}</td></tr>
           </table>
         </div>
         
