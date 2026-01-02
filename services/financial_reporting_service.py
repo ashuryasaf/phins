@@ -728,10 +728,11 @@ class FinancialReportingService:
         }
         
         if dashboard_type == 'accountant':
+            # Claims paid includes both 'paid' and 'approved' status (approved = ready to pay)
             claims_paid_amt = sum(c.get('paid_amount', c.get('approved_amount', 0)) 
-                                  for c in self._claims.values() if _status_eq(c, 'paid'))
+                                  for c in self._claims.values() if _status_in(c, ['paid', 'approved']))
             claims_pending_amt = sum(c.get('claimed_amount', 0) for c in self._claims.values() 
-                                     if _status_in(c, ['pending', 'under_review', 'approved']))
+                                     if _status_in(c, ['pending', 'under_review']))
             
             return {
                 **base_data,
