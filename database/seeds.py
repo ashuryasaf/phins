@@ -142,6 +142,14 @@ def seed_sample_data(session=None):
         # =================================================================
         # PRIMARY TEST ACCOUNT: asaf@assurance.co.il
         # =================================================================
+        # Import in-memory data structures for primary customer sync
+        try:
+            from web_portal.server import CUSTOMERS, POLICIES, UNDERWRITING_APPLICATIONS, BILLING, CLAIMS
+            sync_primary_to_memory = True
+        except ImportError:
+            sync_primary_to_memory = False
+            logger.warning("Could not import in-memory data structures for primary customer")
+        
         primary_customer = customer_repo.find_one_by(email='asaf@assurance.co.il')
         if not primary_customer:
             pwd = hash_password('Assurance2024!')
@@ -165,6 +173,17 @@ def seed_sample_data(session=None):
                 portal_active=True
             )
             logger.info(f"Created primary customer: {primary_customer.email}")
+            
+            # Sync primary customer to memory
+            if sync_primary_to_memory:
+                CUSTOMERS['CUST-ASAF-001'] = {
+                    'id': 'CUST-ASAF-001',
+                    'name': 'Asaf Assurance',
+                    'email': 'asaf@assurance.co.il',
+                    'phone': '+972-50-1234567',
+                    'date_of_birth': '1985-03-15',
+                    'created_date': now.isoformat()
+                }
             
             # Initialize health wallet with $20,000 deposit (as per user's test data)
             from web_portal.server import HEALTH_WALLETS
@@ -234,10 +253,29 @@ def seed_sample_data(session=None):
                 )
                 logger.info(f"Created policy: {policy.id}")
                 
+                # Sync policy to memory
+                if sync_primary_to_memory:
+                    POLICIES[pol_data['id']] = {
+                        'id': pol_data['id'],
+                        'customer_id': 'CUST-ASAF-001',
+                        'type': pol_data['type'],
+                        'coverage_amount': pol_data['coverage_amount'],
+                        'annual_premium': pol_data['annual_premium'],
+                        'monthly_premium': pol_data['monthly_premium'],
+                        'status': pol_data['status'],
+                        'risk_score': pol_data['risk_score'],
+                        'start_date': now.isoformat(),
+                        'end_date': (now + timedelta(days=365)).isoformat(),
+                        'approval_date': now.isoformat(),
+                        'created_date': now.isoformat(),
+                        'updated_date': now.isoformat()
+                    }
+                
                 # Create bill for active policy
                 if pol_data['status'] == 'active':
+                    bill_id = f"BILL-{pol_data['id'].replace('POL-', '')}"
                     bill = billing_repo.create(
-                        id=f"BILL-{pol_data['id'].replace('POL-', '')}",
+                        id=bill_id,
                         policy_id=policy.id,
                         customer_id=primary_customer.id,
                         amount=pol_data['monthly_premium'],
@@ -246,6 +284,24 @@ def seed_sample_data(session=None):
                         due_date=now + timedelta(days=30)
                     )
                     logger.info(f"Created bill: {bill.id}")
+                    
+                    # Sync bill to memory
+                    if sync_primary_to_memory:
+                        BILLING[bill_id] = {
+                            'id': bill_id,
+                            'policy_id': pol_data['id'],
+                            'customer_id': 'CUST-ASAF-001',
+                            'amount': pol_data['monthly_premium'],
+                            'amount_paid': 0.0,
+                            'status': 'outstanding',
+                            'due_date': (now + timedelta(days=30)).isoformat(),
+                            'paid_date': None,
+                            'payment_method': None,
+                            'transaction_id': None,
+                            'late_fee': 0.0,
+                            'created_date': now.isoformat(),
+                            'updated_date': now.isoformat()
+                        }
             
             # Create sample claims for the primary customer
             claim_repo = ClaimRepository(session)
@@ -295,6 +351,7 @@ def seed_sample_data(session=None):
             
             for claim_data in sample_claims:
                 try:
+                    filed_date = now - timedelta(days=random.randint(1, 30))
                     claim = claim_repo.create(
                         id=claim_data['id'],
                         policy_id=claim_data['policy_id'],
@@ -304,9 +361,25 @@ def seed_sample_data(session=None):
                         claimed_amount=claim_data['claimed_amount'],
                         approved_amount=claim_data.get('approved_amount'),
                         status=claim_data['status'],
-                        filed_date=now - timedelta(days=random.randint(1, 30))
+                        filed_date=filed_date
                     )
                     logger.info(f"Created claim: {claim.id}")
+                    
+                    # Sync claim to memory
+                    if sync_primary_to_memory:
+                        CLAIMS[claim_data['id']] = {
+                            'id': claim_data['id'],
+                            'policy_id': claim_data['policy_id'],
+                            'customer_id': 'CUST-ASAF-001',
+                            'type': claim_data['type'],
+                            'description': claim_data['description'],
+                            'claimed_amount': claim_data['claimed_amount'],
+                            'approved_amount': claim_data.get('approved_amount', 0),
+                            'status': claim_data['status'],
+                            'filed_date': filed_date.isoformat(),
+                            'created_date': filed_date.isoformat(),
+                            'updated_date': now.isoformat()
+                        }
                 except Exception as e:
                     logger.warning(f"Could not create claim {claim_data['id']}: {e}")
         else:
@@ -339,6 +412,14 @@ def seed_sample_data(session=None):
             }
         ]
         
+        # Import in-memory data structures for sync
+        try:
+            from web_portal.server import CUSTOMERS, POLICIES, UNDERWRITING_APPLICATIONS, BILLING
+            sync_to_memory = True
+        except ImportError:
+            sync_to_memory = False
+            logger.warning("Could not import in-memory data structures - database-only seeding")
+        
         for cust_data in additional_customers:
             existing = customer_repo.find_one_by(email=cust_data['email'])
             if existing:
@@ -361,13 +442,16 @@ def seed_sample_data(session=None):
             pol_id = f"POL-{cust_data['id'].replace('CUST-', '')}"
             uw_id = f"UW-{cust_data['id'].replace('CUST-', '')}"
             
+            annual_premium = cust_data['coverage'] * 0.012
+            monthly_premium = cust_data['coverage'] * 0.001
+            
             policy = policy_repo.create(
                 id=pol_id,
                 customer_id=customer.id,
                 type=cust_data['policy_type'],
                 coverage_amount=cust_data['coverage'],
-                annual_premium=cust_data['coverage'] * 0.012,
-                monthly_premium=cust_data['coverage'] * 0.001,
+                annual_premium=annual_premium,
+                monthly_premium=monthly_premium,
                 status='pending_underwriting',
                 risk_score='medium',
                 underwriting_id=uw_id,
@@ -387,6 +471,63 @@ def seed_sample_data(session=None):
                 submitted_date=now
             )
             logger.info(f"Created underwriting application: {uw_app.id}")
+            
+            # === SYNC TO IN-MEMORY DATA STRUCTURES ===
+            if sync_to_memory:
+                # Sync customer
+                CUSTOMERS[cust_data['id']] = {
+                    'id': cust_data['id'],
+                    'name': cust_data['name'],
+                    'email': cust_data['email'],
+                    'phone': f"+1-555-{hash(cust_data['email']) % 10000:04d}",
+                    'created_date': now.isoformat()
+                }
+                
+                # Sync policy
+                POLICIES[pol_id] = {
+                    'id': pol_id,
+                    'customer_id': cust_data['id'],
+                    'type': cust_data['policy_type'],
+                    'coverage_amount': float(cust_data['coverage']),
+                    'annual_premium': float(annual_premium),
+                    'monthly_premium': float(monthly_premium),
+                    'status': 'pending_underwriting',
+                    'underwriting_id': uw_id,
+                    'risk_score': 'medium',
+                    'start_date': now.isoformat(),
+                    'end_date': (now + timedelta(days=365)).isoformat(),
+                    'created_date': now.isoformat(),
+                    'updated_date': now.isoformat()
+                }
+                
+                # Sync underwriting application
+                UNDERWRITING_APPLICATIONS[uw_id] = {
+                    'id': uw_id,
+                    'policy_id': pol_id,
+                    'customer_id': cust_data['id'],
+                    'customer_name': cust_data['name'],
+                    'customer_email': cust_data['email'],
+                    'policy_type': cust_data['policy_type'],
+                    'coverage_amount': float(cust_data['coverage']),
+                    'annual_premium': float(annual_premium),
+                    'monthly_premium': float(monthly_premium),
+                    'age': None,
+                    'risk_score': 'medium',
+                    'status': 'pending',
+                    'risk_assessment': 'medium',
+                    'medical_exam_required': False,
+                    'additional_documents_required': False,
+                    'notes': None,
+                    'questionnaire_responses': {},
+                    'payment_setup': {},
+                    'health_wallet': {},
+                    'submitted_date': now.isoformat(),
+                    'decision_date': None,
+                    'decided_by': None,
+                    'created_date': now.isoformat(),
+                    'updated_date': now.isoformat()
+                }
+                logger.info(f"Synced {cust_data['id']} to in-memory data structures")
         
         logger.info("Sample data seeded successfully")
         

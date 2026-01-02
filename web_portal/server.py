@@ -3392,20 +3392,64 @@ For claims or questions, please contact:
                     self.wfile.write(json.dumps(payload).encode('utf-8'))
             return
         
-        # Underwriting Applications Endpoints
+        # Underwriting Applications Endpoints - WITH DATA ENRICHMENT
         if path == '/api/underwriting':
             app_id = qs.get('id', [None])[0]
+            
+            def enrich_underwriting_app(app):
+                """Enrich underwriting application with policy and customer data"""
+                enriched = dict(app)  # Copy to avoid modifying original
+                
+                # Lookup linked policy
+                policy_id = app.get('policy_id')
+                if policy_id:
+                    policy = POLICIES.get(policy_id, {})
+                    # Enrich with policy data if not already set
+                    if not enriched.get('policy_type'):
+                        enriched['policy_type'] = policy.get('type', 'N/A')
+                    if not enriched.get('coverage_amount'):
+                        enriched['coverage_amount'] = policy.get('coverage_amount', 0)
+                    if not enriched.get('annual_premium'):
+                        enriched['annual_premium'] = policy.get('annual_premium', 0)
+                    if not enriched.get('monthly_premium'):
+                        enriched['monthly_premium'] = policy.get('monthly_premium', 0)
+                    if not enriched.get('risk_score') and not enriched.get('risk_assessment'):
+                        enriched['risk_score'] = policy.get('risk_score', 'medium')
+                        enriched['risk_assessment'] = policy.get('risk_score', 'medium')
+                    # Policy status
+                    enriched['policy_status'] = policy.get('status', 'pending')
+                
+                # Lookup linked customer
+                customer_id = app.get('customer_id')
+                if customer_id:
+                    customer = CUSTOMERS.get(customer_id, {})
+                    # Enrich with customer data if not already set
+                    if not enriched.get('customer_name'):
+                        enriched['customer_name'] = customer.get('name') or customer.get('full_name') or customer_id
+                    if not enriched.get('customer_email'):
+                        enriched['customer_email'] = customer.get('email', '')
+                    if not enriched.get('age') and customer.get('date_of_birth'):
+                        try:
+                            dob = datetime.fromisoformat(customer['date_of_birth'].replace('Z', '+00:00'))
+                            enriched['age'] = (datetime.now() - dob).days // 365
+                        except Exception:
+                            pass
+                
+                return enriched
+            
             if app_id:
                 app = UNDERWRITING_APPLICATIONS.get(app_id)
                 if app:
                     self._set_json_headers()
-                    self.wfile.write(json.dumps(app).encode('utf-8'))
+                    self.wfile.write(json.dumps(enrich_underwriting_app(app)).encode('utf-8'))
                 else:
                     self._set_json_headers(404)
                     self.wfile.write(json.dumps({'error': 'Application not found'}).encode('utf-8'))
             else:
+                # Return all applications with enriched data
+                enriched_apps = [enrich_underwriting_app(app) for app in UNDERWRITING_APPLICATIONS.values()]
                 self._set_json_headers()
-                self.wfile.write(json.dumps(list(UNDERWRITING_APPLICATIONS.values())).encode('utf-8'))
+                self.wfile.write(json.dumps(enriched_apps).encode('utf-8'))
             return
         
         # Customers Endpoint
