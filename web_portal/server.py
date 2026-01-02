@@ -3662,10 +3662,13 @@ For claims or questions, please contact:
             user = get_session_user(session) or {}
             role = (user.get('role') or '').lower()
             
-            # Filter by customer for non-admin roles
-            customer_filter = query_params.get('customer_id')
-            tx_type_filter = query_params.get('type')
-            limit = min(int(query_params.get('limit', 100)), 500)
+            # Filter by customer for non-admin roles (qs is parse_qs result - values are lists)
+            customer_filter = qs.get('customer_id', [None])[0]
+            tx_type_filter = qs.get('type', [None])[0]
+            try:
+                limit = min(int(qs.get('limit', [100])[0]), 500)
+            except (ValueError, TypeError):
+                limit = 100
             
             ledger_entries = list(TRANSACTION_LEDGER.values())
             
