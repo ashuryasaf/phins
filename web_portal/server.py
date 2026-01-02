@@ -3752,6 +3752,30 @@ For claims or questions, please contact:
             }).encode('utf-8'))
             return
         
+        # ========== PAYMENT METHODS API (GET) ==========
+        # Available payment methods for billing UI - works as GET request
+        if path == '/api/payment/methods':
+            # Return available payment methods for the billing dashboard
+            default_methods = [
+                {'id': 'credit_card', 'name': 'Credit Card', 'gateway': 'stripe', 'enabled': True, 'icon': '💳'},
+                {'id': 'debit_card', 'name': 'Debit Card', 'gateway': 'stripe', 'enabled': True, 'icon': '💳'},
+                {'id': 'paypal', 'name': 'PayPal', 'gateway': 'paypal', 'enabled': True, 'icon': '🅿️'},
+                {'id': 'apple_pay', 'name': 'Apple Pay', 'gateway': 'stripe', 'enabled': True, 'icon': '🍎'},
+                {'id': 'google_pay', 'name': 'Google Pay', 'gateway': 'stripe', 'enabled': True, 'icon': '🔵'},
+                {'id': 'bank_transfer', 'name': 'Bank Transfer', 'gateway': 'manual', 'enabled': True, 'icon': '🏦'},
+                {'id': 'crypto_btc', 'name': 'Bitcoin', 'gateway': 'crypto', 'enabled': True, 'icon': '₿'},
+                {'id': 'crypto_eth', 'name': 'Ethereum', 'gateway': 'crypto', 'enabled': True, 'icon': '⟠'},
+                {'id': 'crypto_usdc', 'name': 'USDC', 'gateway': 'crypto', 'enabled': True, 'icon': '💵'},
+            ]
+            self._set_json_headers()
+            self.wfile.write(json.dumps({
+                'success': True,
+                'methods': default_methods,
+                'test_mode': True,
+                'message': 'Available payment gateways'
+            }).encode('utf-8'))
+            return
+        
         # Customer billing "next due" (portal convenience)
         if path == '/api/billing/next-due':
             if not session:
