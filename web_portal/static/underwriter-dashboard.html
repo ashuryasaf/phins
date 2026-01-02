@@ -373,7 +373,14 @@
         </div>
         
         <div class="section">
-            <h2>Pending Applications</h2>
+            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 15px;">
+                <h2 style="margin: 0;">Pending Applications</h2>
+                <div style="display: flex; gap: 8px;">
+                    <button class="btn" style="background: #6b7280; color: white; padding: 8px 16px;" onclick="exportApplications('csv')" title="Export as CSV">📊 Export CSV</button>
+                    <button class="btn" style="background: #6b7280; color: white; padding: 8px 16px;" onclick="exportApplications('pdf')" title="Export as PDF">📄 Export PDF</button>
+                    <button class="btn" style="background: #6b7280; color: white; padding: 8px 16px;" onclick="refreshApplications()" title="Refresh">🔄 Refresh</button>
+                </div>
+            </div>
             <div id="applications-list">
                 <p>Loading applications...</p>
             </div>
@@ -488,7 +495,8 @@
         
         function displayApplications(applications) {
             const container = document.getElementById('applications-list');
-            const pending = applications.filter(a => a.status === 'pending');
+            // Case-insensitive status check
+            const pending = applications.filter(a => (a.status || '').toLowerCase() === 'pending');
             
             if (pending.length === 0) {
                 container.innerHTML = '<p>No pending applications at this time.</p>';
@@ -534,19 +542,20 @@
         }
         
         function updateStats(applications) {
-            const pending = applications.filter(a => a.status === 'pending');
+            // Case-insensitive status checks
+            const pending = applications.filter(a => (a.status || '').toLowerCase() === 'pending');
             const approvedToday = applications.filter(a => 
-                a.status === 'approved' && 
+                (a.status || '').toLowerCase() === 'approved' && 
                 new Date(a.updated_date).toDateString() === new Date().toDateString()
             );
-            const highRisk = pending.filter(a => a.risk_score === 'high');
+            const highRisk = pending.filter(a => (a.risk_score || '').toLowerCase() === 'high');
             
             document.getElementById('pending-count').textContent = pending.length;
             document.getElementById('approved-today').textContent = approvedToday.length;
             document.getElementById('high-risk-count').textContent = highRisk.length;
             
-            // Calculate avg processing time from actual data
-            const processedApps = applications.filter(a => a.status === 'approved' && a.created_date && a.updated_date);
+            // Calculate avg processing time from actual data (case-insensitive)
+            const processedApps = applications.filter(a => (a.status || '').toLowerCase() === 'approved' && a.created_date && a.updated_date);
             if (processedApps.length > 0) {
                 const avgHours = processedApps.reduce((sum, a) => {
                     const created = new Date(a.created_date);
@@ -645,6 +654,140 @@
                 submitBtn.disabled = false;
             }
         }
+        
+        // Store loaded applications for export
+        let lastApplicationsData = [];
+        
+        // Refresh button
+        function refreshApplications() {
+            showToast('Refreshing applications...', 'info');
+            loadApplications();
+        }
+        
+        // Export functions
+        function exportApplications(format) {
+            if (!lastApplicationsData || lastApplicationsData.length === 0) {
+                showToast('No applications to export', 'warning');
+                return;
+            }
+            
+            if (format === 'csv') {
+                const csvData = lastApplicationsData.map(app => ({
+                    Application_ID: app.id,
+                    Customer_ID: app.customer_id,
+                    Customer_Name: app.customer_name || 'N/A',
+                    Policy_Type: app.policy_type || 'N/A',
+                    Coverage_Amount: app.coverage_amount || 0,
+                    Risk_Score: app.risk_score || app.risk_assessment || 'medium',
+                    Status: app.status,
+                    Submitted_Date: app.submitted_date || app.created_date,
+                    Medical_Exam: app.medical_exam_required ? 'Yes' : 'No'
+                }));
+                
+                const headers = Object.keys(csvData[0]);
+                const csvContent = [
+                    headers.join(','),
+                    ...csvData.map(row => headers.map(h => {
+                        const val = row[h];
+                        if (typeof val === 'string' && val.includes(',')) return `"${val}"`;
+                        return val;
+                    }).join(','))
+                ].join('\n');
+                
+                const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+                const link = document.createElement('a');
+                link.href = URL.createObjectURL(blob);
+                link.download = `PHINS_Underwriting_Applications_${new Date().toISOString().split('T')[0]}.csv`;
+                link.click();
+                showToast('CSV exported successfully', 'success');
+            } else if (format === 'pdf') {
+                const printWindow = window.open('', '_blank');
+                printWindow.document.write(`
+                    <html>
+                    <head>
+                        <title>Underwriting Applications Report</title>
+                        <style>
+                            body { font-family: Arial, sans-serif; padding: 40px; max-width: 900px; margin: 0 auto; }
+                            table { width: 100%; border-collapse: collapse; margin: 15px 0; }
+                            th, td { border: 1px solid #333; padding: 8px; text-align: left; font-size: 11px; }
+                            th { background: #667eea; color: white; }
+                            h1 { color: #1a1f36; border-bottom: 2px solid #667eea; padding-bottom: 10px; }
+                            .header { display: flex; justify-content: space-between; margin-bottom: 20px; }
+                            .logo { font-size: 24px; font-weight: bold; }
+                            .summary { background: #f8f9fa; padding: 15px; border-radius: 8px; margin: 15px 0; }
+                            .risk-low { color: #155724; } .risk-medium { color: #856404; } .risk-high { color: #721c24; }
+                            @page { margin: 1cm; }
+                        </style>
+                    </head>
+                    <body>
+                        <div class="header">
+                            <div class="logo">🛡️ PHINS Insurance</div>
+                            <div>${new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</div>
+                        </div>
+                        <h1>🔍 Underwriting Applications Report</h1>
+                        <div class="summary">
+                            <strong>Total Applications:</strong> ${lastApplicationsData.length} | 
+                            <strong>Pending:</strong> ${lastApplicationsData.filter(a => a.status === 'pending').length} |
+                            <strong>Approved:</strong> ${lastApplicationsData.filter(a => a.status === 'approved').length}
+                        </div>
+                        <table>
+                            <thead>
+                                <tr><th>ID</th><th>Customer</th><th>Type</th><th>Coverage</th><th>Risk</th><th>Status</th><th>Submitted</th></tr>
+                            </thead>
+                            <tbody>
+                                ${lastApplicationsData.map(app => `
+                                    <tr>
+                                        <td>${app.id}</td>
+                                        <td>${app.customer_name || app.customer_id || 'N/A'}</td>
+                                        <td>${app.policy_type || 'N/A'}</td>
+                                        <td>$${Number(app.coverage_amount || 0).toLocaleString()}</td>
+                                        <td class="risk-${app.risk_score || app.risk_assessment || 'medium'}">${(app.risk_score || app.risk_assessment || 'medium').toUpperCase()}</td>
+                                        <td>${app.status}</td>
+                                        <td>${new Date(app.submitted_date || app.created_date).toLocaleDateString()}</td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                        <hr style="margin-top: 40px;">
+                        <p style="font-size: 10px; color: #666;">
+                            Generated by PHINS AI BI Platform | Report ID: UW-${Date.now().toString(36).toUpperCase()}
+                        </p>
+                    </body>
+                    </html>
+                `);
+                printWindow.document.close();
+                setTimeout(() => printWindow.print(), 500);
+                showToast('PDF export ready', 'success');
+            }
+        }
+        
+        // Override loadApplications to store data
+        const originalLoadApplications = loadApplications;
+        loadApplications = async function() {
+            try {
+                const response = await fetch('/api/underwriting', {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                
+                if (!response.ok) {
+                    if (response.status === 401) {
+                        window.location.href = '/login.html';
+                        return;
+                    }
+                    throw new Error('Failed to load applications');
+                }
+                
+                const data = await response.json();
+                const applications = Array.isArray(data) ? data : (data.applications || []);
+                lastApplicationsData = applications; // Store for export
+                displayApplications(applications);
+                updateStats(applications);
+            } catch (error) {
+                console.error('Error loading applications:', error);
+                document.getElementById('applications-list').innerHTML = 
+                    '<p>Error loading applications. Please refresh the page.</p>';
+            }
+        };
         
         // Load applications on page load
         loadApplications();

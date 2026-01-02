@@ -3651,6 +3651,107 @@ For claims or questions, please contact:
                 self.wfile.write(json.dumps({'error': str(e), 'transactions': []}).encode('utf-8'))
             return
         
+        # ========== TRANSACTION LEDGER API ==========
+        # Master ledger for all financial transactions with blockchain/NFT tracking
+        if path == '/api/ledger':
+            if not session:
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Unauthorized'}).encode('utf-8'))
+                return
+            
+            user = get_session_user(session) or {}
+            role = (user.get('role') or '').lower()
+            
+            # Filter by customer for non-admin roles
+            customer_filter = query_params.get('customer_id')
+            tx_type_filter = query_params.get('type')
+            limit = min(int(query_params.get('limit', 100)), 500)
+            
+            ledger_entries = list(TRANSACTION_LEDGER.values())
+            
+            # Apply filters
+            if customer_filter:
+                ledger_entries = [e for e in ledger_entries if e.get('customer_id') == customer_filter]
+            if tx_type_filter:
+                ledger_entries = [e for e in ledger_entries if e.get('type') == tx_type_filter]
+            
+            # Sort by timestamp desc
+            ledger_entries.sort(key=lambda x: x.get('timestamp', ''), reverse=True)
+            ledger_entries = ledger_entries[:limit]
+            
+            # Get summary statistics
+            total_entries = len(TRANSACTION_LEDGER)
+            tx_types = {}
+            for entry in TRANSACTION_LEDGER.values():
+                tx_type = entry.get('type', 'unknown')
+                tx_types[tx_type] = tx_types.get(tx_type, 0) + 1
+            
+            self._set_json_headers()
+            self.wfile.write(json.dumps({
+                'success': True,
+                'ledger_entries': ledger_entries,
+                'total_entries': total_entries,
+                'transaction_types': tx_types,
+                'filters_applied': {
+                    'customer_id': customer_filter,
+                    'type': tx_type_filter,
+                    'limit': limit
+                }
+            }).encode('utf-8'))
+            return
+        
+        # Ledger validation/integrity check
+        if path == '/api/ledger/validate':
+            if not session:
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Unauthorized'}).encode('utf-8'))
+                return
+            
+            # Validate ledger integrity
+            issues = []
+            validated_count = 0
+            
+            for tx_id, entry in TRANSACTION_LEDGER.items():
+                validated_count += 1
+                
+                # Check required fields
+                if not entry.get('customer_id'):
+                    issues.append({'tx_id': tx_id, 'issue': 'Missing customer_id'})
+                if not entry.get('type'):
+                    issues.append({'tx_id': tx_id, 'issue': 'Missing type'})
+                if not entry.get('timestamp'):
+                    issues.append({'tx_id': tx_id, 'issue': 'Missing timestamp'})
+                
+                # Verify NFT reference exists
+                nft_ref = entry.get('metadata', {}).get('nft_token_id')
+                if nft_ref and nft_ref not in NFT_LEDGER:
+                    issues.append({'tx_id': tx_id, 'issue': f'Missing NFT token reference: {nft_ref}'})
+            
+            # Cross-reference with billing records
+            for bill_id, bill in BILLING.items():
+                # Check if approved bills have ledger entries
+                if status_eq(bill, 'paid'):
+                    related_entries = [e for e in TRANSACTION_LEDGER.values() 
+                                      if e.get('metadata', {}).get('bill_id') == bill_id]
+                    if not related_entries:
+                        issues.append({'bill_id': bill_id, 'issue': 'Paid bill missing ledger entry'})
+            
+            integrity_status = 'HEALTHY' if len(issues) == 0 else ('WARNING' if len(issues) < 5 else 'CRITICAL')
+            
+            self._set_json_headers()
+            self.wfile.write(json.dumps({
+                'success': True,
+                'integrity_status': integrity_status,
+                'validated_entries': validated_count,
+                'issues_found': len(issues),
+                'issues': issues[:50],  # Limit issues returned
+                'nft_ledger_count': len(NFT_LEDGER),
+                'transaction_ledger_count': len(TRANSACTION_LEDGER),
+                'billing_records_count': len(BILLING),
+                'timestamp': datetime.now().isoformat()
+            }).encode('utf-8'))
+            return
+        
         # Customer billing "next due" (portal convenience)
         if path == '/api/billing/next-due':
             if not session:
@@ -10130,6 +10231,29 @@ For claims or questions, please contact:
         except ImportError:
             payment_gateway_enabled = False
             payment_gateway = None
+        
+        # Fallback payment methods endpoint (works even without payment gateway service)
+        if path == '/api/payment/methods' and not payment_gateway_enabled:
+            # Return default payment methods for the billing UI
+            default_methods = [
+                {'id': 'credit_card', 'name': 'Credit Card', 'gateway': 'stripe', 'enabled': True, 'icon': '💳'},
+                {'id': 'debit_card', 'name': 'Debit Card', 'gateway': 'stripe', 'enabled': True, 'icon': '💳'},
+                {'id': 'paypal', 'name': 'PayPal', 'gateway': 'paypal', 'enabled': True, 'icon': '🅿️'},
+                {'id': 'apple_pay', 'name': 'Apple Pay', 'gateway': 'stripe', 'enabled': True, 'icon': '🍎'},
+                {'id': 'google_pay', 'name': 'Google Pay', 'gateway': 'stripe', 'enabled': True, 'icon': '🔵'},
+                {'id': 'bank_transfer', 'name': 'Bank Transfer', 'gateway': 'manual', 'enabled': True, 'icon': '🏦'},
+                {'id': 'crypto_btc', 'name': 'Bitcoin', 'gateway': 'crypto', 'enabled': True, 'icon': '₿'},
+                {'id': 'crypto_eth', 'name': 'Ethereum', 'gateway': 'crypto', 'enabled': True, 'icon': '⟠'},
+                {'id': 'crypto_usdc', 'name': 'USDC', 'gateway': 'crypto', 'enabled': True, 'icon': '💵'},
+            ]
+            self._set_json_headers()
+            self.wfile.write(json.dumps({
+                'success': True,
+                'methods': default_methods,
+                'test_mode': True,
+                'message': 'Using default payment methods (test mode)'
+            }).encode('utf-8'))
+            return
         
         if payment_gateway_enabled:
             # Get available payment methods

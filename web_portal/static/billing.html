@@ -470,6 +470,49 @@
       </div>
     </section>
 
+    <!-- Transaction Ledger Section -->
+    <section class="card">
+      <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 15px;">
+        <div>
+          <h2 style="margin: 0 0 5px 0;">📒 Transaction Ledger</h2>
+          <p style="color: #666; margin: 0;">Master ledger with blockchain/NFT verification</p>
+        </div>
+        <div style="display: flex; gap: 8px;">
+          <button class="btn btn-small" onclick="refreshLedger()" title="Refresh Ledger">🔄 Refresh</button>
+          <button class="btn btn-small" onclick="validateLedger()" title="Validate Integrity">✅ Validate</button>
+          <button class="btn btn-small" onclick="exportLedger('csv')" title="Export Ledger as CSV">📊 CSV</button>
+          <button class="btn btn-small" onclick="exportLedger('pdf')" title="Export Ledger as PDF">📄 PDF</button>
+        </div>
+      </div>
+      
+      <div class="stats-grid" style="margin-bottom: 1.5rem;">
+        <div class="stat-card" style="background: linear-gradient(135deg, #4CAF50 0%, #2E7D32 100%);">
+          <div class="stat-label">Total Entries</div>
+          <div class="stat-value" id="ledger-total">0</div>
+        </div>
+        <div class="stat-card" style="background: linear-gradient(135deg, #2196F3 0%, #1565C0 100%);">
+          <div class="stat-label">NFT Verified</div>
+          <div class="stat-value" id="ledger-nft">0</div>
+        </div>
+        <div class="stat-card" style="background: linear-gradient(135deg, #9C27B0 0%, #6A1B9A 100%);">
+          <div class="stat-label">Integrity Status</div>
+          <div class="stat-value" id="ledger-integrity" style="font-size: 1.2rem;">-</div>
+        </div>
+      </div>
+      
+      <div class="tabs">
+        <div class="tab active" onclick="filterLedger('all')">All</div>
+        <div class="tab" onclick="filterLedger('policy_approved')">Policy Approvals</div>
+        <div class="tab" onclick="filterLedger('billing_created')">Billing</div>
+        <div class="tab" onclick="filterLedger('claim_payment')">Claims</div>
+        <div class="tab" onclick="filterLedger('pipeline_initialized')">Pipeline</div>
+      </div>
+      
+      <div class="transaction-list" id="ledger-list">
+        <p class="muted">Loading ledger entries...</p>
+      </div>
+    </section>
+
     <!-- Payment Processing -->
     <section class="card">
       <h2>🔐 Secure Payment Processing</h2>

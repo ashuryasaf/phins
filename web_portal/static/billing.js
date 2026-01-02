@@ -14,6 +14,7 @@ document.addEventListener('DOMContentLoaded', () => {
   loadFraudAlerts();
   loadRecentTransactions();
   loadPaymentMethods(); // Load available payment gateways
+  loadLedger(); // Load transaction ledger
   initializePaymentForm();
   populateExpiryYears();
 
@@ -1797,5 +1798,217 @@ async function exportMarketplace(format) {
     }
   } catch (err) {
     alert('Error exporting marketplace data: ' + err.message);
+  }
+}
+
+// ========== TRANSACTION LEDGER FUNCTIONS ==========
+let lastLedgerData = [];
+let currentLedgerFilter = 'all';
+
+async function loadLedger(filter = 'all') {
+  currentLedgerFilter = filter;
+  const token = localStorage.getItem('phins_token');
+  
+  try {
+    let url = '/api/ledger?limit=100';
+    if (filter && filter !== 'all') {
+      url += `&type=${filter}`;
+    }
+    
+    const response = await fetch(url, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    
+    if (!response.ok) throw new Error('Failed to load ledger');
+    
+    const data = await response.json();
+    lastLedgerData = data.ledger_entries || [];
+    
+    // Update stats
+    document.getElementById('ledger-total').textContent = data.total_entries || lastLedgerData.length;
+    document.getElementById('ledger-nft').textContent = data.nft_ledger_count || lastLedgerData.filter(e => e.metadata?.nft_token_id).length;
+    
+    displayLedger(lastLedgerData);
+    
+    // Update tab active state
+    document.querySelectorAll('#ledger-list').forEach(tab => {
+      tab.classList.remove('active');
+    });
+    
+  } catch (err) {
+    console.error('Failed to load ledger:', err);
+    document.getElementById('ledger-list').innerHTML = '<p class="muted">Unable to load ledger entries.</p>';
+  }
+}
+
+function displayLedger(entries) {
+  const container = document.getElementById('ledger-list');
+  
+  if (!entries || entries.length === 0) {
+    container.innerHTML = '<p class="muted">No ledger entries found.</p>';
+    return;
+  }
+  
+  const typeIcons = {
+    'policy_approved': '✅',
+    'billing_created': '📄',
+    'claim_payment_received': '💰',
+    'claim_payout': '💸',
+    'health_wallet_activated': '💳',
+    'pipeline_initialized': '🔄',
+    'payment_received': '💵',
+    'premium_payment': '💳',
+    'default': '📒'
+  };
+  
+  const typeColors = {
+    'policy_approved': '#28a745',
+    'billing_created': '#007bff',
+    'claim_payment_received': '#ffc107',
+    'claim_payout': '#dc3545',
+    'health_wallet_activated': '#17a2b8',
+    'pipeline_initialized': '#6f42c1',
+    'payment_received': '#28a745',
+    'premium_payment': '#28a745',
+    'default': '#6c757d'
+  };
+  
+  container.innerHTML = entries.map(entry => {
+    const icon = typeIcons[entry.type] || typeIcons.default;
+    const color = typeColors[entry.type] || typeColors.default;
+    const nftId = entry.metadata?.nft_token_id;
+    
+    return `
+      <div class="transaction-item" style="border-left: 4px solid ${color};">
+        <div class="tx-details">
+          <strong>${icon} ${entry.id}</strong>
+          <span class="tx-type" style="background: ${color}; color: white; padding: 2px 8px; border-radius: 12px; font-size: 0.75rem; margin-left: 8px;">
+            ${(entry.type || 'unknown').replace(/_/g, ' ')}
+          </span>
+          ${nftId ? `<span style="background: #9c27b0; color: white; padding: 2px 6px; border-radius: 4px; font-size: 0.7rem; margin-left: 4px;">🔗 NFT</span>` : ''}
+        </div>
+        <div style="margin-top: 5px; color: #555;">${entry.description || 'No description'}</div>
+        <div class="tx-meta" style="margin-top: 8px; font-size: 0.85rem; color: #888;">
+          <span>Customer: ${entry.customer_id || 'N/A'}</span>
+          <span>Amount: ${formatCurrencyExport(entry.amount || 0)}</span>
+          <span>${new Date(entry.timestamp).toLocaleString()}</span>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+function filterLedger(filter) {
+  // Update tab active states
+  document.querySelectorAll('.tabs .tab').forEach(tab => {
+    if (tab.textContent.toLowerCase().includes(filter.toLowerCase().replace('_', ' ')) || 
+        (filter === 'all' && tab.textContent === 'All')) {
+      tab.classList.add('active');
+    } else {
+      tab.classList.remove('active');
+    }
+  });
+  
+  loadLedger(filter);
+}
+
+function refreshLedger() {
+  loadLedger(currentLedgerFilter);
+}
+
+async function validateLedger() {
+  const token = localStorage.getItem('phins_token');
+  
+  try {
+    const response = await fetch('/api/ledger/validate', {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    
+    if (!response.ok) throw new Error('Validation failed');
+    
+    const data = await response.json();
+    const statusEl = document.getElementById('ledger-integrity');
+    
+    const statusColors = {
+      'HEALTHY': '#28a745',
+      'WARNING': '#ffc107',
+      'CRITICAL': '#dc3545'
+    };
+    
+    statusEl.textContent = data.integrity_status;
+    statusEl.style.color = statusColors[data.integrity_status] || '#6c757d';
+    
+    // Show detailed alert
+    let message = `Ledger Integrity: ${data.integrity_status}\n\n`;
+    message += `✓ Validated Entries: ${data.validated_entries}\n`;
+    message += `✓ NFT Ledger Count: ${data.nft_ledger_count}\n`;
+    message += `✓ Transaction Ledger: ${data.transaction_ledger_count}\n`;
+    message += `✓ Billing Records: ${data.billing_records_count}\n`;
+    
+    if (data.issues_found > 0) {
+      message += `\n⚠️ Issues Found: ${data.issues_found}\n`;
+      data.issues.slice(0, 5).forEach(issue => {
+        message += `  - ${issue.issue}\n`;
+      });
+    }
+    
+    alert(message);
+    
+  } catch (err) {
+    console.error('Ledger validation failed:', err);
+    document.getElementById('ledger-integrity').textContent = 'ERROR';
+    document.getElementById('ledger-integrity').style.color = '#dc3545';
+    alert('Failed to validate ledger: ' + err.message);
+  }
+}
+
+function exportLedger(format) {
+  if (!lastLedgerData || lastLedgerData.length === 0) {
+    alert('No ledger entries to export');
+    return;
+  }
+  
+  if (format === 'csv') {
+    const csvData = lastLedgerData.map(entry => ({
+      Transaction_ID: entry.id,
+      Customer_ID: entry.customer_id,
+      Type: entry.type,
+      Amount: entry.amount,
+      Description: entry.description,
+      Status: entry.status,
+      NFT_Token: entry.metadata?.nft_token_id || 'N/A',
+      Timestamp: entry.timestamp
+    }));
+    downloadCSV(csvData, 'PHINS_Transaction_Ledger');
+  } else if (format === 'pdf') {
+    const content = `
+      <p><strong>Total Ledger Entries:</strong> ${lastLedgerData.length}</p>
+      <p><strong>Generated:</strong> ${new Date().toLocaleString()}</p>
+      <table>
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Customer</th>
+            <th>Type</th>
+            <th>Amount</th>
+            <th>Status</th>
+            <th>Timestamp</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${lastLedgerData.slice(0, 100).map(entry => `
+            <tr>
+              <td>${entry.id}</td>
+              <td>${entry.customer_id || 'N/A'}</td>
+              <td>${entry.type}</td>
+              <td>${formatCurrencyExport(entry.amount || 0)}</td>
+              <td>${entry.status}</td>
+              <td>${new Date(entry.timestamp).toLocaleString()}</td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    `;
+    exportPDF('Transaction Ledger Report', content);
   }
 }
