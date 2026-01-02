@@ -4679,8 +4679,33 @@ For claims or questions, please contact:
         
         # Health Wallet GET endpoints
         if path == '/api/health-wallet/purchases':
+            # Require authentication
+            if not session:
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Unauthorized'}).encode('utf-8'))
+                return
+            
+            user = get_session_user(session) or {}
+            role = (user.get('role') or '').lower()
+            session_customer_id = user.get('customer_id') or session.get('customer_id')
+            
             # GET purchases history
-            customer_id = qs.get('customer_id', ['CUST001'])[0]
+            requested_customer_id = qs.get('customer_id', [None])[0]
+            
+            # Customers can only access their own data
+            if role == 'customer':
+                customer_id = session_customer_id
+                if requested_customer_id and requested_customer_id != session_customer_id:
+                    self._set_json_headers(403)
+                    self.wfile.write(json.dumps({'error': 'Access denied - can only view your own data'}).encode('utf-8'))
+                    return
+            else:
+                customer_id = requested_customer_id or session_customer_id
+            
+            if not customer_id:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'customer_id required'}).encode('utf-8'))
+                return
             
             purchases = [p for p in MEDICAL_PURCHASES.values() if p.get('customer_id') == customer_id]
             purchases.sort(key=lambda x: x.get('timestamp', ''), reverse=True)
@@ -4694,7 +4719,32 @@ For claims or questions, please contact:
         
         # NFT Ledger GET endpoint - Customer Transaction Ledger
         if path == '/api/nft-ledger':
-            customer_id = qs.get('customer_id', ['CUST001'])[0]
+            # Require authentication
+            if not session:
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Unauthorized'}).encode('utf-8'))
+                return
+            
+            user = get_session_user(session) or {}
+            role = (user.get('role') or '').lower()
+            session_customer_id = user.get('customer_id') or session.get('customer_id')
+            
+            requested_customer_id = qs.get('customer_id', [None])[0]
+            
+            # Customers can only access their own data
+            if role == 'customer':
+                customer_id = session_customer_id
+                if requested_customer_id and requested_customer_id != session_customer_id:
+                    self._set_json_headers(403)
+                    self.wfile.write(json.dumps({'error': 'Access denied - can only view your own data'}).encode('utf-8'))
+                    return
+            else:
+                customer_id = requested_customer_id or session_customer_id
+            
+            if not customer_id:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'customer_id required'}).encode('utf-8'))
+                return
             
             # Get all NFT tokens for this customer
             customer_nfts = [
@@ -4914,14 +4964,39 @@ For claims or questions, please contact:
             return
         
         if path.startswith('/api/health-wallet'):
-            customer_id = qs.get('customer_id', ['CUST001'])[0]
+            # Require authentication
+            if not session:
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Unauthorized'}).encode('utf-8'))
+                return
+            
+            user = get_session_user(session) or {}
+            role = (user.get('role') or '').lower()
+            session_customer_id = user.get('customer_id') or session.get('customer_id')
+            
+            requested_customer_id = qs.get('customer_id', [None])[0]
+            
+            # Customers can only access their own wallet
+            if role == 'customer':
+                customer_id = session_customer_id
+                if requested_customer_id and requested_customer_id != session_customer_id:
+                    self._set_json_headers(403)
+                    self.wfile.write(json.dumps({'error': 'Access denied - can only view your own wallet'}).encode('utf-8'))
+                    return
+            else:
+                customer_id = requested_customer_id or session_customer_id
+            
+            if not customer_id:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'customer_id required'}).encode('utf-8'))
+                return
             
             # Get or create wallet
             if customer_id not in HEALTH_WALLETS:
                 HEALTH_WALLETS[customer_id] = {
                     'customer_id': customer_id,
-                    'balance': 850.00,
-                    'monthly_deposit': 100.00,
+                    'balance': 0.00,  # Start with 0, not arbitrary amount
+                    'monthly_deposit': 0.00,
                     'transactions': [],
                     'created_at': datetime.now().isoformat()
                 }
@@ -5078,8 +5153,28 @@ For claims or questions, please contact:
                 self.wfile.write(json.dumps({'error': 'Investment service unavailable'}).encode('utf-8'))
                 return
             
-            customer_id = qs.get('customer_id', [''])[0]
+            # Require authentication
+            if not session:
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Unauthorized'}).encode('utf-8'))
+                return
+            
+            user = get_session_user(session) or {}
+            role = (user.get('role') or '').lower()
+            session_customer_id = user.get('customer_id') or session.get('customer_id')
+            
+            requested_customer_id = qs.get('customer_id', [''])[0]
             account_id = qs.get('account_id', [''])[0]
+            
+            # Customers can only access their own portfolio
+            if role == 'customer':
+                customer_id = session_customer_id
+                if requested_customer_id and requested_customer_id != session_customer_id:
+                    self._set_json_headers(403)
+                    self.wfile.write(json.dumps({'error': 'Access denied - can only view your own portfolio'}).encode('utf-8'))
+                    return
+            else:
+                customer_id = requested_customer_id
             
             if account_id:
                 result = portfolio_service.get_portfolio_summary(account_id)
@@ -5120,7 +5215,28 @@ For claims or questions, please contact:
                 self.wfile.write(json.dumps({'error': 'Investment service unavailable'}).encode('utf-8'))
                 return
             
-            customer_id = qs.get('customer_id', [''])[0]
+            # Require authentication
+            if not session:
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Unauthorized'}).encode('utf-8'))
+                return
+            
+            user = get_session_user(session) or {}
+            role = (user.get('role') or '').lower()
+            session_customer_id = user.get('customer_id') or session.get('customer_id')
+            
+            requested_customer_id = qs.get('customer_id', [''])[0]
+            
+            # Customers can only access their own accounts
+            if role == 'customer':
+                customer_id = session_customer_id
+                if requested_customer_id and requested_customer_id != session_customer_id:
+                    self._set_json_headers(403)
+                    self.wfile.write(json.dumps({'error': 'Access denied - can only view your own accounts'}).encode('utf-8'))
+                    return
+            else:
+                customer_id = requested_customer_id
+            
             if not customer_id:
                 self._set_json_headers(400)
                 self.wfile.write(json.dumps({'error': 'customer_id required'}).encode('utf-8'))
@@ -6838,7 +6954,33 @@ For claims or questions, please contact:
 
         # Investment portfolio endpoint (legacy - redirect to new API)
         if path.startswith('/api/investment-portfolio'):
-            customer_id = qs.get('customer_id', ['CUST001'])[0]
+            # Require authentication
+            if not session:
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Unauthorized'}).encode('utf-8'))
+                return
+            
+            user = get_session_user(session) or {}
+            role = (user.get('role') or '').lower()
+            session_customer_id = user.get('customer_id') or session.get('customer_id')
+            
+            requested_customer_id = qs.get('customer_id', [None])[0]
+            
+            # Customers can only access their own portfolio
+            if role == 'customer':
+                customer_id = session_customer_id
+                if requested_customer_id and requested_customer_id != session_customer_id:
+                    self._set_json_headers(403)
+                    self.wfile.write(json.dumps({'error': 'Access denied - can only view your own portfolio'}).encode('utf-8'))
+                    return
+            else:
+                customer_id = requested_customer_id or session_customer_id
+            
+            if not customer_id:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'customer_id required'}).encode('utf-8'))
+                return
+            
             result = {'customer_id': customer_id, 'message': 'Portfolio data unavailable'}
             try:
                 # Try new portfolio service first
