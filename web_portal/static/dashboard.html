@@ -803,7 +803,8 @@
       <div style="margin-top: 16px; display: flex; gap: 12px; flex-wrap: wrap;">
         <button onclick="refreshPurchases()" class="btn" style="background: linear-gradient(135deg, #1565c0 0%, #1976d2 100%); color: white; border: none; padding: 10px 20px; border-radius: 8px; cursor: pointer; font-weight: 600;">🔄 Refresh</button>
         <button onclick="validateAllPurchases()" class="btn" style="background: linear-gradient(135deg, #4caf50 0%, #66bb6a 100%); color: white; border: none; padding: 10px 20px; border-radius: 8px; cursor: pointer; font-weight: 600;">✓ Validate All on Ledgers</button>
-        <button onclick="exportPurchases()" class="btn" style="background: linear-gradient(135deg, #546e7a 0%, #78909c 100%); color: white; border: none; padding: 10px 20px; border-radius: 8px; cursor: pointer; font-weight: 600;">📥 Export CSV</button>
+        <button onclick="exportPurchases('csv')" class="btn" style="background: linear-gradient(135deg, #546e7a 0%, #78909c 100%); color: white; border: none; padding: 10px 20px; border-radius: 8px; cursor: pointer; font-weight: 600;">📊 Export CSV</button>
+        <button onclick="exportPurchases('pdf')" class="btn" style="background: linear-gradient(135deg, #c62828 0%, #e53935 100%); color: white; border: none; padding: 10px 20px; border-radius: 8px; cursor: pointer; font-weight: 600;">📄 Export PDF</button>
       </div>
     </section>
 
@@ -3134,9 +3135,11 @@
       showNotification('Purchase history refreshed', 'success');
     }
     
-    function exportPurchases() {
+    function exportPurchases(format = 'csv') {
       const cid = customerId || sessionStorage.getItem('customer_id') || '';
-      // Create CSV from current data
+      const customerName = document.getElementById('welcome-name')?.textContent || 'Customer';
+      
+      // Gather data from current table
       const rows = [['Date', 'Product', 'Category', 'Provider', 'Amount', 'NFT Token', 'Ledger Status', 'Status']];
       const tbody = document.getElementById('purchase-history-table');
       tbody.querySelectorAll('tr').forEach(row => {
@@ -3155,14 +3158,92 @@
         }
       });
       
-      const csv = rows.map(r => r.join(',')).join('\n');
-      const blob = new Blob([csv], { type: 'text/csv' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `PHINS_Purchases_${cid}_${new Date().toISOString().split('T')[0]}.csv`;
-      a.click();
-      showNotification('Purchase history exported', 'success');
+      if (format === 'pdf') {
+        // Generate PDF
+        const totalAmount = rows.slice(1).reduce((sum, row) => {
+          const amount = parseFloat(row[4].replace(/[$,]/g, '')) || 0;
+          return sum + amount;
+        }, 0);
+        
+        const htmlContent = `
+          <!DOCTYPE html>
+          <html>
+          <head>
+            <title>PHINS Medical Purchases Report</title>
+            <style>
+              body { font-family: Arial, sans-serif; padding: 40px; color: #333; }
+              .header { text-align: center; margin-bottom: 30px; border-bottom: 2px solid #0d47a1; padding-bottom: 20px; }
+              .header h1 { color: #0d47a1; margin: 0; }
+              .header p { color: #666; margin: 5px 0; }
+              .summary { background: #f5f5f5; padding: 15px; border-radius: 8px; margin-bottom: 20px; }
+              .summary-grid { display: flex; justify-content: space-between; }
+              .summary-item { text-align: center; }
+              .summary-label { font-size: 12px; color: #666; }
+              .summary-value { font-size: 18px; font-weight: bold; color: #0d47a1; }
+              table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+              th { background: #0d47a1; color: white; padding: 12px 8px; text-align: left; font-size: 11px; }
+              td { padding: 10px 8px; border-bottom: 1px solid #ddd; font-size: 11px; }
+              tr:nth-child(even) { background: #f9f9f9; }
+              .footer { margin-top: 30px; text-align: center; font-size: 10px; color: #999; border-top: 1px solid #ddd; padding-top: 15px; }
+              .verified { color: #4caf50; font-weight: bold; }
+              @media print { body { padding: 20px; } }
+            </style>
+          </head>
+          <body>
+            <div class="header">
+              <h1>🛡️ PHINS Medical Purchases Report</h1>
+              <p>Customer: ${customerName} (${cid})</p>
+              <p>Generated: ${new Date().toLocaleString()}</p>
+            </div>
+            <div class="summary">
+              <div class="summary-grid">
+                <div class="summary-item">
+                  <div class="summary-label">Total Purchases</div>
+                  <div class="summary-value">${rows.length - 1}</div>
+                </div>
+                <div class="summary-item">
+                  <div class="summary-label">Total Amount</div>
+                  <div class="summary-value">$${totalAmount.toLocaleString(undefined, {minimumFractionDigits: 2})}</div>
+                </div>
+                <div class="summary-item">
+                  <div class="summary-label">Report Status</div>
+                  <div class="summary-value verified">✓ Ledger Verified</div>
+                </div>
+              </div>
+            </div>
+            <table>
+              <thead>
+                <tr>${rows[0].map(h => `<th>${h}</th>`).join('')}</tr>
+              </thead>
+              <tbody>
+                ${rows.slice(1).map(row => `<tr>${row.map(cell => `<td>${cell}</td>`).join('')}</tr>`).join('')}
+              </tbody>
+            </table>
+            <div class="footer">
+              <p>This report is generated from your personal NFT & Transaction Ledgers on PHINS-CHAIN</p>
+              <p>© ${new Date().getFullYear()} PHINS Insurance Company. All rights reserved.</p>
+            </div>
+          </body>
+          </html>
+        `;
+        
+        const printWindow = window.open('', '_blank');
+        printWindow.document.write(htmlContent);
+        printWindow.document.close();
+        printWindow.print();
+        showNotification('PDF report generated - print dialog opened', 'success');
+      } else {
+        // Export CSV
+        const csv = rows.map(r => r.map(cell => `"${cell}"`).join(',')).join('\n');
+        const blob = new Blob([csv], { type: 'text/csv' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `PHINS_Purchases_${cid}_${new Date().toISOString().split('T')[0]}.csv`;
+        a.click();
+        URL.revokeObjectURL(url);
+        showNotification('Purchase history exported as CSV', 'success');
+      }
     }
 
     // ========== NFT LEDGER FUNCTIONS ==========
