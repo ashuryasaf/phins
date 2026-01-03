@@ -1903,65 +1903,75 @@ function printTransactions() {
   exportPDF('Transaction List', content.innerHTML);
 }
 
-// Export Marketplace Transactions
+// Export Marketplace/Service Transactions
 async function exportMarketplace(format) {
   try {
-    const response = await fetch('/api/marketplace/transactions', {
+    const response = await fetch('/api/service-transactions', {
       headers: { 'Authorization': `Bearer ${localStorage.getItem('phins_token')}` }
     });
     const data = await response.json();
-    lastMarketplaceData = data.transactions || data || [];
+    lastMarketplaceData = data.transactions || [];
     
     if (lastMarketplaceData.length === 0) {
-      alert('No marketplace transactions to export');
+      alert('No service transactions to export');
       return;
     }
     
     if (format === 'csv') {
       const csvData = lastMarketplaceData.map(t => ({
-        Transaction_ID: t.transaction_id || t.id,
+        Transaction_ID: t.id,
         Type: t.type,
-        Description: t.description || t.item_name || 'N/A',
-        Amount: t.amount,
+        Category: t.category,
+        Description: t.description || 'N/A',
+        Amount: t.amount || 0,
         Insurance_Covered: t.insurance_covered || 0,
-        Customer_Paid: t.customer_paid || t.amount,
+        Wallet_Paid: t.wallet_paid || 0,
+        Customer_ID: t.customer_id || 'N/A',
+        Provider: t.provider || 'N/A',
         Status: t.status,
-        Date: t.date || t.created_at,
-        NFT_ID: t.nft_token_id || 'N/A'
+        Date: t.timestamp ? new Date(t.timestamp).toISOString().split('T')[0] : 'N/A',
+        NFT_Token_ID: t.nft_token_id || 'N/A'
       }));
-      downloadCSV(csvData, 'PHINS_Marketplace_Transactions');
+      downloadCSV(csvData, 'PHINS_Service_Transactions');
     } else if (format === 'pdf') {
+      const totalVolume = lastMarketplaceData.reduce((sum, t) => sum + (t.amount || 0), 0);
+      const totalInsurance = lastMarketplaceData.reduce((sum, t) => sum + (t.insurance_covered || 0), 0);
+      
       const content = `
-        <p><strong>Total Marketplace Transactions:</strong> ${lastMarketplaceData.length}</p>
-        <table>
+        <div style="margin-bottom: 20px;">
+          <p><strong>Total Service Transactions:</strong> ${lastMarketplaceData.length}</p>
+          <p><strong>Total Volume:</strong> $${totalVolume.toLocaleString(undefined, {minimumFractionDigits: 2})}</p>
+          <p><strong>Insurance Covered:</strong> $${totalInsurance.toLocaleString(undefined, {minimumFractionDigits: 2})}</p>
+        </div>
+        <table style="width: 100%; border-collapse: collapse;">
           <thead>
-            <tr>
-              <th>ID</th>
-              <th>Type</th>
-              <th>Description</th>
-              <th>Amount</th>
-              <th>Status</th>
-              <th>Date</th>
+            <tr style="background: #f5f5f5;">
+              <th style="padding: 8px; border: 1px solid #ddd; text-align: left;">ID</th>
+              <th style="padding: 8px; border: 1px solid #ddd; text-align: left;">Type</th>
+              <th style="padding: 8px; border: 1px solid #ddd; text-align: left;">Description</th>
+              <th style="padding: 8px; border: 1px solid #ddd; text-align: right;">Amount</th>
+              <th style="padding: 8px; border: 1px solid #ddd; text-align: left;">Status</th>
+              <th style="padding: 8px; border: 1px solid #ddd; text-align: left;">Date</th>
             </tr>
           </thead>
           <tbody>
             ${lastMarketplaceData.slice(0, 50).map(t => `
               <tr>
-                <td>${t.transaction_id || t.id}</td>
-                <td>${t.type}</td>
-                <td>${t.description || t.item_name || 'N/A'}</td>
-                <td>${formatCurrencyExport(t.amount)}</td>
-                <td>${t.status}</td>
-                <td>${new Date(t.date || t.created_at).toLocaleDateString()}</td>
+                <td style="padding: 6px; border: 1px solid #ddd;">${t.id}</td>
+                <td style="padding: 6px; border: 1px solid #ddd;">${t.type} / ${t.category}</td>
+                <td style="padding: 6px; border: 1px solid #ddd;">${(t.description || 'N/A').substring(0, 40)}</td>
+                <td style="padding: 6px; border: 1px solid #ddd; text-align: right;">$${Number(t.amount || 0).toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
+                <td style="padding: 6px; border: 1px solid #ddd;">${t.status}</td>
+                <td style="padding: 6px; border: 1px solid #ddd;">${t.timestamp ? new Date(t.timestamp).toLocaleDateString() : 'N/A'}</td>
               </tr>
             `).join('')}
           </tbody>
         </table>
       `;
-      exportPDF('Marketplace Transaction Report', content);
+      exportPDF('Service Transaction Report', content);
     }
   } catch (err) {
-    alert('Error exporting marketplace data: ' + err.message);
+    alert('Error exporting service data: ' + err.message);
   }
 }
 
