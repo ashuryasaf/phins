@@ -16695,27 +16695,38 @@ def run_server(port: int = PORT) -> None:
     
     # Seed efrat@phins.ai customer if not exists
     print("👤 Initializing customer accounts...")
-    if 'CUST-EFRAT-001' not in CUSTOMERS:
-        CUSTOMERS['CUST-EFRAT-001'] = {
-            'id': 'CUST-EFRAT-001',
-            'name': 'Efrat PHINS',
-            'email': 'efrat@phins.ai',
-            'phone': '+972-50-9876543',
-            'date_of_birth': '1990-06-15',
-            'created_date': datetime.now().isoformat(),
-            'status': 'active'
-        }
-        # Initialize health wallet for efrat
-        HEALTH_WALLETS['CUST-EFRAT-001'] = {
-            'customer_id': 'CUST-EFRAT-001',
-            'balance': 0.00,
-            'monthly_deposit': 0.00,
-            'transactions': [],
-            'created_at': datetime.now().isoformat()
-        }
-        print("✓ Customer efrat@phins.ai (CUST-EFRAT-001) initialized")
-    else:
-        print("✓ Customer efrat@phins.ai already exists")
+    try:
+        # Check if customer exists (handle both dict and database wrapper)
+        efrat_exists = False
+        try:
+            efrat_exists = 'CUST-EFRAT-001' in CUSTOMERS
+        except Exception:
+            # Database wrapper failed, assume not exists
+            efrat_exists = False
+        
+        if not efrat_exists:
+            CUSTOMERS['CUST-EFRAT-001'] = {
+                'id': 'CUST-EFRAT-001',
+                'name': 'Efrat PHINS',
+                'email': 'efrat@phins.ai',
+                'phone': '+972-50-9876543',
+                'date_of_birth': '1990-06-15',
+                'created_date': datetime.now().isoformat(),
+                'status': 'active'
+            }
+            # Initialize health wallet for efrat
+            HEALTH_WALLETS['CUST-EFRAT-001'] = {
+                'customer_id': 'CUST-EFRAT-001',
+                'balance': 0.00,
+                'monthly_deposit': 0.00,
+                'transactions': [],
+                'created_at': datetime.now().isoformat()
+            }
+            print("✓ Customer efrat@phins.ai (CUST-EFRAT-001) initialized")
+        else:
+            print("✓ Customer efrat@phins.ai already exists")
+    except Exception as e:
+        print(f"⚠️  Customer initialization skipped (database issue): {e}")
     
     # Log suspended test accounts
     print(f"🚫 Suspended test accounts (hidden from platform data): {len(SUSPENDED_TEST_ACCOUNTS)}")
