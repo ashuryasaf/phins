@@ -2004,8 +2004,30 @@ else:
         'accountant': {**hash_password('PDadmin123@'), 'role': 'accountant', 'name': 'Bob Accountant'},
         # Permanent admin accounts - NEVER DELETE
         'asaf@phins.ai': {**hash_password('PHINSadmin2024!'), 'role': 'admin', 'name': 'Asaf PHINS'},
-        'asaf@assurance.co.il': {**hash_password('Assurance2024!'), 'role': 'customer', 'name': 'Asaf Assurance'}
+        'asaf@assurance.co.il': {**hash_password('Assurance2024!'), 'role': 'customer', 'name': 'Asaf Assurance', 'customer_id': 'CUST-ASAF-001'},
+        # Customer account for efrat@phins.ai
+        'efrat@phins.ai': {**hash_password('PHINScustomer2024!'), 'role': 'customer', 'name': 'Efrat PHINS', 'customer_id': 'CUST-EFRAT-001'}
     }
+
+# ========== SUSPENDED TEST ACCOUNTS ==========
+# Test accounts that should NOT appear in admin dashboards, reports, or data aggregations
+# These accounts can still LOGIN but their data is hidden from platform displays
+# To reactivate: Remove customer_id from this set
+SUSPENDED_TEST_ACCOUNTS: set = {
+    'CUST-TEST-100',  # Sara Cohen - Test account
+    'CUST-TEST-101',  # Test account
+    'CUST-TEST-102',  # Test account
+}
+
+def is_suspended_account(customer_id: str) -> bool:
+    """Check if a customer_id is in the suspended test accounts list"""
+    if not customer_id:
+        return False
+    return customer_id in SUSPENDED_TEST_ACCOUNTS or customer_id.upper() in SUSPENDED_TEST_ACCOUNTS
+
+def filter_suspended_accounts(items: list, customer_id_field: str = 'customer_id') -> list:
+    """Filter out suspended test accounts from a list of items"""
+    return [item for item in items if not is_suspended_account(item.get(customer_id_field, ''))]
 
 
 def get_mock_statement(customer_id: str) -> Dict[str, Any]:
@@ -3274,6 +3296,9 @@ For claims or questions, please contact:
                 all_items = list(POLICIES.values())
                 if role == 'customer' and session_customer_id:
                     all_items = [p for p in all_items if p.get('customer_id') == session_customer_id]
+                else:
+                    # Admin/staff view: Filter out suspended test accounts
+                    all_items = [p for p in all_items if not is_suspended_account(p.get('customer_id', ''))]
 
                 wants_paging = ('page' in qs) or ('page_size' in qs)
                 if not wants_paging:
@@ -3777,6 +3802,9 @@ For claims or questions, please contact:
                         pid = c.get('policy_id')
                         return bool(pid and POLICIES.get(pid, {}).get('customer_id') == session_customer_id)
                     claims_list = [c for c in claims_list if _belongs(c)]
+                else:
+                    # Admin/staff view: Filter out suspended test accounts
+                    claims_list = [c for c in claims_list if not is_suspended_account(c.get('customer_id', ''))]
 
                 wants_paging = ('page' in qs) or ('page_size' in qs)
                 if not wants_paging:
@@ -3858,7 +3886,10 @@ For claims or questions, please contact:
                     self.wfile.write(json.dumps({'error': 'Application not found'}).encode('utf-8'))
             else:
                 # Return all applications with enriched data
-                enriched_apps = [enrich_underwriting_app(app) for app in UNDERWRITING_APPLICATIONS.values()]
+                # FILTER: Exclude suspended test accounts from admin displays
+                all_apps = [app for app in UNDERWRITING_APPLICATIONS.values() 
+                           if not is_suspended_account(app.get('customer_id', ''))]
+                enriched_apps = [enrich_underwriting_app(app) for app in all_apps]
                 self._set_json_headers()
                 self.wfile.write(json.dumps(enriched_apps).encode('utf-8'))
             return
@@ -3910,9 +3941,11 @@ For claims or questions, please contact:
                     self._set_json_headers(403)
                     self.wfile.write(json.dumps({'error': 'Access denied - admin access required to list all customers'}).encode('utf-8'))
                 else:
-                    # Admin/staff can see all
+                    # Admin/staff can see all (excluding suspended test accounts)
+                    visible_customers = [c for c in CUSTOMERS.values() 
+                                        if not is_suspended_account(c.get('id', ''))]
                     self._set_json_headers()
-                    self.wfile.write(json.dumps(list(CUSTOMERS.values())).encode('utf-8'))
+                    self.wfile.write(json.dumps(visible_customers).encode('utf-8'))
             return
 
         # Customer status endpoint (post-application visibility)
@@ -4080,7 +4113,8 @@ For claims or questions, please contact:
         
         # Billing stats for admin dashboard (fallback when billing_engine unavailable)
         if path == '/api/billing/stats':
-            bills = list(BILLING.values())
+            # FILTER: Exclude suspended test accounts from billing stats
+            bills = [b for b in BILLING.values() if not is_suspended_account(b.get('customer_id', ''))]
             
             # Calculate comprehensive stats
             total_billed = sum(float(b.get('amount', 0)) for b in bills)
@@ -4365,9 +4399,13 @@ For claims or questions, please contact:
         # List all registered customers with their complete pipeline status
         if path == '/api/admin/customers':
             # Build comprehensive customer list with all related data
+            # FILTER: Exclude suspended test accounts from admin displays
             customer_list = []
             
             for cust_id, customer in CUSTOMERS.items():
+                # Skip suspended test accounts
+                if is_suspended_account(cust_id):
+                    continue
                 # Find associated policies
                 customer_policies = [p for p in POLICIES.values() if p.get('customer_id') == cust_id]
                 
@@ -7594,6 +7632,43 @@ For claims or questions, please contact:
             return
         
         # ========== END PHINS BALANCE SHEET API ==========
+        
+        # ========== SUSPENDED TEST ACCOUNTS MANAGEMENT API ==========
+        
+        # Get suspended accounts list
+        if path == '/api/admin/suspended-accounts':
+            if not require_role(session, ['admin']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Unauthorized. Admin access required.'}).encode('utf-8'))
+                return
+            
+            # Get details of suspended accounts
+            suspended_details = []
+            for cust_id in SUSPENDED_TEST_ACCOUNTS:
+                customer = CUSTOMERS.get(cust_id, {})
+                policies_count = len([p for p in POLICIES.values() if p.get('customer_id') == cust_id])
+                apps_count = len([a for a in UNDERWRITING_APPLICATIONS.values() if a.get('customer_id') == cust_id])
+                
+                suspended_details.append({
+                    'customer_id': cust_id,
+                    'name': customer.get('name', 'Unknown'),
+                    'email': customer.get('email', 'N/A'),
+                    'policies_count': policies_count,
+                    'applications_count': apps_count,
+                    'status': 'suspended',
+                    'note': 'Test account - hidden from platform data but can still login'
+                })
+            
+            self._set_json_headers()
+            self.wfile.write(json.dumps({
+                'success': True,
+                'suspended_accounts': suspended_details,
+                'total_suspended': len(SUSPENDED_TEST_ACCOUNTS),
+                'message': 'These accounts can login but their data is hidden from admin dashboards and reports.'
+            }).encode('utf-8'))
+            return
+        
+        # ========== END SUSPENDED TEST ACCOUNTS MANAGEMENT API ==========
 
         # Investment portfolio endpoint (legacy - redirect to new API)
         if path.startswith('/api/investment-portfolio'):
@@ -9631,6 +9706,85 @@ For claims or questions, please contact:
             return
         
         # ========== END PHINS BALANCE SHEET MANAGEMENT API ==========
+        
+        # ========== SUSPENDED TEST ACCOUNTS MANAGEMENT API ==========
+        
+        # Suspend an account (hide from platform data)
+        if path == '/api/admin/suspend-account':
+            if not require_role(session, ['admin']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Unauthorized. Admin access required.'}).encode('utf-8'))
+                return
+            
+            try:
+                data = json.loads(body or '{}')
+                customer_id = data.get('customer_id')
+                
+                if not customer_id:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'customer_id required'}).encode('utf-8'))
+                    return
+                
+                if customer_id not in CUSTOMERS:
+                    self._set_json_headers(404)
+                    self.wfile.write(json.dumps({'error': 'Customer not found'}).encode('utf-8'))
+                    return
+                
+                if customer_id in SUSPENDED_TEST_ACCOUNTS:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'Account is already suspended'}).encode('utf-8'))
+                    return
+                
+                SUSPENDED_TEST_ACCOUNTS.add(customer_id)
+                
+                self._set_json_headers(200)
+                self.wfile.write(json.dumps({
+                    'success': True,
+                    'customer_id': customer_id,
+                    'status': 'suspended',
+                    'message': f'Account {customer_id} suspended. Data hidden from platform but login still available.'
+                }).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+        
+        # Reactivate a suspended account
+        if path == '/api/admin/reactivate-account':
+            if not require_role(session, ['admin']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Unauthorized. Admin access required.'}).encode('utf-8'))
+                return
+            
+            try:
+                data = json.loads(body or '{}')
+                customer_id = data.get('customer_id')
+                
+                if not customer_id:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'customer_id required'}).encode('utf-8'))
+                    return
+                
+                if customer_id not in SUSPENDED_TEST_ACCOUNTS:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'Account is not suspended'}).encode('utf-8'))
+                    return
+                
+                SUSPENDED_TEST_ACCOUNTS.discard(customer_id)
+                
+                self._set_json_headers(200)
+                self.wfile.write(json.dumps({
+                    'success': True,
+                    'customer_id': customer_id,
+                    'status': 'active',
+                    'message': f'Account {customer_id} reactivated. Data now visible on platform.'
+                }).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+        
+        # ========== END SUSPENDED TEST ACCOUNTS MANAGEMENT API ==========
         
         # Pipeline Process - Process next step for a customer
         if path.startswith('/api/admin/pipeline-process/'):
@@ -12711,8 +12865,23 @@ For claims or questions, please contact:
         # Get purchase history (POST)
         if path == '/api/health-wallet/purchases':
             try:
+                # SECURITY: Enforce customer data isolation
+                user = get_session_user(session) or {}
+                role = (user.get('role') or session.get('role', '') if session else '').lower()
+                session_customer_id = user.get('customer_id') or (session.get('customer_id') if session else None)
+                
                 data = json.loads(body) if body else {}
-                customer_id = data.get('customer_id', 'CUST001')
+                requested_customer_id = data.get('customer_id')
+                
+                # Customers can only access their own data
+                if role == 'customer':
+                    customer_id = session_customer_id
+                    if requested_customer_id and requested_customer_id != session_customer_id:
+                        self._set_json_headers(403)
+                        self.wfile.write(json.dumps({'error': 'Access denied - can only view your own data'}).encode('utf-8'))
+                        return
+                else:
+                    customer_id = requested_customer_id or session_customer_id or 'CUST001'
                 
                 purchases = [p for p in MEDICAL_PURCHASES.values() if p.get('customer_id') == customer_id]
                 purchases.sort(key=lambda x: x.get('timestamp', ''), reverse=True)
@@ -16523,6 +16692,35 @@ def run_server(port: int = PORT) -> None:
             print(f"❌ Database initialization failed: {e}")
             print("   Server will continue with in-memory storage")
             # Don't fail - just fall back to in-memory
+    
+    # Seed efrat@phins.ai customer if not exists
+    print("👤 Initializing customer accounts...")
+    if 'CUST-EFRAT-001' not in CUSTOMERS:
+        CUSTOMERS['CUST-EFRAT-001'] = {
+            'id': 'CUST-EFRAT-001',
+            'name': 'Efrat PHINS',
+            'email': 'efrat@phins.ai',
+            'phone': '+972-50-9876543',
+            'date_of_birth': '1990-06-15',
+            'created_date': datetime.now().isoformat(),
+            'status': 'active'
+        }
+        # Initialize health wallet for efrat
+        HEALTH_WALLETS['CUST-EFRAT-001'] = {
+            'customer_id': 'CUST-EFRAT-001',
+            'balance': 0.00,
+            'monthly_deposit': 0.00,
+            'transactions': [],
+            'created_at': datetime.now().isoformat()
+        }
+        print("✓ Customer efrat@phins.ai (CUST-EFRAT-001) initialized")
+    else:
+        print("✓ Customer efrat@phins.ai already exists")
+    
+    # Log suspended test accounts
+    print(f"🚫 Suspended test accounts (hidden from platform data): {len(SUSPENDED_TEST_ACCOUNTS)}")
+    for acc in SUSPENDED_TEST_ACCOUNTS:
+        print(f"   - {acc}")
     
     server_address = ('0.0.0.0', port)
     httpd = ThreadingHTTPServer(server_address, PortalHandler)
