@@ -4154,6 +4154,174 @@ For claims or questions, please contact:
             }).encode('utf-8'))
             return
         
+        # ========== SERVICE TRANSACTIONS API (for Marketplace & Service Transactions tab) ==========
+        
+        # Get comprehensive service transactions (combines ledger, claims, medical purchases)
+        if path == '/api/service-transactions':
+            try:
+                # Check auth
+                if not session:
+                    self._set_json_headers(401)
+                    self.wfile.write(json.dumps({'error': 'Authentication required'}).encode('utf-8'))
+                    return
+                
+                user = get_session_user(session) or {}
+                role = (user.get('role') or '').lower()
+                session_customer_id = user.get('customer_id') or session.get('customer_id')
+                
+                # Get filter from query string
+                filter_type = qs.get('filter', ['all'])[0]
+                customer_filter = qs.get('customer_id', [None])[0]
+                
+                # For customers, only show their own data
+                if role == 'customer':
+                    customer_filter = session_customer_id
+                
+                transactions = []
+                now = datetime.now()
+                
+                # 1. Medical Purchases (Services)
+                for purchase_id, purchase in MEDICAL_PURCHASES.items():
+                    if customer_filter and purchase.get('customer_id') != customer_filter:
+                        continue
+                    if is_suspended_account(purchase.get('customer_id', '')):
+                        continue
+                    
+                    transactions.append({
+                        'id': purchase_id,
+                        'type': 'service',
+                        'category': 'medical_purchase',
+                        'description': purchase.get('product_name', 'Medical Purchase'),
+                        'amount': float(purchase.get('amount', 0)),
+                        'customer_id': purchase.get('customer_id'),
+                        'status': purchase.get('status', 'completed'),
+                        'nft_token_id': purchase.get('nft_token_id'),
+                        'timestamp': purchase.get('timestamp', now.isoformat()),
+                        'provider': purchase.get('provider_name', 'N/A'),
+                        'insurance_covered': float(purchase.get('insurance_covered', 0)),
+                        'wallet_paid': float(purchase.get('wallet_paid', purchase.get('amount', 0)))
+                    })
+                
+                # 2. Claims (Insurance Transactions)
+                for claim_id, claim in CLAIMS.items():
+                    if customer_filter and claim.get('customer_id') != customer_filter:
+                        continue
+                    if is_suspended_account(claim.get('customer_id', '')):
+                        continue
+                    
+                    claim_status = (claim.get('status', '') or '').lower()
+                    is_pending = claim_status in ['pending', 'submitted', 'under_review']
+                    
+                    transactions.append({
+                        'id': claim_id,
+                        'type': 'claim',
+                        'category': 'insurance_claim',
+                        'description': f"Claim: {claim.get('type', 'General')} - {claim.get('description', '')[:50]}",
+                        'amount': float(claim.get('claimed_amount', 0)),
+                        'approved_amount': float(claim.get('approved_amount', 0) or 0),
+                        'customer_id': claim.get('customer_id'),
+                        'policy_id': claim.get('policy_id'),
+                        'status': claim.get('status', 'pending'),
+                        'nft_token_id': claim.get('nft_token_id'),
+                        'timestamp': claim.get('filed_date', claim.get('created_date', now.isoformat())),
+                        'provider': claim.get('provider', 'N/A'),
+                        'insurance_covered': float(claim.get('approved_amount', 0) or 0),
+                        'is_pending_approval': is_pending
+                    })
+                
+                # 3. Billing Payments (Premium Transactions)
+                for bill_id, bill in BILLING.items():
+                    if customer_filter and bill.get('customer_id') != customer_filter:
+                        continue
+                    if is_suspended_account(bill.get('customer_id', '')):
+                        continue
+                    
+                    if float(bill.get('amount_paid', 0)) > 0:
+                        transactions.append({
+                            'id': bill_id,
+                            'type': 'payment',
+                            'category': 'premium_payment',
+                            'description': f"Premium Payment - {bill.get('description', 'Policy Premium')}",
+                            'amount': float(bill.get('amount_paid', 0)),
+                            'customer_id': bill.get('customer_id'),
+                            'policy_id': bill.get('policy_id'),
+                            'status': bill.get('status', 'paid'),
+                            'timestamp': bill.get('paid_date', bill.get('created_date', now.isoformat())),
+                            'insurance_covered': 0,
+                            'is_pending_approval': False
+                        })
+                
+                # 4. Transaction Ledger entries (for comprehensive view)
+                for tx in TRANSACTION_LEDGER:
+                    if customer_filter and tx.get('customer_id') != customer_filter:
+                        continue
+                    if is_suspended_account(tx.get('customer_id', '')):
+                        continue
+                    
+                    tx_type = tx.get('tx_type', tx.get('type', 'transaction'))
+                    if tx_type in ['claim_submitted', 'claim_payment', 'medical_purchase', 'wallet_deposit', 'investment_deposit']:
+                        transactions.append({
+                            'id': tx.get('id', tx.get('tx_id')),
+                            'type': 'ledger',
+                            'category': tx_type,
+                            'description': tx.get('description', tx_type),
+                            'amount': float(tx.get('amount', 0)),
+                            'customer_id': tx.get('customer_id'),
+                            'status': 'verified',
+                            'nft_token_id': tx.get('nft_token_id'),
+                            'timestamp': tx.get('timestamp', now.isoformat()),
+                            'insurance_covered': 0,
+                            'is_pending_approval': False
+                        })
+                
+                # Apply filter
+                if filter_type == 'pending':
+                    transactions = [t for t in transactions if t.get('is_pending_approval') or 
+                                   (t.get('status', '').lower() in ['pending', 'submitted', 'under_review'])]
+                elif filter_type == 'services':
+                    transactions = [t for t in transactions if t.get('type') == 'service' or 
+                                   t.get('category') in ['medical_purchase', 'medical', 'service']]
+                elif filter_type == 'products':
+                    transactions = [t for t in transactions if t.get('category') in ['product', 'medical_product']]
+                
+                # Remove duplicates by ID
+                seen_ids = set()
+                unique_transactions = []
+                for t in transactions:
+                    if t['id'] not in seen_ids:
+                        seen_ids.add(t['id'])
+                        unique_transactions.append(t)
+                
+                # Sort by timestamp (newest first)
+                unique_transactions.sort(key=lambda x: x.get('timestamp', ''), reverse=True)
+                
+                # Calculate stats
+                total_volume = sum(t.get('amount', 0) for t in unique_transactions)
+                insurance_covered = sum(t.get('insurance_covered', 0) for t in unique_transactions)
+                pending_count = len([t for t in unique_transactions if t.get('is_pending_approval') or 
+                                    t.get('status', '').lower() in ['pending', 'submitted']])
+                nft_count = len([t for t in unique_transactions if t.get('nft_token_id')])
+                
+                self._set_json_headers()
+                self.wfile.write(json.dumps({
+                    'success': True,
+                    'transactions': unique_transactions[:100],  # Limit to 100
+                    'total': len(unique_transactions),
+                    'stats': {
+                        'total_volume': round(total_volume, 2),
+                        'insurance_covered_total': round(insurance_covered, 2),
+                        'pending_approvals': pending_count,
+                        'total_nfts_issued': nft_count
+                    }
+                }).encode('utf-8'))
+            except Exception as e:
+                print(f"Service transactions error: {e}")
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+        
+        # ========== END SERVICE TRANSACTIONS API ==========
+        
         # Billing transactions for admin dashboard (fallback)
         if path == '/api/billing/transactions':
             try:
