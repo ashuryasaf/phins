@@ -4279,8 +4279,11 @@ For claims or questions, please contact:
                     transactions = [t for t in transactions if t.get('is_pending_approval') or 
                                    (t.get('status', '').lower() in ['pending', 'submitted', 'under_review'])]
                 elif filter_type == 'services':
+                    # Include all medical services, purchases, and related categories
+                    service_categories = ['medical_purchase', 'medical', 'service', 'medical_service', 
+                                         'medication', 'diagnostic', 'consultation', 'therapy']
                     transactions = [t for t in transactions if t.get('type') == 'service' or 
-                                   t.get('category') in ['medical_purchase', 'medical', 'service']]
+                                   t.get('category') in service_categories]
                 elif filter_type == 'products':
                     transactions = [t for t in transactions if t.get('category') in ['product', 'medical_product']]
                 
@@ -16941,6 +16944,89 @@ def run_server(port: int = PORT) -> None:
             print("✓ Customer efrat@phins.ai already exists")
     except Exception as e:
         print(f"⚠️  Customer initialization skipped (database issue): {e}")
+    
+    # Initialize sample service transactions for marketplace display
+    print("📋 Initializing service transactions for marketplace...")
+    try:
+        # Add sample medical purchases if none exist
+        if not MEDICAL_PURCHASES:
+            now = datetime.now()
+            sample_purchases = [
+                {
+                    'id': 'MP-ASAF-001',
+                    'customer_id': 'CUST-ASAF-001',
+                    'product_name': 'Annual Health Checkup Package',
+                    'provider_name': 'Ichilov Medical Center',
+                    'amount': 1200.00,
+                    'insurance_covered': 960.00,
+                    'wallet_paid': 240.00,
+                    'status': 'completed',
+                    'nft_token_id': f'NFT-MP-{(now - timedelta(days=5)).strftime("%Y%m%d")}-001',
+                    'timestamp': (now - timedelta(days=5)).isoformat(),
+                    'category': 'medical_service'
+                },
+                {
+                    'id': 'MP-ASAF-002',
+                    'customer_id': 'CUST-ASAF-001',
+                    'product_name': 'Physical Therapy Session (8 sessions)',
+                    'provider_name': 'RehabCare Clinic',
+                    'amount': 2400.00,
+                    'insurance_covered': 1920.00,
+                    'wallet_paid': 480.00,
+                    'status': 'completed',
+                    'nft_token_id': f'NFT-MP-{(now - timedelta(days=12)).strftime("%Y%m%d")}-002',
+                    'timestamp': (now - timedelta(days=12)).isoformat(),
+                    'category': 'medical_service'
+                },
+                {
+                    'id': 'MP-ASAF-003',
+                    'customer_id': 'CUST-ASAF-001',
+                    'product_name': 'Prescription Medication - Monthly Supply',
+                    'provider_name': 'Super-Pharm',
+                    'amount': 350.00,
+                    'insurance_covered': 280.00,
+                    'wallet_paid': 70.00,
+                    'status': 'completed',
+                    'nft_token_id': f'NFT-MP-{(now - timedelta(days=2)).strftime("%Y%m%d")}-003',
+                    'timestamp': (now - timedelta(days=2)).isoformat(),
+                    'category': 'medication'
+                },
+                {
+                    'id': 'MP-ASAF-004',
+                    'customer_id': 'CUST-ASAF-001',
+                    'product_name': 'MRI Scan - Knee Joint',
+                    'provider_name': 'Assuta Diagnostic Imaging',
+                    'amount': 3500.00,
+                    'insurance_covered': 3150.00,
+                    'wallet_paid': 350.00,
+                    'status': 'pending',
+                    'nft_token_id': None,
+                    'timestamp': (now - timedelta(days=1)).isoformat(),
+                    'category': 'diagnostic'
+                },
+                {
+                    'id': 'MP-EFRAT-001',
+                    'customer_id': 'CUST-EFRAT-001',
+                    'product_name': 'Dermatology Consultation',
+                    'provider_name': 'Skin Health Clinic',
+                    'amount': 650.00,
+                    'insurance_covered': 520.00,
+                    'wallet_paid': 130.00,
+                    'status': 'completed',
+                    'nft_token_id': f'NFT-MP-{(now - timedelta(days=8)).strftime("%Y%m%d")}-004',
+                    'timestamp': (now - timedelta(days=8)).isoformat(),
+                    'category': 'medical_service'
+                }
+            ]
+            
+            for purchase in sample_purchases:
+                MEDICAL_PURCHASES[purchase['id']] = purchase
+            
+            print(f"✓ Initialized {len(sample_purchases)} sample service transactions")
+        else:
+            print(f"✓ Service transactions already exist ({len(MEDICAL_PURCHASES)} records)")
+    except Exception as e:
+        print(f"⚠️  Service transaction initialization skipped: {e}")
     
     # Log suspended test accounts
     print(f"🚫 Suspended test accounts (hidden from platform data): {len(SUSPENDED_TEST_ACCOUNTS)}")
