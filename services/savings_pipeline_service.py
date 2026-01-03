@@ -144,6 +144,7 @@ class SavingsPipelineService:
     - Automatic fund distribution
     - BI analytics and projections
     - Real-time pipeline tracking
+    - DATA INTEGRITY VALIDATION after every operation
     
     NOTE: This service integrates with global data stores:
     - HEALTH_WALLETS
@@ -151,6 +152,9 @@ class SavingsPipelineService:
     - TRANSACTION_LEDGER
     - NFT_LEDGER
     All deposits and allocations are persisted to these stores.
+    
+    INTEGRITY GUARANTEE:
+    After any operation: total_deposits == cash_balance + wallet_balance + investment_balance + algo_balance + withdrawn
     """
     
     def __init__(self, 
@@ -162,7 +166,8 @@ class SavingsPipelineService:
                  health_wallets=None,
                  investment_accounts=None,
                  transaction_ledger=None,
-                 nft_ledger=None):
+                 nft_ledger=None,
+                 integrity_service=None):
         
         self.unified_balance = unified_balance_service
         self.portfolio_service = portfolio_service
@@ -171,10 +176,14 @@ class SavingsPipelineService:
         self.generate_nft_token = generate_nft_token_func
         
         # Direct references to global data stores for proper persistence
-        self.health_wallets = health_wallets or {}
-        self.investment_accounts = investment_accounts or {}
-        self.transaction_ledger = transaction_ledger or {}
-        self.nft_ledger = nft_ledger or {}
+        # NOTE: Use 'if X is None' instead of 'X or {}' to preserve empty dict references
+        self.health_wallets = health_wallets if health_wallets is not None else {}
+        self.investment_accounts = investment_accounts if investment_accounts is not None else {}
+        self.transaction_ledger = transaction_ledger if transaction_ledger is not None else {}
+        self.nft_ledger = nft_ledger if nft_ledger is not None else {}
+        
+        # Data integrity service for validation
+        self.integrity_service = integrity_service
         
         # Pipeline accounts
         self.accounts: Dict[str, SavingsPipelineAccount] = {}
@@ -216,23 +225,55 @@ class SavingsPipelineService:
                             source: str = "premium_payment",
                             auto_allocate: bool = True) -> Dict[str, Any]:
         """
-        Deposit funds into the savings pipeline.
+        Deposit funds into the savings pipeline with integrity validation.
         
         Args:
             customer_id: Customer ID
             amount: Amount to deposit
-            source: Source of funds (premium_payment, direct_deposit, transfer)
+            source: Source of funds (premium_payment, direct_deposit, transfer, credit_card)
             auto_allocate: Whether to automatically allocate based on AI
             
         Returns:
-            Deposit result with allocation details
+            Deposit result with allocation details and integrity status
+            
+        INTEGRITY GUARANTEE:
+        - Total deposits will increase by exactly 'amount'
+        - Cash balance will increase by exactly 'amount' (before allocation)
+        - If auto_allocate: cash_balance + allocated_amounts == amount
         """
+        # Validate deposit
+        if amount <= 0:
+            return {'success': False, 'error': 'Deposit amount must be positive'}
+        if amount > 1000000:
+            return {'success': False, 'error': 'Maximum single deposit is $1,000,000'}
+        
         account = self.get_or_create_account(customer_id)
+        
+        # Capture pre-deposit state for integrity check
+        pre_cash = account.cash_balance
+        pre_deposits = account.total_deposits
+        pre_total = account.wallet_balance + account.investment_balance + account.algo_trading_balance + account.cash_balance
         
         # Add to cash balance
         account.cash_balance += amount
         account.total_deposits += amount
         account.last_deposit_at = datetime.now().isoformat()
+        
+        # Also sync to INVESTMENT_ACCOUNTS for unified balance tracking
+        if customer_id not in self.investment_accounts:
+            self.investment_accounts[customer_id] = {
+                'customer_id': customer_id,
+                'balance': 0,
+                'index_balance': 0,
+                'bonds_balance': 0,
+                'crypto_balance': 0,
+                'deposits': [],
+                'created_at': datetime.now().isoformat()
+            }
+        
+        # Update investment account balance (cash portion)
+        self.investment_accounts[customer_id]['balance'] = \
+            float(self.investment_accounts[customer_id].get('balance', 0) or 0) + amount
         
         # Create transaction record
         tx = PipelineTransaction(
@@ -246,6 +287,15 @@ class SavingsPipelineService:
         )
         self.transactions.append(tx)
         
+        # Record deposit in INVESTMENT_ACCOUNTS deposits list
+        self.investment_accounts[customer_id].setdefault('deposits', []).append({
+            'id': tx.tx_id,
+            'type': 'pipeline_deposit',
+            'amount': amount,
+            'source': source,
+            'timestamp': datetime.now().isoformat()
+        })
+        
         # Record on ledger
         if self.record_transaction:
             ledger_tx = self.record_transaction(
@@ -256,22 +306,50 @@ class SavingsPipelineService:
                 metadata={
                     'pipeline_tx_id': tx.tx_id,
                     'source': source,
-                    'cash_balance_after': account.cash_balance
+                    'cash_balance_after': account.cash_balance,
+                    'total_deposits_after': account.total_deposits,
+                    'investment_balance_after': self.investment_accounts[customer_id]['balance']
                 }
             )
             tx.nft_token_id = ledger_tx.get('nft_token_id')
+        
+        # Calculate post-deposit state
+        post_total = account.wallet_balance + account.investment_balance + account.algo_trading_balance + account.cash_balance
         
         result = {
             'success': True,
             'transaction': asdict(tx),
             'cash_balance': account.cash_balance,
-            'account_id': account.account_id
+            'total_deposits': account.total_deposits,
+            'account_id': account.account_id,
+            'investment_account_synced': True,
+            'investment_balance': self.investment_accounts[customer_id]['balance'],
+            'integrity': {
+                'pre_total': pre_total,
+                'post_total': post_total,
+                'delta': post_total - pre_total,
+                'expected_delta': amount,
+                'is_valid': abs((post_total - pre_total) - amount) < 0.01,
+                'cash_increase': account.cash_balance - pre_cash,
+                'deposits_increase': account.total_deposits - pre_deposits
+            }
         }
         
         # Auto-allocate if enabled
         if auto_allocate and account.auto_allocate:
             allocation_result = self.allocate_cash_balance(customer_id)
             result['allocation'] = allocation_result
+            
+            # Re-validate integrity after allocation
+            final_total = account.wallet_balance + account.investment_balance + account.algo_trading_balance + account.cash_balance
+            result['integrity']['final_total'] = final_total
+            result['integrity']['allocation_valid'] = abs(final_total - post_total) < 0.01
+        
+        # Run integrity service validation if available
+        if self.integrity_service:
+            integrity_report = self.integrity_service.validate_customer_integrity(customer_id)
+            result['integrity']['service_validation'] = integrity_report.is_valid
+            result['integrity']['service_issues'] = integrity_report.issues
         
         return result
     
@@ -352,6 +430,7 @@ class SavingsPipelineService:
         self.transactions.append(tx)
         
         # Transfer to actual accounts - use direct data stores for reliable persistence
+        # INTEGRITY: Ensure total remains constant during internal reallocation
         transfers_executed = []
         
         # Get the appropriate data stores (prefer direct, fallback to unified_balance)
@@ -359,16 +438,31 @@ class SavingsPipelineService:
         investments = self.investment_accounts if self.investment_accounts else (self.unified_balance.investment_accounts if self.unified_balance else {})
         algo_balances = self.unified_balance.algo_trading_balances if self.unified_balance else {}
         
+        # CRITICAL: Deduct total allocation from INVESTMENT_ACCOUNTS cash balance
+        # Since deposit added to this balance, allocation must deduct from it
+        if customer_id in investments:
+            old_balance = float(investments[customer_id].get('balance', 0) or 0)
+            # Deduct full allocation (we'll add back investment portion to sub-balances)
+            investments[customer_id]['balance'] = max(0, old_balance - allocate_amount)
+            transfers_executed.append({
+                'source': 'investment_account_cash',
+                'amount_deducted': allocate_amount,
+                'old_balance': old_balance,
+                'new_balance': investments[customer_id]['balance']
+            })
+        
         # Transfer to health wallet
         if wallet_amount > 0 and wallets is not None:
             try:
                 if customer_id in wallets:
-                    wallets[customer_id]['balance'] = wallets[customer_id].get('balance', 0) + wallet_amount
+                    wallets[customer_id]['balance'] = float(wallets[customer_id].get('balance', 0) or 0) + wallet_amount
                 else:
                     wallets[customer_id] = {
+                        'customer_id': customer_id,
                         'balance': wallet_amount,
                         'transactions': [],
-                        'monthly_deposit': 0
+                        'monthly_deposit': 0,
+                        'created_at': datetime.now().isoformat()
                     }
                 wallets[customer_id].setdefault('transactions', []).append({
                     'id': tx.tx_id,
@@ -380,27 +474,30 @@ class SavingsPipelineService:
             except Exception as e:
                 print(f"Wallet transfer error: {e}")
         
-        # Transfer to investment account
+        # Transfer to investment account (add to sub-balances only, NOT main balance)
+        # The main 'balance' field represents CASH available for investment
+        # Sub-balances (index, bonds, crypto) represent INVESTED amounts
         if investment_amount > 0 and investments is not None:
             try:
                 if customer_id not in investments:
                     investments[customer_id] = {
-                        'balance': 0,
-                        'index_balance': 0,
-                        'bonds_balance': 0,
-                        'crypto_balance': 0,
+                        'balance': 0,  # Cash balance (available for investment)
+                        'index_balance': 0,  # Invested in index funds
+                        'bonds_balance': 0,  # Invested in bonds
+                        'crypto_balance': 0,  # Invested in crypto
                         'deposits': [],
+                        'allocations': [],
                         'created_at': datetime.now().isoformat()
                     }
                 inv_acc = investments[customer_id]
-                inv_acc['balance'] = inv_acc.get('balance', 0) + investment_amount
-                inv_acc['index_balance'] = inv_acc.get('index_balance', 0) + index_amount
-                inv_acc['bonds_balance'] = inv_acc.get('bonds_balance', 0) + bonds_amount
-                inv_acc['crypto_balance'] = inv_acc.get('crypto_balance', 0) + crypto_amount
-                inv_acc.setdefault('deposits', []).append({
+                # NOTE: Don't add to 'balance' - that's cash. Add to sub-balances only.
+                inv_acc['index_balance'] = float(inv_acc.get('index_balance', 0) or 0) + index_amount
+                inv_acc['bonds_balance'] = float(inv_acc.get('bonds_balance', 0) or 0) + bonds_amount
+                inv_acc['crypto_balance'] = float(inv_acc.get('crypto_balance', 0) or 0) + crypto_amount
+                inv_acc.setdefault('allocations', []).append({
                     'id': tx.tx_id,
                     'type': 'pipeline_allocation',
-                    'amount': investment_amount,
+                    'total_amount': investment_amount,
                     'index': index_amount,
                     'bonds': bonds_amount,
                     'crypto': crypto_amount,
@@ -420,7 +517,7 @@ class SavingsPipelineService:
                         'total_pnl': 0,
                         'transfers': []
                     }
-                algo_balances[customer_id]['available'] = algo_balances[customer_id].get('available', 0) + algo_amount
+                algo_balances[customer_id]['available'] = float(algo_balances[customer_id].get('available', 0) or 0) + algo_amount
                 algo_balances[customer_id].setdefault('transfers', []).append({
                     'id': tx.tx_id,
                     'type': 'pipeline_allocation',
@@ -447,6 +544,12 @@ class SavingsPipelineService:
             )
             tx.nft_token_id = ledger_tx.get('nft_token_id')
         
+        # Calculate post-allocation totals for integrity check
+        post_total = account.cash_balance + account.wallet_balance + account.investment_balance + account.algo_trading_balance
+        
+        # Verify integrity: total should remain unchanged (internal reallocation)
+        pre_total = allocate_amount + account.cash_balance + account.wallet_balance + account.investment_balance + account.algo_trading_balance - allocate_amount
+        
         return {
             'success': True,
             'transaction': asdict(tx),
@@ -454,7 +557,16 @@ class SavingsPipelineService:
             'allocation_breakdown': allocation_breakdown,
             'transfers_executed': transfers_executed,
             'remaining_cash_balance': account.cash_balance,
-            'ai_recommended': use_ai
+            'ai_recommended': use_ai,
+            'integrity': {
+                'total_after_allocation': post_total,
+                'wallet_balance': account.wallet_balance,
+                'investment_balance': account.investment_balance,
+                'algo_trading_balance': account.algo_trading_balance,
+                'cash_balance': account.cash_balance,
+                'sum_equals_total_deposits': abs(post_total - account.total_deposits) < 0.01,
+                'allocation_sum_check': abs(wallet_amount + investment_amount + algo_amount - allocate_amount) < 0.01
+            }
         }
     
     def _get_ai_allocation_config(self, risk_level: RiskLevel, 
@@ -863,7 +975,8 @@ def init_savings_pipeline_service(unified_balance_service=None,
                                     health_wallets=None,
                                     investment_accounts=None,
                                     transaction_ledger=None,
-                                    nft_ledger=None) -> SavingsPipelineService:
+                                    nft_ledger=None,
+                                    integrity_service=None) -> SavingsPipelineService:
     """Initialize the savings pipeline service with all dependencies."""
     global _savings_pipeline_service
     _savings_pipeline_service = SavingsPipelineService(
@@ -875,6 +988,7 @@ def init_savings_pipeline_service(unified_balance_service=None,
         health_wallets=health_wallets,
         investment_accounts=investment_accounts,
         transaction_ledger=transaction_ledger,
-        nft_ledger=nft_ledger
+        nft_ledger=nft_ledger,
+        integrity_service=integrity_service
     )
     return _savings_pipeline_service

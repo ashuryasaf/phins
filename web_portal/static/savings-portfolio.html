@@ -1214,6 +1214,17 @@
         
         async function loadPortfolioData() {
             try {
+                // STEP 0: Load verified total from integrity service
+                let verifiedData = null;
+                try {
+                    const verifyResponse = await fetch(`/api/integrity/verified-total?customer_id=${customerId}`);
+                    verifiedData = await verifyResponse.json();
+                    window.verifiedTotal = verifiedData;
+                    console.log('Integrity verification:', verifiedData);
+                } catch (e) {
+                    console.warn('Integrity service not available:', e);
+                }
+                
                 // STEP 1: Load unified investment data (syncs with Dashboard)
                 const unifiedResponse = await fetch(`/api/investment/unified?customer_id=${customerId}`);
                 const unifiedData = await unifiedResponse.json();
@@ -1308,15 +1319,24 @@
             // Get unified data for consistency with Dashboard
             const unified = window.unifiedInvestment || {};
             
-            // Calculate total value: Cash + Invested Assets + Algo Trading
-            const cashBalance = unified.cash_balance || portfolioData.cash_balance || 0;
-            const investedAssets = portfolioData.total_market_value || unified.invested_assets || 0;
-            const algoTradingProfits = unified.algo_trading_profits || 0;
+            // Get verified data from integrity service (most accurate)
+            const verified = window.verifiedTotal || {};
+            
+            // Use verified totals when available (ensures integrity)
+            // Fallback to unified data, then portfolio data
+            const cashBalance = verified.cash_balance || unified.cash_balance || portfolioData.cash_balance || 0;
+            const walletBalance = verified.wallet_balance || 0;
+            const investedAssets = verified.investment_balance || portfolioData.total_market_value || unified.invested_assets || 0;
+            const algoTradingProfits = verified.algo_trading_balance || unified.algo_trading_profits || 0;
             const monthlyContrib = unified.monthly_contribution || portfolioData.monthly_contribution || 0;
             
-            // Total = Cash Balance + Invested Assets + Algo Trading Portfolio
-            // This matches the unified API calculation for consistency
-            const totalValue = unified.total_value || (cashBalance + investedAssets + algoTradingProfits);
+            // Total = Cash Balance + Wallet + Invested Assets + Algo Trading
+            // Use verified total if available (integrity-checked)
+            const totalValue = verified.total_savings || unified.total_value || (cashBalance + walletBalance + investedAssets + algoTradingProfits);
+            
+            // Check integrity status
+            const integrityValid = verified.integrity_valid !== false;
+            const integrityIssues = verified.verification?.issues || [];
             
             // Update summary cards
             document.getElementById('totalValue').textContent = formatCurrency(totalValue);
@@ -1372,10 +1392,21 @@
             document.getElementById('unrealizedGain').textContent = 
                 `${unrealizedGain >= 0 ? '+' : ''}${formatCurrency(unrealizedGain)} unrealized`;
             
-            // Update cash balance label to show it's synced
+            // Update cash balance label to show it's synced and verified
             const cashLabel = document.getElementById('cashLabel');
-            if (cashLabel && unified.synced) {
-                cashLabel.innerHTML = '✓ Synced with Dashboard';
+            if (cashLabel) {
+                if (verified.integrity_valid !== undefined) {
+                    if (integrityValid) {
+                        cashLabel.innerHTML = '✓ Verified & Synced';
+                        cashLabel.style.color = '#4caf50';
+                    } else {
+                        cashLabel.innerHTML = '⚠️ Integrity Issue';
+                        cashLabel.style.color = '#ff9800';
+                        console.warn('Integrity issues:', integrityIssues);
+                    }
+                } else if (unified.synced) {
+                    cashLabel.innerHTML = '✓ Synced with Dashboard';
+                }
             }
             
             // Update allocation chart
@@ -2015,6 +2046,128 @@
             // Refresh algo data periodically
             setInterval(loadAlgoPortfolio, 30000);
         });
+        
+        // ========== ADD SAVINGS WITH INTEGRITY VERIFICATION ==========
+        
+        // Add savings via credit card with full integrity checking
+        async function addSavingsWithIntegrity(amount, source = 'credit_card') {
+            if (!amount || amount <= 0) {
+                showToast('Please enter a valid amount', 'error');
+                return null;
+            }
+            
+            if (amount > 1000000) {
+                showToast('Maximum deposit is $1,000,000', 'error');
+                return null;
+            }
+            
+            try {
+                // Get pre-deposit integrity status
+                const preIntegrityResponse = await fetch(`/api/integrity/verified-total?customer_id=${customerId}`);
+                const preIntegrity = await preIntegrityResponse.json();
+                const preTotalSavings = preIntegrity.total_savings || 0;
+                
+                // Process the deposit
+                const response = await fetch('/api/savings/deposit', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        account_id: accountId,
+                        customer_id: customerId,
+                        amount: amount,
+                        source: source
+                    })
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    // Verify post-deposit integrity
+                    const postIntegrityResponse = await fetch(`/api/integrity/verified-total?customer_id=${customerId}`);
+                    const postIntegrity = await postIntegrityResponse.json();
+                    const postTotalSavings = postIntegrity.total_savings || 0;
+                    
+                    // Calculate actual delta
+                    const actualDelta = postTotalSavings - preTotalSavings;
+                    const expectedDelta = amount;
+                    const isIntegrityValid = Math.abs(actualDelta - expectedDelta) < 0.01;
+                    
+                    if (isIntegrityValid) {
+                        showToast(`Added ${formatCurrency(amount)} to savings (Verified ✓)`, 'success');
+                    } else {
+                        showToast(`Deposit processed. Delta: ${formatCurrency(actualDelta)} (Expected: ${formatCurrency(expectedDelta)})`, 'warning');
+                        console.warn('Integrity check:', { preTotalSavings, postTotalSavings, actualDelta, expectedDelta });
+                    }
+                    
+                    // Refresh portfolio data
+                    await loadPortfolioData();
+                    await loadTransactions();
+                    
+                    return {
+                        success: true,
+                        amount: amount,
+                        preTotalSavings,
+                        postTotalSavings,
+                        integrityValid: isIntegrityValid,
+                        nft_token_id: result.nft_token_id
+                    };
+                } else {
+                    showToast(result.error || 'Deposit failed', 'error');
+                    return { success: false, error: result.error };
+                }
+            } catch (e) {
+                showToast('Deposit failed: ' + e.message, 'error');
+                return { success: false, error: e.message };
+            }
+        }
+        
+        // Verify current integrity status
+        async function verifyIntegrity() {
+            try {
+                const response = await fetch(`/api/integrity/check?customer_id=${customerId}&auto_correct=false`);
+                const report = await response.json();
+                
+                console.log('Integrity Report:', report);
+                
+                if (report.is_valid) {
+                    showToast('Savings integrity verified ✓', 'success');
+                } else {
+                    showToast(`Integrity issues found: ${report.issues.join(', ')}`, 'warning');
+                }
+                
+                return report;
+            } catch (e) {
+                showToast('Integrity check failed', 'error');
+                return null;
+            }
+        }
+        
+        // Auto-correct integrity issues
+        async function autoCorrectIntegrity() {
+            try {
+                const response = await fetch(`/api/integrity/check?customer_id=${customerId}&auto_correct=true`);
+                const report = await response.json();
+                
+                if (report.corrections_applied && report.corrections_applied.length > 0) {
+                    showToast(`Applied ${report.corrections_applied.length} correction(s)`, 'success');
+                    await loadPortfolioData();
+                } else if (report.is_valid) {
+                    showToast('No corrections needed - integrity OK', 'success');
+                } else {
+                    showToast('Could not auto-correct all issues', 'warning');
+                }
+                
+                return report;
+            } catch (e) {
+                showToast('Auto-correction failed', 'error');
+                return null;
+            }
+        }
+        
+        // Expose functions globally for testing
+        window.addSavingsWithIntegrity = addSavingsWithIntegrity;
+        window.verifyIntegrity = verifyIntegrity;
+        window.autoCorrectIntegrity = autoCorrectIntegrity;
     </script>
 </body>
 </html>

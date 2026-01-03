@@ -1379,6 +1379,53 @@ def _init_portfolio_tracker():
 
 _init_portfolio_tracker()
 
+# Initialize Data Integrity Service for savings/wallet integrity validation
+integrity_service = None
+integrity_service_enabled = False
+
+def _init_integrity_service():
+    global integrity_service, integrity_service_enabled, savings_pipeline_service
+    try:
+        from services.data_integrity_service import init_integrity_service
+        integrity_service = init_integrity_service(
+            health_wallets=HEALTH_WALLETS,
+            investment_accounts=INVESTMENT_ACCOUNTS,
+            transaction_ledger=TRANSACTION_LEDGER,
+            nft_ledger=NFT_LEDGER,
+            savings_pipeline_service=savings_pipeline_service,
+            unified_balance_service=unified_balance_service,
+            record_transaction_func=record_transaction
+        )
+        integrity_service_enabled = True
+        print("✓ Data Integrity service enabled (savings/wallet integrity validation)")
+        
+        # Also pass integrity service to savings pipeline if available
+        if savings_pipeline_service:
+            savings_pipeline_service.integrity_service = integrity_service
+    except ImportError as e:
+        print(f"Warning: Data Integrity service not available: {e}")
+
+_init_integrity_service()
+
+# Initialize Customer Data Access Service for enforcing data isolation
+customer_access_service = None
+customer_access_enabled = False
+
+def _init_customer_access_service():
+    global customer_access_service, customer_access_enabled
+    try:
+        from services.customer_data_access import init_customer_access_service
+        customer_access_service = init_customer_access_service(
+            audit_log=AUDIT_LOG if 'AUDIT_LOG' in dir() else [],
+            customers=CUSTOMERS
+        )
+        customer_access_enabled = True
+        print("✓ Customer Data Access service enabled (data isolation enforcement)")
+    except ImportError as e:
+        print(f"Warning: Customer Data Access service not available: {e}")
+
+_init_customer_access_service()
+
 # Sync any loaded algo trading data to the newly initialized services
 try:
     sync_loaded_algo_data()
@@ -1538,6 +1585,73 @@ def get_session_user(session: dict[str, str] | None) -> Dict[str, Any] | None:
         return None
     with STATE_LOCK:
         return USERS.get(username)
+
+
+def authorize_customer_data(session: dict[str, str] | None, 
+                            requested_customer_id: str | None,
+                            resource_type: str = 'data') -> tuple[bool, str | None, str | None]:
+    """
+    Authorize customer data access - enforces strict data isolation for customers.
+    
+    SECURITY: Customers can ONLY access their own data. Admin/staff can access any customer's data.
+    
+    Args:
+        session: User session dict with 'customer_id', 'role', 'username'
+        requested_customer_id: The customer_id being requested (from query params)
+        resource_type: Type of resource (savings, policies, claims, etc.) for error messages
+        
+    Returns:
+        Tuple of (authorized: bool, resolved_customer_id: str or None, error: str or None)
+        
+    Example usage:
+        authorized, customer_id, error = authorize_customer_data(session, qs.get('customer_id', [None])[0], 'savings')
+        if not authorized:
+            self._set_json_headers(403)
+            self.wfile.write(json.dumps({'error': error}).encode('utf-8'))
+            return
+    """
+    # Admin roles that can access any customer's data
+    ADMIN_ROLES = ['admin', 'underwriter', 'claims', 'claims_adjuster', 'accountant']
+    
+    # No session - require authentication
+    if not session:
+        return False, None, 'Authentication required'
+    
+    # Get user info from session
+    user = get_session_user(session) or {}
+    user_role = (user.get('role') or session.get('role') or '').lower()
+    session_customer_id = user.get('customer_id') or session.get('customer_id')
+    username = session.get('username', 'unknown')
+    
+    # Admin/staff roles can access any customer's data
+    if user_role in ADMIN_ROLES:
+        resolved_id = requested_customer_id or session_customer_id
+        return True, resolved_id, None
+    
+    # For customer role, enforce strict data isolation
+    if user_role == 'customer':
+        # Customer must have a customer_id in their session
+        if not session_customer_id:
+            print(f"⚠️ ACCESS DENIED: Customer '{username}' has no customer_id in session")
+            return False, None, 'Customer session invalid - no customer_id'
+        
+        # If no specific ID requested, use session's customer_id
+        if not requested_customer_id:
+            return True, session_customer_id, None
+        
+        # If specific ID requested, it MUST match session's customer_id
+        if requested_customer_id != session_customer_id:
+            print(f"⚠️ ACCESS VIOLATION: Customer '{username}' ({session_customer_id}) attempted to access "
+                  f"{resource_type} for customer '{requested_customer_id}'")
+            return False, None, f'Access denied - you can only access your own {resource_type}'
+        
+        # Authorized - accessing own data
+        return True, session_customer_id, None
+    
+    # Unknown role - default deny
+    print(f"⚠️ ACCESS DENIED: Unknown role '{user_role}' for user '{username}'")
+    return False, None, 'Access denied - invalid role'
+
 
 def log_malicious_attempt(client_ip: str, reason: str, details: Dict[str, Any] | None = None):
     """Log a malicious attempt for monitoring and analysis"""
@@ -3751,9 +3865,28 @@ For claims or questions, please contact:
         
         # Customers Endpoint
         if path == '/api/customers':
-            customer_id = qs.get('id', [None])[0]
-            if customer_id:
-                customer = CUSTOMERS.get(customer_id)
+            requested_customer_id = qs.get('id', [None])[0]
+            
+            # SECURITY: Enforce customer data isolation
+            user = get_session_user(session) or {}
+            role = (user.get('role') or session.get('role', '') if session else '').lower()
+            session_customer_id = user.get('customer_id') or (session.get('customer_id') if session else None)
+            
+            if requested_customer_id:
+                # Specific customer requested
+                # Customers can only access their own data
+                if role == 'customer':
+                    if not session_customer_id:
+                        self._set_json_headers(403)
+                        self.wfile.write(json.dumps({'error': 'Customer session invalid'}).encode('utf-8'))
+                        return
+                    if requested_customer_id != session_customer_id:
+                        print(f"⚠️ ACCESS VIOLATION: Customer attempted to access customer data for '{requested_customer_id}'")
+                        self._set_json_headers(403)
+                        self.wfile.write(json.dumps({'error': 'Access denied - you can only access your own customer data'}).encode('utf-8'))
+                        return
+                    
+                customer = CUSTOMERS.get(requested_customer_id)
                 if customer:
                     self._set_json_headers()
                     self.wfile.write(json.dumps(customer).encode('utf-8'))
@@ -3761,8 +3894,25 @@ For claims or questions, please contact:
                     self._set_json_headers(404)
                     self.wfile.write(json.dumps({'error': 'Customer not found'}).encode('utf-8'))
             else:
-                self._set_json_headers()
-                self.wfile.write(json.dumps(list(CUSTOMERS.values())).encode('utf-8'))
+                # List all customers
+                # Only admin/staff can list all customers
+                if role == 'customer':
+                    # For customers, only return their own data
+                    if session_customer_id:
+                        customer = CUSTOMERS.get(session_customer_id)
+                        self._set_json_headers()
+                        self.wfile.write(json.dumps([customer] if customer else []).encode('utf-8'))
+                    else:
+                        self._set_json_headers(403)
+                        self.wfile.write(json.dumps({'error': 'Access denied'}).encode('utf-8'))
+                elif role not in ['admin', 'accountant', 'underwriter', 'claims', 'claims_adjuster']:
+                    # Unknown or no role - require authentication
+                    self._set_json_headers(403)
+                    self.wfile.write(json.dumps({'error': 'Access denied - admin access required to list all customers'}).encode('utf-8'))
+                else:
+                    # Admin/staff can see all
+                    self._set_json_headers()
+                    self.wfile.write(json.dumps(list(CUSTOMERS.values())).encode('utf-8'))
             return
 
         # Customer status endpoint (post-application visibility)
@@ -3844,7 +3994,16 @@ For claims or questions, please contact:
 
         # Customer summary endpoint - dashboard quick stats
         if path == '/api/customer/summary':
-            customer_id = qs.get('customer_id', [None])[0]
+            requested_customer_id = qs.get('customer_id', [None])[0]
+            
+            # SECURITY: Enforce customer data isolation
+            authorized, customer_id, error = authorize_customer_data(
+                session, requested_customer_id, 'customer summary'
+            )
+            if not authorized:
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': error}).encode('utf-8'))
+                return
             
             if not customer_id:
                 self._set_json_headers(400)
@@ -3882,12 +4041,37 @@ For claims or questions, please contact:
 
         # Customer billing list - GET /api/billing?customer_id=XXX
         if path == '/api/billing':
-            customer_id = qs.get('customer_id', [None])[0]
+            requested_customer_id = qs.get('customer_id', [None])[0]
+            
+            # SECURITY: Enforce customer data isolation
+            user = get_session_user(session) or {}
+            role = (user.get('role') or session.get('role', '') if session else '').lower()
+            session_customer_id = user.get('customer_id') or (session.get('customer_id') if session else None)
+            
+            # For customer role, force their own customer_id
+            if role == 'customer':
+                if not session_customer_id:
+                    self._set_json_headers(403)
+                    self.wfile.write(json.dumps({'error': 'Customer session invalid'}).encode('utf-8'))
+                    return
+                if requested_customer_id and requested_customer_id != session_customer_id:
+                    print(f"⚠️ ACCESS VIOLATION: Customer attempted to access billing for '{requested_customer_id}'")
+                    self._set_json_headers(403)
+                    self.wfile.write(json.dumps({'error': 'Access denied - you can only view your own billing'}).encode('utf-8'))
+                    return
+                customer_id = session_customer_id
+            else:
+                customer_id = requested_customer_id
             
             # Filter bills by customer if provided
             if customer_id:
                 bills_list = [b for b in BILLING.values() if b.get('customer_id') == customer_id]
             else:
+                # Admins can see all bills if no customer_id specified
+                if role not in ['admin', 'accountant', 'underwriter']:
+                    self._set_json_headers(403)
+                    self.wfile.write(json.dumps({'error': 'Access denied - customer_id required'}).encode('utf-8'))
+                    return
                 bills_list = list(BILLING.values())
             
             self._set_json_headers()
@@ -4155,7 +4339,22 @@ For claims or questions, please contact:
             return
         
         if path.startswith('/api/statement'):
-            customer_id = qs.get('customer_id', ['CUST001'])[0]
+            requested_customer_id = qs.get('customer_id', [None])[0]
+            
+            # SECURITY: Enforce customer data isolation for statements
+            authorized, customer_id, error = authorize_customer_data(
+                session, requested_customer_id, 'statement'
+            )
+            if not authorized:
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': error}).encode('utf-8'))
+                return
+            
+            if not customer_id:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'customer_id required'}).encode('utf-8'))
+                return
+                
             data = try_get_statement_from_engine(customer_id) or get_mock_statement(customer_id)
             self._set_json_headers()
             self.wfile.write(json.dumps(data).encode('utf-8'))
@@ -4464,7 +4663,17 @@ For claims or questions, please contact:
         
         # Customer allocation preferences (GET)
         if path == '/api/customer/allocation':
-            customer_id = qs.get('customer_id', [''])[0]
+            requested_customer_id = qs.get('customer_id', [''])[0]
+            
+            # SECURITY: Enforce customer data isolation
+            authorized, customer_id, error = authorize_customer_data(
+                session, requested_customer_id, 'allocation preferences'
+            )
+            if not authorized:
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': error}).encode('utf-8'))
+                return
+            
             if not customer_id:
                 self._set_json_headers(400)
                 self.wfile.write(json.dumps({'error': 'customer_id required'}).encode('utf-8'))
@@ -4497,9 +4706,18 @@ For claims or questions, please contact:
         
         # Simulate coverage increase - shows impact on savings distribution
         if path == '/api/customer/simulate-coverage':
-            customer_id = qs.get('customer_id', [''])[0]
+            requested_customer_id = qs.get('customer_id', [''])[0]
             additional_coverage = float(qs.get('additional_coverage', ['500000'])[0])
             policy_type = qs.get('policy_type', ['life'])[0]
+            
+            # SECURITY: Enforce customer data isolation
+            authorized, customer_id, error = authorize_customer_data(
+                session, requested_customer_id, 'coverage simulation'
+            )
+            if not authorized:
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': error}).encode('utf-8'))
+                return
             
             if not customer_id:
                 self._set_json_headers(400)
@@ -5181,7 +5399,22 @@ For claims or questions, please contact:
             return
 
         if path.startswith('/api/allocations'):
-            customer_id = qs.get('customer_id', ['CUST001'])[0]
+            requested_customer_id = qs.get('customer_id', [None])[0]
+            
+            # SECURITY: Enforce customer data isolation for allocations
+            authorized, customer_id, error = authorize_customer_data(
+                session, requested_customer_id, 'allocations'
+            )
+            if not authorized:
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': error}).encode('utf-8'))
+                return
+            
+            if not customer_id:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'customer_id required'}).encode('utf-8'))
+                return
+            
             data = {"allocations": (try_get_statement_from_engine(customer_id) or get_mock_statement(customer_id))["allocations"]}
             self._set_json_headers()
             self.wfile.write(json.dumps(data).encode('utf-8'))
@@ -5725,7 +5958,19 @@ For claims or questions, please contact:
                 self.wfile.write(json.dumps({'error': 'Algo trading service unavailable'}).encode('utf-8'))
                 return
             
-            customer_id = qs.get('customer_id', [''])[0]
+            requested_customer_id = qs.get('customer_id', [''])[0]
+            
+            # SECURITY: Enforce customer data isolation for customer-specific data
+            if requested_customer_id:
+                authorized, customer_id, error = authorize_customer_data(
+                    session, requested_customer_id, 'algo trading dashboard'
+                )
+                if not authorized:
+                    self._set_json_headers(403)
+                    self.wfile.write(json.dumps({'error': error}).encode('utf-8'))
+                    return
+            else:
+                customer_id = None  # No customer filter - global data
             
             # Get comprehensive dashboard data
             bot_stats = algo_trading_service.get_all_bot_stats(customer_id if customer_id else None)
@@ -5808,7 +6053,19 @@ For claims or questions, please contact:
         
         # Comprehensive trading statistics for mini tabs
         if path == '/api/algo/stats':
-            customer_id = qs.get('customer_id', [''])[0]
+            requested_customer_id = qs.get('customer_id', [''])[0]
+            
+            # SECURITY: Enforce customer data isolation for customer-specific stats
+            if requested_customer_id:
+                authorized, customer_id, error = authorize_customer_data(
+                    session, requested_customer_id, 'algo trading stats'
+                )
+                if not authorized:
+                    self._set_json_headers(403)
+                    self.wfile.write(json.dumps({'error': error}).encode('utf-8'))
+                    return
+            else:
+                customer_id = ''
             
             try:
                 # Initialize stats with defaults
@@ -5983,7 +6240,17 @@ For claims or questions, please contact:
                 self.wfile.write(json.dumps({'error': 'Unified balance service unavailable'}).encode('utf-8'))
                 return
             
-            customer_id = qs.get('customer_id', [''])[0]
+            requested_customer_id = qs.get('customer_id', [''])[0]
+            
+            # SECURITY: Enforce customer data isolation
+            authorized, customer_id, error = authorize_customer_data(
+                session, requested_customer_id, 'unified balance'
+            )
+            if not authorized:
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': error}).encode('utf-8'))
+                return
+            
             if not customer_id:
                 self._set_json_headers(400)
                 self.wfile.write(json.dumps({'error': 'customer_id required'}).encode('utf-8'))
@@ -6001,7 +6268,17 @@ For claims or questions, please contact:
                 self.wfile.write(json.dumps({'error': 'Unified balance service unavailable'}).encode('utf-8'))
                 return
             
-            customer_id = qs.get('customer_id', [''])[0]
+            requested_customer_id = qs.get('customer_id', [''])[0]
+            
+            # SECURITY: Enforce customer data isolation
+            authorized, customer_id, error = authorize_customer_data(
+                session, requested_customer_id, 'algo trading balance'
+            )
+            if not authorized:
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': error}).encode('utf-8'))
+                return
+            
             if not customer_id:
                 self._set_json_headers(400)
                 self.wfile.write(json.dumps({'error': 'customer_id required'}).encode('utf-8'))
@@ -6022,8 +6299,17 @@ For claims or questions, please contact:
                 self.wfile.write(json.dumps({'error': 'Unified balance service unavailable'}).encode('utf-8'))
                 return
             
-            customer_id = qs.get('customer_id', [''])[0]
+            requested_customer_id = qs.get('customer_id', [''])[0]
             limit = int(qs.get('limit', ['100'])[0])
+            
+            # SECURITY: Enforce customer data isolation
+            authorized, customer_id, error = authorize_customer_data(
+                session, requested_customer_id, 'transactions'
+            )
+            if not authorized:
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': error}).encode('utf-8'))
+                return
             
             if not customer_id:
                 self._set_json_headers(400)
@@ -6067,7 +6353,17 @@ For claims or questions, please contact:
         # Single source of truth connecting Dashboard and Savings Portfolio
         
         if path == '/api/investment/unified':
-            customer_id = qs.get('customer_id', [''])[0]
+            requested_customer_id = qs.get('customer_id', [''])[0]
+            
+            # SECURITY: Enforce customer data isolation
+            authorized, customer_id, error = authorize_customer_data(
+                session, requested_customer_id, 'investment data'
+            )
+            if not authorized:
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': error}).encode('utf-8'))
+                return
+            
             if not customer_id:
                 self._set_json_headers(400)
                 self.wfile.write(json.dumps({'error': 'customer_id required'}).encode('utf-8'))
@@ -6242,16 +6538,98 @@ For claims or questions, please contact:
                 self.wfile.write(json.dumps({'error': 'Unified balance service unavailable'}).encode('utf-8'))
                 return
             
-            customer_id = qs.get('customer_id', [''])[0]
+            requested_customer_id = qs.get('customer_id', [''])[0]
+            
+            # SECURITY: Enforce customer data isolation
+            authorized, customer_id, error = authorize_customer_data(
+                session, requested_customer_id, 'balance reconciliation'
+            )
+            if not authorized:
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': error}).encode('utf-8'))
+                return
+            
             if not customer_id:
                 self._set_json_headers(400)
                 self.wfile.write(json.dumps({'error': 'customer_id required'}).encode('utf-8'))
                 return
             
-            reconciliation = unified_balance_service.reconcile_balances(customer_id)
+            # Use auto_correct=True to fix any discrepancies
+            auto_correct = qs.get('auto_correct', ['false'])[0].lower() == 'true'
+            reconciliation = unified_balance_service.reconcile_balances(customer_id, auto_correct=auto_correct)
             self._set_json_headers()
             self.wfile.write(json.dumps(reconciliation).encode('utf-8'))
             return
+        
+        # ========== DATA INTEGRITY VERIFICATION API ==========
+        # Ensures savings totals are correct: total = cash + wallet + investment + algo
+        
+        # Get verified total for a customer (with integrity validation)
+        if path == '/api/integrity/verified-total':
+            if not integrity_service_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Data integrity service unavailable'}).encode('utf-8'))
+                return
+            
+            requested_customer_id = qs.get('customer_id', [''])[0]
+            
+            # SECURITY: Enforce customer data isolation
+            authorized, customer_id, error = authorize_customer_data(
+                session, requested_customer_id, 'integrity verification'
+            )
+            if not authorized:
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': error}).encode('utf-8'))
+                return
+            
+            if not customer_id:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'customer_id required'}).encode('utf-8'))
+                return
+            
+            try:
+                verified_total = integrity_service.get_verified_total(customer_id)
+                self._set_json_headers()
+                self.wfile.write(json.dumps(verified_total, default=str).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+        
+        # Full integrity check (detailed report)
+        if path == '/api/integrity/check':
+            if not integrity_service_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Data integrity service unavailable'}).encode('utf-8'))
+                return
+            
+            requested_customer_id = qs.get('customer_id', [''])[0]
+            auto_correct = qs.get('auto_correct', ['false'])[0].lower() == 'true'
+            
+            # SECURITY: Enforce customer data isolation
+            authorized, customer_id, error = authorize_customer_data(
+                session, requested_customer_id, 'integrity check'
+            )
+            if not authorized:
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': error}).encode('utf-8'))
+                return
+            
+            if not customer_id:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'customer_id required'}).encode('utf-8'))
+                return
+            
+            try:
+                report = integrity_service.validate_customer_integrity(customer_id, auto_correct=auto_correct)
+                self._set_json_headers()
+                self.wfile.write(json.dumps(report.to_dict(), default=str).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+        
+        # ========== END DATA INTEGRITY API ==========
         
         # ========== END UNIFIED BALANCE GET API ==========
         
@@ -6265,7 +6643,17 @@ For claims or questions, please contact:
                 self.wfile.write(json.dumps({'error': 'Portfolio tracker service unavailable'}).encode('utf-8'))
                 return
             
-            customer_id = qs.get('customer_id', [''])[0]
+            requested_customer_id = qs.get('customer_id', [''])[0]
+            
+            # SECURITY: Enforce customer data isolation
+            authorized, customer_id, error = authorize_customer_data(
+                session, requested_customer_id, 'portfolio'
+            )
+            if not authorized:
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': error}).encode('utf-8'))
+                return
+            
             if not customer_id:
                 self._set_json_headers(400)
                 self.wfile.write(json.dumps({'error': 'customer_id required'}).encode('utf-8'))
@@ -6283,8 +6671,17 @@ For claims or questions, please contact:
                 self.wfile.write(json.dumps({'error': 'Portfolio tracker service unavailable'}).encode('utf-8'))
                 return
             
-            customer_id = qs.get('customer_id', [''])[0]
+            requested_customer_id = qs.get('customer_id', [''])[0]
             portfolio_type = qs.get('type', [''])[0]  # investment, algo_trading, or empty for all
+            
+            # SECURITY: Enforce customer data isolation
+            authorized, customer_id, error = authorize_customer_data(
+                session, requested_customer_id, 'portfolio positions'
+            )
+            if not authorized:
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': error}).encode('utf-8'))
+                return
             
             if not customer_id:
                 self._set_json_headers(400)
@@ -7070,6 +7467,128 @@ For claims or questions, please contact:
                     'last_updated': PHINS_BALANCE_SHEET['last_updated']
                 },
                 'recent_claims': recent_claims,
+                'timestamp': datetime.now().isoformat()
+            }, default=str).encode('utf-8'))
+            return
+        
+        # Balance Sheet Reconciliation - Verify and auto-correct integrity
+        if path == '/api/admin/balance-sheet/reconcile':
+            # Check authorization - only admin and accountant
+            if not require_role(session, ['admin', 'accountant']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Unauthorized. Admin or Accountant access required.'}).encode('utf-8'))
+                return
+            
+            auto_correct = qs.get('auto_correct', ['false'])[0].lower() == 'true'
+            
+            initialize_balance_sheet()
+            
+            # Calculate expected values from actual transaction data
+            # 1. Premium Income - from paid bills
+            expected_premium_income = sum(
+                float(b.get('amount_paid', 0)) for b in BILLING.values()
+                if float(b.get('amount_paid', 0)) > 0
+            )
+            
+            # 2. Claims Paid - from paid claims
+            expected_claims_paid = sum(
+                float(c.get('paid_amount', 0) or c.get('approved_amount', 0)) 
+                for c in CLAIMS.values()
+                if status_eq(c, 'paid')
+            )
+            
+            # 3. Calculate from transaction ledger as secondary source
+            ledger_premium_income = sum(
+                tx.get('amount', 0) for tx in TRANSACTION_LEDGER.values()
+                if tx.get('tx_type') in ['premium_payment', 'bill_paid', 'premium_received']
+            )
+            ledger_claims_paid = sum(
+                tx.get('amount', 0) for tx in TRANSACTION_LEDGER.values()
+                if tx.get('tx_type') in ['claim_payment', 'claim_paid', 'claims_paid']
+            )
+            
+            # Current values in balance sheet
+            current_premium_income = PHINS_BALANCE_SHEET['revenue_breakdown']['premium_income']
+            current_claims_paid = PHINS_BALANCE_SHEET['expense_breakdown']['claims_paid']
+            
+            # Discrepancies
+            discrepancies = []
+            corrections = []
+            
+            premium_diff = abs(expected_premium_income - current_premium_income)
+            claims_diff = abs(expected_claims_paid - current_claims_paid)
+            
+            if premium_diff > 0.01:
+                discrepancies.append({
+                    'field': 'premium_income',
+                    'expected': expected_premium_income,
+                    'current': current_premium_income,
+                    'difference': expected_premium_income - current_premium_income,
+                    'source': 'paid_bills'
+                })
+                
+                if auto_correct:
+                    PHINS_BALANCE_SHEET['revenue_breakdown']['premium_income'] = expected_premium_income
+                    old_total = PHINS_BALANCE_SHEET['total_revenue']
+                    PHINS_BALANCE_SHEET['total_revenue'] = sum(PHINS_BALANCE_SHEET['revenue_breakdown'].values())
+                    corrections.append(f'Premium income updated: ${current_premium_income:.2f} -> ${expected_premium_income:.2f}')
+                    corrections.append(f'Total revenue updated: ${old_total:.2f} -> ${PHINS_BALANCE_SHEET["total_revenue"]:.2f}')
+            
+            if claims_diff > 0.01:
+                discrepancies.append({
+                    'field': 'claims_paid',
+                    'expected': expected_claims_paid,
+                    'current': current_claims_paid,
+                    'difference': expected_claims_paid - current_claims_paid,
+                    'source': 'paid_claims'
+                })
+                
+                if auto_correct:
+                    PHINS_BALANCE_SHEET['expense_breakdown']['claims_paid'] = expected_claims_paid
+                    old_total = PHINS_BALANCE_SHEET['total_expenses']
+                    PHINS_BALANCE_SHEET['total_expenses'] = sum(PHINS_BALANCE_SHEET['expense_breakdown'].values())
+                    corrections.append(f'Claims paid updated: ${current_claims_paid:.2f} -> ${expected_claims_paid:.2f}')
+                    corrections.append(f'Total expenses updated: ${old_total:.2f} -> ${PHINS_BALANCE_SHEET["total_expenses"]:.2f}')
+            
+            # Update timestamp if corrections were made
+            if corrections:
+                PHINS_BALANCE_SHEET['last_updated'] = datetime.now().isoformat()
+                PHINS_BALANCE_SHEET['audit_log'].append({
+                    'action': 'reconciliation_auto_correct',
+                    'actor': session.get('username', 'system') if session else 'system',
+                    'timestamp': datetime.now().isoformat(),
+                    'corrections': corrections,
+                    'discrepancies_found': len(discrepancies)
+                })
+                save_ledger_data()
+            
+            is_valid = len(discrepancies) == 0
+            
+            self._set_json_headers()
+            self.wfile.write(json.dumps({
+                'success': True,
+                'is_valid': is_valid,
+                'discrepancies': discrepancies,
+                'corrections_made': corrections,
+                'auto_correct_enabled': auto_correct,
+                'validation_sources': {
+                    'premium_income': {
+                        'from_bills': expected_premium_income,
+                        'from_ledger': ledger_premium_income,
+                        'current': current_premium_income
+                    },
+                    'claims_paid': {
+                        'from_claims': expected_claims_paid,
+                        'from_ledger': ledger_claims_paid,
+                        'current': current_claims_paid
+                    }
+                },
+                'current_balance_sheet': {
+                    'claims_reserve': PHINS_BALANCE_SHEET['claims_reserve'],
+                    'total_revenue': PHINS_BALANCE_SHEET['total_revenue'],
+                    'total_expenses': PHINS_BALANCE_SHEET['total_expenses'],
+                    'net_income': PHINS_BALANCE_SHEET['total_revenue'] - PHINS_BALANCE_SHEET['total_expenses']
+                },
                 'timestamp': datetime.now().isoformat()
             }, default=str).encode('utf-8'))
             return
@@ -10716,9 +11235,57 @@ For claims or questions, please contact:
             policy = POLICIES.get(policy_id)
             
             if policy:
+                now = datetime.now()
+                customer_id = policy.get('customer_id')
+                
+                # Update policy status
                 policy['status'] = 'active'
-                policy['activation_date'] = datetime.now().isoformat()
+                policy['activation_date'] = now.isoformat()
+                policy['effective_date'] = policy.get('effective_date') or now.isoformat()
                 POLICIES[policy_id] = policy
+                
+                # INTEGRITY: Generate billing record if none exists
+                existing_bills = [b for b in BILLING.values() 
+                                if b.get('policy_id') == policy_id and not status_eq(b, 'paid')]
+                
+                bill_id = None
+                if not existing_bills:
+                    bill_id = f"BILL-{now.strftime('%Y%m%d%H%M%S')}-{random.randint(1000,9999)}"
+                    monthly_premium = policy.get('monthly_premium', 0) or (policy.get('annual_premium', 0) / 12)
+                    
+                    bill = {
+                        'id': bill_id,
+                        'policy_id': policy_id,
+                        'customer_id': customer_id,
+                        'amount': round(float(monthly_premium), 2),
+                        'amount_paid': 0.0,
+                        'status': 'outstanding',
+                        'billing_frequency': 'monthly',
+                        'due_date': (now + timedelta(days=30)).isoformat(),
+                        'billing_period_start': now.isoformat(),
+                        'billing_period_end': (now + timedelta(days=30)).isoformat(),
+                        'created_date': now.isoformat(),
+                        'updated_date': now.isoformat(),
+                        'description': f"Premium for policy {policy_id}"
+                    }
+                    BILLING[bill_id] = bill
+                
+                # INTEGRITY: Record activation on transaction ledger
+                if customer_id:
+                    activation_tx = record_transaction(
+                        customer_id=customer_id,
+                        tx_type='policy_activated',
+                        amount=policy.get('coverage_amount', 0),
+                        description=f"Policy {policy_id} activated. Coverage: ${policy.get('coverage_amount', 0):,.0f}",
+                        metadata={
+                            'policy_id': policy_id,
+                            'coverage_amount': policy.get('coverage_amount', 0),
+                            'annual_premium': policy.get('annual_premium', 0),
+                            'monthly_premium': policy.get('monthly_premium', 0),
+                            'bill_id': bill_id
+                        }
+                    )
+                
                 save_ledger_data()
                 
                 self._set_json_headers()
@@ -10726,7 +11293,10 @@ For claims or questions, please contact:
                     'success': True,
                     'policy_id': policy_id,
                     'status': 'active',
-                    'activation_date': policy['activation_date']
+                    'activation_date': policy['activation_date'],
+                    'billing_created': bill_id is not None,
+                    'bill_id': bill_id,
+                    'ledger_updated': customer_id is not None
                 }).encode('utf-8'))
             else:
                 self._set_json_headers(404)
@@ -12732,11 +13302,20 @@ For claims or questions, please contact:
             
             try:
                 data = json.loads(body)
-                customer_id = data.get('customer_id')
+                requested_customer_id = data.get('customer_id')
                 policy_id = data.get('policy_id')
                 monthly_contribution = float(data.get('monthly_contribution', 500))
                 savings_rate_pct = float(data.get('savings_rate_pct', 25))
                 risk_profile_str = data.get('risk_profile', 'moderate')
+                
+                # SECURITY: Enforce customer data isolation
+                authorized, customer_id, error = authorize_customer_data(
+                    session, requested_customer_id, 'savings account creation'
+                )
+                if not authorized:
+                    self._set_json_headers(403)
+                    self.wfile.write(json.dumps({'error': error}).encode('utf-8'))
+                    return
                 
                 if not customer_id or not policy_id:
                     self._set_json_headers(400)
@@ -12793,7 +13372,16 @@ For claims or questions, please contact:
             
             try:
                 data = json.loads(body)
-                customer_id = data.get('customer_id')
+                requested_customer_id = data.get('customer_id')
+                
+                # SECURITY: Enforce customer data isolation
+                authorized, customer_id, error = authorize_customer_data(
+                    session, requested_customer_id, 'savings account reset'
+                )
+                if not authorized:
+                    self._set_json_headers(403)
+                    self.wfile.write(json.dumps({'error': error}).encode('utf-8'))
+                    return
                 
                 if not customer_id:
                     self._set_json_headers(400)
@@ -12852,6 +13440,7 @@ For claims or questions, please contact:
             return
         
         # Deposit funds into savings account (syncs with INVESTMENT_ACCOUNTS)
+        # INTEGRITY: This endpoint ensures total savings = sum of all components
         if path == '/api/savings/deposit':
             if not portfolio_enabled:
                 self._set_json_headers(503)
@@ -12863,7 +13452,7 @@ For claims or questions, please contact:
                 account_id = data.get('account_id')
                 amount = float(data.get('amount', 0))
                 source = data.get('source', 'manual_deposit')
-                customer_id = data.get('customer_id')
+                requested_customer_id = data.get('customer_id')
                 
                 if not account_id or amount <= 0:
                     self._set_json_headers(400)
@@ -12876,12 +13465,28 @@ For claims or questions, please contact:
                     return
                 
                 # Get customer_id from account if not provided
+                customer_id = requested_customer_id
                 if not customer_id:
-                    accounts = portfolio_service.get_customer_accounts('')
                     for acc in portfolio_service.accounts.values():
                         if acc.account_id == account_id:
                             customer_id = acc.customer_id
                             break
+                
+                # SECURITY: Enforce customer data isolation
+                if customer_id:
+                    authorized, authorized_customer_id, error = authorize_customer_data(
+                        session, customer_id, 'savings deposit'
+                    )
+                    if not authorized:
+                        self._set_json_headers(403)
+                        self.wfile.write(json.dumps({'error': error}).encode('utf-8'))
+                        return
+                    customer_id = authorized_customer_id
+                
+                # Pre-deposit integrity check
+                pre_integrity = None
+                if integrity_service_enabled and customer_id:
+                    pre_integrity = integrity_service.validate_customer_integrity(customer_id)
                 
                 result = portfolio_service.deposit(account_id, amount, source)
                 
@@ -12899,16 +13504,15 @@ For claims or questions, please contact:
                                 'created_at': datetime.now().isoformat()
                             }
                         
-                        inv_acc = INVESTMENT_ACCOUNTS[customer_id].copy()
-                        inv_acc['balance'] = inv_acc.get('balance', 0) + amount
-                        inv_acc['deposits'].append({
+                        inv_acc = INVESTMENT_ACCOUNTS[customer_id]
+                        inv_acc['balance'] = float(inv_acc.get('balance', 0) or 0) + amount
+                        inv_acc.setdefault('deposits', []).append({
                             'id': f"DEP-{datetime.now().strftime('%Y%m%d%H%M%S')}-{random.randint(1000,9999)}",
                             'amount': amount,
                             'source': source,
                             'account_id': account_id,
                             'timestamp': datetime.now().isoformat()
                         })
-                        INVESTMENT_ACCOUNTS[customer_id] = inv_acc
                         
                         # Record on ledger
                         record_transaction(
@@ -12928,11 +13532,28 @@ For claims or questions, please contact:
                         
                         result['investment_account_synced'] = True
                         result['investment_balance'] = inv_acc['balance']
+                        
+                        # Post-deposit integrity check
+                        if integrity_service_enabled:
+                            post_integrity = integrity_service.validate_customer_integrity(customer_id, auto_correct=True)
+                            result['integrity'] = {
+                                'pre_total': pre_integrity.calculated_total if pre_integrity else 0,
+                                'post_total': post_integrity.calculated_total,
+                                'delta': post_integrity.calculated_total - (pre_integrity.calculated_total if pre_integrity else 0),
+                                'expected_delta': amount,
+                                'is_valid': post_integrity.is_valid,
+                                'issues': post_integrity.issues
+                            }
+                            
+                            # Verify the delta matches deposit amount
+                            actual_delta = post_integrity.calculated_total - (pre_integrity.calculated_total if pre_integrity else 0)
+                            if abs(actual_delta - amount) > 0.01:
+                                result['integrity']['warning'] = f'Balance delta ({actual_delta:.2f}) differs from deposit ({amount:.2f})'
                     
                     if audit:
                         try:
                             audit.log('system', 'deposit', 'savings_account', account_id, 
-                                     {'amount': amount, 'source': source})
+                                     {'amount': amount, 'source': source, 'integrity_valid': result.get('integrity', {}).get('is_valid', True)})
                         except Exception:
                             pass
                 

@@ -410,7 +410,10 @@
     <div id="balance-sheet-section" class="section-content" style="margin-top: 24px; background: linear-gradient(135deg, #0d47a1 0%, #1565c0 100%); border-radius: 12px; padding: 20px; color: white;">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
         <h3 style="color: white; margin: 0;">🏦 PHINS General Reserves (Balance Sheet)</h3>
-        <button onclick="loadBalanceSheet()" class="btn" style="background: rgba(255,255,255,0.2); color: white; border: 1px solid rgba(255,255,255,0.3); padding: 8px 16px; border-radius: 8px; cursor: pointer;">🔄 Refresh</button>
+        <div style="display: flex; gap: 8px;">
+          <button onclick="reconcileBalanceSheet()" class="btn" style="background: rgba(76,175,80,0.3); color: white; border: 1px solid rgba(76,175,80,0.5); padding: 8px 16px; border-radius: 8px; cursor: pointer;" title="Verify data integrity">✅ Reconcile</button>
+          <button onclick="loadBalanceSheet()" class="btn" style="background: rgba(255,255,255,0.2); color: white; border: 1px solid rgba(255,255,255,0.3); padding: 8px 16px; border-radius: 8px; cursor: pointer;">🔄 Refresh</button>
+        </div>
       </div>
       
       <!-- Reserve Balances -->
@@ -2386,6 +2389,59 @@
         }
       } catch (err) {
         console.error('Failed to load balance sheet:', err);
+      }
+    }
+    
+    // Reconcile Balance Sheet - Verify and fix data integrity
+    async function reconcileBalanceSheet() {
+      const autoCorrect = confirm('🔍 Balance Sheet Reconciliation\n\nThis will verify premium income and claims paid against actual transaction data.\n\nClick OK to auto-correct any discrepancies found.\nClick Cancel to view discrepancies without making changes.');
+      
+      try {
+        const response = await fetch(`/api/admin/balance-sheet/reconcile?auto_correct=${autoCorrect}`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        
+        if (response.ok) {
+          const data = await response.json();
+          
+          let message = `✅ Balance Sheet Reconciliation Complete\n\n`;
+          message += `Data Valid: ${data.is_valid ? 'Yes ✓' : 'No ⚠️'}\n\n`;
+          
+          if (data.discrepancies.length > 0) {
+            message += `Discrepancies Found:\n`;
+            data.discrepancies.forEach(d => {
+              message += `• ${d.field}: Expected $${d.expected.toFixed(2)}, Current $${d.current.toFixed(2)} (Diff: $${d.difference.toFixed(2)})\n`;
+            });
+            message += `\n`;
+          } else {
+            message += `No discrepancies found - data is consistent!\n\n`;
+          }
+          
+          if (data.corrections_made.length > 0) {
+            message += `Corrections Made:\n`;
+            data.corrections_made.forEach(c => {
+              message += `• ${c}\n`;
+            });
+          }
+          
+          message += `\n📊 Current Balance Sheet:\n`;
+          message += `• Claims Reserve: $${data.current_balance_sheet.claims_reserve.toLocaleString()}\n`;
+          message += `• Total Revenue: $${data.current_balance_sheet.total_revenue.toLocaleString()}\n`;
+          message += `• Total Expenses: $${data.current_balance_sheet.total_expenses.toLocaleString()}\n`;
+          message += `• Net Income: $${data.current_balance_sheet.net_income.toLocaleString()}`;
+          
+          alert(message);
+          
+          // Reload balance sheet to show updated values
+          if (data.corrections_made.length > 0) {
+            loadBalanceSheet();
+          }
+        } else {
+          alert('Failed to reconcile balance sheet: ' + response.status);
+        }
+      } catch (err) {
+        alert('Error reconciling balance sheet: ' + err.message);
+        console.error('Reconciliation error:', err);
       }
     }
     

@@ -464,9 +464,17 @@ class UnifiedBalanceService:
         
         return tokens[:limit]
     
-    def reconcile_balances(self, customer_id: str) -> Dict[str, Any]:
+    def reconcile_balances(self, customer_id: str, auto_correct: bool = False) -> Dict[str, Any]:
         """
         Reconcile all balances for a customer against transaction ledger.
+        
+        This method ensures data integrity by validating that:
+        - Total deposits = Sum of all balances + withdrawals
+        - All transaction types are properly accounted for
+        
+        Args:
+            customer_id: Customer ID to reconcile
+            auto_correct: If True, attempt to fix discrepancies
         
         Returns:
             Reconciliation report showing any discrepancies
@@ -475,35 +483,104 @@ class UnifiedBalanceService:
         expected = {
             'health_wallet': 0,
             'investment_account': 0,
-            'algo_trading': 0
+            'algo_trading': 0,
+            'cash_balance': 0
         }
+        
+        # Comprehensive transaction type mapping
+        deposit_types = {
+            'wallet_deposit': 'health_wallet',
+            'health_wallet_deposit': 'health_wallet',
+            'investment_deposit': 'investment_account',
+            'pipeline_deposit': 'investment_account',  # Pipeline deposits go to investment
+            'savings_deposit': 'investment_account',
+            'premium_allocation': 'investment_account',
+            'algo_trading_deposit': 'algo_trading',
+            'algo_deposit': 'algo_trading',
+            'card_payment': 'investment_account',
+            'credit_card_deposit': 'investment_account',
+            'bank_transfer': 'investment_account',
+        }
+        
+        withdrawal_types = {
+            'wallet_withdrawal': 'health_wallet',
+            'health_wallet_withdrawal': 'health_wallet',
+            'medical_purchase': 'health_wallet',
+            'claim_payment': 'health_wallet',
+            'investment_withdrawal': 'investment_account',
+            'algo_trading_withdrawal': 'algo_trading',
+            'withdrawal': 'investment_account',
+        }
+        
+        # Internal transfer types (move between accounts)
+        transfer_types = {
+            'pipeline_allocation': True,
+            'internal_transfer': True,
+            'allocation_manual': True,
+            'allocation_increase_cover': True,
+            'allocation_add_policy': True,
+        }
+        
+        total_deposits = 0.0
+        total_withdrawals = 0.0
         
         for tx in self.transaction_ledger.values():
             if tx.get('customer_id') != customer_id:
                 continue
             
-            tx_type = tx.get('type', '')
-            amount = float(tx.get('amount', 0))
+            tx_type = tx.get('type', tx.get('tx_type', '')).lower()
+            amount = float(tx.get('amount', 0) or 0)
             
-            if tx_type == 'wallet_deposit':
-                expected['health_wallet'] += amount
-            elif tx_type == 'medical_purchase':
-                expected['health_wallet'] -= amount
-            elif tx_type in ['premium_payment', 'investment_deposit']:
-                expected['investment_account'] += amount * 0.25  # savings portion
-            elif tx_type == 'algo_trading_deposit':
-                expected['algo_trading'] += amount
-            elif tx_type == 'algo_trading_withdrawal':
-                expected['algo_trading'] -= amount
-            elif tx_type.startswith('algo_trade_'):
-                pass  # Internal movement, no change to total
+            # Check deposit types
+            for dep_type, dest_account in deposit_types.items():
+                if dep_type in tx_type:
+                    expected[dest_account] += abs(amount)
+                    total_deposits += abs(amount)
+                    break
+            
+            # Check withdrawal types
+            for wd_type, source_account in withdrawal_types.items():
+                if wd_type in tx_type:
+                    expected[source_account] -= abs(amount)
+                    total_withdrawals += abs(amount)
+                    break
+            
+            # Check transfer types (internal movement)
+            for tf_type in transfer_types:
+                if tf_type in tx_type:
+                    # These are internal, extract from/to from metadata
+                    metadata = tx.get('metadata', {})
+                    from_acc = metadata.get('from_account', '').lower()
+                    to_acc = metadata.get('to_account', '').lower()
+                    
+                    # Map account names
+                    acc_map = {
+                        'wallet': 'health_wallet',
+                        'health_wallet': 'health_wallet',
+                        'investment': 'investment_account',
+                        'investment_account': 'investment_account',
+                        'algo': 'algo_trading',
+                        'algo_trading': 'algo_trading',
+                        'cash_balance': 'cash_balance',
+                        'cash': 'cash_balance',
+                    }
+                    
+                    from_mapped = acc_map.get(from_acc)
+                    to_mapped = acc_map.get(to_acc)
+                    
+                    if from_mapped and from_mapped in expected:
+                        expected[from_mapped] -= abs(amount)
+                    if to_mapped and to_mapped in expected:
+                        expected[to_mapped] += abs(amount)
+                    break
         
         # Get actual balances
         actual = {
-            'health_wallet': self.health_wallets.get(customer_id, {}).get('balance', 0),
-            'investment_account': self.investment_accounts.get(customer_id, {}).get('balance', 0),
-            'algo_trading': self.algo_trading_balances.get(customer_id, {}).get('available', 0) +
-                          self.algo_trading_balances.get(customer_id, {}).get('in_positions', 0)
+            'health_wallet': float(self.health_wallets.get(customer_id, {}).get('balance', 0) or 0),
+            'investment_account': float(self.investment_accounts.get(customer_id, {}).get('balance', 0) or 0),
+            'algo_trading': float(self.algo_trading_balances.get(customer_id, {}).get('available', 0) or 0) +
+                          float(self.algo_trading_balances.get(customer_id, {}).get('in_positions', 0) or 0),
+            'cash_balance': 0  # Cash balance from pipeline if available
         }
         
         # Calculate discrepancies
@@ -517,13 +594,75 @@ class UnifiedBalanceService:
                     'difference': actual_bal - expected_bal
                 }
         
+        # Auto-correct if requested
+        corrections = []
+        if auto_correct and discrepancies:
+            for account, disc in list(discrepancies.items()):
+                diff = disc['difference']
+                if abs(diff) > 0.01:
+                    # Correct the discrepancy
+                    if account == 'health_wallet' and customer_id in self.health_wallets:
+                        self.health_wallets[customer_id]['balance'] = disc['expected']
+                        corrections.append({'account': account, 'corrected_to': disc['expected']})
+                    elif account == 'investment_account' and customer_id in self.investment_accounts:
+                        self.investment_accounts[customer_id]['balance'] = disc['expected']
+                        corrections.append({'account': account, 'corrected_to': disc['expected']})
+                    elif account == 'algo_trading' and customer_id in self.algo_trading_balances:
+                        # Adjust available balance
+                        in_pos = self.algo_trading_balances[customer_id].get('in_positions', 0)
+                        self.algo_trading_balances[customer_id]['available'] = disc['expected'] - in_pos
+                        corrections.append({'account': account, 'corrected_to': disc['expected']})
+            
+            # Record correction transaction
+            if corrections and self.record_transaction:
+                self.record_transaction(
+                    customer_id=customer_id,
+                    tx_type='balance_reconciliation',
+                    amount=0,
+                    description='Auto-reconciliation of balances',
+                    metadata={
+                        'corrections': corrections,
+                        'discrepancies_before': discrepancies
+                    }
+                )
+            
+            # Re-fetch actual balances
+            actual = {
+                'health_wallet': float(self.health_wallets.get(customer_id, {}).get('balance', 0) or 0),
+                'investment_account': float(self.investment_accounts.get(customer_id, {}).get('balance', 0) or 0),
+                'algo_trading': float(self.algo_trading_balances.get(customer_id, {}).get('available', 0) or 0) +
+                              float(self.algo_trading_balances.get(customer_id, {}).get('in_positions', 0) or 0),
+                'cash_balance': 0
+            }
+            
+            # Recalculate discrepancies
+            discrepancies = {}
+            for account, expected_bal in expected.items():
+                actual_bal = actual.get(account, 0)
+                if abs(expected_bal - actual_bal) > 0.01:
+                    discrepancies[account] = {
+                        'expected': expected_bal,
+                        'actual': actual_bal,
+                        'difference': actual_bal - expected_bal
+                    }
+        
+        # Calculate total integrity
+        total_actual = sum(actual.values())
+        total_expected = total_deposits - total_withdrawals
+        
         return {
             'customer_id': customer_id,
             'timestamp': datetime.now().isoformat(),
             'expected_balances': expected,
             'actual_balances': actual,
             'discrepancies': discrepancies,
-            'is_reconciled': len(discrepancies) == 0
+            'is_reconciled': len(discrepancies) == 0,
+            'total_deposits': total_deposits,
+            'total_withdrawals': total_withdrawals,
+            'total_expected': total_expected,
+            'total_actual': total_actual,
+            'corrections_applied': corrections,
+            'integrity_valid': abs(total_actual - total_expected) < 1.00  # Allow $1 tolerance
         }
 
 

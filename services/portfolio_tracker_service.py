@@ -217,10 +217,11 @@ class PortfolioTrackerService:
                  record_transaction_func=None,
                  generate_nft_token_func=None):
         """Initialize with data store references"""
-        self.health_wallets = health_wallets or {}
-        self.investment_accounts = investment_accounts or {}
-        self.transaction_ledger = transaction_ledger or {}
-        self.nft_ledger = nft_ledger or {}
+        # NOTE: Use 'if X is None' instead of 'X or {}' to preserve empty dict references
+        self.health_wallets = health_wallets if health_wallets is not None else {}
+        self.investment_accounts = investment_accounts if investment_accounts is not None else {}
+        self.transaction_ledger = transaction_ledger if transaction_ledger is not None else {}
+        self.nft_ledger = nft_ledger if nft_ledger is not None else {}
         self.record_transaction = record_transaction_func
         self.generate_nft_token = generate_nft_token_func
         

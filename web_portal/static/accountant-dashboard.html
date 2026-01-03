@@ -283,6 +283,7 @@
             <button class="tab active" onclick="showTab('projection')">📊 Customer Projection</button>
             <button class="tab" onclick="showTab('forecast')">📈 25-Year Forecast</button>
             <button class="tab" onclick="showTab('portfolio')">📋 Portfolio Report</button>
+            <button class="tab" onclick="showTab('balancesheet')">🏦 Balance Sheet</button>
             <button class="tab" onclick="showTab('integrity')">✅ Data Integrity</button>
             <button class="tab" onclick="showTab('dashboards')">👁️ Dashboard Views</button>
         </div>
@@ -387,6 +388,133 @@
                     <button class="btn btn-secondary" onclick="printReport('portfolio-results')" title="Print Report">🖨️ Print</button>
                 </div>
                 <div id="portfolio-results"><div class="loading">Loading portfolio report...</div></div>
+            </div>
+        </div>
+        
+        <!-- PHINS Balance Sheet Tab (General Reserves) -->
+        <div id="balancesheet-tab" class="tab-content">
+            <div class="section">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                    <div>
+                        <h2 style="margin: 0; display: flex; align-items: center; gap: 10px;">
+                            🏦 PHINS General Reserves (Balance Sheet)
+                        </h2>
+                        <p style="color: #666; margin: 5px 0 0 0;">Company reserves, revenue, and expense tracking</p>
+                    </div>
+                    <div style="display: flex; gap: 10px;">
+                        <button class="btn btn-primary" onclick="loadBalanceSheet()">🔄 Refresh</button>
+                        <button class="btn btn-success" onclick="reconcileBalanceSheet()" style="background: linear-gradient(135deg, #10b981 0%, #059669 100%);">✅ Reconcile</button>
+                        <button class="btn btn-secondary" onclick="exportBalanceSheet('csv')">📊 Export CSV</button>
+                        <button class="btn btn-secondary" onclick="printReport('balance-sheet-content')">🖨️ Print</button>
+                    </div>
+                </div>
+                
+                <div id="balance-sheet-content">
+                    <!-- Main Balance Cards -->
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; margin-bottom: 24px;">
+                        <div class="stat-card" style="background: linear-gradient(135deg, #1e3a8a 0%, #3b82f6 100%); color: white;">
+                            <div class="stat-value" id="bs-total-balance" style="color: white;">$0</div>
+                            <div class="stat-label" style="color: rgba(255,255,255,0.8);">Total Balance</div>
+                        </div>
+                        <div class="stat-card" style="background: linear-gradient(135deg, #059669 0%, #10b981 100%); color: white;">
+                            <div class="stat-value" id="bs-claims-reserve" style="color: white;">$0</div>
+                            <div class="stat-label" style="color: rgba(255,255,255,0.8);">Claims Reserve</div>
+                        </div>
+                        <div class="stat-card" style="background: linear-gradient(135deg, #7c3aed 0%, #8b5cf6 100%); color: white;">
+                            <div class="stat-value" id="bs-operating-reserve" style="color: white;">$0</div>
+                            <div class="stat-label" style="color: rgba(255,255,255,0.8);">Operating Reserve</div>
+                        </div>
+                        <div class="stat-card" style="background: linear-gradient(135deg, #0891b2 0%, #06b6d4 100%); color: white;">
+                            <div class="stat-value" id="bs-total-revenue" style="color: white;">$0</div>
+                            <div class="stat-label" style="color: rgba(255,255,255,0.8);">Total Revenue</div>
+                        </div>
+                        <div class="stat-card" style="background: linear-gradient(135deg, #dc2626 0%, #ef4444 100%); color: white;">
+                            <div class="stat-value" id="bs-claims-paid" style="color: white;">$0</div>
+                            <div class="stat-label" style="color: rgba(255,255,255,0.8);">Claims Paid</div>
+                        </div>
+                        <div class="stat-card" style="background: linear-gradient(135deg, #ca8a04 0%, #eab308 100%); color: white;">
+                            <div class="stat-value" id="bs-net-income" style="color: white;">$0</div>
+                            <div class="stat-label" style="color: rgba(255,255,255,0.8);">Net Income</div>
+                        </div>
+                    </div>
+                    
+                    <!-- Revenue & Expense Breakdown -->
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px;">
+                        <!-- Revenue Breakdown -->
+                        <div style="background: linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%); border-radius: 12px; padding: 20px; border: 1px solid #10b981;">
+                            <h3 style="margin: 0 0 16px 0; color: #065f46; display: flex; align-items: center; gap: 8px;">
+                                📈 Revenue Breakdown
+                            </h3>
+                            <div id="bs-revenue-list" style="font-size: 14px;">
+                                <div style="display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid rgba(16, 185, 129, 0.2);">
+                                    <span>Premium Income</span>
+                                    <strong id="bs-premium-income">$0</strong>
+                                </div>
+                                <div style="display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid rgba(16, 185, 129, 0.2);">
+                                    <span>Management Fees</span>
+                                    <strong id="bs-management-fees">$0</strong>
+                                </div>
+                                <div style="display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid rgba(16, 185, 129, 0.2);">
+                                    <span>Underwriting Fees</span>
+                                    <strong id="bs-underwriting-fees">$0</strong>
+                                </div>
+                                <div style="display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid rgba(16, 185, 129, 0.2);">
+                                    <span>Investment Earnings</span>
+                                    <strong id="bs-investment-earnings">$0</strong>
+                                </div>
+                                <div style="display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid rgba(16, 185, 129, 0.2);">
+                                    <span>Late Fees</span>
+                                    <strong id="bs-late-fees">$0</strong>
+                                </div>
+                                <div style="display: flex; justify-content: space-between; padding: 8px 0;">
+                                    <span>Other Income</span>
+                                    <strong id="bs-other-income">$0</strong>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Expense Breakdown -->
+                        <div style="background: linear-gradient(135deg, #fef2f2 0%, #fecaca 100%); border-radius: 12px; padding: 20px; border: 1px solid #ef4444;">
+                            <h3 style="margin: 0 0 16px 0; color: #991b1b; display: flex; align-items: center; gap: 8px;">
+                                📉 Expense Breakdown
+                            </h3>
+                            <div id="bs-expense-list" style="font-size: 14px;">
+                                <div style="display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid rgba(239, 68, 68, 0.2);">
+                                    <span>Claims Paid</span>
+                                    <strong id="bs-exp-claims-paid">$0</strong>
+                                </div>
+                                <div style="display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid rgba(239, 68, 68, 0.2);">
+                                    <span>Supplier Payments</span>
+                                    <strong id="bs-supplier-payments">$0</strong>
+                                </div>
+                                <div style="display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid rgba(239, 68, 68, 0.2);">
+                                    <span>Operating Costs</span>
+                                    <strong id="bs-operating-costs">$0</strong>
+                                </div>
+                                <div style="display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid rgba(239, 68, 68, 0.2);">
+                                    <span>Reinsurance</span>
+                                    <strong id="bs-reinsurance">$0</strong>
+                                </div>
+                                <div style="display: flex; justify-content: space-between; padding: 8px 0;">
+                                    <span>Other Expenses</span>
+                                    <strong id="bs-other-expenses">$0</strong>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Summary Footer -->
+                    <div style="margin-top: 20px; padding: 16px; background: #f8fafc; border-radius: 8px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+                        <div style="font-size: 13px; color: #64748b;">
+                            <span>📅 Last Updated: </span>
+                            <strong id="bs-last-updated">Never</strong>
+                        </div>
+                        <div style="font-size: 13px; color: #64748b;">
+                            <span>📊 Transactions: </span>
+                            <strong id="bs-tx-count">0</strong>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
         
@@ -2001,12 +2129,204 @@
             }
         };
         
+        // Load PHINS Balance Sheet (General Reserves)
+        async function loadBalanceSheet() {
+            try {
+                const response = await fetch('/api/admin/balance-sheet', {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    const bs = data.balance_sheet;
+                    
+                    // Format currency helper
+                    const fmt = (val) => '$' + Number(val || 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
+                    
+                    // Main balances
+                    document.getElementById('bs-total-balance').textContent = fmt(bs.total_balance);
+                    document.getElementById('bs-claims-reserve').textContent = fmt(bs.claims_reserve);
+                    document.getElementById('bs-operating-reserve').textContent = fmt(bs.operating_reserve);
+                    document.getElementById('bs-total-revenue').textContent = fmt(bs.total_revenue);
+                    document.getElementById('bs-claims-paid').textContent = fmt(bs.expense_breakdown?.claims_paid || 0);
+                    document.getElementById('bs-net-income').textContent = fmt(bs.net_income);
+                    
+                    // Revenue breakdown
+                    if (bs.revenue_breakdown) {
+                        document.getElementById('bs-premium-income').textContent = fmt(bs.revenue_breakdown.premium_income);
+                        document.getElementById('bs-management-fees').textContent = fmt(bs.revenue_breakdown.management_fees);
+                        document.getElementById('bs-underwriting-fees').textContent = fmt(bs.revenue_breakdown.underwriting_fees);
+                        document.getElementById('bs-investment-earnings').textContent = fmt(bs.revenue_breakdown.investment_earnings);
+                        document.getElementById('bs-late-fees').textContent = fmt(bs.revenue_breakdown.late_fees);
+                        document.getElementById('bs-other-income').textContent = fmt(bs.revenue_breakdown.other_income);
+                    }
+                    
+                    // Expense breakdown
+                    if (bs.expense_breakdown) {
+                        document.getElementById('bs-exp-claims-paid').textContent = fmt(bs.expense_breakdown.claims_paid);
+                        document.getElementById('bs-supplier-payments').textContent = fmt(bs.expense_breakdown.supplier_payments);
+                        document.getElementById('bs-operating-costs').textContent = fmt(bs.expense_breakdown.operating_costs);
+                        document.getElementById('bs-reinsurance').textContent = fmt(bs.expense_breakdown.reinsurance);
+                        document.getElementById('bs-other-expenses').textContent = fmt(bs.expense_breakdown.other_expenses);
+                    }
+                    
+                    // Footer
+                    document.getElementById('bs-tx-count').textContent = bs.transaction_count || 0;
+                    if (bs.last_updated) {
+                        const date = new Date(bs.last_updated);
+                        document.getElementById('bs-last-updated').textContent = date.toLocaleString();
+                    }
+                    
+                    console.log('Balance sheet loaded:', bs);
+                } else if (response.status === 403) {
+                    document.getElementById('balance-sheet-content').innerHTML = 
+                        '<div class="error" style="padding: 20px; background: #fef2f2; border-radius: 8px; color: #991b1b;">⚠️ Access denied. Accountant or Admin role required.</div>';
+                } else {
+                    console.error('Failed to load balance sheet:', response.status);
+                }
+            } catch (err) {
+                console.error('Failed to load balance sheet:', err);
+                document.getElementById('balance-sheet-content').innerHTML = 
+                    `<div class="error" style="padding: 20px; background: #fef2f2; border-radius: 8px; color: #991b1b;">Error loading balance sheet: ${err.message}</div>`;
+            }
+        }
+        
+        // Reconcile Balance Sheet - Verify and fix data integrity
+        async function reconcileBalanceSheet() {
+            const autoCorrect = confirm('🔍 Balance Sheet Reconciliation\n\nThis will verify premium income and claims paid against actual transaction data.\n\nClick OK to auto-correct any discrepancies found.\nClick Cancel to view discrepancies without making changes.');
+            
+            try {
+                const response = await fetch(`/api/admin/balance-sheet/reconcile?auto_correct=${autoCorrect}`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    
+                    let message = `✅ Balance Sheet Reconciliation Complete\n\n`;
+                    message += `Data Valid: ${data.is_valid ? 'Yes ✓' : 'No ⚠️'}\n\n`;
+                    
+                    if (data.discrepancies.length > 0) {
+                        message += `Discrepancies Found:\n`;
+                        data.discrepancies.forEach(d => {
+                            message += `• ${d.field}: Expected $${d.expected.toFixed(2)}, Current $${d.current.toFixed(2)} (Diff: $${d.difference.toFixed(2)})\n`;
+                        });
+                        message += `\n`;
+                    } else {
+                        message += `No discrepancies found - data is consistent!\n\n`;
+                    }
+                    
+                    if (data.corrections_made.length > 0) {
+                        message += `Corrections Made:\n`;
+                        data.corrections_made.forEach(c => {
+                            message += `• ${c}\n`;
+                        });
+                    }
+                    
+                    message += `\n📊 Current Balance Sheet:\n`;
+                    message += `• Claims Reserve: $${data.current_balance_sheet.claims_reserve.toLocaleString()}\n`;
+                    message += `• Total Revenue: $${data.current_balance_sheet.total_revenue.toLocaleString()}\n`;
+                    message += `• Total Expenses: $${data.current_balance_sheet.total_expenses.toLocaleString()}\n`;
+                    message += `• Net Income: $${data.current_balance_sheet.net_income.toLocaleString()}`;
+                    
+                    alert(message);
+                    
+                    // Reload balance sheet to show updated values
+                    if (data.corrections_made.length > 0) {
+                        loadBalanceSheet();
+                    }
+                } else {
+                    alert('Failed to reconcile balance sheet: ' + response.status);
+                }
+            } catch (err) {
+                alert('Error reconciling balance sheet: ' + err.message);
+                console.error('Reconciliation error:', err);
+            }
+        }
+        
+        // Export balance sheet as CSV
+        function exportBalanceSheet(format) {
+            const content = document.getElementById('balance-sheet-content');
+            if (!content) return;
+            
+            // Gather data from DOM
+            const data = [
+                ['PHINS General Reserves (Balance Sheet)'],
+                ['Generated', new Date().toLocaleString()],
+                [''],
+                ['Account', 'Balance'],
+                ['Total Balance', document.getElementById('bs-total-balance')?.textContent || '$0'],
+                ['Claims Reserve', document.getElementById('bs-claims-reserve')?.textContent || '$0'],
+                ['Operating Reserve', document.getElementById('bs-operating-reserve')?.textContent || '$0'],
+                ['Total Revenue', document.getElementById('bs-total-revenue')?.textContent || '$0'],
+                ['Claims Paid', document.getElementById('bs-claims-paid')?.textContent || '$0'],
+                ['Net Income', document.getElementById('bs-net-income')?.textContent || '$0'],
+                [''],
+                ['Revenue Breakdown'],
+                ['Premium Income', document.getElementById('bs-premium-income')?.textContent || '$0'],
+                ['Management Fees', document.getElementById('bs-management-fees')?.textContent || '$0'],
+                ['Underwriting Fees', document.getElementById('bs-underwriting-fees')?.textContent || '$0'],
+                ['Investment Earnings', document.getElementById('bs-investment-earnings')?.textContent || '$0'],
+                ['Late Fees', document.getElementById('bs-late-fees')?.textContent || '$0'],
+                ['Other Income', document.getElementById('bs-other-income')?.textContent || '$0'],
+                [''],
+                ['Expense Breakdown'],
+                ['Claims Paid', document.getElementById('bs-exp-claims-paid')?.textContent || '$0'],
+                ['Supplier Payments', document.getElementById('bs-supplier-payments')?.textContent || '$0'],
+                ['Operating Costs', document.getElementById('bs-operating-costs')?.textContent || '$0'],
+                ['Reinsurance', document.getElementById('bs-reinsurance')?.textContent || '$0'],
+                ['Other Expenses', document.getElementById('bs-other-expenses')?.textContent || '$0']
+            ];
+            
+            const csv = data.map(row => row.join(',')).join('\n');
+            const blob = new Blob([csv], { type: 'text/csv' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `phins-balance-sheet-${new Date().toISOString().slice(0,10)}.csv`;
+            a.click();
+            URL.revokeObjectURL(url);
+        }
+        
+        // Print report helper
+        function printReport(containerId) {
+            const content = document.getElementById(containerId);
+            if (!content) return;
+            
+            const printWindow = window.open('', '_blank');
+            printWindow.document.write(`
+                <html>
+                <head>
+                    <title>PHINS Report</title>
+                    <style>
+                        body { font-family: Arial, sans-serif; padding: 20px; }
+                        table { border-collapse: collapse; width: 100%; margin: 10px 0; }
+                        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+                        th { background: #f5f5f5; }
+                        .stat-card { display: inline-block; padding: 15px; margin: 5px; border: 1px solid #ddd; border-radius: 8px; }
+                        .stat-value { font-size: 24px; font-weight: bold; }
+                        .stat-label { font-size: 12px; color: #666; }
+                    </style>
+                </head>
+                <body>
+                    <h1>PHINS Financial Report</h1>
+                    <p>Generated: ${new Date().toLocaleString()}</p>
+                    ${content.innerHTML}
+                </body>
+                </html>
+            `);
+            printWindow.document.close();
+            printWindow.print();
+        }
+        
         // Initial load
         loadQuickStats();
         loadPortfolioReport();
+        loadBalanceSheet();  // Load balance sheet on page load
         
         // Auto-refresh
         setInterval(loadQuickStats, 60000);
+        setInterval(loadBalanceSheet, 60000);  // Refresh balance sheet every minute
     </script>
 </body>
 </html>
