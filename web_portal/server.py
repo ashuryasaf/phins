@@ -4405,8 +4405,22 @@ For claims or questions, please contact:
             # Apply filters
             if customer_filter:
                 ledger_entries = [e for e in ledger_entries if e.get('customer_id') == customer_filter]
+            
+            # Type filter supports both exact match and prefix match
+            # e.g., "claim" matches "claim_submitted", "claim_payment", etc.
             if tx_type_filter:
-                ledger_entries = [e for e in ledger_entries if e.get('type') == tx_type_filter]
+                def type_matches(entry_type: str, filter_type: str) -> bool:
+                    if not entry_type:
+                        return False
+                    # Exact match
+                    if entry_type == filter_type:
+                        return True
+                    # Prefix match (e.g., "claim" matches "claim_submitted")
+                    if entry_type.startswith(filter_type + '_') or entry_type.startswith(filter_type):
+                        return True
+                    return False
+                
+                ledger_entries = [e for e in ledger_entries if type_matches(e.get('type', ''), tx_type_filter)]
             
             # Sort by timestamp desc
             ledger_entries.sort(key=lambda x: x.get('timestamp', ''), reverse=True)
