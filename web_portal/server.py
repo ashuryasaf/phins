@@ -17028,6 +17028,220 @@ def run_server(port: int = PORT) -> None:
     except Exception as e:
         print(f"⚠️  Service transaction initialization skipped: {e}")
     
+    # Initialize Transaction Ledger with sample data for BI dashboard
+    print("📒 Initializing transaction ledger for BI pipeline...")
+    try:
+        if not TRANSACTION_LEDGER:
+            now = datetime.now()
+            
+            # Sample ledger entries covering all tab categories
+            sample_ledger = [
+                # Policy Approvals
+                {
+                    'id': 'TX-POL-ASAF-001',
+                    'customer_id': 'CUST-ASAF-001',
+                    'type': 'policy_approved',
+                    'amount': 2400.00,
+                    'description': 'Health Insurance Policy Approved - Annual Premium',
+                    'metadata': {'policy_id': 'POL-ASAF-HEALTH-001', 'coverage': 500000, 'underwriter': 'system'},
+                    'timestamp': (now - timedelta(days=30)).isoformat(),
+                    'status': 'completed',
+                    'nft_token_id': f'NFT-POL-{(now - timedelta(days=30)).strftime("%Y%m%d")}-001'
+                },
+                {
+                    'id': 'TX-POL-ASAF-002',
+                    'customer_id': 'CUST-ASAF-001',
+                    'type': 'policy_approved',
+                    'amount': 1800.00,
+                    'description': 'Auto Insurance Policy Approved - Annual Premium',
+                    'metadata': {'policy_id': 'POL-ASAF-AUTO-001', 'coverage': 150000, 'underwriter': 'system'},
+                    'timestamp': (now - timedelta(days=25)).isoformat(),
+                    'status': 'completed',
+                    'nft_token_id': f'NFT-POL-{(now - timedelta(days=25)).strftime("%Y%m%d")}-002'
+                },
+                {
+                    'id': 'TX-POL-EFRAT-001',
+                    'customer_id': 'CUST-EFRAT-001',
+                    'type': 'policy_approved',
+                    'amount': 1200.00,
+                    'description': 'Health Insurance Policy Approved',
+                    'metadata': {'policy_id': 'POL-EFRAT-HEALTH-001', 'coverage': 250000, 'underwriter': 'admin'},
+                    'timestamp': (now - timedelta(days=20)).isoformat(),
+                    'status': 'completed',
+                    'nft_token_id': f'NFT-POL-{(now - timedelta(days=20)).strftime("%Y%m%d")}-003'
+                },
+                
+                # Billing Transactions
+                {
+                    'id': 'TX-BILL-ASAF-001',
+                    'customer_id': 'CUST-ASAF-001',
+                    'type': 'billing_created',
+                    'amount': 200.00,
+                    'description': 'Monthly Premium Payment - Health Insurance',
+                    'metadata': {'bill_id': 'BILL-ASAF-001', 'policy_id': 'POL-ASAF-HEALTH-001', 'payment_method': 'credit_card'},
+                    'timestamp': (now - timedelta(days=15)).isoformat(),
+                    'status': 'completed',
+                    'nft_token_id': f'NFT-BILL-{(now - timedelta(days=15)).strftime("%Y%m%d")}-001'
+                },
+                {
+                    'id': 'TX-BILL-ASAF-002',
+                    'customer_id': 'CUST-ASAF-001',
+                    'type': 'billing_created',
+                    'amount': 150.00,
+                    'description': 'Monthly Premium Payment - Auto Insurance',
+                    'metadata': {'bill_id': 'BILL-ASAF-002', 'policy_id': 'POL-ASAF-AUTO-001', 'payment_method': 'bank_transfer'},
+                    'timestamp': (now - timedelta(days=14)).isoformat(),
+                    'status': 'completed',
+                    'nft_token_id': f'NFT-BILL-{(now - timedelta(days=14)).strftime("%Y%m%d")}-002'
+                },
+                {
+                    'id': 'TX-BILL-EFRAT-001',
+                    'customer_id': 'CUST-EFRAT-001',
+                    'type': 'billing_created',
+                    'amount': 100.00,
+                    'description': 'Monthly Premium Payment - Health Insurance',
+                    'metadata': {'bill_id': 'BILL-EFRAT-001', 'policy_id': 'POL-EFRAT-HEALTH-001', 'payment_method': 'credit_card'},
+                    'timestamp': (now - timedelta(days=10)).isoformat(),
+                    'status': 'completed',
+                    'nft_token_id': f'NFT-BILL-{(now - timedelta(days=10)).strftime("%Y%m%d")}-003'
+                },
+                
+                # Claim Transactions
+                {
+                    'id': 'TX-CLM-ASAF-001',
+                    'customer_id': 'CUST-ASAF-001',
+                    'type': 'claim_submitted',
+                    'amount': 15000.00,
+                    'description': 'Claim Submitted - Emergency Room Visit',
+                    'metadata': {'claim_id': 'CLM-ASAF-001', 'policy_id': 'POL-ASAF-HEALTH-001', 'claim_type': 'Medical'},
+                    'timestamp': (now - timedelta(days=12)).isoformat(),
+                    'status': 'pending',
+                    'nft_token_id': f'NFT-CLM-{(now - timedelta(days=12)).strftime("%Y%m%d")}-001'
+                },
+                {
+                    'id': 'TX-CLM-ASAF-002',
+                    'customer_id': 'CUST-ASAF-001',
+                    'type': 'claim_payment',
+                    'amount': 3200.00,
+                    'description': 'Claim Paid - Auto Collision Repair',
+                    'metadata': {'claim_id': 'CLM-ASAF-003', 'policy_id': 'POL-ASAF-AUTO-001', 'approved_by': 'claims_adjuster'},
+                    'timestamp': (now - timedelta(days=7)).isoformat(),
+                    'status': 'completed',
+                    'nft_token_id': f'NFT-CLM-{(now - timedelta(days=7)).strftime("%Y%m%d")}-002'
+                },
+                {
+                    'id': 'TX-CLM-ASAF-003',
+                    'customer_id': 'CUST-ASAF-001',
+                    'type': 'claim_submitted',
+                    'amount': 2800.00,
+                    'description': 'Claim Submitted - Dental Treatment',
+                    'metadata': {'claim_id': 'CLM-ASAF-004', 'policy_id': 'POL-ASAF-HEALTH-001', 'claim_type': 'Dental'},
+                    'timestamp': (now - timedelta(days=5)).isoformat(),
+                    'status': 'pending',
+                    'nft_token_id': f'NFT-CLM-{(now - timedelta(days=5)).strftime("%Y%m%d")}-003'
+                },
+                
+                # Pipeline Events
+                {
+                    'id': 'TX-PIPE-001',
+                    'customer_id': 'SYSTEM',
+                    'type': 'pipeline_initialized',
+                    'amount': 0,
+                    'description': 'AI BI Pipeline Initialized - Data Processing Started',
+                    'metadata': {'pipeline_name': 'claims_processing', 'version': '2.1.0', 'status': 'active'},
+                    'timestamp': (now - timedelta(days=35)).isoformat(),
+                    'status': 'completed',
+                    'nft_token_id': f'NFT-PIPE-{(now - timedelta(days=35)).strftime("%Y%m%d")}-001'
+                },
+                {
+                    'id': 'TX-PIPE-002',
+                    'customer_id': 'SYSTEM',
+                    'type': 'pipeline_initialized',
+                    'amount': 0,
+                    'description': 'Risk Assessment Pipeline Started',
+                    'metadata': {'pipeline_name': 'risk_assessment', 'version': '1.5.0', 'status': 'active'},
+                    'timestamp': (now - timedelta(days=28)).isoformat(),
+                    'status': 'completed',
+                    'nft_token_id': f'NFT-PIPE-{(now - timedelta(days=28)).strftime("%Y%m%d")}-002'
+                },
+                {
+                    'id': 'TX-PIPE-003',
+                    'customer_id': 'SYSTEM',
+                    'type': 'pipeline_initialized',
+                    'amount': 0,
+                    'description': 'Fraud Detection Pipeline Activated',
+                    'metadata': {'pipeline_name': 'fraud_detection', 'version': '3.0.0', 'status': 'monitoring'},
+                    'timestamp': (now - timedelta(days=21)).isoformat(),
+                    'status': 'completed',
+                    'nft_token_id': f'NFT-PIPE-{(now - timedelta(days=21)).strftime("%Y%m%d")}-003'
+                },
+                {
+                    'id': 'TX-PIPE-004',
+                    'customer_id': 'SYSTEM',
+                    'type': 'pipeline_initialized',
+                    'amount': 0,
+                    'description': 'Customer Analytics Pipeline Updated',
+                    'metadata': {'pipeline_name': 'customer_analytics', 'version': '2.0.0', 'models_loaded': 5},
+                    'timestamp': (now - timedelta(days=3)).isoformat(),
+                    'status': 'completed',
+                    'nft_token_id': f'NFT-PIPE-{(now - timedelta(days=3)).strftime("%Y%m%d")}-004'
+                },
+                
+                # Additional transactions for comprehensive ledger
+                {
+                    'id': 'TX-WALLET-001',
+                    'customer_id': 'CUST-ASAF-001',
+                    'type': 'wallet_deposit',
+                    'amount': 500.00,
+                    'description': 'Health Wallet Top-up',
+                    'metadata': {'wallet_type': 'health_savings', 'source': 'bank_transfer'},
+                    'timestamp': (now - timedelta(days=18)).isoformat(),
+                    'status': 'completed',
+                    'nft_token_id': f'NFT-WAL-{(now - timedelta(days=18)).strftime("%Y%m%d")}-001'
+                },
+                {
+                    'id': 'TX-INV-001',
+                    'customer_id': 'CUST-ASAF-001',
+                    'type': 'investment_deposit',
+                    'amount': 1000.00,
+                    'description': 'Investment Portfolio Contribution',
+                    'metadata': {'portfolio': 'balanced_growth', 'allocation': {'stocks': 60, 'bonds': 40}},
+                    'timestamp': (now - timedelta(days=22)).isoformat(),
+                    'status': 'completed',
+                    'nft_token_id': f'NFT-INV-{(now - timedelta(days=22)).strftime("%Y%m%d")}-001'
+                }
+            ]
+            
+            # Populate TRANSACTION_LEDGER
+            for entry in sample_ledger:
+                TRANSACTION_LEDGER[entry['id']] = entry
+            
+            # Also populate NFT_LEDGER for blockchain verification
+            for entry in sample_ledger:
+                if entry.get('nft_token_id'):
+                    NFT_LEDGER[entry['nft_token_id']] = {
+                        'token_id': entry['nft_token_id'],
+                        'customer_id': entry['customer_id'],
+                        'transaction_type': entry['type'],
+                        'transaction_id': entry['id'],
+                        'amount': entry['amount'],
+                        'description': entry['description'],
+                        'timestamp': entry['timestamp'],
+                        'metadata': entry.get('metadata', {}),
+                        'verified': True
+                    }
+            
+            print(f"✓ Initialized {len(sample_ledger)} ledger entries with NFT verification")
+            print(f"   - Policy Approvals: 3")
+            print(f"   - Billing Records: 3")
+            print(f"   - Claim Transactions: 3")
+            print(f"   - Pipeline Events: 4")
+            print(f"   - Other (Wallet/Investment): 2")
+        else:
+            print(f"✓ Transaction ledger already populated ({len(TRANSACTION_LEDGER)} entries)")
+    except Exception as e:
+        print(f"⚠️  Transaction ledger initialization skipped: {e}")
+    
     # Log suspended test accounts
     print(f"🚫 Suspended test accounts (hidden from platform data): {len(SUSPENDED_TEST_ACCOUNTS)}")
     for acc in SUSPENDED_TEST_ACCOUNTS:

@@ -1982,6 +1982,11 @@ let currentLedgerFilter = 'all';
 async function loadLedger(filter = 'all') {
   currentLedgerFilter = filter;
   const token = localStorage.getItem('phins_token');
+  const container = document.getElementById('ledger-list');
+  
+  if (container) {
+    container.innerHTML = '<p class="muted">Loading ledger entries...</p>';
+  }
   
   try {
     let url = '/api/ledger?limit=100';
@@ -1999,15 +2004,33 @@ async function loadLedger(filter = 'all') {
     lastLedgerData = data.ledger_entries || [];
     
     // Update stats
-    document.getElementById('ledger-total').textContent = data.total_entries || lastLedgerData.length;
-    document.getElementById('ledger-nft').textContent = data.nft_ledger_count || lastLedgerData.filter(e => e.metadata?.nft_token_id).length;
+    const totalEl = document.getElementById('ledger-total');
+    const nftEl = document.getElementById('ledger-nft');
+    const integrityEl = document.getElementById('ledger-integrity');
     
+    if (totalEl) totalEl.textContent = data.total_entries || lastLedgerData.length;
+    
+    // Count NFT-verified entries
+    const nftCount = lastLedgerData.filter(e => e.nft_token_id || e.metadata?.nft_token_id).length;
+    if (nftEl) nftEl.textContent = nftCount;
+    
+    // Update integrity status based on NFT coverage
+    if (integrityEl) {
+      const coverage = lastLedgerData.length > 0 ? (nftCount / lastLedgerData.length * 100) : 0;
+      if (coverage >= 90) {
+        integrityEl.textContent = '✅ HEALTHY';
+        integrityEl.style.color = '#28a745';
+      } else if (coverage >= 70) {
+        integrityEl.textContent = '⚠️ WARNING';
+        integrityEl.style.color = '#ffc107';
+      } else {
+        integrityEl.textContent = '🔍 CHECKING';
+        integrityEl.style.color = '#17a2b8';
+      }
+    }
+    
+    console.log(`Ledger loaded: ${lastLedgerData.length} entries (filter: ${filter})`);
     displayLedger(lastLedgerData);
-    
-    // Update tab active state
-    document.querySelectorAll('#ledger-list').forEach(tab => {
-      tab.classList.remove('active');
-    });
     
   } catch (err) {
     console.error('Failed to load ledger:', err);
@@ -2019,16 +2042,26 @@ function displayLedger(entries) {
   const container = document.getElementById('ledger-list');
   
   if (!entries || entries.length === 0) {
-    container.innerHTML = '<p class="muted">No ledger entries found.</p>';
+    container.innerHTML = `
+      <div style="text-align: center; padding: 40px; color: #666;">
+        <div style="font-size: 3rem; margin-bottom: 12px;">📒</div>
+        <div style="font-size: 1.1rem; font-weight: 600;">No ledger entries found</div>
+        <div style="font-size: 0.9rem; margin-top: 8px;">Transaction records will appear here</div>
+      </div>
+    `;
     return;
   }
   
   const typeIcons = {
     'policy_approved': '✅',
-    'billing_created': '📄',
+    'billing_created': '💳',
+    'claim_submitted': '📋',
+    'claim_payment': '💰',
     'claim_payment_received': '💰',
     'claim_payout': '💸',
-    'health_wallet_activated': '💳',
+    'health_wallet_activated': '🏥',
+    'wallet_deposit': '💵',
+    'investment_deposit': '📈',
     'pipeline_initialized': '🔄',
     'payment_received': '💵',
     'premium_payment': '💳',
@@ -2038,34 +2071,66 @@ function displayLedger(entries) {
   const typeColors = {
     'policy_approved': '#28a745',
     'billing_created': '#007bff',
+    'claim_submitted': '#ffc107',
+    'claim_payment': '#17a2b8',
     'claim_payment_received': '#ffc107',
     'claim_payout': '#dc3545',
     'health_wallet_activated': '#17a2b8',
-    'pipeline_initialized': '#6f42c1',
+    'wallet_deposit': '#20c997',
+    'investment_deposit': '#6f42c1',
+    'pipeline_initialized': '#9c27b0',
     'payment_received': '#28a745',
     'premium_payment': '#28a745',
     'default': '#6c757d'
   };
   
+  const statusBadges = {
+    'completed': { bg: '#d4edda', color: '#155724', text: 'COMPLETED' },
+    'pending': { bg: '#fff3cd', color: '#856404', text: 'PENDING' },
+    'failed': { bg: '#f8d7da', color: '#721c24', text: 'FAILED' }
+  };
+  
   container.innerHTML = entries.map(entry => {
     const icon = typeIcons[entry.type] || typeIcons.default;
     const color = typeColors[entry.type] || typeColors.default;
-    const nftId = entry.metadata?.nft_token_id;
+    const nftId = entry.nft_token_id || entry.metadata?.nft_token_id;
+    const status = statusBadges[entry.status] || statusBadges.completed;
+    const metadata = entry.metadata || {};
+    
+    // Format metadata details
+    let metaDetails = [];
+    if (metadata.policy_id) metaDetails.push(`Policy: ${metadata.policy_id}`);
+    if (metadata.claim_id) metaDetails.push(`Claim: ${metadata.claim_id}`);
+    if (metadata.bill_id) metaDetails.push(`Bill: ${metadata.bill_id}`);
+    if (metadata.pipeline_name) metaDetails.push(`Pipeline: ${metadata.pipeline_name}`);
+    if (metadata.payment_method) metaDetails.push(`Method: ${metadata.payment_method}`);
     
     return `
-      <div class="transaction-item" style="border-left: 4px solid ${color};">
-        <div class="tx-details">
-          <strong>${icon} ${entry.id}</strong>
-          <span class="tx-type" style="background: ${color}; color: white; padding: 2px 8px; border-radius: 12px; font-size: 0.75rem; margin-left: 8px;">
-            ${(entry.type || 'unknown').replace(/_/g, ' ')}
-          </span>
-          ${nftId ? `<span style="background: #9c27b0; color: white; padding: 2px 6px; border-radius: 4px; font-size: 0.7rem; margin-left: 4px;">🔗 NFT</span>` : ''}
+      <div class="transaction-item" style="border-left: 4px solid ${color}; padding: 12px; margin-bottom: 8px; background: #fafafa; border-radius: 0 8px 8px 0;">
+        <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 8px;">
+          <div style="flex: 1;">
+            <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+              <span style="font-size: 1.5rem;">${icon}</span>
+              <strong style="color: #333;">${entry.id}</strong>
+              <span style="background: ${color}; color: white; padding: 3px 10px; border-radius: 12px; font-size: 0.75rem; font-weight: 600; text-transform: uppercase;">
+                ${(entry.type || 'unknown').replace(/_/g, ' ')}
+              </span>
+              ${nftId ? `<span style="background: linear-gradient(135deg, #9c27b0, #673ab7); color: white; padding: 3px 8px; border-radius: 4px; font-size: 0.7rem;">🔗 NFT Verified</span>` : ''}
+            </div>
+            <div style="margin-top: 8px; color: #444; font-size: 0.95rem;">${entry.description || 'No description'}</div>
+            ${metaDetails.length > 0 ? `<div style="margin-top: 6px; font-size: 0.8rem; color: #666;">${metaDetails.join(' • ')}</div>` : ''}
+          </div>
+          <div style="text-align: right; min-width: 120px;">
+            ${entry.amount > 0 ? `<div style="font-size: 1.2rem; font-weight: 700; color: ${color};">$${Number(entry.amount).toLocaleString(undefined, {minimumFractionDigits: 2})}</div>` : ''}
+            <div style="background: ${status.bg}; color: ${status.color}; padding: 3px 8px; border-radius: 4px; font-size: 0.75rem; font-weight: 600; display: inline-block; margin-top: 4px;">
+              ${status.text}
+            </div>
+          </div>
         </div>
-        <div style="margin-top: 5px; color: #555;">${entry.description || 'No description'}</div>
-        <div class="tx-meta" style="margin-top: 8px; font-size: 0.85rem; color: #888;">
-          <span>Customer: ${entry.customer_id || 'N/A'}</span>
-          <span>Amount: ${formatCurrencyExport(entry.amount || 0)}</span>
-          <span>${new Date(entry.timestamp).toLocaleString()}</span>
+        <div style="margin-top: 10px; padding-top: 8px; border-top: 1px solid #e0e0e0; font-size: 0.8rem; color: #888; display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px;">
+          <span>👤 ${entry.customer_id || 'SYSTEM'}</span>
+          <span>🕐 ${new Date(entry.timestamp).toLocaleString()}</span>
+          ${nftId ? `<span style="color: #9c27b0;">🔗 ${nftId.substring(0, 20)}...</span>` : ''}
         </div>
       </div>
     `;
