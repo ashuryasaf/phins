@@ -7471,6 +7471,128 @@ For claims or questions, please contact:
             }, default=str).encode('utf-8'))
             return
         
+        # Balance Sheet Reconciliation - Verify and auto-correct integrity
+        if path == '/api/admin/balance-sheet/reconcile':
+            # Check authorization - only admin and accountant
+            if not require_role(session, ['admin', 'accountant']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Unauthorized. Admin or Accountant access required.'}).encode('utf-8'))
+                return
+            
+            auto_correct = qs.get('auto_correct', ['false'])[0].lower() == 'true'
+            
+            initialize_balance_sheet()
+            
+            # Calculate expected values from actual transaction data
+            # 1. Premium Income - from paid bills
+            expected_premium_income = sum(
+                float(b.get('amount_paid', 0)) for b in BILLING.values()
+                if float(b.get('amount_paid', 0)) > 0
+            )
+            
+            # 2. Claims Paid - from paid claims
+            expected_claims_paid = sum(
+                float(c.get('paid_amount', 0) or c.get('approved_amount', 0)) 
+                for c in CLAIMS.values()
+                if status_eq(c, 'paid')
+            )
+            
+            # 3. Calculate from transaction ledger as secondary source
+            ledger_premium_income = sum(
+                tx.get('amount', 0) for tx in TRANSACTION_LEDGER.values()
+                if tx.get('tx_type') in ['premium_payment', 'bill_paid', 'premium_received']
+            )
+            ledger_claims_paid = sum(
+                tx.get('amount', 0) for tx in TRANSACTION_LEDGER.values()
+                if tx.get('tx_type') in ['claim_payment', 'claim_paid', 'claims_paid']
+            )
+            
+            # Current values in balance sheet
+            current_premium_income = PHINS_BALANCE_SHEET['revenue_breakdown']['premium_income']
+            current_claims_paid = PHINS_BALANCE_SHEET['expense_breakdown']['claims_paid']
+            
+            # Discrepancies
+            discrepancies = []
+            corrections = []
+            
+            premium_diff = abs(expected_premium_income - current_premium_income)
+            claims_diff = abs(expected_claims_paid - current_claims_paid)
+            
+            if premium_diff > 0.01:
+                discrepancies.append({
+                    'field': 'premium_income',
+                    'expected': expected_premium_income,
+                    'current': current_premium_income,
+                    'difference': expected_premium_income - current_premium_income,
+                    'source': 'paid_bills'
+                })
+                
+                if auto_correct:
+                    PHINS_BALANCE_SHEET['revenue_breakdown']['premium_income'] = expected_premium_income
+                    old_total = PHINS_BALANCE_SHEET['total_revenue']
+                    PHINS_BALANCE_SHEET['total_revenue'] = sum(PHINS_BALANCE_SHEET['revenue_breakdown'].values())
+                    corrections.append(f'Premium income updated: ${current_premium_income:.2f} -> ${expected_premium_income:.2f}')
+                    corrections.append(f'Total revenue updated: ${old_total:.2f} -> ${PHINS_BALANCE_SHEET["total_revenue"]:.2f}')
+            
+            if claims_diff > 0.01:
+                discrepancies.append({
+                    'field': 'claims_paid',
+                    'expected': expected_claims_paid,
+                    'current': current_claims_paid,
+                    'difference': expected_claims_paid - current_claims_paid,
+                    'source': 'paid_claims'
+                })
+                
+                if auto_correct:
+                    PHINS_BALANCE_SHEET['expense_breakdown']['claims_paid'] = expected_claims_paid
+                    old_total = PHINS_BALANCE_SHEET['total_expenses']
+                    PHINS_BALANCE_SHEET['total_expenses'] = sum(PHINS_BALANCE_SHEET['expense_breakdown'].values())
+                    corrections.append(f'Claims paid updated: ${current_claims_paid:.2f} -> ${expected_claims_paid:.2f}')
+                    corrections.append(f'Total expenses updated: ${old_total:.2f} -> ${PHINS_BALANCE_SHEET["total_expenses"]:.2f}')
+            
+            # Update timestamp if corrections were made
+            if corrections:
+                PHINS_BALANCE_SHEET['last_updated'] = datetime.now().isoformat()
+                PHINS_BALANCE_SHEET['audit_log'].append({
+                    'action': 'reconciliation_auto_correct',
+                    'actor': session.get('username', 'system') if session else 'system',
+                    'timestamp': datetime.now().isoformat(),
+                    'corrections': corrections,
+                    'discrepancies_found': len(discrepancies)
+                })
+                save_ledger_data()
+            
+            is_valid = len(discrepancies) == 0
+            
+            self._set_json_headers()
+            self.wfile.write(json.dumps({
+                'success': True,
+                'is_valid': is_valid,
+                'discrepancies': discrepancies,
+                'corrections_made': corrections,
+                'auto_correct_enabled': auto_correct,
+                'validation_sources': {
+                    'premium_income': {
+                        'from_bills': expected_premium_income,
+                        'from_ledger': ledger_premium_income,
+                        'current': current_premium_income
+                    },
+                    'claims_paid': {
+                        'from_claims': expected_claims_paid,
+                        'from_ledger': ledger_claims_paid,
+                        'current': current_claims_paid
+                    }
+                },
+                'current_balance_sheet': {
+                    'claims_reserve': PHINS_BALANCE_SHEET['claims_reserve'],
+                    'total_revenue': PHINS_BALANCE_SHEET['total_revenue'],
+                    'total_expenses': PHINS_BALANCE_SHEET['total_expenses'],
+                    'net_income': PHINS_BALANCE_SHEET['total_revenue'] - PHINS_BALANCE_SHEET['total_expenses']
+                },
+                'timestamp': datetime.now().isoformat()
+            }, default=str).encode('utf-8'))
+            return
+        
         # ========== END PHINS BALANCE SHEET API ==========
 
         # Investment portfolio endpoint (legacy - redirect to new API)
@@ -11113,9 +11235,57 @@ For claims or questions, please contact:
             policy = POLICIES.get(policy_id)
             
             if policy:
+                now = datetime.now()
+                customer_id = policy.get('customer_id')
+                
+                # Update policy status
                 policy['status'] = 'active'
-                policy['activation_date'] = datetime.now().isoformat()
+                policy['activation_date'] = now.isoformat()
+                policy['effective_date'] = policy.get('effective_date') or now.isoformat()
                 POLICIES[policy_id] = policy
+                
+                # INTEGRITY: Generate billing record if none exists
+                existing_bills = [b for b in BILLING.values() 
+                                if b.get('policy_id') == policy_id and not status_eq(b, 'paid')]
+                
+                bill_id = None
+                if not existing_bills:
+                    bill_id = f"BILL-{now.strftime('%Y%m%d%H%M%S')}-{random.randint(1000,9999)}"
+                    monthly_premium = policy.get('monthly_premium', 0) or (policy.get('annual_premium', 0) / 12)
+                    
+                    bill = {
+                        'id': bill_id,
+                        'policy_id': policy_id,
+                        'customer_id': customer_id,
+                        'amount': round(float(monthly_premium), 2),
+                        'amount_paid': 0.0,
+                        'status': 'outstanding',
+                        'billing_frequency': 'monthly',
+                        'due_date': (now + timedelta(days=30)).isoformat(),
+                        'billing_period_start': now.isoformat(),
+                        'billing_period_end': (now + timedelta(days=30)).isoformat(),
+                        'created_date': now.isoformat(),
+                        'updated_date': now.isoformat(),
+                        'description': f"Premium for policy {policy_id}"
+                    }
+                    BILLING[bill_id] = bill
+                
+                # INTEGRITY: Record activation on transaction ledger
+                if customer_id:
+                    activation_tx = record_transaction(
+                        customer_id=customer_id,
+                        tx_type='policy_activated',
+                        amount=policy.get('coverage_amount', 0),
+                        description=f"Policy {policy_id} activated. Coverage: ${policy.get('coverage_amount', 0):,.0f}",
+                        metadata={
+                            'policy_id': policy_id,
+                            'coverage_amount': policy.get('coverage_amount', 0),
+                            'annual_premium': policy.get('annual_premium', 0),
+                            'monthly_premium': policy.get('monthly_premium', 0),
+                            'bill_id': bill_id
+                        }
+                    )
+                
                 save_ledger_data()
                 
                 self._set_json_headers()
@@ -11123,7 +11293,10 @@ For claims or questions, please contact:
                     'success': True,
                     'policy_id': policy_id,
                     'status': 'active',
-                    'activation_date': policy['activation_date']
+                    'activation_date': policy['activation_date'],
+                    'billing_created': bill_id is not None,
+                    'bill_id': bill_id,
+                    'ledger_updated': customer_id is not None
                 }).encode('utf-8'))
             else:
                 self._set_json_headers(404)
