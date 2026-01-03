@@ -1379,6 +1379,34 @@ def _init_portfolio_tracker():
 
 _init_portfolio_tracker()
 
+# Initialize Data Integrity Service for savings/wallet integrity validation
+integrity_service = None
+integrity_service_enabled = False
+
+def _init_integrity_service():
+    global integrity_service, integrity_service_enabled, savings_pipeline_service
+    try:
+        from services.data_integrity_service import init_integrity_service
+        integrity_service = init_integrity_service(
+            health_wallets=HEALTH_WALLETS,
+            investment_accounts=INVESTMENT_ACCOUNTS,
+            transaction_ledger=TRANSACTION_LEDGER,
+            nft_ledger=NFT_LEDGER,
+            savings_pipeline_service=savings_pipeline_service,
+            unified_balance_service=unified_balance_service,
+            record_transaction_func=record_transaction
+        )
+        integrity_service_enabled = True
+        print("✓ Data Integrity service enabled (savings/wallet integrity validation)")
+        
+        # Also pass integrity service to savings pipeline if available
+        if savings_pipeline_service:
+            savings_pipeline_service.integrity_service = integrity_service
+    except ImportError as e:
+        print(f"Warning: Data Integrity service not available: {e}")
+
+_init_integrity_service()
+
 # Sync any loaded algo trading data to the newly initialized services
 try:
     sync_loaded_algo_data()
@@ -6248,10 +6276,63 @@ For claims or questions, please contact:
                 self.wfile.write(json.dumps({'error': 'customer_id required'}).encode('utf-8'))
                 return
             
-            reconciliation = unified_balance_service.reconcile_balances(customer_id)
+            # Use auto_correct=True to fix any discrepancies
+            auto_correct = qs.get('auto_correct', ['false'])[0].lower() == 'true'
+            reconciliation = unified_balance_service.reconcile_balances(customer_id, auto_correct=auto_correct)
             self._set_json_headers()
             self.wfile.write(json.dumps(reconciliation).encode('utf-8'))
             return
+        
+        # ========== DATA INTEGRITY VERIFICATION API ==========
+        # Ensures savings totals are correct: total = cash + wallet + investment + algo
+        
+        # Get verified total for a customer (with integrity validation)
+        if path == '/api/integrity/verified-total':
+            if not integrity_service_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Data integrity service unavailable'}).encode('utf-8'))
+                return
+            
+            customer_id = qs.get('customer_id', [''])[0]
+            if not customer_id:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'customer_id required'}).encode('utf-8'))
+                return
+            
+            try:
+                verified_total = integrity_service.get_verified_total(customer_id)
+                self._set_json_headers()
+                self.wfile.write(json.dumps(verified_total, default=str).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+        
+        # Full integrity check (detailed report)
+        if path == '/api/integrity/check':
+            if not integrity_service_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Data integrity service unavailable'}).encode('utf-8'))
+                return
+            
+            customer_id = qs.get('customer_id', [''])[0]
+            auto_correct = qs.get('auto_correct', ['false'])[0].lower() == 'true'
+            
+            if not customer_id:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'customer_id required'}).encode('utf-8'))
+                return
+            
+            try:
+                report = integrity_service.validate_customer_integrity(customer_id, auto_correct=auto_correct)
+                self._set_json_headers()
+                self.wfile.write(json.dumps(report.to_dict(), default=str).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+        
+        # ========== END DATA INTEGRITY API ==========
         
         # ========== END UNIFIED BALANCE GET API ==========
         
@@ -12852,6 +12933,7 @@ For claims or questions, please contact:
             return
         
         # Deposit funds into savings account (syncs with INVESTMENT_ACCOUNTS)
+        # INTEGRITY: This endpoint ensures total savings = sum of all components
         if path == '/api/savings/deposit':
             if not portfolio_enabled:
                 self._set_json_headers(503)
@@ -12877,11 +12959,15 @@ For claims or questions, please contact:
                 
                 # Get customer_id from account if not provided
                 if not customer_id:
-                    accounts = portfolio_service.get_customer_accounts('')
                     for acc in portfolio_service.accounts.values():
                         if acc.account_id == account_id:
                             customer_id = acc.customer_id
                             break
+                
+                # Pre-deposit integrity check
+                pre_integrity = None
+                if integrity_service_enabled and customer_id:
+                    pre_integrity = integrity_service.validate_customer_integrity(customer_id)
                 
                 result = portfolio_service.deposit(account_id, amount, source)
                 
@@ -12899,16 +12985,15 @@ For claims or questions, please contact:
                                 'created_at': datetime.now().isoformat()
                             }
                         
-                        inv_acc = INVESTMENT_ACCOUNTS[customer_id].copy()
-                        inv_acc['balance'] = inv_acc.get('balance', 0) + amount
-                        inv_acc['deposits'].append({
+                        inv_acc = INVESTMENT_ACCOUNTS[customer_id]
+                        inv_acc['balance'] = float(inv_acc.get('balance', 0) or 0) + amount
+                        inv_acc.setdefault('deposits', []).append({
                             'id': f"DEP-{datetime.now().strftime('%Y%m%d%H%M%S')}-{random.randint(1000,9999)}",
                             'amount': amount,
                             'source': source,
                             'account_id': account_id,
                             'timestamp': datetime.now().isoformat()
                         })
-                        INVESTMENT_ACCOUNTS[customer_id] = inv_acc
                         
                         # Record on ledger
                         record_transaction(
@@ -12928,11 +13013,28 @@ For claims or questions, please contact:
                         
                         result['investment_account_synced'] = True
                         result['investment_balance'] = inv_acc['balance']
+                        
+                        # Post-deposit integrity check
+                        if integrity_service_enabled:
+                            post_integrity = integrity_service.validate_customer_integrity(customer_id, auto_correct=True)
+                            result['integrity'] = {
+                                'pre_total': pre_integrity.calculated_total if pre_integrity else 0,
+                                'post_total': post_integrity.calculated_total,
+                                'delta': post_integrity.calculated_total - (pre_integrity.calculated_total if pre_integrity else 0),
+                                'expected_delta': amount,
+                                'is_valid': post_integrity.is_valid,
+                                'issues': post_integrity.issues
+                            }
+                            
+                            # Verify the delta matches deposit amount
+                            actual_delta = post_integrity.calculated_total - (pre_integrity.calculated_total if pre_integrity else 0)
+                            if abs(actual_delta - amount) > 0.01:
+                                result['integrity']['warning'] = f'Balance delta ({actual_delta:.2f}) differs from deposit ({amount:.2f})'
                     
                     if audit:
                         try:
                             audit.log('system', 'deposit', 'savings_account', account_id, 
-                                     {'amount': amount, 'source': source})
+                                     {'amount': amount, 'source': source, 'integrity_valid': result.get('integrity', {}).get('is_valid', True)})
                         except Exception:
                             pass
                 
