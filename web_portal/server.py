@@ -11061,13 +11061,55 @@ For claims or questions, please contact:
                         return
                     data['customer_id'] = session_customer_id
                 
+                # Extract all claim data
+                claimed_amount = float(data.get('claimed_amount', 0))
+                claim_type = data.get('type', 'general')
+                description = data.get('description', '')
+                policy_id = data.get('policy_id')
+                incident_date = data.get('incident_date')
+                provider = data.get('provider', '')
+                payment_destination = data.get('payment_destination', 'health_wallet')
+                bank_details = data.get('bank_details')
+                files_data = data.get('files', [])
+                files_count = data.get('files_count', len(files_data) if files_data else 0)
+                
+                # Validate claim amount against policy coverage
+                if policy_id:
+                    policy = POLICIES.get(policy_id, {})
+                    coverage = float(policy.get('coverage_amount', policy.get('coverage', 0)) or 0)
+                    if claimed_amount > coverage:
+                        self._set_json_headers(400)
+                        self.wfile.write(json.dumps({
+                            'error': f'Claim amount (${claimed_amount:,.2f}) exceeds policy coverage (${coverage:,.2f})'
+                        }).encode('utf-8'))
+                        return
+                
+                # Store file metadata (base64 data stored separately or in files table)
+                files_metadata = []
+                if files_data:
+                    for i, file_info in enumerate(files_data[:10]):  # Limit to 10 files
+                        file_id = f"FILE-{claim_id}-{i+1:03d}"
+                        files_metadata.append({
+                            'id': file_id,
+                            'name': file_info.get('name', f'file_{i+1}'),
+                            'type': file_info.get('type', 'application/octet-stream'),
+                            'size': file_info.get('size', 0),
+                            'uploaded_at': datetime.now().isoformat()
+                        })
+                
                 claim = {
                     'id': claim_id,
-                    'policy_id': data.get('policy_id'),
+                    'policy_id': policy_id,
                     'customer_id': data.get('customer_id'),
-                    'type': data.get('type', 'general'),
-                    'description': data.get('description', ''),
-                    'claimed_amount': float(data.get('claimed_amount', 0)),
+                    'type': claim_type,
+                    'description': description,
+                    'claimed_amount': claimed_amount,
+                    'incident_date': incident_date,
+                    'provider': provider,
+                    'payment_destination': payment_destination,
+                    'bank_details': bank_details if payment_destination == 'bank_transfer' else None,
+                    'files': files_metadata,
+                    'files_count': files_count,
                     'status': 'Pending',
                     'filed_date': datetime.now().isoformat(),
                     'created_date': datetime.now().isoformat()
@@ -11079,18 +11121,22 @@ For claims or questions, please contact:
                 claim_tx = record_transaction(
                     customer_id=data.get('customer_id', 'unknown'),
                     tx_type='claim_submitted',
-                    amount=float(data.get('claimed_amount', 0)),
-                    description=f"Claim {claim_id} submitted: {data.get('type', 'general')} - {data.get('description', '')[:50]}",
+                    amount=claimed_amount,
+                    description=f"Claim {claim_id} submitted: {claim_type} - {description[:50]}",
                     metadata={
                         'claim_id': claim_id,
-                        'policy_id': data.get('policy_id'),
-                        'claim_type': data.get('type', 'general'),
-                        'claimed_amount': float(data.get('claimed_amount', 0)),
-                        'description': data.get('description', '')
+                        'policy_id': policy_id,
+                        'claim_type': claim_type,
+                        'claimed_amount': claimed_amount,
+                        'payment_destination': payment_destination,
+                        'files_count': files_count,
+                        'incident_date': incident_date,
+                        'provider': provider,
+                        'description': description
                     }
                 )
                 claim['nft_token_id'] = claim_tx.get('nft_token_id')
-                claim['ledger_tx_id'] = claim_tx.get('id')  # Fixed: use 'id' not 'tx_id'
+                claim['ledger_tx_id'] = claim_tx.get('id')
                 
                 if audit:
                     actor = session.get('username') if session else 'system'

@@ -1032,9 +1032,212 @@
         </table>
       </div>
       <div style="margin-top:16px">
-        <button class="btn btn-primary" onclick="alert('File New Claim feature - Coming Soon!')">File New Claim</button>
+        <button class="btn btn-primary" onclick="showFileClaimModal()">📝 File New Claim</button>
       </div>
     </section>
+
+    <!-- File Claim Modal -->
+    <div id="file-claim-modal" class="modal" style="display:none; position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.6); z-index:1000; align-items:center; justify-content:center; backdrop-filter: blur(4px);">
+      <div class="modal-content" style="background:white; border-radius:20px; padding:0; max-width:700px; width:95%; max-height:90vh; overflow-y:auto; box-shadow: 0 25px 80px rgba(0,0,0,0.3);">
+        <!-- Modal Header -->
+        <div style="background: linear-gradient(135deg, #ef6c00 0%, #ff9800 100%); padding: 24px; border-radius: 20px 20px 0 0;">
+          <div style="display:flex; justify-content:space-between; align-items:center;">
+            <div>
+              <h3 style="margin:0; color: white; font-size: 1.5rem;">📝 File New Claim</h3>
+              <p style="margin: 4px 0 0 0; color: rgba(255,255,255,0.9); font-size: 0.9rem;">Submit a claim against your active policy</p>
+            </div>
+            <button onclick="closeFileClaimModal()" style="background:rgba(255,255,255,0.2); border:none; font-size:1.5rem; cursor:pointer; color: white; width: 40px; height: 40px; border-radius: 50%; display: flex; align-items: center; justify-content: center;">&times;</button>
+          </div>
+        </div>
+        
+        <form id="file-claim-form" onsubmit="submitClaim(event)" style="padding: 24px;">
+          <!-- Step Indicator -->
+          <div id="claim-steps" style="display: flex; justify-content: center; gap: 8px; margin-bottom: 24px;">
+            <div class="claim-step active" data-step="1" style="width: 12px; height: 12px; border-radius: 50%; background: #ef6c00;"></div>
+            <div class="claim-step" data-step="2" style="width: 12px; height: 12px; border-radius: 50%; background: #ddd;"></div>
+            <div class="claim-step" data-step="3" style="width: 12px; height: 12px; border-radius: 50%; background: #ddd;"></div>
+          </div>
+          
+          <!-- Step 1: Select Policy -->
+          <div id="claim-step-1" class="claim-form-step">
+            <h4 style="margin: 0 0 16px 0; color: #333;">Step 1: Select Policy</h4>
+            
+            <div style="margin-bottom: 20px;">
+              <label style="display:block; margin-bottom:8px; font-weight:600; color:#333;">Select Active Policy *</label>
+              <select id="claim-policy-id" required style="width:100%; padding:14px; border:2px solid #e0e0e0; border-radius:10px; font-size:1rem; background: #fafafa;" onchange="updatePolicyDetails()">
+                <option value="">-- Choose a policy --</option>
+              </select>
+            </div>
+            
+            <!-- Selected Policy Details -->
+            <div id="selected-policy-details" style="display: none; background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%); border-radius: 12px; padding: 16px; margin-bottom: 20px;">
+              <div style="font-weight: 600; color: #1565c0; margin-bottom: 8px;">📋 Policy Details</div>
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 0.9rem;">
+                <div><span style="color: #666;">Type:</span> <span id="policy-detail-type" style="font-weight: 600;">-</span></div>
+                <div><span style="color: #666;">Coverage:</span> <span id="policy-detail-coverage" style="font-weight: 600;">-</span></div>
+                <div><span style="color: #666;">Status:</span> <span id="policy-detail-status" style="font-weight: 600; color: #4caf50;">-</span></div>
+                <div><span style="color: #666;">Remaining:</span> <span id="policy-detail-remaining" style="font-weight: 600;">-</span></div>
+              </div>
+            </div>
+            
+            <div style="display: flex; justify-content: flex-end; gap: 12px; margin-top: 24px;">
+              <button type="button" class="btn btn-outline" onclick="closeFileClaimModal()">Cancel</button>
+              <button type="button" class="btn btn-primary" onclick="nextClaimStep(2)" style="background: linear-gradient(135deg, #ef6c00 0%, #ff9800 100%);">Next →</button>
+            </div>
+          </div>
+          
+          <!-- Step 2: Claim Details -->
+          <div id="claim-step-2" class="claim-form-step" style="display: none;">
+            <h4 style="margin: 0 0 16px 0; color: #333;">Step 2: Claim Details</h4>
+            
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 20px;">
+              <div>
+                <label style="display:block; margin-bottom:8px; font-weight:600; color:#333;">Claim Type *</label>
+                <select id="claim-type" required style="width:100%; padding:14px; border:2px solid #e0e0e0; border-radius:10px; font-size:1rem; background: #fafafa;">
+                  <option value="">-- Select type --</option>
+                  <option value="medical">🏥 Medical Expense</option>
+                  <option value="hospitalization">🏨 Hospitalization</option>
+                  <option value="prescription">💊 Prescription/Medication</option>
+                  <option value="dental">🦷 Dental</option>
+                  <option value="vision">👓 Vision/Eye Care</option>
+                  <option value="therapy">🧠 Therapy/Mental Health</option>
+                  <option value="accident">🚑 Accident/Emergency</option>
+                  <option value="disability">♿ Disability</option>
+                  <option value="death_benefit">💐 Death Benefit</option>
+                  <option value="other">📋 Other</option>
+                </select>
+              </div>
+              <div>
+                <label style="display:block; margin-bottom:8px; font-weight:600; color:#333;">Claim Amount ($) *</label>
+                <input type="number" id="claim-amount" required min="1" step="0.01" placeholder="Enter amount" style="width:100%; padding:14px; border:2px solid #e0e0e0; border-radius:10px; font-size:1rem; background: #fafafa; box-sizing: border-box;">
+              </div>
+            </div>
+            
+            <div style="margin-bottom: 20px;">
+              <label style="display:block; margin-bottom:8px; font-weight:600; color:#333;">Date of Incident/Service *</label>
+              <input type="date" id="claim-incident-date" required style="width:100%; padding:14px; border:2px solid #e0e0e0; border-radius:10px; font-size:1rem; background: #fafafa; box-sizing: border-box;">
+            </div>
+            
+            <div style="margin-bottom: 20px;">
+              <label style="display:block; margin-bottom:8px; font-weight:600; color:#333;">Description *</label>
+              <textarea id="claim-description" required rows="3" placeholder="Describe the incident, treatment, or expense..." style="width:100%; padding:14px; border:2px solid #e0e0e0; border-radius:10px; font-size:1rem; background: #fafafa; resize: vertical; box-sizing: border-box;"></textarea>
+            </div>
+            
+            <div style="margin-bottom: 20px;">
+              <label style="display:block; margin-bottom:8px; font-weight:600; color:#333;">Provider/Facility Name</label>
+              <input type="text" id="claim-provider" placeholder="Hospital, clinic, pharmacy name..." style="width:100%; padding:14px; border:2px solid #e0e0e0; border-radius:10px; font-size:1rem; background: #fafafa; box-sizing: border-box;">
+            </div>
+            
+            <div style="display: flex; justify-content: space-between; gap: 12px; margin-top: 24px;">
+              <button type="button" class="btn btn-outline" onclick="prevClaimStep(1)">← Back</button>
+              <button type="button" class="btn btn-primary" onclick="nextClaimStep(3)" style="background: linear-gradient(135deg, #ef6c00 0%, #ff9800 100%);">Next →</button>
+            </div>
+          </div>
+          
+          <!-- Step 3: Documents & Payment -->
+          <div id="claim-step-3" class="claim-form-step" style="display: none;">
+            <h4 style="margin: 0 0 16px 0; color: #333;">Step 3: Documents & Payment Preference</h4>
+            
+            <!-- File Upload Section -->
+            <div style="margin-bottom: 24px;">
+              <label style="display:block; margin-bottom:8px; font-weight:600; color:#333;">📎 Supporting Documents</label>
+              <p style="color: #666; font-size: 0.85rem; margin-bottom: 12px;">Upload receipts, medical records, photos, or any supporting evidence</p>
+              
+              <div id="file-drop-zone" style="border: 2px dashed #ccc; border-radius: 12px; padding: 30px; text-align: center; background: #fafafa; cursor: pointer; transition: all 0.3s;" onclick="document.getElementById('claim-files').click()" ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)" ondrop="handleFileDrop(event)">
+                <div style="font-size: 2.5rem; margin-bottom: 8px;">📤</div>
+                <div style="font-weight: 600; color: #333;">Drop files here or click to browse</div>
+                <div style="color: #666; font-size: 0.85rem; margin-top: 4px;">Photos, PDFs, Videos, Audio (Max 10MB each)</div>
+                <input type="file" id="claim-files" multiple accept="image/*,application/pdf,video/*,audio/*,.doc,.docx" style="display: none;" onchange="handleFileSelect(event)">
+              </div>
+              
+              <!-- File Preview List -->
+              <div id="claim-files-list" style="margin-top: 12px; display: none;">
+                <div style="font-weight: 600; color: #333; margin-bottom: 8px;">Selected Files:</div>
+                <div id="files-preview" style="display: flex; flex-direction: column; gap: 8px;"></div>
+              </div>
+            </div>
+            
+            <!-- Payment Preference -->
+            <div style="margin-bottom: 24px;">
+              <label style="display:block; margin-bottom:12px; font-weight:600; color:#333;">💰 Payment Destination *</label>
+              <p style="color: #666; font-size: 0.85rem; margin-bottom: 12px;">Where should we deposit the approved claim amount?</p>
+              
+              <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px;">
+                <label style="display: flex; align-items: center; padding: 16px; border: 2px solid #e0e0e0; border-radius: 12px; cursor: pointer; transition: all 0.2s;" onclick="selectPaymentOption(this, 'health_wallet')">
+                  <input type="radio" name="payment-destination" value="health_wallet" checked style="margin-right: 12px;">
+                  <div>
+                    <div style="font-weight: 600;">💊 Health Wallet</div>
+                    <div style="font-size: 0.8rem; color: #666;">For medical expenses</div>
+                  </div>
+                </label>
+                
+                <label style="display: flex; align-items: center; padding: 16px; border: 2px solid #e0e0e0; border-radius: 12px; cursor: pointer; transition: all 0.2s;" onclick="selectPaymentOption(this, 'investment')">
+                  <input type="radio" name="payment-destination" value="investment" style="margin-right: 12px;">
+                  <div>
+                    <div style="font-weight: 600;">📈 Investment Account</div>
+                    <div style="font-size: 0.8rem; color: #666;">Grow your savings</div>
+                  </div>
+                </label>
+                
+                <label style="display: flex; align-items: center; padding: 16px; border: 2px solid #e0e0e0; border-radius: 12px; cursor: pointer; transition: all 0.2s;" onclick="selectPaymentOption(this, 'bank_transfer')">
+                  <input type="radio" name="payment-destination" value="bank_transfer" style="margin-right: 12px;">
+                  <div>
+                    <div style="font-weight: 600;">🏦 Bank Account</div>
+                    <div style="font-size: 0.8rem; color: #666;">Direct deposit</div>
+                  </div>
+                </label>
+                
+                <label style="display: flex; align-items: center; padding: 16px; border: 2px solid #e0e0e0; border-radius: 12px; cursor: pointer; transition: all 0.2s;" onclick="selectPaymentOption(this, 'credit_card')">
+                  <input type="radio" name="payment-destination" value="credit_card" style="margin-right: 12px;">
+                  <div>
+                    <div style="font-weight: 600;">💳 Credit Card Refund</div>
+                    <div style="font-size: 0.8rem; color: #666;">Refund to card</div>
+                  </div>
+                </label>
+              </div>
+            </div>
+            
+            <!-- Bank Details (shown when bank_transfer selected) -->
+            <div id="bank-details-section" style="display: none; background: #f5f5f5; border-radius: 12px; padding: 16px; margin-bottom: 24px;">
+              <div style="font-weight: 600; color: #333; margin-bottom: 12px;">🏦 Bank Account Details</div>
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                <input type="text" id="bank-name" placeholder="Bank Name" style="padding: 12px; border: 1px solid #ddd; border-radius: 8px;">
+                <input type="text" id="account-number" placeholder="Account Number" style="padding: 12px; border: 1px solid #ddd; border-radius: 8px;">
+                <input type="text" id="routing-number" placeholder="Routing Number" style="padding: 12px; border: 1px solid #ddd; border-radius: 8px;">
+                <input type="text" id="account-holder" placeholder="Account Holder Name" style="padding: 12px; border: 1px solid #ddd; border-radius: 8px;">
+              </div>
+            </div>
+            
+            <!-- Claim Summary -->
+            <div style="background: linear-gradient(135deg, #fff3e0 0%, #ffe0b2 100%); border-radius: 12px; padding: 16px; margin-bottom: 24px;">
+              <div style="font-weight: 600; color: #ef6c00; margin-bottom: 12px;">📋 Claim Summary</div>
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 0.9rem;">
+                <div><span style="color: #666;">Policy:</span> <span id="summary-policy" style="font-weight: 600;">-</span></div>
+                <div><span style="color: #666;">Type:</span> <span id="summary-type" style="font-weight: 600;">-</span></div>
+                <div><span style="color: #666;">Amount:</span> <span id="summary-amount" style="font-weight: 600; color: #ef6c00;">$0.00</span></div>
+                <div><span style="color: #666;">Payment To:</span> <span id="summary-payment" style="font-weight: 600;">Health Wallet</span></div>
+                <div style="grid-column: 1 / -1;"><span style="color: #666;">Files:</span> <span id="summary-files" style="font-weight: 600;">0 attached</span></div>
+              </div>
+            </div>
+            
+            <!-- Terms -->
+            <div style="margin-bottom: 24px;">
+              <label style="display: flex; align-items: flex-start; gap: 12px; cursor: pointer;">
+                <input type="checkbox" id="claim-terms" required style="margin-top: 4px;">
+                <span style="font-size: 0.85rem; color: #666;">I confirm that all information provided is accurate and truthful. I understand that fraudulent claims may result in policy cancellation and legal action.</span>
+              </label>
+            </div>
+            
+            <div style="display: flex; justify-content: space-between; gap: 12px;">
+              <button type="button" class="btn btn-outline" onclick="prevClaimStep(2)">← Back</button>
+              <button type="submit" class="btn btn-primary" style="background: linear-gradient(135deg, #4caf50 0%, #66bb6a 100%); padding: 14px 32px;">
+                ✓ Submit Claim
+              </button>
+            </div>
+          </div>
+        </form>
+      </div>
+    </div>
 
     <!-- COMPREHENSIVE BILLING & SETTINGS SECTION -->
     <section id="billing-settings" class="section-content" style="background: linear-gradient(135deg, #f3e5f5 0%, #e1bee7 100%); border-radius: 16px; padding: 28px; margin-bottom: 32px; border: 1px solid rgba(123, 31, 162, 0.15);">
@@ -1548,6 +1751,367 @@
     function viewClaim(claimId) {
       alert('Claim Details: ' + claimId + '\\n\\nFull claim management coming soon.');
     }
+    
+    // ========== FILE NEW CLAIM FUNCTIONS ==========
+    
+    let claimFiles = [];
+    let currentClaimStep = 1;
+    
+    function showFileClaimModal() {
+      // Reset form
+      document.getElementById('file-claim-form').reset();
+      claimFiles = [];
+      currentClaimStep = 1;
+      
+      // Populate policies dropdown
+      populateClaimPolicies();
+      
+      // Reset steps
+      showClaimStep(1);
+      
+      // Reset file list
+      document.getElementById('claim-files-list').style.display = 'none';
+      document.getElementById('files-preview').innerHTML = '';
+      
+      // Reset bank details
+      document.getElementById('bank-details-section').style.display = 'none';
+      
+      // Set default date to today
+      document.getElementById('claim-incident-date').valueAsDate = new Date();
+      
+      // Show modal
+      document.getElementById('file-claim-modal').style.display = 'flex';
+    }
+    
+    function closeFileClaimModal() {
+      document.getElementById('file-claim-modal').style.display = 'none';
+    }
+    
+    function populateClaimPolicies() {
+      const select = document.getElementById('claim-policy-id');
+      select.innerHTML = '<option value="">-- Choose a policy --</option>';
+      
+      // Filter only active policies
+      const activePolicies = allPolicies.filter(p => 
+        (p.status || '').toLowerCase() === 'active'
+      );
+      
+      if (activePolicies.length === 0) {
+        select.innerHTML = '<option value="">No active policies found</option>';
+        return;
+      }
+      
+      activePolicies.forEach(policy => {
+        const coverage = Number(policy.coverage_amount || policy.coverage || 0);
+        const type = (policy.type || 'Unknown').charAt(0).toUpperCase() + (policy.type || 'unknown').slice(1);
+        select.innerHTML += `<option value="${policy.id}" data-type="${type}" data-coverage="${coverage}" data-status="${policy.status}">${policy.id} - ${type} Insurance ($${coverage.toLocaleString()} coverage)</option>`;
+      });
+    }
+    
+    function updatePolicyDetails() {
+      const select = document.getElementById('claim-policy-id');
+      const selectedOption = select.options[select.selectedIndex];
+      const detailsDiv = document.getElementById('selected-policy-details');
+      
+      if (!select.value) {
+        detailsDiv.style.display = 'none';
+        return;
+      }
+      
+      const policy = allPolicies.find(p => p.id === select.value);
+      if (policy) {
+        document.getElementById('policy-detail-type').textContent = (policy.type || 'Unknown').charAt(0).toUpperCase() + (policy.type || '').slice(1);
+        document.getElementById('policy-detail-coverage').textContent = '$' + Number(policy.coverage_amount || policy.coverage || 0).toLocaleString();
+        document.getElementById('policy-detail-status').textContent = (policy.status || 'Unknown').charAt(0).toUpperCase() + (policy.status || '').slice(1);
+        
+        // Calculate remaining coverage (coverage - already claimed)
+        const totalClaimed = (policy.claims || []).reduce((sum, c) => sum + Number(c.approved_amount || 0), 0);
+        const remaining = Number(policy.coverage_amount || policy.coverage || 0) - totalClaimed;
+        document.getElementById('policy-detail-remaining').textContent = '$' + remaining.toLocaleString();
+        
+        detailsDiv.style.display = 'block';
+      }
+    }
+    
+    function showClaimStep(step) {
+      // Hide all steps
+      document.querySelectorAll('.claim-form-step').forEach(s => s.style.display = 'none');
+      
+      // Show current step
+      document.getElementById(`claim-step-${step}`).style.display = 'block';
+      
+      // Update step indicators
+      document.querySelectorAll('#claim-steps .claim-step').forEach((s, i) => {
+        s.style.background = (i + 1) <= step ? '#ef6c00' : '#ddd';
+      });
+      
+      currentClaimStep = step;
+      
+      // Update summary on step 3
+      if (step === 3) {
+        updateClaimSummary();
+      }
+    }
+    
+    function nextClaimStep(step) {
+      // Validate current step before moving
+      if (currentClaimStep === 1) {
+        if (!document.getElementById('claim-policy-id').value) {
+          showNotification('Please select a policy', 'error');
+          return;
+        }
+      } else if (currentClaimStep === 2) {
+        const type = document.getElementById('claim-type').value;
+        const amount = document.getElementById('claim-amount').value;
+        const date = document.getElementById('claim-incident-date').value;
+        const description = document.getElementById('claim-description').value;
+        
+        if (!type || !amount || !date || !description) {
+          showNotification('Please fill in all required fields', 'error');
+          return;
+        }
+        
+        if (Number(amount) <= 0) {
+          showNotification('Claim amount must be greater than 0', 'error');
+          return;
+        }
+      }
+      
+      showClaimStep(step);
+    }
+    
+    function prevClaimStep(step) {
+      showClaimStep(step);
+    }
+    
+    function updateClaimSummary() {
+      const policySelect = document.getElementById('claim-policy-id');
+      const policyText = policySelect.options[policySelect.selectedIndex]?.text || '-';
+      document.getElementById('summary-policy').textContent = policyText.split(' - ')[0];
+      
+      const typeSelect = document.getElementById('claim-type');
+      document.getElementById('summary-type').textContent = typeSelect.options[typeSelect.selectedIndex]?.text || '-';
+      
+      const amount = Number(document.getElementById('claim-amount').value || 0);
+      document.getElementById('summary-amount').textContent = '$' + amount.toLocaleString(undefined, {minimumFractionDigits: 2});
+      
+      const paymentDest = document.querySelector('input[name="payment-destination"]:checked')?.value || 'health_wallet';
+      const paymentLabels = {
+        'health_wallet': 'Health Wallet',
+        'investment': 'Investment Account',
+        'bank_transfer': 'Bank Account',
+        'credit_card': 'Credit Card Refund'
+      };
+      document.getElementById('summary-payment').textContent = paymentLabels[paymentDest] || paymentDest;
+      
+      document.getElementById('summary-files').textContent = claimFiles.length + ' attached';
+    }
+    
+    function selectPaymentOption(element, value) {
+      // Update visual selection
+      document.querySelectorAll('input[name="payment-destination"]').forEach(input => {
+        input.closest('label').style.borderColor = '#e0e0e0';
+        input.closest('label').style.background = 'white';
+      });
+      element.style.borderColor = '#ef6c00';
+      element.style.background = '#fff3e0';
+      
+      // Show/hide bank details
+      document.getElementById('bank-details-section').style.display = value === 'bank_transfer' ? 'block' : 'none';
+      
+      // Update summary
+      updateClaimSummary();
+    }
+    
+    // File handling functions
+    function handleDragOver(event) {
+      event.preventDefault();
+      event.stopPropagation();
+      event.currentTarget.style.borderColor = '#ef6c00';
+      event.currentTarget.style.background = '#fff3e0';
+    }
+    
+    function handleDragLeave(event) {
+      event.preventDefault();
+      event.stopPropagation();
+      event.currentTarget.style.borderColor = '#ccc';
+      event.currentTarget.style.background = '#fafafa';
+    }
+    
+    function handleFileDrop(event) {
+      event.preventDefault();
+      event.stopPropagation();
+      event.currentTarget.style.borderColor = '#ccc';
+      event.currentTarget.style.background = '#fafafa';
+      
+      const files = event.dataTransfer.files;
+      addClaimFiles(files);
+    }
+    
+    function handleFileSelect(event) {
+      const files = event.target.files;
+      addClaimFiles(files);
+    }
+    
+    function addClaimFiles(files) {
+      const maxSize = 10 * 1024 * 1024; // 10MB
+      
+      for (let file of files) {
+        if (file.size > maxSize) {
+          showNotification(`File "${file.name}" exceeds 10MB limit`, 'error');
+          continue;
+        }
+        
+        // Check if already added
+        if (claimFiles.some(f => f.name === file.name && f.size === file.size)) {
+          continue;
+        }
+        
+        claimFiles.push(file);
+      }
+      
+      updateFilesPreview();
+    }
+    
+    function updateFilesPreview() {
+      const container = document.getElementById('files-preview');
+      const listDiv = document.getElementById('claim-files-list');
+      
+      if (claimFiles.length === 0) {
+        listDiv.style.display = 'none';
+        return;
+      }
+      
+      listDiv.style.display = 'block';
+      
+      container.innerHTML = claimFiles.map((file, index) => {
+        const icon = getFileIcon(file.type);
+        const size = (file.size / 1024).toFixed(1) + ' KB';
+        
+        return `
+          <div style="display: flex; align-items: center; justify-content: space-between; padding: 10px; background: #f5f5f5; border-radius: 8px;">
+            <div style="display: flex; align-items: center; gap: 10px;">
+              <span style="font-size: 1.5rem;">${icon}</span>
+              <div>
+                <div style="font-weight: 500; font-size: 0.9rem;">${file.name}</div>
+                <div style="font-size: 0.75rem; color: #666;">${size}</div>
+              </div>
+            </div>
+            <button type="button" onclick="removeClaimFile(${index})" style="background: #ff5252; color: white; border: none; width: 28px; height: 28px; border-radius: 50%; cursor: pointer; font-size: 1rem;">×</button>
+          </div>
+        `;
+      }).join('');
+      
+      updateClaimSummary();
+    }
+    
+    function getFileIcon(mimeType) {
+      if (mimeType.startsWith('image/')) return '🖼️';
+      if (mimeType.startsWith('video/')) return '🎬';
+      if (mimeType.startsWith('audio/')) return '🔊';
+      if (mimeType.includes('pdf')) return '📄';
+      if (mimeType.includes('word') || mimeType.includes('document')) return '📝';
+      return '📎';
+    }
+    
+    function removeClaimFile(index) {
+      claimFiles.splice(index, 1);
+      updateFilesPreview();
+    }
+    
+    async function submitClaim(event) {
+      event.preventDefault();
+      
+      // Validate terms
+      if (!document.getElementById('claim-terms').checked) {
+        showNotification('Please accept the terms and conditions', 'error');
+        return;
+      }
+      
+      const policyId = document.getElementById('claim-policy-id').value;
+      const claimType = document.getElementById('claim-type').value;
+      const amount = Number(document.getElementById('claim-amount').value);
+      const incidentDate = document.getElementById('claim-incident-date').value;
+      const description = document.getElementById('claim-description').value;
+      const provider = document.getElementById('claim-provider').value;
+      const paymentDestination = document.querySelector('input[name="payment-destination"]:checked')?.value || 'health_wallet';
+      
+      // Get bank details if needed
+      let bankDetails = null;
+      if (paymentDestination === 'bank_transfer') {
+        bankDetails = {
+          bank_name: document.getElementById('bank-name').value,
+          account_number: document.getElementById('account-number').value,
+          routing_number: document.getElementById('routing-number').value,
+          account_holder: document.getElementById('account-holder').value
+        };
+      }
+      
+      // Prepare file data (base64 encode for now)
+      const filesData = [];
+      for (let file of claimFiles) {
+        const base64 = await fileToBase64(file);
+        filesData.push({
+          name: file.name,
+          type: file.type,
+          size: file.size,
+          data: base64
+        });
+      }
+      
+      const claimData = {
+        policy_id: policyId,
+        type: claimType,
+        claimed_amount: amount,
+        incident_date: incidentDate,
+        description: description,
+        provider: provider,
+        payment_destination: paymentDestination,
+        bank_details: bankDetails,
+        files: filesData.length > 0 ? filesData : undefined,
+        files_count: filesData.length
+      };
+      
+      try {
+        const response = await fetch('/api/claims/create', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${authToken}`
+          },
+          body: JSON.stringify(claimData)
+        });
+        
+        const result = await response.json();
+        
+        if (response.ok && result.id) {
+          closeFileClaimModal();
+          showNotification(`✅ Claim ${result.id} submitted successfully!\nYou'll receive updates via email.`, 'success');
+          
+          // Refresh claims list
+          loadClaims();
+          
+          // Record on NFT ledger
+          await recordCustomerAction('claim_submitted', amount, `Claim filed: ${claimType} - $${amount.toFixed(2)}`);
+        } else {
+          showNotification('❌ Failed to submit claim: ' + (result.error || 'Unknown error'), 'error');
+        }
+      } catch (error) {
+        console.error('Claim submission error:', error);
+        showNotification('❌ Failed to submit claim: ' + error.message, 'error');
+      }
+    }
+    
+    function fileToBase64(file) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.readAsDataURL(file);
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = error => reject(error);
+      });
+    }
+    
+    // ========== END FILE NEW CLAIM FUNCTIONS ==========
     
     // Load billing information
     async function loadBillingInfo() {
