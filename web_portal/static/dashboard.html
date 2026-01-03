@@ -1757,30 +1757,46 @@
     let claimFiles = [];
     let currentClaimStep = 1;
     
-    function showFileClaimModal() {
-      // Reset form
-      document.getElementById('file-claim-form').reset();
-      claimFiles = [];
-      currentClaimStep = 1;
-      
-      // Populate policies dropdown
-      populateClaimPolicies();
-      
-      // Reset steps
-      showClaimStep(1);
-      
-      // Reset file list
-      document.getElementById('claim-files-list').style.display = 'none';
-      document.getElementById('files-preview').innerHTML = '';
-      
-      // Reset bank details
-      document.getElementById('bank-details-section').style.display = 'none';
-      
-      // Set default date to today
-      document.getElementById('claim-incident-date').valueAsDate = new Date();
-      
-      // Show modal
-      document.getElementById('file-claim-modal').style.display = 'flex';
+    async function showFileClaimModal() {
+      try {
+        // Reset form
+        document.getElementById('file-claim-form').reset();
+        claimFiles = [];
+        currentClaimStep = 1;
+        
+        // Ensure policies are loaded (refresh if needed)
+        if (!allPolicies || allPolicies.length === 0) {
+          console.log('Loading policies for claim modal...');
+          await loadPolicies();
+        }
+        
+        // Populate policies dropdown
+        populateClaimPolicies();
+        
+        // Reset steps
+        showClaimStep(1);
+        
+        // Reset file list
+        document.getElementById('claim-files-list').style.display = 'none';
+        document.getElementById('files-preview').innerHTML = '';
+        
+        // Reset bank details
+        document.getElementById('bank-details-section').style.display = 'none';
+        
+        // Reset selected policy details
+        document.getElementById('selected-policy-details').style.display = 'none';
+        
+        // Set default date to today
+        document.getElementById('claim-incident-date').valueAsDate = new Date();
+        
+        // Show modal
+        document.getElementById('file-claim-modal').style.display = 'flex';
+        
+        console.log('Claim modal opened. Active policies:', allPolicies.filter(p => (p.status || '').toLowerCase() === 'active').length);
+      } catch (error) {
+        console.error('Error opening claim modal:', error);
+        showNotification('Error opening claim form. Please try again.', 'error');
+      }
     }
     
     function closeFileClaimModal() {
@@ -1789,22 +1805,39 @@
     
     function populateClaimPolicies() {
       const select = document.getElementById('claim-policy-id');
+      if (!select) {
+        console.error('Policy select element not found');
+        return;
+      }
+      
       select.innerHTML = '<option value="">-- Choose a policy --</option>';
       
+      // Debug log
+      console.log('All policies:', allPolicies);
+      
       // Filter only active policies
-      const activePolicies = allPolicies.filter(p => 
-        (p.status || '').toLowerCase() === 'active'
+      const activePolicies = (allPolicies || []).filter(p => 
+        p && (p.status || '').toLowerCase() === 'active'
       );
       
+      console.log('Active policies for claims:', activePolicies);
+      
       if (activePolicies.length === 0) {
-        select.innerHTML = '<option value="">No active policies found</option>';
+        select.innerHTML = '<option value="" disabled>⚠️ No active policies found - Please apply for a policy first</option>';
+        showNotification('You need an active policy to file a claim. Apply for a policy first.', 'warning');
         return;
       }
       
       activePolicies.forEach(policy => {
         const coverage = Number(policy.coverage_amount || policy.coverage || 0);
         const type = (policy.type || 'Unknown').charAt(0).toUpperCase() + (policy.type || 'unknown').slice(1);
-        select.innerHTML += `<option value="${policy.id}" data-type="${type}" data-coverage="${coverage}" data-status="${policy.status}">${policy.id} - ${type} Insurance ($${coverage.toLocaleString()} coverage)</option>`;
+        const option = document.createElement('option');
+        option.value = policy.id;
+        option.dataset.type = type;
+        option.dataset.coverage = coverage;
+        option.dataset.status = policy.status;
+        option.textContent = `${policy.id} - ${type} Insurance ($${coverage.toLocaleString()} coverage)`;
+        select.appendChild(option);
       });
     }
     
@@ -2022,6 +2055,8 @@
     async function submitClaim(event) {
       event.preventDefault();
       
+      console.log('Submitting claim...');
+      
       // Validate terms
       if (!document.getElementById('claim-terms').checked) {
         showNotification('Please accept the terms and conditions', 'error');
@@ -2033,30 +2068,75 @@
       const amount = Number(document.getElementById('claim-amount').value);
       const incidentDate = document.getElementById('claim-incident-date').value;
       const description = document.getElementById('claim-description').value;
-      const provider = document.getElementById('claim-provider').value;
+      const provider = document.getElementById('claim-provider').value || '';
       const paymentDestination = document.querySelector('input[name="payment-destination"]:checked')?.value || 'health_wallet';
+      
+      // Validate required fields
+      if (!policyId) {
+        showNotification('Please select a policy', 'error');
+        return;
+      }
+      if (!claimType) {
+        showNotification('Please select a claim type', 'error');
+        return;
+      }
+      if (!amount || amount <= 0) {
+        showNotification('Please enter a valid claim amount', 'error');
+        return;
+      }
+      if (!incidentDate) {
+        showNotification('Please enter the incident date', 'error');
+        return;
+      }
+      if (!description) {
+        showNotification('Please enter a description', 'error');
+        return;
+      }
       
       // Get bank details if needed
       let bankDetails = null;
       if (paymentDestination === 'bank_transfer') {
         bankDetails = {
-          bank_name: document.getElementById('bank-name').value,
-          account_number: document.getElementById('account-number').value,
-          routing_number: document.getElementById('routing-number').value,
-          account_holder: document.getElementById('account-holder').value
+          bank_name: document.getElementById('bank-name')?.value || '',
+          account_number: document.getElementById('account-number')?.value || '',
+          routing_number: document.getElementById('routing-number')?.value || '',
+          account_holder: document.getElementById('account-holder')?.value || ''
         };
       }
       
-      // Prepare file data (base64 encode for now)
+      // Prepare file data (base64 encode - skip data for large files to avoid payload limits)
       const filesData = [];
       for (let file of claimFiles) {
-        const base64 = await fileToBase64(file);
-        filesData.push({
-          name: file.name,
-          type: file.type,
-          size: file.size,
-          data: base64
-        });
+        try {
+          // Only include base64 for files under 2MB to avoid payload issues
+          if (file.size < 2 * 1024 * 1024) {
+            const base64 = await fileToBase64(file);
+            filesData.push({
+              name: file.name,
+              type: file.type,
+              size: file.size,
+              data: base64
+            });
+          } else {
+            // For larger files, just include metadata
+            filesData.push({
+              name: file.name,
+              type: file.type,
+              size: file.size,
+              data: null,
+              note: 'File too large for inline upload'
+            });
+          }
+        } catch (e) {
+          console.warn('Error encoding file:', file.name, e);
+          filesData.push({
+            name: file.name,
+            type: file.type,
+            size: file.size,
+            data: null,
+            error: 'Failed to encode'
+          });
+        }
       }
       
       const claimData = {
@@ -2069,8 +2149,16 @@
         payment_destination: paymentDestination,
         bank_details: bankDetails,
         files: filesData.length > 0 ? filesData : undefined,
-        files_count: filesData.length
+        files_count: claimFiles.length
       };
+      
+      console.log('Claim data:', claimData);
+      
+      // Show loading state
+      const submitBtn = event.target.querySelector('button[type="submit"]');
+      const originalText = submitBtn.innerHTML;
+      submitBtn.innerHTML = '⏳ Submitting...';
+      submitBtn.disabled = true;
       
       try {
         const response = await fetch('/api/claims/create', {
@@ -2083,22 +2171,31 @@
         });
         
         const result = await response.json();
+        console.log('Claim response:', result);
         
         if (response.ok && result.id) {
           closeFileClaimModal();
-          showNotification(`✅ Claim ${result.id} submitted successfully!\nYou'll receive updates via email.`, 'success');
+          showNotification(`✅ Claim ${result.id} submitted successfully!\n📋 NFT Token: ${result.nft_token_id || 'Pending'}\nYou'll receive updates via email.`, 'success');
           
           // Refresh claims list
-          loadClaims();
+          await loadClaims();
           
-          // Record on NFT ledger
-          await recordCustomerAction('claim_submitted', amount, `Claim filed: ${claimType} - $${amount.toFixed(2)}`);
+          // Record on NFT ledger (if not already done by server)
+          try {
+            await recordCustomerAction('claim_submitted', amount, `Claim filed: ${claimType} - $${amount.toFixed(2)}`);
+          } catch (e) {
+            console.log('NFT record note:', e);
+          }
         } else {
           showNotification('❌ Failed to submit claim: ' + (result.error || 'Unknown error'), 'error');
         }
       } catch (error) {
         console.error('Claim submission error:', error);
         showNotification('❌ Failed to submit claim: ' + error.message, 'error');
+      } finally {
+        // Restore button
+        submitBtn.innerHTML = originalText;
+        submitBtn.disabled = false;
       }
     }
     
