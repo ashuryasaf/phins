@@ -11453,6 +11453,79 @@ For claims or questions, please contact:
                 self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
             return
         
+        # Delete Claim Endpoint - Admin only
+        if path == '/api/claims/delete':
+            # Require admin authentication
+            auth_header = self.headers.get('Authorization', '')
+            token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+            session = validate_session(token) if token else None
+            
+            if not session:
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Unauthorized'}).encode('utf-8'))
+                return
+            
+            user = get_session_user(session) or {}
+            role = (user.get('role') or '').lower()
+            
+            # Only admins can delete claims
+            if role not in ['admin', 'underwriter']:
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Admin access required'}).encode('utf-8'))
+                return
+            
+            try:
+                data = json.loads(body)
+                claim_ids = data.get('claim_ids', [])
+                
+                if not claim_ids:
+                    # Single claim deletion
+                    claim_id = data.get('id') or data.get('claim_id')
+                    if claim_id:
+                        claim_ids = [claim_id]
+                
+                deleted = []
+                not_found = []
+                
+                for claim_id in claim_ids:
+                    if claim_id in CLAIMS:
+                        # Record deletion in ledger
+                        claim = CLAIMS[claim_id]
+                        record_transaction(
+                            customer_id=claim.get('customer_id', 'unknown'),
+                            tx_type='claim_deleted',
+                            amount=float(claim.get('claimed_amount', 0)),
+                            description=f"Claim {claim_id} deleted by admin",
+                            metadata={
+                                'claim_id': claim_id,
+                                'original_status': claim.get('status'),
+                                'deleted_by': user.get('username', 'admin')
+                            }
+                        )
+                        del CLAIMS[claim_id]
+                        deleted.append(claim_id)
+                    else:
+                        not_found.append(claim_id)
+                
+                if audit:
+                    actor = user.get('username', 'admin')
+                    try:
+                        audit.log(actor, 'delete', 'claims', ','.join(deleted), {'count': len(deleted)})
+                    except Exception:
+                        pass
+                
+                self._set_json_headers()
+                self.wfile.write(json.dumps({
+                    'success': True,
+                    'deleted': deleted,
+                    'not_found': not_found,
+                    'message': f'Deleted {len(deleted)} claim(s)'
+                }).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+        
         # Pay Claim Endpoint - Transfers from PHINS Balance Sheet to Customer Health Wallet
         if path == '/api/claims/pay':
             try:
