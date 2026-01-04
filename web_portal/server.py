@@ -17247,11 +17247,11 @@ def run_server(port: int = PORT) -> None:
     # Initialize Transaction Ledger with sample data for BI dashboard
     print("📒 Initializing transaction ledger for BI pipeline...")
     try:
-        if not TRANSACTION_LEDGER:
-            now = datetime.now()
-            
-            # Sample ledger entries covering all tab categories
-            sample_ledger = [
+        now = datetime.now()
+        
+        # Sample ledger entries covering all tab categories
+        # Always add to ensure demo data is available
+        sample_ledger = [
                 # Policy Approvals
                 {
                     'id': 'TX-POL-ASAF-001',
@@ -17447,37 +17447,36 @@ def run_server(port: int = PORT) -> None:
                     'metadata': {'portfolio': 'balanced_growth', 'source': 'premium_savings', 'allocation_pct': 65},
                     'timestamp': (now - timedelta(days=15)).isoformat(),
                     'status': 'completed',
-                    'nft_token_id': f'NFT-INV-{(now - timedelta(days=15)).strftime("%Y%m%d")}-002'
+                'nft_token_id': f'NFT-INV-{(now - timedelta(days=15)).strftime("%Y%m%d")}-002'
+            }
+        ]
+        
+        # Populate TRANSACTION_LEDGER
+        for entry in sample_ledger:
+            TRANSACTION_LEDGER[entry['id']] = entry
+        
+        # Also populate NFT_LEDGER for blockchain verification
+        for entry in sample_ledger:
+            if entry.get('nft_token_id'):
+                NFT_LEDGER[entry['nft_token_id']] = {
+                    'token_id': entry['nft_token_id'],
+                    'customer_id': entry['customer_id'],
+                    'transaction_type': entry['type'],
+                    'transaction_id': entry['id'],
+                    'amount': entry['amount'],
+                    'description': entry['description'],
+                    'timestamp': entry['timestamp'],
+                    'metadata': entry.get('metadata', {}),
+                    'verified': True
                 }
-            ]
-            
-            # Populate TRANSACTION_LEDGER
-            for entry in sample_ledger:
-                TRANSACTION_LEDGER[entry['id']] = entry
-            
-            # Also populate NFT_LEDGER for blockchain verification
-            for entry in sample_ledger:
-                if entry.get('nft_token_id'):
-                    NFT_LEDGER[entry['nft_token_id']] = {
-                        'token_id': entry['nft_token_id'],
-                        'customer_id': entry['customer_id'],
-                        'transaction_type': entry['type'],
-                        'transaction_id': entry['id'],
-                        'amount': entry['amount'],
-                        'description': entry['description'],
-                        'timestamp': entry['timestamp'],
-                        'metadata': entry.get('metadata', {}),
-                        'verified': True
-                    }
-            
-            print(f"✓ Initialized {len(sample_ledger)} ledger entries with NFT verification")
-            print(f"   - Policy Approvals: 3")
-            print(f"   - Billing Records: 3")
-            print(f"   - Claim Transactions: 3")
-            print(f"   - Pipeline Events: 4")
-            print(f"   - Savings Deposits: 4 (Wallet $15,000 + Investment $32,500 = $47,500)")
-        else:
-            print(f"✓ Transaction ledger already populated ({len(TRANSACTION_LEDGER)} entries)")
+        
+        print(f"✓ Initialized {len(sample_ledger)} ledger entries with NFT verification")
+        print(f"   - Policy Approvals: 3")
+        print(f"   - Billing Records: 3")
+        print(f"   - Claim Transactions: 3")
+        print(f"   - Pipeline Events: 4")
+        print(f"   - Savings Deposits: 4 (Wallet $15,000 + Investment $32,500 = $47,500)")
+        print(f"   - Total ledger entries: {len(TRANSACTION_LEDGER)}")
     except Exception as e:
         print(f"⚠️  Transaction ledger initialization skipped: {e}")
     
