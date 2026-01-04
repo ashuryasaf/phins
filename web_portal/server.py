@@ -17071,15 +17071,26 @@ def run_server(port: int = PORT) -> None:
     try:
         now = datetime.now()
         
-        # Initialize/Update Health Wallet for Asaf (always ensure correct balance)
+        # Initialize/Update Health Wallet for Asaf (always reset to clean state)
+        # Filter out test claim payments and keep only valid deposit transactions
         existing_wallet = HEALTH_WALLETS.get('CUST-ASAF-001', {})
         existing_txns = existing_wallet.get('transactions', [])
         
+        # Only keep initial deposits, not claim payments (those inflate balance incorrectly)
+        clean_txns = [t for t in existing_txns if t.get('type') in ['initial_deposit', 'monthly_contribution', 'premium_deposit']]
+        
+        # Calculate correct balance from clean transactions
+        if clean_txns:
+            correct_balance = sum(float(t.get('amount', 0)) for t in clean_txns)
+        else:
+            correct_balance = 15000.00  # Default: $10,000 initial + $5,000 monthly
+        
+        # Always reset to clean state with correct balance
         HEALTH_WALLETS['CUST-ASAF-001'] = {
             'customer_id': 'CUST-ASAF-001',
-            'balance': 15000.00,  # Correct balance for demo
+            'balance': correct_balance,
             'monthly_deposit': 382.50,  # 30% of savings ($1,275 * 0.30)
-            'transactions': existing_txns if existing_txns else [
+            'transactions': clean_txns if clean_txns else [
                 {
                     'id': f'INIT-WALLET-{now.strftime("%Y%m%d")}-001',
                     'type': 'initial_deposit',
@@ -17105,7 +17116,7 @@ def run_server(port: int = PORT) -> None:
             ],
             'created_at': existing_wallet.get('created_at', (now - timedelta(days=30)).isoformat())
         }
-        print(f"   ✓ Health Wallet CUST-ASAF-001: $15,000.00")
+        print(f"   ✓ Health Wallet CUST-ASAF-001: ${correct_balance:,.2f}")
         
         # Initialize/Update Investment Account for Asaf (always ensure correct balance)
         existing_inv = INVESTMENT_ACCOUNTS.get('CUST-ASAF-001', {})

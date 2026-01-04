@@ -178,7 +178,8 @@ class DataIntegrityService:
         ]
         
         # Claim payments to tracked accounts (wallet, investment) count as deposits
-        claim_deposit_types = ['claim_payment_wallet', 'claim_payment_investment']
+        # These represent insurance payouts that legitimately enter customer's balance
+        claim_deposit_types = ['claim_payment_wallet', 'claim_payment_investment', 'claim_payment_received']
         
         for tx in self.transaction_ledger.values():
             if tx.get('customer_id') != customer_id:
