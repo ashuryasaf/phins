@@ -212,12 +212,30 @@ class Claim(Base):
     created_date = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_date = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
+    # Extended claim fields for full claim filing flow
+    incident_date = Column(String(50))  # Date of incident
+    provider = Column(String(200))  # Healthcare/Service provider
+    payment_destination = Column(String(50), default='health_wallet')  # Where to send payment
+    bank_details = Column(Text)  # JSON string for bank details if bank_transfer
+    files_metadata = Column(Text)  # JSON string for file attachments metadata
+    files_count = Column(Integer, default=0)  # Number of attached files
+    nft_token_id = Column(String(100))  # NFT ledger token ID
+    ledger_tx_id = Column(String(100))  # Transaction ledger ID
+    approved_by = Column(String(100))  # Who approved the claim
+    approval_notes = Column(Text)  # Notes from approver
+    rejected_by = Column(String(100))  # Who rejected the claim
+    processed_by = Column(String(100))  # Who processed the payment
+    payment_method = Column(String(50))  # How payment was made
+    payment_reference = Column(String(100))  # Payment reference number
+    paid_amount = Column(Float)  # Actual amount paid
+    
     # Relationships
     policy = relationship("Policy", back_populates="claims")
     customer = relationship("Customer", back_populates="claims")
     
     def to_dict(self):
         """Convert model to dictionary"""
+        import json as _json
         return {
             'id': self.id,
             'policy_id': self.policy_id,
@@ -232,7 +250,22 @@ class Claim(Base):
             'payment_date': self.payment_date.isoformat() if self.payment_date else None,
             'rejection_reason': self.rejection_reason,
             'created_date': self.created_date.isoformat() if self.created_date else None,
-            'updated_date': self.updated_date.isoformat() if self.updated_date else None
+            'updated_date': self.updated_date.isoformat() if self.updated_date else None,
+            'incident_date': self.incident_date,
+            'provider': self.provider,
+            'payment_destination': self.payment_destination,
+            'bank_details': _json.loads(self.bank_details) if self.bank_details else None,
+            'files': _json.loads(self.files_metadata) if self.files_metadata else [],
+            'files_count': self.files_count or 0,
+            'nft_token_id': self.nft_token_id,
+            'ledger_tx_id': self.ledger_tx_id,
+            'approved_by': self.approved_by,
+            'approval_notes': self.approval_notes,
+            'rejected_by': self.rejected_by,
+            'processed_by': self.processed_by,
+            'payment_method': self.payment_method,
+            'payment_reference': self.payment_reference,
+            'paid_amount': self.paid_amount
         }
 
 

@@ -77,6 +77,7 @@ FIELD_MAPPINGS = {
     },
     'claims': {
         'claim_id': 'id',          # claim_id → id
+        'files': 'files_metadata', # files → files_metadata (stored as JSON string)
     },
     'policies': {
         'policy_id': 'id',         # policy_id → id (if used)
@@ -87,10 +88,16 @@ FIELD_MAPPINGS = {
     }
 }
 
+# Fields that need JSON serialization when storing
+JSON_FIELDS = {
+    'claims': ['files_metadata', 'bank_details'],
+}
+
 
 def map_fields_for_repository(repository_name: str, data: Dict[str, Any]) -> Dict[str, Any]:
     """
     Map field names from server dictionary format to database model format.
+    Also handles JSON serialization for complex fields.
     
     Args:
         repository_name: Name of the repository (billing, claims, etc.)
@@ -99,12 +106,12 @@ def map_fields_for_repository(repository_name: str, data: Dict[str, Any]) -> Dic
     Returns:
         Dictionary with database model field names
     """
-    mappings = FIELD_MAPPINGS.get(repository_name, {})
-    if not mappings:
-        return data
+    import json
     
     result = data.copy()
     
+    # Apply field name mappings
+    mappings = FIELD_MAPPINGS.get(repository_name, {})
     for old_name, new_name in mappings.items():
         if old_name in result:
             # Copy value to new field name
@@ -112,6 +119,13 @@ def map_fields_for_repository(repository_name: str, data: Dict[str, Any]) -> Dic
                 result[new_name] = result[old_name]
             # Remove old field name (to avoid 'unexpected keyword argument' errors)
             del result[old_name]
+    
+    # Serialize JSON fields (convert dicts/lists to JSON strings)
+    json_fields = JSON_FIELDS.get(repository_name, [])
+    for field in json_fields:
+        if field in result and result[field] is not None:
+            if isinstance(result[field], (dict, list)):
+                result[field] = json.dumps(result[field])
     
     return result
 
