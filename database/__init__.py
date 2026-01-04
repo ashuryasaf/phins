@@ -98,6 +98,63 @@ def init_database(drop_existing: bool = False):
     logger.info("Creating database tables...")
     Base.metadata.create_all(engine)
     logger.info("Database tables created successfully")
+    
+    # Upgrade schema to add any new columns
+    upgrade_schema(engine)
+
+
+def upgrade_schema(engine=None):
+    """
+    Add missing columns to existing tables.
+    This handles schema migrations for new columns added to models.
+    """
+    if engine is None:
+        engine = get_engine()
+    
+    from sqlalchemy import inspect, text
+    
+    inspector = inspect(engine)
+    
+    # Define new columns to add (table_name, column_name, column_type, default)
+    new_columns = [
+        # Claim extended fields
+        ('claims', 'incident_date', 'VARCHAR(50)', None),
+        ('claims', 'provider', 'VARCHAR(200)', None),
+        ('claims', 'payment_destination', 'VARCHAR(50)', "'health_wallet'"),
+        ('claims', 'bank_details', 'TEXT', None),
+        ('claims', 'files_metadata', 'TEXT', None),
+        ('claims', 'files_count', 'INTEGER', '0'),
+        ('claims', 'nft_token_id', 'VARCHAR(100)', None),
+        ('claims', 'ledger_tx_id', 'VARCHAR(100)', None),
+        ('claims', 'approved_by', 'VARCHAR(100)', None),
+        ('claims', 'approval_notes', 'TEXT', None),
+        ('claims', 'rejected_by', 'VARCHAR(100)', None),
+        ('claims', 'processed_by', 'VARCHAR(100)', None),
+        ('claims', 'payment_method', 'VARCHAR(50)', None),
+        ('claims', 'payment_reference', 'VARCHAR(100)', None),
+        ('claims', 'paid_amount', 'FLOAT', None),
+    ]
+    
+    with engine.connect() as conn:
+        for table_name, column_name, column_type, default in new_columns:
+            # Check if table exists
+            if table_name not in inspector.get_table_names():
+                continue
+                
+            # Check if column already exists
+            columns = [col['name'] for col in inspector.get_columns(table_name)]
+            if column_name in columns:
+                continue
+            
+            # Add the new column
+            try:
+                default_clause = f" DEFAULT {default}" if default else ""
+                sql = f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_type}{default_clause}"
+                conn.execute(text(sql))
+                conn.commit()
+                logger.info(f"Added column {column_name} to {table_name}")
+            except Exception as e:
+                logger.warning(f"Could not add column {column_name} to {table_name}: {e}")
 
 
 def close_database():
@@ -161,6 +218,7 @@ __all__ = [
     'get_session_factory',
     'get_db_session',
     'init_database',
+    'upgrade_schema',
     'close_database',
     'check_database_connection',
     'get_database_info',
