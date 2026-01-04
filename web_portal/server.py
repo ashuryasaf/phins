@@ -16994,69 +16994,73 @@ def run_server(port: int = PORT) -> None:
     try:
         now = datetime.now()
         
-        # Initialize Health Wallet for Asaf (with sample balance for demo)
-        if 'CUST-ASAF-001' not in HEALTH_WALLETS or HEALTH_WALLETS['CUST-ASAF-001'].get('balance', 0) == 0:
-            HEALTH_WALLETS['CUST-ASAF-001'] = {
-                'customer_id': 'CUST-ASAF-001',
-                'balance': 15000.00,  # Initial balance for demo
-                'monthly_deposit': 255.00,  # 30% of savings to wallet
-                'transactions': [
-                    {
-                        'id': f'INIT-WALLET-{now.strftime("%Y%m%d")}-001',
-                        'type': 'initial_deposit',
-                        'amount': 10000.00,
-                        'source': 'policy_savings',
-                        'description': 'Initial policy savings allocation to health wallet',
-                        'previous_balance': 0.0,
-                        'balance_after': 10000.0,
-                        'timestamp': (now - timedelta(days=30)).isoformat(),
-                        'nft_token_id': f'NFT-WAL-{(now - timedelta(days=30)).strftime("%Y%m%d")}-001'
-                    },
-                    {
-                        'id': f'INIT-WALLET-{now.strftime("%Y%m%d")}-002',
-                        'type': 'monthly_contribution',
-                        'amount': 5000.00,
-                        'source': 'premium_savings',
-                        'description': 'Monthly premium savings deposit',
-                        'previous_balance': 10000.0,
-                        'balance_after': 15000.0,
-                        'timestamp': (now - timedelta(days=15)).isoformat(),
-                        'nft_token_id': f'NFT-WAL-{(now - timedelta(days=15)).strftime("%Y%m%d")}-002'
-                    }
-                ],
-                'created_at': (now - timedelta(days=30)).isoformat()
-            }
-            print(f"   ✓ Health Wallet CUST-ASAF-001: $15,000.00")
+        # Initialize/Update Health Wallet for Asaf (always ensure correct balance)
+        existing_wallet = HEALTH_WALLETS.get('CUST-ASAF-001', {})
+        existing_txns = existing_wallet.get('transactions', [])
         
-        # Initialize Investment Account for Asaf
-        if 'CUST-ASAF-001' not in INVESTMENT_ACCOUNTS or INVESTMENT_ACCOUNTS['CUST-ASAF-001'].get('balance', 0) == 0:
-            INVESTMENT_ACCOUNTS['CUST-ASAF-001'] = {
-                'customer_id': 'CUST-ASAF-001',
-                'balance': 32500.00,  # 65% of savings to investment
-                'index_balance': 19500.00,  # 60% of investment
-                'bonds_balance': 9750.00,   # 30% of investment
-                'crypto_balance': 3250.00,  # 10% of investment
-                'deposits': [
-                    {
-                        'id': f'INIT-INV-{now.strftime("%Y%m%d")}-001',
-                        'amount': 20000.00,
-                        'payment_method': 'policy_savings',
-                        'source': 'initial_allocation',
-                        'timestamp': (now - timedelta(days=30)).isoformat()
-                    },
-                    {
-                        'id': f'INIT-INV-{now.strftime("%Y%m%d")}-002',
-                        'amount': 12500.00,
-                        'payment_method': 'monthly_premium',
-                        'source': 'premium_savings',
-                        'timestamp': (now - timedelta(days=15)).isoformat()
-                    }
-                ],
-                'created_at': (now - timedelta(days=30)).isoformat()
-            }
-            print(f"   ✓ Investment Account CUST-ASAF-001: $32,500.00")
+        HEALTH_WALLETS['CUST-ASAF-001'] = {
+            'customer_id': 'CUST-ASAF-001',
+            'balance': 15000.00,  # Correct balance for demo
+            'monthly_deposit': 382.50,  # 30% of savings ($1,275 * 0.30)
+            'transactions': existing_txns if existing_txns else [
+                {
+                    'id': f'INIT-WALLET-{now.strftime("%Y%m%d")}-001',
+                    'type': 'initial_deposit',
+                    'amount': 10000.00,
+                    'source': 'policy_savings',
+                    'description': 'Initial policy savings allocation to health wallet',
+                    'previous_balance': 0.0,
+                    'balance_after': 10000.0,
+                    'timestamp': (now - timedelta(days=30)).isoformat(),
+                    'nft_token_id': f'NFT-WAL-{(now - timedelta(days=30)).strftime("%Y%m%d")}-001'
+                },
+                {
+                    'id': f'INIT-WALLET-{now.strftime("%Y%m%d")}-002',
+                    'type': 'monthly_contribution',
+                    'amount': 5000.00,
+                    'source': 'premium_savings',
+                    'description': 'Monthly premium savings deposit',
+                    'previous_balance': 10000.0,
+                    'balance_after': 15000.0,
+                    'timestamp': (now - timedelta(days=15)).isoformat(),
+                    'nft_token_id': f'NFT-WAL-{(now - timedelta(days=15)).strftime("%Y%m%d")}-002'
+                }
+            ],
+            'created_at': existing_wallet.get('created_at', (now - timedelta(days=30)).isoformat())
+        }
+        print(f"   ✓ Health Wallet CUST-ASAF-001: $15,000.00")
         
-        # Initialize Customer Allocation preferences with 75% savings
+        # Initialize/Update Investment Account for Asaf (always ensure correct balance)
+        existing_inv = INVESTMENT_ACCOUNTS.get('CUST-ASAF-001', {})
+        existing_deposits = existing_inv.get('deposits', [])
+        
+        INVESTMENT_ACCOUNTS['CUST-ASAF-001'] = {
+            'customer_id': 'CUST-ASAF-001',
+            'balance': 32500.00,  # Total investment balance
+            'index_balance': 19500.00,  # 60% of investment in index funds
+            'bonds_balance': 9750.00,   # 30% of investment in bonds
+            'crypto_balance': 3250.00,  # 10% of investment in crypto
+            'deposits': existing_deposits if existing_deposits else [
+                {
+                    'id': f'INIT-INV-{now.strftime("%Y%m%d")}-001',
+                    'amount': 20000.00,
+                    'payment_method': 'policy_savings',
+                    'source': 'initial_allocation',
+                    'timestamp': (now - timedelta(days=30)).isoformat()
+                },
+                {
+                    'id': f'INIT-INV-{now.strftime("%Y%m%d")}-002',
+                    'amount': 12500.00,
+                    'payment_method': 'monthly_premium',
+                    'source': 'premium_savings',
+                    'timestamp': (now - timedelta(days=15)).isoformat()
+                }
+            ],
+            'created_at': existing_inv.get('created_at', (now - timedelta(days=30)).isoformat())
+        }
+        print(f"   ✓ Investment Account CUST-ASAF-001: $32,500.00")
+        
+        # Initialize/Update Customer Allocation preferences with 75% savings
         if 'CUST-ASAF-001' not in CUSTOMER_ALLOCATIONS:
             CUSTOMER_ALLOCATIONS['CUST-ASAF-001'] = {
                 'savings_pct': 75.0,      # 75% of premium to savings
