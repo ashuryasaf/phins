@@ -320,7 +320,8 @@ def seed_sample_data(session=None):
                     'type': 'Medical',
                     'description': 'Emergency room visit for chest pain - cardiac evaluation',
                     'claimed_amount': 15000.00,
-                    'status': 'Pending'
+                    'approved_amount': 15000.00,
+                    'status': 'Paid'
                 },
                 {
                     'id': 'CLM-ASAF-002',
@@ -328,7 +329,8 @@ def seed_sample_data(session=None):
                     'type': 'Prescription',
                     'description': 'Monthly prescription medications - cardiovascular',
                     'claimed_amount': 850.00,
-                    'status': 'Under Review'
+                    'approved_amount': 850.00,
+                    'status': 'Paid'
                 },
                 {
                     'id': 'CLM-ASAF-003',
@@ -336,8 +338,8 @@ def seed_sample_data(session=None):
                     'type': 'Collision',
                     'description': 'Fender bender accident - rear bumper damage repair',
                     'claimed_amount': 3500.00,
-                    'status': 'Approved',
-                    'approved_amount': 3200.00
+                    'approved_amount': 3200.00,
+                    'status': 'Paid'
                 },
                 {
                     'id': 'CLM-ASAF-004',

@@ -17159,74 +17159,84 @@ def run_server(port: int = PORT) -> None:
     except Exception as e:
         print(f"⚠️  Service transaction initialization skipped: {e}")
     
-    # Initialize sample claims for Asaf
+    # Initialize sample claims for Asaf (always update to ensure correct status)
     print("📋 Initializing sample claims...")
     try:
-        if not CLAIMS:
-            now = datetime.now()
-            sample_claims = [
-                {
-                    'id': 'CLM-ASAF-001',
-                    'policy_id': 'POL-ASAF-HEALTH-001',
-                    'customer_id': 'CUST-ASAF-001',
-                    'type': 'Medical',
-                    'description': 'Emergency room visit for chest pain - cardiac evaluation',
-                    'claimed_amount': 15000.0,
-                    'approved_amount': 15000.0,
-                    'status': 'Paid',
-                    'filed_date': (now - timedelta(days=30)).isoformat(),
-                    'approval_date': (now - timedelta(days=25)).isoformat(),
-                    'payment_date': (now - timedelta(days=20)).isoformat(),
-                    'nft_token_id': f'NFT-CLM-{(now - timedelta(days=30)).strftime("%Y%m%d")}-001'
-                },
-                {
-                    'id': 'CLM-ASAF-002',
-                    'policy_id': 'POL-ASAF-HEALTH-001',
-                    'customer_id': 'CUST-ASAF-001',
-                    'type': 'Prescription',
-                    'description': 'Monthly prescription medications - cardiovascular',
-                    'claimed_amount': 850.0,
-                    'approved_amount': 850.0,
-                    'status': 'Paid',
-                    'filed_date': (now - timedelta(days=25)).isoformat(),
-                    'approval_date': (now - timedelta(days=22)).isoformat(),
-                    'payment_date': (now - timedelta(days=18)).isoformat(),
-                    'nft_token_id': f'NFT-CLM-{(now - timedelta(days=25)).strftime("%Y%m%d")}-002'
-                },
-                {
-                    'id': 'CLM-ASAF-003',
-                    'policy_id': 'POL-ASAF-AUTO-001',
-                    'customer_id': 'CUST-ASAF-001',
-                    'type': 'Collision',
-                    'description': 'Fender bender accident - rear bumper damage repair',
-                    'claimed_amount': 3500.0,
-                    'approved_amount': 3200.0,
-                    'status': 'Paid',
-                    'filed_date': (now - timedelta(days=20)).isoformat(),
-                    'approval_date': (now - timedelta(days=15)).isoformat(),
-                    'payment_date': (now - timedelta(days=10)).isoformat(),
-                    'nft_token_id': f'NFT-CLM-{(now - timedelta(days=20)).strftime("%Y%m%d")}-003'
-                },
-                {
-                    'id': 'CLM-ASAF-004',
-                    'policy_id': 'POL-ASAF-HEALTH-001',
-                    'customer_id': 'CUST-ASAF-001',
-                    'type': 'Dental',
-                    'description': 'Root canal treatment and crown placement',
-                    'claimed_amount': 2800.0,
-                    'approved_amount': 0.0,
-                    'status': 'Pending',
-                    'filed_date': (now - timedelta(days=5)).isoformat(),
-                    'nft_token_id': f'NFT-CLM-{(now - timedelta(days=5)).strftime("%Y%m%d")}-004'
-                }
-            ]
-            
-            for claim in sample_claims:
-                CLAIMS[claim['id']] = claim
-            
-            print(f"✓ Initialized {len(sample_claims)} sample claims (3 Paid, 1 Pending)")
-        else:
-            print(f"✓ Claims already exist ({len(CLAIMS)} records)")
+        now = datetime.now()
+        sample_claims = [
+            {
+                'id': 'CLM-ASAF-001',
+                'policy_id': 'POL-ASAF-HEALTH-001',
+                'customer_id': 'CUST-ASAF-001',
+                'type': 'Medical',
+                'description': 'Emergency room visit for chest pain - cardiac evaluation',
+                'claimed_amount': 15000.0,
+                'approved_amount': 15000.0,
+                'status': 'Paid',
+                'filed_date': (now - timedelta(days=30)).isoformat(),
+                'approval_date': (now - timedelta(days=25)).isoformat(),
+                'payment_date': (now - timedelta(days=20)).isoformat(),
+                'nft_token_id': f'NFT-CLM-{(now - timedelta(days=30)).strftime("%Y%m%d")}-001'
+            },
+            {
+                'id': 'CLM-ASAF-002',
+                'policy_id': 'POL-ASAF-HEALTH-001',
+                'customer_id': 'CUST-ASAF-001',
+                'type': 'Prescription',
+                'description': 'Monthly prescription medications - cardiovascular',
+                'claimed_amount': 850.0,
+                'approved_amount': 850.0,
+                'status': 'Paid',
+                'filed_date': (now - timedelta(days=25)).isoformat(),
+                'approval_date': (now - timedelta(days=22)).isoformat(),
+                'payment_date': (now - timedelta(days=18)).isoformat(),
+                'nft_token_id': f'NFT-CLM-{(now - timedelta(days=25)).strftime("%Y%m%d")}-002'
+            },
+            {
+                'id': 'CLM-ASAF-003',
+                'policy_id': 'POL-ASAF-AUTO-001',
+                'customer_id': 'CUST-ASAF-001',
+                'type': 'Collision',
+                'description': 'Fender bender accident - rear bumper damage repair',
+                'claimed_amount': 3500.0,
+                'approved_amount': 3200.0,
+                'status': 'Paid',
+                'filed_date': (now - timedelta(days=20)).isoformat(),
+                'approval_date': (now - timedelta(days=15)).isoformat(),
+                'payment_date': (now - timedelta(days=10)).isoformat(),
+                'nft_token_id': f'NFT-CLM-{(now - timedelta(days=20)).strftime("%Y%m%d")}-003'
+            },
+            {
+                'id': 'CLM-ASAF-004',
+                'policy_id': 'POL-ASAF-HEALTH-001',
+                'customer_id': 'CUST-ASAF-001',
+                'type': 'Dental',
+                'description': 'Root canal treatment and crown placement',
+                'claimed_amount': 2800.0,
+                'approved_amount': 0.0,
+                'status': 'Pending',
+                'filed_date': (now - timedelta(days=5)).isoformat(),
+                'nft_token_id': f'NFT-CLM-{(now - timedelta(days=5)).strftime("%Y%m%d")}-004'
+            },
+            {
+                'id': 'CLM-ASAF-005',
+                'policy_id': 'POL-ASAF-LIFE-001',
+                'customer_id': 'CUST-ASAF-001',
+                'type': 'Disability',
+                'description': 'Temporary disability claim - work injury recovery',
+                'claimed_amount': 45000.0,
+                'approved_amount': 0.0,
+                'status': 'Under Review',
+                'filed_date': (now - timedelta(days=15)).isoformat(),
+                'nft_token_id': f'NFT-CLM-{(now - timedelta(days=15)).strftime("%Y%m%d")}-005'
+            }
+        ]
+        
+        # Always update claims to ensure correct status
+        for claim in sample_claims:
+            CLAIMS[claim['id']] = claim
+        
+        print(f"✓ Initialized {len(sample_claims)} sample claims (3 Paid, 1 Pending, 1 Under Review)")
     except Exception as e:
         print(f"⚠️  Claims initialization skipped: {e}")
     
