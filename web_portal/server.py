@@ -13701,6 +13701,16 @@ For claims or questions, please contact:
                 return
             
             try:
+                # Get session from authorization header
+                auth_header = self.headers.get('Authorization', '')
+                token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+                session = validate_session(token) if token else None
+                
+                if not session:
+                    self._set_json_headers(401)
+                    self.wfile.write(json.dumps({'error': 'Authentication required'}).encode('utf-8'))
+                    return
+                
                 data = json.loads(body)
                 requested_customer_id = data.get('customer_id')
                 policy_id = data.get('policy_id')
@@ -13771,6 +13781,16 @@ For claims or questions, please contact:
                 return
             
             try:
+                # Get session from authorization header
+                auth_header = self.headers.get('Authorization', '')
+                token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+                session = validate_session(token) if token else None
+                
+                if not session:
+                    self._set_json_headers(401)
+                    self.wfile.write(json.dumps({'error': 'Authentication required'}).encode('utf-8'))
+                    return
+                
                 data = json.loads(body)
                 requested_customer_id = data.get('customer_id')
                 
@@ -13848,6 +13868,16 @@ For claims or questions, please contact:
                 return
             
             try:
+                # Get session from authorization header
+                auth_header = self.headers.get('Authorization', '')
+                token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+                session = validate_session(token) if token else None
+                
+                if not session:
+                    self._set_json_headers(401)
+                    self.wfile.write(json.dumps({'error': 'Authentication required'}).encode('utf-8'))
+                    return
+                
                 data = json.loads(body)
                 account_id = data.get('account_id')
                 amount = float(data.get('amount', 0))
