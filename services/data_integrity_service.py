@@ -169,10 +169,16 @@ class DataIntegrityService:
             'card_payment', 'credit_card_deposit', 'bank_transfer'
         ]
         
+        # Withdrawal types (money leaving tracked accounts)
+        # Note: claim_payment destination varies (wallet/bank/etc) so counted separately
+        # Premium payments go to insurance, not a withdrawal from savings
         withdrawal_types = [
             'wallet_withdrawal', 'investment_withdrawal', 'withdrawal',
-            'medical_purchase', 'claim_payment', 'premium_payment'
+            'medical_purchase'  # Direct spend from wallet
         ]
+        
+        # Claim payments to tracked accounts (wallet, investment) count as deposits
+        claim_deposit_types = ['claim_payment_wallet', 'claim_payment_investment']
         
         for tx in self.transaction_ledger.values():
             if tx.get('customer_id') != customer_id:
@@ -181,11 +187,15 @@ class DataIntegrityService:
             tx_type = tx.get('type', tx.get('tx_type', '')).lower()
             amount = float(tx.get('amount', 0) or 0)
             
-            # Deposits
+            # Deposits (direct savings/investment deposits)
             if any(dt in tx_type for dt in deposit_types):
                 total_deposits += abs(amount)
             
-            # Withdrawals (track separately)
+            # Claim payments to tracked accounts (wallet/investment) count as deposits
+            if any(cdt in tx_type for cdt in claim_deposit_types):
+                total_deposits += abs(amount)
+            
+            # Withdrawals (money leaving tracked accounts)
             if any(wt in tx_type for wt in withdrawal_types):
                 total_withdrawn += abs(amount)
         
