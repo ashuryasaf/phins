@@ -11300,9 +11300,8 @@ For claims or questions, please contact:
                     'created_date': datetime.now().isoformat()
                 }
                 
-                CLAIMS[claim_id] = claim
-                
-                # Record claim creation on TRANSACTION_LEDGER and NFT_LEDGER
+                # Record claim creation on TRANSACTION_LEDGER and NFT_LEDGER first
+                # to get the NFT token ID before storing the claim
                 claim_tx = record_transaction(
                     customer_id=data.get('customer_id', 'unknown'),
                     tx_type='claim_submitted',
@@ -11320,8 +11319,13 @@ For claims or questions, please contact:
                         'description': description
                     }
                 )
+                
+                # Set NFT and ledger IDs on the claim before storing
                 claim['nft_token_id'] = claim_tx.get('nft_token_id')
                 claim['ledger_tx_id'] = claim_tx.get('id')
+                
+                # Now store the complete claim with all fields including NFT token
+                CLAIMS[claim_id] = claim
                 
                 if audit:
                     actor = session.get('username') if session else 'system'
