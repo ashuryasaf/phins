@@ -125,13 +125,19 @@ class DataIntegrityService:
         wallet_balance = float(wallet_data.get('balance', 0) or 0)
         
         # 2. Investment Account Balance
-        # Investment = cash (available for investment) + invested sub-balances
+        # The 'balance' field is the TOTAL investment balance
+        # Sub-balances (index, bonds, crypto) are the breakdown of where the money is invested
+        # Cash is any unallocated portion: balance - (index + bonds + crypto)
         inv_data = self.investment_accounts.get(customer_id, {})
-        inv_cash = float(inv_data.get('balance', 0) or 0)  # Cash available
+        inv_total = float(inv_data.get('balance', 0) or 0)  # Total investment balance
         inv_index = float(inv_data.get('index_balance', 0) or 0)  # Invested in indexes
         inv_bonds = float(inv_data.get('bonds_balance', 0) or 0)  # Invested in bonds
         inv_crypto = float(inv_data.get('crypto_balance', 0) or 0)  # Invested in crypto
-        investment_balance = inv_cash + inv_index + inv_bonds + inv_crypto
+        # Calculate actual invested amount
+        inv_allocated = inv_index + inv_bonds + inv_crypto
+        # Investment balance is the total from the balance field (not sum of sub-balances)
+        # The sub-balances are just the allocation breakdown
+        investment_balance = inv_total
         
         # 3. Algo Trading Balance (from unified balance service)
         algo_balance = 0.0

@@ -17403,28 +17403,51 @@ def run_server(port: int = PORT) -> None:
                     'nft_token_id': f'NFT-PIPE-{(now - timedelta(days=3)).strftime("%Y%m%d")}-004'
                 },
                 
-                # Additional transactions for comprehensive ledger
+                # Savings and Investment Deposit Transactions for CUST-ASAF-001
+                # These match the initialized balances: Wallet $15,000, Investment $32,500
                 {
-                    'id': 'TX-WALLET-001',
+                    'id': 'TX-WALLET-ASAF-001',
                     'customer_id': 'CUST-ASAF-001',
                     'type': 'wallet_deposit',
-                    'amount': 500.00,
-                    'description': 'Health Wallet Top-up',
-                    'metadata': {'wallet_type': 'health_savings', 'source': 'bank_transfer'},
-                    'timestamp': (now - timedelta(days=18)).isoformat(),
+                    'amount': 10000.00,
+                    'description': 'Initial Health Wallet Allocation from Policy Savings',
+                    'metadata': {'wallet_type': 'health_wallet', 'source': 'policy_savings', 'policy_id': 'POL-ASAF-HEALTH-001'},
+                    'timestamp': (now - timedelta(days=30)).isoformat(),
                     'status': 'completed',
-                    'nft_token_id': f'NFT-WAL-{(now - timedelta(days=18)).strftime("%Y%m%d")}-001'
+                    'nft_token_id': f'NFT-WAL-INIT-{(now - timedelta(days=30)).strftime("%Y%m%d")}-001'
                 },
                 {
-                    'id': 'TX-INV-001',
+                    'id': 'TX-WALLET-ASAF-002',
+                    'customer_id': 'CUST-ASAF-001',
+                    'type': 'wallet_deposit',
+                    'amount': 5000.00,
+                    'description': 'Monthly Premium Savings Allocation to Health Wallet',
+                    'metadata': {'wallet_type': 'health_wallet', 'source': 'premium_savings', 'allocation_pct': 30},
+                    'timestamp': (now - timedelta(days=15)).isoformat(),
+                    'status': 'completed',
+                    'nft_token_id': f'NFT-WAL-{(now - timedelta(days=15)).strftime("%Y%m%d")}-002'
+                },
+                {
+                    'id': 'TX-INV-ASAF-001',
                     'customer_id': 'CUST-ASAF-001',
                     'type': 'investment_deposit',
-                    'amount': 1000.00,
-                    'description': 'Investment Portfolio Contribution',
-                    'metadata': {'portfolio': 'balanced_growth', 'allocation': {'stocks': 60, 'bonds': 40}},
-                    'timestamp': (now - timedelta(days=22)).isoformat(),
+                    'amount': 20000.00,
+                    'description': 'Initial Investment Allocation from Policy Savings',
+                    'metadata': {'portfolio': 'balanced_growth', 'source': 'policy_savings', 'allocation': {'index': 60, 'bonds': 30, 'crypto': 10}},
+                    'timestamp': (now - timedelta(days=30)).isoformat(),
                     'status': 'completed',
-                    'nft_token_id': f'NFT-INV-{(now - timedelta(days=22)).strftime("%Y%m%d")}-001'
+                    'nft_token_id': f'NFT-INV-INIT-{(now - timedelta(days=30)).strftime("%Y%m%d")}-001'
+                },
+                {
+                    'id': 'TX-INV-ASAF-002',
+                    'customer_id': 'CUST-ASAF-001',
+                    'type': 'investment_deposit',
+                    'amount': 12500.00,
+                    'description': 'Monthly Premium Savings Allocation to Investment Account',
+                    'metadata': {'portfolio': 'balanced_growth', 'source': 'premium_savings', 'allocation_pct': 65},
+                    'timestamp': (now - timedelta(days=15)).isoformat(),
+                    'status': 'completed',
+                    'nft_token_id': f'NFT-INV-{(now - timedelta(days=15)).strftime("%Y%m%d")}-002'
                 }
             ]
             
@@ -17452,7 +17475,7 @@ def run_server(port: int = PORT) -> None:
             print(f"   - Billing Records: 3")
             print(f"   - Claim Transactions: 3")
             print(f"   - Pipeline Events: 4")
-            print(f"   - Other (Wallet/Investment): 2")
+            print(f"   - Savings Deposits: 4 (Wallet $15,000 + Investment $32,500 = $47,500)")
         else:
             print(f"✓ Transaction ledger already populated ({len(TRANSACTION_LEDGER)} entries)")
     except Exception as e:
