@@ -2535,39 +2535,43 @@
       try {
         if (!customerId) return;
         
-        const response = await fetch('/api/marketplace/transactions', {
-          method: 'POST',
+        // Load medical purchases from health wallet API
+        const response = await fetch(`/api/health-wallet/purchases?customer_id=${customerId}`, {
           headers: {
-            'Content-Type': 'application/json',
             'Authorization': `Bearer ${authToken}`
-          },
-          body: JSON.stringify({ customer_id: customerId, limit: 10 })
+          }
         });
         
         if (response.ok) {
           const data = await response.json();
-          displayTransactionHistory(data.transactions || []);
+          displayTransactionHistory(data.purchases || []);
         }
       } catch (err) {
-        console.error('Failed to load transaction history:', err);
+        console.error('Failed to load purchase history:', err);
       }
     }
     
-    function displayTransactionHistory(transactions) {
+    function displayTransactionHistory(purchases) {
       const tbody = document.getElementById('purchase-history-table');
-      if (!transactions.length) return;
+      if (!purchases || !purchases.length) {
+        tbody.innerHTML = '<tr><td colspan="8" style="text-align: center; color: #666; padding: 40px;">No purchases yet</td></tr>';
+        return;
+      }
       
-      tbody.innerHTML = transactions.map(t => {
-        const date = new Date(t.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-        const statusClass = t.status === 'completed' ? 'badge-active' : 
-                           t.status === 'pending' ? 'badge-pending' : 'badge-orange';
+      tbody.innerHTML = purchases.map(p => {
+        const date = p.timestamp ? new Date(p.timestamp).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'N/A';
+        const statusClass = p.status === 'completed' ? 'badge-active' : 
+                           p.status === 'pending' ? 'badge-pending' : 'badge-orange';
         return `
           <tr>
             <td>${date}</td>
-            <td>${t.item_name}</td>
-            <td>${t.category}</td>
-            <td>$${Number(t.total_amount).toFixed(2)}</td>
-            <td><span class="badge ${statusClass}">${t.status}</span></td>
+            <td>${p.product_name || 'N/A'}</td>
+            <td>${p.provider_name || 'N/A'}</td>
+            <td>${p.category || 'medical'}</td>
+            <td>$${Number(p.amount || 0).toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
+            <td style="color: #28a745;">$${Number(p.insurance_covered || 0).toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
+            <td style="color: #dc3545;">$${Number(p.wallet_paid || 0).toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
+            <td><span class="badge ${statusClass}">${p.status || 'pending'}</span></td>
           </tr>
         `;
       }).join('');
