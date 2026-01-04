@@ -16989,6 +16989,93 @@ def run_server(port: int = PORT) -> None:
     except Exception as e:
         print(f"⚠️  Customer initialization skipped (database issue): {e}")
     
+    # Initialize CUST-ASAF-001 wallets and investment account
+    print("💰 Initializing customer wallets and investment accounts...")
+    try:
+        now = datetime.now()
+        
+        # Initialize Health Wallet for Asaf (with sample balance for demo)
+        if 'CUST-ASAF-001' not in HEALTH_WALLETS or HEALTH_WALLETS['CUST-ASAF-001'].get('balance', 0) == 0:
+            HEALTH_WALLETS['CUST-ASAF-001'] = {
+                'customer_id': 'CUST-ASAF-001',
+                'balance': 15000.00,  # Initial balance for demo
+                'monthly_deposit': 255.00,  # 30% of savings to wallet
+                'transactions': [
+                    {
+                        'id': f'INIT-WALLET-{now.strftime("%Y%m%d")}-001',
+                        'type': 'initial_deposit',
+                        'amount': 10000.00,
+                        'source': 'policy_savings',
+                        'description': 'Initial policy savings allocation to health wallet',
+                        'previous_balance': 0.0,
+                        'balance_after': 10000.0,
+                        'timestamp': (now - timedelta(days=30)).isoformat(),
+                        'nft_token_id': f'NFT-WAL-{(now - timedelta(days=30)).strftime("%Y%m%d")}-001'
+                    },
+                    {
+                        'id': f'INIT-WALLET-{now.strftime("%Y%m%d")}-002',
+                        'type': 'monthly_contribution',
+                        'amount': 5000.00,
+                        'source': 'premium_savings',
+                        'description': 'Monthly premium savings deposit',
+                        'previous_balance': 10000.0,
+                        'balance_after': 15000.0,
+                        'timestamp': (now - timedelta(days=15)).isoformat(),
+                        'nft_token_id': f'NFT-WAL-{(now - timedelta(days=15)).strftime("%Y%m%d")}-002'
+                    }
+                ],
+                'created_at': (now - timedelta(days=30)).isoformat()
+            }
+            print(f"   ✓ Health Wallet CUST-ASAF-001: $15,000.00")
+        
+        # Initialize Investment Account for Asaf
+        if 'CUST-ASAF-001' not in INVESTMENT_ACCOUNTS or INVESTMENT_ACCOUNTS['CUST-ASAF-001'].get('balance', 0) == 0:
+            INVESTMENT_ACCOUNTS['CUST-ASAF-001'] = {
+                'customer_id': 'CUST-ASAF-001',
+                'balance': 32500.00,  # 65% of savings to investment
+                'index_balance': 19500.00,  # 60% of investment
+                'bonds_balance': 9750.00,   # 30% of investment
+                'crypto_balance': 3250.00,  # 10% of investment
+                'deposits': [
+                    {
+                        'id': f'INIT-INV-{now.strftime("%Y%m%d")}-001',
+                        'amount': 20000.00,
+                        'payment_method': 'policy_savings',
+                        'source': 'initial_allocation',
+                        'timestamp': (now - timedelta(days=30)).isoformat()
+                    },
+                    {
+                        'id': f'INIT-INV-{now.strftime("%Y%m%d")}-002',
+                        'amount': 12500.00,
+                        'payment_method': 'monthly_premium',
+                        'source': 'premium_savings',
+                        'timestamp': (now - timedelta(days=15)).isoformat()
+                    }
+                ],
+                'created_at': (now - timedelta(days=30)).isoformat()
+            }
+            print(f"   ✓ Investment Account CUST-ASAF-001: $32,500.00")
+        
+        # Initialize Customer Allocation preferences with 75% savings
+        if 'CUST-ASAF-001' not in CUSTOMER_ALLOCATIONS:
+            CUSTOMER_ALLOCATIONS['CUST-ASAF-001'] = {
+                'savings_pct': 75.0,      # 75% of premium to savings
+                'risk_pct': 25.0,         # 25% of premium to risk coverage
+                'wallet_pct': 30.0,       # 30% of savings to Health Wallet
+                'investment_pct': 65.0,   # 65% of savings to Investment
+                'algo_pct': 5.0,          # 5% of savings to Algo Trading
+                'index_pct': 60.0,        # 60% of investment to Index Funds
+                'bonds_pct': 30.0,        # 30% of investment to Bonds
+                'crypto_pct': 10.0,       # 10% of investment to Crypto
+                'updated_at': now.isoformat(),
+                'customer_id': 'CUST-ASAF-001'
+            }
+            print(f"   ✓ Allocation preferences: 75% savings / 25% risk")
+        
+        print("✓ Customer wallets and investments initialized")
+    except Exception as e:
+        print(f"⚠️  Wallet initialization error: {e}")
+    
     # Initialize sample service transactions for marketplace display
     print("📋 Initializing service transactions for marketplace...")
     try:
