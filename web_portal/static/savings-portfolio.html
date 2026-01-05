@@ -1264,8 +1264,19 @@
                 }
                 
                 // STEP 3: Load detailed portfolio summary
-                response = await fetch(`/api/savings/portfolio?account_id=${accountId}`);
-                portfolioData = await response.json();
+                try {
+                    response = await fetch(`/api/savings/portfolio?account_id=${accountId}`);
+                    portfolioData = await response.json();
+                } catch (e) {
+                    console.warn('Portfolio service unavailable, using unified data only');
+                    portfolioData = {};
+                }
+                
+                // Ensure portfolioData is always an object (never null/undefined)
+                if (!portfolioData || portfolioData.error) {
+                    console.log('No portfolio data, initializing with unified data');
+                    portfolioData = {};
+                }
                 
                 // STEP 4: Merge unified data with portfolio data for complete picture
                 // Override with unified data where available for consistency
@@ -1333,13 +1344,14 @@
         }
         
         function updatePortfolioDisplay() {
-            if (!portfolioData) return;
-            
             // Get unified data for consistency with Dashboard
             const unified = window.unifiedInvestment || {};
             
             // Get verified data from integrity service (most accurate)
             const verified = window.verifiedTotal || {};
+            
+            // Ensure portfolioData exists
+            if (!portfolioData) portfolioData = {};
             
             // DEBUG: Log all data sources
             console.log('Portfolio Display Data Sources:', {
@@ -1347,6 +1359,12 @@
                 unified: unified,
                 portfolioData: portfolioData
             });
+            
+            // If no data from any source, show message
+            if (!verified.customer_id && !unified.customer_id && Object.keys(portfolioData).length === 0) {
+                console.warn('No portfolio data available from any source');
+                // Don't return - try to display whatever we have
+            }
             
             // Field mapping (in priority order):
             // 1. verified (integrity service) - most accurate
@@ -2038,7 +2056,8 @@
         // Load Algo Trading Portfolio data
         async function loadAlgoPortfolio() {
             try {
-                const response = await fetch(`/api/portfolio/algo?customer_id=${customerId}`);
+                // Use the correct API endpoint for algo trading balance
+                const response = await fetch(`/api/balance/algo-trading?customer_id=${customerId}`);
                 const data = await response.json();
                 
                 let totalValue = 0;
@@ -2049,6 +2068,13 @@
                     const inPositions = data.balance.in_positions || 0;
                     totalPnl = data.balance.total_pnl || 0;
                     totalValue = available + inPositions;
+                    console.log('Algo Trading balance from API:', { available, inPositions, totalPnl, totalValue });
+                }
+                
+                // Also check verified data from integrity service
+                if (totalValue === 0 && window.verifiedTotal && window.verifiedTotal.algo_trading_balance > 0) {
+                    totalValue = window.verifiedTotal.algo_trading_balance;
+                    console.log('Algo Trading balance from verified:', totalValue);
                 }
                 
                 // Fallback to unified data if algo service has no data
@@ -2073,8 +2099,11 @@
                 }
             } catch (e) {
                 console.error('Failed to load algo portfolio:', e);
-                // Fallback to unified data on error
-                if (window.unifiedInvestment && window.unifiedInvestment.algo_trading_profits > 0) {
+                // Fallback to verified data on error
+                if (window.verifiedTotal && window.verifiedTotal.algo_trading_balance > 0) {
+                    document.getElementById('algoPortfolioValue').textContent = 
+                        formatCurrency(window.verifiedTotal.algo_trading_balance);
+                } else if (window.unifiedInvestment && window.unifiedInvestment.algo_trading_profits > 0) {
                     document.getElementById('algoPortfolioValue').textContent = 
                         formatCurrency(window.unifiedInvestment.algo_trading_profits);
                 }
