@@ -17194,13 +17194,127 @@ def run_server(port: int = PORT) -> None:
             # Initialize health wallet for efrat
             HEALTH_WALLETS['CUST-EFRAT-001'] = {
                 'customer_id': 'CUST-EFRAT-001',
-                'balance': 0.00,
-                'monthly_deposit': 0.00,
-                'transactions': [],
+                'balance': 5000.00,  # Initial wallet balance
+                'monthly_deposit': 200.00,
+                'transactions': [
+                    {
+                        'id': f'INIT-WALLET-EFRAT-001',
+                        'type': 'initial_deposit',
+                        'amount': 5000.00,
+                        'source': 'policy_savings',
+                        'description': 'Initial policy savings allocation',
+                        'previous_balance': 0.0,
+                        'balance_after': 5000.0,
+                        'timestamp': datetime.now().isoformat()
+                    }
+                ],
                 'created_at': datetime.now().isoformat()
             }
-            print("✓ Customer efrat@phins.ai (CUST-EFRAT-001) initialized")
+            
+            # Create an active policy for Efrat
+            efrat_policy_id = 'POL-EFRAT-UNIFIED-001'
+            POLICIES[efrat_policy_id] = {
+                'id': efrat_policy_id,
+                'customer_id': 'CUST-EFRAT-001',
+                'type': 'phins_unified',
+                'coverage_amount': 500000.0,
+                'annual_premium': 5600.0,
+                'monthly_premium': 466.67,
+                'status': 'active',  # Active so claims can be filed
+                'risk_score': 'low',
+                'start_date': datetime.now().isoformat(),
+                'end_date': (datetime.now() + timedelta(days=365)).isoformat(),
+                'approval_date': datetime.now().isoformat(),
+                'created_date': datetime.now().isoformat(),
+                'billing': {
+                    'frequency': 'monthly',
+                    'auto_pay': True,
+                    'payment_method': {
+                        'type': 'card',
+                        'card_last4': '4444',
+                        'card_type': 'mastercard'
+                    },
+                    'next_billing_date': (datetime.now() + timedelta(days=30)).isoformat()
+                },
+                'health_wallet': {
+                    'enabled': True,
+                    'monthly_deposit': 200
+                },
+                'coverages': {
+                    'medical': {'limit': 200000, 'deductible': 500},
+                    'dental': {'limit': 10000, 'deductible': 100},
+                    'vision': {'limit': 5000, 'deductible': 50},
+                    'disability': {'limit': 100000, 'deductible': 0},
+                    'life': {'limit': 500000, 'deductible': 0}
+                }
+            }
+            
+            # Create billing for Efrat
+            efrat_bill_id = f"BILL-EFRAT-{datetime.now().strftime('%Y%m%d')}-001"
+            BILLING[efrat_bill_id] = {
+                'id': efrat_bill_id,
+                'policy_id': efrat_policy_id,
+                'customer_id': 'CUST-EFRAT-001',
+                'customer_name': 'Efrat PHINS',
+                'amount': 466.67,
+                'amount_paid': 466.67,  # First month paid
+                'status': 'paid',
+                'due_date': (datetime.now() + timedelta(days=30)).isoformat(),
+                'created_date': datetime.now().isoformat()
+            }
+            
+            # Initialize investment account for Efrat
+            INVESTMENT_ACCOUNTS['CUST-EFRAT-001'] = {
+                'customer_id': 'CUST-EFRAT-001',
+                'balance': 10000.00,
+                'index_balance': 6000.00,
+                'bonds_balance': 3000.00,
+                'crypto_balance': 1000.00,
+                'deposits': [
+                    {
+                        'id': 'DEP-EFRAT-001',
+                        'amount': 10000.00,
+                        'source': 'initial_deposit',
+                        'timestamp': datetime.now().isoformat()
+                    }
+                ],
+                'created_at': datetime.now().isoformat()
+            }
+            
+            print("✓ Customer efrat@phins.ai (CUST-EFRAT-001) initialized with policy and wallets")
         else:
+            # Customer exists, but ensure policy exists too
+            efrat_policy_id = 'POL-EFRAT-UNIFIED-001'
+            if efrat_policy_id not in POLICIES:
+                POLICIES[efrat_policy_id] = {
+                    'id': efrat_policy_id,
+                    'customer_id': 'CUST-EFRAT-001',
+                    'type': 'phins_unified',
+                    'coverage_amount': 500000.0,
+                    'annual_premium': 5600.0,
+                    'monthly_premium': 466.67,
+                    'status': 'active',
+                    'risk_score': 'low',
+                    'start_date': datetime.now().isoformat(),
+                    'end_date': (datetime.now() + timedelta(days=365)).isoformat(),
+                    'approval_date': datetime.now().isoformat(),
+                    'created_date': datetime.now().isoformat(),
+                    'billing': {
+                        'frequency': 'monthly',
+                        'auto_pay': True,
+                        'payment_method': {'type': 'card', 'card_last4': '4444', 'card_type': 'mastercard'},
+                        'next_billing_date': (datetime.now() + timedelta(days=30)).isoformat()
+                    },
+                    'health_wallet': {'enabled': True, 'monthly_deposit': 200},
+                    'coverages': {
+                        'medical': {'limit': 200000, 'deductible': 500},
+                        'dental': {'limit': 10000, 'deductible': 100},
+                        'vision': {'limit': 5000, 'deductible': 50},
+                        'disability': {'limit': 100000, 'deductible': 0},
+                        'life': {'limit': 500000, 'deductible': 0}
+                    }
+                }
+                print("✓ Policy POL-EFRAT-UNIFIED-001 created for efrat@phins.ai")
             print("✓ Customer efrat@phins.ai already exists")
     except Exception as e:
         print(f"⚠️  Customer initialization skipped (database issue): {e}")
