@@ -1027,6 +1027,9 @@ class AlgoTradingService:
                 "realized_pnl": round(bot.realized_pnl, 2),
                 "unrealized_pnl": round(bot.unrealized_pnl, 2),
                 "total_return_pct": round((bot.total_pnl / 10000) * 100, 2) if bot.total_pnl else 0,
+                # Compatibility: some callers/tests expect these fields under "performance"
+                "total_trades": bot.total_trades,
+                "win_rate": round(bot.win_rate, 1),
             },
             
             # Trade Statistics

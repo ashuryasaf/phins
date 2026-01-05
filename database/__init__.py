@@ -10,6 +10,7 @@ from sqlalchemy.orm import sessionmaker, scoped_session, Session
 from sqlalchemy.pool import Pool
 from typing import Optional
 import logging
+import os
 
 from .config import DatabaseConfig
 from .models import Base
@@ -89,6 +90,17 @@ def init_database(drop_existing: bool = False):
     Args:
         drop_existing: If True, drop all existing tables before creating (USE WITH CAUTION)
     """
+    # In pytest/CI we want deterministic, isolated DB state.
+    # Many tests call init_database() multiple times and reuse the same SQLITE_PATH.
+    try:
+        phins_test_mode = str(os.environ.get('PHINS_TEST_MODE', '')).lower() in ('1', 'true', 'yes', 'y')
+        if (not drop_existing) and phins_test_mode and DatabaseConfig.is_sqlite():
+            sqlite_path = os.environ.get('SQLITE_PATH', '')
+            if sqlite_path.startswith('/tmp/'):
+                drop_existing = True
+    except Exception:
+        pass
+
     engine = get_engine()
     
     if drop_existing:
