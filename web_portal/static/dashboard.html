@@ -985,30 +985,6 @@
       </div>
     </div>
 
-    <!-- Premium Statement -->
-    <section class="section-content">
-      <h2>My Premium Statement</h2>
-      <div class="card">
-        <div id="summary" class="summary-grid">
-          <div class="summary-item">
-            <div class="summary-label">Total Premium</div>
-            <div class="summary-value">$0.00</div>
-          </div>
-          <div class="summary-item">
-            <div class="summary-label">Risk Allocation (75%)</div>
-            <div class="summary-value">$0.00</div>
-          </div>
-          <div class="summary-item">
-            <div class="summary-label">Savings Allocation (25%)</div>
-            <div class="summary-value">$0.00</div>
-          </div>
-        </div>
-        
-        <h3 style="margin-top:32px">Premium Allocations</h3>
-        <ul id="alloc-list" class="alloc-list"></ul>
-      </div>
-    </section>
-
     <!-- Claims Section -->
     <section id="claims" class="section-content">
       <h2>My Claims</h2>
@@ -3963,7 +3939,8 @@
         const res = await fetch(`/api/statement?customer_id=${cid}`);
         const data = await res.json();
         
-        document.getElementById('summary').innerHTML = `
+        const summaryEl = document.getElementById('summary');
+        if (summaryEl) summaryEl.innerHTML = `
           <div class="summary-item">
             <div class="summary-label">Total Monthly Premium</div>
             <div class="summary-value">$${formatNumber(data.total_premium || 0, 2)}</div>
@@ -3989,6 +3966,7 @@
         if (billingRiskEl) billingRiskEl.textContent = '$' + formatNumber(data.risk_total || 0, 2);
         
         const list = document.getElementById('alloc-list');
+        if (!list) return;
         if (data.allocations && data.allocations.length > 0) {
           list.innerHTML = data.allocations.map(a => `
             <li style="display: flex; justify-content: space-between; padding: 12px; background: #f8f9fa; border-radius: 8px; margin-bottom: 8px;">
