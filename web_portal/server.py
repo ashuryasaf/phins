@@ -1589,10 +1589,12 @@ def require_role(session: dict[str, str] | None, allowed_roles: list[str]) -> bo
         return False
     
     user = USERS.get(username)
-    if not user:
+    # Prefer authoritative role from user record; fall back to server-side session role if needed.
+    # (Session is stored server-side; this fallback is mainly for robustness when user lookup is unavailable.)
+    role = (user or {}).get('role') or session.get('role')
+    if not role:
         return False
-    
-    return user.get('role') in allowed_roles
+    return role in allowed_roles
 
 
 def get_session_user(session: dict[str, str] | None) -> Dict[str, Any] | None:
@@ -3256,7 +3258,7 @@ For claims or questions, please contact:
             user = get_session_user(session) or {}
             role = (user.get('role') or '').lower()
             requested_supplier_id = (qs.get('supplier_id', [None])[0] or '').strip() or None
-            supplier_id = user.get('username') if role == 'supplier' else (requested_supplier_id or None)
+            supplier_id = (session or {}).get('username') if role == 'supplier' else (requested_supplier_id or None)
 
             with STATE_LOCK:
                 offers = list(SUPPLIER_OFFERS.values())
@@ -3287,7 +3289,7 @@ For claims or questions, please contact:
             user = get_session_user(session) or {}
             role = (user.get('role') or '').lower()
             requested_supplier_id = (qs.get('supplier_id', [None])[0] or '').strip() or None
-            supplier_id = user.get('username') if role == 'supplier' else (requested_supplier_id or None)
+            supplier_id = (session or {}).get('username') if role == 'supplier' else (requested_supplier_id or None)
 
             txs = marketplace.get_all_transactions(limit=200)
             # Best-effort mapping: treat provider_id as supplier_id when present
@@ -6951,6 +6953,73 @@ For claims or questions, please contact:
                 self._set_json_headers(500)
                 self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
             return
+
+        # Supplier ecosystem integrity (non-financial):
+        # Validates supplier offer store and fee schedule governance state.
+        if path == '/api/integrity/supplier-ecosystem':
+            if not require_role(session, ['admin', 'supplier', 'actuary']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Unauthorized'}).encode('utf-8'))
+                return
+
+            user = get_session_user(session) or {}
+            role = (user.get('role') or session.get('role') or '').lower()
+            requested_supplier_id = (qs.get('supplier_id', [None])[0] or '').strip() or None
+            supplier_id = session.get('username') if role == 'supplier' else requested_supplier_id
+
+            with STATE_LOCK:
+                offers = list(SUPPLIER_OFFERS.values())
+                fee_schedules = list(FEE_SCHEDULES.values())
+
+            if supplier_id:
+                offers = [o for o in offers if o.get('supplier_id') == supplier_id]
+
+            issues: list[str] = []
+            active_offers = [o for o in offers if o.get('active') is True]
+            for o in offers:
+                oid = o.get('id', '?')
+                if not o.get('supplier_id'):
+                    issues.append(f"Offer {oid} missing supplier_id")
+                if not o.get('category'):
+                    issues.append(f"Offer {oid} missing category")
+                if not o.get('name'):
+                    issues.append(f"Offer {oid} missing name")
+                try:
+                    price = float(o.get('price', 0))
+                    if price < 0:
+                        issues.append(f"Offer {oid} has negative price")
+                except Exception:
+                    issues.append(f"Offer {oid} has invalid price")
+
+            approved_fee_schedules = [fs for fs in fee_schedules if (fs.get('status') or '').lower() == 'approved']
+            draft_fee_schedules = [fs for fs in fee_schedules if (fs.get('status') or '').lower() == 'draft']
+
+            # Signal: for pricing/ranking stability, at least HEALTH should have an approved schedule.
+            health_fee_ok = any((fs.get('domain') or '').lower() == 'health' for fs in approved_fee_schedules)
+            if not health_fee_ok:
+                issues.append('No approved fee schedule for domain=health')
+
+            integrity_status = 'HEALTHY' if len(issues) == 0 else ('WARNING' if len(issues) < 5 else 'CRITICAL')
+            self._set_json_headers()
+            self.wfile.write(json.dumps({
+                'timestamp': datetime.now().isoformat(),
+                'supplier_scope': supplier_id,
+                'offers': {
+                    'total': len(offers),
+                    'active': len(active_offers),
+                    'inactive': len(offers) - len(active_offers),
+                    'categories': sorted({(o.get('category') or '').lower() for o in offers if o.get('category')}),
+                },
+                'fee_schedules': {
+                    'total': len(fee_schedules),
+                    'approved': len(approved_fee_schedules),
+                    'draft': len(draft_fee_schedules),
+                    'approved_domains': sorted({(fs.get('domain') or '').lower() for fs in approved_fee_schedules if fs.get('domain')}),
+                },
+                'integrity_status': integrity_status,
+                'issues': issues,
+            }).encode('utf-8'))
+            return
         
         # ========== END DATA INTEGRITY API ==========
         
@@ -8975,7 +9044,7 @@ For claims or questions, please contact:
                 actor = (session or {}).get('username') if session else 'unknown'
 
                 offer_id = str(payload.get('id') or '').strip() or f"OFF-{datetime.now().strftime('%Y%m%d')}-{random.randint(1000,9999)}"
-                supplier_id = user.get('username') if role == 'supplier' else str(payload.get('supplier_id') or '').strip()
+                supplier_id = (session or {}).get('username') if role == 'supplier' else str(payload.get('supplier_id') or '').strip()
                 category = str(payload.get('category') or '').strip().lower()
                 name = str(payload.get('name') or '').strip()
                 item_type = str(payload.get('item_type') or 'product').strip().lower()
@@ -9024,6 +9093,25 @@ For claims or questions, please contact:
                         'updated_by': actor,
                     }
 
+                # Pipeline-style integrity trace (non-financial): record offer lifecycle event in ledger for auditability.
+                try:
+                    record_transaction(
+                        customer_id=None,
+                        tx_type='supplier_offer_upsert',
+                        amount=0.0,
+                        description=f"Supplier offer upsert: {offer_id}",
+                        metadata={
+                            'offer_id': offer_id,
+                            'supplier_id': supplier_id,
+                            'category': category,
+                            'price': price,
+                            'currency': currency,
+                            'active': active,
+                        },
+                    )
+                except Exception:
+                    pass
+
                 if audit:
                     try:
                         audit.log(actor, 'upsert', 'supplier_offer', offer_id, {'supplier_id': supplier_id, 'category': category, 'price': price})
@@ -9070,6 +9158,20 @@ For claims or questions, please contact:
                         self.wfile.write(json.dumps({'error': 'Forbidden'}).encode('utf-8'))
                         return
                     del SUPPLIER_OFFERS[offer_id]
+
+                try:
+                    record_transaction(
+                        customer_id=None,
+                        tx_type='supplier_offer_delete',
+                        amount=0.0,
+                        description=f"Supplier offer delete: {offer_id}",
+                        metadata={
+                            'offer_id': offer_id,
+                            'supplier_id': existing.get('supplier_id'),
+                        },
+                    )
+                except Exception:
+                    pass
                 if audit:
                     try:
                         audit.log(actor, 'delete', 'supplier_offer', offer_id, {'supplier_id': existing.get('supplier_id')})
