@@ -53,7 +53,7 @@ document.addEventListener('DOMContentLoaded', function () {
             const role = data.role || '';
             
             if (role === 'admin') {
-              window.location.href = '/admin.html';
+              window.location.href = '/admin-portal.html';
             } else if (role === 'actuary') {
               window.location.href = '/actuary-dashboard.html';
             } else if (role === 'supplier') {
