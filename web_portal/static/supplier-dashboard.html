@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>PHINS Supplier Dashboard</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="container">
+      <div>
+        <h1 class="brand">PHINS - Supplier</h1>
+        <div class="muted-text" id="whoami">Loading session...</div>
+      </div>
+      <nav class="nav">
+        <a href="/admin.html">Admin</a>
+        <a href="/actuary-dashboard.html">Actuary</a>
+        <a href="/dashboard.html">Client</a>
+        <a href="/login.html" class="btn-login">Login</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="container" style="padding-top:24px">
+    <div class="section-content">
+      <div class="section-header">
+        <h2>Offers & Pricing</h2>
+        <div style="display:flex; gap:8px; flex-wrap:wrap">
+          <button class="btn btn-outline" id="refresh-offers">Refresh</button>
+        </div>
+      </div>
+
+      <div class="card" style="margin-bottom:16px">
+        <div class="filter-bar">
+          <input class="search-input" id="supplier-id" placeholder="supplier_id (admin only; suppliers auto)" />
+          <input class="search-input" id="offer-category" placeholder="category (consultation/pharmacy/home_care/...)" />
+          <input class="search-input" id="offer-name" placeholder="offer name (e.g., Dr. Visit / Wheelchair)" />
+        </div>
+        <div class="filter-bar">
+          <input class="search-input" id="offer-price" placeholder="price" />
+          <input class="search-input" id="offer-currency" placeholder="currency (USD)" />
+          <select class="filter-select" id="offer-type">
+            <option value="service">service</option>
+            <option value="product">product</option>
+          </select>
+          <select class="filter-select" id="offer-active">
+            <option value="true">active</option>
+            <option value="false">inactive</option>
+          </select>
+        </div>
+        <div style="display:flex; gap:10px; flex-wrap:wrap; margin-top:12px">
+          <button class="btn btn-outline" id="create-offer">Create Offer</button>
+          <div class="muted-text" id="offer-msg"></div>
+        </div>
+      </div>
+
+      <div class="table-card">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Supplier</th>
+              <th>Type</th>
+              <th>Category</th>
+              <th>Name</th>
+              <th>Price</th>
+              <th>Status</th>
+              <th>Updated</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="offers-body">
+            <tr><td colspan="9" class="muted-text">Loading...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="section-content">
+      <div class="section-header">
+        <h2>Orders (Marketplace Transactions)</h2>
+        <div style="display:flex; gap:8px; flex-wrap:wrap">
+          <button class="btn btn-outline" id="refresh-orders">Refresh</button>
+        </div>
+      </div>
+      <div class="table-card">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Transaction</th>
+              <th>Supplier</th>
+              <th>Customer</th>
+              <th>Type</th>
+              <th>Item</th>
+              <th>Total</th>
+              <th>Status</th>
+              <th>Updated</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="orders-body">
+            <tr><td colspan="9" class="muted-text">Loading...</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="muted-text" style="margin-top:10px">
+        Note: until a full supplier-order model is implemented, this view maps to marketplace transactions best-effort.
+      </div>
+    </div>
+  </main>
+
+  <script src="/supplier-dashboard.js"></script>
+</body>
+</html>

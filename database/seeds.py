@@ -43,6 +43,20 @@ def seed_default_users(session=None):
                 'email': 'admin@phins.ai'
             },
             {
+                'username': 'actuary',
+                'password': 'PDadmin123@',
+                'role': 'actuary',
+                'name': 'Actuary User',
+                'email': 'actuary@phins.ai'
+            },
+            {
+                'username': 'supplier',
+                'password': 'PDadmin123@',
+                'role': 'supplier',
+                'name': 'Supplier User',
+                'email': 'supplier@phins.ai'
+            },
+            {
                 'username': 'underwriter',
                 'password': 'PDadmin123@',
                 'role': 'underwriter',

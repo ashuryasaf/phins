@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>PHINS Actuary Dashboard</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="container">
+      <div>
+        <h1 class="brand">PHINS - Actuary</h1>
+        <div class="muted-text" id="whoami">Loading session...</div>
+      </div>
+      <nav class="nav">
+        <a href="/admin.html">Admin</a>
+        <a href="/underwriter-dashboard.html">Underwriting</a>
+        <a href="/supplier-dashboard.html">Supplier</a>
+        <a href="/login.html" class="btn-login">Login</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="container" style="padding-top:24px">
+    <div class="section-content">
+      <div class="section-header">
+        <h2>Actuarial Tables</h2>
+        <div style="display:flex; gap:8px; flex-wrap:wrap">
+          <button class="btn btn-outline" id="refresh-tables">Refresh</button>
+        </div>
+      </div>
+      <div class="table-card">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Name</th>
+              <th>Type</th>
+              <th>Version</th>
+              <th>Effective</th>
+              <th>Created By</th>
+              <th>Created</th>
+            </tr>
+          </thead>
+          <tbody id="tables-body">
+            <tr><td colspan="7" class="muted-text">Loading...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="section-content">
+      <div class="section-header">
+        <h2>Upload Actuarial Table (JSON)</h2>
+      </div>
+      <div class="card">
+        <div class="form-group">
+          <label>Payload (JSON with fields: name, table_type, version, effective_date, data)</label>
+          <textarea id="actuarial-json" rows="10" placeholder='{"name":"PHINS Pricing Table","table_type":"pricing","version":"20260105","effective_date":"2026-01-05","data":[{"age":30,"adl":"independent","multiplier":1.0}]}'></textarea>
+        </div>
+        <div style="display:flex; gap:10px; flex-wrap:wrap; margin-top:12px">
+          <button class="btn btn-outline" id="upload-table">Upload</button>
+          <div class="muted-text" id="upload-msg"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="section-content">
+      <div class="section-header">
+        <h2>Fee Schedules (Versioned) - Draft & Approvals</h2>
+        <div style="display:flex; gap:8px; flex-wrap:wrap">
+          <button class="btn btn-outline" id="refresh-fees">Refresh</button>
+        </div>
+      </div>
+
+      <div class="card" style="margin-bottom:16px">
+        <div class="filter-bar">
+          <input class="search-input" id="fee-domain" placeholder="domain (health/investment/banking/advisory/delivery)" />
+          <input class="search-input" id="fee-version" placeholder="version (e.g. 20260105)" />
+          <input class="search-input" id="fee-effective" placeholder="effective_date (YYYY-MM-DD)" />
+        </div>
+        <div class="form-group">
+          <label>Rules (JSON object/array)</label>
+          <textarea id="fee-rules" rows="6" placeholder='{"platform_fee_pct":1.5,"min_fee":0.50,"notes":"example"}'></textarea>
+        </div>
+        <div style="display:flex; gap:10px; flex-wrap:wrap; margin-top:12px">
+          <button class="btn btn-outline" id="create-fee">Create Draft</button>
+          <div class="muted-text" id="fee-msg"></div>
+        </div>
+        <div class="muted-text" style="margin-top:8px">
+          Approvals enforce maker/checker by default (approver must differ from creator).
+        </div>
+      </div>
+
+      <div class="table-card">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Domain</th>
+              <th>Version</th>
+              <th>Effective</th>
+              <th>Status</th>
+              <th>Created By</th>
+              <th>Approved By</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="fees-body">
+            <tr><td colspan="8" class="muted-text">Loading...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </main>
+
+  <script src="/actuary-dashboard.js"></script>
+</body>
+</html>
