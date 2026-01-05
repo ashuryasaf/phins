@@ -1304,6 +1304,18 @@ except ImportError as e:
 unified_balance_service = None
 unified_balance_enabled = False
 
+# Reinsurance service (provider adapters; mock integrations)
+reinsurance_service = None
+reinsurance_enabled = False
+try:
+    from services.reinsurance_service import get_reinsurance_service, ReinsuranceQuoteRequest
+    reinsurance_service = get_reinsurance_service()
+    reinsurance_enabled = True
+    print("✓ Reinsurance service enabled (Swiss Re, Munich Re scaffolding)")
+except Exception as e:
+    reinsurance_enabled = False
+    print(f"Warning: Reinsurance service not available: {e}")
+
 # Initialize pipeline service with data stores
 def _init_pipeline():
     global pipeline_service
@@ -1497,6 +1509,9 @@ FEE_SCHEDULES: Dict[str, Dict[str, Any]] = {}  # schedule_id -> schedule metadat
 
 # Supplier ecosystem (in-memory demo store; DB schema not yet extended)
 SUPPLIER_OFFERS: Dict[str, Dict[str, Any]] = {}  # offer_id -> supplier offer
+
+# Reinsurance contracts (scaffolding; DB schema not yet extended)
+REINSURANCE_CONTRACTS: Dict[str, Dict[str, Any]] = {}  # contract_id -> contract details
 
 # Hash passwords for security (in production, use proper password hashing)
 def hash_password(password: str) -> dict[str, str]:
@@ -2185,6 +2200,11 @@ def get_bi_data_actuary() -> Dict[str, Any]:
             'count': fee_schedule_count,
             'approved': approved_fee,
             'approved_domains': approved_domains
+        },
+        'reinsurance': {
+            'enabled': bool(reinsurance_enabled),
+            'providers': reinsurance_service.providers() if reinsurance_enabled and reinsurance_service else [],
+            'bound_contracts': len(REINSURANCE_CONTRACTS),
         }
     }
 
@@ -2649,7 +2669,7 @@ For claims or questions, please contact:
         
         # BI Dashboard Endpoints (Admin/Management only)
         if path == '/api/bi/actuary':
-            if not require_role(session, ['admin', 'accountant', 'underwriter']):
+            if not require_role(session, ['admin', 'accountant', 'underwriter', 'actuary']):
                 self._set_json_headers(403)
                 self.wfile.write(json.dumps({'error': 'Unauthorized. Admin access required.'}).encode('utf-8'))
                 return
@@ -7035,6 +7055,117 @@ For claims or questions, please contact:
                 'issues': issues,
             }).encode('utf-8'))
             return
+
+        # ===================== REINSURANCE (ACTUARY/ADMIN) =====================
+        if path == '/api/reinsurance/providers':
+            if not require_role(session, ['admin', 'actuary']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Unauthorized'}).encode('utf-8'))
+                return
+            if not reinsurance_enabled or not reinsurance_service:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Reinsurance service unavailable'}).encode('utf-8'))
+                return
+            self._set_json_headers()
+            self.wfile.write(json.dumps({'items': reinsurance_service.providers()}).encode('utf-8'))
+            return
+
+        if path == '/api/reinsurance/contracts':
+            if not require_role(session, ['admin', 'actuary']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Unauthorized'}).encode('utf-8'))
+                return
+            with STATE_LOCK:
+                items = sorted(REINSURANCE_CONTRACTS.values(), key=lambda x: x.get('created_at', ''), reverse=True)
+            self._set_json_headers()
+            self.wfile.write(json.dumps({'items': items}).encode('utf-8'))
+            return
+
+        if path == '/api/reinsurance/quote':
+            if not require_role(session, ['admin', 'actuary']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Unauthorized'}).encode('utf-8'))
+                return
+            if not reinsurance_enabled or not reinsurance_service:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Reinsurance service unavailable'}).encode('utf-8'))
+                return
+
+            # Inputs are provided as query params for quick BI prototyping.
+            try:
+                currency = (qs.get('currency', ['USD'])[0] or 'USD').upper()
+                total_exposure = float(qs.get('total_exposure', ['0'])[0] or 0)
+                expected_annual_premium = float(qs.get('expected_annual_premium', ['0'])[0] or 0)
+                expected_loss_ratio = float(qs.get('expected_loss_ratio', ['0.6'])[0] or 0.6)
+                risk_band = (qs.get('risk_band', ['medium'])[0] or 'medium').lower()
+                region = (qs.get('region', ['global'])[0] or 'global')
+                line_of_business = (qs.get('line_of_business', ['health'])[0] or 'health').lower()
+                portfolio_id = (qs.get('portfolio_id', [None])[0] or None)
+                customer_id = (qs.get('customer_id', [None])[0] or None)
+            except Exception as e:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'Invalid parameters', 'details': str(e)}).encode('utf-8'))
+                return
+
+            req = ReinsuranceQuoteRequest(
+                customer_id=customer_id,
+                portfolio_id=portfolio_id,
+                currency=currency,
+                total_exposure=total_exposure,
+                expected_annual_premium=expected_annual_premium,
+                expected_loss_ratio=expected_loss_ratio,
+                risk_band=risk_band,
+                region=region,
+                line_of_business=line_of_business,
+            )
+            quotes = reinsurance_service.quote_all(req)
+            self._set_json_headers()
+            self.wfile.write(json.dumps({'items': [q.to_dict() for q in quotes]}).encode('utf-8'))
+            return
+
+        if path == '/api/reinsurance/recommendation':
+            if not require_role(session, ['admin', 'actuary']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Unauthorized'}).encode('utf-8'))
+                return
+            if not reinsurance_enabled or not reinsurance_service:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Reinsurance service unavailable'}).encode('utf-8'))
+                return
+
+            objective = (qs.get('objective', ['min_cost'])[0] or 'min_cost').strip()
+            # reuse quote endpoint logic by calling quote_all with same query params
+            try:
+                currency = (qs.get('currency', ['USD'])[0] or 'USD').upper()
+                total_exposure = float(qs.get('total_exposure', ['0'])[0] or 0)
+                expected_annual_premium = float(qs.get('expected_annual_premium', ['0'])[0] or 0)
+                expected_loss_ratio = float(qs.get('expected_loss_ratio', ['0.6'])[0] or 0.6)
+                risk_band = (qs.get('risk_band', ['medium'])[0] or 'medium').lower()
+                region = (qs.get('region', ['global'])[0] or 'global')
+                line_of_business = (qs.get('line_of_business', ['health'])[0] or 'health').lower()
+                portfolio_id = (qs.get('portfolio_id', [None])[0] or None)
+                customer_id = (qs.get('customer_id', [None])[0] or None)
+            except Exception as e:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'Invalid parameters', 'details': str(e)}).encode('utf-8'))
+                return
+
+            req = ReinsuranceQuoteRequest(
+                customer_id=customer_id,
+                portfolio_id=portfolio_id,
+                currency=currency,
+                total_exposure=total_exposure,
+                expected_annual_premium=expected_annual_premium,
+                expected_loss_ratio=expected_loss_ratio,
+                risk_band=risk_band,
+                region=region,
+                line_of_business=line_of_business,
+            )
+            quotes = reinsurance_service.quote_all(req)
+            rec = reinsurance_service.recommend(quotes, objective=objective)
+            self._set_json_headers()
+            self.wfile.write(json.dumps({'quotes': [q.to_dict() for q in quotes], **rec}).encode('utf-8'))
+            return
         
         # ========== END DATA INTEGRITY API ==========
         
@@ -9394,6 +9525,82 @@ For claims or questions, please contact:
             except Exception as e:
                 self._set_json_headers(500)
                 self.wfile.write(json.dumps({'error': 'Failed to update status', 'details': str(e)}).encode('utf-8'))
+            return
+
+        # Bind a reinsurance contract from a chosen quote (scaffolding)
+        if path == '/api/reinsurance/contracts/bind':
+            auth_header = self.headers.get('Authorization', '')
+            token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+            session = validate_session(token) if token else None
+            if not require_role(session, ['admin', 'actuary']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Unauthorized'}).encode('utf-8'))
+                return
+            if not reinsurance_enabled or not reinsurance_service:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Reinsurance service unavailable'}).encode('utf-8'))
+                return
+
+            try:
+                payload = json.loads(body or '{}')
+                quote = payload.get('quote')
+                if not isinstance(quote, dict):
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'Missing quote object'}).encode('utf-8'))
+                    return
+                contract_name = str(payload.get('contract_name') or 'Reinsurance Contract').strip()
+                portfolio_id = str(payload.get('portfolio_id') or '').strip() or None
+                customer_id = str(payload.get('customer_id') or '').strip() or None
+
+                contract_id = f"RC-{datetime.now().strftime('%Y%m%d')}-{random.randint(1000,9999)}"
+                actor = (session or {}).get('username') or 'unknown'
+                row = {
+                    'id': contract_id,
+                    'name': contract_name,
+                    'portfolio_id': portfolio_id,
+                    'customer_id': customer_id,
+                    'provider': quote.get('provider'),
+                    'product': quote.get('product'),
+                    'currency': quote.get('currency'),
+                    'annual_premium': quote.get('annual_premium'),
+                    'attachment_point': quote.get('attachment_point'),
+                    'limit': quote.get('limit'),
+                    'ceded_share_pct': quote.get('ceded_share_pct'),
+                    'quote_id': quote.get('quote_id'),
+                    'provider_request_id': quote.get('provider_request_id'),
+                    'status': 'bound',
+                    'created_at': datetime.now().isoformat(),
+                    'created_by': actor,
+                }
+
+                with STATE_LOCK:
+                    REINSURANCE_CONTRACTS[contract_id] = row
+
+                if audit:
+                    try:
+                        audit.log(actor, 'bind', 'reinsurance_contract', contract_id, {'provider': row.get('provider'), 'product': row.get('product')})
+                    except Exception:
+                        pass
+
+                try:
+                    record_transaction(
+                        customer_id=customer_id,
+                        tx_type='reinsurance_contract_bound',
+                        amount=0.0,
+                        description=f"Reinsurance contract bound: {contract_id}",
+                        metadata={'contract_id': contract_id, 'provider': row.get('provider'), 'annual_premium': row.get('annual_premium')},
+                    )
+                except Exception:
+                    pass
+
+                self._set_json_headers(201)
+                self.wfile.write(json.dumps({'success': True, 'id': contract_id}).encode('utf-8'))
+            except json.JSONDecodeError:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'Invalid JSON payload'}).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': 'Bind failed', 'details': str(e)}).encode('utf-8'))
             return
 
         # Admin: Bulk upload customers (JSON list or CSV)
