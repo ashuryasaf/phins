@@ -1434,17 +1434,38 @@
         // Global state
         let accountId = null;
         let customerId = null;
+        let authToken = null;
         let bots = [];
         let signals = [];
         let orders = [];
         let unifiedBalance = null;
         let fundMode = 'deposit';
         
+        // Helper function to get auth headers
+        function getAuthHeaders() {
+            const headers = { 'Content-Type': 'application/json' };
+            if (authToken) {
+                headers['Authorization'] = `Bearer ${authToken}`;
+            }
+            return headers;
+        }
+        
+        // Helper for authenticated fetch
+        async function authFetch(url, options = {}) {
+            const headers = { ...getAuthHeaders(), ...(options.headers || {}) };
+            return fetch(url, { ...options, headers });
+        }
+        
         // Initialize
         document.addEventListener('DOMContentLoaded', async () => {
-            // Get customer ID from multiple sources - NO HARDCODED FALLBACK
+            // Get customer ID and token from multiple sources
             const session = JSON.parse(localStorage.getItem('session') || '{}');
             const urlParams = new URLSearchParams(window.location.search);
+            
+            // Get auth token
+            authToken = session.token 
+                     || localStorage.getItem('phins_token')
+                     || sessionStorage.getItem('phins_token');
             
             customerId = session.customer_id 
                       || sessionStorage.getItem('customer_id')
@@ -1459,11 +1480,11 @@
                 return;
             }
             
-            console.log('Algo Trading loaded for customer:', customerId);
+            console.log('Algo Trading loaded for customer:', customerId, 'Token:', authToken ? 'present' : 'missing');
             
             // Get account ID
             try {
-                const response = await fetch(`/api/savings/accounts?customer_id=${customerId}`);
+                const response = await authFetch(`/api/savings/accounts?customer_id=${customerId}`);
                 const data = await response.json();
                 if (data.accounts && data.accounts.length > 0) {
                     accountId = data.accounts[0].account_id;
@@ -1522,7 +1543,7 @@
                 // Fetch latest prices for positions
                 if (positions && positions.length > 0) {
                     const symbols = positions.map(p => p.symbol).join(',');
-                    const response = await fetch(`/api/algo/prices?symbols=${symbols}`);
+                    const response = await authFetch(`/api/algo/prices?symbols=${symbols}`);
                     const data = await response.json();
                     
                     if (data.prices) {
@@ -1545,7 +1566,7 @@
         
         async function loadBots() {
             try {
-                const response = await fetch(`/api/algo/bots?account_id=${accountId}`);
+                const response = await authFetch(`/api/algo/bots?account_id=${accountId}`);
                 const data = await response.json();
                 bots = data.bots || [];
                 renderBots();
@@ -1643,7 +1664,7 @@
         
         async function loadSignals() {
             try {
-                const response = await fetch('/api/algo/signals?limit=30');
+                const response = await authFetch('/api/algo/signals?limit=30');
                 const data = await response.json();
                 signals = data.signals || [];
                 renderSignals();
@@ -1762,7 +1783,7 @@
         
         async function loadOrders() {
             try {
-                const response = await fetch(`/api/algo/orders?account_id=${accountId}&limit=10`);
+                const response = await authFetch(`/api/algo/orders?account_id=${accountId}&limit=10`);
                 const data = await response.json();
                 orders = data.orders || [];
                 renderOrders();
@@ -1806,12 +1827,12 @@
         async function loadPositions() {
             try {
                 // Load positions from portfolio tracker
-                const posResponse = await fetch(`/api/portfolio/positions?customer_id=${customerId}&type=algo_trading`);
+                const posResponse = await authFetch(`/api/portfolio/positions?customer_id=${customerId}&type=algo_trading`);
                 const posData = await posResponse.json();
                 positions = posData.positions || [];
                 
                 // Load portfolio summary
-                const sumResponse = await fetch(`/api/portfolio/summary?customer_id=${customerId}&type=algo_trading`);
+                const sumResponse = await authFetch(`/api/portfolio/summary?customer_id=${customerId}&type=algo_trading`);
                 portfolioSummary = await sumResponse.json();
                 
                 renderPositions();
@@ -1893,9 +1914,9 @@
             if (!confirm(`Sell all ${symbol}? (Value: $${amount.toFixed(2)})`)) return;
             
             try {
-                const response = await fetch('/api/portfolio/sell', {
+                const response = await authFetch('/api/portfolio/sell', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    
                     body: JSON.stringify({
                         customer_id: customerId,
                         symbol: symbol,
@@ -1929,9 +1950,9 @@
         // Quick trade from cash balance using portfolio tracker
         async function executeQuickTradeFromCash(symbol, amount, side = 'buy') {
             try {
-                const response = await fetch(`/api/portfolio/${side}`, {
+                const response = await authFetch(`/api/portfolio/${side}`, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    
                     body: JSON.stringify({
                         customer_id: customerId,
                         symbol: symbol,
@@ -1957,7 +1978,7 @@
         
         async function loadMarketOverview() {
             try {
-                const response = await fetch('/api/algo/market-overview');
+                const response = await authFetch('/api/algo/market-overview');
                 const data = await response.json();
                 renderMarketOverview(data.assets || []);
             } catch (e) {
@@ -1989,7 +2010,7 @@
             const symbol = document.getElementById('indicatorSymbol').value;
             
             try {
-                const response = await fetch(`/api/algo/indicators?symbol=${symbol}`);
+                const response = await authFetch(`/api/algo/indicators?symbol=${symbol}`);
                 const data = await response.json();
                 renderIndicators(data);
             } catch (e) {
@@ -2040,7 +2061,7 @@
         async function updateStats() {
             // Fetch comprehensive stats from unified API
             try {
-                const response = await fetch(`/api/algo/stats?customer_id=${customerId}`);
+                const response = await authFetch(`/api/algo/stats?customer_id=${customerId}`);
                 const stats = await response.json();
                 
                 if (!stats.error) {
@@ -2205,9 +2226,9 @@
         
         async function activateSmartBot(templateId) {
             try {
-                const response = await fetch('/api/algo/smart-bots/create', {
+                const response = await authFetch('/api/algo/smart-bots/create', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    
                     body: JSON.stringify({
                         account_id: customerId,
                         template_id: templateId
@@ -2221,9 +2242,9 @@
                     
                     // Simulate some trades for demo
                     if (data.bot?.bot_id) {
-                        await fetch('/api/algo/bots/simulate', {
+                        await authFetch('/api/algo/bots/simulate', {
                             method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
+                            
                             body: JSON.stringify({
                                 bot_id: data.bot.bot_id,
                                 days: 30
@@ -2335,9 +2356,9 @@
             showToast('Activating demo data...', 'info');
             
             try {
-                const response = await fetch('/api/algo/activate-demo', {
+                const response = await authFetch('/api/algo/activate-demo', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    
                     body: JSON.stringify({ customer_id: customerId })
                 });
                 
@@ -2405,9 +2426,9 @@
             }
             
             try {
-                const response = await fetch('/api/algo/bots/create', {
+                const response = await authFetch('/api/algo/bots/create', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    
                     body: JSON.stringify({
                         account_id: accountId,
                         customer_id: customerId,
@@ -2455,9 +2476,9 @@
         
         async function startBot(botId) {
             try {
-                const response = await fetch('/api/algo/bots/start', {
+                const response = await authFetch('/api/algo/bots/start', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    
                     body: JSON.stringify({ bot_id: botId })
                 });
                 
@@ -2473,9 +2494,9 @@
         
         async function stopBot(botId) {
             try {
-                const response = await fetch('/api/algo/bots/stop', {
+                const response = await authFetch('/api/algo/bots/stop', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    
                     body: JSON.stringify({ bot_id: botId })
                 });
                 
@@ -2491,9 +2512,9 @@
         
         async function runBotCycle(botId) {
             try {
-                const response = await fetch('/api/algo/bots/run-cycle', {
+                const response = await authFetch('/api/algo/bots/run-cycle', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    
                     body: JSON.stringify({ bot_id: botId })
                 });
                 
@@ -2515,9 +2536,9 @@
             if (!confirm('Delete this bot?')) return;
             
             try {
-                const response = await fetch('/api/algo/bots/delete', {
+                const response = await authFetch('/api/algo/bots/delete', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    
                     body: JSON.stringify({ bot_id: botId })
                 });
                 
@@ -2537,9 +2558,9 @@
             
             try {
                 // Use portfolio tracker for real-time P&L tracking
-                const response = await fetch('/api/portfolio/trade', {
+                const response = await authFetch('/api/portfolio/trade', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    
                     body: JSON.stringify({
                         customer_id: customerId,
                         symbol,
@@ -2575,9 +2596,9 @@
         
         async function autoRebalance() {
             try {
-                const response = await fetch('/api/algo/rebalance', {
+                const response = await authFetch('/api/algo/rebalance', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    
                     body: JSON.stringify({ account_id: accountId })
                 });
                 
@@ -2604,9 +2625,9 @@
             try {
                 showToast(`Executing ${side.toUpperCase()} ${symbol}...`, 'info');
                 
-                const response = await fetch('/api/algo/trade', {
+                const response = await authFetch('/api/algo/trade', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    
                     body: JSON.stringify({
                         account_id: effectiveAccountId,
                         customer_id: customerId,
@@ -2687,7 +2708,7 @@
         async function loadPipelineData() {
             try {
                 // Load pipeline analytics
-                const analyticsRes = await fetch(`/api/pipeline/analytics?customer_id=${customerId}`);
+                const analyticsRes = await authFetch(`/api/pipeline/analytics?customer_id=${customerId}`);
                 const analytics = await analyticsRes.json();
                 
                 // Update pipeline visualization
@@ -2722,7 +2743,7 @@
                 }
                 
                 // Load AI recommendation
-                const recRes = await fetch(`/api/pipeline/ai-recommendation?customer_id=${customerId}`);
+                const recRes = await authFetch(`/api/pipeline/ai-recommendation?customer_id=${customerId}`);
                 const recommendation = await recRes.json();
                 
                 if (recommendation.recommendations && recommendation.recommendations.length > 0) {
@@ -2744,7 +2765,7 @@
         
         async function loadUnifiedBalance() {
             try {
-                const response = await fetch(`/api/balance/unified?customer_id=${customerId}`);
+                const response = await authFetch(`/api/balance/unified?customer_id=${customerId}`);
                 const data = await response.json();
                 unifiedBalance = data;
                 
@@ -2765,7 +2786,7 @@
         
         async function loadAlgoBalance() {
             try {
-                const response = await fetch(`/api/balance/algo-trading?customer_id=${customerId}`);
+                const response = await authFetch(`/api/balance/algo-trading?customer_id=${customerId}`);
                 const data = await response.json();
                 
                 const balance = data.balance || {};
@@ -2865,7 +2886,7 @@
             try {
                 const response = await fetch(endpoint, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    
                     body: JSON.stringify(body)
                 });
                 
@@ -2898,9 +2919,9 @@
         
         async function loadRealtimeProfits() {
             try {
-                const response = await fetch('/api/algo/profits/realtime', {
+                const response = await authFetch('/api/algo/profits/realtime', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    
                     body: JSON.stringify({ customer_id: customerId })
                 });
                 
@@ -2929,9 +2950,9 @@
         
         async function loadTradingSummary() {
             try {
-                const response = await fetch('/api/algo/profits/summary', {
+                const response = await authFetch('/api/algo/profits/summary', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    
                     body: JSON.stringify({ customer_id: customerId })
                 });
                 
@@ -2967,9 +2988,9 @@
             showToast('🚀 Running profit cycle...', 'info');
             
             try {
-                const response = await fetch('/api/algo/run-profit-cycle', {
+                const response = await authFetch('/api/algo/run-profit-cycle', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    
                     body: JSON.stringify({ 
                         customer_id: customerId,
                         account_id: customerId
@@ -3024,9 +3045,9 @@
             showToast('⚡ Activating profit trading...', 'info');
             
             try {
-                const response = await fetch('/api/algo/activate-profits', {
+                const response = await authFetch('/api/algo/activate-profits', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    
                     body: JSON.stringify({ 
                         customer_id: customerId,
                         initial_capital: 1000,

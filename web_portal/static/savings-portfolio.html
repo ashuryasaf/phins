@@ -1144,11 +1144,34 @@
         const riskProfiles = ['conservative', 'moderate_conservative', 'moderate', 'moderate_aggressive', 'aggressive'];
         const riskLabels = ['Conservative', 'Moderate Conservative', 'Moderate', 'Moderate Aggressive', 'Aggressive'];
         
+        // Auth token for API calls
+        let authToken = null;
+        
+        // Helper function to get auth headers
+        function getAuthHeaders() {
+            const headers = { 'Content-Type': 'application/json' };
+            if (authToken) {
+                headers['Authorization'] = `Bearer ${authToken}`;
+            }
+            return headers;
+        }
+        
+        // Helper for authenticated fetch
+        async function authFetch(url, options = {}) {
+            const headers = { ...getAuthHeaders(), ...(options.headers || {}) };
+            return fetch(url, { ...options, headers });
+        }
+        
         // Initialize dashboard
         document.addEventListener('DOMContentLoaded', async () => {
-            // Get customer ID from multiple sources - NO HARDCODED FALLBACK
+            // Get customer ID and token from multiple sources
             const session = JSON.parse(localStorage.getItem('session') || '{}');
             const urlParams = new URLSearchParams(window.location.search);
+            
+            // Get auth token
+            authToken = session.token 
+                     || localStorage.getItem('phins_token')
+                     || sessionStorage.getItem('phins_token');
             
             customerId = session.customer_id 
                       || sessionStorage.getItem('customer_id')
@@ -1163,7 +1186,7 @@
                 return;
             }
             
-            console.log('Investment Portfolio loaded for customer:', customerId);
+            console.log('Investment Portfolio loaded for customer:', customerId, 'Token:', authToken ? 'present' : 'missing');
             
             // Load all data
             await Promise.all([
@@ -1217,7 +1240,7 @@
                 // STEP 0: Load verified total from integrity service
                 let verifiedData = null;
                 try {
-                    const verifyResponse = await fetch(`/api/integrity/verified-total?customer_id=${customerId}`);
+                    const verifyResponse = await authFetch(`/api/integrity/verified-total?customer_id=${customerId}`);
                     verifiedData = await verifyResponse.json();
                     window.verifiedTotal = verifiedData;
                     console.log('Integrity verification:', verifiedData);
@@ -1226,14 +1249,14 @@
                 }
                 
                 // STEP 1: Load unified investment data (syncs with Dashboard)
-                const unifiedResponse = await fetch(`/api/investment/unified?customer_id=${customerId}`);
+                const unifiedResponse = await authFetch(`/api/investment/unified?customer_id=${customerId}`);
                 const unifiedData = await unifiedResponse.json();
                 
                 // Store unified data for display
                 window.unifiedInvestment = unifiedData;
                 
                 // STEP 2: Load or create savings account for detailed portfolio management
-                let response = await fetch(`/api/savings/accounts?customer_id=${customerId}`);
+                let response = await authFetch(`/api/savings/accounts?customer_id=${customerId}`);
                 let data = await response.json();
                 
                 if (data.accounts && data.accounts.length > 0) {
@@ -1243,9 +1266,8 @@
                     // Use unified data for monthly contribution if available
                     const monthlyContrib = unifiedData.monthly_contribution || 1000;
                     
-                    response = await fetch('/api/savings/create-account', {
+                    response = await authFetch('/api/savings/create-account', {
                         method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
                             customer_id: customerId,
                             policy_id: 'POL-001',
@@ -1265,7 +1287,7 @@
                 
                 // STEP 3: Load detailed portfolio summary
                 try {
-                    response = await fetch(`/api/savings/portfolio?account_id=${accountId}`);
+                    response = await authFetch(`/api/savings/portfolio?account_id=${accountId}`);
                     portfolioData = await response.json();
                 } catch (e) {
                     console.warn('Portfolio service unavailable, using unified data only');
@@ -1329,9 +1351,8 @@
         
         async function investInAsset(symbol, amount) {
             try {
-                await fetch('/api/savings/invest', {
+                await authFetch('/api/savings/invest', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         account_id: accountId,
                         symbol: symbol,
@@ -1631,7 +1652,7 @@
             if (!accountId) return;
             
             try {
-                const response = await fetch(`/api/savings/recommendations?account_id=${accountId}`);
+                const response = await authFetch(`/api/savings/recommendations?account_id=${accountId}`);
                 const data = await response.json();
                 
                 const container = document.getElementById('recommendationsList');
@@ -1663,7 +1684,7 @@
             if (!accountId) return;
             
             try {
-                const response = await fetch(`/api/savings/transactions?account_id=${accountId}&limit=10`);
+                const response = await authFetch(`/api/savings/transactions?account_id=${accountId}&limit=10`);
                 const data = await response.json();
                 
                 const container = document.getElementById('transactionList');
@@ -1712,7 +1733,7 @@
             const years = document.getElementById('projectionYears').value;
             
             try {
-                const response = await fetch(`/api/savings/projections?account_id=${accountId}&years=${years}`);
+                const response = await authFetch(`/api/savings/projections?account_id=${accountId}&years=${years}`);
                 projectionsData = await response.json();
                 
                 // Update lump sum display
@@ -1855,9 +1876,8 @@
             const profile = riskProfiles[value - 1];
             
             try {
-                const response = await fetch('/api/savings/update-risk-profile', {
+                const response = await authFetch('/api/savings/update-risk-profile', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         account_id: accountId,
                         risk_profile: profile
@@ -1888,9 +1908,8 @@
             }
             
             try {
-                const response = await fetch('/api/savings/invest', {
+                const response = await authFetch('/api/savings/invest', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         account_id: accountId,
                         symbol: symbol,
@@ -1921,9 +1940,8 @@
             }
             
             try {
-                const response = await fetch('/api/savings/sell', {
+                const response = await authFetch('/api/savings/sell', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         account_id: accountId,
                         symbol: symbol,
@@ -1975,9 +1993,8 @@
             }
             
             try {
-                const response = await fetch('/api/savings/invest', {
+                const response = await authFetch('/api/savings/invest', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         account_id: accountId,
                         symbol: symbol,
@@ -2057,7 +2074,7 @@
         async function loadAlgoPortfolio() {
             try {
                 // Use the correct API endpoint for algo trading balance
-                const response = await fetch(`/api/balance/algo-trading?customer_id=${customerId}`);
+                const response = await authFetch(`/api/balance/algo-trading?customer_id=${customerId}`);
                 const data = await response.json();
                 
                 let totalValue = 0;
@@ -2127,9 +2144,8 @@
             }
             
             try {
-                const response = await fetch('/api/portfolio/deposit-to-algo', {
+                const response = await authFetch('/api/portfolio/deposit-to-algo', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         customer_id: customerId,
                         amount: amount,
@@ -2183,14 +2199,13 @@
             
             try {
                 // Get pre-deposit integrity status
-                const preIntegrityResponse = await fetch(`/api/integrity/verified-total?customer_id=${customerId}`);
+                const preIntegrityResponse = await authFetch(`/api/integrity/verified-total?customer_id=${customerId}`);
                 const preIntegrity = await preIntegrityResponse.json();
                 const preTotalSavings = preIntegrity.total_savings || 0;
                 
                 // Process the deposit
-                const response = await fetch('/api/savings/deposit', {
+                const response = await authFetch('/api/savings/deposit', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         account_id: accountId,
                         customer_id: customerId,
@@ -2203,7 +2218,7 @@
                 
                 if (result.success) {
                     // Verify post-deposit integrity
-                    const postIntegrityResponse = await fetch(`/api/integrity/verified-total?customer_id=${customerId}`);
+                    const postIntegrityResponse = await authFetch(`/api/integrity/verified-total?customer_id=${customerId}`);
                     const postIntegrity = await postIntegrityResponse.json();
                     const postTotalSavings = postIntegrity.total_savings || 0;
                     
@@ -2244,7 +2259,7 @@
         // Verify current integrity status
         async function verifyIntegrity() {
             try {
-                const response = await fetch(`/api/integrity/check?customer_id=${customerId}&auto_correct=false`);
+                const response = await authFetch(`/api/integrity/check?customer_id=${customerId}&auto_correct=false`);
                 const report = await response.json();
                 
                 console.log('Integrity Report:', report);
@@ -2265,7 +2280,7 @@
         // Auto-correct integrity issues
         async function autoCorrectIntegrity() {
             try {
-                const response = await fetch(`/api/integrity/check?customer_id=${customerId}&auto_correct=true`);
+                const response = await authFetch(`/api/integrity/check?customer_id=${customerId}&auto_correct=true`);
                 const report = await response.json();
                 
                 if (report.corrections_applied && report.corrections_applied.length > 0) {
