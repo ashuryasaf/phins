@@ -17358,29 +17358,67 @@ def run_server(port: int = PORT) -> None:
     try:
         now = datetime.now()
         
-        # Initialize/Update Health Wallet for Asaf - RESET TO $0 (clean slate for testing pipeline)
-        # All deposits should come through the savings pipeline
+        # Initialize Health Wallet for Asaf with demo data
         HEALTH_WALLETS['CUST-ASAF-001'] = {
             'customer_id': 'CUST-ASAF-001',
-            'balance': 0.00,  # Start with $0 - deposits come via pipeline
+            'balance': 25000.00,  # Demo starting balance
             'monthly_deposit': 382.50,  # 30% of savings ($1,275 * 0.30)
-            'transactions': [],  # Clean transaction history
+            'transactions': [
+                {
+                    'id': 'INIT-WALLET-001',
+                    'type': 'initial_deposit',
+                    'amount': 25000.00,
+                    'description': 'Initial demo deposit',
+                    'timestamp': now.isoformat(),
+                    'balance_after': 25000.00
+                }
+            ],
             'created_at': now.isoformat()
         }
-        print(f"   ✓ Health Wallet CUST-ASAF-001: $0.00 (reset)")
+        print(f"   ✓ Health Wallet CUST-ASAF-001: $25,000.00 (demo)")
         
-        # Initialize/Update Investment Account for Asaf - RESET TO $0 (clean slate for testing pipeline)
-        # All deposits should come through the savings pipeline
+        # Initialize Investment Account for Asaf with demo data
         INVESTMENT_ACCOUNTS['CUST-ASAF-001'] = {
             'customer_id': 'CUST-ASAF-001',
-            'balance': 0.00,  # Start with $0 - deposits come via pipeline
-            'index_balance': 0.00,
-            'bonds_balance': 0.00,
-            'crypto_balance': 0.00,
-            'deposits': [],  # Clean deposit history
+            'balance': 15000.00,  # Demo starting balance
+            'index_balance': 9000.00,   # 60% in Index Funds
+            'bonds_balance': 4500.00,   # 30% in Bonds
+            'crypto_balance': 1500.00,  # 10% in Crypto
+            'deposits': [
+                {
+                    'id': 'INIT-INV-001',
+                    'type': 'initial_deposit',
+                    'amount': 15000.00,
+                    'index_amount': 9000.00,
+                    'bonds_amount': 4500.00,
+                    'crypto_amount': 1500.00,
+                    'description': 'Initial demo deposit',
+                    'timestamp': now.isoformat()
+                }
+            ],
             'created_at': now.isoformat()
         }
-        print(f"   ✓ Investment Account CUST-ASAF-001: $0.00 (reset)")
+        print(f"   ✓ Investment Account CUST-ASAF-001: $15,000.00 (demo)")
+        
+        # Initialize Algo Trading Balance for Asaf with demo data
+        if unified_balance_enabled and unified_balance_service:
+            unified_balance_service.algo_trading_balances['CUST-ASAF-001'] = {
+                'available': 5000.00,  # Demo starting balance
+                'in_positions': 0.00,
+                'total_pnl': 0.00,
+                'active_bots': 0,
+                'transfers': [
+                    {
+                        'id': 'INIT-ALGO-001',
+                        'type': 'deposit',
+                        'source': 'initial_demo',
+                        'amount': 5000.00,
+                        'timestamp': now.isoformat()
+                    }
+                ],
+                'created_at': now.isoformat()
+            }
+            print(f"   ✓ Algo Trading CUST-ASAF-001: $5,000.00 (demo)")
         
         # Initialize/Update Customer Allocation preferences with 75% savings
         if 'CUST-ASAF-001' not in CUSTOMER_ALLOCATIONS:
