@@ -1,0 +1,485 @@
+@startuml phins_context
+skinparam monochrome false
+skinparam shadowing false
+skinparam componentStyle rectangle
+skinparam wrapWidth 220
+
+title PHINS - System Context (Suppliers + Wallets + Actuary + AI/BI)
+
+actor Client
+actor Admin
+actor SupplierUser as Supplier
+actor Courier
+actor "External Payment Processor" as PSP
+actor "Bank / ACH" as Bank
+actor "Broker/Exchange" as Broker
+actor "Advisor (Doctor/Lawyer)" as Advisor
+
+rectangle "PHINS Platform" {
+  [Client Portal UI] as ClientPortal
+  [Supplier Portal UI] as SupplierPortal
+  [Admin Portal UI] as AdminPortal
+  [Actuary UI] as ActuaryUI
+
+  [Marketplace API] as Marketplace
+  [Wallet/Ledger API] as Wallet
+  [Underwriting/Policy API] as Insurance
+  [Claims API] as Claims
+  [Billing/Invoices API] as Billing
+  [Delivery API] as Delivery
+  [Investment API] as Investment
+  [Banking/Custody API] as Banking
+  [Decisioning (Actuary/AI)] as Decisioning
+
+  [Event Bus] as Bus
+  [OLTP DB] as OLTP
+  [Lakehouse/BI] as Lake
+}
+
+Client --> ClientPortal
+Admin --> AdminPortal
+Supplier --> SupplierPortal
+
+ClientPortal --> Marketplace
+ClientPortal --> Wallet
+ClientPortal --> Insurance
+ClientPortal --> Claims
+ClientPortal --> Billing
+ClientPortal --> Delivery
+ClientPortal --> Investment
+ClientPortal --> Banking
+
+ActuaryUI --> Decisioning
+AdminPortal --> Decisioning
+AdminPortal --> Marketplace
+AdminPortal --> Wallet
+SupplierPortal --> Marketplace
+SupplierPortal --> Delivery
+
+PSP --> Wallet : deposits/charges (card)
+Bank --> Banking : deposits/withdrawals
+Banking --> Wallet : settlement/ledger postings
+Courier --> Delivery : quotes/tracking
+Broker --> Investment : venues/fees/execution
+Advisor --> Marketplace : availability/pricing
+
+Insurance --> Decisioning : risk factors, underwriting assessment
+Decisioning --> Insurance : pricing + actuarial fee decisions
+Claims --> Wallet : claim payout credits
+Billing --> Wallet : reconciled payments
+Marketplace --> Bus
+Wallet --> Bus
+Insurance --> Bus
+Claims --> Bus
+Delivery --> Bus
+Investment --> Bus
+Banking --> Bus
+
+Bus --> Lake
+Marketplace --> OLTP
+Wallet --> OLTP
+Insurance --> OLTP
+Claims --> OLTP
+Billing --> OLTP
+Delivery --> OLTP
+Investment --> OLTP
+Banking --> OLTP
+Decisioning --> OLTP : versioned rules/tables/models metadata
+@enduml
+
+@startuml phins_components
+skinparam monochrome false
+skinparam shadowing false
+skinparam componentStyle rectangle
+skinparam wrapWidth 220
+
+title PHINS - Component Diagram (Supplier Ecosystem + Data Integrity + Wallets + Investment + Banking)
+
+package "Presentation" {
+  [Client Portal UI]
+  [Supplier Portal UI]
+  [Admin Portal UI]
+  [Actuary UI]
+  [Investment UI]
+  [Banking/Custody UI]
+}
+
+package "APIs / Gateways" {
+  [API Gateway]
+  [AuthN/AuthZ Service]
+}
+
+package "Core Services" {
+  [Supplier Onboarding Service]
+  [Catalog Service]
+  [Offer/Pricing Service]
+  [Quote & Ranking Service]
+  [Cart Service]
+  [Order Service]
+  [Delivery Orchestration Service]
+  [Billing Service]
+  [Wallet & Ledger Service]
+  [Claims Service]
+  [Underwriting/Policy Service]
+  [Decisioning Service (Actuary/AI)]
+
+  [Investment Marketplace Service]
+  [Trade Routing / Best Execution Service]
+  [Market Data Service]
+
+  [Banking/Custody Service]
+  [Treasury & Limits Service]
+  [KYC/AML & Sanctions Service]
+
+  [Audit Service]
+}
+
+package "Data Integrity Patterns" {
+  [Outbox Publisher]
+  [Idempotency Store]
+  [Reconciliation Jobs]
+}
+
+database "OLTP (Postgres)" as DB
+queue "Event Bus (Kafka/NATS)" as Q
+database "Lakehouse (S3/Iceberg/BigQuery)" as LH
+component "Feature Store" as FS
+component "BI / Dashboards" as BI
+
+[Client Portal UI] --> [API Gateway]
+[Supplier Portal UI] --> [API Gateway]
+[Admin Portal UI] --> [API Gateway]
+[Actuary UI] --> [API Gateway]
+[Investment UI] --> [API Gateway]
+[Banking/Custody UI] --> [API Gateway]
+
+[API Gateway] --> [AuthN/AuthZ Service]
+[API Gateway] --> [Supplier Onboarding Service]
+[API Gateway] --> [Catalog Service]
+[API Gateway] --> [Offer/Pricing Service]
+[API Gateway] --> [Quote & Ranking Service]
+[API Gateway] --> [Cart Service]
+[API Gateway] --> [Order Service]
+[API Gateway] --> [Delivery Orchestration Service]
+[API Gateway] --> [Billing Service]
+[API Gateway] --> [Wallet & Ledger Service]
+[API Gateway] --> [Claims Service]
+[API Gateway] --> [Underwriting/Policy Service]
+[API Gateway] --> [Decisioning Service (Actuary/AI)]
+
+[API Gateway] --> [Investment Marketplace Service]
+[API Gateway] --> [Trade Routing / Best Execution Service]
+[API Gateway] --> [Banking/Custody Service]
+[API Gateway] --> [Treasury & Limits Service]
+[API Gateway] --> [KYC/AML & Sanctions Service]
+
+[Investment Marketplace Service] --> [Market Data Service]
+[Trade Routing / Best Execution Service] --> [Market Data Service]
+[Investment Marketplace Service] --> [Wallet & Ledger Service]
+
+[Banking/Custody Service] --> [Wallet & Ledger Service]
+[Banking/Custody Service] --> [Treasury & Limits Service]
+[Banking/Custody Service] --> [KYC/AML & Sanctions Service]
+[Investment Marketplace Service] --> [KYC/AML & Sanctions Service]
+[Wallet & Ledger Service] --> [KYC/AML & Sanctions Service]
+
+[Underwriting/Policy Service] --> [Audit Service]
+[Claims Service] --> [Audit Service]
+[Wallet & Ledger Service] --> [Audit Service]
+[Offer/Pricing Service] --> [Audit Service]
+[Decisioning Service (Actuary/AI)] --> [Audit Service]
+[Trade Routing / Best Execution Service] --> [Audit Service]
+[Banking/Custody Service] --> [Audit Service]
+
+[Cart Service] --> DB
+[Order Service] --> DB
+[Catalog Service] --> DB
+[Offer/Pricing Service] --> DB
+[Quote & Ranking Service] --> DB
+[Delivery Orchestration Service] --> DB
+[Billing Service] --> DB
+[Wallet & Ledger Service] --> DB
+[Claims Service] --> DB
+[Underwriting/Policy Service] --> DB
+[Decisioning Service (Actuary/AI)] --> DB
+[Investment Marketplace Service] --> DB
+[Trade Routing / Best Execution Service] --> DB
+[Market Data Service] --> DB
+[Banking/Custody Service] --> DB
+[Treasury & Limits Service] --> DB
+[KYC/AML & Sanctions Service] --> DB
+[Audit Service] --> DB
+
+[Wallet & Ledger Service] --> [Idempotency Store]
+[Order Service] --> [Idempotency Store]
+[Billing Service] --> [Idempotency Store]
+[Investment Marketplace Service] --> [Idempotency Store]
+[Banking/Custody Service] --> [Idempotency Store]
+
+[Cart Service] --> [Outbox Publisher]
+[Order Service] --> [Outbox Publisher]
+[Wallet & Ledger Service] --> [Outbox Publisher]
+[Offer/Pricing Service] --> [Outbox Publisher]
+[Delivery Orchestration Service] --> [Outbox Publisher]
+[Underwriting/Policy Service] --> [Outbox Publisher]
+[Claims Service] --> [Outbox Publisher]
+[Investment Marketplace Service] --> [Outbox Publisher]
+[Banking/Custody Service] --> [Outbox Publisher]
+
+[Outbox Publisher] --> Q
+Q --> LH
+LH --> BI
+LH --> FS
+FS --> [Decisioning Service (Actuary/AI)]
+FS --> [Trade Routing / Best Execution Service]
+
+[Reconciliation Jobs] --> DB
+[Reconciliation Jobs] --> Q
+@enduml
+
+@startuml phins_domain
+skinparam monochrome false
+skinparam shadowing false
+skinparam wrapWidth 220
+
+title PHINS - Domain Model (Suppliers + Orders + Delivery + Wallets + Actuary + Investment/Banking)
+
+class Customer {
+  +id
+  +dob
+  +age
+  +risk_profile_id
+}
+
+class RiskProfile {
+  +id
+  +factors_json
+  +underwriting_assessment_version
+}
+
+class ActuarialTable {
+  +id
+  +table_type
+  +version
+  +effective_date
+}
+
+class FeeSchedule {
+  +id
+  +domain: {HEALTH, INVESTMENT, BANKING, ADVISORY, DELIVERY}
+  +version
+  +rules_json
+}
+
+class Supplier {
+  +id
+  +legal_name
+  +status: {PENDING, APPROVED, SUSPENDED}
+  +settlement_account_id
+  +sla_tier
+}
+
+class ProductService {
+  +id
+  +category: {CONSULTATION, MEDICAL_DEVICE, DAILY_SUPPLY, PHARMACY, HOME_CARE, TRADING, CUSTODY, ADVISORY, DELIVERY}
+  +name
+  +attributes_json
+}
+
+class Offer {
+  +id
+  +supplier_id
+  +product_service_id
+  +base_price
+  +currency
+  +region
+  +availability
+  +last_updated_at
+}
+
+class Quote {
+  +id
+  +customer_id
+  +items_json
+  +computed_price
+  +pricing_explanation_json
+  +pricing_version
+  +expires_at
+}
+
+class Wallet {
+  +id
+  +customer_id
+  +wallet_type: {HEALTH, INVESTMENT, BANKING, ADVISORY}
+  +currency
+}
+
+class LedgerEntry {
+  +id
+  +wallet_id
+  +direction: {DEBIT,CREDIT}
+  +amount
+  +reference_type
+  +reference_id
+  +posted_at
+}
+
+class WalletHold {
+  +id
+  +wallet_id
+  +amount
+  +status: {HELD,CAPTURED,RELEASED,EXPIRED}
+  +idempotency_key
+}
+
+class Cart {
+  +id
+  +customer_id
+  +items_json
+}
+
+class Order {
+  +id
+  +customer_id
+  +status: {CREATED,PAID,CONFIRMED,FULFILLING,SHIPPED,DELIVERED,CANCELLED,REFUNDED}
+  +total
+}
+
+class OrderItem {
+  +id
+  +order_id
+  +offer_id
+  +qty
+  +unit_price
+}
+
+class DeliveryQuote {
+  +id
+  +order_id
+  +courier
+  +price
+  +eta
+}
+
+class Settlement {
+  +id
+  +supplier_id
+  +order_id
+  +gross
+  +fees
+  +net
+  +status: {PENDING,PAID,FAILED}
+}
+
+class Trade {
+  +id
+  +customer_id
+  +instrument
+  +venue
+  +qty
+  +fees
+  +status
+}
+
+class CustodyAccount {
+  +id
+  +customer_id
+  +provider
+  +status
+}
+
+Customer "1" -- "1" RiskProfile
+ActuarialTable "1" -- "0..*" FeeSchedule : informs
+Customer "1" -- "0..*" Wallet
+Wallet "1" -- "0..*" LedgerEntry
+Wallet "1" -- "0..*" WalletHold
+
+Supplier "1" -- "0..*" Offer
+ProductService "1" -- "0..*" Offer
+Customer "1" -- "0..*" Cart
+Customer "1" -- "0..*" Order
+Order "1" -- "1..*" OrderItem
+OrderItem "*" --> "1" Offer
+Order "1" -- "0..*" DeliveryQuote
+Order "1" -- "0..1" Settlement
+
+Quote "*" --> "1" Customer
+Quote "*" --> "0..*" Offer : references inputs used
+
+Customer "1" -- "0..*" Trade
+Customer "1" -- "0..*" CustodyAccount
+FeeSchedule ..> Quote : used for fees
+ActuarialTable ..> Quote : used for risk/actuarial fees
+@enduml
+
+@startuml phins_sequence_health_checkout
+skinparam monochrome false
+skinparam shadowing false
+skinparam wrapWidth 220
+
+title Sequence - Health Wallet Purchase (Best Price) + Delivery + Ledger Integrity
+
+actor Client
+participant "Client Portal" as UI
+participant "Marketplace" as M
+participant "Quote & Ranking" as Q
+participant "Decisioning (Actuary/AI)" as D
+participant "Delivery Service" as Del
+participant "Wallet/Ledger" as W
+participant "Order Service" as O
+participant "Billing Service" as B
+participant "Supplier" as S
+participant "Courier" as C
+
+Client -> UI : Choose category (e.g., Consultation)
+UI -> M : Search(category, location, constraints)
+M -> Q : GetRankedOffers(request)
+Q -> D : GetFeeSchedule + eligibility + risk adjustments\n(input: customer risk profile + actuarial tables versions)
+D --> Q : pricing_rules + version + explanations
+Q --> M : Ranked offers + computed final prices\n(least expensive first)
+M --> UI : Show best price + alternates
+
+Client -> UI : Add to cart + proceed to checkout
+UI -> Del : Request delivery quotes(cart, address)
+Del -> C : Quote request
+C --> Del : Quote options (price/ETA)
+Del --> UI : Delivery options
+
+Client -> UI : Confirm purchase (select offer + courier)
+UI -> O : CreateOrder(cart, selected_delivery)
+O -> W : CreateHold(wallet=HEALTH, amount=order_total, idem_key)
+W --> O : hold_id (HELD)
+O -> B : CreateInvoice(order_id)
+B --> O : invoice_id
+O -> S : PlaceOrder(order details)
+S --> O : Accept/Confirm
+O -> W : CaptureHold(hold_id)  ## double-entry posting
+W --> O : captured (ledger entries posted)
+O -> Del : CreateShipment(order_id, courier)
+Del -> C : Create shipment
+C --> Del : tracking_id
+Del --> UI : Tracking info
+O --> UI : Order confirmed + receipt + tracking
+@enduml
+
+@startuml phins_order_state
+skinparam monochrome false
+skinparam shadowing false
+
+title State Machine - Order Lifecycle (Wallet-safe)
+
+[*] --> CREATED
+CREATED --> PAID : wallet hold+capture OR card capture
+PAID --> CONFIRMED : supplier accepts
+CONFIRMED --> FULFILLING : picking/scheduling
+FULFILLING --> SHIPPED : courier pickup/tracking
+SHIPPED --> DELIVERED : proof of delivery
+DELIVERED --> [*]
+
+CREATED --> CANCELLED : user cancels (release hold)
+PAID --> REFUNDED : refund (ledger reversal)
+CONFIRMED --> CANCELLED : supplier cancel (release/refund)
+SHIPPED --> REFUNDED : return/failed delivery (policy-based)
+CANCELLED --> [*]
+REFUNDED --> [*]
+@enduml
