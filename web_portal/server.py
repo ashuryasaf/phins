@@ -14291,7 +14291,44 @@ For claims or questions, please contact:
                     self.wfile.write(json.dumps({'error': 'account_id, symbol, and positive amount required'}).encode('utf-8'))
                     return
                 
+                # SYNC: Get the account and sync its balance with INVESTMENT_ACCOUNTS
+                account = portfolio_service.accounts.get(account_id)
+                if account:
+                    customer_id = account.customer_id
+                    
+                    # Get actual balance from INVESTMENT_ACCOUNTS
+                    inv_account = INVESTMENT_ACCOUNTS.get(customer_id, {})
+                    actual_balance = float(inv_account.get('balance', 0))
+                    
+                    # Also include Health Wallet as available for investment
+                    health_wallet = HEALTH_WALLETS.get(customer_id, {})
+                    wallet_balance = float(health_wallet.get('balance', 0))
+                    
+                    # Total available = Investment balance + Health Wallet
+                    total_available = actual_balance + wallet_balance
+                    
+                    # Sync the portfolio_service account balance
+                    if total_available > account.balance:
+                        account.balance = total_available
+                        print(f"Synced portfolio balance for {customer_id}: ${total_available:,.2f}")
+                
                 result = portfolio_service.invest(account_id, symbol, amount)
+                
+                # If successful, also update INVESTMENT_ACCOUNTS
+                if result.get('success'):
+                    customer_id = account.customer_id if account else None
+                    if customer_id and customer_id in INVESTMENT_ACCOUNTS:
+                        # Deduct from investment balance first, then health wallet if needed
+                        inv_bal = float(INVESTMENT_ACCOUNTS[customer_id].get('balance', 0))
+                        if amount <= inv_bal:
+                            INVESTMENT_ACCOUNTS[customer_id]['balance'] = inv_bal - amount
+                        else:
+                            # Use investment balance first, then health wallet
+                            remaining = amount - inv_bal
+                            INVESTMENT_ACCOUNTS[customer_id]['balance'] = 0
+                            if customer_id in HEALTH_WALLETS:
+                                hw_bal = float(HEALTH_WALLETS[customer_id].get('balance', 0))
+                                HEALTH_WALLETS[customer_id]['balance'] = max(0, hw_bal - remaining)
                 
                 if result.get('success') and audit:
                     try:
