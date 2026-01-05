@@ -17324,82 +17324,29 @@ def run_server(port: int = PORT) -> None:
     try:
         now = datetime.now()
         
-        # Initialize/Update Health Wallet for Asaf (always reset to clean state)
-        # Filter out test claim payments and keep only valid deposit transactions
-        existing_wallet = HEALTH_WALLETS.get('CUST-ASAF-001', {})
-        existing_txns = existing_wallet.get('transactions', [])
-        
-        # Only keep initial deposits, not claim payments (those inflate balance incorrectly)
-        clean_txns = [t for t in existing_txns if t.get('type') in ['initial_deposit', 'monthly_contribution', 'premium_deposit']]
-        
-        # Calculate correct balance from clean transactions
-        if clean_txns:
-            correct_balance = sum(float(t.get('amount', 0)) for t in clean_txns)
-        else:
-            correct_balance = 15000.00  # Default: $10,000 initial + $5,000 monthly
-        
-        # Always reset to clean state with correct balance
+        # Initialize/Update Health Wallet for Asaf - RESET TO $0 (clean slate for testing pipeline)
+        # All deposits should come through the savings pipeline
         HEALTH_WALLETS['CUST-ASAF-001'] = {
             'customer_id': 'CUST-ASAF-001',
-            'balance': correct_balance,
+            'balance': 0.00,  # Start with $0 - deposits come via pipeline
             'monthly_deposit': 382.50,  # 30% of savings ($1,275 * 0.30)
-            'transactions': clean_txns if clean_txns else [
-                {
-                    'id': f'INIT-WALLET-{now.strftime("%Y%m%d")}-001',
-                    'type': 'initial_deposit',
-                    'amount': 10000.00,
-                    'source': 'policy_savings',
-                    'description': 'Initial policy savings allocation to health wallet',
-                    'previous_balance': 0.0,
-                    'balance_after': 10000.0,
-                    'timestamp': (now - timedelta(days=30)).isoformat(),
-                    'nft_token_id': f'NFT-WAL-{(now - timedelta(days=30)).strftime("%Y%m%d")}-001'
-                },
-                {
-                    'id': f'INIT-WALLET-{now.strftime("%Y%m%d")}-002',
-                    'type': 'monthly_contribution',
-                    'amount': 5000.00,
-                    'source': 'premium_savings',
-                    'description': 'Monthly premium savings deposit',
-                    'previous_balance': 10000.0,
-                    'balance_after': 15000.0,
-                    'timestamp': (now - timedelta(days=15)).isoformat(),
-                    'nft_token_id': f'NFT-WAL-{(now - timedelta(days=15)).strftime("%Y%m%d")}-002'
-                }
-            ],
-            'created_at': existing_wallet.get('created_at', (now - timedelta(days=30)).isoformat())
+            'transactions': [],  # Clean transaction history
+            'created_at': now.isoformat()
         }
-        print(f"   ✓ Health Wallet CUST-ASAF-001: ${correct_balance:,.2f}")
+        print(f"   ✓ Health Wallet CUST-ASAF-001: $0.00 (reset)")
         
-        # Initialize/Update Investment Account for Asaf (always ensure correct balance)
-        existing_inv = INVESTMENT_ACCOUNTS.get('CUST-ASAF-001', {})
-        existing_deposits = existing_inv.get('deposits', [])
-        
+        # Initialize/Update Investment Account for Asaf - RESET TO $0 (clean slate for testing pipeline)
+        # All deposits should come through the savings pipeline
         INVESTMENT_ACCOUNTS['CUST-ASAF-001'] = {
             'customer_id': 'CUST-ASAF-001',
-            'balance': 32500.00,  # Total investment balance
-            'index_balance': 19500.00,  # 60% of investment in index funds
-            'bonds_balance': 9750.00,   # 30% of investment in bonds
-            'crypto_balance': 3250.00,  # 10% of investment in crypto
-            'deposits': existing_deposits if existing_deposits else [
-                {
-                    'id': f'INIT-INV-{now.strftime("%Y%m%d")}-001',
-                    'amount': 20000.00,
-                    'payment_method': 'policy_savings',
-                    'source': 'initial_allocation',
-                    'timestamp': (now - timedelta(days=30)).isoformat()
-                },
-                {
-                    'id': f'INIT-INV-{now.strftime("%Y%m%d")}-002',
-                    'amount': 12500.00,
-                    'payment_method': 'monthly_premium',
-                    'source': 'premium_savings',
-                    'timestamp': (now - timedelta(days=15)).isoformat()
-                }
-            ],
-            'created_at': existing_inv.get('created_at', (now - timedelta(days=30)).isoformat())
+            'balance': 0.00,  # Start with $0 - deposits come via pipeline
+            'index_balance': 0.00,
+            'bonds_balance': 0.00,
+            'crypto_balance': 0.00,
+            'deposits': [],  # Clean deposit history
+            'created_at': now.isoformat()
         }
-        print(f"   ✓ Investment Account CUST-ASAF-001: $32,500.00")
+        print(f"   ✓ Investment Account CUST-ASAF-001: $0.00 (reset)")
         
         # Initialize/Update Customer Allocation preferences with 75% savings
         if 'CUST-ASAF-001' not in CUSTOMER_ALLOCATIONS:
@@ -17744,52 +17691,11 @@ def run_server(port: int = PORT) -> None:
                     'nft_token_id': f'NFT-PIPE-{(now - timedelta(days=3)).strftime("%Y%m%d")}-004'
                 },
                 
-                # Savings and Investment Deposit Transactions for CUST-ASAF-001
-                # These match the initialized balances: Wallet $15,000, Investment $32,500
-                {
-                    'id': 'TX-WALLET-ASAF-001',
-                    'customer_id': 'CUST-ASAF-001',
-                    'type': 'wallet_deposit',
-                    'amount': 10000.00,
-                    'description': 'Initial Health Wallet Allocation from Policy Savings',
-                    'metadata': {'wallet_type': 'health_wallet', 'source': 'policy_savings', 'policy_id': 'POL-ASAF-HEALTH-001'},
-                    'timestamp': (now - timedelta(days=30)).isoformat(),
-                    'status': 'completed',
-                    'nft_token_id': f'NFT-WAL-INIT-{(now - timedelta(days=30)).strftime("%Y%m%d")}-001'
-                },
-                {
-                    'id': 'TX-WALLET-ASAF-002',
-                    'customer_id': 'CUST-ASAF-001',
-                    'type': 'wallet_deposit',
-                    'amount': 5000.00,
-                    'description': 'Monthly Premium Savings Allocation to Health Wallet',
-                    'metadata': {'wallet_type': 'health_wallet', 'source': 'premium_savings', 'allocation_pct': 30},
-                    'timestamp': (now - timedelta(days=15)).isoformat(),
-                    'status': 'completed',
-                    'nft_token_id': f'NFT-WAL-{(now - timedelta(days=15)).strftime("%Y%m%d")}-002'
-                },
-                {
-                    'id': 'TX-INV-ASAF-001',
-                    'customer_id': 'CUST-ASAF-001',
-                    'type': 'investment_deposit',
-                    'amount': 20000.00,
-                    'description': 'Initial Investment Allocation from Policy Savings',
-                    'metadata': {'portfolio': 'balanced_growth', 'source': 'policy_savings', 'allocation': {'index': 60, 'bonds': 30, 'crypto': 10}},
-                    'timestamp': (now - timedelta(days=30)).isoformat(),
-                    'status': 'completed',
-                    'nft_token_id': f'NFT-INV-INIT-{(now - timedelta(days=30)).strftime("%Y%m%d")}-001'
-                },
-                {
-                    'id': 'TX-INV-ASAF-002',
-                    'customer_id': 'CUST-ASAF-001',
-                    'type': 'investment_deposit',
-                    'amount': 12500.00,
-                    'description': 'Monthly Premium Savings Allocation to Investment Account',
-                    'metadata': {'portfolio': 'balanced_growth', 'source': 'premium_savings', 'allocation_pct': 65},
-                    'timestamp': (now - timedelta(days=15)).isoformat(),
-                    'status': 'completed',
-                'nft_token_id': f'NFT-INV-{(now - timedelta(days=15)).strftime("%Y%m%d")}-002'
-            }
+                # NOTE: CUST-ASAF-001 deposit entries removed - starting with $0 balance
+                # All deposits should come through the savings pipeline for testing
+                # Uncomment below to restore initial deposits:
+                # TX-WALLET-ASAF-001: $10,000, TX-WALLET-ASAF-002: $5,000
+                # TX-INV-ASAF-001: $20,000, TX-INV-ASAF-002: $12,500
         ]
         
         # Populate TRANSACTION_LEDGER
@@ -17816,7 +17722,7 @@ def run_server(port: int = PORT) -> None:
         print(f"   - Billing Records: 3")
         print(f"   - Claim Transactions: 3")
         print(f"   - Pipeline Events: 4")
-        print(f"   - Savings Deposits: 4 (Wallet $15,000 + Investment $32,500 = $47,500)")
+        print(f"   - CUST-ASAF-001 Savings: $0.00 (reset - use pipeline to add funds)")
         print(f"   - Total ledger entries: {len(TRANSACTION_LEDGER)}")
     except Exception as e:
         print(f"⚠️  Transaction ledger initialization skipped: {e}")
