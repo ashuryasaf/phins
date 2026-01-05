@@ -144,6 +144,89 @@
         <pre id="bi-json" style="white-space:pre-wrap; margin:0" class="muted-text">Loading...</pre>
       </div>
     </div>
+
+    <div class="section-content">
+      <div class="section-header">
+        <h2>Reinsurance Hedging (Swiss Re / Munich Re)</h2>
+        <div style="display:flex; gap:8px; flex-wrap:wrap">
+          <button class="btn btn-outline" id="refresh-reins">Refresh</button>
+        </div>
+      </div>
+
+      <div class="card" style="margin-bottom:16px">
+        <div class="muted-text" style="margin-bottom:10px">
+          Providers:
+          <span id="reins-providers" class="muted-text">Loading...</span>
+        </div>
+
+        <div class="filter-bar">
+          <input class="search-input" id="reins-total-exposure" placeholder="total_exposure (e.g. 10000000)" />
+          <input class="search-input" id="reins-loss-ratio" placeholder="expected_loss_ratio (0..1, e.g. 0.62)" />
+          <input class="search-input" id="reins-risk-band" placeholder="risk_band (low/medium/high/very_high)" />
+          <input class="search-input" id="reins-region" placeholder="region (e.g. EU)" />
+          <input class="search-input" id="reins-lob" placeholder="line_of_business (health/life/...)" />
+          <input class="search-input" id="reins-currency" placeholder="currency (USD)" />
+        </div>
+        <div class="filter-bar">
+          <select class="filter-select" id="reins-objective">
+            <option value="min_cost">min_cost</option>
+            <option value="best_confidence">best_confidence</option>
+          </select>
+          <input class="search-input" id="reins-contract-name" placeholder="contract name (for binding)" />
+          <input class="search-input" id="reins-portfolio-id" placeholder="portfolio_id (optional)" />
+        </div>
+        <div style="display:flex; gap:10px; flex-wrap:wrap; margin-top:12px">
+          <button class="btn btn-outline" id="reins-run-quotes">Run quotes</button>
+          <button class="btn btn-outline" id="reins-recommend">Recommend</button>
+          <button class="btn btn-outline" id="reins-bind" disabled>Bind recommended</button>
+          <div class="muted-text" id="reins-msg"></div>
+        </div>
+      </div>
+
+      <div class="table-card" style="margin-bottom:16px">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Quote ID</th>
+              <th>Provider</th>
+              <th>Product</th>
+              <th>Annual Premium</th>
+              <th>Attachment</th>
+              <th>Limit</th>
+              <th>Ceded %</th>
+              <th>Confidence</th>
+            </tr>
+          </thead>
+          <tbody id="reins-quotes-body">
+            <tr><td colspan="8" class="muted-text">No quotes yet.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="table-card">
+        <div class="section-header" style="margin-bottom:12px">
+          <h3 style="margin:0">Bound Contracts</h3>
+          <button class="btn btn-outline" id="reins-refresh-contracts">Refresh contracts</button>
+        </div>
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Name</th>
+              <th>Provider</th>
+              <th>Product</th>
+              <th>Currency</th>
+              <th>Annual Premium</th>
+              <th>Status</th>
+              <th>Created</th>
+            </tr>
+          </thead>
+          <tbody id="reins-contracts-body">
+            <tr><td colspan="8" class="muted-text">Loading...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
   </main>
 
   <script src="/actuary-dashboard.js"></script>
