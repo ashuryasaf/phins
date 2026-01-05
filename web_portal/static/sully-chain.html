@@ -1,0 +1,1399 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="theme-color" content="#1a237e">
+  <title>Sully Chain - Supplier Management Dashboard</title>
+  <link rel="stylesheet" href="/styles.css">
+  <style>
+    :root {
+      --sully-primary: #1a237e;
+      --sully-secondary: #283593;
+      --sully-accent: #3f51b5;
+      --sully-light: #5c6bc0;
+      --sully-success: #00c853;
+      --sully-warning: #ffc107;
+      --sully-danger: #ff5252;
+      --sully-gradient: linear-gradient(135deg, #1a237e 0%, #283593 50%, #3f51b5 100%);
+    }
+    
+    /* Sully Chain Header */
+    .sully-header {
+      background: var(--sully-gradient);
+      border-bottom: 1px solid rgba(255,255,255,0.15);
+      padding: 0;
+      position: sticky;
+      top: 0;
+      z-index: 1000;
+      box-shadow: 0 4px 24px rgba(26, 35, 126, 0.4);
+    }
+    .sully-header-inner {
+      max-width: 1800px;
+      margin: 0 auto;
+      padding: 0.85rem 2rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .sully-logo {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      text-decoration: none;
+    }
+    .sully-logo-icon {
+      width: 48px;
+      height: 48px;
+      background: linear-gradient(135deg, #7c4dff 0%, #651fff 100%);
+      border-radius: 14px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.5rem;
+      box-shadow: 0 4px 15px rgba(124, 77, 255, 0.5);
+      border: 2px solid rgba(255,255,255,0.3);
+    }
+    .sully-logo-text {
+      font-size: 1.5rem;
+      font-weight: 800;
+      background: linear-gradient(135deg, #fff 0%, #c5cae9 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      letter-spacing: -0.5px;
+    }
+    .sully-logo-subtitle {
+      font-size: 0.7rem;
+      color: rgba(255,255,255,0.7);
+      font-weight: 500;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+    .sully-nav {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .sully-nav a {
+      padding: 0.5rem 1rem;
+      color: rgba(255,255,255,0.85);
+      text-decoration: none;
+      border-radius: 8px;
+      font-size: 0.9rem;
+      font-weight: 500;
+      transition: all 0.2s ease;
+    }
+    .sully-nav a:hover {
+      background: rgba(255,255,255,0.12);
+      color: white;
+    }
+    .sully-nav a.active {
+      background: linear-gradient(135deg, #7c4dff 0%, #651fff 100%);
+      color: white;
+      box-shadow: 0 4px 12px rgba(124, 77, 255, 0.4);
+    }
+    .sully-nav .nav-divider {
+      width: 1px;
+      height: 24px;
+      background: rgba(255,255,255,0.2);
+      margin: 0 0.5rem;
+    }
+    .sully-nav .btn-logout {
+      background: linear-gradient(135deg, #ff5252 0%, #d50000 100%);
+      color: white;
+      padding: 0.5rem 1rem;
+      border-radius: 8px;
+      font-weight: 600;
+    }
+    
+    /* Main Content */
+    .sully-main {
+      max-width: 1800px;
+      margin: 0 auto;
+      padding: 2rem;
+      background: #f5f5f5;
+      min-height: calc(100vh - 80px);
+    }
+    
+    /* Stats Cards */
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 1.5rem;
+      margin-bottom: 2rem;
+    }
+    .stat-card {
+      background: white;
+      border-radius: 16px;
+      padding: 1.5rem;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+      transition: transform 0.2s ease, box-shadow 0.2s ease;
+      border-left: 4px solid var(--sully-accent);
+    }
+    .stat-card:hover {
+      transform: translateY(-4px);
+      box-shadow: 0 8px 30px rgba(0,0,0,0.12);
+    }
+    .stat-card.suppliers { border-left-color: #00c853; }
+    .stat-card.allocations { border-left-color: #ffc107; }
+    .stat-card.bids { border-left-color: #2196f3; }
+    .stat-card.escrow { border-left-color: #9c27b0; }
+    .stat-icon {
+      width: 48px;
+      height: 48px;
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.5rem;
+      margin-bottom: 1rem;
+    }
+    .stat-card.suppliers .stat-icon { background: rgba(0, 200, 83, 0.12); }
+    .stat-card.allocations .stat-icon { background: rgba(255, 193, 7, 0.12); }
+    .stat-card.bids .stat-icon { background: rgba(33, 150, 243, 0.12); }
+    .stat-card.escrow .stat-icon { background: rgba(156, 39, 176, 0.12); }
+    .stat-value {
+      font-size: 2rem;
+      font-weight: 700;
+      color: #1a237e;
+      line-height: 1;
+    }
+    .stat-label {
+      font-size: 0.9rem;
+      color: #666;
+      margin-top: 0.5rem;
+    }
+    .stat-change {
+      font-size: 0.8rem;
+      margin-top: 0.5rem;
+      display: flex;
+      align-items: center;
+      gap: 0.25rem;
+    }
+    .stat-change.positive { color: #00c853; }
+    .stat-change.negative { color: #ff5252; }
+    
+    /* Section Cards */
+    .section-card {
+      background: white;
+      border-radius: 16px;
+      padding: 1.5rem;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+      margin-bottom: 1.5rem;
+    }
+    .section-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 1.5rem;
+      padding-bottom: 1rem;
+      border-bottom: 1px solid #eee;
+    }
+    .section-title {
+      font-size: 1.25rem;
+      font-weight: 700;
+      color: #1a237e;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .section-actions {
+      display: flex;
+      gap: 0.5rem;
+    }
+    
+    /* Buttons */
+    .btn {
+      padding: 0.5rem 1rem;
+      border-radius: 8px;
+      font-size: 0.9rem;
+      font-weight: 600;
+      cursor: pointer;
+      border: none;
+      transition: all 0.2s ease;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .btn-primary {
+      background: var(--sully-gradient);
+      color: white;
+    }
+    .btn-primary:hover {
+      box-shadow: 0 4px 15px rgba(26, 35, 126, 0.4);
+      transform: translateY(-1px);
+    }
+    .btn-secondary {
+      background: #f0f0f0;
+      color: #333;
+    }
+    .btn-secondary:hover {
+      background: #e0e0e0;
+    }
+    .btn-success {
+      background: linear-gradient(135deg, #00c853 0%, #00a844 100%);
+      color: white;
+    }
+    .btn-warning {
+      background: linear-gradient(135deg, #ffc107 0%, #ff9800 100%);
+      color: #333;
+    }
+    
+    /* Tables */
+    .data-table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+    .data-table th {
+      text-align: left;
+      padding: 1rem 0.75rem;
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: #666;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      border-bottom: 2px solid #eee;
+    }
+    .data-table td {
+      padding: 1rem 0.75rem;
+      font-size: 0.9rem;
+      border-bottom: 1px solid #f5f5f5;
+      color: #333;
+    }
+    .data-table tr:hover {
+      background: #f9f9f9;
+    }
+    
+    /* Status Badges */
+    .badge {
+      padding: 0.25rem 0.75rem;
+      border-radius: 20px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .badge-success { background: rgba(0, 200, 83, 0.12); color: #00a844; }
+    .badge-warning { background: rgba(255, 193, 7, 0.12); color: #f57c00; }
+    .badge-danger { background: rgba(255, 82, 82, 0.12); color: #d50000; }
+    .badge-info { background: rgba(33, 150, 243, 0.12); color: #1565c0; }
+    .badge-purple { background: rgba(156, 39, 176, 0.12); color: #7b1fa2; }
+    
+    /* Supplier Type Icons */
+    .supplier-type-icon {
+      width: 32px;
+      height: 32px;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1rem;
+    }
+    .type-legal { background: #e3f2fd; }
+    .type-doctor { background: #ffebee; }
+    .type-medical { background: #e8f5e9; }
+    .type-pharmacy { background: #fff3e0; }
+    .type-banking { background: #fce4ec; }
+    .type-delivery { background: #f3e5f5; }
+    
+    /* Dashboard Grid */
+    .dashboard-grid {
+      display: grid;
+      grid-template-columns: 2fr 1fr;
+      gap: 1.5rem;
+    }
+    @media (max-width: 1200px) {
+      .dashboard-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+    
+    /* Ledger Activity */
+    .ledger-list {
+      max-height: 400px;
+      overflow-y: auto;
+    }
+    .ledger-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 1rem;
+      padding: 1rem 0;
+      border-bottom: 1px solid #f5f5f5;
+    }
+    .ledger-item:last-child {
+      border-bottom: none;
+    }
+    .ledger-icon {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.9rem;
+      flex-shrink: 0;
+    }
+    .ledger-icon.bid { background: #e3f2fd; }
+    .ledger-icon.supplier { background: #e8f5e9; }
+    .ledger-icon.escrow { background: #f3e5f5; }
+    .ledger-icon.allocation { background: #fff3e0; }
+    .ledger-content {
+      flex: 1;
+    }
+    .ledger-action {
+      font-size: 0.9rem;
+      color: #333;
+      font-weight: 500;
+    }
+    .ledger-details {
+      font-size: 0.8rem;
+      color: #666;
+      margin-top: 0.25rem;
+    }
+    .ledger-time {
+      font-size: 0.75rem;
+      color: #999;
+      white-space: nowrap;
+    }
+    
+    /* Rating Stars */
+    .rating {
+      color: #ffc107;
+      font-size: 0.9rem;
+    }
+    
+    /* Progress Bar */
+    .progress-bar {
+      height: 6px;
+      background: #eee;
+      border-radius: 3px;
+      overflow: hidden;
+    }
+    .progress-bar-fill {
+      height: 100%;
+      border-radius: 3px;
+      transition: width 0.3s ease;
+    }
+    .progress-bar-fill.success { background: #00c853; }
+    .progress-bar-fill.warning { background: #ffc107; }
+    .progress-bar-fill.info { background: #2196f3; }
+    
+    /* Modal */
+    .modal-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0,0,0,0.5);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 2000;
+      opacity: 0;
+      visibility: hidden;
+      transition: all 0.3s ease;
+    }
+    .modal-overlay.active {
+      opacity: 1;
+      visibility: visible;
+    }
+    .modal {
+      background: white;
+      border-radius: 20px;
+      width: 90%;
+      max-width: 600px;
+      max-height: 90vh;
+      overflow-y: auto;
+      transform: scale(0.9);
+      transition: transform 0.3s ease;
+    }
+    .modal-overlay.active .modal {
+      transform: scale(1);
+    }
+    .modal-header {
+      padding: 1.5rem;
+      border-bottom: 1px solid #eee;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .modal-title {
+      font-size: 1.25rem;
+      font-weight: 700;
+      color: #1a237e;
+    }
+    .modal-close {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      border: none;
+      background: #f5f5f5;
+      cursor: pointer;
+      font-size: 1.2rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .modal-body {
+      padding: 1.5rem;
+    }
+    .modal-footer {
+      padding: 1rem 1.5rem;
+      border-top: 1px solid #eee;
+      display: flex;
+      justify-content: flex-end;
+      gap: 0.5rem;
+    }
+    
+    /* Form Elements */
+    .form-group {
+      margin-bottom: 1rem;
+    }
+    .form-label {
+      display: block;
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: #333;
+      margin-bottom: 0.5rem;
+    }
+    .form-input {
+      width: 100%;
+      padding: 0.75rem 1rem;
+      border: 2px solid #eee;
+      border-radius: 10px;
+      font-size: 0.95rem;
+      transition: border-color 0.2s ease;
+    }
+    .form-input:focus {
+      outline: none;
+      border-color: var(--sully-accent);
+    }
+    .form-select {
+      width: 100%;
+      padding: 0.75rem 1rem;
+      border: 2px solid #eee;
+      border-radius: 10px;
+      font-size: 0.95rem;
+      background: white;
+      cursor: pointer;
+    }
+    
+    /* Top Suppliers List */
+    .top-supplier {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      padding: 0.75rem 0;
+      border-bottom: 1px solid #f5f5f5;
+    }
+    .top-supplier:last-child {
+      border-bottom: none;
+    }
+    .rank-badge {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+      font-size: 0.85rem;
+    }
+    .rank-badge.gold { background: #ffd700; color: #333; }
+    .rank-badge.silver { background: #c0c0c0; color: #333; }
+    .rank-badge.bronze { background: #cd7f32; color: white; }
+    .rank-badge.standard { background: #e0e0e0; color: #666; }
+    .supplier-info {
+      flex: 1;
+    }
+    .supplier-name {
+      font-weight: 600;
+      color: #333;
+    }
+    .supplier-meta {
+      font-size: 0.8rem;
+      color: #666;
+    }
+    .supplier-score {
+      text-align: right;
+    }
+    .score-value {
+      font-size: 1.25rem;
+      font-weight: 700;
+      color: #1a237e;
+    }
+    .score-label {
+      font-size: 0.7rem;
+      color: #999;
+      text-transform: uppercase;
+    }
+
+    /* Tabs */
+    .tabs {
+      display: flex;
+      gap: 0.5rem;
+      margin-bottom: 1.5rem;
+      border-bottom: 2px solid #eee;
+      padding-bottom: 0.5rem;
+    }
+    .tab {
+      padding: 0.5rem 1rem;
+      border-radius: 8px 8px 0 0;
+      font-size: 0.9rem;
+      font-weight: 600;
+      cursor: pointer;
+      color: #666;
+      background: transparent;
+      border: none;
+      transition: all 0.2s ease;
+    }
+    .tab.active {
+      color: #1a237e;
+      background: rgba(26, 35, 126, 0.08);
+    }
+    .tab:hover:not(.active) {
+      color: #333;
+      background: #f5f5f5;
+    }
+    .tab-content {
+      display: none;
+    }
+    .tab-content.active {
+      display: block;
+    }
+
+    /* Empty State */
+    .empty-state {
+      text-align: center;
+      padding: 3rem 2rem;
+      color: #999;
+    }
+    .empty-icon {
+      font-size: 3rem;
+      margin-bottom: 1rem;
+      opacity: 0.5;
+    }
+  </style>
+</head>
+<body>
+  <!-- Header -->
+  <header class="sully-header">
+    <div class="sully-header-inner">
+      <a href="/sully-chain.html" class="sully-logo">
+        <div class="sully-logo-icon">&#x1F517;</div>
+        <div>
+          <div class="sully-logo-text">Sully Chain</div>
+          <div class="sully-logo-subtitle">Supplier Management System</div>
+        </div>
+      </a>
+      <nav class="sully-nav">
+        <a href="/sully-chain.html" class="active">Dashboard</a>
+        <a href="#suppliers" onclick="showTab('suppliers')">Suppliers</a>
+        <a href="#allocations" onclick="showTab('allocations')">Allocations</a>
+        <a href="#ledger" onclick="showTab('ledger')">Ledger</a>
+        <a href="#analytics" onclick="showTab('analytics')">Analytics</a>
+        <span class="nav-divider"></span>
+        <a href="/admin.html">PHINS Admin</a>
+        <a href="#" class="btn-logout" onclick="logout()">Logout</a>
+      </nav>
+    </div>
+  </header>
+
+  <!-- Main Content -->
+  <main class="sully-main">
+    <!-- Stats Overview -->
+    <div class="stats-grid">
+      <div class="stat-card suppliers">
+        <div class="stat-icon">&#x1F465;</div>
+        <div class="stat-value" id="stat-suppliers">247</div>
+        <div class="stat-label">Active Suppliers</div>
+        <div class="stat-change positive">&#x25B2; 12% this month</div>
+      </div>
+      <div class="stat-card allocations">
+        <div class="stat-icon">&#x1F4CB;</div>
+        <div class="stat-value" id="stat-allocations">34</div>
+        <div class="stat-label">Open Allocations</div>
+        <div class="stat-change negative">&#x25BC; 5% this month</div>
+      </div>
+      <div class="stat-card bids">
+        <div class="stat-icon">&#x1F4B0;</div>
+        <div class="stat-value" id="stat-bids">156</div>
+        <div class="stat-label">Pending Bids</div>
+        <div class="stat-change positive">&#x25B2; 23% this month</div>
+      </div>
+      <div class="stat-card escrow">
+        <div class="stat-icon">&#x1F512;</div>
+        <div class="stat-value" id="stat-escrow">$2.4M</div>
+        <div class="stat-label">Escrow Held</div>
+        <div class="stat-change positive">&#x25B2; 8% this month</div>
+      </div>
+    </div>
+
+    <!-- Dashboard Content -->
+    <div class="tabs">
+      <button class="tab active" data-tab="overview" onclick="switchTab('overview')">Overview</button>
+      <button class="tab" data-tab="suppliers" onclick="switchTab('suppliers')">Suppliers</button>
+      <button class="tab" data-tab="allocations" onclick="switchTab('allocations')">Allocations</button>
+      <button class="tab" data-tab="ledger" onclick="switchTab('ledger')">Ledger</button>
+    </div>
+
+    <!-- Overview Tab -->
+    <div id="tab-overview" class="tab-content active">
+      <div class="dashboard-grid">
+        <!-- Recent Allocations -->
+        <div class="section-card">
+          <div class="section-header">
+            <h2 class="section-title">&#x1F4CB; Recent Allocations</h2>
+            <div class="section-actions">
+              <button class="btn btn-primary" onclick="openModal('new-allocation')">+ New Allocation</button>
+            </div>
+          </div>
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Code</th>
+                <th>Service Type</th>
+                <th>Status</th>
+                <th>Bids</th>
+                <th>Closes</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="recent-allocations">
+              <tr>
+                <td><strong>AL-2024-0892</strong></td>
+                <td>
+                  <div style="display:flex;align-items:center;gap:0.5rem;">
+                    <span class="supplier-type-icon type-medical">&#x1FA7A;</span>
+                    Medical Exam
+                  </div>
+                </td>
+                <td><span class="badge badge-success">Open</span></td>
+                <td>12</td>
+                <td>2h 30m</td>
+                <td><button class="btn btn-secondary btn-sm">View</button></td>
+              </tr>
+              <tr>
+                <td><strong>AL-2024-0891</strong></td>
+                <td>
+                  <div style="display:flex;align-items:center;gap:0.5rem;">
+                    <span class="supplier-type-icon type-legal">&#x2696;</span>
+                    Legal Review
+                  </div>
+                </td>
+                <td><span class="badge badge-warning">Bidding</span></td>
+                <td>8</td>
+                <td>1d 4h</td>
+                <td><button class="btn btn-secondary btn-sm">View</button></td>
+              </tr>
+              <tr>
+                <td><strong>AL-2024-0890</strong></td>
+                <td>
+                  <div style="display:flex;align-items:center;gap:0.5rem;">
+                    <span class="supplier-type-icon type-pharmacy">&#x1F48A;</span>
+                    Equipment Supply
+                  </div>
+                </td>
+                <td><span class="badge badge-info">Awarded</span></td>
+                <td>15</td>
+                <td>Closed</td>
+                <td><button class="btn btn-secondary btn-sm">View</button></td>
+              </tr>
+              <tr>
+                <td><strong>AL-2024-0889</strong></td>
+                <td>
+                  <div style="display:flex;align-items:center;gap:0.5rem;">
+                    <span class="supplier-type-icon type-delivery">&#x1F69A;</span>
+                    Transport
+                  </div>
+                </td>
+                <td><span class="badge badge-success">Open</span></td>
+                <td>5</td>
+                <td>3d 12h</td>
+                <td><button class="btn btn-secondary btn-sm">View</button></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Right Sidebar -->
+        <div>
+          <!-- Top Suppliers -->
+          <div class="section-card">
+            <div class="section-header">
+              <h2 class="section-title">&#x1F3C6; Top Suppliers</h2>
+            </div>
+            <div id="top-suppliers">
+              <div class="top-supplier">
+                <div class="rank-badge gold">1</div>
+                <div class="supplier-info">
+                  <div class="supplier-name">HealthFirst Medical</div>
+                  <div class="supplier-meta">Medical Services &bull; 45 completions</div>
+                </div>
+                <div class="supplier-score">
+                  <div class="score-value">98.5</div>
+                  <div class="score-label">Score</div>
+                </div>
+              </div>
+              <div class="top-supplier">
+                <div class="rank-badge silver">2</div>
+                <div class="supplier-info">
+                  <div class="supplier-name">Swift Delivery Co</div>
+                  <div class="supplier-meta">Delivery &bull; 78 completions</div>
+                </div>
+                <div class="supplier-score">
+                  <div class="score-value">97.2</div>
+                  <div class="score-label">Score</div>
+                </div>
+              </div>
+              <div class="top-supplier">
+                <div class="rank-badge bronze">3</div>
+                <div class="supplier-info">
+                  <div class="supplier-name">LegalEase Partners</div>
+                  <div class="supplier-meta">Legal &bull; 32 completions</div>
+                </div>
+                <div class="supplier-score">
+                  <div class="score-value">96.8</div>
+                  <div class="score-label">Score</div>
+                </div>
+              </div>
+              <div class="top-supplier">
+                <div class="rank-badge standard">4</div>
+                <div class="supplier-info">
+                  <div class="supplier-name">MedEquip Solutions</div>
+                  <div class="supplier-meta">Equipment &bull; 28 completions</div>
+                </div>
+                <div class="supplier-score">
+                  <div class="score-value">95.4</div>
+                  <div class="score-label">Score</div>
+                </div>
+              </div>
+              <div class="top-supplier">
+                <div class="rank-badge standard">5</div>
+                <div class="supplier-info">
+                  <div class="supplier-name">SecureBank Financial</div>
+                  <div class="supplier-meta">Banking &bull; 67 completions</div>
+                </div>
+                <div class="supplier-score">
+                  <div class="score-value">94.1</div>
+                  <div class="score-label">Score</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Ledger Activity -->
+          <div class="section-card" style="margin-top:1.5rem;">
+            <div class="section-header">
+              <h2 class="section-title">&#x1F4D6; Ledger Activity</h2>
+            </div>
+            <div class="ledger-list" id="ledger-activity">
+              <div class="ledger-item">
+                <div class="ledger-icon bid">&#x1F4B0;</div>
+                <div class="ledger-content">
+                  <div class="ledger-action">Bid Submitted</div>
+                  <div class="ledger-details">HealthFirst on AL-0892</div>
+                </div>
+                <div class="ledger-time">2m ago</div>
+              </div>
+              <div class="ledger-item">
+                <div class="ledger-icon supplier">&#x2705;</div>
+                <div class="ledger-content">
+                  <div class="ledger-action">Supplier Verified</div>
+                  <div class="ledger-details">NewMed Labs activated</div>
+                </div>
+                <div class="ledger-time">15m ago</div>
+              </div>
+              <div class="ledger-item">
+                <div class="ledger-icon escrow">&#x1F512;</div>
+                <div class="ledger-content">
+                  <div class="ledger-action">Escrow Created</div>
+                  <div class="ledger-details">$45,000 for AL-0891</div>
+                </div>
+                <div class="ledger-time">28m ago</div>
+              </div>
+              <div class="ledger-item">
+                <div class="ledger-icon allocation">&#x1F3C6;</div>
+                <div class="ledger-content">
+                  <div class="ledger-action">Winner Selected</div>
+                  <div class="ledger-details">MedEquip won AL-0889</div>
+                </div>
+                <div class="ledger-time">1h ago</div>
+              </div>
+              <div class="ledger-item">
+                <div class="ledger-icon supplier">&#x1F4DD;</div>
+                <div class="ledger-content">
+                  <div class="ledger-action">Fulfillment Complete</div>
+                  <div class="ledger-details">AL-0885 marked done</div>
+                </div>
+                <div class="ledger-time">2h ago</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Suppliers Tab -->
+    <div id="tab-suppliers" class="tab-content">
+      <div class="section-card">
+        <div class="section-header">
+          <h2 class="section-title">&#x1F465; Supplier Registry</h2>
+          <div class="section-actions">
+            <input type="text" class="form-input" placeholder="Search suppliers..." style="width:250px;margin-right:0.5rem;">
+            <select class="form-select" style="width:150px;margin-right:0.5rem;">
+              <option value="">All Types</option>
+              <option value="legal">Legal</option>
+              <option value="doctor">Doctor</option>
+              <option value="medical_service">Medical Service</option>
+              <option value="pharmacy">Pharmacy</option>
+              <option value="delivery">Delivery</option>
+              <option value="banking">Banking</option>
+            </select>
+            <button class="btn btn-primary" onclick="openModal('new-supplier')">+ Register Supplier</button>
+          </div>
+        </div>
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Supplier</th>
+              <th>Type</th>
+              <th>Status</th>
+              <th>Rating</th>
+              <th>Completions</th>
+              <th>Balance</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="suppliers-list">
+            <tr>
+              <td>
+                <strong>HealthFirst Medical Group</strong><br>
+                <small style="color:#666">SUP-20240115-A3F2B</small>
+              </td>
+              <td>
+                <div style="display:flex;align-items:center;gap:0.5rem;">
+                  <span class="supplier-type-icon type-medical">&#x1FA7A;</span>
+                  Medical Service
+                </div>
+              </td>
+              <td><span class="badge badge-success">Active</span></td>
+              <td><span class="rating">&#x2B50; 4.9</span></td>
+              <td>45</td>
+              <td>$125,430</td>
+              <td>
+                <button class="btn btn-secondary btn-sm">View</button>
+                <button class="btn btn-warning btn-sm">Edit</button>
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <strong>LegalEase Partners LLP</strong><br>
+                <small style="color:#666">SUP-20240110-B7D9C</small>
+              </td>
+              <td>
+                <div style="display:flex;align-items:center;gap:0.5rem;">
+                  <span class="supplier-type-icon type-legal">&#x2696;</span>
+                  Legal
+                </div>
+              </td>
+              <td><span class="badge badge-success">Active</span></td>
+              <td><span class="rating">&#x2B50; 4.8</span></td>
+              <td>32</td>
+              <td>$89,200</td>
+              <td>
+                <button class="btn btn-secondary btn-sm">View</button>
+                <button class="btn btn-warning btn-sm">Edit</button>
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <strong>Swift Delivery Co.</strong><br>
+                <small style="color:#666">SUP-20240105-C2E4F</small>
+              </td>
+              <td>
+                <div style="display:flex;align-items:center;gap:0.5rem;">
+                  <span class="supplier-type-icon type-delivery">&#x1F69A;</span>
+                  Delivery
+                </div>
+              </td>
+              <td><span class="badge badge-success">Active</span></td>
+              <td><span class="rating">&#x2B50; 4.7</span></td>
+              <td>78</td>
+              <td>$67,890</td>
+              <td>
+                <button class="btn btn-secondary btn-sm">View</button>
+                <button class="btn btn-warning btn-sm">Edit</button>
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <strong>NewMed Labs</strong><br>
+                <small style="color:#666">SUP-20240120-D9G1H</small>
+              </td>
+              <td>
+                <div style="display:flex;align-items:center;gap:0.5rem;">
+                  <span class="supplier-type-icon type-medical">&#x1F9EA;</span>
+                  Medical Service
+                </div>
+              </td>
+              <td><span class="badge badge-warning">Pending</span></td>
+              <td><span class="rating">--</span></td>
+              <td>0</td>
+              <td>$0</td>
+              <td>
+                <button class="btn btn-success btn-sm">Verify</button>
+                <button class="btn btn-secondary btn-sm">View</button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Allocations Tab -->
+    <div id="tab-allocations" class="tab-content">
+      <div class="section-card">
+        <div class="section-header">
+          <h2 class="section-title">&#x1F4CB; Allocation Management</h2>
+          <div class="section-actions">
+            <select class="form-select" style="width:150px;margin-right:0.5rem;">
+              <option value="">All Status</option>
+              <option value="open">Open</option>
+              <option value="bidding">Bidding</option>
+              <option value="evaluation">Evaluation</option>
+              <option value="awarded">Awarded</option>
+            </select>
+            <button class="btn btn-primary" onclick="openModal('new-allocation')">+ Create Allocation</button>
+          </div>
+        </div>
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Allocation</th>
+              <th>Service Request</th>
+              <th>Type</th>
+              <th>Status</th>
+              <th>Reserve Price</th>
+              <th>Bids</th>
+              <th>Deadline</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="allocations-list">
+            <tr>
+              <td>
+                <strong>AL-2024-0892</strong><br>
+                <small style="color:#666">Competitive</small>
+              </td>
+              <td>SR-2024-1523</td>
+              <td>Medical Exam</td>
+              <td><span class="badge badge-success">Open</span></td>
+              <td>$2,500</td>
+              <td>12</td>
+              <td>Jan 22, 2:30 PM</td>
+              <td>
+                <button class="btn btn-secondary btn-sm">View Bids</button>
+                <button class="btn btn-warning btn-sm">Close</button>
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <strong>AL-2024-0891</strong><br>
+                <small style="color:#666">Competitive</small>
+              </td>
+              <td>SR-2024-1520</td>
+              <td>Legal Review</td>
+              <td><span class="badge badge-warning">Bidding</span></td>
+              <td>$5,000</td>
+              <td>8</td>
+              <td>Jan 23, 5:00 PM</td>
+              <td>
+                <button class="btn btn-secondary btn-sm">View Bids</button>
+                <button class="btn btn-warning btn-sm">Close</button>
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <strong>AL-2024-0890</strong><br>
+                <small style="color:#666">Emergency</small>
+              </td>
+              <td>SR-2024-1518</td>
+              <td>Equipment</td>
+              <td><span class="badge badge-info">Awarded</span></td>
+              <td>$15,000</td>
+              <td>15</td>
+              <td>Closed</td>
+              <td>
+                <button class="btn btn-secondary btn-sm">View Details</button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Ledger Tab -->
+    <div id="tab-ledger" class="tab-content">
+      <div class="section-card">
+        <div class="section-header">
+          <h2 class="section-title">&#x1F4D6; Immutable Ledger</h2>
+          <div class="section-actions">
+            <input type="date" class="form-input" style="width:150px;margin-right:0.5rem;">
+            <select class="form-select" style="width:180px;margin-right:0.5rem;">
+              <option value="">All Actions</option>
+              <option value="supplier_registered">Supplier Registered</option>
+              <option value="bid_submitted">Bid Submitted</option>
+              <option value="winner_selected">Winner Selected</option>
+              <option value="payment_released">Payment Released</option>
+            </select>
+            <button class="btn btn-secondary">Export Audit Report</button>
+            <button class="btn btn-primary">Verify Integrity</button>
+          </div>
+        </div>
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Sequence</th>
+              <th>Timestamp</th>
+              <th>Action</th>
+              <th>Entity</th>
+              <th>Actor</th>
+              <th>Hash</th>
+            </tr>
+          </thead>
+          <tbody id="ledger-entries">
+            <tr>
+              <td><strong>#10,542</strong></td>
+              <td>2024-01-21 14:32:15</td>
+              <td><span class="badge badge-info">Bid Submitted</span></td>
+              <td>bid:BID-0892-A1</td>
+              <td>supplier:HealthFirst</td>
+              <td><code style="font-size:0.75rem;">a3f2b9c1...</code></td>
+            </tr>
+            <tr>
+              <td><strong>#10,541</strong></td>
+              <td>2024-01-21 14:15:03</td>
+              <td><span class="badge badge-success">Supplier Verified</span></td>
+              <td>supplier:SUP-20240120</td>
+              <td>user:admin</td>
+              <td><code style="font-size:0.75rem;">7d9c4e2f...</code></td>
+            </tr>
+            <tr>
+              <td><strong>#10,540</strong></td>
+              <td>2024-01-21 14:02:47</td>
+              <td><span class="badge badge-purple">Escrow Created</span></td>
+              <td>escrow:ESC-0891</td>
+              <td>system</td>
+              <td><code style="font-size:0.75rem;">b2e4f8a7...</code></td>
+            </tr>
+            <tr>
+              <td><strong>#10,539</strong></td>
+              <td>2024-01-21 13:45:22</td>
+              <td><span class="badge badge-warning">Winner Selected</span></td>
+              <td>allocation:AL-0889</td>
+              <td>user:underwriter</td>
+              <td><code style="font-size:0.75rem;">c9g1h3j5...</code></td>
+            </tr>
+            <tr>
+              <td><strong>#10,538</strong></td>
+              <td>2024-01-21 12:30:18</td>
+              <td><span class="badge badge-success">Service Completed</span></td>
+              <td>fulfillment:FUL-0885</td>
+              <td>supplier:MedEquip</td>
+              <td><code style="font-size:0.75rem;">d5k2m7n9...</code></td>
+            </tr>
+          </tbody>
+        </table>
+        <div style="margin-top:1rem;padding:1rem;background:#f9f9f9;border-radius:8px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;">
+            <div>
+              <strong style="color:#1a237e;">Chain Integrity Status</strong>
+              <div style="font-size:0.85rem;color:#666;margin-top:0.25rem;">Last verified: 2024-01-21 14:00:00 UTC</div>
+            </div>
+            <span class="badge badge-success" style="padding:0.5rem 1rem;font-size:0.9rem;">&#x2705; VERIFIED</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- New Supplier Modal -->
+  <div class="modal-overlay" id="modal-new-supplier">
+    <div class="modal">
+      <div class="modal-header">
+        <h3 class="modal-title">Register New Supplier</h3>
+        <button class="modal-close" onclick="closeModal('new-supplier')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <form id="new-supplier-form">
+          <div class="form-group">
+            <label class="form-label">Supplier Name *</label>
+            <input type="text" class="form-input" name="name" required>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Supplier Type *</label>
+            <select class="form-select" name="supplier_type" required>
+              <option value="">Select Type...</option>
+              <option value="legal">Legal</option>
+              <option value="doctor">Doctor</option>
+              <option value="medical_service">Medical Service</option>
+              <option value="pharmacy">Pharmacy</option>
+              <option value="medical_equipment">Medical Equipment</option>
+              <option value="reinsurance">Reinsurance</option>
+              <option value="banking">Banking</option>
+              <option value="trading">Trading</option>
+              <option value="delivery">Delivery</option>
+              <option value="transportation">Transportation</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Email *</label>
+            <input type="email" class="form-input" name="email" required>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Phone</label>
+            <input type="tel" class="form-input" name="phone">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Registration Number</label>
+            <input type="text" class="form-input" name="registration_number">
+          </div>
+          <div class="form-group">
+            <label class="form-label">City</label>
+            <input type="text" class="form-input" name="city">
+          </div>
+          <div class="form-group">
+            <label class="form-label">State</label>
+            <input type="text" class="form-input" name="state">
+          </div>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="closeModal('new-supplier')">Cancel</button>
+        <button class="btn btn-primary" onclick="submitSupplier()">Register Supplier</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- New Allocation Modal -->
+  <div class="modal-overlay" id="modal-new-allocation">
+    <div class="modal">
+      <div class="modal-header">
+        <h3 class="modal-title">Create New Allocation</h3>
+        <button class="modal-close" onclick="closeModal('new-allocation')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <form id="new-allocation-form">
+          <div class="form-group">
+            <label class="form-label">Service Type *</label>
+            <select class="form-select" name="service_type" required>
+              <option value="">Select Type...</option>
+              <option value="legal">Legal Services</option>
+              <option value="doctor">Doctor Consultation</option>
+              <option value="medical_service">Medical Service</option>
+              <option value="pharmacy">Pharmacy</option>
+              <option value="medical_equipment">Medical Equipment</option>
+              <option value="delivery">Delivery</option>
+              <option value="transportation">Transportation</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Title *</label>
+            <input type="text" class="form-input" name="title" required placeholder="Brief description of service needed">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Description</label>
+            <textarea class="form-input" name="description" rows="3" placeholder="Detailed requirements..."></textarea>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Allocation Type</label>
+            <select class="form-select" name="allocation_type">
+              <option value="competitive">Competitive Bidding</option>
+              <option value="direct">Direct Assignment</option>
+              <option value="emergency">Emergency</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Reserve Price ($)</label>
+            <input type="number" class="form-input" name="reserve_price" step="0.01">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Duration (hours)</label>
+            <input type="number" class="form-input" name="duration_hours" value="48">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Minimum Supplier Rating</label>
+            <input type="number" class="form-input" name="required_rating" min="0" max="100" value="0">
+          </div>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="closeModal('new-allocation')">Cancel</button>
+        <button class="btn btn-primary" onclick="submitAllocation()">Create Allocation</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Tab switching
+    function switchTab(tabName) {
+      // Update tab buttons
+      document.querySelectorAll('.tab').forEach(tab => {
+        tab.classList.remove('active');
+        if (tab.dataset.tab === tabName) {
+          tab.classList.add('active');
+        }
+      });
+      
+      // Update tab content
+      document.querySelectorAll('.tab-content').forEach(content => {
+        content.classList.remove('active');
+      });
+      document.getElementById('tab-' + tabName).classList.add('active');
+    }
+
+    // Modal functions
+    function openModal(modalName) {
+      document.getElementById('modal-' + modalName).classList.add('active');
+    }
+
+    function closeModal(modalName) {
+      document.getElementById('modal-' + modalName).classList.remove('active');
+    }
+
+    // Close modal on overlay click
+    document.querySelectorAll('.modal-overlay').forEach(overlay => {
+      overlay.addEventListener('click', (e) => {
+        if (e.target === overlay) {
+          overlay.classList.remove('active');
+        }
+      });
+    });
+
+    // API Functions
+    async function fetchWithAuth(url, options = {}) {
+      const token = localStorage.getItem('token');
+      options.headers = {
+        ...options.headers,
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      };
+      return fetch(url, options);
+    }
+
+    async function submitSupplier() {
+      const form = document.getElementById('new-supplier-form');
+      const formData = new FormData(form);
+      const data = Object.fromEntries(formData.entries());
+      
+      try {
+        const response = await fetchWithAuth('/api/sully-chain/suppliers', {
+          method: 'POST',
+          body: JSON.stringify(data)
+        });
+        
+        if (response.ok) {
+          alert('Supplier registered successfully!');
+          closeModal('new-supplier');
+          form.reset();
+          loadSuppliers();
+        } else {
+          const error = await response.json();
+          alert('Error: ' + (error.error || 'Failed to register supplier'));
+        }
+      } catch (err) {
+        console.error('Error:', err);
+        alert('Error registering supplier');
+      }
+    }
+
+    async function submitAllocation() {
+      const form = document.getElementById('new-allocation-form');
+      const formData = new FormData(form);
+      const data = Object.fromEntries(formData.entries());
+      
+      // Convert numeric fields
+      if (data.reserve_price) data.reserve_price = parseFloat(data.reserve_price);
+      if (data.duration_hours) data.duration_hours = parseInt(data.duration_hours);
+      if (data.required_rating) data.required_rating = parseFloat(data.required_rating);
+      
+      try {
+        const response = await fetchWithAuth('/api/sully-chain/allocations', {
+          method: 'POST',
+          body: JSON.stringify(data)
+        });
+        
+        if (response.ok) {
+          alert('Allocation created successfully!');
+          closeModal('new-allocation');
+          form.reset();
+          loadAllocations();
+        } else {
+          const error = await response.json();
+          alert('Error: ' + (error.error || 'Failed to create allocation'));
+        }
+      } catch (err) {
+        console.error('Error:', err);
+        alert('Error creating allocation');
+      }
+    }
+
+    async function loadDashboardStats() {
+      try {
+        const response = await fetchWithAuth('/api/sully-chain/stats');
+        if (response.ok) {
+          const stats = await response.json();
+          document.getElementById('stat-suppliers').textContent = stats.active_suppliers || 0;
+          document.getElementById('stat-allocations').textContent = stats.open_allocations || 0;
+          document.getElementById('stat-bids').textContent = stats.pending_bids || 0;
+          document.getElementById('stat-escrow').textContent = '$' + formatNumber(stats.escrow_held || 0);
+        }
+      } catch (err) {
+        console.log('Could not load stats:', err);
+      }
+    }
+
+    async function loadSuppliers() {
+      // This would fetch from API in production
+      console.log('Loading suppliers...');
+    }
+
+    async function loadAllocations() {
+      // This would fetch from API in production
+      console.log('Loading allocations...');
+    }
+
+    function formatNumber(num) {
+      if (num >= 1000000) {
+        return (num / 1000000).toFixed(1) + 'M';
+      } else if (num >= 1000) {
+        return (num / 1000).toFixed(1) + 'K';
+      }
+      return num.toLocaleString();
+    }
+
+    function logout() {
+      localStorage.removeItem('token');
+      localStorage.removeItem('username');
+      window.location.href = '/login.html';
+    }
+
+    // Initialize
+    document.addEventListener('DOMContentLoaded', () => {
+      const token = localStorage.getItem('token');
+      if (!token) {
+        window.location.href = '/login.html';
+        return;
+      }
+      
+      loadDashboardStats();
+    });
+  </script>
+</body>
+</html>
