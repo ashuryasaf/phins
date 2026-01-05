@@ -1587,6 +1587,13 @@ LEGACY_DEMO_PASSWORDS: Dict[str, str] = {
     'accountant': 'acct123',
 }
 
+# IMPORTANT:
+# - These short demo passwords are intentionally disabled in production by default.
+# - They are only enabled in automated tests (PHINS_TEST_MODE) or when explicitly allowed via env var.
+ALLOW_LEGACY_DEMO_PASSWORDS = PHINS_TEST_MODE or (
+    str(os.environ.get('ALLOW_LEGACY_DEMO_PASSWORDS', '')).lower() in ('1', 'true', 'yes', 'y')
+)
+
 def validate_session(token: str) -> dict[str, str] | None:
     """Validate session token and return user info or None"""
     if not token or not token.startswith('phins_'):
@@ -8502,7 +8509,7 @@ For claims or questions, please contact:
                 # 1. Check internal users (admin, underwriter, etc.)
                 try:
                     staff_user = USERS.get(username)
-                    legacy_ok = username in LEGACY_DEMO_PASSWORDS and password == LEGACY_DEMO_PASSWORDS[username]
+                    legacy_ok = ALLOW_LEGACY_DEMO_PASSWORDS and username in LEGACY_DEMO_PASSWORDS and password == LEGACY_DEMO_PASSWORDS[username]
 
                     if staff_user and (verify_password(password, staff_user['hash'], staff_user['salt']) or legacy_ok):
                         user = staff_user
@@ -8837,7 +8844,7 @@ For claims or questions, please contact:
                     return
                 
                 # Verify current password
-                legacy_ok = username in LEGACY_DEMO_PASSWORDS and current_password == LEGACY_DEMO_PASSWORDS[username]
+                legacy_ok = ALLOW_LEGACY_DEMO_PASSWORDS and username in LEGACY_DEMO_PASSWORDS and current_password == LEGACY_DEMO_PASSWORDS[username]
                 if not (verify_password(current_password, user['hash'], user['salt']) or legacy_ok):
                     self._set_json_headers(401)
                     self.wfile.write(json.dumps({'error': 'Current password is incorrect'}).encode('utf-8'))
@@ -9971,7 +9978,8 @@ For claims or questions, please contact:
                         'success': True,
                         'message': 'Database seeded successfully',
                         'accounts': {
-                            'admin': {'username': 'admin', 'password': 'admin123'},
+                            # NOTE: legacy short demo passwords (like admin123) are disabled in production by default.
+                            'admin': {'username': 'admin', 'password': 'PDadmin123@'},
                             'customer': {'email': 'asaf@assurance.co.il', 'password': 'Assurance2024!'}
                         }
                     }).encode('utf-8'))
