@@ -188,14 +188,82 @@ async function createFeeSchedule() {
   }
 }
 
+async function uploadFile() {
+  const msg = document.getElementById('upload-file-msg');
+  msg.textContent = 'Uploading file...';
+  msg.className = 'muted-text';
+
+  const fileInput = document.getElementById('actuarial-file');
+  const file = fileInput.files && fileInput.files[0];
+  if (!file) {
+    msg.textContent = 'Please select a file.';
+    msg.className = 'text-danger';
+    return;
+  }
+
+  const name = (document.getElementById('upload-name').value || '').trim();
+  const table_type = (document.getElementById('upload-table-type').value || '').trim();
+  const version = (document.getElementById('upload-version').value || '').trim();
+  const effective_date = (document.getElementById('upload-effective').value || '').trim();
+  const sheet = (document.getElementById('upload-sheet').value || '').trim();
+
+  const token = getToken();
+  if (!token) {
+    msg.textContent = 'Not logged in.';
+    msg.className = 'text-danger';
+    return;
+  }
+
+  const fd = new FormData();
+  fd.append('file', file, file.name);
+  if (name) fd.append('name', name);
+  if (table_type) fd.append('table_type', table_type);
+  if (version) fd.append('version', version);
+  if (effective_date) fd.append('effective_date', effective_date);
+  if (sheet) fd.append('sheet', sheet);
+
+  try {
+    const r = await fetch('/api/admin/actuarial-tables/upload-file', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}` },
+      body: fd
+    });
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(data.error || `HTTP ${r.status}`);
+    msg.textContent = `Uploaded: ${data.id || 'ok'}`;
+    msg.className = 'text-success';
+    fileInput.value = '';
+    await refreshTables();
+  } catch (e) {
+    msg.textContent = `Upload failed: ${e.message}`;
+    msg.className = 'text-danger';
+  }
+}
+
+async function refreshBi() {
+  const pre = document.getElementById('bi-json');
+  pre.textContent = 'Loading...';
+  try {
+    const data = await apiGet('/api/bi/actuary');
+    pre.textContent = JSON.stringify(data, null, 2);
+    pre.className = 'muted-text';
+  } catch (e) {
+    pre.textContent = `Failed: ${e.message}`;
+    pre.className = 'text-danger';
+  }
+}
+
 document.addEventListener('DOMContentLoaded', async () => {
   await loadSession();
   await refreshTables();
   await refreshFeeSchedules();
+  await refreshBi();
 
   document.getElementById('refresh-tables').addEventListener('click', refreshTables);
   document.getElementById('upload-table').addEventListener('click', uploadTable);
+  document.getElementById('upload-file').addEventListener('click', uploadFile);
   document.getElementById('refresh-fees').addEventListener('click', refreshFeeSchedules);
   document.getElementById('create-fee').addEventListener('click', createFeeSchedule);
+  document.getElementById('refresh-bi').addEventListener('click', refreshBi);
 });
 

@@ -52,16 +52,35 @@
 
     <div class="section-content">
       <div class="section-header">
-        <h2>Upload Actuarial Table (JSON)</h2>
+        <h2>Upload Actuarial Dataset (XLSX/CSV/JSON)</h2>
       </div>
       <div class="card">
+        <div class="filter-bar">
+          <input class="search-input" id="upload-name" placeholder="dataset name (e.g., Reinsurance Rates 2026)" />
+          <input class="search-input" id="upload-table-type" placeholder="table_type (pricing/reinsurance/accounting/fees)" />
+          <input class="search-input" id="upload-version" placeholder="version (e.g., 20260105)" />
+          <input class="search-input" id="upload-effective" placeholder="effective_date (YYYY-MM-DD)" />
+          <input class="search-input" id="upload-sheet" placeholder="xlsx sheet (optional)" />
+        </div>
         <div class="form-group">
-          <label>Payload (JSON with fields: name, table_type, version, effective_date, data)</label>
+          <label>File (XLSX/CSV/JSON)</label>
+          <input id="actuarial-file" type="file" accept=".xlsx,.csv,.json" />
+        </div>
+        <div style="display:flex; gap:10px; flex-wrap:wrap; margin-top:12px">
+          <button class="btn btn-outline" id="upload-file">Upload File</button>
+          <div class="muted-text" id="upload-file-msg"></div>
+        </div>
+        <hr style="margin:20px 0; border:0; border-top:1px solid #e3f2fd" />
+        <div class="form-group">
+          <label>Or paste JSON payload (fields: name, table_type, version, effective_date, data)</label>
           <textarea id="actuarial-json" rows="10" placeholder='{"name":"PHINS Pricing Table","table_type":"pricing","version":"20260105","effective_date":"2026-01-05","data":[{"age":30,"adl":"independent","multiplier":1.0}]}'></textarea>
         </div>
         <div style="display:flex; gap:10px; flex-wrap:wrap; margin-top:12px">
           <button class="btn btn-outline" id="upload-table">Upload</button>
           <div class="muted-text" id="upload-msg"></div>
+        </div>
+        <div class="muted-text" style="margin-top:8px">
+          Uploaded datasets are stored as encrypted actuarial payloads and can be used by BI endpoints and pricing decisioning.
         </div>
       </div>
     </div>
@@ -111,6 +130,18 @@
             <tr><td colspan="8" class="muted-text">Loading...</td></tr>
           </tbody>
         </table>
+      </div>
+    </div>
+
+    <div class="section-content">
+      <div class="section-header">
+        <h2>AI/BI - Actuarial Intelligence (Read-only)</h2>
+        <div style="display:flex; gap:8px; flex-wrap:wrap">
+          <button class="btn btn-outline" id="refresh-bi">Refresh</button>
+        </div>
+      </div>
+      <div class="card">
+        <pre id="bi-json" style="white-space:pre-wrap; margin:0" class="muted-text">Loading...</pre>
       </div>
     </div>
   </main>
