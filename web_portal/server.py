@@ -17764,10 +17764,11 @@ def run_server(port: int = PORT) -> None:
                 },
                 
                 # CUST-ASAF-001 demo deposit entries - matching wallet/investment initialization
+                # Use specific deposit types recognized by integrity service
                 {
                     'id': 'TX-DEMO-WALLET-ASAF-001',
                     'customer_id': 'CUST-ASAF-001',
-                    'type': 'deposit',
+                    'type': 'wallet_deposit',  # Recognized by integrity service
                     'amount': 25000.00,
                     'description': 'Initial demo deposit - Health Wallet',
                     'metadata': {'destination': 'health_wallet', 'demo': True},
@@ -17778,7 +17779,7 @@ def run_server(port: int = PORT) -> None:
                 {
                     'id': 'TX-DEMO-INV-ASAF-001',
                     'customer_id': 'CUST-ASAF-001',
-                    'type': 'deposit',
+                    'type': 'investment_deposit',  # Recognized by integrity service
                     'amount': 15000.00,
                     'description': 'Initial demo deposit - Investment Account',
                     'metadata': {'destination': 'investment', 'index_amount': 9000, 'bonds_amount': 4500, 'crypto_amount': 1500, 'demo': True},
@@ -17789,7 +17790,7 @@ def run_server(port: int = PORT) -> None:
                 {
                     'id': 'TX-DEMO-ALGO-ASAF-001',
                     'customer_id': 'CUST-ASAF-001',
-                    'type': 'deposit',
+                    'type': 'algo_trading_deposit',  # Recognized by integrity service
                     'amount': 5000.00,
                     'description': 'Initial demo deposit - Algo Trading',
                     'metadata': {'destination': 'algo_trading', 'demo': True},
