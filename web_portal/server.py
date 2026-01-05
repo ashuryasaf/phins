@@ -12759,17 +12759,41 @@ For claims or questions, please contact:
                                 'deposits': [],
                                 'created_at': datetime.now().isoformat()
                             }
+                        
+                        # Get customer's allocation preferences for investment breakdown
+                        allocation_prefs = get_customer_allocation(customer_id)
+                        
+                        # Calculate investment breakdown using customer preferences
+                        index_amount = amount * (allocation_prefs['index_pct'] / 100.0)
+                        bonds_amount = amount * (allocation_prefs['bonds_pct'] / 100.0)
+                        crypto_amount = amount * (allocation_prefs['crypto_pct'] / 100.0)
+                        
+                        # Update balances with allocation breakdown
                         INVESTMENT_ACCOUNTS[customer_id]['balance'] += amount
+                        INVESTMENT_ACCOUNTS[customer_id]['index_balance'] = INVESTMENT_ACCOUNTS[customer_id].get('index_balance', 0) + index_amount
+                        INVESTMENT_ACCOUNTS[customer_id]['bonds_balance'] = INVESTMENT_ACCOUNTS[customer_id].get('bonds_balance', 0) + bonds_amount
+                        INVESTMENT_ACCOUNTS[customer_id]['crypto_balance'] = INVESTMENT_ACCOUNTS[customer_id].get('crypto_balance', 0) + crypto_amount
+                        
                         new_balance = INVESTMENT_ACCOUNTS[customer_id]['balance']
                         
-                        # Add to deposits history
+                        # Add to deposits history with allocation details
                         INVESTMENT_ACCOUNTS[customer_id]['deposits'].append({
                             'id': payment_result['transaction_id'],
                             'amount': amount,
+                            'index_amount': index_amount,
+                            'bonds_amount': bonds_amount,
+                            'crypto_amount': crypto_amount,
                             'payment_method': payment_method,
                             'source': source_account if payment_method == 'internal_transfer' else 'external',
                             'timestamp': datetime.now().isoformat()
                         })
+                        
+                        # Add allocation details to result
+                        payment_result['investment_allocation'] = {
+                            'index': index_amount,
+                            'bonds': bonds_amount,
+                            'crypto': crypto_amount
+                        }
                         
                     elif destination == 'algo_trading':
                         if unified_balance_enabled:

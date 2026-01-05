@@ -177,6 +177,10 @@ class DataIntegrityService:
             'medical_purchase'  # Direct spend from wallet
         ]
         
+        # Internal transfer types - these move money within customer accounts
+        # Should NOT count as deposits or withdrawals for balance calculation
+        internal_transfer_types = ['internal_transfer', 'balance_correction']
+        
         # Claim payments to tracked accounts (wallet, investment) count as deposits
         # These represent insurance payouts that legitimately enter customer's balance
         claim_deposit_types = ['claim_payment_wallet', 'claim_payment_investment', 'claim_payment_received']
@@ -187,6 +191,10 @@ class DataIntegrityService:
             
             tx_type = tx.get('type', tx.get('tx_type', '')).lower()
             amount = float(tx.get('amount', 0) or 0)
+            
+            # Skip internal transfers - they move money within accounts, not in/out
+            if any(itt in tx_type for itt in internal_transfer_types):
+                continue
             
             # Deposits (direct savings/investment deposits)
             if any(dt in tx_type for dt in deposit_types):
@@ -254,8 +262,9 @@ class DataIntegrityService:
             else:
                 issues.append(f"Minor balance discrepancy: ${discrepancy:.2f} (within tolerance)")
         
-        # Auto-correct if requested and we have discrepancies
-        if auto_correct and not is_valid and abs(discrepancy) > 0.01:
+        # Auto-correct if requested and we have significant discrepancies
+        # Only auto-correct for discrepancies greater than $10 to avoid noise
+        if auto_correct and not is_valid and abs(discrepancy) > 10.00:
             correction = self._attempt_auto_correction(
                 customer_id, discrepancy, cash_balance, wallet_balance,
                 investment_balance, algo_balance, expected_total
