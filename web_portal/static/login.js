@@ -54,6 +54,10 @@ document.addEventListener('DOMContentLoaded', function () {
             
             if (role === 'admin') {
               window.location.href = '/admin.html';
+            } else if (role === 'actuary') {
+              window.location.href = '/actuary-dashboard.html';
+            } else if (role === 'supplier') {
+              window.location.href = '/supplier-dashboard.html';
             } else if (role === 'customer') {
               window.location.href = '/client-portal.html';
             } else if (role === 'underwriter') {

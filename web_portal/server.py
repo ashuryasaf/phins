@@ -1484,6 +1484,12 @@ STATE_LOCK = threading.RLock()
 ACTUARIAL_TABLES: Dict[str, Dict[str, Any]] = {}  # table_id -> metadata + encrypted payload
 TOKEN_REGISTRY: Dict[str, Dict[str, Any]] = {}  # entry_id -> token metadata
 
+# Actuary governance data stores (in-memory fallback; DB schema not yet extended)
+FEE_SCHEDULES: Dict[str, Dict[str, Any]] = {}  # schedule_id -> schedule metadata + rules
+
+# Supplier ecosystem (in-memory demo store; DB schema not yet extended)
+SUPPLIER_OFFERS: Dict[str, Dict[str, Any]] = {}  # offer_id -> supplier offer
+
 # Hash passwords for security (in production, use proper password hashing)
 def hash_password(password: str) -> dict[str, str]:
     salt = secrets.token_hex(16)
@@ -3208,6 +3214,85 @@ For claims or questions, please contact:
             items = sorted(items, key=lambda x: x.get('created_date', ''), reverse=True)
             self._set_json_headers()
             self.wfile.write(json.dumps({'items': items}).encode('utf-8'))
+            return
+
+        # Admin/Actuary: fee schedules (versioned; in-memory store for now)
+        if path == '/api/admin/fee-schedules':
+            if not require_role(session, ['admin']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Unauthorized. Admin access required.'}).encode('utf-8'))
+                return
+
+            domain = (qs.get('domain', [None])[0] or '').strip().lower() or None
+            status = (qs.get('status', [None])[0] or '').strip().lower() or None
+            with STATE_LOCK:
+                items = list(FEE_SCHEDULES.values())
+            if domain:
+                items = [i for i in items if (i.get('domain') or '').lower() == domain]
+            if status:
+                items = [i for i in items if (i.get('status') or '').lower() == status]
+            items = sorted(items, key=lambda x: (x.get('effective_date') or '', x.get('created_at') or ''), reverse=True)
+            self._set_json_headers()
+            self.wfile.write(json.dumps({'items': items}).encode('utf-8'))
+            return
+
+        # Supplier: list offers (admin can view all; supplier sees own)
+        if path == '/api/supplier/offers':
+            if not require_role(session, ['admin', 'supplier']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Unauthorized'}).encode('utf-8'))
+                return
+
+            user = get_session_user(session) or {}
+            role = (user.get('role') or '').lower()
+            requested_supplier_id = (qs.get('supplier_id', [None])[0] or '').strip() or None
+            supplier_id = user.get('username') if role == 'supplier' else (requested_supplier_id or None)
+
+            with STATE_LOCK:
+                offers = list(SUPPLIER_OFFERS.values())
+            if supplier_id:
+                offers = [o for o in offers if o.get('supplier_id') == supplier_id]
+            offers = sorted(offers, key=lambda x: x.get('updated_at') or x.get('created_at') or '', reverse=True)
+            self._set_json_headers()
+            self.wfile.write(json.dumps({'items': offers}).encode('utf-8'))
+            return
+
+        # Supplier: list "orders" (mapped to marketplace transactions for now)
+        if path == '/api/supplier/orders':
+            if not require_role(session, ['admin', 'supplier']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Unauthorized'}).encode('utf-8'))
+                return
+            if not marketplace_enabled or not marketplace:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Marketplace service unavailable'}).encode('utf-8'))
+                return
+
+            limit_raw = qs.get('limit', ['50'])[0]
+            try:
+                limit = max(1, min(200, int(limit_raw)))
+            except Exception:
+                limit = 50
+
+            user = get_session_user(session) or {}
+            role = (user.get('role') or '').lower()
+            requested_supplier_id = (qs.get('supplier_id', [None])[0] or '').strip() or None
+            supplier_id = user.get('username') if role == 'supplier' else (requested_supplier_id or None)
+
+            txs = marketplace.get_all_transactions(limit=200)
+            # Best-effort mapping: treat provider_id as supplier_id when present
+            items = []
+            for t in txs:
+                inferred_supplier = t.get('provider_id') or t.get('provider') or None
+                if supplier_id and inferred_supplier and inferred_supplier != supplier_id:
+                    continue
+                if supplier_id and not inferred_supplier:
+                    continue
+                t2 = dict(t)
+                t2['supplier_id'] = inferred_supplier
+                items.append(t2)
+            self._set_json_headers()
+            self.wfile.write(json.dumps({'items': items[:limit]}).encode('utf-8'))
             return
 
         # Token registry (enabled-only for customers)
@@ -8725,6 +8810,298 @@ For claims or questions, please contact:
             except Exception as e:
                 self._set_json_headers(400)
                 self.wfile.write(json.dumps({'error': 'Upload failed', 'details': str(e)}).encode('utf-8'))
+            return
+
+        # Admin/Actuary: Create fee schedule (draft) - governance-friendly (maker/checker supported via approve endpoint)
+        if path == '/api/admin/fee-schedules/create':
+            auth_header = self.headers.get('Authorization', '')
+            token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+            session = validate_session(token) if token else None
+            if not require_role(session, ['admin']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Unauthorized. Admin access required.'}).encode('utf-8'))
+                return
+
+            try:
+                payload = json.loads(body or '{}')
+                domain = str(payload.get('domain') or '').strip().lower()
+                version = str(payload.get('version') or datetime.now().strftime('%Y%m%d')).strip()
+                effective_date = str(payload.get('effective_date') or datetime.now().strftime('%Y-%m-%d')).strip()
+                rules = payload.get('rules')
+                notes = str(payload.get('notes') or '').strip()
+
+                if not domain:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'Missing domain'}).encode('utf-8'))
+                    return
+                if rules is None or not isinstance(rules, (dict, list)):
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'Missing rules (must be object or array)'}).encode('utf-8'))
+                    return
+
+                actor = (session or {}).get('username') if session else 'admin'
+                schedule_id = f"FS-{datetime.now().strftime('%Y%m%d')}-{random.randint(1000,9999)}"
+                row = {
+                    'id': schedule_id,
+                    'domain': domain,
+                    'version': version,
+                    'effective_date': effective_date,
+                    'status': 'draft',
+                    'rules': rules,
+                    'notes': notes,
+                    'created_by': actor,
+                    'created_at': datetime.now().isoformat(),
+                    'approved_by': None,
+                    'approved_at': None,
+                    'approval_notes': None,
+                }
+
+                with STATE_LOCK:
+                    FEE_SCHEDULES[schedule_id] = row
+
+                if audit:
+                    try:
+                        audit.log(actor, 'create', 'fee_schedule', schedule_id, {'domain': domain, 'version': version, 'status': 'draft'})
+                    except Exception:
+                        pass
+
+                self._set_json_headers(201)
+                self.wfile.write(json.dumps({'success': True, 'id': schedule_id}).encode('utf-8'))
+            except json.JSONDecodeError:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'Invalid JSON payload'}).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': 'Failed to create fee schedule', 'details': str(e)}).encode('utf-8'))
+            return
+
+        # Admin/Actuary: Approve fee schedule (maker/checker: approver must differ from creator)
+        if path == '/api/admin/fee-schedules/approve':
+            auth_header = self.headers.get('Authorization', '')
+            token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+            session = validate_session(token) if token else None
+            if not require_role(session, ['admin']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Unauthorized. Admin access required.'}).encode('utf-8'))
+                return
+
+            try:
+                payload = json.loads(body or '{}')
+                schedule_id = str(payload.get('id') or '').strip()
+                approval_notes = str(payload.get('approval_notes') or '').strip()
+                if not schedule_id:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'Missing id'}).encode('utf-8'))
+                    return
+
+                actor = (session or {}).get('username') if session else 'admin'
+                with STATE_LOCK:
+                    row = FEE_SCHEDULES.get(schedule_id)
+                    if not row:
+                        self._set_json_headers(404)
+                        self.wfile.write(json.dumps({'error': 'Fee schedule not found'}).encode('utf-8'))
+                        return
+                    if (row.get('status') or '').lower() == 'approved':
+                        self._set_json_headers(409)
+                        self.wfile.write(json.dumps({'error': 'Already approved'}).encode('utf-8'))
+                        return
+                    creator = row.get('created_by')
+                    # Maker/checker enforcement (allow override via env for demos)
+                    allow_self = os.environ.get('ALLOW_SELF_APPROVE_FEE_SCHEDULES', 'false').lower() in ('true', '1', 'yes')
+                    if creator and creator == actor and not allow_self:
+                        self._set_json_headers(403)
+                        self.wfile.write(json.dumps({
+                            'error': 'Maker/checker violation: approver must differ from creator',
+                            'hint': 'Approve with a different admin user, or set ALLOW_SELF_APPROVE_FEE_SCHEDULES=true for demo only.'
+                        }).encode('utf-8'))
+                        return
+
+                    row['status'] = 'approved'
+                    row['approved_by'] = actor
+                    row['approved_at'] = datetime.now().isoformat()
+                    row['approval_notes'] = approval_notes or None
+                    row['updated_at'] = datetime.now().isoformat()
+
+                if audit:
+                    try:
+                        audit.log(actor, 'approve', 'fee_schedule', schedule_id, {'status': 'approved'})
+                    except Exception:
+                        pass
+
+                self._set_json_headers()
+                self.wfile.write(json.dumps({'success': True, 'id': schedule_id}).encode('utf-8'))
+            except json.JSONDecodeError:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'Invalid JSON payload'}).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': 'Failed to approve fee schedule', 'details': str(e)}).encode('utf-8'))
+            return
+
+        # Supplier: create/update offer
+        if path == '/api/supplier/offers/upsert':
+            auth_header = self.headers.get('Authorization', '')
+            token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+            session = validate_session(token) if token else None
+            if not require_role(session, ['admin', 'supplier']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Unauthorized'}).encode('utf-8'))
+                return
+
+            try:
+                payload = json.loads(body or '{}')
+                user = get_session_user(session) or {}
+                role = (user.get('role') or '').lower()
+                actor = (session or {}).get('username') if session else 'unknown'
+
+                offer_id = str(payload.get('id') or '').strip() or f"OFF-{datetime.now().strftime('%Y%m%d')}-{random.randint(1000,9999)}"
+                supplier_id = user.get('username') if role == 'supplier' else str(payload.get('supplier_id') or '').strip()
+                category = str(payload.get('category') or '').strip().lower()
+                name = str(payload.get('name') or '').strip()
+                item_type = str(payload.get('item_type') or 'product').strip().lower()
+                currency = str(payload.get('currency') or 'USD').strip().upper()
+                active = bool(payload.get('active', True))
+                price_raw = payload.get('price')
+
+                if not supplier_id:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'Missing supplier_id'}).encode('utf-8'))
+                    return
+                if not category:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'Missing category'}).encode('utf-8'))
+                    return
+                if not name:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'Missing name'}).encode('utf-8'))
+                    return
+                try:
+                    price = float(price_raw)
+                except Exception:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'Invalid price'}).encode('utf-8'))
+                    return
+                if price < 0:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'Price must be non-negative'}).encode('utf-8'))
+                    return
+
+                now = datetime.now().isoformat()
+                with STATE_LOCK:
+                    existing = SUPPLIER_OFFERS.get(offer_id)
+                    created_at = existing.get('created_at') if existing else now
+                    SUPPLIER_OFFERS[offer_id] = {
+                        'id': offer_id,
+                        'supplier_id': supplier_id,
+                        'category': category,
+                        'name': name,
+                        'item_type': item_type,
+                        'price': price,
+                        'currency': currency,
+                        'active': active,
+                        'created_at': created_at,
+                        'updated_at': now,
+                        'updated_by': actor,
+                    }
+
+                if audit:
+                    try:
+                        audit.log(actor, 'upsert', 'supplier_offer', offer_id, {'supplier_id': supplier_id, 'category': category, 'price': price})
+                    except Exception:
+                        pass
+
+                self._set_json_headers(201 if not existing else 200)
+                self.wfile.write(json.dumps({'success': True, 'id': offer_id}).encode('utf-8'))
+            except json.JSONDecodeError:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'Invalid JSON payload'}).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': 'Failed to upsert offer', 'details': str(e)}).encode('utf-8'))
+            return
+
+        # Supplier: delete offer
+        if path == '/api/supplier/offers/delete':
+            auth_header = self.headers.get('Authorization', '')
+            token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+            session = validate_session(token) if token else None
+            if not require_role(session, ['admin', 'supplier']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Unauthorized'}).encode('utf-8'))
+                return
+            try:
+                payload = json.loads(body or '{}')
+                offer_id = str(payload.get('id') or '').strip()
+                if not offer_id:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'Missing id'}).encode('utf-8'))
+                    return
+                user = get_session_user(session) or {}
+                role = (user.get('role') or '').lower()
+                actor = (session or {}).get('username') if session else 'unknown'
+                with STATE_LOCK:
+                    existing = SUPPLIER_OFFERS.get(offer_id)
+                    if not existing:
+                        self._set_json_headers(404)
+                        self.wfile.write(json.dumps({'error': 'Offer not found'}).encode('utf-8'))
+                        return
+                    if role == 'supplier' and existing.get('supplier_id') != user.get('username'):
+                        self._set_json_headers(403)
+                        self.wfile.write(json.dumps({'error': 'Forbidden'}).encode('utf-8'))
+                        return
+                    del SUPPLIER_OFFERS[offer_id]
+                if audit:
+                    try:
+                        audit.log(actor, 'delete', 'supplier_offer', offer_id, {'supplier_id': existing.get('supplier_id')})
+                    except Exception:
+                        pass
+                self._set_json_headers()
+                self.wfile.write(json.dumps({'success': True}).encode('utf-8'))
+            except json.JSONDecodeError:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'Invalid JSON payload'}).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': 'Failed to delete offer', 'details': str(e)}).encode('utf-8'))
+            return
+
+        # Supplier: update order status (mapped to marketplace transaction status)
+        if path == '/api/supplier/orders/update-status':
+            auth_header = self.headers.get('Authorization', '')
+            token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+            session = validate_session(token) if token else None
+            if not require_role(session, ['admin', 'supplier']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Unauthorized'}).encode('utf-8'))
+                return
+            if not marketplace_enabled or not marketplace:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Marketplace service unavailable'}).encode('utf-8'))
+                return
+            try:
+                payload = json.loads(body or '{}')
+                transaction_id = str(payload.get('transaction_id') or '').strip()
+                status = str(payload.get('status') or '').strip().lower()
+                notes = str(payload.get('notes') or '').strip() or None
+                if not transaction_id or not status:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'Missing transaction_id or status'}).encode('utf-8'))
+                    return
+                actor = (session or {}).get('username') if session else 'unknown'
+                result = marketplace.update_transaction_status(transaction_id, status, notes)
+                if audit and result.get('success'):
+                    try:
+                        audit.log(actor, 'update_status', 'supplier_order', transaction_id, {'status': status})
+                    except Exception:
+                        pass
+                self._set_json_headers(200 if result.get('success') else 400)
+                self.wfile.write(json.dumps(result).encode('utf-8'))
+            except json.JSONDecodeError:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'Invalid JSON payload'}).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': 'Failed to update status', 'details': str(e)}).encode('utf-8'))
             return
 
         # Admin: Bulk upload customers (JSON list or CSV)
