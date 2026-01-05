@@ -17763,11 +17763,40 @@ def run_server(port: int = PORT) -> None:
                     'nft_token_id': f'NFT-PIPE-{(now - timedelta(days=3)).strftime("%Y%m%d")}-004'
                 },
                 
-                # NOTE: CUST-ASAF-001 deposit entries removed - starting with $0 balance
-                # All deposits should come through the savings pipeline for testing
-                # Uncomment below to restore initial deposits:
-                # TX-WALLET-ASAF-001: $10,000, TX-WALLET-ASAF-002: $5,000
-                # TX-INV-ASAF-001: $20,000, TX-INV-ASAF-002: $12,500
+                # CUST-ASAF-001 demo deposit entries - matching wallet/investment initialization
+                {
+                    'id': 'TX-DEMO-WALLET-ASAF-001',
+                    'customer_id': 'CUST-ASAF-001',
+                    'type': 'deposit',
+                    'amount': 25000.00,
+                    'description': 'Initial demo deposit - Health Wallet',
+                    'metadata': {'destination': 'health_wallet', 'demo': True},
+                    'timestamp': now.isoformat(),
+                    'status': 'completed',
+                    'nft_token_id': f'NFT-DEMO-WALLET-{now.strftime("%Y%m%d")}-001'
+                },
+                {
+                    'id': 'TX-DEMO-INV-ASAF-001',
+                    'customer_id': 'CUST-ASAF-001',
+                    'type': 'deposit',
+                    'amount': 15000.00,
+                    'description': 'Initial demo deposit - Investment Account',
+                    'metadata': {'destination': 'investment', 'index_amount': 9000, 'bonds_amount': 4500, 'crypto_amount': 1500, 'demo': True},
+                    'timestamp': now.isoformat(),
+                    'status': 'completed',
+                    'nft_token_id': f'NFT-DEMO-INV-{now.strftime("%Y%m%d")}-001'
+                },
+                {
+                    'id': 'TX-DEMO-ALGO-ASAF-001',
+                    'customer_id': 'CUST-ASAF-001',
+                    'type': 'deposit',
+                    'amount': 5000.00,
+                    'description': 'Initial demo deposit - Algo Trading',
+                    'metadata': {'destination': 'algo_trading', 'demo': True},
+                    'timestamp': now.isoformat(),
+                    'status': 'completed',
+                    'nft_token_id': f'NFT-DEMO-ALGO-{now.strftime("%Y%m%d")}-001'
+                }
         ]
         
         # Populate TRANSACTION_LEDGER
@@ -17794,7 +17823,10 @@ def run_server(port: int = PORT) -> None:
         print(f"   - Billing Records: 3")
         print(f"   - Claim Transactions: 3")
         print(f"   - Pipeline Events: 4")
-        print(f"   - CUST-ASAF-001 Savings: $0.00 (reset - use pipeline to add funds)")
+        print(f"   - CUST-ASAF-001 Demo Deposits: $45,000")
+        print(f"     • Health Wallet: $25,000")
+        print(f"     • Investment: $15,000")
+        print(f"     • Algo Trading: $5,000")
         print(f"   - Total ledger entries: {len(TRANSACTION_LEDGER)}")
     except Exception as e:
         print(f"⚠️  Transaction ledger initialization skipped: {e}")
