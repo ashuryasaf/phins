@@ -870,9 +870,9 @@
                 </div>
             </div>
             <div class="summary-card">
-                <div class="card-label">&#128181; Cash Balance</div>
+                <div class="card-label">💊 Health Wallet</div>
                 <div class="card-value" id="cashBalance">$0.00</div>
-                <div class="card-change" id="cashLabel">Available to invest</div>
+                <div class="card-change" id="cashLabel">Spendable balance</div>
             </div>
             <div class="summary-card success">
                 <div class="card-label">&#128200; Invested Assets</div>
@@ -1324,15 +1324,24 @@
             
             // Use verified totals when available (ensures integrity)
             // Fallback to unified data, then portfolio data
-            const cashBalance = verified.cash_balance || unified.cash_balance || portfolioData.cash_balance || 0;
+            // Field naming: 
+            //   - wallet_balance = Health Wallet (spendable cash from /api/integrity/verified-total)
+            //   - cash_balance = Investment cash available to invest (usually 0 since included in investment_balance)
+            //   - investment_balance = Total invested assets (includes index, bonds, crypto)
+            //   - algo_trading_balance = Algo trading portfolio value
             const walletBalance = verified.wallet_balance || 0;
+            const investmentCash = verified.cash_balance || unified.cash_balance || portfolioData.cash_balance || 0;
             const investedAssets = verified.investment_balance || portfolioData.total_market_value || unified.invested_assets || 0;
             const algoTradingProfits = verified.algo_trading_balance || unified.algo_trading_profits || 0;
             const monthlyContrib = unified.monthly_contribution || portfolioData.monthly_contribution || 0;
             
-            // Total = Cash Balance + Wallet + Invested Assets + Algo Trading
+            // Display health wallet as "Cash Balance" card (primary spendable cash)
+            // If no wallet balance, show investment cash instead
+            const cashBalance = walletBalance > 0 ? walletBalance : investmentCash;
+            
+            // Total = Wallet + Investment + Algo Trading (no double counting)
             // Use verified total if available (integrity-checked)
-            const totalValue = verified.total_savings || unified.total_value || (cashBalance + walletBalance + investedAssets + algoTradingProfits);
+            const totalValue = verified.total_savings || unified.total_value || (walletBalance + investedAssets + algoTradingProfits);
             
             // Check integrity status
             const integrityValid = verified.integrity_valid !== false;
