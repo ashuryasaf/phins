@@ -1341,26 +1341,47 @@
             // Get verified data from integrity service (most accurate)
             const verified = window.verifiedTotal || {};
             
-            // Use verified totals when available (ensures integrity)
-            // Fallback to unified data, then portfolio data
-            // Field naming: 
-            //   - wallet_balance = Health Wallet (spendable cash from /api/integrity/verified-total)
-            //   - cash_balance = Investment cash available to invest (usually 0 since included in investment_balance)
-            //   - investment_balance = Total invested assets (includes index, bonds, crypto)
-            //   - algo_trading_balance = Algo trading portfolio value
+            // DEBUG: Log all data sources
+            console.log('Portfolio Display Data Sources:', {
+                verified: verified,
+                unified: unified,
+                portfolioData: portfolioData
+            });
+            
+            // Field mapping (in priority order):
+            // 1. verified (integrity service) - most accurate
+            // 2. unified (investment/unified API) - real-time investment data  
+            // 3. portfolioData (savings/portfolio API) - fallback
+            
+            // Health Wallet balance (spendable cash for medical)
             const walletBalance = verified.wallet_balance || 0;
-            const investmentCash = verified.cash_balance || unified.cash_balance || portfolioData.cash_balance || 0;
-            const investedAssets = verified.investment_balance || portfolioData.total_market_value || unified.invested_assets || 0;
-            const algoTradingProfits = verified.algo_trading_balance || unified.algo_trading_profits || 0;
+            
+            // Investment balance - from unified API (invested_assets) or verified (investment_balance)
+            // Note: unified.invested_assets = index + bonds + crypto
+            const investedAssets = unified.invested_assets || unified.total_value || verified.investment_balance || 0;
+            
+            // Algo trading balance
+            const algoTradingBalance = verified.algo_trading_balance || unified.algo_trading_profits || 0;
+            
+            // Investment cash (uninvested in investment account)
+            const investmentCash = unified.cash_balance || 0;
+            
+            // Monthly contribution from policies
             const monthlyContrib = unified.monthly_contribution || portfolioData.monthly_contribution || 0;
             
-            // Display health wallet as "Cash Balance" card (primary spendable cash)
-            // If no wallet balance, show investment cash instead
+            // Cash balance card shows Health Wallet (primary spendable cash)
             const cashBalance = walletBalance > 0 ? walletBalance : investmentCash;
             
-            // Total = Wallet + Investment + Algo Trading (no double counting)
-            // Use verified total if available (integrity-checked)
-            const totalValue = verified.total_savings || unified.total_value || (walletBalance + investedAssets + algoTradingProfits);
+            // Total portfolio = all savings (wallet + investment + algo)
+            const totalValue = verified.total_savings || (walletBalance + investedAssets + algoTradingBalance);
+            
+            console.log('Calculated Display Values:', {
+                walletBalance,
+                investedAssets,
+                algoTradingBalance,
+                totalValue,
+                monthlyContrib
+            });
             
             // Check integrity status
             const integrityValid = verified.integrity_valid !== false;
@@ -1456,7 +1477,35 @@
         }
         
         function updateAllocationChart() {
-            const allocation = portfolioData.allocation || {};
+            // Get allocation from unified data first, fallback to portfolioData
+            const unified = window.unifiedInvestment || {};
+            let allocation = portfolioData.allocation || {};
+            
+            // If allocation is empty but we have unified data with index/bonds/crypto
+            // Build allocation from unified breakdown
+            if (Object.keys(allocation).length === 0 && unified.breakdown) {
+                const breakdown = unified.breakdown;
+                const total = (breakdown.index_funds || 0) + (breakdown.bonds || 0) + (breakdown.crypto || 0);
+                
+                if (total > 0) {
+                    allocation = {
+                        equity: { 
+                            value: breakdown.index_funds || 0, 
+                            percentage: ((breakdown.index_funds || 0) / total) * 100 
+                        },
+                        fixed_income: { 
+                            value: breakdown.bonds || 0, 
+                            percentage: ((breakdown.bonds || 0) / total) * 100 
+                        },
+                        crypto: { 
+                            value: breakdown.crypto || 0, 
+                            percentage: ((breakdown.crypto || 0) / total) * 100 
+                        }
+                    };
+                    console.log('Built allocation from unified breakdown:', allocation);
+                }
+            }
+            
             const legendContainer = document.getElementById('allocationLegend');
             const pieChart = document.getElementById('allocationPie');
             
