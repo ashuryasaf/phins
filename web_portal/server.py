@@ -16731,6 +16731,11 @@ For claims or questions, please contact:
                     'account': inv_account,
                     'allocation_preferences': allocation_prefs,
                     'total_balance': inv_account.get('balance', 0.0),
+                    # Include balance breakdown at root level for dashboard consistency
+                    'index_balance': inv_account.get('index_balance', 0.0),
+                    'bonds_balance': inv_account.get('bonds_balance', 0.0),
+                    'crypto_balance': inv_account.get('crypto_balance', 0.0),
+                    'deposits_count': len(inv_account.get('deposits', [])),
                     'breakdown': {
                         'index_funds': inv_account.get('index_balance', 0.0),
                         'bonds': inv_account.get('bonds_balance', 0.0),
