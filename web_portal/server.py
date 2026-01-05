@@ -1015,13 +1015,18 @@ def calculate_monthly_distribution(customer_id: str) -> Dict[str, Any]:
     
     # Get customer info for age-based calculations
     customer = CUSTOMERS.get(customer_id, {})
-    customer_age = customer.get('age', 40)
-    if not customer_age and customer.get('dob'):
+    customer_age = customer.get('age') or 40  # Use 40 as default if age is None or missing
+    
+    # Try to calculate from DOB if age is not set
+    if customer_age == 40 and customer.get('dob'):
         try:
-            dob = datetime.strptime(customer.get('dob', '1985-01-01')[:10], '%Y-%m-%d')
+            dob = datetime.strptime(str(customer.get('dob', '1985-01-01'))[:10], '%Y-%m-%d')
             customer_age = (datetime.now() - dob).days // 365
         except:
             customer_age = 40
+    
+    # Ensure customer_age is always an integer
+    customer_age = int(customer_age) if customer_age else 40
     
     # Map risk_score to ADL level for actuarial calculations
     # This ensures consistency with Long-Term Projection Calculator
