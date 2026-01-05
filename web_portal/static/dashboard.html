@@ -2752,6 +2752,410 @@
       homecare: '🏠 Home Care Services'
     };
     
+    // ========== SHOPPING CART SYSTEM ==========
+    let shoppingCart = [];
+    
+    function addToCart(productId, productName, price, category = 'general') {
+      // Check if item already in cart
+      const existingItem = shoppingCart.find(item => item.id === productId);
+      if (existingItem) {
+        existingItem.quantity += 1;
+      } else {
+        shoppingCart.push({
+          id: productId,
+          name: productName,
+          price: price,
+          category: category,
+          quantity: 1
+        });
+      }
+      updateCartDisplay();
+      showCartPanel();
+      showNotification(`✅ ${productName} added to cart`, 'success');
+    }
+    
+    function removeFromCart(productId) {
+      shoppingCart = shoppingCart.filter(item => item.id !== productId);
+      updateCartDisplay();
+      if (shoppingCart.length === 0) {
+        hideCartPanel();
+      }
+    }
+    
+    function updateCartQuantity(productId, delta) {
+      const item = shoppingCart.find(item => item.id === productId);
+      if (item) {
+        item.quantity += delta;
+        if (item.quantity <= 0) {
+          removeFromCart(productId);
+        } else {
+          updateCartDisplay();
+        }
+      }
+    }
+    
+    function clearCart() {
+      shoppingCart = [];
+      updateCartDisplay();
+      hideCartPanel();
+    }
+    
+    function getCartTotal() {
+      return shoppingCart.reduce((total, item) => total + (item.price * item.quantity), 0);
+    }
+    
+    function getCartItemCount() {
+      return shoppingCart.reduce((count, item) => count + item.quantity, 0);
+    }
+    
+    function updateCartDisplay() {
+      const cartPanel = document.getElementById('floating-cart-panel');
+      const cartBadge = document.getElementById('cart-badge');
+      const itemCount = getCartItemCount();
+      const total = getCartTotal();
+      
+      // Update badge
+      if (cartBadge) {
+        cartBadge.textContent = itemCount;
+        cartBadge.style.display = itemCount > 0 ? 'flex' : 'none';
+      }
+      
+      // Update cart panel content
+      if (cartPanel) {
+        const cartItems = document.getElementById('cart-items');
+        const cartTotal = document.getElementById('cart-total');
+        
+        if (cartItems) {
+          if (shoppingCart.length === 0) {
+            cartItems.innerHTML = '<div style="text-align: center; color: #888; padding: 20px;">Your cart is empty</div>';
+          } else {
+            cartItems.innerHTML = shoppingCart.map(item => `
+              <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px 0; border-bottom: 1px solid rgba(255,255,255,0.1);">
+                <div style="flex: 1;">
+                  <div style="font-weight: 600; font-size: 0.9rem; color: #fff;">${item.name}</div>
+                  <div style="font-size: 0.8rem; color: rgba(255,255,255,0.7);">$${item.price.toFixed(2)} each</div>
+                </div>
+                <div style="display: flex; align-items: center; gap: 8px;">
+                  <button onclick="updateCartQuantity('${item.id}', -1)" style="background: rgba(255,255,255,0.2); border: none; color: white; width: 24px; height: 24px; border-radius: 4px; cursor: pointer; font-size: 14px;">−</button>
+                  <span style="color: white; min-width: 20px; text-align: center;">${item.quantity}</span>
+                  <button onclick="updateCartQuantity('${item.id}', 1)" style="background: rgba(255,255,255,0.2); border: none; color: white; width: 24px; height: 24px; border-radius: 4px; cursor: pointer; font-size: 14px;">+</button>
+                  <span style="color: #4caf50; font-weight: 600; min-width: 60px; text-align: right;">$${(item.price * item.quantity).toFixed(2)}</span>
+                  <button onclick="removeFromCart('${item.id}')" style="background: rgba(244,67,54,0.3); border: none; color: #ff8a80; width: 24px; height: 24px; border-radius: 4px; cursor: pointer; font-size: 12px;">✕</button>
+                </div>
+              </div>
+            `).join('');
+          }
+        }
+        
+        if (cartTotal) {
+          cartTotal.textContent = `$${total.toFixed(2)}`;
+        }
+      }
+    }
+    
+    function showCartPanel() {
+      const panel = document.getElementById('floating-cart-panel');
+      if (panel && shoppingCart.length > 0) {
+        panel.style.display = 'block';
+        panel.style.animation = 'slideIn 0.3s ease-out';
+      }
+    }
+    
+    function hideCartPanel() {
+      const panel = document.getElementById('floating-cart-panel');
+      if (panel) {
+        panel.style.display = 'none';
+      }
+    }
+    
+    function toggleCartPanel() {
+      const panel = document.getElementById('floating-cart-panel');
+      if (panel) {
+        if (panel.style.display === 'none' || !panel.style.display) {
+          showCartPanel();
+        } else {
+          hideCartPanel();
+        }
+      }
+    }
+    
+    async function checkoutCart() {
+      if (shoppingCart.length === 0) {
+        showNotification('Your cart is empty', 'warning');
+        return;
+      }
+      
+      const cid = customerId || sessionStorage.getItem('customer_id') || '';
+      const total = getCartTotal();
+      
+      // Fetch balances for checkout
+      let totalDeposits = { health_wallet: walletBalance, investment: 0, algo_trading: 0, total: walletBalance };
+      
+      try {
+        const balanceResponse = await fetch('/api/unified-payment/balances', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ customer_id: cid })
+        });
+        if (balanceResponse.ok) {
+          const balanceData = await balanceResponse.json();
+          totalDeposits = {
+            health_wallet: balanceData.balances?.health_wallet?.balance || 0,
+            investment: balanceData.balances?.investment?.balance || 0,
+            algo_trading: balanceData.balances?.algo_trading?.balance || 0,
+            total: balanceData.total_assets || 0
+          };
+        }
+      } catch (e) { console.log('Using local balance data'); }
+      
+      // Show checkout modal with cart summary
+      showCartCheckoutModal(totalDeposits);
+    }
+    
+    function showCartCheckoutModal(balances) {
+      const total = getCartTotal();
+      const itemCount = getCartItemCount();
+      const hasEnoughWallet = balances.health_wallet >= total;
+      const hasEnoughInvestment = balances.investment >= total;
+      const hasEnoughTotal = balances.total >= total;
+      const shortfall = total - balances.health_wallet;
+      
+      // AI Recommendation
+      let aiRecommendation = '';
+      let recommendedSource = 'health_wallet';
+      
+      if (hasEnoughWallet) {
+        aiRecommendation = '✨ <strong>Recommended:</strong> Pay directly from Health Wallet - instant & no fees';
+        recommendedSource = 'health_wallet';
+      } else if (balances.health_wallet > 0 && hasEnoughTotal) {
+        aiRecommendation = '💡 <strong>Smart Split:</strong> Use wallet balance + transfer from investments';
+        recommendedSource = 'split';
+      } else if (hasEnoughInvestment) {
+        aiRecommendation = '📈 <strong>Available:</strong> Transfer from your Investment Account';
+        recommendedSource = 'investment';
+      } else if (!hasEnoughTotal) {
+        aiRecommendation = '⚠️ <strong>Notice:</strong> Add funds to complete this purchase';
+        recommendedSource = 'add_funds';
+      }
+      
+      const cartItemsHtml = shoppingCart.map(item => `
+        <div style="display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #eee;">
+          <span style="color: #333;">${item.name} × ${item.quantity}</span>
+          <span style="font-weight: 600; color: #1565c0;">$${(item.price * item.quantity).toFixed(2)}</span>
+        </div>
+      `).join('');
+      
+      const modalHtml = `
+        <div id="cart-checkout-modal" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 4000; display: flex; justify-content: center; align-items: center; padding: 20px; box-sizing: border-box;">
+          <div style="background: white; border-radius: 18px; max-width: 450px; width: 100%; max-height: 85vh; overflow-y: auto; box-shadow: 0 20px 60px rgba(0,0,0,0.3); transform: scale(0.9); animation: modalPop 0.3s ease-out forwards;">
+            
+            <!-- Header -->
+            <div style="background: linear-gradient(135deg, #1565c0 0%, #0d47a1 100%); color: white; padding: 20px; border-radius: 18px 18px 0 0;">
+              <div style="display: flex; justify-content: space-between; align-items: center;">
+                <h2 style="margin: 0; font-size: 1.35rem;">🛒 Complete Purchase</h2>
+                <button onclick="closeCartCheckoutModal()" style="background: rgba(255,255,255,0.2); border: none; color: white; width: 32px; height: 32px; border-radius: 50%; font-size: 18px; cursor: pointer;">×</button>
+              </div>
+              <p style="margin: 6px 0 0 0; opacity: 0.9; font-size: 0.85rem;">${itemCount} item${itemCount > 1 ? 's' : ''} in your cart</p>
+            </div>
+            
+            <!-- Cart Summary -->
+            <div style="padding: 16px 18px; border-bottom: 1px solid #eee; max-height: 180px; overflow-y: auto; background: #fafafa;">
+              <div style="font-weight: 600; color: #333; margin-bottom: 10px; font-size: 0.9rem;">📦 Order Summary</div>
+              ${cartItemsHtml}
+            </div>
+            
+            <!-- Total -->
+            <div style="padding: 16px 18px; border-bottom: 1px solid #eee;">
+              <div style="display: flex; justify-content: space-between; align-items: center;">
+                <span style="color: #666; font-size: 0.9rem;">Total Amount</span>
+                <span style="font-size: 1.6rem; font-weight: 700; color: #1565c0;">$${total.toFixed(2)}</span>
+              </div>
+              
+              <!-- AI Recommendation -->
+              <div style="background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%); padding: 10px 14px; border-radius: 8px; margin-top: 12px;">
+                <div style="font-size: 0.8rem; color: #1565c0;">${aiRecommendation}</div>
+              </div>
+            </div>
+            
+            <!-- Balance Cards -->
+            <div style="padding: 14px 18px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px;">
+              <div style="background: ${hasEnoughWallet ? 'linear-gradient(135deg, #e8f5e9 0%, #c8e6c9 100%)' : '#f5f5f5'}; padding: 10px; border-radius: 10px; text-align: center;">
+                <div style="font-size: 0.7rem; color: #666;">💊 Wallet</div>
+                <div style="font-size: 1rem; font-weight: 700; color: ${hasEnoughWallet ? '#2e7d32' : '#999'};">$${balances.health_wallet.toFixed(2)}</div>
+              </div>
+              <div style="background: ${hasEnoughInvestment ? 'linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%)' : '#f5f5f5'}; padding: 10px; border-radius: 10px; text-align: center;">
+                <div style="font-size: 0.7rem; color: #666;">📈 Invest</div>
+                <div style="font-size: 1rem; font-weight: 700; color: ${hasEnoughInvestment ? '#1565c0' : '#999'};">$${balances.investment.toFixed(2)}</div>
+              </div>
+              <div style="background: linear-gradient(135deg, #fff3e0 0%, #ffe0b2 100%); padding: 10px; border-radius: 10px; text-align: center;">
+                <div style="font-size: 0.7rem; color: #666;">💰 Total</div>
+                <div style="font-size: 1rem; font-weight: 700; color: #e65100;">$${balances.total.toFixed(2)}</div>
+              </div>
+            </div>
+            
+            <!-- Payment Options -->
+            <div style="padding: 14px 18px;">
+              <div style="font-weight: 600; color: #333; margin-bottom: 10px; font-size: 0.85rem;">💳 Payment Method</div>
+              
+              <div style="display: flex; flex-direction: column; gap: 8px;">
+                ${hasEnoughWallet ? `
+                <button onclick="processCartPayment('health_wallet')" style="background: linear-gradient(135deg, #4caf50 0%, #66bb6a 100%); color: white; border: none; padding: 12px; border-radius: 10px; cursor: pointer; font-weight: 600; font-size: 0.9rem; display: flex; align-items: center; justify-content: center; gap: 8px;">
+                  💊 Pay with Health Wallet
+                </button>
+                ` : ''}
+                
+                ${!hasEnoughWallet && hasEnoughTotal && balances.health_wallet > 0 ? `
+                <button onclick="processCartPayment('split')" style="background: linear-gradient(135deg, #7b1fa2 0%, #9c27b0 100%); color: white; border: none; padding: 12px; border-radius: 10px; cursor: pointer; font-weight: 600; font-size: 0.9rem; display: flex; align-items: center; justify-content: center; gap: 8px;">
+                  🔄 Smart Split ($${balances.health_wallet.toFixed(2)} wallet + $${shortfall.toFixed(2)} transfer)
+                </button>
+                ` : ''}
+                
+                ${hasEnoughInvestment && !hasEnoughWallet ? `
+                <button onclick="processCartPayment('investment')" style="background: linear-gradient(135deg, #1565c0 0%, #1976d2 100%); color: white; border: none; padding: 12px; border-radius: 10px; cursor: pointer; font-weight: 600; font-size: 0.9rem; display: flex; align-items: center; justify-content: center; gap: 8px;">
+                  📈 Pay from Investments
+                </button>
+                ` : ''}
+                
+                <button onclick="processCartPayment('card')" style="background: linear-gradient(135deg, #37474f 0%, #455a64 100%); color: white; border: none; padding: 12px; border-radius: 10px; cursor: pointer; font-weight: 600; font-size: 0.9rem; display: flex; align-items: center; justify-content: center; gap: 8px;">
+                  💳 Pay with Card
+                </button>
+              </div>
+            </div>
+            
+            <!-- Footer -->
+            <div style="padding: 14px 18px; background: #fafafa; border-radius: 0 0 18px 18px; display: flex; justify-content: space-between;">
+              <button onclick="closeCartCheckoutModal()" style="background: #f5f5f5; border: 1px solid #ddd; padding: 10px 20px; border-radius: 8px; cursor: pointer; color: #666; font-size: 0.85rem;">
+                ← Continue Shopping
+              </button>
+              <button onclick="clearCart(); closeCartCheckoutModal();" style="background: none; border: none; color: #f44336; cursor: pointer; font-size: 0.85rem;">
+                🗑️ Clear Cart
+              </button>
+            </div>
+          </div>
+        </div>
+        <style>
+          @keyframes modalPop {
+            from { transform: scale(0.9); opacity: 0; }
+            to { transform: scale(1); opacity: 1; }
+          }
+        </style>
+      `;
+      
+      document.body.insertAdjacentHTML('beforeend', modalHtml);
+    }
+    
+    function closeCartCheckoutModal() {
+      const modal = document.getElementById('cart-checkout-modal');
+      if (modal) modal.remove();
+    }
+    
+    async function processCartPayment(paymentMethod) {
+      const cid = customerId || sessionStorage.getItem('customer_id') || '';
+      const total = getCartTotal();
+      
+      // Close checkout modal and show processing
+      closeCartCheckoutModal();
+      showNotification('🔄 Processing your order...', 'info');
+      
+      try {
+        // Process each item in cart
+        for (const item of shoppingCart) {
+          const itemTotal = item.price * item.quantity;
+          
+          const response = await fetch('/api/health-wallet/purchase', {
+            method: 'POST',
+            headers: { 
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${authToken}`
+            },
+            body: JSON.stringify({
+              customer_id: cid,
+              product_id: item.id,
+              product_name: item.name,
+              amount: itemTotal,
+              quantity: item.quantity,
+              category: item.category,
+              payment_source: paymentMethod
+            })
+          });
+          
+          if (!response.ok) {
+            const err = await response.json();
+            throw new Error(err.error || 'Purchase failed');
+          }
+        }
+        
+        // Success - clear cart and refresh
+        showNotification(`✅ Order complete! ${getCartItemCount()} item(s) purchased for $${total.toFixed(2)}`, 'success');
+        clearCart();
+        hideCartPanel();
+        
+        // Refresh balances
+        setTimeout(() => {
+          loadWalletBalance();
+          loadActivityLog();
+        }, 1000);
+        
+      } catch (error) {
+        console.error('Cart checkout error:', error);
+        showNotification(`❌ ${error.message}`, 'error');
+      }
+    }
+    
+    // Initialize cart panel on page load
+    function initializeCartPanel() {
+      if (!document.getElementById('floating-cart-panel')) {
+        const cartPanelHtml = `
+          <!-- Floating Cart Button -->
+          <div id="floating-cart-btn" onclick="toggleCartPanel()" style="position: fixed; bottom: 100px; right: 30px; width: 60px; height: 60px; background: linear-gradient(135deg, #ff9800 0%, #f57c00 100%); border-radius: 50%; display: flex; align-items: center; justify-content: center; cursor: pointer; box-shadow: 0 4px 20px rgba(255, 152, 0, 0.4); z-index: 2999; transition: transform 0.2s;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'">
+            <span style="font-size: 28px;">🛒</span>
+            <span id="cart-badge" style="position: absolute; top: -5px; right: -5px; background: #f44336; color: white; width: 24px; height: 24px; border-radius: 50%; font-size: 12px; font-weight: 700; display: none; align-items: center; justify-content: center;">0</span>
+          </div>
+          
+          <!-- Floating Cart Panel -->
+          <div id="floating-cart-panel" style="display: none; position: fixed; bottom: 170px; right: 30px; width: 360px; max-height: 450px; background: linear-gradient(135deg, rgba(21, 101, 192, 0.95) 0%, rgba(13, 71, 161, 0.95) 100%); backdrop-filter: blur(20px); border-radius: 16px; box-shadow: 0 10px 40px rgba(0,0,0,0.3); z-index: 2998; overflow: hidden;">
+            
+            <!-- Cart Header -->
+            <div style="padding: 16px 18px; border-bottom: 1px solid rgba(255,255,255,0.1); display: flex; justify-content: space-between; align-items: center;">
+              <h3 style="margin: 0; color: white; font-size: 1.1rem;">🛒 Your Cart</h3>
+              <button onclick="hideCartPanel()" style="background: rgba(255,255,255,0.2); border: none; color: white; width: 28px; height: 28px; border-radius: 50%; cursor: pointer; font-size: 14px;">×</button>
+            </div>
+            
+            <!-- Cart Items -->
+            <div id="cart-items" style="max-height: 250px; overflow-y: auto; padding: 12px 18px;">
+              <div style="text-align: center; color: rgba(255,255,255,0.7); padding: 20px;">Your cart is empty</div>
+            </div>
+            
+            <!-- Cart Footer -->
+            <div style="padding: 14px 18px; border-top: 1px solid rgba(255,255,255,0.1); background: rgba(0,0,0,0.2);">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                <span style="color: rgba(255,255,255,0.8); font-size: 0.9rem;">Total:</span>
+                <span id="cart-total" style="font-size: 1.4rem; font-weight: 700; color: #4caf50;">$0.00</span>
+              </div>
+              <button onclick="checkoutCart()" style="width: 100%; background: linear-gradient(135deg, #4caf50 0%, #66bb6a 100%); color: white; border: none; padding: 14px; border-radius: 10px; cursor: pointer; font-weight: 700; font-size: 1rem; display: flex; align-items: center; justify-content: center; gap: 8px;">
+                💳 Checkout
+              </button>
+              <button onclick="clearCart()" style="width: 100%; background: transparent; color: rgba(255,255,255,0.6); border: none; padding: 8px; cursor: pointer; font-size: 0.85rem; margin-top: 8px;">
+                🗑️ Clear Cart
+              </button>
+            </div>
+          </div>
+          
+          <style>
+            @keyframes slideIn {
+              from { transform: translateX(100%); opacity: 0; }
+              to { transform: translateX(0); opacity: 1; }
+            }
+          </style>
+        `;
+        document.body.insertAdjacentHTML('beforeend', cartPanelHtml);
+      }
+    }
+    
+    // Initialize cart when DOM is ready
+    document.addEventListener('DOMContentLoaded', initializeCartPanel);
+    // ========== END SHOPPING CART SYSTEM ==========
+    
     function showMedicalCategory(category) {
       const products = medicalProducts[category] || [];
       const title = categoryTitles[category] || 'Products';
@@ -2769,10 +3173,16 @@
           ${product.size ? `<p style="color: #888; font-size: 12px; margin: 0 0 8px 0;">📏 ${product.size}</p>` : ''}
           <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 16px;">
             <span style="font-size: 20px; font-weight: bold; color: #28a745;">$${product.price.toFixed(2)}</span>
-            <button onclick="purchaseProduct('${product.id}', '${product.name.replace(/'/g, "\\'")}', ${product.price})" 
-                    style="background: #667eea; color: white; border: none; padding: 10px 20px; border-radius: 6px; cursor: pointer; font-weight: 600;">
-              Pay with Wallet
-            </button>
+            <div style="display: flex; gap: 8px;">
+              <button onclick="addToCart('${product.id}', '${product.name.replace(/'/g, "\\'")}', ${product.price}, '${category}')" 
+                      style="background: linear-gradient(135deg, #ff9800 0%, #f57c00 100%); color: white; border: none; padding: 10px 16px; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 13px;">
+                🛒 Add to Cart
+              </button>
+              <button onclick="purchaseProduct('${product.id}', '${product.name.replace(/'/g, "\\'")}', ${product.price})" 
+                      style="background: #667eea; color: white; border: none; padding: 10px 16px; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 13px;">
+                ⚡ Buy Now
+              </button>
+            </div>
           </div>
         </div>
       `).join('');
