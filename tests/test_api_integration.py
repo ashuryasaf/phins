@@ -318,7 +318,11 @@ def test_policies_get_by_id_endpoint():
     assert data['coverage_amount'] == 50000
     
     # Test non-existent policy
-    body, status = _get(base + "/api/policies?id=NONEXISTENT")
+    try:
+        body, status = _get(base + "/api/policies?id=NONEXISTENT")
+    except HTTPError as e:
+        body = e.read().decode('utf-8')
+        status = e.code
     assert status == 404
     
     srv.stop()

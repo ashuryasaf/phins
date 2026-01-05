@@ -156,10 +156,21 @@ class DatabaseDict:
         with DatabaseManager() as db:
             repo = self._get_repository(db)
             items = repo.get_all()
-            self._cache = {item.id if hasattr(item, 'id') else 
-                          (item.username if hasattr(item, 'username') else 
-                          (item.token if hasattr(item, 'token') else str(item))): 
-                          item.to_dict() for item in items}
+            def _key_for_item(item):
+                # Use correct primary key per repository (prevents subtle bugs like sessions keyed by username)
+                if self.repository_name == 'sessions' and hasattr(item, 'token'):
+                    return item.token
+                if self.repository_name == 'users' and hasattr(item, 'username'):
+                    return item.username
+                if hasattr(item, 'id'):
+                    return item.id
+                if hasattr(item, 'username'):
+                    return item.username
+                if hasattr(item, 'token'):
+                    return item.token
+                return str(item)
+
+            self._cache = {_key_for_item(item): item.to_dict() for item in items}
             self._cache_valid = True
     
     def __getitem__(self, key: str) -> Dict[str, Any]:
