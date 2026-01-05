@@ -875,9 +875,16 @@
                 <div class="card-change" id="cashLabel">Spendable balance</div>
             </div>
             <div class="summary-card success">
-                <div class="card-label">&#128200; Invested Assets</div>
+                <div class="card-label">📊 Invested Assets</div>
                 <div class="card-value" id="investedValue">$0.00</div>
                 <div class="card-change" id="unrealizedGain">$0.00 unrealized</div>
+            </div>
+            <div class="summary-card" style="background: linear-gradient(135deg, #059669 0%, #10b981 100%); border: none;">
+                <div class="card-label" style="color: rgba(255,255,255,0.9);">💵 Investment Cash</div>
+                <div class="card-value" id="investmentCashBalance" style="color: white;">$0.00</div>
+                <div class="card-change" id="investmentCashLabel" style="color: rgba(255,255,255,0.8);">
+                    Available for trading
+                </div>
             </div>
             <div class="summary-card" style="position: relative;">
                 <div class="card-label">&#128197; Monthly Savings</div>
@@ -905,16 +912,64 @@
         <div style="background: rgba(99, 102, 241, 0.1); border: 1px solid rgba(99, 102, 241, 0.3); border-radius: 12px; padding: 16px; margin-bottom: 24px;">
             <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 16px;">
                 <div style="flex: 1; min-width: 200px;">
-                    <div style="font-weight: 600; color: #8b5cf6; margin-bottom: 4px;">🚀 Fund Algo Trading from Cash Balance</div>
+                    <div style="font-weight: 600; color: #8b5cf6; margin-bottom: 4px;">🚀 Fund Algo Trading from Investment Cash</div>
                     <p style="color: var(--text-secondary); font-size: 0.85rem; margin: 0;">
                         Transfer funds to algo trading for automated strategies, real-time P&L tracking, and margin calculation.
                     </p>
+                    <div id="transferAvailableInfo" style="margin-top: 8px; font-size: 0.8rem; color: #10b981;">
+                        💵 Available: <span id="transferAvailableAmount">$0.00</span>
+                    </div>
                 </div>
                 <div style="display: flex; gap: 8px; align-items: center;">
-                    <input type="number" id="algoTransferAmount" placeholder="Amount ($)" min="10" style="padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-card); color: var(--text-primary); width: 140px;">
-                    <button onclick="transferToAlgoTrading()" style="padding: 10px 20px; background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%); border: none; border-radius: 8px; color: white; cursor: pointer; font-weight: 600;">
+                    <input type="number" id="algoTransferAmount" placeholder="Amount ($)" min="10" style="padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-card); color: var(--text-primary); width: 140px;" oninput="validateTransferAmount()">
+                    <button id="algoTransferBtn" onclick="transferToAlgoTrading()" style="padding: 10px 20px; background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%); border: none; border-radius: 8px; color: white; cursor: pointer; font-weight: 600; opacity: 0.5;" disabled>
                         Transfer →
                     </button>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Quick Trading Actions -->
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 16px; margin-bottom: 24px;">
+            <div style="background: rgba(16, 185, 129, 0.1); border: 1px solid rgba(16, 185, 129, 0.3); border-radius: 12px; padding: 16px;">
+                <div style="font-weight: 600; color: #10b981; margin-bottom: 8px;">⚡ Quick Invest</div>
+                <div style="display: flex; gap: 8px;">
+                    <select id="quickInvestAsset" style="flex: 1; padding: 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-card); color: var(--text-primary);">
+                        <option value="SPY">SPY (S&P 500)</option>
+                        <option value="QQQ">QQQ (NASDAQ)</option>
+                        <option value="BTC">BTC (Bitcoin)</option>
+                        <option value="ETH">ETH (Ethereum)</option>
+                        <option value="BONDS">Bonds Fund</option>
+                    </select>
+                    <input type="number" id="quickInvestAmount" placeholder="$" min="10" style="width: 80px; padding: 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-card); color: var(--text-primary);">
+                    <button id="quickInvestBtn" onclick="quickInvest()" style="padding: 8px 16px; background: #10b981; border: none; border-radius: 6px; color: white; cursor: pointer; font-weight: 600; opacity: 0.5;" disabled>
+                        Buy
+                    </button>
+                </div>
+                <div style="margin-top: 8px; font-size: 0.75rem; color: var(--text-secondary);">
+                    Cash available: <span id="quickInvestAvailable" style="color: #10b981;">$0.00</span>
+                </div>
+            </div>
+            
+            <div style="background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.3); border-radius: 12px; padding: 16px;">
+                <div style="font-weight: 600; color: #ef4444; margin-bottom: 8px;">📈 P&L Summary</div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 0.85rem;">
+                    <div>
+                        <div style="color: var(--text-secondary);">Total Invested</div>
+                        <div id="totalInvestedAmount" style="font-weight: 600;">$0.00</div>
+                    </div>
+                    <div>
+                        <div style="color: var(--text-secondary);">Current Value</div>
+                        <div id="currentValueAmount" style="font-weight: 600;">$0.00</div>
+                    </div>
+                    <div>
+                        <div style="color: var(--text-secondary);">Unrealized P&L</div>
+                        <div id="unrealizedPnL" style="font-weight: 600; color: #10b981;">$0.00</div>
+                    </div>
+                    <div>
+                        <div style="color: var(--text-secondary);">Return %</div>
+                        <div id="returnPctDisplay" style="font-weight: 600; color: #10b981;">0.00%</div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -1431,6 +1486,18 @@
             document.getElementById('cashBalance').textContent = formatCurrency(cashBalance);
             document.getElementById('investedValue').textContent = formatCurrency(investedAssets);
             document.getElementById('monthlyContribution').textContent = formatCurrency(monthlyContrib);
+            
+            // Update investment cash balance (available for trading/transfers)
+            const investCashEl = document.getElementById('investmentCashBalance');
+            if (investCashEl) {
+                investCashEl.textContent = formatCurrency(investmentCash);
+            }
+            
+            // Store investment cash globally for transfer validation
+            window.availableInvestmentCash = investmentCash;
+            
+            // Update transfer button state based on available funds
+            updateTransferButtonState();
             
             // Update monthly distribution breakdown
             const dist = unified.monthly_distribution || {};
@@ -2070,6 +2137,109 @@
         
         // ========== ALGO TRADING INTEGRATION ==========
         
+        // Update transfer and trading button states based on available funds
+        function updateTransferButtonState() {
+            const availableCash = window.availableInvestmentCash || 0;
+            const healthWallet = window.verifiedTotal?.wallet_balance || 0;
+            const totalAvailable = availableCash + healthWallet;
+            
+            // Update available amount displays
+            const transferAvailEl = document.getElementById('transferAvailableAmount');
+            if (transferAvailEl) {
+                transferAvailEl.textContent = formatCurrency(totalAvailable);
+            }
+            
+            const quickInvestAvailEl = document.getElementById('quickInvestAvailable');
+            if (quickInvestAvailEl) {
+                quickInvestAvailEl.textContent = formatCurrency(availableCash);
+            }
+            
+            // Enable/disable transfer button
+            const transferBtn = document.getElementById('algoTransferBtn');
+            if (transferBtn) {
+                if (totalAvailable >= 10) {
+                    transferBtn.disabled = false;
+                    transferBtn.style.opacity = '1';
+                    transferBtn.style.cursor = 'pointer';
+                } else {
+                    transferBtn.disabled = true;
+                    transferBtn.style.opacity = '0.5';
+                    transferBtn.style.cursor = 'not-allowed';
+                }
+            }
+            
+            // Enable/disable quick invest button
+            const quickInvestBtn = document.getElementById('quickInvestBtn');
+            if (quickInvestBtn) {
+                if (availableCash >= 10) {
+                    quickInvestBtn.disabled = false;
+                    quickInvestBtn.style.opacity = '1';
+                    quickInvestBtn.style.cursor = 'pointer';
+                } else {
+                    quickInvestBtn.disabled = true;
+                    quickInvestBtn.style.opacity = '0.5';
+                    quickInvestBtn.style.cursor = 'not-allowed';
+                }
+            }
+            
+            // Update P&L summary
+            updatePnLSummary();
+        }
+        
+        // Validate transfer amount in real-time
+        function validateTransferAmount() {
+            const amount = parseFloat(document.getElementById('algoTransferAmount').value) || 0;
+            const availableCash = (window.availableInvestmentCash || 0) + (window.verifiedTotal?.wallet_balance || 0);
+            const transferBtn = document.getElementById('algoTransferBtn');
+            
+            if (amount >= 10 && amount <= availableCash) {
+                transferBtn.disabled = false;
+                transferBtn.style.opacity = '1';
+                transferBtn.style.cursor = 'pointer';
+            } else {
+                transferBtn.disabled = true;
+                transferBtn.style.opacity = '0.5';
+                transferBtn.style.cursor = 'not-allowed';
+            }
+        }
+        
+        // Update P&L Summary panel
+        function updatePnLSummary() {
+            const unified = window.unifiedInvestment || {};
+            const verified = window.verifiedTotal || {};
+            
+            // Calculate P&L values
+            const investedAssets = unified.invested_assets || verified.investment_balance || 0;
+            const unrealizedGain = unified.unrealized_gain || 0;
+            const returnPct = unified.return_pct || 0;
+            
+            // Total invested is current value minus unrealized gain
+            const totalInvested = investedAssets - unrealizedGain;
+            
+            // Update P&L display elements
+            const totalInvestedEl = document.getElementById('totalInvestedAmount');
+            if (totalInvestedEl) {
+                totalInvestedEl.textContent = formatCurrency(totalInvested > 0 ? totalInvested : investedAssets);
+            }
+            
+            const currentValueEl = document.getElementById('currentValueAmount');
+            if (currentValueEl) {
+                currentValueEl.textContent = formatCurrency(investedAssets);
+            }
+            
+            const unrealizedPnLEl = document.getElementById('unrealizedPnL');
+            if (unrealizedPnLEl) {
+                unrealizedPnLEl.textContent = `${unrealizedGain >= 0 ? '+' : ''}${formatCurrency(unrealizedGain)}`;
+                unrealizedPnLEl.style.color = unrealizedGain >= 0 ? '#10b981' : '#ef4444';
+            }
+            
+            const returnPctEl = document.getElementById('returnPctDisplay');
+            if (returnPctEl) {
+                returnPctEl.textContent = `${returnPct >= 0 ? '+' : ''}${returnPct.toFixed(2)}%`;
+                returnPctEl.style.color = returnPct >= 0 ? '#10b981' : '#ef4444';
+            }
+        }
+        
         // Load Algo Trading Portfolio data
         async function loadAlgoPortfolio() {
             try {
@@ -2136,20 +2306,26 @@
                 return;
             }
             
-            // Check cash balance
-            const cashBal = parseFloat(document.getElementById('cashBalance').textContent.replace(/[^0-9.-]/g, ''));
-            if (amount > cashBal) {
-                showToast('Insufficient cash balance', 'error');
+            // Check available funds (investment cash + health wallet)
+            const investmentCash = window.availableInvestmentCash || 0;
+            const healthWallet = window.verifiedTotal?.wallet_balance || 0;
+            const totalAvailable = investmentCash + healthWallet;
+            
+            if (amount > totalAvailable) {
+                showToast(`Insufficient funds. Available: ${formatCurrency(totalAvailable)}`, 'error');
                 return;
             }
             
+            // Determine source based on which account has funds
+            const source = investmentCash >= amount ? 'investment' : 'health_wallet';
+            
             try {
-                const response = await authFetch('/api/portfolio/deposit-to-algo', {
+                const response = await authFetch('/api/balance/transfer-to-algo', {
                     method: 'POST',
                     body: JSON.stringify({
                         customer_id: customerId,
                         amount: amount,
-                        source: 'investment'
+                        source: source
                     })
                 });
                 
