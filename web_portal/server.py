@@ -2138,6 +2138,16 @@ def get_bi_data_actuary() -> Dict[str, Any]:
     """Generate actuarial BI data"""
     # Best-effort include actuarial upload state (table governance signal)
     actuarial_count = len(ACTUARIAL_TABLES)
+    fee_schedule_count = len(FEE_SCHEDULES)
+    approved_fee = 0
+    approved_domains: list[str] = []
+    try:
+        approved = [fs for fs in FEE_SCHEDULES.values() if (fs.get('status') or '').lower() == 'approved']
+        approved_fee = len(approved)
+        approved_domains = sorted({(fs.get('domain') or '').lower() for fs in approved if fs.get('domain')})
+    except Exception:
+        approved_fee = 0
+        approved_domains = []
     latest_uploaded = None
     try:
         if ACTUARIAL_TABLES:
@@ -2170,6 +2180,11 @@ def get_bi_data_actuary() -> Dict[str, Any]:
         'actuarial_tables': {
             'count': actuarial_count,
             'latest_uploaded': latest_uploaded
+        },
+        'fee_schedules': {
+            'count': fee_schedule_count,
+            'approved': approved_fee,
+            'approved_domains': approved_domains
         }
     }
 
@@ -8211,7 +8226,13 @@ For claims or questions, please contact:
         
         # Regular JSON POST requests
         length = int(self.headers.get('Content-Length', 0))
-        body = self.rfile.read(length).decode('utf-8') if length else ''
+        content_type = (self.headers.get('Content-Type') or '').lower()
+        body_bytes = self.rfile.read(length) if length else b''
+        # IMPORTANT: multipart bodies contain binary data (xlsx) and must NOT be decoded as utf-8.
+        if content_type.startswith('multipart/form-data'):
+            body = ''
+        else:
+            body = body_bytes.decode('utf-8') if body_bytes else ''
         
         # Demo login endpoint with secure password verification
         if path == '/api/login':
@@ -8891,6 +8912,155 @@ For claims or questions, please contact:
                 if audit:
                     try:
                         audit.log(actor, 'upload', 'actuarial_table', table_id, {'table_type': table_type, 'version': version})
+                    except Exception:
+                        pass
+
+                self._set_json_headers(201)
+                self.wfile.write(json.dumps({'success': True, 'id': table_id}).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'Upload failed', 'details': str(e)}).encode('utf-8'))
+            return
+
+        # Admin/Actuary: Upload actuarial table via multipart file (XLSX/CSV/JSON)
+        if path == '/api/admin/actuarial-tables/upload-file':
+            auth_header = self.headers.get('Authorization', '')
+            token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+            session = validate_session(token) if token else None
+            if not require_role(session, ['admin', 'actuary']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Unauthorized. Admin/Actuary access required.'}).encode('utf-8'))
+                return
+
+            content_type = (self.headers.get('Content-Type') or '').lower()
+            if not content_type.startswith('multipart/form-data'):
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'Expected multipart/form-data'}).encode('utf-8'))
+                return
+
+            boundary = content_type.split('boundary=')[1] if 'boundary=' in content_type else None
+            if not boundary:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'No boundary in multipart data'}).encode('utf-8'))
+                return
+
+            try:
+                # body_bytes was already read at the start of do_POST
+                fields, files = self._parse_multipart_form(body_bytes, boundary.encode())
+                up = files.get('file')
+                if not up:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'Missing file field'}).encode('utf-8'))
+                    return
+
+                filename = str(up.get('filename') or '').strip()
+                file_bytes: bytes = up.get('data') or b''
+                sheet = (fields.get('sheet') or '').strip()
+
+                name = (fields.get('name') or '').strip() or (filename or 'Actuarial Dataset')
+                table_type = (fields.get('table_type') or fields.get('type') or 'pricing').strip().lower()
+                version = (fields.get('version') or datetime.now().strftime('%Y%m%d')).strip()
+                effective_date = (fields.get('effective_date') or datetime.now().strftime('%Y-%m-%d')).strip()
+
+                # Parse file into data_obj
+                data_obj: Any
+                lower_name = filename.lower()
+
+                if lower_name.endswith('.csv'):
+                    import csv, io
+                    reader = csv.DictReader(io.StringIO(file_bytes.decode('utf-8', errors='ignore')))
+                    data_obj = [r for r in reader]
+                elif lower_name.endswith('.json'):
+                    data_obj = json.loads(file_bytes.decode('utf-8', errors='ignore') or '{}')
+                elif lower_name.endswith('.xlsx'):
+                    try:
+                        from openpyxl import load_workbook  # type: ignore
+                    except Exception as e:
+                        self._set_json_headers(500)
+                        self.wfile.write(json.dumps({'error': 'openpyxl required for xlsx upload', 'details': str(e)}).encode('utf-8'))
+                        return
+                    import io as _io
+                    wb = load_workbook(_io.BytesIO(file_bytes), read_only=True, data_only=True)
+                    ws = wb[sheet] if sheet and sheet in wb.sheetnames else wb.active
+                    rows_iter = ws.iter_rows(values_only=True)
+                    headers = next(rows_iter, None)
+                    if not headers:
+                        data_obj = []
+                    else:
+                        header_names = [str(h).strip() if h is not None else '' for h in headers]
+                        data_obj = []
+                        for row in rows_iter:
+                            if row is None:
+                                continue
+                            rec = {}
+                            empty = True
+                            for i, cell in enumerate(row):
+                                key = header_names[i] if i < len(header_names) else f'col_{i+1}'
+                                if not key:
+                                    key = f'col_{i+1}'
+                                if cell is not None and str(cell).strip() != '':
+                                    empty = False
+                                rec[key] = cell
+                            if not empty:
+                                data_obj.append(rec)
+                else:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'Unsupported file type. Use .xlsx, .csv, or .json'}).encode('utf-8'))
+                    return
+
+                actor = (session or {}).get('username') if session else 'actuary'
+                table_id = f"AT-{datetime.now().strftime('%Y%m%d')}-{random.randint(1000,9999)}"
+
+                if encrypt_json:
+                    blob = encrypt_json(data_obj).to_json()
+                else:
+                    blob = json.dumps({"scheme": "plain", "ciphertext": json.dumps(data_obj, default=str)})
+
+                if USE_DATABASE and database_enabled:
+                    from database.manager import DatabaseManager
+                    from database.models import ActuarialTable
+                    eff_dt = None
+                    try:
+                        eff_dt = datetime.strptime(str(effective_date), '%Y-%m-%d') if effective_date else None
+                    except Exception:
+                        eff_dt = None
+                    with DatabaseManager() as db:
+                        row = ActuarialTable(
+                            id=table_id,
+                            name=name,
+                            table_type=table_type,
+                            version=version,
+                            effective_date=eff_dt,
+                            payload=blob,
+                            classification="restricted",
+                            created_by=actor,
+                        )
+                        db.actuarial.create(row)
+                    if audit:
+                        try:
+                            audit.log(actor, 'upload_file', 'actuarial_table', table_id, {'table_type': table_type, 'version': version, 'filename': filename})
+                        except Exception:
+                            pass
+                    self._set_json_headers(201)
+                    self.wfile.write(json.dumps({'success': True, 'id': table_id}).encode('utf-8'))
+                    return
+
+                with STATE_LOCK:
+                    ACTUARIAL_TABLES[table_id] = {
+                        "id": table_id,
+                        "name": name,
+                        "table_type": table_type,
+                        "version": version,
+                        "effective_date": effective_date,
+                        "classification": "restricted",
+                        "created_by": actor,
+                        "created_date": datetime.now().isoformat(),
+                        "payload": blob,
+                    }
+
+                if audit:
+                    try:
+                        audit.log(actor, 'upload_file', 'actuarial_table', table_id, {'table_type': table_type, 'version': version, 'filename': filename})
                     except Exception:
                         pass
 
@@ -17664,6 +17834,68 @@ For claims or questions, please contact:
                             fields[field_name] = field_value
         
         return fields
+
+    def _parse_multipart_form(self, data: bytes, boundary: bytes) -> tuple[Dict[str, str], Dict[str, Dict[str, Any]]]:
+        """
+        Parse multipart/form-data into:
+        - fields: {name: value}
+        - files: {field_name: {filename, content_type, data(bytes)}}
+        """
+        fields: Dict[str, str] = {}
+        files: Dict[str, Dict[str, Any]] = {}
+        parts = data.split(b'--' + boundary)
+
+        for part in parts:
+            if b'Content-Disposition: form-data' not in part:
+                continue
+
+            # Extract field name
+            if b'name="' not in part:
+                continue
+            name_start = part.find(b'name="') + 6
+            name_end = part.find(b'"', name_start)
+            field_name = part[name_start:name_end].decode('utf-8', errors='ignore')
+
+            # Extract filename (if any)
+            filename = None
+            if b'filename="' in part:
+                fn_start = part.find(b'filename="') + 10
+                fn_end = part.find(b'"', fn_start)
+                filename = part[fn_start:fn_end].decode('utf-8', errors='ignore')
+
+            # Content-Type header for file parts
+            ct = None
+            if b'Content-Type:' in part:
+                ct_start = part.find(b'Content-Type:') + len(b'Content-Type:')
+                ct_end = part.find(b'\r\n', ct_start)
+                if ct_end != -1:
+                    ct = part[ct_start:ct_end].decode('utf-8', errors='ignore').strip()
+
+            # Body starts after blank line
+            value_start = part.find(b'\r\n\r\n')
+            if value_start == -1:
+                continue
+            value_start += 4
+            value_end = part.rfind(b'\r\n')
+            if value_end <= value_start:
+                continue
+            raw_value = part[value_start:value_end]
+
+            if filename:
+                files[field_name] = {
+                    'filename': filename,
+                    'content_type': ct or 'application/octet-stream',
+                    'data': raw_value,
+                }
+            else:
+                try:
+                    txt = raw_value.decode('utf-8', errors='ignore').strip()
+                except Exception:
+                    txt = ''
+                if txt:
+                    fields[field_name] = txt
+
+        return fields, files
     
     def _calculate_age(self, dob_str: str) -> int:
         """Calculate age from date of birth string"""
