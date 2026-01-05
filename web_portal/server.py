@@ -10759,6 +10759,145 @@ For claims or questions, please contact:
                 self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
             return
         
+        # Admin: Directly Activate Policy (bypasses underwriting if needed)
+        if path == '/api/policies/activate':
+            try:
+                # Authorization check
+                auth_header = self.headers.get('Authorization', '')
+                token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+                session = validate_session(token) if token else None
+                
+                if not session:
+                    self._set_json_headers(401)
+                    self.wfile.write(json.dumps({'error': 'Authentication required'}).encode('utf-8'))
+                    return
+                
+                user = get_session_user(session) or {}
+                role = (user.get('role') or '').lower()
+                
+                if role not in ['admin', 'underwriter', 'agent']:
+                    self._set_json_headers(403)
+                    self.wfile.write(json.dumps({'error': 'Admin/underwriter access required'}).encode('utf-8'))
+                    return
+                
+                data = json.loads(body)
+                policy_id = data.get('policy_id')
+                
+                if not policy_id:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'policy_id required'}).encode('utf-8'))
+                    return
+                
+                policy = POLICIES.get(policy_id)
+                if not policy:
+                    self._set_json_headers(404)
+                    self.wfile.write(json.dumps({'error': f'Policy {policy_id} not found'}).encode('utf-8'))
+                    return
+                
+                if status_eq(policy, 'active'):
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'Policy is already active'}).encode('utf-8'))
+                    return
+                
+                now = datetime.now()
+                customer_id = policy.get('customer_id')
+                
+                # Activate the policy
+                policy['status'] = 'active'
+                policy['approval_date'] = now.isoformat()
+                policy['effective_date'] = now.isoformat()
+                policy['approved_by'] = user.get('username', 'admin')
+                policy['activation_notes'] = data.get('notes', 'Activated via admin API')
+                
+                # Create/update underwriting application if exists
+                uw_id = policy.get('underwriting_id')
+                if uw_id:
+                    if uw_id not in UNDERWRITING_APPLICATIONS:
+                        UNDERWRITING_APPLICATIONS[uw_id] = {
+                            'id': uw_id,
+                            'policy_id': policy_id,
+                            'customer_id': customer_id,
+                            'customer_name': CUSTOMERS.get(customer_id, {}).get('name', ''),
+                            'status': 'approved',
+                            'risk_assessment': policy.get('risk_score', 'medium'),
+                            'submitted_date': policy.get('created_date', now.isoformat()),
+                            'decision_date': now.isoformat(),
+                            'approved_by': user.get('username', 'admin')
+                        }
+                    else:
+                        UNDERWRITING_APPLICATIONS[uw_id]['status'] = 'approved'
+                        UNDERWRITING_APPLICATIONS[uw_id]['decision_date'] = now.isoformat()
+                        UNDERWRITING_APPLICATIONS[uw_id]['approved_by'] = user.get('username', 'admin')
+                
+                # Generate billing record if not exists
+                existing_bill = next((b for b in BILLING.values() if b.get('policy_id') == policy_id), None)
+                if not existing_bill:
+                    bill_id = f"BILL-{now.strftime('%Y%m%d%H%M%S')}-{random.randint(1000,9999)}"
+                    monthly_premium = policy.get('monthly_premium', 0) or policy.get('annual_premium', 0) / 12
+                    BILLING[bill_id] = {
+                        'id': bill_id,
+                        'policy_id': policy_id,
+                        'customer_id': customer_id,
+                        'customer_name': CUSTOMERS.get(customer_id, {}).get('name', ''),
+                        'amount': round(float(monthly_premium), 2),
+                        'amount_paid': 0.0,
+                        'status': 'outstanding',
+                        'due_date': (now + timedelta(days=30)).isoformat(),
+                        'created_date': now.isoformat()
+                    }
+                
+                # Initialize health wallet if not exists
+                if customer_id and customer_id not in HEALTH_WALLETS:
+                    HEALTH_WALLETS[customer_id] = {
+                        'customer_id': customer_id,
+                        'balance': 0,
+                        'monthly_deposit': policy.get('health_wallet', {}).get('monthly_deposit', 0),
+                        'transactions': [],
+                        'created_at': now.isoformat()
+                    }
+                
+                # Initialize investment account if not exists
+                if customer_id and customer_id not in INVESTMENT_ACCOUNTS:
+                    INVESTMENT_ACCOUNTS[customer_id] = {
+                        'customer_id': customer_id,
+                        'balance': 0,
+                        'index_balance': 0,
+                        'bonds_balance': 0,
+                        'crypto_balance': 0,
+                        'deposits': [],
+                        'created_at': now.isoformat()
+                    }
+                
+                # Save changes
+                POLICIES[policy_id] = policy
+                save_ledger_data()
+                
+                # Record on ledger
+                record_transaction(
+                    customer_id=customer_id,
+                    tx_type='policy_activated',
+                    amount=0,
+                    description=f"Policy {policy_id} activated",
+                    metadata={
+                        'policy_id': policy_id,
+                        'activated_by': user.get('username', 'admin'),
+                        'policy_type': policy.get('type')
+                    }
+                )
+                
+                self._set_json_headers(200)
+                self.wfile.write(json.dumps({
+                    'success': True,
+                    'policy_id': policy_id,
+                    'status': 'active',
+                    'message': f'Policy {policy_id} has been activated',
+                    'policy': policy
+                }).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+        
         # Approve Underwriting Endpoint - Full Pipeline Validation
         if path == '/api/underwriting/approve':
             try:
