@@ -1273,6 +1273,25 @@
                     portfolioData.cash_balance = unifiedData.cash_balance || portfolioData.cash_balance;
                     portfolioData.monthly_contribution = unifiedData.monthly_contribution || portfolioData.monthly_contribution;
                     
+                    // Merge allocation data from unified investment API
+                    // This ensures the allocation chart shows actual investment breakdown
+                    if (unifiedData.allocation) {
+                        portfolioData.allocation = {
+                            equity: { 
+                                value: unifiedData.allocation.index?.value || 0, 
+                                percentage: unifiedData.allocation.index?.percentage || 0 
+                            },
+                            fixed_income: { 
+                                value: unifiedData.allocation.bonds?.value || 0, 
+                                percentage: unifiedData.allocation.bonds?.percentage || 0 
+                            },
+                            crypto: { 
+                                value: unifiedData.allocation.crypto?.value || 0, 
+                                percentage: unifiedData.allocation.crypto?.percentage || 0 
+                            }
+                        };
+                    }
+                    
                     // Calculate total account value from unified source
                     const unifiedTotal = unifiedData.total_value || 0;
                     if (unifiedTotal > 0) {
@@ -1441,13 +1460,24 @@
             const legendContainer = document.getElementById('allocationLegend');
             const pieChart = document.getElementById('allocationPie');
             
+            // Colors matching PHINS platform design
             const colors = {
-                equity: '#0066cc',
-                fixed_income: '#10b981',
-                crypto: '#f59e0b',
+                equity: '#1565c0',       // Index Funds - Blue
+                fixed_income: '#2e7d32', // Bonds - Green
+                crypto: '#f59e0b',       // Crypto - Amber
                 commodity: '#8b5cf6',
                 currency: '#ec4899',
                 alternative: '#06b6d4'
+            };
+            
+            // Friendly labels for display
+            const labels = {
+                equity: '📈 Index Funds',
+                fixed_income: '🏦 Bonds',
+                crypto: '₿ Crypto',
+                commodity: '🥇 Commodity',
+                currency: '💱 Currency',
+                alternative: '🔄 Alternative'
             };
             
             // Generate legend
@@ -1465,11 +1495,14 @@
                     gradientParts.push(`${color} ${currentDeg}deg ${endDeg}deg`);
                     currentDeg = endDeg;
                     
+                    // Use friendly labels if available
+                    const displayLabel = labels[assetClass] || assetClass.replace('_', ' ').replace(/\b\w/g, c => c.toUpperCase());
+                    
                     legendHTML += `
                         <div class="legend-item">
                             <div class="legend-color" style="background: ${color};"></div>
-                            <span class="legend-label">${assetClass.replace('_', ' ').replace(/\b\w/g, c => c.toUpperCase())}</span>
-                            <span class="legend-value">${pct.toFixed(1)}%</span>
+                            <span class="legend-label">${displayLabel}</span>
+                            <span class="legend-value">${pct.toFixed(1)}% ($${value.toLocaleString()})</span>
                         </div>
                     `;
                 }
