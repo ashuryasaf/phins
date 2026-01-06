@@ -1,0 +1,265 @@
+{
+  "report_id": "RR-UW-20260106-6316-20260106231414",
+  "application_id": "UW-20260106-6316",
+  "customer_id": "CUST-20260106-6316",
+  "policy_type": "Life Insurance",
+  "coverage_amount": 350000,
+  "applicant": {
+    "name": "Michael Thompson",
+    "age": 47,
+    "gender": "male",
+    "occupation": "Retail Manager",
+    "location": "Birmingham, West Midlands"
+  },
+  "risk_scores": {
+    "overall": 0.4210000000000001,
+    "category": "elevated",
+    "identity": 0.9466666666666667,
+    "medical": 0.9200000000000002,
+    "lifestyle": 0.8,
+    "financial": 0.85,
+    "fraud": 0.0
+  },
+  "medical_assessment": {
+    "conditions": [
+      {
+        "condition": "Obesity",
+        "icd_code": "E66.9",
+        "severity": "moderate",
+        "diagnosed_date": "2021-06-20",
+        "status": "active",
+        "treatment": "Dietary management, exercise program, nutritionist consultations",
+        "risk_impact": 0.25,
+        "exclusion_recommended": false,
+        "loading_percentage": 15,
+        "notes": "BMI 32.5 (Class I Obesity). Patient engaged with weight management program. No recent complications."
+      },
+      {
+        "condition": "Essential Hypertension",
+        "icd_code": "I10",
+        "severity": "mild",
+        "diagnosed_date": "2022-03-10",
+        "status": "controlled",
+        "treatment": "Lisinopril 10mg daily, lifestyle modifications",
+        "risk_impact": 0.2,
+        "exclusion_recommended": false,
+        "loading_percentage": 10,
+        "notes": "Blood pressure well controlled on medication. Regular monitoring in place."
+      },
+      {
+        "condition": "Mobility Impairment - Left Leg",
+        "icd_code": "M62.50",
+        "severity": "moderate",
+        "diagnosed_date": "2019-08-15",
+        "status": "stable",
+        "treatment": "Physiotherapy, mobility aids, annual orthopaedic review",
+        "risk_impact": 0.15,
+        "exclusion_recommended": true,
+        "loading_percentage": 0,
+        "notes": "Result of RTA in 2019. 30% disability rating. Stable condition, uses walking stick."
+      }
+    ],
+    "disability_percentage": 30,
+    "disability_type": "Mobility Impairment - Lower Limb",
+    "bmi_category": "Obese Class I",
+    "smoking_status": "non_smoker"
+  },
+  "documents": [
+    {
+      "type": "passport",
+      "id": "DOC-PASS-001",
+      "verified": true,
+      "authenticity_score": 0.95,
+      "expiry_status": "valid",
+      "extracted_data": {
+        "full_name": "MICHAEL JAMES THOMPSON",
+        "date_of_birth": "1979-03-15",
+        "nationality": "BRITISH",
+        "passport_number": "AB1234567",
+        "expiry_date": "2030-05-20"
+      },
+      "flags": []
+    },
+    {
+      "type": "driving_licence",
+      "id": "DOC-DL-001",
+      "verified": true,
+      "authenticity_score": 0.92,
+      "expiry_status": "valid",
+      "extracted_data": {
+        "full_name": "MICHAEL JAMES THOMPSON",
+        "date_of_birth": "1979-03-15",
+        "licence_number": "THOMP903155MJ9AB",
+        "categories": "B - Automatic only",
+        "restrictions": "Automatic transmission only due to mobility"
+      },
+      "flags": [
+        "RESTRICTION_NOTED"
+      ]
+    },
+    {
+      "type": "disability_certificate",
+      "id": "DOC-DC-001",
+      "verified": true,
+      "authenticity_score": 0.98,
+      "expiry_status": "valid",
+      "extracted_data": {
+        "full_name": "MICHAEL JAMES THOMPSON",
+        "disability_type": "Mobility Impairment - Lower Limb",
+        "disability_percentage": 30,
+        "issue_date": "2020-01-15",
+        "valid_until": "2027-01-14",
+        "issuing_authority": "Department for Work and Pensions"
+      },
+      "flags": [
+        "DISABILITY_DECLARED"
+      ]
+    },
+    {
+      "type": "medical_report",
+      "id": "DOC-MED-001",
+      "verified": true,
+      "authenticity_score": 0.96,
+      "expiry_status": "valid",
+      "extracted_data": {
+        "provider": "Birmingham NHS Trust",
+        "report_date": "2025-11-20",
+        "physician": "Dr. Sarah Williams",
+        "conditions": [
+          "Obesity",
+          "Hypertension",
+          "Mobility Impairment"
+        ]
+      },
+      "flags": [
+        "MULTIPLE_CONDITIONS"
+      ]
+    },
+    {
+      "type": "photo",
+      "id": "DOC-PHOTO-001",
+      "verified": true,
+      "authenticity_score": 0.94,
+      "expiry_status": "valid",
+      "extracted_data": {
+        "face_detected": true,
+        "face_match_score": 0.91
+      },
+      "flags": []
+    },
+    {
+      "type": "video_verification",
+      "id": "DOC-VIDEO-001",
+      "verified": true,
+      "authenticity_score": 0.93,
+      "expiry_status": "valid",
+      "extracted_data": {
+        "liveness_check": "passed",
+        "identity_match": 0.89,
+        "duration_seconds": 45
+      },
+      "flags": []
+    }
+  ],
+  "identity_verified": true,
+  "risk_factors": [
+    {
+      "category": "demographic",
+      "name": "Age",
+      "value": "47",
+      "impact": 0.1,
+      "direction": "increases",
+      "weight": 0.15,
+      "explanation": "Applicant age of 47 years increases mortality risk",
+      "source": "application"
+    },
+    {
+      "category": "medical",
+      "name": "Disability",
+      "value": "30%",
+      "impact": 0.18,
+      "direction": "increases",
+      "weight": 0.25,
+      "explanation": "30% disability rating impacts risk assessment",
+      "source": "disability_certificate"
+    },
+    {
+      "category": "medical",
+      "name": "Obesity",
+      "value": "moderate",
+      "impact": 0.25,
+      "direction": "increases",
+      "weight": 0.2,
+      "explanation": "Obesity (moderate) - active",
+      "source": "medical_report"
+    },
+    {
+      "category": "medical",
+      "name": "Essential Hypertension",
+      "value": "mild",
+      "impact": 0.2,
+      "direction": "increases",
+      "weight": 0.2,
+      "explanation": "Essential Hypertension (mild) - controlled",
+      "source": "medical_report"
+    },
+    {
+      "category": "medical",
+      "name": "Mobility Impairment - Left Leg",
+      "value": "moderate",
+      "impact": 0.15,
+      "direction": "increases",
+      "weight": 0.2,
+      "explanation": "Mobility Impairment - Left Leg (moderate) - stable",
+      "source": "medical_report"
+    },
+    {
+      "category": "lifestyle",
+      "name": "BMI Category",
+      "value": "Obese Class I",
+      "impact": 0.2,
+      "direction": "increases",
+      "weight": 0.15,
+      "explanation": "BMI category (Obese Class I) indicates elevated health risk",
+      "source": "medical_report"
+    }
+  ],
+  "recommendation": {
+    "type": "approve_with_exclusions",
+    "confidence": 0.8,
+    "rationale": "Elevated risk profile requires exclusions or significant loading. Consider specific condition exclusions.",
+    "supporting_factors": [
+      "Obesity: moderate (increases risk by 25.0%)",
+      "Essential Hypertension: mild (increases risk by 20.0%)",
+      "BMI Category: Obese Class I (increases risk by 20.0%)",
+      "Disability: 30% (increases risk by 18.0%)",
+      "Mobility Impairment - Left Leg: moderate (increases risk by 15.0%)"
+    ],
+    "risk_mitigations": [
+      "Consider disability-specific exclusion clause",
+      "Recommend annual BMI monitoring requirement",
+      "Require updated medical examination annually"
+    ],
+    "conditions": [
+      "Premium loading of 55% applied",
+      "Annual medical review required"
+    ],
+    "premium_adjustment": 0.55,
+    "exclusions": [
+      "Pre-existing condition exclusion: Mobility Impairment - Left Leg"
+    ],
+    "monitoring": [
+      "Annual health declaration required",
+      "Bi-annual BMI assessment",
+      "Annual disability status update",
+      "Claims monitoring for adverse patterns"
+    ],
+    "review_period_months": 12
+  },
+  "metadata": {
+    "assessment_date": "2026-01-06T23:14:14.487181",
+    "assessor_id": "RRG-9eddc334",
+    "processing_time_seconds": 7.5e-05,
+    "model_version": "1.0.0"
+  }
+}
