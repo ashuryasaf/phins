@@ -406,6 +406,53 @@ def seed_sample_data(session=None):
                         }
                 except Exception as e:
                     logger.warning(f"Could not create claim {claim_data['id']}: {e}")
+            
+            # Create underwriting application for primary customer
+            # This is the latest application that can be used for risk assessment reports
+            uw_asaf_id = f"UW-ASAF-{now.strftime('%Y%m%d')}-001"
+            existing_uw = underwriting_repo.find_one_by(id=uw_asaf_id)
+            if not existing_uw:
+                try:
+                    uw_app = underwriting_repo.create(
+                        id=uw_asaf_id,
+                        policy_id='POL-ASAF-HEALTH-001',
+                        customer_id='CUST-ASAF-001',
+                        status='pending',
+                        risk_assessment='medium',
+                        risk_score='medium',
+                        created_date=now
+                    )
+                    logger.info(f"Created underwriting application for primary customer: {uw_app.id}")
+                    
+                    # Sync to memory
+                    if sync_primary_to_memory:
+                        UNDERWRITING_APPLICATIONS[uw_asaf_id] = {
+                            'id': uw_asaf_id,
+                            'policy_id': 'POL-ASAF-HEALTH-001',
+                            'customer_id': 'CUST-ASAF-001',
+                            'customer_name': 'Asaf Assurance',
+                            'customer_email': 'asaf@assurance.co.il',
+                            'policy_type': 'health',
+                            'coverage_amount': 500000.0,
+                            'annual_premium': 6000.0,
+                            'monthly_premium': 500.0,
+                            'status': 'pending',
+                            'risk_score': 'medium',
+                            'risk_assessment': 'medium',
+                            'age': 39,
+                            'disability_percentage': 30,
+                            'bmi': 32,
+                            'smoking_status': 'never',
+                            'medical_conditions': [
+                                {'condition': 'Obesity', 'severity': 'moderate', 'icd_code': 'E66.9'},
+                                {'condition': 'Disability', 'severity': 'moderate', 'icd_code': 'Z99.89'}
+                            ],
+                            'created_date': now.isoformat(),
+                            'submitted_date': now.isoformat(),
+                            'updated_date': now.isoformat()
+                        }
+                except Exception as e:
+                    logger.warning(f"Could not create underwriting application for primary customer: {e}")
         else:
             logger.info(f"Primary customer {primary_customer.email} already exists, skipping...")
         

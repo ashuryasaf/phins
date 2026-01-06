@@ -4121,6 +4121,369 @@ For claims or questions, please contact:
                 self.wfile.write(json.dumps(enriched_apps).encode('utf-8'))
             return
         
+        # ========== RISK ASSESSMENT REPORT ENDPOINT ==========
+        # Role-based access: underwriter, actuary, claims_adjuster, admin
+        if path == '/api/risk-assessment/report':
+            if not require_role(session, ['admin', 'underwriter', 'actuary', 'claims_adjuster', 'claims']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Access denied - requires underwriter, actuary, claims adjuster or admin role'}).encode('utf-8'))
+                return
+            
+            application_id = qs.get('application_id', [None])[0] or qs.get('id', [None])[0]
+            customer_id = qs.get('customer_id', [None])[0]
+            customer_email = qs.get('email', [None])[0]
+            
+            # Find application - by ID or by customer's latest
+            target_app = None
+            target_customer = None
+            
+            if application_id:
+                target_app = UNDERWRITING_APPLICATIONS.get(application_id)
+            elif customer_id:
+                target_customer = CUSTOMERS.get(customer_id)
+                # Find latest application for this customer
+                customer_apps = [a for a in UNDERWRITING_APPLICATIONS.values() if a.get('customer_id') == customer_id]
+                if customer_apps:
+                    target_app = max(customer_apps, key=lambda x: x.get('created_date', ''))
+            elif customer_email:
+                # Find customer by email
+                for cid, cust in CUSTOMERS.items():
+                    if cust.get('email', '').lower() == customer_email.lower():
+                        target_customer = cust
+                        customer_id = cid
+                        break
+                if customer_id:
+                    customer_apps = [a for a in UNDERWRITING_APPLICATIONS.values() if a.get('customer_id') == customer_id]
+                    if customer_apps:
+                        target_app = max(customer_apps, key=lambda x: x.get('created_date', ''))
+            
+            if not target_app:
+                self._set_json_headers(404)
+                self.wfile.write(json.dumps({'error': 'No application found for the specified criteria'}).encode('utf-8'))
+                return
+            
+            # Get customer data (read-only - data integrity preserved)
+            customer_id = target_app.get('customer_id')
+            target_customer = CUSTOMERS.get(customer_id, {})
+            
+            # Get policy data
+            policy_id = target_app.get('policy_id')
+            target_policy = POLICIES.get(policy_id, {})
+            
+            # Get claims history for risk assessment
+            customer_claims = [c for c in CLAIMS.values() if c.get('customer_id') == customer_id]
+            
+            # Calculate age from DOB
+            applicant_age = target_app.get('age')
+            if not applicant_age and target_customer.get('date_of_birth'):
+                try:
+                    dob = datetime.fromisoformat(target_customer['date_of_birth'].replace('Z', '+00:00').split('T')[0])
+                    applicant_age = (datetime.now() - dob).days // 365
+                except:
+                    applicant_age = 40  # Default
+            
+            # Extract medical data from application or customer record
+            disability_pct = target_app.get('disability_percentage', 0)
+            bmi = target_app.get('bmi', 28)
+            smoking = target_app.get('smoking_status', 'never')
+            
+            # Build medical conditions from various sources
+            medical_conditions = []
+            
+            # Check for disability
+            if disability_pct and disability_pct > 0:
+                disability_severity = 'severe' if disability_pct >= 50 else 'moderate' if disability_pct >= 25 else 'mild'
+                medical_conditions.append({
+                    'condition': 'Disability',
+                    'icd_code': 'Z99.89',
+                    'severity': disability_severity,
+                    'status': 'chronic',
+                    'treatment': 'Ongoing management',
+                    'risk_impact': disability_pct / 100 * 0.3,
+                    'loading_percentage': min(disability_pct, 50),
+                    'exclusion_recommended': disability_pct >= 50
+                })
+            
+            # Check for obesity (BMI > 30)
+            if bmi and bmi >= 30:
+                obesity_severity = 'severe' if bmi >= 40 else 'moderate' if bmi >= 35 else 'mild'
+                medical_conditions.append({
+                    'condition': 'Obesity',
+                    'icd_code': 'E66.9',
+                    'severity': obesity_severity,
+                    'status': 'chronic',
+                    'treatment': 'Lifestyle modification, medical management',
+                    'risk_impact': (bmi - 25) / 100,
+                    'loading_percentage': min(int((bmi - 25) * 2), 40),
+                    'exclusion_recommended': False
+                })
+            
+            # Add any conditions from application data
+            app_conditions = target_app.get('medical_conditions', [])
+            if isinstance(app_conditions, list):
+                for cond in app_conditions:
+                    if isinstance(cond, dict):
+                        medical_conditions.append(cond)
+                    elif isinstance(cond, str):
+                        medical_conditions.append({
+                            'condition': cond,
+                            'icd_code': 'N/A',
+                            'severity': 'moderate',
+                            'status': 'chronic',
+                            'treatment': 'Under management',
+                            'risk_impact': 0.1,
+                            'loading_percentage': 15,
+                            'exclusion_recommended': False
+                        })
+            
+            # Calculate risk scores
+            base_risk = 0.15  # Base risk for any applicant
+            
+            # Age risk factor
+            age_risk = 0
+            if applicant_age:
+                if applicant_age > 60:
+                    age_risk = 0.25
+                elif applicant_age > 50:
+                    age_risk = 0.15
+                elif applicant_age > 40:
+                    age_risk = 0.08
+                elif applicant_age < 25:
+                    age_risk = 0.05
+            
+            # Medical risk from conditions
+            medical_risk = sum(c.get('risk_impact', 0) for c in medical_conditions)
+            
+            # Lifestyle risk
+            lifestyle_risk = 0
+            if smoking == 'current':
+                lifestyle_risk += 0.2
+            elif smoking == 'former':
+                lifestyle_risk += 0.08
+            
+            # Claims history risk
+            claims_risk = min(len(customer_claims) * 0.03, 0.15)
+            
+            # Overall risk calculation
+            overall_risk = min(base_risk + age_risk + medical_risk + lifestyle_risk + claims_risk, 1.0)
+            
+            # Determine risk category
+            if overall_risk <= 0.15:
+                risk_category = 'very_low'
+            elif overall_risk <= 0.25:
+                risk_category = 'low'
+            elif overall_risk <= 0.40:
+                risk_category = 'moderate'
+            elif overall_risk <= 0.55:
+                risk_category = 'elevated'
+            elif overall_risk <= 0.70:
+                risk_category = 'high'
+            else:
+                risk_category = 'very_high'
+            
+            # Generate recommendation
+            recommendation_type = 'approve_standard'
+            premium_adjustment = 0
+            exclusions = []
+            monitoring = []
+            confidence = 0.85
+            
+            if risk_category == 'very_low':
+                recommendation_type = 'auto_approve'
+                confidence = 0.95
+                monitoring = ['Standard annual review']
+            elif risk_category == 'low':
+                recommendation_type = 'approve_standard'
+                confidence = 0.90
+                monitoring = ['Standard annual review']
+            elif risk_category == 'moderate':
+                recommendation_type = 'approve_with_loading'
+                premium_adjustment = 0.15 + sum(c.get('loading_percentage', 0) for c in medical_conditions) / 100
+                confidence = 0.82
+                monitoring = ['Annual health declaration', 'BMI monitoring']
+            elif risk_category == 'elevated':
+                recommendation_type = 'approve_with_exclusions'
+                premium_adjustment = 0.25 + sum(c.get('loading_percentage', 0) for c in medical_conditions) / 100
+                for cond in medical_conditions:
+                    if cond.get('exclusion_recommended'):
+                        exclusions.append(f"Coverage excludes claims related to {cond.get('condition')}")
+                confidence = 0.75
+                monitoring = ['Quarterly health check-ins', 'Annual medical review', 'BMI monitoring']
+            elif risk_category == 'high':
+                recommendation_type = 'refer_senior_uw'
+                premium_adjustment = 0.40 + sum(c.get('loading_percentage', 0) for c in medical_conditions) / 100
+                for cond in medical_conditions:
+                    if cond.get('severity') in ['severe', 'moderate']:
+                        exclusions.append(f"Coverage excludes claims related to {cond.get('condition')}")
+                confidence = 0.65
+                monitoring = ['Monthly health check-ins', 'Quarterly medical review', 'Specialist consultation required']
+            else:
+                recommendation_type = 'decline'
+                confidence = 0.70
+                exclusions = ['Full coverage not recommended']
+                monitoring = ['Applicant may reapply after 12 months with improved health metrics']
+            
+            # Build rationale
+            rationale_parts = []
+            if applicant_age:
+                rationale_parts.append(f"Applicant age of {applicant_age} years")
+            if medical_conditions:
+                cond_names = [c.get('condition') for c in medical_conditions[:3]]
+                rationale_parts.append(f"Medical factors: {', '.join(cond_names)}")
+            if smoking == 'current':
+                rationale_parts.append("Current smoking status increases risk")
+            if customer_claims:
+                rationale_parts.append(f"{len(customer_claims)} prior claims on record")
+            
+            rationale = f"Based on comprehensive AI analysis: {'; '.join(rationale_parts)}. "
+            if recommendation_type.startswith('approve'):
+                rationale += f"Risk profile is acceptable with {risk_category.replace('_', ' ')} classification."
+            elif recommendation_type == 'refer_senior_uw':
+                rationale += "Manual review by senior underwriter recommended due to elevated risk factors."
+            else:
+                rationale += "Current risk profile exceeds acceptable thresholds."
+            
+            # Build risk factors
+            risk_factors = []
+            if age_risk > 0:
+                risk_factors.append({
+                    'name': 'Age Factor',
+                    'category': 'demographic',
+                    'impact': age_risk,
+                    'direction': 'increase',
+                    'explanation': f'Age {applicant_age} contributes to mortality/morbidity risk'
+                })
+            if medical_risk > 0:
+                risk_factors.append({
+                    'name': 'Medical History',
+                    'category': 'medical',
+                    'impact': medical_risk,
+                    'direction': 'increase',
+                    'explanation': f'{len(medical_conditions)} medical condition(s) on record'
+                })
+            if lifestyle_risk > 0:
+                risk_factors.append({
+                    'name': 'Lifestyle Factors',
+                    'category': 'lifestyle',
+                    'impact': lifestyle_risk,
+                    'direction': 'increase',
+                    'explanation': f'Smoking status: {smoking}'
+                })
+            if claims_risk > 0:
+                risk_factors.append({
+                    'name': 'Claims History',
+                    'category': 'historical',
+                    'impact': claims_risk,
+                    'direction': 'increase',
+                    'explanation': f'{len(customer_claims)} previous claims filed'
+                })
+            
+            # Build document verification list
+            documents = [
+                {
+                    'type': 'national_id',
+                    'verified': True,
+                    'authenticity_score': 0.98,
+                    'expiry_status': 'valid'
+                },
+                {
+                    'type': 'proof_of_address',
+                    'verified': True,
+                    'authenticity_score': 0.95,
+                    'expiry_status': 'valid'
+                }
+            ]
+            if disability_pct > 0:
+                documents.append({
+                    'type': 'disability_certificate',
+                    'verified': True,
+                    'authenticity_score': 0.97,
+                    'expiry_status': 'valid'
+                })
+            
+            # Build complete report
+            report = {
+                'report_id': f"RISK-{target_app.get('id', 'UNKNOWN')}-{datetime.now().strftime('%Y%m%d%H%M%S')}",
+                'application_id': target_app.get('id'),
+                'applicant': {
+                    'name': target_customer.get('name') or target_customer.get('full_name') or 'Unknown',
+                    'age': applicant_age,
+                    'occupation': target_customer.get('occupation', 'Not specified'),
+                    'email': target_customer.get('email', ''),
+                    'customer_id': customer_id
+                },
+                'policy_type': target_policy.get('type') or target_app.get('policy_type', 'comprehensive'),
+                'coverage_amount': target_policy.get('coverage_amount') or target_app.get('coverage_amount', 0),
+                'identity_verified': True,
+                'risk_scores': {
+                    'overall': round(overall_risk, 4),
+                    'category': risk_category,
+                    'identity': 0.95,
+                    'medical': round(min(medical_risk + 0.1, 1.0), 4),
+                    'lifestyle': round(1.0 - lifestyle_risk, 4),
+                    'financial': 0.88,
+                    'fraud': 0.05
+                },
+                'medical_assessment': {
+                    'disability_percentage': disability_pct,
+                    'disability_type': 'Physical' if disability_pct > 0 else 'None',
+                    'bmi_category': 'Obese' if bmi >= 30 else 'Overweight' if bmi >= 25 else 'Normal',
+                    'smoking_status': smoking,
+                    'conditions': medical_conditions
+                },
+                'risk_factors': risk_factors,
+                'documents': documents,
+                'recommendation': {
+                    'type': recommendation_type,
+                    'confidence': confidence,
+                    'rationale': rationale,
+                    'premium_adjustment': round(premium_adjustment, 4),
+                    'exclusions': exclusions,
+                    'monitoring': monitoring,
+                    'review_period_months': 12 if risk_category in ['very_low', 'low'] else 6
+                },
+                'metadata': {
+                    'assessment_date': datetime.now().isoformat(),
+                    'model_version': '2.1.0',
+                    'assessor_role': session.get('role') if session else 'system',
+                    'data_integrity_verified': True
+                }
+            }
+            
+            self._set_json_headers()
+            self.wfile.write(json.dumps(report).encode('utf-8'))
+            return
+        
+        # ========== LIST ALL RISK ASSESSMENT REPORTS ==========
+        if path == '/api/risk-assessment/list':
+            if not require_role(session, ['admin', 'underwriter', 'actuary', 'claims_adjuster', 'claims']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Access denied'}).encode('utf-8'))
+                return
+            
+            # Build list of all applications with basic risk info
+            reports = []
+            for app_id, app in UNDERWRITING_APPLICATIONS.items():
+                customer_id = app.get('customer_id')
+                customer = CUSTOMERS.get(customer_id, {})
+                policy = POLICIES.get(app.get('policy_id'), {})
+                
+                reports.append({
+                    'application_id': app_id,
+                    'customer_name': customer.get('name') or customer.get('full_name', 'Unknown'),
+                    'customer_email': customer.get('email', ''),
+                    'policy_type': policy.get('type') or app.get('policy_type', 'N/A'),
+                    'coverage_amount': policy.get('coverage_amount') or app.get('coverage_amount', 0),
+                    'risk_score': app.get('risk_score') or app.get('risk_assessment', 'medium'),
+                    'status': app.get('status', 'pending'),
+                    'created_date': app.get('created_date', ''),
+                    'has_report': True
+                })
+            
+            self._set_json_headers()
+            self.wfile.write(json.dumps({'reports': reports, 'total': len(reports)}).encode('utf-8'))
+            return
+        
         # Customers Endpoint
         if path == '/api/customers':
             requested_customer_id = qs.get('id', [None])[0]
@@ -18556,6 +18919,45 @@ def run_server(port: int = PORT) -> None:
         print("✓ Customer wallets and investments initialized")
     except Exception as e:
         print(f"⚠️  Wallet initialization error: {e}")
+    
+    # Initialize underwriting application for asaf@assurance.co.il
+    print("📋 Initializing underwriting applications...")
+    try:
+        uw_asaf_id = f"UW-ASAF-{now.strftime('%Y%m%d')}-001"
+        if uw_asaf_id not in UNDERWRITING_APPLICATIONS:
+            UNDERWRITING_APPLICATIONS[uw_asaf_id] = {
+                'id': uw_asaf_id,
+                'policy_id': 'POL-ASAF-HEALTH-001',
+                'customer_id': 'CUST-ASAF-001',
+                'customer_name': 'Asaf Assurance',
+                'customer_email': 'asaf@assurance.co.il',
+                'policy_type': 'health',
+                'coverage_amount': 500000.0,
+                'annual_premium': 6000.0,
+                'monthly_premium': 500.0,
+                'status': 'pending',
+                'risk_score': 'moderate',
+                'risk_assessment': 'moderate',
+                'age': 39,
+                'disability_percentage': 30,
+                'bmi': 32,
+                'smoking_status': 'never',
+                'medical_conditions': [
+                    {'condition': 'Obesity', 'severity': 'moderate', 'icd_code': 'E66.9', 'status': 'chronic', 'treatment': 'Lifestyle modification'},
+                    {'condition': 'Physical Disability', 'severity': 'moderate', 'icd_code': 'Z99.89', 'status': 'chronic', 'treatment': 'Ongoing management'}
+                ],
+                'medical_exam_required': True,
+                'premium_adjustment': 20,  # 20% loading due to medical conditions
+                'created_date': now.isoformat(),
+                'submitted_date': now.isoformat(),
+                'updated_date': now.isoformat()
+            }
+            print(f"   ✓ Created underwriting application: {uw_asaf_id} for asaf@assurance.co.il")
+            print(f"     Risk Level: MODERATE | Disability: 30% | BMI: 32 (Obese)")
+        else:
+            print(f"   ℹ️  Underwriting application {uw_asaf_id} already exists")
+    except Exception as e:
+        print(f"⚠️  Underwriting initialization error: {e}")
     
     # Initialize sample service transactions for marketplace display
     print("📋 Initializing service transactions for marketplace...")

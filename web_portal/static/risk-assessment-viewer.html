@@ -1,0 +1,542 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Risk Assessment Report - PHINS</title>
+    <link rel="stylesheet" href="/styles.css">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #f0f4f8; min-height: 100vh; }
+        
+        .phins-header {
+            background: linear-gradient(135deg, #1a1f36 0%, #2d3561 50%, #1a1f36 100%);
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+            padding: 0.75rem 2rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            position: sticky;
+            top: 0;
+            z-index: 1000;
+        }
+        .phins-logo { display: flex; align-items: center; gap: 0.75rem; text-decoration: none; }
+        .phins-logo-icon { width: 40px; height: 40px; background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%); border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 1.3rem; }
+        .phins-logo-text { font-size: 1.5rem; font-weight: 700; background: linear-gradient(135deg, #4facfe 0%, #00f2fe 50%, #43e97b 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        .header-actions { display: flex; gap: 10px; }
+        .header-btn { padding: 8px 16px; border-radius: 8px; border: none; cursor: pointer; font-weight: 600; transition: all 0.2s; }
+        .header-btn.primary { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; }
+        .header-btn.secondary { background: rgba(255,255,255,0.1); color: white; border: 1px solid rgba(255,255,255,0.2); }
+        
+        .container { max-width: 1200px; margin: 0 auto; padding: 20px; }
+        
+        .report-header {
+            background: linear-gradient(135deg, #1a237e 0%, #0d47a1 100%);
+            color: white;
+            padding: 30px;
+            border-radius: 12px 12px 0 0;
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            flex-wrap: wrap;
+            gap: 20px;
+        }
+        .report-title h1 { font-size: 1.8rem; margin-bottom: 8px; }
+        .report-title p { opacity: 0.9; }
+        .report-id { font-family: monospace; background: rgba(255,255,255,0.1); padding: 6px 12px; border-radius: 6px; font-size: 0.85rem; }
+        .report-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+        .action-btn { padding: 10px 20px; border-radius: 8px; border: none; cursor: pointer; font-weight: 600; display: flex; align-items: center; gap: 8px; transition: all 0.2s; }
+        .action-btn:hover { transform: translateY(-2px); }
+        .action-btn.download { background: #28a745; color: white; }
+        .action-btn.print { background: #6c757d; color: white; }
+        .action-btn.approve { background: #10b981; color: white; }
+        .action-btn.reject { background: #ef4444; color: white; }
+        
+        .report-body { background: white; border-radius: 0 0 12px 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.1); }
+        
+        .section { padding: 25px 30px; border-bottom: 1px solid #eee; }
+        .section:last-child { border-bottom: none; }
+        .section-title { font-size: 1.2rem; font-weight: 600; color: #1a237e; margin-bottom: 20px; display: flex; align-items: center; gap: 10px; }
+        .section-title::before { content: ''; width: 4px; height: 24px; background: #1a237e; border-radius: 2px; }
+        
+        .info-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; }
+        .info-card { background: #f8f9fa; border-radius: 10px; padding: 15px; }
+        .info-label { font-size: 0.75rem; color: #666; text-transform: uppercase; letter-spacing: 0.5px; }
+        .info-value { font-size: 1.1rem; font-weight: 600; color: #333; margin-top: 4px; }
+        
+        .risk-score-display { text-align: center; padding: 30px; }
+        .risk-gauge { width: 200px; height: 200px; border-radius: 50%; margin: 0 auto 20px; display: flex; align-items: center; justify-content: center; position: relative; }
+        .risk-gauge-inner { width: 160px; height: 160px; border-radius: 50%; background: white; display: flex; flex-direction: column; align-items: center; justify-content: center; box-shadow: inset 0 2px 10px rgba(0,0,0,0.1); }
+        .risk-gauge-value { font-size: 2.5rem; font-weight: 700; }
+        .risk-gauge-label { font-size: 0.85rem; color: #666; }
+        .risk-category-badge { display: inline-block; padding: 10px 25px; border-radius: 25px; font-weight: 700; font-size: 1rem; color: white; }
+        
+        .score-bars { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px; margin-top: 30px; }
+        .score-item { background: #f8f9fa; padding: 15px; border-radius: 10px; }
+        .score-header { display: flex; justify-content: space-between; margin-bottom: 8px; }
+        .score-name { font-weight: 600; color: #333; }
+        .score-value { font-weight: 700; }
+        .score-bar { height: 10px; background: #e0e0e0; border-radius: 5px; overflow: hidden; }
+        .score-bar-fill { height: 100%; border-radius: 5px; transition: width 0.5s ease; }
+        
+        .condition-card { background: #f8f9fa; border-radius: 10px; padding: 20px; margin-bottom: 15px; border-left: 4px solid; }
+        .condition-card.severe { border-color: #dc3545; background: #fff5f5; }
+        .condition-card.moderate { border-color: #ffc107; background: #fffbeb; }
+        .condition-card.mild { border-color: #28a745; background: #f0fff4; }
+        .condition-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+        .condition-name { font-weight: 700; font-size: 1.1rem; }
+        .condition-severity { padding: 4px 12px; border-radius: 12px; font-size: 0.75rem; font-weight: 600; text-transform: uppercase; }
+        .condition-details { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-top: 10px; font-size: 0.9rem; }
+        
+        .recommendation-box { padding: 25px; border-radius: 12px; color: white; margin-bottom: 20px; }
+        .recommendation-type { font-size: 1.5rem; font-weight: 700; margin-bottom: 8px; }
+        .recommendation-confidence { opacity: 0.9; font-size: 0.9rem; }
+        
+        .factor-list { list-style: none; }
+        .factor-item { padding: 15px; background: #f8f9fa; border-radius: 10px; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; }
+        .factor-info { flex: 1; min-width: 200px; }
+        .factor-name { font-weight: 600; margin-bottom: 4px; }
+        .factor-explanation { font-size: 0.85rem; color: #666; }
+        .factor-impact { padding: 6px 14px; border-radius: 15px; font-size: 0.8rem; font-weight: 600; white-space: nowrap; }
+        .factor-impact.high { background: #fee2e2; color: #991b1b; }
+        .factor-impact.medium { background: #fef3c7; color: #92400e; }
+        .factor-impact.low { background: #d1fae5; color: #065f46; }
+        
+        .exclusion-box { background: #fee2e2; border: 1px solid #fecaca; border-radius: 10px; padding: 20px; margin-bottom: 15px; }
+        .exclusion-title { color: #991b1b; font-weight: 700; margin-bottom: 10px; display: flex; align-items: center; gap: 8px; }
+        .exclusion-item { padding: 8px 0; border-bottom: 1px solid #fecaca; }
+        .exclusion-item:last-child { border-bottom: none; }
+        
+        .monitoring-box { background: #dbeafe; border: 1px solid #bfdbfe; border-radius: 10px; padding: 20px; }
+        .monitoring-title { color: #1e40af; font-weight: 700; margin-bottom: 10px; display: flex; align-items: center; gap: 8px; }
+        .monitoring-item { padding: 8px 0; display: flex; align-items: center; gap: 8px; }
+        
+        .premium-box { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 25px; border-radius: 12px; text-align: center; }
+        .premium-label { font-size: 0.9rem; opacity: 0.9; }
+        .premium-value { font-size: 3rem; font-weight: 700; margin: 10px 0; }
+        
+        .document-table { width: 100%; border-collapse: collapse; }
+        .document-table th, .document-table td { padding: 12px 15px; text-align: left; border-bottom: 1px solid #eee; }
+        .document-table th { background: #f8f9fa; font-weight: 600; color: #333; }
+        .status-badge { padding: 4px 12px; border-radius: 12px; font-size: 0.8rem; font-weight: 600; }
+        .status-badge.verified { background: #d1fae5; color: #065f46; }
+        .status-badge.pending { background: #fef3c7; color: #92400e; }
+        .status-badge.failed { background: #fee2e2; color: #991b1b; }
+        
+        .footer { background: #f8f9fa; padding: 20px 30px; text-align: center; font-size: 0.85rem; color: #666; border-radius: 0 0 12px 12px; }
+        
+        .loading { text-align: center; padding: 60px; }
+        .loading-spinner { width: 50px; height: 50px; border: 4px solid #e0e0e0; border-top-color: #667eea; border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto 20px; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        
+        .error-box { background: #fee2e2; border: 1px solid #fecaca; border-radius: 10px; padding: 30px; text-align: center; color: #991b1b; }
+        
+        @media (max-width: 768px) {
+            .report-header { padding: 20px; }
+            .report-title h1 { font-size: 1.4rem; }
+            .section { padding: 20px; }
+            .risk-gauge { width: 150px; height: 150px; }
+            .risk-gauge-inner { width: 120px; height: 120px; }
+            .risk-gauge-value { font-size: 2rem; }
+        }
+        
+        @media print {
+            .phins-header, .header-actions, .report-actions { display: none; }
+            .container { max-width: 100%; padding: 0; }
+            .report-body { box-shadow: none; }
+        }
+    </style>
+</head>
+<body>
+    <header class="phins-header">
+        <a href="/admin.html" class="phins-logo">
+            <div class="phins-logo-icon">🛡️</div>
+            <span class="phins-logo-text">PHINS</span>
+        </a>
+        <div class="header-actions">
+            <button class="header-btn secondary" onclick="window.history.back()">← Back</button>
+            <a href="/underwriter-dashboard.html" class="header-btn secondary">Underwriting</a>
+            <a href="/admin.html" class="header-btn primary">Admin Portal</a>
+        </div>
+    </header>
+    
+    <div class="container">
+        <div id="report-container">
+            <div class="loading">
+                <div class="loading-spinner"></div>
+                <p>Loading risk assessment report...</p>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        const token = localStorage.getItem('phins_token');
+        if (!token) window.location.href = '/login.html';
+        
+        // Get application ID from URL
+        const urlParams = new URLSearchParams(window.location.search);
+        const applicationId = urlParams.get('id') || urlParams.get('app_id');
+        const customerId = urlParams.get('customer_id');
+        
+        async function loadReport() {
+            const container = document.getElementById('report-container');
+            
+            try {
+                let url = '/api/risk-assessment/report';
+                if (applicationId) {
+                    url += `?application_id=${applicationId}`;
+                } else if (customerId) {
+                    url += `?customer_id=${customerId}`;
+                }
+                
+                const response = await fetch(url, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                
+                if (!response.ok) {
+                    if (response.status === 401) {
+                        window.location.href = '/login.html';
+                        return;
+                    }
+                    throw new Error('Failed to load report');
+                }
+                
+                const report = await response.json();
+                renderReport(report);
+                
+            } catch (error) {
+                console.error('Error loading report:', error);
+                container.innerHTML = `
+                    <div class="error-box">
+                        <h3>⚠️ Error Loading Report</h3>
+                        <p>Could not load the risk assessment report. Please try again.</p>
+                        <p style="margin-top: 15px;">
+                            <button onclick="loadReport()" class="action-btn download">Retry</button>
+                            <button onclick="window.history.back()" class="action-btn print">Go Back</button>
+                        </p>
+                    </div>
+                `;
+            }
+        }
+        
+        function renderReport(report) {
+            const container = document.getElementById('report-container');
+            
+            // Risk category colors
+            const categoryColors = {
+                very_low: '#10b981',
+                low: '#22c55e',
+                moderate: '#f59e0b',
+                elevated: '#f97316',
+                high: '#ef4444',
+                very_high: '#dc2626'
+            };
+            
+            const recColors = {
+                auto_approve: '#10b981',
+                approve_standard: '#22c55e',
+                approve_with_loading: '#0ea5e9',
+                approve_with_exclusions: '#f59e0b',
+                refer_medical: '#f97316',
+                refer_senior_uw: '#ef4444',
+                decline: '#dc2626',
+                defer: '#6b7280'
+            };
+            
+            const riskColor = categoryColors[report.risk_scores?.category] || '#6b7280';
+            const recColor = recColors[report.recommendation?.type] || '#6b7280';
+            
+            const riskScore = report.risk_scores?.overall || 0;
+            const riskCategory = (report.risk_scores?.category || 'unknown').replace(/_/g, ' ').toUpperCase();
+            
+            container.innerHTML = `
+                <div class="report-header">
+                    <div class="report-title">
+                        <h1>🔒 Risk Assessment Report</h1>
+                        <p>AI-Powered Comprehensive Risk Analysis</p>
+                        <div class="report-id">Report ID: ${report.report_id || 'N/A'}</div>
+                    </div>
+                    <div class="report-actions">
+                        <button class="action-btn download" onclick="downloadReport()">📥 Download PDF</button>
+                        <button class="action-btn print" onclick="window.print()">🖨️ Print</button>
+                        ${report.recommendation?.type?.includes('approve') ? `
+                            <button class="action-btn approve" onclick="approveApplication()">✓ Approve</button>
+                        ` : ''}
+                        <button class="action-btn reject" onclick="rejectApplication()">✗ Reject</button>
+                    </div>
+                </div>
+                
+                <div class="report-body">
+                    <!-- Application & Applicant Info -->
+                    <div class="section">
+                        <div class="section-title">Application & Applicant Details</div>
+                        <div class="info-grid">
+                            <div class="info-card">
+                                <div class="info-label">Application ID</div>
+                                <div class="info-value">${report.application_id || 'N/A'}</div>
+                            </div>
+                            <div class="info-card">
+                                <div class="info-label">Applicant Name</div>
+                                <div class="info-value">${report.applicant?.name || 'N/A'}</div>
+                            </div>
+                            <div class="info-card">
+                                <div class="info-label">Age</div>
+                                <div class="info-value">${report.applicant?.age || 'N/A'} years</div>
+                            </div>
+                            <div class="info-card">
+                                <div class="info-label">Occupation</div>
+                                <div class="info-value">${report.applicant?.occupation || 'N/A'}</div>
+                            </div>
+                            <div class="info-card">
+                                <div class="info-label">Policy Type</div>
+                                <div class="info-value">${(report.policy_type || 'N/A').replace(/_/g, ' ')}</div>
+                            </div>
+                            <div class="info-card">
+                                <div class="info-label">Coverage Amount</div>
+                                <div class="info-value">£${Number(report.coverage_amount || 0).toLocaleString()}</div>
+                            </div>
+                            <div class="info-card">
+                                <div class="info-label">Identity Verified</div>
+                                <div class="info-value">${report.identity_verified ? '✅ Verified' : '⚠️ Pending'}</div>
+                            </div>
+                            <div class="info-card">
+                                <div class="info-label">Assessment Date</div>
+                                <div class="info-value">${report.metadata?.assessment_date ? new Date(report.metadata.assessment_date).toLocaleDateString() : 'N/A'}</div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Overall Risk Score -->
+                    <div class="section">
+                        <div class="section-title">Overall Risk Assessment</div>
+                        <div class="risk-score-display">
+                            <div class="risk-gauge" style="background: conic-gradient(${riskColor} 0% ${riskScore * 100}%, #e5e7eb ${riskScore * 100}% 100%);">
+                                <div class="risk-gauge-inner">
+                                    <div class="risk-gauge-value" style="color: ${riskColor};">${(riskScore * 100).toFixed(1)}%</div>
+                                    <div class="risk-gauge-label">Risk Score</div>
+                                </div>
+                            </div>
+                            <div class="risk-category-badge" style="background: ${riskColor};">${riskCategory}</div>
+                        </div>
+                        
+                        <div class="score-bars">
+                            ${renderScoreBar('Identity Score', report.risk_scores?.identity, '#10b981')}
+                            ${renderScoreBar('Medical Risk', report.risk_scores?.medical, report.risk_scores?.medical > 0.5 ? '#ef4444' : '#f59e0b')}
+                            ${renderScoreBar('Lifestyle Score', report.risk_scores?.lifestyle, '#22c55e')}
+                            ${renderScoreBar('Financial Score', report.risk_scores?.financial, '#3b82f6')}
+                            ${renderScoreBar('Fraud Score', report.risk_scores?.fraud, report.risk_scores?.fraud > 0.3 ? '#ef4444' : '#22c55e')}
+                        </div>
+                    </div>
+                    
+                    <!-- Medical Assessment -->
+                    <div class="section">
+                        <div class="section-title">Medical Assessment</div>
+                        <div class="info-grid" style="margin-bottom: 20px;">
+                            <div class="info-card">
+                                <div class="info-label">Disability Status</div>
+                                <div class="info-value">${report.medical_assessment?.disability_percentage || 0}% (${report.medical_assessment?.disability_type || 'None'})</div>
+                            </div>
+                            <div class="info-card">
+                                <div class="info-label">BMI Category</div>
+                                <div class="info-value">${report.medical_assessment?.bmi_category || 'N/A'}</div>
+                            </div>
+                            <div class="info-card">
+                                <div class="info-label">Smoking Status</div>
+                                <div class="info-value">${(report.medical_assessment?.smoking_status || 'N/A').replace(/_/g, ' ')}</div>
+                            </div>
+                        </div>
+                        
+                        <h4 style="margin: 20px 0 15px;">Medical Conditions</h4>
+                        ${(report.medical_assessment?.conditions || []).map(c => `
+                            <div class="condition-card ${c.severity}">
+                                <div class="condition-header">
+                                    <span class="condition-name">${c.condition} (${c.icd_code || 'N/A'})</span>
+                                    <span class="condition-severity" style="background: ${c.severity === 'severe' ? '#fee2e2' : c.severity === 'moderate' ? '#fef3c7' : '#d1fae5'}; color: ${c.severity === 'severe' ? '#991b1b' : c.severity === 'moderate' ? '#92400e' : '#065f46'};">${c.severity}</span>
+                                </div>
+                                <div class="condition-details">
+                                    <div><strong>Status:</strong> ${c.status || 'N/A'}</div>
+                                    <div><strong>Treatment:</strong> ${c.treatment || 'N/A'}</div>
+                                    <div><strong>Risk Impact:</strong> ${((c.risk_impact || 0) * 100).toFixed(1)}%</div>
+                                    ${c.loading_percentage > 0 ? `<div><strong>Loading:</strong> +${c.loading_percentage}%</div>` : ''}
+                                </div>
+                                ${c.exclusion_recommended ? '<div style="color: #dc2626; margin-top: 10px; font-weight: 600;">⚠️ Exclusion Recommended</div>' : ''}
+                            </div>
+                        `).join('') || '<p style="color: #666;">No significant medical conditions identified.</p>'}
+                    </div>
+                    
+                    <!-- Risk Factors -->
+                    <div class="section">
+                        <div class="section-title">Risk Factors Analysis</div>
+                        <ul class="factor-list">
+                            ${(report.risk_factors || []).map(f => `
+                                <li class="factor-item">
+                                    <div class="factor-info">
+                                        <div class="factor-name">${f.name} (${f.category})</div>
+                                        <div class="factor-explanation">${f.explanation}</div>
+                                    </div>
+                                    <span class="factor-impact ${f.impact > 0.3 ? 'high' : f.impact > 0.15 ? 'medium' : 'low'}">
+                                        ${f.direction?.toUpperCase() || 'IMPACT'} ${((f.impact || 0) * 100).toFixed(1)}%
+                                    </span>
+                                </li>
+                            `).join('') || '<li class="factor-item"><div class="factor-info">No significant risk factors identified.</div></li>'}
+                        </ul>
+                    </div>
+                    
+                    <!-- Document Verification -->
+                    ${report.documents && report.documents.length > 0 ? `
+                    <div class="section">
+                        <div class="section-title">Document Verification</div>
+                        <table class="document-table">
+                            <thead>
+                                <tr>
+                                    <th>Document Type</th>
+                                    <th>Status</th>
+                                    <th>Authenticity</th>
+                                    <th>Expiry Status</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${report.documents.map(d => `
+                                    <tr>
+                                        <td>${(d.type || 'N/A').replace(/_/g, ' ')}</td>
+                                        <td><span class="status-badge ${d.verified ? 'verified' : 'pending'}">${d.verified ? '✓ Verified' : 'Pending'}</span></td>
+                                        <td>${((d.authenticity_score || 0) * 100).toFixed(1)}%</td>
+                                        <td>${(d.expiry_status || 'N/A').replace(/_/g, ' ')}</td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+                    ` : ''}
+                    
+                    <!-- AI Recommendation -->
+                    <div class="section">
+                        <div class="section-title">🤖 AI Executive Recommendation</div>
+                        
+                        <div class="recommendation-box" style="background: ${recColor};">
+                            <div class="recommendation-type">${(report.recommendation?.type || 'N/A').replace(/_/g, ' ').toUpperCase()}</div>
+                            <div class="recommendation-confidence">Confidence Level: ${((report.recommendation?.confidence || 0) * 100).toFixed(1)}%</div>
+                        </div>
+                        
+                        <div style="background: #f8f9fa; padding: 20px; border-radius: 10px; border-left: 4px solid ${recColor}; margin-bottom: 20px;">
+                            <strong>Rationale:</strong>
+                            <p style="margin-top: 10px;">${report.recommendation?.rationale || 'N/A'}</p>
+                        </div>
+                        
+                        ${report.recommendation?.premium_adjustment > 0 ? `
+                        <div class="premium-box">
+                            <div class="premium-label">Recommended Premium Loading</div>
+                            <div class="premium-value">+${(report.recommendation.premium_adjustment * 100).toFixed(0)}%</div>
+                        </div>
+                        ` : ''}
+                        
+                        ${report.recommendation?.exclusions && report.recommendation.exclusions.length > 0 ? `
+                        <div class="exclusion-box">
+                            <div class="exclusion-title">⚠️ Recommended Exclusions</div>
+                            ${report.recommendation.exclusions.map(e => `<div class="exclusion-item">${e}</div>`).join('')}
+                        </div>
+                        ` : ''}
+                        
+                        ${report.recommendation?.monitoring && report.recommendation.monitoring.length > 0 ? `
+                        <div class="monitoring-box">
+                            <div class="monitoring-title">📋 Monitoring Requirements</div>
+                            ${report.recommendation.monitoring.map(m => `<div class="monitoring-item">• ${m}</div>`).join('')}
+                        </div>
+                        ` : ''}
+                        
+                        <div style="margin-top: 20px; text-align: center; padding: 15px; background: #f1f5f9; border-radius: 8px;">
+                            <strong>Review Period:</strong> ${report.recommendation?.review_period_months || 12} months
+                        </div>
+                    </div>
+                    
+                    <!-- Footer -->
+                    <div class="footer">
+                        <p>Generated by PHINS AI Underwriting Bot v${report.metadata?.model_version || '1.0.0'}</p>
+                        <p>Assessment Date: ${report.metadata?.assessment_date ? new Date(report.metadata.assessment_date).toLocaleString() : 'N/A'}</p>
+                        <p style="margin-top: 10px; font-size: 0.75rem; opacity: 0.7;">This report is generated by an AI system and should be reviewed by a qualified underwriter before final decision.</p>
+                    </div>
+                </div>
+            `;
+        }
+        
+        function renderScoreBar(name, value, color) {
+            const percentage = ((value || 0) * 100).toFixed(1);
+            return `
+                <div class="score-item">
+                    <div class="score-header">
+                        <span class="score-name">${name}</span>
+                        <span class="score-value" style="color: ${color};">${percentage}%</span>
+                    </div>
+                    <div class="score-bar">
+                        <div class="score-bar-fill" style="width: ${percentage}%; background: ${color};"></div>
+                    </div>
+                </div>
+            `;
+        }
+        
+        function downloadReport() {
+            window.print();
+        }
+        
+        async function approveApplication() {
+            if (!confirm('Approve this application with the recommended terms?')) return;
+            
+            try {
+                const response = await fetch('/api/underwriting/approve', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        id: applicationId,
+                        approved_by: localStorage.getItem('phins_username') || 'Underwriter',
+                        notes: 'Approved based on AI risk assessment'
+                    })
+                });
+                
+                if (response.ok) {
+                    alert('Application approved successfully!');
+                    window.location.href = '/underwriter-dashboard.html';
+                } else {
+                    alert('Failed to approve application');
+                }
+            } catch (error) {
+                alert('Error approving application');
+            }
+        }
+        
+        async function rejectApplication() {
+            const reason = prompt('Enter rejection reason:');
+            if (!reason) return;
+            
+            try {
+                const response = await fetch('/api/underwriting/reject', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        id: applicationId,
+                        rejected_by: localStorage.getItem('phins_username') || 'Underwriter',
+                        reason: reason
+                    })
+                });
+                
+                if (response.ok) {
+                    alert('Application rejected');
+                    window.location.href = '/underwriter-dashboard.html';
+                } else {
+                    alert('Failed to reject application');
+                }
+            } catch (error) {
+                alert('Error rejecting application');
+            }
+        }
+        
+        // Load report on page load
+        loadReport();
+    </script>
+</body>
+</html>

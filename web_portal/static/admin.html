@@ -685,6 +685,9 @@
           <a href="/underwriter-dashboard.html" class="btn btn-small" style="background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%); color: white; text-decoration: none;">
             📋 Full Underwriter Dashboard
           </a>
+          <a href="/risk-assessment-viewer.html" class="btn btn-small" style="background: linear-gradient(135deg, #ec4899 0%, #db2777 100%); color: white; text-decoration: none;">
+            🔒 Risk Assessment Reports
+          </a>
         </div>
         <!-- Progress indicator -->
         <div id="pipeline-progress" style="display: none; margin-top: 12px;">
@@ -2500,6 +2503,9 @@
             <td><span class="badge ${statusClass}">${(app.status || 'pending').charAt(0).toUpperCase() + (app.status || 'pending').slice(1)}</span></td>
             <td>
               <div style="display: flex; gap: 6px;">
+                <button class="action-btn" title="Risk Report" onclick="viewRiskReport('${app.id}')" style="background: linear-gradient(135deg, #ec4899 0%, #db2777 100%); color: white;">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
+                </button>
                 ${app.status === 'pending' ? `
                   <button class="action-btn approve" title="Approve" onclick="approveApplication('${app.id}')">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>
@@ -2517,6 +2523,11 @@
           </tr>
         `;
       }).join('');
+    }
+    
+    // View risk assessment report for an application
+    function viewRiskReport(uwId) {
+      window.location.href = `/risk-assessment-viewer.html?id=${encodeURIComponent(uwId)}`;
     }
     
     async function approveApplication(uwId) {
