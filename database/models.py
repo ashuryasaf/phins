@@ -584,3 +584,379 @@ class TokenRegistry(Base):
             "created_by": self.created_by,
             "created_date": self.created_date.isoformat() if self.created_date else None,
         }
+
+
+# ============================================================================
+# Underwriting Bot Models (NEW - Additive Only, Preserves Existing Data)
+# ============================================================================
+
+
+class MetadataType(str, enum.Enum):
+    """Types of metadata for underwriting assessment"""
+    PHOTO = "photo"
+    MEDICAL_REPORT = "medical_report"
+    PASSPORT = "passport"
+    DRIVING_LICENCE = "driving_licence"
+    NATIONAL_INSURANCE = "national_insurance"
+    DISABILITY_CERTIFICATE = "disability_certificate"
+    AUDIO = "audio"
+    VIDEO = "video"
+    OTHER_DOCUMENT = "other_document"
+
+
+class ProcessingStatusEnum(str, enum.Enum):
+    """Processing status for metadata"""
+    PENDING = "pending"
+    PROCESSING = "processing"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    REQUIRES_REVIEW = "requires_review"
+
+
+class ValidationStatusEnum(str, enum.Enum):
+    """Validation status for metadata"""
+    PENDING = "pending"
+    VALID = "valid"
+    INVALID = "invalid"
+    EXPIRED = "expired"
+    SUSPICIOUS = "suspicious"
+
+
+class RiskLevelEnum(str, enum.Enum):
+    """Risk level categories"""
+    VERY_LOW = "very_low"
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+    VERY_HIGH = "very_high"
+
+
+class DecisionRecommendationEnum(str, enum.Enum):
+    """AI decision recommendations"""
+    APPROVE = "approve"
+    APPROVE_CONDITIONAL = "approve_conditional"
+    REFER_MANUAL = "refer_manual"
+    DECLINE = "decline"
+    PENDING_INFO = "pending_info"
+
+
+class AssessmentStatusEnum(str, enum.Enum):
+    """Assessment lifecycle status"""
+    INITIATED = "initiated"
+    COLLECTING_METADATA = "collecting_metadata"
+    VALIDATING_METADATA = "validating_metadata"
+    PROCESSING = "processing"
+    RISK_ASSESSING = "risk_assessing"
+    DECISION_READY = "decision_ready"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+    REFERRED = "referred"
+    CONDITIONAL_APPROVAL = "conditional_approval"
+    COMPLETED = "completed"
+    VALIDATION_FAILED = "validation_failed"
+
+
+class UnderwritingMetadataModel(Base):
+    """
+    Stores metadata uploaded for underwriting assessment.
+    
+    This is a NEW table - does not modify any existing customer data.
+    Metadata includes photos, medical reports, official documents, audio, video.
+    """
+    __tablename__ = 'underwriting_metadata'
+    
+    id = Column(String(50), primary_key=True)
+    underwriting_id = Column(String(50), index=True, nullable=False)
+    customer_id = Column(String(50), index=True, nullable=False)
+    assessment_id = Column(String(50), index=True, nullable=True)
+    
+    # File information
+    metadata_type = Column(String(50), nullable=False, index=True)
+    file_name = Column(String(255), nullable=False)
+    file_path = Column(String(500), nullable=True)
+    file_hash = Column(String(64), nullable=True)  # SHA-256 hash
+    file_size_bytes = Column(Integer, nullable=True)
+    mime_type = Column(String(100), nullable=True)
+    
+    # Processing state
+    upload_date = Column(DateTime, default=datetime.utcnow, nullable=False)
+    processing_status = Column(String(50), default='pending', index=True)
+    processing_result = Column(Text, nullable=True)  # JSON string
+    
+    # Extracted data
+    extracted_data = Column(Text, nullable=True)  # JSON string
+    confidence_score = Column(Float, nullable=True)
+    
+    # Validation
+    validation_status = Column(String(50), default='pending', index=True)
+    validation_notes = Column(Text, nullable=True)
+    
+    # Timestamps
+    created_date = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_date = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    def to_dict(self):
+        """Convert model to dictionary"""
+        import json as _json
+        
+        def safe_json_loads(val):
+            if val is None:
+                return {}
+            if isinstance(val, dict):
+                return val
+            try:
+                return _json.loads(val)
+            except:
+                return {}
+        
+        return {
+            'id': self.id,
+            'underwriting_id': self.underwriting_id,
+            'customer_id': self.customer_id,
+            'assessment_id': self.assessment_id,
+            'metadata_type': self.metadata_type,
+            'file_name': self.file_name,
+            'file_path': self.file_path,
+            'file_hash': self.file_hash,
+            'file_size_bytes': self.file_size_bytes,
+            'mime_type': self.mime_type,
+            'upload_date': self.upload_date.isoformat() if self.upload_date else None,
+            'processing_status': self.processing_status,
+            'processing_result': safe_json_loads(self.processing_result),
+            'extracted_data': safe_json_loads(self.extracted_data),
+            'confidence_score': self.confidence_score,
+            'validation_status': self.validation_status,
+            'validation_notes': self.validation_notes,
+            'created_date': self.created_date.isoformat() if self.created_date else None,
+            'updated_date': self.updated_date.isoformat() if self.updated_date else None
+        }
+
+
+class RiskAssessmentReportModel(Base):
+    """
+    Stores comprehensive risk assessment reports generated by the underwriting bot.
+    
+    This is a NEW table - does not modify any existing customer data.
+    """
+    __tablename__ = 'risk_assessment_reports'
+    
+    id = Column(String(50), primary_key=True)
+    underwriting_id = Column(String(50), index=True, nullable=False)
+    customer_id = Column(String(50), index=True, nullable=False)
+    assessment_id = Column(String(50), index=True, nullable=True)
+    
+    # Assessment date and scores
+    assessment_date = Column(DateTime, default=datetime.utcnow, nullable=False)
+    overall_risk_score = Column(Float, nullable=False)  # 0.0 to 1.0
+    risk_level = Column(String(20), nullable=False, index=True)  # very_low, low, medium, high, very_high
+    
+    # Component scores
+    identity_verified = Column(Boolean, default=False)
+    identity_score = Column(Float, nullable=True)
+    document_score = Column(Float, nullable=True)
+    medical_score = Column(Float, nullable=True)
+    behavioral_score = Column(Float, nullable=True)
+    fraud_score = Column(Float, nullable=True)
+    
+    # Decision
+    recommendation = Column(String(50), nullable=False, index=True)  # approve, approve_conditional, refer_manual, decline
+    confidence_level = Column(Float, nullable=True)
+    explanation = Column(Text, nullable=True)
+    
+    # Risk factors (JSON array)
+    risk_factors = Column(Text, nullable=True)  # JSON string
+    
+    # Human override
+    human_override = Column(Boolean, default=False)
+    human_decision = Column(String(50), nullable=True)
+    human_notes = Column(Text, nullable=True)
+    
+    # Metadata processed (JSON array of metadata IDs)
+    metadata_processed = Column(Text, nullable=True)  # JSON string
+    processing_time_seconds = Column(Float, nullable=True)
+    
+    # Timestamps
+    created_date = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_date = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    def to_dict(self):
+        """Convert model to dictionary"""
+        import json as _json
+        
+        def safe_json_loads(val):
+            if val is None:
+                return []
+            if isinstance(val, list):
+                return val
+            try:
+                return _json.loads(val)
+            except:
+                return []
+        
+        return {
+            'id': self.id,
+            'underwriting_id': self.underwriting_id,
+            'customer_id': self.customer_id,
+            'assessment_id': self.assessment_id,
+            'assessment_date': self.assessment_date.isoformat() if self.assessment_date else None,
+            'overall_risk_score': self.overall_risk_score,
+            'risk_level': self.risk_level,
+            'identity_verified': self.identity_verified,
+            'identity_score': self.identity_score,
+            'document_score': self.document_score,
+            'medical_score': self.medical_score,
+            'behavioral_score': self.behavioral_score,
+            'fraud_score': self.fraud_score,
+            'recommendation': self.recommendation,
+            'confidence_level': self.confidence_level,
+            'explanation': self.explanation,
+            'risk_factors': safe_json_loads(self.risk_factors),
+            'human_override': self.human_override,
+            'human_decision': self.human_decision,
+            'human_notes': self.human_notes,
+            'metadata_processed': safe_json_loads(self.metadata_processed),
+            'processing_time_seconds': self.processing_time_seconds,
+            'created_date': self.created_date.isoformat() if self.created_date else None,
+            'updated_date': self.updated_date.isoformat() if self.updated_date else None
+        }
+
+
+class RiskFactorModel(Base):
+    """
+    Stores individual risk factors identified during assessment.
+    
+    This is a NEW table - does not modify any existing customer data.
+    """
+    __tablename__ = 'risk_factors'
+    
+    id = Column(String(50), primary_key=True)
+    report_id = Column(String(50), index=True, nullable=False)
+    
+    # Factor details
+    factor_category = Column(String(50), nullable=False, index=True)  # age, health, lifestyle, occupation, location, history
+    factor_name = Column(String(200), nullable=False)
+    factor_value = Column(Text, nullable=True)
+    
+    # Impact assessment
+    impact_score = Column(Float, nullable=False)  # -1.0 to 1.0
+    impact_direction = Column(String(20), nullable=False)  # positive (increases risk), negative (decreases), neutral
+    
+    # Source metadata
+    source_metadata_id = Column(String(50), nullable=True)
+    explanation = Column(Text, nullable=True)
+    
+    # Timestamps
+    created_date = Column(DateTime, default=datetime.utcnow, nullable=False)
+    
+    def to_dict(self):
+        """Convert model to dictionary"""
+        return {
+            'id': self.id,
+            'report_id': self.report_id,
+            'factor_category': self.factor_category,
+            'factor_name': self.factor_name,
+            'factor_value': self.factor_value,
+            'impact_score': self.impact_score,
+            'impact_direction': self.impact_direction,
+            'source_metadata_id': self.source_metadata_id,
+            'explanation': self.explanation,
+            'created_date': self.created_date.isoformat() if self.created_date else None
+        }
+
+
+class BotAssessmentModel(Base):
+    """
+    Stores bot assessment sessions.
+    
+    This is a NEW table - does not modify any existing customer data.
+    """
+    __tablename__ = 'bot_assessments'
+    
+    id = Column(String(50), primary_key=True)
+    underwriting_id = Column(String(50), index=True, nullable=False)
+    customer_id = Column(String(50), index=True, nullable=False)
+    policy_id = Column(String(50), index=True, nullable=True)
+    
+    # Status
+    status = Column(String(50), nullable=False, default='initiated', index=True)
+    
+    # Customer snapshot (READ-ONLY copy at time of assessment)
+    customer_snapshot = Column(Text, nullable=True)  # JSON string
+    existing_policies_count = Column(Integer, default=0)
+    existing_claims_count = Column(Integer, default=0)
+    
+    # Timestamps
+    started_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    completed_at = Column(DateTime, nullable=True)
+    
+    # Report reference
+    report_id = Column(String(50), nullable=True, index=True)
+    
+    # Timestamps
+    created_date = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_date = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    def to_dict(self):
+        """Convert model to dictionary"""
+        import json as _json
+        
+        def safe_json_loads(val):
+            if val is None:
+                return {}
+            if isinstance(val, dict):
+                return val
+            try:
+                return _json.loads(val)
+            except:
+                return {}
+        
+        return {
+            'id': self.id,
+            'underwriting_id': self.underwriting_id,
+            'customer_id': self.customer_id,
+            'policy_id': self.policy_id,
+            'status': self.status,
+            'customer_snapshot': safe_json_loads(self.customer_snapshot),
+            'existing_policies_count': self.existing_policies_count,
+            'existing_claims_count': self.existing_claims_count,
+            'started_at': self.started_at.isoformat() if self.started_at else None,
+            'completed_at': self.completed_at.isoformat() if self.completed_at else None,
+            'report_id': self.report_id,
+            'created_date': self.created_date.isoformat() if self.created_date else None,
+            'updated_date': self.updated_date.isoformat() if self.updated_date else None
+        }
+
+
+class ExtractedFeatureModel(Base):
+    """
+    Stores features extracted from metadata.
+    
+    This is a NEW table - does not modify any existing customer data.
+    """
+    __tablename__ = 'extracted_features'
+    
+    id = Column(String(50), primary_key=True)
+    metadata_id = Column(String(50), index=True, nullable=False)
+    
+    # Feature details
+    feature_type = Column(String(100), nullable=False, index=True)  # identity, health, document, behavioral
+    feature_name = Column(String(200), nullable=False)
+    feature_value = Column(Text, nullable=True)
+    confidence = Column(Float, nullable=True)
+    source_location = Column(String(100), nullable=True)
+    
+    # Timestamps
+    created_date = Column(DateTime, default=datetime.utcnow, nullable=False)
+    
+    def to_dict(self):
+        """Convert model to dictionary"""
+        return {
+            'id': self.id,
+            'metadata_id': self.metadata_id,
+            'feature_type': self.feature_type,
+            'feature_name': self.feature_name,
+            'feature_value': self.feature_value,
+            'confidence': self.confidence,
+            'source_location': self.source_location,
+            'created_date': self.created_date.isoformat() if self.created_date else None
+        }
