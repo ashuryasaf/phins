@@ -10,70 +10,243 @@ import hmac
 import secrets
 import random
 from datetime import datetime, timedelta
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Any
 
 
 class SecurityValidator:
-    """Security validation utilities for payment processing"""
+    """Security validation utilities for payment processing - PCI DSS Compliant"""
+    
+    # Card type identification patterns (IIN/BIN ranges)
+    CARD_PATTERNS = {
+        'visa': {
+            'prefixes': ['4'],
+            'lengths': [13, 16, 19],
+            'cvv_length': 3
+        },
+        'mastercard': {
+            'prefixes': ['51', '52', '53', '54', '55'] + [str(i) for i in range(2221, 2721)],
+            'lengths': [16],  # Mastercard is ALWAYS 16 digits
+            'cvv_length': 3
+        },
+        'amex': {
+            'prefixes': ['34', '37'],
+            'lengths': [15],
+            'cvv_length': 4
+        },
+        'discover': {
+            'prefixes': ['6011', '644', '645', '646', '647', '648', '649', '65'],
+            'lengths': [16, 19],
+            'cvv_length': 3
+        },
+        'diners': {
+            'prefixes': ['300', '301', '302', '303', '304', '305', '36', '38'],
+            'lengths': [14, 16],
+            'cvv_length': 3
+        },
+        'jcb': {
+            'prefixes': ['3528', '3529'] + [str(i) for i in range(3530, 3590)],
+            'lengths': [16, 19],
+            'cvv_length': 3
+        }
+    }
     
     @staticmethod
     def hash_sensitive_data(data: str, salt: str = None) -> Tuple[str, str]:
-        """Hash sensitive data with salt"""
+        """Hash sensitive data with salt - PCI DSS compliant"""
         if salt is None:
-            salt = secrets.token_hex(16)
-        hashed = hashlib.pbkdf2_hmac('sha256', data.encode(), salt.encode(), 100000)
+            salt = secrets.token_hex(32)  # 256-bit salt
+        # Use PBKDF2 with SHA-256, 310,000 iterations (OWASP 2023 recommendation)
+        hashed = hashlib.pbkdf2_hmac('sha256', data.encode(), salt.encode(), 310000)
         return hashed.hex(), salt
     
     @staticmethod
     def verify_hash(data: str, hashed: str, salt: str) -> bool:
-        """Verify hashed data"""
+        """Verify hashed data using constant-time comparison"""
         new_hash, _ = SecurityValidator.hash_sensitive_data(data, salt)
         return hmac.compare_digest(new_hash, hashed)
     
     @staticmethod
-    def validate_card_number(card_number: str) -> bool:
-        """Luhn algorithm for card validation"""
+    def detect_card_type(card_number: str) -> Optional[str]:
+        """Detect card type from card number (IIN/BIN identification)"""
         card_number = card_number.replace(' ', '').replace('-', '')
-        if not card_number.isdigit() or len(card_number) < 13 or len(card_number) > 19:
-            return False
+        if not card_number.isdigit():
+            return None
         
-        def luhn_checksum(card):
-            def digits_of(n):
-                return [int(d) for d in str(n)]
-            digits = digits_of(card)
+        for card_type, rules in SecurityValidator.CARD_PATTERNS.items():
+            for prefix in rules['prefixes']:
+                if card_number.startswith(prefix):
+                    if len(card_number) in rules['lengths']:
+                        return card_type
+        return None
+    
+    @staticmethod
+    def validate_card_number(card_number: str, expected_type: str = None) -> Dict[str, Any]:
+        """
+        Comprehensive card number validation with:
+        - Format cleaning
+        - Length validation by card type
+        - IIN/BIN prefix validation
+        - Luhn algorithm checksum
+        
+        Returns dict with validation details for insurance-grade accuracy.
+        """
+        # Clean the card number
+        original = card_number
+        card_number = card_number.replace(' ', '').replace('-', '').replace('.', '')
+        
+        result = {
+            'valid': False,
+            'card_number_masked': SecurityValidator.mask_card_number(card_number),
+            'card_type': None,
+            'errors': [],
+            'warnings': []
+        }
+        
+        # Basic format check
+        if not card_number.isdigit():
+            result['errors'].append('Card number must contain only digits')
+            return result
+        
+        # Length check
+        length = len(card_number)
+        if length < 13:
+            result['errors'].append(f'Card number too short ({length} digits, minimum 13)')
+            return result
+        if length > 19:
+            result['errors'].append(f'Card number too long ({length} digits, maximum 19)')
+            return result
+        
+        # Detect card type
+        detected_type = SecurityValidator.detect_card_type(card_number)
+        result['card_type'] = detected_type
+        
+        # Validate against expected type if provided
+        if expected_type and detected_type:
+            if expected_type.lower() != detected_type:
+                result['warnings'].append(f'Card appears to be {detected_type}, not {expected_type}')
+        
+        # Card-type specific validation
+        if detected_type:
+            rules = SecurityValidator.CARD_PATTERNS[detected_type]
+            if length not in rules['lengths']:
+                result['errors'].append(
+                    f'{detected_type.title()} cards must be {" or ".join(map(str, rules["lengths"]))} digits (got {length})'
+                )
+                return result
+        else:
+            result['warnings'].append('Unknown card type - proceeding with basic validation')
+        
+        # Mastercard specific: MUST be exactly 16 digits
+        if detected_type == 'mastercard' and length != 16:
+            result['errors'].append('Mastercard must be exactly 16 digits')
+            return result
+        
+        # Luhn algorithm checksum
+        def luhn_checksum(card: str) -> bool:
+            digits = [int(d) for d in card]
             odd_digits = digits[-1::-2]
             even_digits = digits[-2::-2]
             checksum = sum(odd_digits)
             for d in even_digits:
-                checksum += sum(digits_of(d * 2))
-            return checksum % 10
+                doubled = d * 2
+                checksum += doubled if doubled < 10 else doubled - 9
+            return checksum % 10 == 0
         
-        return luhn_checksum(card_number) == 0
+        if not luhn_checksum(card_number):
+            result['errors'].append('Card number failed checksum validation (invalid card)')
+            return result
+        
+        # All validations passed
+        result['valid'] = True
+        return result
     
     @staticmethod
-    def validate_cvv(cvv: str, card_type: str = 'standard') -> bool:
-        """Validate CVV format"""
+    def validate_cvv(cvv: str, card_type: str = None) -> Dict[str, Any]:
+        """
+        Validate CVV/CVC/CID with card-type specific rules.
+        - Visa/Mastercard/Discover/JCB: 3 digits
+        - Amex: 4 digits (CID)
+        """
+        result = {
+            'valid': False,
+            'errors': []
+        }
+        
+        if not cvv:
+            result['errors'].append('CVV is required')
+            return result
+        
+        cvv = cvv.strip()
+        
         if not cvv.isdigit():
-            return False
-        expected_length = 4 if card_type == 'amex' else 3
-        return len(cvv) == expected_length
+            result['errors'].append('CVV must contain only digits')
+            return result
+        
+        # Determine expected length
+        if card_type and card_type.lower() == 'amex':
+            expected_length = 4
+            cvv_name = 'CID'
+        else:
+            expected_length = 3
+            cvv_name = 'CVV'
+        
+        if len(cvv) != expected_length:
+            result['errors'].append(f'{cvv_name} must be exactly {expected_length} digits')
+            return result
+        
+        result['valid'] = True
+        return result
     
     @staticmethod
-    def validate_expiry(expiry_month: int, expiry_year: int) -> bool:
-        """Check if card is not expired"""
+    def validate_expiry(expiry_month: int, expiry_year: int) -> Dict[str, Any]:
+        """
+        Validate card expiry date with detailed feedback.
+        """
+        result = {
+            'valid': False,
+            'errors': [],
+            'warnings': []
+        }
+        
         now = datetime.now()
+        
+        # Validate month range
+        if expiry_month < 1 or expiry_month > 12:
+            result['errors'].append('Invalid expiry month (must be 1-12)')
+            return result
+        
+        # Handle 2-digit year
+        if expiry_year < 100:
+            expiry_year = 2000 + expiry_year
+        
+        # Check if expired
         if expiry_year < now.year:
-            return False
+            result['errors'].append('Card has expired')
+            return result
+        
         if expiry_year == now.year and expiry_month < now.month:
-            return False
-        return True
+            result['errors'].append('Card has expired')
+            return result
+        
+        # Warning for cards expiring soon
+        months_until_expiry = (expiry_year - now.year) * 12 + (expiry_month - now.month)
+        if months_until_expiry <= 2:
+            result['warnings'].append(f'Card expires in {months_until_expiry} month(s)')
+        
+        result['valid'] = True
+        result['expiry_formatted'] = f"{expiry_month:02d}/{expiry_year}"
+        return result
     
     @staticmethod
     def mask_card_number(card_number: str) -> str:
-        """Mask card number for display (PCI compliance)"""
+        """
+        PCI DSS compliant card masking - show only last 4 digits.
+        Never store or log full card numbers.
+        """
         card_number = card_number.replace(' ', '').replace('-', '')
         if len(card_number) < 4:
             return '****'
+        # PCI DSS allows showing first 6 and last 4, but we show only last 4 for extra security
         return f"****-****-****-{card_number[-4:]}"
     
     @staticmethod
@@ -116,33 +289,47 @@ class BillingEngine:
         """
         Add payment method (tokenized)
         In production, use proper payment gateway tokenization (Stripe, Square, etc.)
+        NEVER store full card numbers - PCI DSS compliance
         """
         try:
-            # Validate card
-            if not self.security.validate_card_number(payment_data['card_number']):
-                return {'success': False, 'error': 'Invalid card number'}
+            # Validate card number with enhanced validation
+            card_validation = self.security.validate_card_number(payment_data['card_number'])
+            if not card_validation['valid']:
+                error_msg = card_validation['errors'][0] if card_validation['errors'] else 'Invalid card number'
+                return {'success': False, 'error': error_msg}
             
-            if not self.security.validate_cvv(payment_data['cvv']):
-                return {'success': False, 'error': 'Invalid CVV'}
+            # Get detected card type for proper CVV validation
+            detected_card_type = card_validation.get('card_type', payment_data.get('card_type'))
             
-            if not self.security.validate_expiry(
+            # Validate CVV with card-type awareness
+            cvv_validation = self.security.validate_cvv(payment_data['cvv'], detected_card_type)
+            if not cvv_validation['valid']:
+                error_msg = cvv_validation['errors'][0] if cvv_validation['errors'] else 'Invalid CVV'
+                return {'success': False, 'error': error_msg}
+            
+            # Validate expiry date
+            expiry_validation = self.security.validate_expiry(
                 int(payment_data['expiry_month']), 
                 int(payment_data['expiry_year'])
-            ):
-                return {'success': False, 'error': 'Card expired'}
+            )
+            if not expiry_validation['valid']:
+                error_msg = expiry_validation['errors'][0] if expiry_validation['errors'] else 'Card expired'
+                return {'success': False, 'error': error_msg}
             
             # Create payment token (simulate tokenization)
+            # In production: use Stripe/Square/Braintree tokenization
             token = f"pm_{secrets.token_hex(16)}"
             
-            # Store masked card info only (PCI compliance)
+            # Store masked card info only (PCI DSS compliance - NEVER store full card numbers)
             if customer_id not in self.payment_methods:
                 self.payment_methods[customer_id] = []
             
             self.payment_methods[customer_id].append({
                 'token': token,
                 'masked_card': self.security.mask_card_number(payment_data['card_number']),
-                'card_type': payment_data.get('card_type', 'visa'),
+                'card_type': detected_card_type or payment_data.get('card_type', 'unknown'),
                 'expiry': f"{payment_data['expiry_month']}/{payment_data['expiry_year']}",
+                'cardholder_name': payment_data.get('cardholder_name', ''),
                 'billing_address': payment_data.get('billing_address', {}),
                 'is_default': len(self.payment_methods[customer_id]) == 0,
                 'created_date': datetime.now().isoformat()
@@ -151,7 +338,8 @@ class BillingEngine:
             return {
                 'success': True,
                 'token': token,
-                'masked_card': self.security.mask_card_number(payment_data['card_number'])
+                'masked_card': self.security.mask_card_number(payment_data['card_number']),
+                'card_type': detected_card_type
             }
         
         except Exception as e:

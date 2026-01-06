@@ -16,14 +16,17 @@ logger = logging.getLogger(__name__)
 
 def convert_datetime_strings(data: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Convert ISO datetime strings to datetime objects for database insertion.
+    Convert ISO datetime strings to datetime objects and dict fields to JSON strings.
     
     Args:
-        data: Dictionary that may contain datetime strings
+        data: Dictionary that may contain datetime strings and nested dicts
     
     Returns:
         Dictionary with datetime strings converted to datetime objects
+        and dict fields converted to JSON strings
     """
+    import json
+    
     datetime_fields = [
         'created_date', 'updated_date', 'start_date', 'end_date',
         'approval_date', 'filed_date', 'payment_date', 'submitted_date',
@@ -31,7 +34,15 @@ def convert_datetime_strings(data: Dict[str, Any]) -> Dict[str, Any]:
         'timestamp'
     ]
     
+    # Fields that should be stored as JSON strings
+    json_fields = [
+        'questionnaire_responses', 'payment_setup', 'health_wallet', 
+        'billing', 'metadata', 'additional_data'
+    ]
+    
     result = data.copy()
+    
+    # Convert datetime fields
     for field in datetime_fields:
         if field in result and result[field] is not None:
             value = result[field]
@@ -42,6 +53,79 @@ def convert_datetime_strings(data: Dict[str, Any]) -> Dict[str, Any]:
                 except (ValueError, AttributeError):
                     # If parsing fails, keep original value
                     pass
+    
+    # Convert dict/list fields to JSON strings for storage
+    for field in json_fields:
+        if field in result and result[field] is not None:
+            value = result[field]
+            if isinstance(value, (dict, list)):
+                try:
+                    result[field] = json.dumps(value)
+                except (TypeError, ValueError):
+                    # If JSON encoding fails, try str
+                    result[field] = str(value)
+    
+    return result
+
+
+# Field mappings from server dictionary keys to database model fields
+# This ensures backward compatibility with existing code that uses different key names
+FIELD_MAPPINGS = {
+    'billing': {
+        'bill_id': 'id',           # bill_id → id (database uses 'id' as primary key)
+        'amount_due': 'amount',    # amount_due → amount
+    },
+    'claims': {
+        'claim_id': 'id',          # claim_id → id
+        'files': 'files_metadata', # files → files_metadata (stored as JSON string)
+    },
+    'policies': {
+        'policy_id': 'id',         # policy_id → id (if used)
+    },
+    'underwriting': {
+        'uw_id': 'id',             # uw_id → id (if used)
+        'application_id': 'id',    # application_id → id
+    }
+}
+
+# Fields that need JSON serialization when storing
+JSON_FIELDS = {
+    'claims': ['files_metadata', 'bank_details'],
+}
+
+
+def map_fields_for_repository(repository_name: str, data: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Map field names from server dictionary format to database model format.
+    Also handles JSON serialization for complex fields.
+    
+    Args:
+        repository_name: Name of the repository (billing, claims, etc.)
+        data: Dictionary with server field names
+    
+    Returns:
+        Dictionary with database model field names
+    """
+    import json
+    
+    result = data.copy()
+    
+    # Apply field name mappings
+    mappings = FIELD_MAPPINGS.get(repository_name, {})
+    for old_name, new_name in mappings.items():
+        if old_name in result:
+            # Copy value to new field name
+            if new_name not in result:  # Don't overwrite if already present
+                result[new_name] = result[old_name]
+            # Remove old field name (to avoid 'unexpected keyword argument' errors)
+            del result[old_name]
+    
+    # Serialize JSON fields (convert dicts/lists to JSON strings)
+    json_fields = JSON_FIELDS.get(repository_name, [])
+    for field in json_fields:
+        if field in result and result[field] is not None:
+            if isinstance(result[field], (dict, list)):
+                result[field] = json.dumps(result[field])
     
     return result
 
@@ -72,10 +156,21 @@ class DatabaseDict:
         with DatabaseManager() as db:
             repo = self._get_repository(db)
             items = repo.get_all()
-            self._cache = {item.id if hasattr(item, 'id') else 
-                          (item.username if hasattr(item, 'username') else 
-                          (item.token if hasattr(item, 'token') else str(item))): 
-                          item.to_dict() for item in items}
+            def _key_for_item(item):
+                # Use correct primary key per repository (prevents subtle bugs like sessions keyed by username)
+                if self.repository_name == 'sessions' and hasattr(item, 'token'):
+                    return item.token
+                if self.repository_name == 'users' and hasattr(item, 'username'):
+                    return item.username
+                if hasattr(item, 'id'):
+                    return item.id
+                if hasattr(item, 'username'):
+                    return item.username
+                if hasattr(item, 'token'):
+                    return item.token
+                return str(item)
+
+            self._cache = {_key_for_item(item): item.to_dict() for item in items}
             self._cache_valid = True
     
     def __getitem__(self, key: str) -> Dict[str, Any]:
@@ -92,12 +187,16 @@ class DatabaseDict:
         # Convert datetime strings to datetime objects
         value = convert_datetime_strings(value)
         
+        # Map field names from server format to database format
+        value = map_fields_for_repository(self.repository_name, value)
+        
         with DatabaseManager() as db:
             repo = self._get_repository(db)
             existing = repo.get_by_id(key)
             if existing:
-                # Update existing
-                repo.update(key, **value)
+                # Update existing - filter out keys that aren't model attributes
+                update_data = {k: v for k, v in value.items() if hasattr(existing, k)}
+                repo.update(key, **update_data)
             else:
                 # Create new (ensure id is set)
                 if 'id' not in value and self.repository_name not in ['users', 'sessions']:
@@ -106,7 +205,17 @@ class DatabaseDict:
                     value['username'] = key
                 elif 'token' not in value and self.repository_name == 'sessions':
                     value['token'] = key
-                repo.create(**value)
+                
+                # Filter out keys that aren't valid model attributes to prevent errors
+                try:
+                    model_class = repo.model_class
+                    valid_columns = {c.name for c in model_class.__table__.columns}
+                    filtered_value = {k: v for k, v in value.items() if k in valid_columns}
+                    repo.create(**filtered_value)
+                except Exception as e:
+                    # Fallback: try creating with all values
+                    logger.warning(f"Error filtering columns for {self.repository_name}: {e}")
+                    repo.create(**value)
         self._cache_valid = False
     
     def __delitem__(self, key: str):

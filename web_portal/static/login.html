@@ -2,7 +2,11 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="theme-color" content="#0d47a1" />
   <title>PHINS Portal — Login</title>
   <link rel="stylesheet" href="/styles.css">
   <style>
@@ -11,88 +15,149 @@
       align-items: center;
       justify-content: center;
       min-height: 100vh;
-      background: linear-gradient(135deg, #005b96 0%, #003d66 100%);
+      background: linear-gradient(135deg, #0d47a1 0%, #1565c0 50%, #1976d2 100%);
+      position: relative;
+    }
+    body::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23ffffff' fill-opacity='0.03'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
+      opacity: 0.5;
+      pointer-events: none;
     }
     .login-container {
       width: 100%;
       max-width: 450px;
       padding: 16px;
+      position: relative;
+      z-index: 1;
     }
     .login-card {
       background: #fff;
-      border-radius: 16px;
-      padding: 48px;
-      box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+      border-radius: 20px;
+      padding: 52px;
+      box-shadow: 0 16px 48px rgba(13, 71, 161, 0.3);
+      border: 1px solid rgba(255,255,255,0.2);
     }
     .login-header {
       text-align: center;
-      margin-bottom: 32px;
+      margin-bottom: 36px;
     }
     .login-logo {
-      font-size: 3rem;
+      font-size: 3.5rem;
       margin-bottom: 16px;
     }
     .login-title {
-      color: var(--brand);
+      color: #0d47a1;
       margin: 0 0 8px 0;
-      font-size: 1.8rem;
+      font-size: 1.9rem;
+      font-weight: 700;
+      letter-spacing: -0.5px;
     }
     .login-subtitle {
-      color: var(--muted);
+      color: #546e7a;
       margin: 0;
       font-size: 0.95rem;
     }
     .form-group {
-      margin-bottom: 20px;
+      margin-bottom: 22px;
     }
     .form-group label {
       display: block;
       margin-bottom: 8px;
       font-weight: 600;
-      color: var(--brand);
+      color: #0d47a1;
+      font-size: 0.95rem;
     }
     .form-group input {
       width: 100%;
-      padding: 14px;
-      border: 2px solid var(--border);
-      border-radius: 8px;
+      padding: 14px 16px;
+      border: 2px solid #e3f2fd;
+      border-radius: 10px;
       font-size: 1rem;
-      transition: border-color 0.3s;
+      transition: all 0.3s;
+      background: #fafcff;
     }
     .form-group input:focus {
       outline: none;
-      border-color: var(--brand);
+      border-color: #1565c0;
+      box-shadow: 0 0 0 4px rgba(21, 101, 192, 0.1);
+      background: #fff;
     }
     .btn-submit {
       width: 100%;
-      padding: 14px;
-      background: var(--brand);
+      padding: 16px;
+      background: linear-gradient(135deg, #1565c0 0%, #1976d2 100%);
       color: #fff;
       border: none;
-      border-radius: 8px;
+      border-radius: 10px;
       font-size: 1.1rem;
       font-weight: 600;
       cursor: pointer;
-      transition: background 0.3s;
+      transition: all 0.3s;
+      box-shadow: 0 4px 15px rgba(21, 101, 192, 0.3);
     }
     .btn-submit:hover {
-      background: var(--brand-dark);
+      background: linear-gradient(135deg, #0d47a1 0%, #1565c0 100%);
+      transform: translateY(-2px);
+      box-shadow: 0 6px 20px rgba(21, 101, 192, 0.4);
     }
     .back-link {
       display: block;
       text-align: center;
       margin-top: 24px;
-      color: var(--brand);
+      color: #1565c0;
       text-decoration: none;
       font-weight: 600;
+      transition: all 0.3s;
     }
     .back-link:hover {
-      opacity: 0.8;
+      color: #0d47a1;
     }
     #login-msg {
       margin-top: 16px;
       text-align: center;
       font-weight: 600;
+    }
+    
+    /* Mobile Responsive */
+    @media screen and (max-width: 480px) {
+      .login-container {
+        padding: 12px;
+      }
+      .login-card {
+        padding: 28px 20px;
+        border-radius: 16px;
+      }
+      .login-logo {
+        font-size: 2.5rem;
+      }
+      .login-title {
+        font-size: 1.5rem;
+      }
+      .login-subtitle {
+        font-size: 0.9rem;
+      }
+      .form-group input {
+        padding: 12px 14px;
+        font-size: 16px; /* Prevents iOS zoom */
+      }
+      .btn-login-submit {
+        padding: 14px;
+        font-size: 1rem;
+      }
+    }
+    
+    /* Safe area for notched phones */
+    @supports (padding: max(0px)) {
+      .login-container {
+        padding-top: max(16px, env(safe-area-inset-top));
+        padding-bottom: max(16px, env(safe-area-inset-bottom));
+      }
     }
   </style>
 </head>

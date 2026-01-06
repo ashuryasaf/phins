@@ -53,7 +53,15 @@ class BillStatus(str, enum.Enum):
 
 
 class Customer(Base):
-    """Customer master table"""
+    """
+    Customer master table (unified entity for policyholders)
+    
+    ARCHITECTURE NOTE:
+    - Customers are policyholders who interact via the client portal
+    - Users (separate table) are internal staff (admin, underwriter, claims, accountant)
+    - Customer includes auth fields for direct portal authentication
+    - This eliminates the need for dual Customer+User records for policyholders
+    """
     __tablename__ = 'customers'
     
     id = Column(String(50), primary_key=True)
@@ -70,6 +78,14 @@ class Customer(Base):
     state = Column(String(100))
     zip = Column(String(20))
     occupation = Column(String(100))
+    
+    # Authentication fields (unified - no separate User record needed for customers)
+    password_hash = Column(String(255), nullable=True)  # Nullable for legacy/migration
+    password_salt = Column(String(255), nullable=True)
+    portal_active = Column(Boolean, default=True)  # Can login to customer portal
+    last_login = Column(DateTime, nullable=True)
+    
+    # Timestamps
     created_date = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_date = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
@@ -77,9 +93,9 @@ class Customer(Base):
     policies = relationship("Policy", back_populates="customer", cascade="all, delete-orphan")
     claims = relationship("Claim", back_populates="customer", cascade="all, delete-orphan")
     
-    def to_dict(self):
+    def to_dict(self, include_auth: bool = False):
         """Convert model to dictionary"""
-        return {
+        data = {
             'id': self.id,
             'name': self.name,
             'first_name': self.first_name,
@@ -94,9 +110,20 @@ class Customer(Base):
             'state': self.state,
             'zip': self.zip,
             'occupation': self.occupation,
+            'portal_active': self.portal_active,
+            'last_login': self.last_login.isoformat() if self.last_login else None,
             'created_date': self.created_date.isoformat() if self.created_date else None,
             'updated_date': self.updated_date.isoformat() if self.updated_date else None
         }
+        # Only include auth fields if explicitly requested (internal use)
+        if include_auth:
+            data['password_hash'] = self.password_hash
+            data['password_salt'] = self.password_salt
+        return data
+    
+    def has_portal_access(self) -> bool:
+        """Check if customer has portal login configured"""
+        return bool(self.password_hash and self.password_salt and self.portal_active)
 
 
 class Policy(Base):
@@ -122,12 +149,28 @@ class Policy(Base):
     # Legacy field mappings for compatibility
     uw_status = Column(String(50))  # Maps to underwriting status
     
+    # JSON fields stored as text
+    billing = Column(Text)  # JSON string for billing configuration
+    health_wallet = Column(Text)  # JSON string for health wallet config
+    
     # Relationships
     customer = relationship("Customer", back_populates="policies")
     claims = relationship("Claim", back_populates="policy", cascade="all, delete-orphan")
     
     def to_dict(self):
         """Convert model to dictionary"""
+        import json as json_module
+        
+        def safe_json_loads(val):
+            if val is None:
+                return {}
+            if isinstance(val, dict):
+                return val
+            try:
+                return json_module.loads(val)
+            except:
+                return {}
+        
         return {
             'id': self.id,
             'customer_id': self.customer_id,
@@ -144,7 +187,9 @@ class Policy(Base):
             'approval_date': self.approval_date.isoformat() if self.approval_date else None,
             'created_date': self.created_date.isoformat() if self.created_date else None,
             'updated_date': self.updated_date.isoformat() if self.updated_date else None,
-            'uw_status': self.uw_status
+            'uw_status': self.uw_status,
+            'billing': safe_json_loads(self.billing),
+            'health_wallet': safe_json_loads(self.health_wallet)
         }
 
 
@@ -167,12 +212,30 @@ class Claim(Base):
     created_date = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_date = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
+    # Extended claim fields for full claim filing flow
+    incident_date = Column(String(50))  # Date of incident
+    provider = Column(String(200))  # Healthcare/Service provider
+    payment_destination = Column(String(50), default='health_wallet')  # Where to send payment
+    bank_details = Column(Text)  # JSON string for bank details if bank_transfer
+    files_metadata = Column(Text)  # JSON string for file attachments metadata
+    files_count = Column(Integer, default=0)  # Number of attached files
+    nft_token_id = Column(String(100))  # NFT ledger token ID
+    ledger_tx_id = Column(String(100))  # Transaction ledger ID
+    approved_by = Column(String(100))  # Who approved the claim
+    approval_notes = Column(Text)  # Notes from approver
+    rejected_by = Column(String(100))  # Who rejected the claim
+    processed_by = Column(String(100))  # Who processed the payment
+    payment_method = Column(String(50))  # How payment was made
+    payment_reference = Column(String(100))  # Payment reference number
+    paid_amount = Column(Float)  # Actual amount paid
+    
     # Relationships
     policy = relationship("Policy", back_populates="claims")
     customer = relationship("Customer", back_populates="claims")
     
     def to_dict(self):
         """Convert model to dictionary"""
+        import json as _json
         return {
             'id': self.id,
             'policy_id': self.policy_id,
@@ -187,7 +250,22 @@ class Claim(Base):
             'payment_date': self.payment_date.isoformat() if self.payment_date else None,
             'rejection_reason': self.rejection_reason,
             'created_date': self.created_date.isoformat() if self.created_date else None,
-            'updated_date': self.updated_date.isoformat() if self.updated_date else None
+            'updated_date': self.updated_date.isoformat() if self.updated_date else None,
+            'incident_date': self.incident_date,
+            'provider': self.provider,
+            'payment_destination': self.payment_destination,
+            'bank_details': _json.loads(self.bank_details) if self.bank_details else None,
+            'files': _json.loads(self.files_metadata) if self.files_metadata else [],
+            'files_count': self.files_count or 0,
+            'nft_token_id': self.nft_token_id,
+            'ledger_tx_id': self.ledger_tx_id,
+            'approved_by': self.approved_by,
+            'approval_notes': self.approval_notes,
+            'rejected_by': self.rejected_by,
+            'processed_by': self.processed_by,
+            'payment_method': self.payment_method,
+            'payment_reference': self.payment_reference,
+            'paid_amount': self.paid_amount
         }
 
 
@@ -198,11 +276,28 @@ class UnderwritingApplication(Base):
     id = Column(String(50), primary_key=True)
     policy_id = Column(String(50), index=True)
     customer_id = Column(String(50), index=True)
+    
+    # Customer info (denormalized for dashboard display)
+    customer_name = Column(String(200))
+    customer_email = Column(String(254))
+    
+    # Policy details
+    policy_type = Column(String(50))
+    coverage_amount = Column(Float)
+    age = Column(Integer)
+    risk_score = Column(String(20))  # low, medium, high, very_high (alias for risk_assessment)
+    
     status = Column(String(50), default='pending')
     risk_assessment = Column(String(20))  # low, medium, high, very_high
     medical_exam_required = Column(Boolean, default=False)
     additional_documents_required = Column(Boolean, default=False)
     notes = Column(Text)
+    
+    # JSON fields stored as text
+    questionnaire_responses = Column(Text)  # JSON string
+    payment_setup = Column(Text)  # JSON string
+    health_wallet = Column(Text)  # JSON string
+    
     submitted_date = Column(DateTime, default=datetime.utcnow, nullable=False)
     decision_date = Column(DateTime)
     decided_by = Column(String(100))  # Username of underwriter
@@ -211,15 +306,36 @@ class UnderwritingApplication(Base):
     
     def to_dict(self):
         """Convert model to dictionary"""
+        import json as json_module
+        
+        def safe_json_loads(val):
+            if val is None:
+                return {}
+            if isinstance(val, dict):
+                return val
+            try:
+                return json_module.loads(val)
+            except:
+                return {}
+        
         return {
             'id': self.id,
             'policy_id': self.policy_id,
             'customer_id': self.customer_id,
+            'customer_name': self.customer_name,
+            'customer_email': self.customer_email,
+            'policy_type': self.policy_type,
+            'coverage_amount': self.coverage_amount,
+            'age': self.age,
+            'risk_score': self.risk_score,
             'status': self.status,
             'risk_assessment': self.risk_assessment,
             'medical_exam_required': self.medical_exam_required,
             'additional_documents_required': self.additional_documents_required,
             'notes': self.notes,
+            'questionnaire_responses': safe_json_loads(self.questionnaire_responses),
+            'payment_setup': safe_json_loads(self.payment_setup),
+            'health_wallet': safe_json_loads(self.health_wallet),
             'submitted_date': self.submitted_date.isoformat() if self.submitted_date else None,
             'decision_date': self.decision_date.isoformat() if self.decision_date else None,
             'decided_by': self.decided_by,
@@ -266,18 +382,40 @@ class Bill(Base):
 
 
 class User(Base):
-    """User accounts table (for staff/admin access)"""
+    """
+    User accounts table (INTERNAL STAFF ONLY)
+    
+    ARCHITECTURE NOTE:
+    - Users are INTERNAL STAFF: admin, underwriter, claims_adjuster, accountant
+    - Customers (policyholders) use the Customer table with embedded auth
+    - This separation ensures clean role boundaries:
+      * Staff → User table → Admin portal
+      * Customers → Customer table → Client portal
+    
+    VALID ROLES:
+    - admin: Full system access
+    - underwriter: Review/approve applications
+    - claims_adjuster: Process claims
+    - accountant: Billing and payments
+    """
     __tablename__ = 'users'
     
     username = Column(String(100), primary_key=True)
     password_hash = Column(String(255), nullable=False)
     password_salt = Column(String(255), nullable=False)
-    role = Column(String(50), nullable=False)  # admin, underwriter, claims, accountant, etc.
+    role = Column(String(50), nullable=False)  # admin, underwriter, claims_adjuster, accountant, customer
     name = Column(String(200))
     email = Column(String(254))
     active = Column(Boolean, default=True)
     created_date = Column(DateTime, default=datetime.utcnow, nullable=False)
     last_login = Column(DateTime)
+    
+    # Customer linkage (for role='customer' users)
+    customer_id = Column(String(50), nullable=True, index=True)
+    
+    # Staff-specific fields
+    department = Column(String(100), nullable=True)
+    employee_id = Column(String(50), nullable=True)
     
     def to_dict(self):
         """Convert model to dictionary (without sensitive fields)"""
@@ -287,9 +425,15 @@ class User(Base):
             'name': self.name,
             'email': self.email,
             'active': self.active,
+            'department': self.department,
+            'employee_id': self.employee_id,
             'created_date': self.created_date.isoformat() if self.created_date else None,
             'last_login': self.last_login.isoformat() if self.last_login else None
         }
+    
+    def is_staff(self) -> bool:
+        """Check if user is internal staff"""
+        return self.role in ('admin', 'underwriter', 'claims_adjuster', 'accountant')
 
 
 class Session(Base):
@@ -299,6 +443,7 @@ class Session(Base):
     token = Column(String(100), primary_key=True)
     username = Column(String(100), index=True)
     customer_id = Column(String(50), index=True)
+    role = Column(String(50), index=True)  # admin, underwriter, claims, accountant, customer
     ip_address = Column(String(45))  # Support IPv6
     expires = Column(DateTime, nullable=False, index=True)
     created_date = Column(DateTime, default=datetime.utcnow, nullable=False)
@@ -309,6 +454,7 @@ class Session(Base):
             'token': self.token,
             'username': self.username,
             'customer_id': self.customer_id,
+            'role': self.role,
             'ip_address': self.ip_address,
             'expires': self.expires.isoformat() if self.expires else None,
             'created_date': self.created_date.isoformat() if self.created_date else None
@@ -418,7 +564,7 @@ class TokenRegistry(Base):
     contract_address = Column(String(200), nullable=True)  # for tokens/NFTs (optional)
     decimals = Column(Integer, nullable=True)
     enabled = Column(Boolean, default=True, nullable=False, index=True)
-    metadata = Column(Text, nullable=True)  # JSON string
+    token_metadata = Column(Text, nullable=True)  # JSON string (renamed from 'metadata' - reserved in SQLAlchemy)
     classification = Column(String(50), default=DataClassification.INTERNAL.value, nullable=False, index=True)
     created_by = Column(String(100), index=True)
     created_date = Column(DateTime, default=datetime.utcnow, nullable=False)
@@ -433,7 +579,7 @@ class TokenRegistry(Base):
             "contract_address": self.contract_address,
             "decimals": self.decimals,
             "enabled": self.enabled,
-            "metadata": self.metadata,
+            "token_metadata": self.token_metadata,
             "classification": self.classification,
             "created_by": self.created_by,
             "created_date": self.created_date.isoformat() if self.created_date else None,

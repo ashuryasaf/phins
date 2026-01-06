@@ -3,7 +3,10 @@
 <head>
   <meta charset="utf-8">
   <title>PHINS – Billing & Payments</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="theme-color" content="#1a1f36">
   <link rel="stylesheet" href="/styles.css">
   <style>
     .transaction-list { max-height: 400px; overflow-y: auto; margin: 1rem 0; }
@@ -21,7 +24,7 @@
       font-size: 0.85rem;
       font-weight: bold;
     }
-    .status-success { background-color: #d4edda; color: #155724; }
+    .status-success, .status-completed { background-color: #d4edda; color: #155724; }
     .status-failed { background-color: #f8d7da; color: #721c24; }
     .status-pending { background-color: #fff3cd; color: #856404; }
     .alert-box {
@@ -64,23 +67,383 @@
     }
     .btn-refund { background-color: #ffc107; color: #000; }
     .btn-refund:hover { background-color: #e0a800; }
+    
+    /* Payment Method Selector */
+    .payment-methods-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: 1rem;
+      margin: 1rem 0;
+    }
+    .payment-method-card {
+      border: 2px solid #ddd;
+      border-radius: 8px;
+      padding: 1rem;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+    .payment-method-card:hover {
+      border-color: #667eea;
+      box-shadow: 0 2px 8px rgba(102, 126, 234, 0.2);
+    }
+    .payment-method-card.selected {
+      border-color: #667eea;
+      background: linear-gradient(135deg, #f0f4ff 0%, #e8ecff 100%);
+    }
+    .payment-method-card .icon {
+      font-size: 2rem;
+      margin-bottom: 0.5rem;
+    }
+    .payment-method-card .name {
+      font-weight: 600;
+      color: #333;
+    }
+    .payment-method-card .badge {
+      font-size: 0.7rem;
+      background: #28a745;
+      color: white;
+      padding: 2px 6px;
+      border-radius: 10px;
+      margin-top: 0.25rem;
+      display: inline-block;
+    }
+    .payment-method-card .badge.test {
+      background: #ffc107;
+      color: #333;
+    }
+    
+    /* Payment Method Forms */
+    .payment-form-section {
+      display: none;
+      animation: fadeIn 0.3s ease;
+    }
+    .payment-form-section.active {
+      display: block;
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(-10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    
+    /* Crypto Payment */
+    .crypto-address {
+      font-family: monospace;
+      background: #f5f5f5;
+      padding: 1rem;
+      border-radius: 4px;
+      word-break: break-all;
+      margin: 0.5rem 0;
+    }
+    .qr-placeholder {
+      width: 200px;
+      height: 200px;
+      background: #f0f0f0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 1rem auto;
+      border-radius: 8px;
+      font-size: 0.9rem;
+      color: #666;
+    }
+    
+    /* Test Mode Banner */
+    .test-mode-banner {
+      background: linear-gradient(90deg, #ffc107 0%, #ff9800 100%);
+      color: #333;
+      padding: 0.75rem 1rem;
+      border-radius: 8px;
+      margin-bottom: 1rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .test-mode-banner .icon { font-size: 1.5rem; }
+    
+    /* Tabs */
+    .tabs {
+      display: flex;
+      border-bottom: 2px solid #ddd;
+      margin-bottom: 1rem;
+    }
+    .tab {
+      padding: 0.75rem 1.5rem;
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      margin-bottom: -2px;
+      transition: all 0.2s;
+    }
+    .tab:hover {
+      background: #f5f5f5;
+    }
+    .tab.active {
+      border-bottom-color: #667eea;
+      color: #667eea;
+      font-weight: 600;
+    }
+    .tab-content {
+      display: none;
+    }
+    .tab-content.active {
+      display: block;
+    }
+    /* PHINS Unified Header */
+    .phins-header {
+      background: linear-gradient(135deg, #1a1f36 0%, #2d3561 50%, #1a1f36 100%);
+      border-bottom: 1px solid rgba(255,255,255,0.1);
+      padding: 0;
+      position: sticky;
+      top: 0;
+      z-index: 1000;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+    }
+    .phins-header-inner {
+      max-width: 1600px;
+      margin: 0 auto;
+      padding: 0.75rem 2rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .phins-logo {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      text-decoration: none;
+    }
+    .phins-logo-icon {
+      width: 44px;
+      height: 44px;
+      background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.5rem;
+      box-shadow: 0 4px 15px rgba(79, 172, 254, 0.4);
+    }
+    .phins-logo-text {
+      font-size: 1.75rem;
+      font-weight: 700;
+      background: linear-gradient(135deg, #4facfe 0%, #00f2fe 50%, #43e97b 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    .phins-nav {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .phins-nav a {
+      padding: 0.5rem 1rem;
+      color: rgba(255,255,255,0.8);
+      text-decoration: none;
+      border-radius: 8px;
+      font-size: 0.9rem;
+      font-weight: 500;
+      transition: all 0.2s ease;
+    }
+    .phins-nav a:hover {
+      background: rgba(255,255,255,0.1);
+      color: white;
+    }
+    .phins-nav a.active {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+    }
+    .phins-nav .btn-logout {
+      background: linear-gradient(135deg, #ff6b6b 0%, #ee5a5a 100%);
+      color: white;
+      padding: 0.5rem 1rem;
+      border-radius: 8px;
+      font-weight: 600;
+    }
+    
+    /* Mobile Menu Button */
+    .mobile-menu-btn {
+      display: none;
+      background: rgba(255,255,255,0.15);
+      border: 1px solid rgba(255,255,255,0.3);
+      color: white;
+      padding: 10px 14px;
+      border-radius: 8px;
+      font-size: 1.5rem;
+      cursor: pointer;
+      z-index: 1001;
+    }
+    
+    /* Mobile Responsive - Portrait and Landscape */
+    @media screen and (max-width: 1024px) {
+      .mobile-menu-btn { display: block; }
+      .phins-nav {
+        display: none;
+        position: fixed;
+        top: 60px;
+        left: 0;
+        right: 0;
+        background: linear-gradient(135deg, #1a1f36 0%, #2d3561 100%);
+        flex-direction: column;
+        padding: 16px;
+        gap: 8px;
+        box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+        z-index: 999;
+        max-height: calc(100vh - 60px);
+        overflow-y: auto;
+      }
+      .phins-nav.open { display: flex !important; }
+      .phins-nav a { 
+        width: 100%; 
+        text-align: center; 
+        padding: 14px 16px; 
+        font-size: 1.1rem;
+        border-radius: 8px;
+        background: rgba(255,255,255,0.05);
+      }
+      .phins-nav a:hover, .phins-nav a.active {
+        background: rgba(255,255,255,0.2);
+      }
+      .phins-nav .btn-logout { margin-top: 8px; }
+    }
+    @media screen and (max-width: 768px) {
+      .phins-header-inner { padding: 0.5rem 1rem; }
+      .phins-logo-icon { width: 36px; height: 36px; font-size: 1.2rem; }
+      .phins-logo-text { font-size: 1.3rem; }
+      .page-title-bar { padding: 16px 1rem; }
+      .page-title-bar h1 { font-size: 1.2rem; }
+      main { padding: 12px; }
+      .stats-grid { grid-template-columns: repeat(2, 1fr); gap: 10px; }
+      .stat-card { padding: 16px; }
+      .stat-value { font-size: 1.5rem; }
+      .section { padding: 16px; margin-bottom: 16px; }
+    }
+    @media screen and (max-width: 480px) {
+      .stats-grid { grid-template-columns: 1fr; }
+      .phins-logo-text { display: none; }
+    }
+    
+    body {
+      background: linear-gradient(180deg, #f0f4f8 0%, #e2e8f0 100%);
+      min-height: 100vh;
+      margin: 0;
+    }
+    .page-title-bar {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      padding: 20px 2rem;
+      margin-bottom: 24px;
+    }
+    .page-title-bar h1 {
+      margin: 0;
+      font-size: 1.5rem;
+    }
   </style>
 </head>
 <body>
-  <header>
-    <h1>💳 Billing & Payment Management</h1>
-    <nav>
-      <a href="/admin.html">Admin Dashboard</a>
-      <a href="/dashboard.html">Customer Portal</a>
-      <a href="/login.html">Logout</a>
-    </nav>
+  <header class="phins-header">
+    <div class="phins-header-inner">
+      <a href="/admin.html" class="phins-logo">
+        <div class="phins-logo-icon">🛡️</div>
+        <span class="phins-logo-text">PHINS</span>
+      </a>
+      <button class="mobile-menu-btn" onclick="toggleMobileMenu()">☰</button>
+      <nav class="phins-nav" id="mobile-nav">
+        <a href="/admin.html">Admin</a>
+        <a href="/underwriter-dashboard.html">🔍 Underwriting</a>
+        <a href="/billing.html" class="active">💳 Billing</a>
+        <a href="/accountant-dashboard.html">💰 Accounting</a>
+        <a href="/savings-portfolio.html">📈 Investments</a>
+        <a href="/login.html" class="btn-logout">Logout</a>
+      </nav>
+    </div>
   </header>
+  <script>
+    function toggleMobileMenu() {
+      document.getElementById('mobile-nav').classList.toggle('open');
+    }
+  </script>
+  <div class="page-title-bar">
+    <h1>💳 Billing & Payment Management</h1>
+  </div>
 
   <main>
+    <!-- Test Mode Banner -->
+    <div class="test-mode-banner">
+      <span class="icon">🧪</span>
+      <div>
+        <strong>TEST MODE ENABLED</strong> - Use test card numbers and sandbox accounts. No real charges will be made.
+      </div>
+    </div>
+
     <!-- Statistics Overview -->
     <section class="card">
-      <h2>Payment Statistics</h2>
+      <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 15px;">
+        <h2 style="margin: 0;">Payment Statistics</h2>
+        <div style="display: flex; gap: 8px;">
+          <button class="btn btn-small" onclick="exportBillingStats('csv')" title="Export Statistics as CSV">📊 CSV</button>
+          <button class="btn btn-small" onclick="exportBillingStats('pdf')" title="Export Statistics as PDF">📄 PDF</button>
+        </div>
+      </div>
       <div class="stats-grid" id="stats-grid"></div>
+    </section>
+
+    <!-- Payment Methods Section -->
+    <section class="card">
+      <h2>💳 Available Payment Methods</h2>
+      <p style="color: #666; margin-bottom: 1rem;">Click a payment method to see test credentials and make a test payment.</p>
+      
+      <div class="payment-methods-grid" id="payment-methods-grid">
+        <!-- Dynamically populated -->
+      </div>
+      
+      <div id="test-credentials" style="margin-top: 1rem; display: none;">
+        <h4>📝 Test Credentials</h4>
+        <div id="test-credentials-content"></div>
+      </div>
+    </section>
+
+    <!-- Marketplace Transactions Section -->
+    <section class="card">
+      <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 10px;">
+        <div>
+          <h2 style="margin: 0 0 5px 0;">🛒 Marketplace & Service Transactions</h2>
+          <p style="color: #666; margin: 0;">Health services, medical products, and NFT-verified transactions</p>
+        </div>
+        <div style="display: flex; gap: 8px;">
+          <button class="btn btn-small" onclick="exportMarketplace('csv')" title="Export Marketplace as CSV">📊 CSV</button>
+          <button class="btn btn-small" onclick="exportMarketplace('pdf')" title="Export Marketplace as PDF">📄 PDF</button>
+        </div>
+      </div>
+      
+      <div class="stats-grid" style="margin-bottom: 1.5rem;">
+        <div class="stat-card" style="background: linear-gradient(135deg, #28a745 0%, #20c997 100%);">
+          <div class="stat-label">Total Volume</div>
+          <div class="stat-value" id="marketplace-volume">$0</div>
+        </div>
+        <div class="stat-card" style="background: linear-gradient(135deg, #17a2b8 0%, #138496 100%);">
+          <div class="stat-label">Insurance Covered</div>
+          <div class="stat-value" id="marketplace-insurance">$0</div>
+        </div>
+        <div class="stat-card" style="background: linear-gradient(135deg, #ffc107 0%, #e0a800 100%);">
+          <div class="stat-label">Pending Approvals</div>
+          <div class="stat-value" id="marketplace-pending">0</div>
+        </div>
+        <div class="stat-card" style="background: linear-gradient(135deg, #6f42c1 0%, #5a32a3 100%);">
+          <div class="stat-label">NFTs Issued</div>
+          <div class="stat-value" id="marketplace-nfts">0</div>
+        </div>
+      </div>
+      
+      <div class="tabs">
+        <div class="tab active" onclick="showMarketplaceTab('all')">📋 All Transactions</div>
+        <div class="tab" onclick="showMarketplaceTab('pending')">⏳ Pending Approvals</div>
+        <div class="tab" onclick="showMarketplaceTab('services')">🏥 Services</div>
+      </div>
+      
+      <div class="transaction-list" id="marketplace-transactions">
+        <p class="muted">Loading marketplace transactions...</p>
+      </div>
     </section>
 
     <!-- Fraud Alerts -->
@@ -93,52 +456,197 @@
 
     <!-- Recent Transactions -->
     <section class="card">
-      <h2>Recent Transactions</h2>
+      <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 15px;">
+        <h2 style="margin: 0;">Recent Transactions</h2>
+        <div style="display: flex; gap: 8px;">
+          <button class="btn btn-small" onclick="exportTransactions('csv')" title="Export Transactions as CSV">📊 Export CSV</button>
+          <button class="btn btn-small" onclick="exportTransactions('pdf')" title="Export Transactions as PDF">📄 Export PDF</button>
+          <button class="btn btn-small" onclick="printTransactions()" title="Print Transactions">🖨️ Print</button>
+        </div>
+      </div>
       <div class="transaction-list" id="transaction-list">
         <p class="muted">Loading transactions...</p>
       </div>
     </section>
 
+    <!-- Transaction Ledger Section -->
+    <section class="card">
+      <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 15px;">
+        <div>
+          <h2 style="margin: 0 0 5px 0;">📒 Transaction Ledger</h2>
+          <p style="color: #666; margin: 0;">Master ledger with blockchain/NFT verification</p>
+        </div>
+        <div style="display: flex; gap: 8px;">
+          <button class="btn btn-small" onclick="refreshLedger()" title="Refresh Ledger">🔄 Refresh</button>
+          <button class="btn btn-small" onclick="validateLedger()" title="Validate Integrity">✅ Validate</button>
+          <button class="btn btn-small" onclick="exportLedger('csv')" title="Export Ledger as CSV">📊 CSV</button>
+          <button class="btn btn-small" onclick="exportLedger('pdf')" title="Export Ledger as PDF">📄 PDF</button>
+        </div>
+      </div>
+      
+      <div class="stats-grid" style="margin-bottom: 1.5rem;">
+        <div class="stat-card" style="background: linear-gradient(135deg, #4CAF50 0%, #2E7D32 100%);">
+          <div class="stat-label">Total Entries</div>
+          <div class="stat-value" id="ledger-total">0</div>
+        </div>
+        <div class="stat-card" style="background: linear-gradient(135deg, #2196F3 0%, #1565C0 100%);">
+          <div class="stat-label">NFT Verified</div>
+          <div class="stat-value" id="ledger-nft">0</div>
+        </div>
+        <div class="stat-card" style="background: linear-gradient(135deg, #9C27B0 0%, #6A1B9A 100%);">
+          <div class="stat-label">Integrity Status</div>
+          <div class="stat-value" id="ledger-integrity" style="font-size: 1.2rem;">-</div>
+        </div>
+      </div>
+      
+      <div class="tabs">
+        <div class="tab active" onclick="filterLedger('all')">📋 All</div>
+        <div class="tab" onclick="filterLedger('policy')">✅ Policy Approvals</div>
+        <div class="tab" onclick="filterLedger('billing')">💳 Billing</div>
+        <div class="tab" onclick="filterLedger('claim')">📄 Claims</div>
+        <div class="tab" onclick="filterLedger('pipeline')">🔄 Pipeline</div>
+      </div>
+      
+      <div class="transaction-list" id="ledger-list">
+        <p class="muted">Loading ledger entries...</p>
+      </div>
+    </section>
+
     <!-- Payment Processing -->
     <section class="card">
-      <h2>Process Payment</h2>
+      <h2>🔐 Secure Payment Processing</h2>
+      <div style="background: #e7f3ff; border-left: 4px solid #667eea; padding: 12px 16px; margin-bottom: 20px; border-radius: 4px;">
+        <strong>🛡️ PCI DSS Compliant</strong> - Your card data is encrypted and never stored in plain text.
+      </div>
+      
       <form id="payment-form">
-        <label>Customer ID:
-          <input type="text" name="customer_id" required placeholder="CUST-12345">
-        </label>
-        
-        <label>Policy ID:
-          <input type="text" name="policy_id" required placeholder="POL-20251212-1234">
-        </label>
-        
-        <label>Amount (USD):
-          <input type="number" name="amount" step="0.01" min="0" required placeholder="250.00">
-        </label>
-        
-        <label>Card Number:
-          <input type="text" name="card_number" required placeholder="4532015112830366" maxlength="19">
-        </label>
-        
-        <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 1rem;">
-          <label>Expiry (MM/YYYY):
-            <input type="text" name="expiry" required placeholder="12/2026" pattern="\d{2}/\d{4}">
+        <!-- Policy & Customer Information -->
+        <fieldset style="border: 1px solid #ddd; padding: 1rem; border-radius: 8px; margin-bottom: 1rem;">
+          <legend style="font-weight: bold; padding: 0 0.5rem;">📋 Policy Information</legend>
+          
+          <label>Customer ID:
+            <input type="text" name="customer_id" id="customer_id" required placeholder="CUST-12345">
           </label>
-          <label>CVV:
-            <input type="text" name="cvv" required placeholder="123" maxlength="4">
+          
+          <label>Policy ID:
+            <input type="text" name="policy_id" id="policy_id" required placeholder="POL-20251212-1234">
           </label>
-        </div>
+          
+          <div id="premium-info" style="display: none; background: #f8f9fa; padding: 1rem; border-radius: 4px; margin-top: 0.5rem;">
+            <strong>Premium Details:</strong>
+            <div id="premium-details"></div>
+          </div>
+        </fieldset>
         
-        <label>Payment Type:
-          <select name="payment_type">
-            <option value="premium">Monthly Premium</option>
-            <option value="down_payment">Down Payment</option>
-            <option value="deductible">Deductible</option>
-            <option value="other">Other</option>
-          </select>
-        </label>
+        <!-- Payment Amount & Type -->
+        <fieldset style="border: 1px solid #ddd; padding: 1rem; border-radius: 8px; margin-bottom: 1rem;">
+          <legend style="font-weight: bold; padding: 0 0.5rem;">💵 Payment Details</legend>
+          
+          <label>Payment Type:
+            <select name="payment_type" id="payment_type" required>
+              <option value="">-- Select Payment Type --</option>
+              <option value="premium">Monthly Premium</option>
+              <option value="quarterly_premium">Quarterly Premium</option>
+              <option value="annual_premium">Annual Premium</option>
+              <option value="down_payment">Initial Down Payment</option>
+              <option value="claim_deductible">Claim Deductible</option>
+              <option value="reinstatement_fee">Policy Reinstatement Fee</option>
+              <option value="late_fee">Late Payment Fee</option>
+              <option value="other">Other</option>
+            </select>
+          </label>
+          
+          <label>Amount (USD):
+            <input type="number" name="amount" id="payment_amount" step="0.01" min="0.01" required placeholder="250.00">
+          </label>
+          
+          <div id="amount-validation" style="font-size: 0.85rem; margin-top: 0.25rem;"></div>
+        </fieldset>
         
-        <button type="submit" class="btn btn-primary">💰 Process Payment</button>
-        <p id="payment-result" class="muted"></p>
+        <!-- Card Information with Real-time Validation -->
+        <fieldset style="border: 1px solid #ddd; padding: 1rem; border-radius: 8px; margin-bottom: 1rem;">
+          <legend style="font-weight: bold; padding: 0 0.5rem;">💳 Card Information</legend>
+          
+          <label>Card Number (16 digits):
+            <div style="position: relative;">
+              <input type="text" name="card_number" id="card_number" required 
+                     placeholder="5425 2334 3010 9903" 
+                     maxlength="23" 
+                     autocomplete="cc-number"
+                     style="padding-right: 60px;">
+              <span id="card-type-icon" style="position: absolute; right: 12px; top: 50%; transform: translateY(-50%); font-size: 1.5rem;"></span>
+            </div>
+          </label>
+          <div id="card-validation" style="font-size: 0.85rem; margin-top: 0.25rem;"></div>
+          
+          <label>Cardholder Name:
+            <input type="text" name="cardholder_name" id="cardholder_name" required 
+                   placeholder="JOHN DOE" 
+                   style="text-transform: uppercase;"
+                   autocomplete="cc-name">
+          </label>
+          
+          <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem;">
+            <label>Expiry Month:
+              <select name="expiry_month" id="expiry_month" required autocomplete="cc-exp-month">
+                <option value="">MM</option>
+                <option value="01">01 - January</option>
+                <option value="02">02 - February</option>
+                <option value="03">03 - March</option>
+                <option value="04">04 - April</option>
+                <option value="05">05 - May</option>
+                <option value="06">06 - June</option>
+                <option value="07">07 - July</option>
+                <option value="08">08 - August</option>
+                <option value="09">09 - September</option>
+                <option value="10">10 - October</option>
+                <option value="11">11 - November</option>
+                <option value="12">12 - December</option>
+              </select>
+            </label>
+            <label>Expiry Year:
+              <select name="expiry_year" id="expiry_year" required autocomplete="cc-exp-year">
+                <option value="">YYYY</option>
+              </select>
+            </label>
+            <label>CVV/CVC:
+              <input type="password" name="cvv" id="cvv" required 
+                     placeholder="***" 
+                     minlength="3" maxlength="4"
+                     autocomplete="cc-csc">
+            </label>
+          </div>
+          <div id="expiry-validation" style="font-size: 0.85rem; margin-top: 0.25rem;"></div>
+          <p style="font-size: 0.8rem; color: #666; margin-top: 0.5rem;">
+            🔒 Your CVV is never stored - it's used only for this transaction.
+          </p>
+        </fieldset>
+        
+        <!-- Insurance-Specific Confirmations -->
+        <fieldset style="border: 1px solid #ddd; padding: 1rem; border-radius: 8px; margin-bottom: 1rem;">
+          <legend style="font-weight: bold; padding: 0 0.5rem;">✅ Payment Confirmations</legend>
+          
+          <label style="display: flex; align-items: flex-start; gap: 0.5rem; margin: 0.5rem 0;">
+            <input type="checkbox" name="confirm_amount" id="confirm_amount" required style="margin-top: 3px;">
+            <span>I confirm the payment amount is correct and corresponds to my policy premium or authorized charges.</span>
+          </label>
+          
+          <label style="display: flex; align-items: flex-start; gap: 0.5rem; margin: 0.5rem 0;">
+            <input type="checkbox" name="confirm_cardholder" id="confirm_cardholder" required style="margin-top: 3px;">
+            <span>I am the authorized cardholder or have authorization to use this card for payment.</span>
+          </label>
+          
+          <label style="display: flex; align-items: flex-start; gap: 0.5rem; margin: 0.5rem 0;">
+            <input type="checkbox" name="confirm_terms" id="confirm_terms" required style="margin-top: 3px;">
+            <span>I understand that late or missed premium payments may result in policy lapse or cancellation.</span>
+          </label>
+        </fieldset>
+        
+        <button type="submit" class="btn btn-primary" id="submit-payment" style="width: 100%; padding: 1rem; font-size: 1.1rem;">
+          🔐 Process Secure Payment
+        </button>
+        
+        <div id="payment-result" style="margin-top: 1rem; padding: 1rem; border-radius: 4px; display: none;"></div>
       </form>
     </section>
 

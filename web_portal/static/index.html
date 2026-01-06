@@ -2,11 +2,147 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="theme-color" content="#0d47a1" />
+  <meta name="apple-mobile-web-app-title" content="PHINS" />
   <title>PHINS Insurance — Comprehensive Coverage & Financial Security</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/styles.css">
+  <style>
+    /* Splash Screen */
+    #splash-screen {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: linear-gradient(135deg, #0d47a1 0%, #1565c0 50%, #1976d2 100%);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 9999;
+      transition: opacity 0.5s ease, visibility 0.5s ease;
+    }
+    #splash-screen.hidden {
+      opacity: 0;
+      visibility: hidden;
+    }
+    .splash-logo {
+      width: 120px;
+      height: 120px;
+      background: linear-gradient(135deg, #42a5f5 0%, #64b5f6 100%);
+      border-radius: 30px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 4rem;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+      border: 3px solid rgba(255,255,255,0.3);
+      animation: pulse-logo 2s ease-in-out infinite;
+    }
+    .splash-text {
+      margin-top: 24px;
+      font-size: 2.5rem;
+      font-weight: 700;
+      color: white;
+      letter-spacing: 4px;
+    }
+    .splash-tagline {
+      margin-top: 8px;
+      font-size: 1rem;
+      color: rgba(255,255,255,0.8);
+      letter-spacing: 2px;
+    }
+    @keyframes pulse-logo {
+      0%, 100% { transform: scale(1); }
+      50% { transform: scale(1.05); }
+    }
+    
+    /* Mobile Responsive */
+    @media screen and (max-width: 768px) {
+      .topbar .container {
+        flex-direction: column;
+        padding: 12px;
+      }
+      .topbar .nav {
+        flex-wrap: wrap;
+        justify-content: center;
+        gap: 8px;
+        margin-top: 12px;
+      }
+      .topbar .nav a {
+        padding: 8px 12px;
+        font-size: 0.85rem;
+      }
+      .hero-content h1 {
+        font-size: 1.5rem !important;
+      }
+      .hero-subtitle {
+        font-size: 1rem !important;
+      }
+      .hero-actions {
+        flex-direction: column !important;
+        gap: 16px !important;
+      }
+      .hero-actions > div {
+        width: 100%;
+      }
+      .hero-actions .btn {
+        width: 100%;
+        padding: 14px 20px !important;
+      }
+      .section-title {
+        font-size: 1.5rem !important;
+      }
+      .product-grid {
+        grid-template-columns: 1fr !important;
+      }
+      .product-card {
+        padding: 20px !important;
+      }
+      .underwriting-grid {
+        grid-template-columns: 1fr !important;
+      }
+      .contact-grid {
+        grid-template-columns: 1fr !important;
+      }
+      .footer-content {
+        grid-template-columns: 1fr !important;
+        text-align: center;
+      }
+    }
+    
+    @media screen and (max-width: 480px) {
+      .splash-logo {
+        width: 100px;
+        height: 100px;
+        font-size: 3rem;
+      }
+      .splash-text {
+        font-size: 2rem;
+      }
+      .brand {
+        font-size: 1.2rem !important;
+      }
+      .topbar .nav .language-selector {
+        display: none;
+      }
+    }
+  </style>
 </head>
 <body>
+  <!-- Splash Screen -->
+  <div id="splash-screen">
+    <div class="splash-logo">🛡️</div>
+    <div class="splash-text">PHINS</div>
+    <div class="splash-tagline">SAFE ASSURANCE</div>
+  </div>
   <header class="topbar">
     <div class="container">
       <h1 class="brand">🛡️ PHINS Insurance</h1>
@@ -26,7 +162,7 @@
           <option value="ru">🌐 Русский</option>
           <option value="pt">🌐 Português</option>
         </select>
-        <a href="/login.html" class="btn-login">Login / Sign Up</a>
+        <a href="/login.html" class="btn-login">🔐 Secure Login</a>
       </nav>
     </div>
   </header>
@@ -35,12 +171,63 @@
   <section id="home" class="hero">
     <div class="container">
       <div class="hero-content">
-        <h1>PHINS: Specialized Disability Protection & Investment</h1>
-        <p class="hero-subtitle">Global coverage for severe permanent disabilities (ADL-based) with integrated wealth building</p>
-        <div class="hero-actions">
-          <a href="/apply.html" class="btn btn-primary">Apply Now</a>
-          <a href="/quote.html" class="btn btn-primary">Get a Quote</a>
-          <a href="/login.html" class="btn btn-secondary">Access My Account</a>
+        <h1>PHINS: One Contract. Complete Protection.</h1>
+        <p class="hero-subtitle" style="font-size: 1.25rem; max-width: 700px; margin: 0 auto;">Save • Pay • Invest • Consume • Hedge — All in one intelligent insurance contract</p>
+        
+        <!-- 5 Pillars Visual -->
+        <div style="display: flex; justify-content: center; gap: 16px; margin-top: 24px; flex-wrap: wrap;">
+          <div style="background: rgba(255,255,255,0.15); backdrop-filter: blur(10px); padding: 12px 20px; border-radius: 12px; text-align: center;">
+            <div style="font-size: 1.5rem;">💰</div>
+            <div style="font-size: 0.8rem; font-weight: 600;">SAVE</div>
+          </div>
+          <div style="background: rgba(255,255,255,0.15); backdrop-filter: blur(10px); padding: 12px 20px; border-radius: 12px; text-align: center;">
+            <div style="font-size: 1.5rem;">💳</div>
+            <div style="font-size: 0.8rem; font-weight: 600;">PAY</div>
+          </div>
+          <div style="background: rgba(255,255,255,0.15); backdrop-filter: blur(10px); padding: 12px 20px; border-radius: 12px; text-align: center;">
+            <div style="font-size: 1.5rem;">📈</div>
+            <div style="font-size: 0.8rem; font-weight: 600;">INVEST</div>
+          </div>
+          <div style="background: rgba(255,255,255,0.15); backdrop-filter: blur(10px); padding: 12px 20px; border-radius: 12px; text-align: center;">
+            <div style="font-size: 1.5rem;">🛒</div>
+            <div style="font-size: 0.8rem; font-weight: 600;">CONSUME</div>
+          </div>
+          <div style="background: rgba(255,255,255,0.15); backdrop-filter: blur(10px); padding: 12px 20px; border-radius: 12px; text-align: center;">
+            <div style="font-size: 1.5rem;">🛡️</div>
+            <div style="font-size: 0.8rem; font-weight: 600;">HEDGE</div>
+          </div>
+        </div>
+        
+        <!-- Two Clear Paths -->
+        <div class="hero-actions" style="display: flex; gap: 24px; justify-content: center; flex-wrap: wrap; margin-top: 32px;">
+          <!-- New Customer Path -->
+          <div style="text-align: center;">
+            <a href="/apply.html" class="btn btn-primary" style="font-size: 1.1rem; padding: 16px 32px; background: linear-gradient(135deg, #ff6b35 0%, #f7931e 100%); box-shadow: 0 8px 30px rgba(255, 107, 53, 0.4);">
+              🚀 Get Your PHINS Contract
+            </a>
+            <p style="margin-top: 8px; font-size: 0.85rem; color: rgba(255,255,255,0.8);">Start building wealth today</p>
+          </div>
+          
+          <!-- Existing Customer Path -->
+          <div style="text-align: center;">
+            <a href="/login.html" class="btn btn-secondary" style="font-size: 1.1rem; padding: 16px 32px; background: rgba(255,255,255,0.95); color: #0d47a1;">
+              🔐 Access My Account
+            </a>
+            <p style="margin-top: 8px; font-size: 0.85rem; color: rgba(255,255,255,0.8);">Existing policyholders</p>
+          </div>
+        </div>
+        
+        <!-- Security Badge -->
+        <div style="margin-top: 24px; display: flex; justify-content: center; gap: 16px; flex-wrap: wrap;">
+          <span style="background: rgba(255,255,255,0.15); color: white; padding: 6px 12px; border-radius: 20px; font-size: 0.8rem;">
+            🔒 256-bit SSL Encryption
+          </span>
+          <span style="background: rgba(255,255,255,0.15); color: white; padding: 6px 12px; border-radius: 20px; font-size: 0.8rem;">
+            🤖 AI-Powered Allocation
+          </span>
+          <span style="background: rgba(255,255,255,0.15); color: white; padding: 6px 12px; border-radius: 20px; font-size: 0.8rem;">
+            📊 NFT Ledger Secured
+          </span>
         </div>
       </div>
     </div>
@@ -49,36 +236,66 @@
   <!-- Products Section -->
   <section id="products" class="section">
     <div class="container">
-      <h2 class="section-title">The PHINS Solution</h2>
-      <p style="text-align:center; max-width:800px; margin:0 auto 48px; font-size:1.1rem; color:var(--muted);">A revolutionary single-contract insurance product combining severe disability protection with investment growth. Designed for global coverage with ADL-based permanent disability criteria.</p>
+      <h2 class="section-title">The PHINS Unified Contract</h2>
+      <p style="text-align:center; max-width:800px; margin:0 auto 48px; font-size:1.1rem; color:var(--muted);">One intelligent contract that combines disability protection, wealth building, medical payments, and AI-powered investments — all secured on blockchain ledgers.</p>
+      
+      <!-- 5 Pillars Explanation -->
+      <div style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 16px; margin-bottom: 48px;">
+        <div style="background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%); padding: 24px 16px; border-radius: 16px; text-align: center;">
+          <div style="font-size: 2.5rem; margin-bottom: 12px;">💰</div>
+          <h4 style="color: #0d47a1; margin: 0 0 8px 0;">SAVE</h4>
+          <p style="font-size: 0.85rem; color: #666; margin: 0;">Build wealth through automatic premium allocation to your savings pool</p>
+        </div>
+        <div style="background: linear-gradient(135deg, #e8f5e9 0%, #c8e6c9 100%); padding: 24px 16px; border-radius: 16px; text-align: center;">
+          <div style="font-size: 2.5rem; margin-bottom: 12px;">💳</div>
+          <h4 style="color: #2e7d32; margin: 0 0 8px 0;">PAY</h4>
+          <p style="font-size: 0.85rem; color: #666; margin: 0;">Use your Health Wallet for medical expenses, prescriptions, and care services</p>
+        </div>
+        <div style="background: linear-gradient(135deg, #fff3e0 0%, #ffe0b2 100%); padding: 24px 16px; border-radius: 16px; text-align: center;">
+          <div style="font-size: 2.5rem; margin-bottom: 12px;">📈</div>
+          <h4 style="color: #e65100; margin: 0 0 8px 0;">INVEST</h4>
+          <p style="font-size: 0.85rem; color: #666; margin: 0;">Grow your portfolio with index funds, bonds, crypto, and AI algo trading</p>
+        </div>
+        <div style="background: linear-gradient(135deg, #f3e5f5 0%, #e1bee7 100%); padding: 24px 16px; border-radius: 16px; text-align: center;">
+          <div style="font-size: 2.5rem; margin-bottom: 12px;">🛒</div>
+          <h4 style="color: #7b1fa2; margin: 0 0 8px 0;">CONSUME</h4>
+          <p style="font-size: 0.85rem; color: #666; margin: 0;">Access medical products, services, and equipment through our marketplace</p>
+        </div>
+        <div style="background: linear-gradient(135deg, #ffebee 0%, #ffcdd2 100%); padding: 24px 16px; border-radius: 16px; text-align: center;">
+          <div style="font-size: 2.5rem; margin-bottom: 12px;">🛡️</div>
+          <h4 style="color: #c62828; margin: 0 0 8px 0;">HEDGE</h4>
+          <p style="font-size: 0.85rem; color: #666; margin: 0;">Complete disability coverage for severe permanent impairments (ADL-based)</p>
+        </div>
+      </div>
+      
       <div class="product-grid">
         <div class="product-card" style="grid-column: 1 / -1; max-width: 900px; margin: 0 auto;">
           <div class="product-icon">🛡️</div>
-          <h3>PHINS Disability Protection & Investment Contract</h3>
-          <p style="font-size:1.05rem; margin-bottom:24px;">The only specialized insurance contract you need: combining severe permanent disability protection with wealth-building investment strategy.</p>
+          <h3>How Your PHINS Contract Works</h3>
+          <p style="font-size:1.05rem; margin-bottom:24px;">Customize your allocation between protection and savings. Your premium automatically flows through our AI-powered pipeline to optimize your financial security.</p>
           
           <div style="display:grid; grid-template-columns:1fr 1fr; gap:32px; margin:32px 0; text-align:left;">
             <div>
-              <h4 style="color:var(--brand); margin:0 0 16px 0;">🏥 Severe Disability Coverage</h4>
+              <h4 style="color:var(--brand); margin:0 0 16px 0;">🛡️ Protection Pool (Customizable %)</h4>
               <ul class="feature-list">
-                <li><strong>✓ ADL-Based Criteria:</strong> Coverage triggers when unable to perform 3+ Activities of Daily Living (ADL)</li>
-                <li><strong>✓ Permanent Disability:</strong> Protection for lifelong severe impairments</li>
-                <li><strong>✓ Global Coverage:</strong> Valid worldwide, no geographic restrictions</li>
-                <li><strong>✓ Comprehensive ADLs:</strong> Bathing, dressing, eating, toileting, transferring, continence</li>
-                <li><strong>✓ Monthly Benefits:</strong> Lifetime income replacement upon qualification</li>
-                <li><strong>✓ Lump Sum Option:</strong> One-time payment available up to full coverage amount</li>
+                <li><strong>✓ ADL-Based Disability:</strong> Coverage for inability to perform 3+ daily activities</li>
+                <li><strong>✓ Permanent Protection:</strong> Lifetime benefits for severe impairments</li>
+                <li><strong>✓ Global Coverage:</strong> Valid worldwide, no restrictions</li>
+                <li><strong>✓ Monthly Income:</strong> Replacement income when you need it most</li>
+                <li><strong>✓ Lump Sum Option:</strong> One-time payment up to full coverage</li>
+                <li><strong>✓ Family Security:</strong> Beneficiary protections included</li>
               </ul>
             </div>
             
             <div>
-              <h4 style="color:var(--brand); margin:0 0 16px 0;">📈 Investment Component</h4>
+              <h4 style="color:var(--brand); margin:0 0 16px 0;">💰 Savings & Investment Pool (Customizable %)</h4>
               <ul class="feature-list">
-                <li><strong>✓ 75% Risk Allocation:</strong> Professional portfolio management for growth</li>
-                <li><strong>✓ 25% Savings Allocation:</strong> Guaranteed returns with capital protection</li>
-                <li><strong>✓ Dual Benefits:</strong> Protection + wealth accumulation in one contract</li>
-                <li><strong>✓ Tax Advantages:</strong> Investment growth within insurance wrapper</li>
-                <li><strong>✓ Liquidity Options:</strong> Partial withdrawals available after vesting</li>
-                <li><strong>✓ Estate Planning:</strong> Beneficiary designation with bypass provisions</li>
+                <li><strong>✓ Health Wallet:</strong> Instant payments for medical expenses</li>
+                <li><strong>✓ Investment Portfolio:</strong> Index funds, bonds, and crypto</li>
+                <li><strong>✓ AI Algo Trading:</strong> Your personal automated trading bot</li>
+                <li><strong>✓ Adjustable Allocation:</strong> Change your split anytime</li>
+                <li><strong>✓ NFT Documentation:</strong> All transactions on blockchain</li>
+                <li><strong>✓ Compound Growth:</strong> AI-optimized returns</li>
               </ul>
             </div>
           </div>
@@ -105,36 +322,49 @@
           </div>
 
           <div style="text-align:center; margin-top:32px;">
-            <a href="#quote" class="btn btn-primary" style="margin-right:12px;">Get Your Quote</a>
-            <a href="#about" class="btn btn-outline">Learn More About Coverage</a>
+            <a href="#quote" class="btn btn-primary">📋 Get Your Free Quote</a>
           </div>
         </div>
       </div>
     </div>
   </section>
 
-  <!-- Get Quote Section -->
+  <!-- Get Quote Section - New Customers Only -->
   <section id="quote" class="section section-alt">
     <div class="container">
-      <h2 class="section-title">Start Your Insurance Journey</h2>
+      <h2 class="section-title">📋 Get Your Free Quote</h2>
+      <p style="text-align: center; max-width: 600px; margin: 0 auto 32px; color: var(--muted);">
+        New to PHINS? Start here to receive a personalized quote. Already a customer? 
+        <a href="/login.html" style="color: var(--brand); font-weight: 600;">Access your account →</a>
+      </p>
+      
       <div class="quote-container">
-        <div class="card">
-          <h3>Get a Free Quote</h3>
+        <div class="card" style="position: relative;">
+          <!-- Security Badge -->
+          <div style="position: absolute; top: -12px; right: 20px; background: linear-gradient(135deg, #28a745 0%, #20c997 100%); color: white; padding: 6px 16px; border-radius: 20px; font-size: 0.8rem; font-weight: 600;">
+            🔒 Secure Form
+          </div>
+          
+          <h3 style="margin-top: 8px;">Request Your Personalized Quote</h3>
+          <p style="color: var(--muted); margin-bottom: 24px; font-size: 0.95rem;">
+            Complete the form below and our team will prepare a customized quote within 24 hours.
+          </p>
+          
           <form id="quote-form" class="quote-form">
             <div class="form-group">
-              <label for="name">Full Name</label>
-              <input type="text" id="name" name="name" required>
+              <label for="name">Full Name *</label>
+              <input type="text" id="name" name="name" required placeholder="Enter your full legal name">
             </div>
             <div class="form-group">
-              <label for="email">Email Address</label>
-              <input type="email" id="email" name="email" required>
+              <label for="email">Email Address *</label>
+              <input type="email" id="email" name="email" required placeholder="you@example.com">
             </div>
             <div class="form-group">
-              <label for="phone">Phone Number</label>
-              <input type="tel" id="phone" name="phone" required>
+              <label for="phone">Phone Number *</label>
+              <input type="tel" id="phone" name="phone" required placeholder="+1 (555) 000-0000">
             </div>
             <div class="form-group">
-              <label for="product">Coverage Amount Desired</label>
+              <label for="product">Coverage Amount Desired *</label>
               <select id="product" name="product" required>
                 <option value="">Select coverage level...</option>
                 <option value="basic">Basic: $500,000 coverage + investment</option>
@@ -145,12 +375,27 @@
               </select>
             </div>
             <div class="form-group">
-              <label for="message">Additional Information</label>
-              <textarea id="message" name="message" rows="4"></textarea>
+              <label for="message">Additional Information (Optional)</label>
+              <textarea id="message" name="message" rows="3" placeholder="Any specific requirements or questions?"></textarea>
             </div>
-            <button type="submit" class="btn btn-primary btn-full">Submit Request</button>
+            
+            <button type="submit" class="btn btn-primary btn-full" style="font-size: 1.05rem; padding: 14px;">
+              📤 Submit Quote Request
+            </button>
+            
+            <p style="text-align: center; margin-top: 16px; font-size: 0.8rem; color: var(--muted);">
+              🔒 Your information is protected with 256-bit encryption
+            </p>
           </form>
           <div id="quote-message" class="form-message"></div>
+          
+          <!-- Or Apply Directly -->
+          <div style="margin-top: 24px; padding-top: 24px; border-top: 1px solid #e0e0e0; text-align: center;">
+            <p style="color: var(--muted); margin-bottom: 12px;">Ready to apply? Skip the quote and start your application:</p>
+            <a href="/apply.html" class="btn btn-outline" style="border-color: var(--brand); color: var(--brand);">
+              📝 Start Full Application
+            </a>
+          </div>
         </div>
       </div>
     </div>
@@ -275,9 +520,6 @@
         </div>
       </div>
 
-      <div style="text-align:center; margin-top:32px;">
-        <a href="#quote" class="btn btn-primary">Start Your Application</a>
-      </div>
     </div>
   </section>
 
@@ -372,13 +614,22 @@
     </div>
   </section>
 
-  <!-- Customer Portal Access -->
+  <!-- Existing Customer Portal Access -->
   <section class="section cta-section">
     <div class="container">
       <div class="cta-content">
-        <h2>Existing Customer?</h2>
-        <p>Access your account to view policies, make claims, and manage your investments</p>
-        <a href="/login.html" class="btn btn-primary btn-large">Login to Portal</a>
+        <h2>🔐 Existing Policyholder?</h2>
+        <p style="max-width: 500px; margin: 0 auto 24px;">Securely access your account to view policies, file claims, manage your Health Wallet, and track your investments</p>
+        <a href="/login.html" class="btn btn-primary btn-large" style="font-size: 1.1rem; padding: 16px 40px;">
+          Access My Account
+        </a>
+        <div style="margin-top: 16px; display: flex; justify-content: center; gap: 12px; flex-wrap: wrap;">
+          <span style="color: rgba(255,255,255,0.8); font-size: 0.85rem;">🔒 Multi-factor Authentication</span>
+          <span style="color: rgba(255,255,255,0.8); font-size: 0.85rem;">•</span>
+          <span style="color: rgba(255,255,255,0.8); font-size: 0.85rem;">📱 Mobile Friendly</span>
+          <span style="color: rgba(255,255,255,0.8); font-size: 0.85rem;">•</span>
+          <span style="color: rgba(255,255,255,0.8); font-size: 0.85rem;">24/7 Access</span>
+        </div>
       </div>
     </div>
   </section>
@@ -387,16 +638,29 @@
     <div class="container">
       <div class="footer-content">
         <div class="footer-section">
-          <h4>PHINS Insurance</h4>
-          <p>Your trusted partner in insurance and financial security.</p>
+          <h4>🛡️ PHINS Insurance</h4>
+          <p>Your trusted partner in specialized disability protection and wealth building.</p>
+          <div style="margin-top: 12px; display: flex; gap: 8px; flex-wrap: wrap;">
+            <span style="background: rgba(255,255,255,0.1); padding: 4px 8px; border-radius: 4px; font-size: 0.75rem;">SOC 2</span>
+            <span style="background: rgba(255,255,255,0.1); padding: 4px 8px; border-radius: 4px; font-size: 0.75rem;">HIPAA</span>
+            <span style="background: rgba(255,255,255,0.1); padding: 4px 8px; border-radius: 4px; font-size: 0.75rem;">PCI DSS</span>
+          </div>
+        </div>
+        <div class="footer-section">
+          <h4>Get Started</h4>
+          <ul>
+            <li><a href="#quote">📋 Get a Quote</a></li>
+            <li><a href="/apply.html">📝 Apply Now</a></li>
+            <li><a href="/login.html">🔐 Customer Login</a></li>
+          </ul>
         </div>
         <div class="footer-section">
           <h4>Quick Links</h4>
           <ul>
             <li><a href="#products">Products</a></li>
+            <li><a href="#underwriting">Underwriting</a></li>
             <li><a href="#about">About Us</a></li>
             <li><a href="#contact">Contact</a></li>
-            <li><a href="/login.html">Customer Portal</a></li>
           </ul>
         </div>
         <div class="footer-section">
@@ -410,7 +674,7 @@
         </div>
       </div>
       <div class="footer-bottom">
-        <p>© 2025 PHINS Insurance Company. All rights reserved. Licensed in all 50 states.</p>
+        <p>© 2025 PHINS Insurance Company. All rights reserved. Licensed in all 50 states. | 🔒 All connections secured with 256-bit SSL encryption</p>
       </div>
     </div>
   </footer>
@@ -525,13 +789,25 @@
       }, 3000);
     }
     
-    // Load saved language preference
+    // Hide splash screen
+    function hideSplashScreen() {
+      const splash = document.getElementById('splash-screen');
+      if (splash) {
+        splash.classList.add('hidden');
+        setTimeout(() => splash.remove(), 500);
+      }
+    }
+    
+    // Load saved language preference and hide splash
     window.addEventListener('DOMContentLoaded', function() {
       const savedLang = localStorage.getItem('phins_language');
       if (savedLang) {
         document.getElementById('language-selector').value = savedLang;
         changeLanguage(savedLang);
       }
+      
+      // Hide splash screen after 1.5s for branding
+      setTimeout(hideSplashScreen, 1500);
     });
   </script>
 </body>

@@ -1,0 +1,10 @@
+On branch cursor/supplier-ecosystem-and-wallets-e2e4
+Your branch is up to date with 'origin/cursor/supplier-ecosystem-and-wallets-e2e4'.
+
+Untracked files:
+  (use "git add <file>..." to include in what will be committed)
+	BACKUP.md
+	backups/
+	scripts/
+
+nothing added to commit but untracked files present (use "git add" to track)
