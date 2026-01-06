@@ -51,13 +51,22 @@ class BaseRepository(Generic[T]):
             Created model instance or None if failed
         """
         try:
+            # Filter out unknown fields for forward/backward compatibility.
+            # This lets older in-memory dict payloads be written to the DB safely.
+            try:
+                allowed = {c.name for c in self.model_class.__table__.columns}  # type: ignore[attr-defined]
+                kwargs = {k: v for k, v in kwargs.items() if k in allowed}
+            except Exception:
+                # If model metadata is unavailable for any reason, fall back to raw kwargs.
+                pass
+
             instance = self.model_class(**kwargs)
             self.session.add(instance)
             self.session.commit()
             self.session.refresh(instance)
             logger.info(f"Created {self.model_class.__name__}: {kwargs.get('id', 'N/A')}")
             return instance
-        except SQLAlchemyError as e:
+        except (SQLAlchemyError, TypeError, ValueError) as e:
             logger.error(f"Error creating {self.model_class.__name__}: {e}")
             self.session.rollback()
             return None
@@ -174,7 +183,8 @@ class BaseRepository(Generic[T]):
             True if exists, False otherwise
         """
         try:
-            return self.session.query(self.model_class).filter_by(id=id_value).count() > 0
+            # Use primary-key get to support non-"id" PKs (e.g. users.username, sessions.token).
+            return self.get_by_id(id_value) is not None
         except SQLAlchemyError as e:
             logger.error(f"Error checking existence of {self.model_class.__name__} {id_value}: {e}")
             return False
