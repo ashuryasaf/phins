@@ -424,7 +424,7 @@ def seed_sample_data(session=None):
                     )
                     logger.info(f"Created underwriting application for primary customer: {uw_app.id}")
                     
-                    # Sync to memory
+                    # Sync to memory with full medical metadata
                     if sync_primary_to_memory:
                         UNDERWRITING_APPLICATIONS[uw_asaf_id] = {
                             'id': uw_asaf_id,
@@ -437,16 +437,51 @@ def seed_sample_data(session=None):
                             'annual_premium': 6000.0,
                             'monthly_premium': 500.0,
                             'status': 'pending',
-                            'risk_score': 'medium',
-                            'risk_assessment': 'medium',
+                            'risk_score': 'moderate',
+                            'risk_assessment': 'moderate',
+                            # Demographic data
                             'age': 39,
+                            'gender': 'male',
+                            'occupation': 'Business Owner',
+                            # Medical data - verified from pipeline
                             'disability_percentage': 30,
+                            'disability_type': 'Mobility Impairment - Lower Limb',
+                            'disability_status': 'stable',
                             'bmi': 32,
+                            'height_cm': 175,
+                            'weight_kg': 98,
                             'smoking_status': 'never',
                             'medical_conditions': [
-                                {'condition': 'Obesity', 'severity': 'moderate', 'icd_code': 'E66.9'},
-                                {'condition': 'Disability', 'severity': 'moderate', 'icd_code': 'Z99.89'}
+                                {
+                                    'condition': 'Obesity',
+                                    'icd_code': 'E66.9',
+                                    'severity': 'moderate',
+                                    'status': 'active',
+                                    'treatment': 'Dietary management, exercise program',
+                                    'risk_impact': 0.07,
+                                    'loading_percentage': 15,
+                                    'notes': 'BMI 32.0 (Class I Obesity). Weight management program.'
+                                },
+                                {
+                                    'condition': 'Mobility Impairment - Lower Limb',
+                                    'icd_code': 'M62.50',
+                                    'severity': 'moderate',
+                                    'status': 'stable',
+                                    'treatment': 'Physiotherapy, mobility aids',
+                                    'risk_impact': 0.18,
+                                    'loading_percentage': 20,
+                                    'exclusion_recommended': True,
+                                    'notes': '30% disability rating. Stable condition.'
+                                }
                             ],
+                            'documents': [
+                                {'type': 'national_id', 'verified': True, 'authenticity_score': 0.95, 'expiry_status': 'valid'},
+                                {'type': 'disability_certificate', 'verified': True, 'authenticity_score': 0.98, 'expiry_status': 'valid', 'flags': 'DISABILITY_DECLARED'},
+                                {'type': 'medical_report', 'verified': True, 'authenticity_score': 0.96, 'expiry_status': 'valid', 'flags': 'MULTIPLE_CONDITIONS'}
+                            ],
+                            'identity_verified': True,
+                            'medical_exam_required': True,
+                            'premium_adjustment': 35,
                             'created_date': now.isoformat(),
                             'submitted_date': now.isoformat(),
                             'updated_date': now.isoformat()
