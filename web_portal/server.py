@@ -5710,13 +5710,22 @@ For claims or questions, please contact:
                 # Update the application with medical data
                 UNDERWRITING_APPLICATIONS[app_id].update(medical_data)
                 
+                # Verify the update worked by reading back the data
+                updated_app = UNDERWRITING_APPLICATIONS.get(app_id, {})
+                
                 self._set_json_headers()
                 self.wfile.write(json.dumps({
                     'success': True,
                     'application_id': app_id,
                     'medical_data_refreshed': True,
                     'fields_updated': list(medical_data.keys()),
-                    'message': 'Medical data refreshed for asaf@assurance.co.il application'
+                    'message': 'Medical data refreshed for asaf@assurance.co.il application',
+                    'verification': {
+                        'disability_percentage': updated_app.get('disability_percentage'),
+                        'bmi': updated_app.get('bmi'),
+                        'smoking_status': updated_app.get('smoking_status'),
+                        'medical_conditions_count': len(updated_app.get('medical_conditions', []))
+                    }
                 }).encode('utf-8'))
             else:
                 self._set_json_headers(400)
@@ -10911,22 +10920,69 @@ For claims or questions, please contact:
                                 'created_date': now.isoformat()
                             }
                         
-                        # Create underwriting application
+                        # Create underwriting application with full medical data
                         UNDERWRITING_APPLICATIONS[new_app_id] = {
                             'id': new_app_id,
                             'customer_id': customer_id,
                             'policy_id': new_policy_id,
+                            'customer_name': CUSTOMERS[customer_id].get('name', 'Asaf Assurance'),
+                            'customer_email': customer_email,
                             'status': 'pending',
-                            'risk_assessment': 'low',
+                            'risk_assessment': 'moderate',
+                            'risk_score': 'moderate',
                             'submitted_date': now.isoformat(),
                             'created_at': now.isoformat(),
                             'applicant_name': CUSTOMERS[customer_id].get('name', 'Asaf Assurance'),
                             'applicant_email': customer_email,
-                            'policy_type': 'comprehensive',
+                            'policy_type': 'health',
                             'coverage_amount': 500000,
                             'annual_premium': 6000,
                             'monthly_premium': 500,
-                            'medical_exam_required': False,
+                            # Medical data for pipeline integrity
+                            'age': 39,
+                            'gender': 'male',
+                            'occupation': 'Business Owner',
+                            'disability_percentage': 30,
+                            'disability_type': 'Mobility Impairment - Lower Limb',
+                            'disability_status': 'stable',
+                            'disability_treatment': 'Physiotherapy, mobility aids, annual orthopaedic review',
+                            'disability_notes': 'Result of injury in 2020. 30% disability rating. Stable condition.',
+                            'bmi': 32,
+                            'height_cm': 175,
+                            'weight_kg': 98,
+                            'bmi_notes': 'BMI 32.0 (Class I Obesity).',
+                            'smoking_status': 'never',
+                            'alcohol_use': 'moderate',
+                            'exercise_frequency': 'weekly',
+                            'medical_conditions': [
+                                {
+                                    'condition': 'Obesity',
+                                    'icd_code': 'E66.9',
+                                    'severity': 'moderate',
+                                    'status': 'active',
+                                    'treatment': 'Dietary management, exercise program',
+                                    'risk_impact': 0.07,
+                                    'loading_percentage': 15
+                                },
+                                {
+                                    'condition': 'Mobility Impairment - Lower Limb',
+                                    'icd_code': 'M62.50',
+                                    'severity': 'moderate',
+                                    'status': 'stable',
+                                    'treatment': 'Physiotherapy, mobility aids',
+                                    'risk_impact': 0.18,
+                                    'loading_percentage': 20,
+                                    'exclusion_recommended': True
+                                }
+                            ],
+                            'documents': [
+                                {'type': 'national_id', 'verified': True, 'authenticity_score': 0.95, 'expiry_status': 'valid'},
+                                {'type': 'disability_certificate', 'verified': True, 'authenticity_score': 0.98, 'expiry_status': 'valid', 'flags': 'DISABILITY_DECLARED'},
+                                {'type': 'medical_report', 'verified': True, 'authenticity_score': 0.96, 'expiry_status': 'valid', 'flags': 'MULTIPLE_CONDITIONS'}
+                            ],
+                            'identity_verified': True,
+                            'medical_exam_required': True,
+                            'premium_adjustment': 35,
                             'health_wallet': {'enabled': True, 'monthly_deposit': 500}
                         }
                         
