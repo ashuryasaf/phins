@@ -102,6 +102,22 @@ def seed_default_users(session=None):
                 'role': 'customer',
                 'name': 'Efrat PHINS',
                 'email': 'efrat@phins.ai'
+            },
+            # Customer account for asi@phins.ai - PERSISTENT ACCOUNT
+            {
+                'username': 'asi@phins.ai',
+                'password': 'PHINScustomer2024!',
+                'role': 'customer',
+                'name': 'Asi PHINS',
+                'email': 'asi@phins.ai'
+            },
+            # Customer account for shosh@phins.ai - PERSISTENT ACCOUNT
+            {
+                'username': 'shosh@phins.ai',
+                'password': 'PHINScustomer2024!',
+                'role': 'customer',
+                'name': 'Shosh PHINS',
+                'email': 'shosh@phins.ai'
             }
         ]
         

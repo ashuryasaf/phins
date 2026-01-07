@@ -19178,6 +19178,38 @@ def run_server(port: int = PORT) -> None:
             except Exception as e:
                 print(f"Note: User seeding skipped (may already exist): {e}")
             
+            # Ensure asi@phins.ai and shosh@phins.ai users exist
+            try:
+                from database.manager import DatabaseManager
+                from database.repositories.user_repository import UserRepository
+                with DatabaseManager() as db:
+                    user_repo = UserRepository(db.session)
+                    
+                    # Users to ensure exist
+                    ensure_users = [
+                        {'username': 'asi@phins.ai', 'password': 'PHINScustomer2024!', 'role': 'customer', 'name': 'Asi PHINS'},
+                        {'username': 'shosh@phins.ai', 'password': 'PHINScustomer2024!', 'role': 'customer', 'name': 'Shosh PHINS'}
+                    ]
+                    
+                    for user_data in ensure_users:
+                        existing = user_repo.get_by_username(user_data['username'])
+                        if not existing:
+                            pw_data = hash_password(user_data['password'])
+                            user_repo.create(
+                                username=user_data['username'],
+                                password_hash=pw_data['hash'],
+                                password_salt=pw_data['salt'],
+                                role=user_data['role'],
+                                name=user_data['name'],
+                                email=user_data['username'],
+                                active=True
+                            )
+                            print(f"   ✓ Created user: {user_data['username']}")
+                        else:
+                            print(f"   ℹ️  User {user_data['username']} already exists")
+            except Exception as e:
+                print(f"   Note: Additional users seeding: {e}")
+            
             # Seed sample customer data (test accounts)
             try:
                 from database.seeds import seed_sample_data
