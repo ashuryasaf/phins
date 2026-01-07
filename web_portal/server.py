@@ -5759,8 +5759,14 @@ For claims or questions, please contact:
                     },
                     'debug': {
                         'before': before_state,
+                        'merged': merged_state,
                         'after': after_state,
-                        'app_id_used': app_id
+                        'app_id_used': app_id,
+                        'medical_data_input': {
+                            'disability_percentage': medical_data.get('disability_percentage'),
+                            'bmi': medical_data.get('bmi'),
+                            'smoking_status': medical_data.get('smoking_status')
+                        }
                     }
                 }).encode('utf-8'))
             else:
