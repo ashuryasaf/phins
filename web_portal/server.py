@@ -20372,7 +20372,81 @@ def run_server(port: int = PORT) -> None:
     for acc in SUSPENDED_TEST_ACCOUNTS:
         print(f"   - {acc}")
     
-    # Final step: Ensure all PHINS customer applications have complete data
+    # Final step 1: Ensure all PHINS customers exist in the CUSTOMERS dictionary
+    print("🔧 Final data integrity check - PHINS customer records...")
+    try:
+        phins_customer_records = [
+            {
+                'id': 'CUST-ASI-001',
+                'name': 'Asi PHINS',
+                'email': 'asi@phins.ai',
+                'phone': '+972-50-1111111',
+                'date_of_birth': '1985-03-20',
+                'age': 40,
+                'gender': 'male',
+                'occupation': 'Software Engineer'
+            },
+            {
+                'id': 'CUST-SHOSH-001',
+                'name': 'Shosh PHINS',
+                'email': 'shosh@phins.ai',
+                'phone': '+972-50-2222222',
+                'date_of_birth': '1988-09-10',
+                'age': 37,
+                'gender': 'female',
+                'occupation': 'Marketing Director'
+            },
+            {
+                'id': 'CUST-EFRAT-001',
+                'name': 'Efrat PHINS',
+                'email': 'efrat@phins.ai',
+                'phone': '+972-50-9876543',
+                'date_of_birth': '1990-06-15',
+                'age': 35,
+                'gender': 'female',
+                'occupation': 'Product Manager'
+            }
+        ]
+        
+        customers_created = 0
+        for cust in phins_customer_records:
+            cust_id = cust['id']
+            if cust_id not in CUSTOMERS:
+                CUSTOMERS[cust_id] = {
+                    **cust,
+                    'created_date': now.isoformat(),
+                    'status': 'active'
+                }
+                customers_created += 1
+                
+                # Initialize wallets
+                if cust_id not in HEALTH_WALLETS:
+                    HEALTH_WALLETS[cust_id] = {
+                        'customer_id': cust_id,
+                        'balance': 0.0,
+                        'monthly_deposit': 0.0,
+                        'transactions': [],
+                        'created_at': now.isoformat()
+                    }
+                if cust_id not in INVESTMENT_ACCOUNTS:
+                    INVESTMENT_ACCOUNTS[cust_id] = {
+                        'customer_id': cust_id,
+                        'balance': 0.0,
+                        'index_balance': 0.0,
+                        'bonds_balance': 0.0,
+                        'crypto_balance': 0.0,
+                        'deposits': [],
+                        'created_at': now.isoformat()
+                    }
+        
+        if customers_created > 0:
+            print(f"   ✓ Created {customers_created} PHINS customer records")
+        else:
+            print(f"   ✓ All PHINS customer records already exist")
+    except Exception as e:
+        print(f"   ⚠️  Customer records check error: {e}")
+    
+    # Final step 2: Ensure all PHINS customer applications have complete data
     # This is a fallback to ensure data integrity on every restart
     print("🔧 Final data integrity check - PHINS customer applications...")
     try:
