@@ -448,13 +448,40 @@
         /* Probability Report Modal */
         .probability-modal {
             max-width: 900px;
+            max-height: 90vh;
+            display: flex;
+            flex-direction: column;
+            padding: 0;
         }
         .prob-header {
             background: linear-gradient(135deg, #1a1f36 0%, #2d3561 100%);
             color: white;
             padding: 24px;
             border-radius: 12px 12px 0 0;
-            margin: -30px -30px 20px -30px;
+            position: sticky;
+            top: 0;
+            z-index: 10;
+            flex-shrink: 0;
+        }
+        .prob-scroll-container {
+            flex: 1;
+            overflow-y: auto;
+            padding: 24px;
+            max-height: calc(90vh - 120px);
+        }
+        .prob-actions-bar {
+            display: flex;
+            gap: 12px;
+            margin-top: 16px;
+            flex-wrap: wrap;
+        }
+        .btn-download {
+            background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+            color: white;
+        }
+        .btn-download:hover {
+            background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+            box-shadow: 0 6px 20px rgba(59, 130, 246, 0.4);
         }
         .prob-score-grid {
             display: grid;
@@ -671,11 +698,21 @@
                         </h2>
                         <p style="margin: 8px 0 0 0; opacity: 0.8;" id="prob-claim-info">Claim Analysis</p>
                     </div>
-                    <span class="close" onclick="closeProbabilityModal()" style="color: white; font-size: 32px;">&times;</span>
+                    <div style="display: flex; align-items: center; gap: 12px;">
+                        <button class="btn btn-download" id="download-report-btn" onclick="downloadProbabilityReport()" style="display: none;">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                            Download PDF
+                        </button>
+                        <button class="btn" id="download-json-btn" onclick="downloadProbabilityReportJSON()" style="display: none; background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: white;">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
+                            JSON
+                        </button>
+                        <span class="close" onclick="closeProbabilityModal()" style="color: white; font-size: 32px; cursor: pointer;">&times;</span>
+                    </div>
                 </div>
             </div>
             
-            <div id="probability-content">
+            <div class="prob-scroll-container" id="probability-content">
                 <div class="loading-spinner"><div class="spinner"></div></div>
             </div>
         </div>
@@ -1042,9 +1079,17 @@
         
         // ========== PROBABILITY REPORT FUNCTIONS ==========
         
+        // Store current report data for download
+        let currentProbabilityReport = null;
+        let currentReportClaim = null;
+        
         async function openProbabilityReport(claimId) {
             document.getElementById('probability-modal').style.display = 'block';
             document.getElementById('probability-content').innerHTML = '<div class="loading-spinner"><div class="spinner"></div></div><p style="text-align: center; margin-top: 16px;">🤖 AI Claims Bot analyzing claim...</p>';
+            document.getElementById('download-report-btn').style.display = 'none';
+            document.getElementById('download-json-btn').style.display = 'none';
+            currentProbabilityReport = null;
+            currentReportClaim = null;
             
             const claim = allClaims.find(c => c.id === claimId);
             if (claim) {
@@ -1067,7 +1112,12 @@
                 
                 const data = await response.json();
                 if (data.success && data.report) {
+                    currentProbabilityReport = data.report;
+                    currentReportClaim = claim;
                     renderProbabilityReport(data.report, claim);
+                    // Show download buttons
+                    document.getElementById('download-report-btn').style.display = 'inline-flex';
+                    document.getElementById('download-json-btn').style.display = 'inline-flex';
                 } else {
                     throw new Error(data.error || 'Unknown error');
                 }
@@ -1266,6 +1316,237 @@
         
         function closeProbabilityModal() {
             document.getElementById('probability-modal').style.display = 'none';
+            currentProbabilityReport = null;
+            currentReportClaim = null;
+        }
+        
+        // Download probability report as PDF (HTML to print)
+        function downloadProbabilityReport() {
+            if (!currentProbabilityReport) {
+                showToast('No report available to download', 'error');
+                return;
+            }
+            
+            const report = currentProbabilityReport;
+            const claim = currentReportClaim || {};
+            const authProb = report.authenticity_probability || 0;
+            const fraudProb = report.fraud_probability || 0;
+            const scores = report.component_scores || {};
+            const ai = report.ai_analysis || {};
+            const hidden = report.hidden_conditions || {};
+            const fraud = report.fraud_indicators || {};
+            const timeline = report.timeline_analysis || {};
+            
+            // Determine colors
+            let authColor = '#10b981';
+            if (authProb < 0.5) authColor = '#ef4444';
+            else if (authProb < 0.7) authColor = '#f59e0b';
+            
+            const htmlContent = `
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>PHINS AI Claims Bot - Probability Report - ${report.claim_id}</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f8f9fa; padding: 20px; color: #333; }
+        .report-container { max-width: 900px; margin: 0 auto; background: white; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.1); overflow: hidden; }
+        .header { background: linear-gradient(135deg, #1e3a5f 0%, #2d5a87 100%); color: white; padding: 30px; }
+        .header h1 { font-size: 1.5rem; margin-bottom: 8px; }
+        .header p { opacity: 0.9; }
+        .content { padding: 30px; }
+        .score-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 24px; }
+        .score-card { padding: 20px; border-radius: 12px; text-align: center; }
+        .score-card.green { background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: white; }
+        .score-card.yellow { background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); color: white; }
+        .score-card.red { background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%); color: white; }
+        .score-card.neutral { background: #f8f9fa; }
+        .score-value { font-size: 2rem; font-weight: 700; }
+        .score-label { font-size: 0.85rem; margin-top: 8px; opacity: 0.9; }
+        .section { background: #f8f9fa; padding: 20px; border-radius: 12px; margin-bottom: 20px; }
+        .section h3 { margin-bottom: 16px; font-size: 1.1rem; }
+        .component-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+        .component { padding: 12px; background: white; border-radius: 8px; }
+        .component-label { font-size: 0.85rem; color: #666; }
+        .component-value { font-weight: 600; margin-top: 4px; }
+        .bar { height: 8px; background: #e5e7eb; border-radius: 4px; margin-top: 8px; }
+        .bar-fill { height: 100%; border-radius: 4px; }
+        .alert { padding: 16px; border-radius: 8px; margin-bottom: 12px; border-left: 4px solid; }
+        .alert.red { background: #fef2f2; border-color: #ef4444; }
+        .alert.yellow { background: #fffbeb; border-color: #f59e0b; }
+        .alert.green { background: #ecfdf5; border-color: #10b981; }
+        .summary-box { background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%); padding: 20px; border-radius: 12px; border: 1px solid #bae6fd; margin-bottom: 20px; }
+        .footer { text-align: center; padding: 20px; color: #666; font-size: 0.85rem; border-top: 1px solid #e5e7eb; }
+        @media print { body { padding: 0; background: white; } .report-container { box-shadow: none; } }
+    </style>
+</head>
+<body>
+    <div class="report-container">
+        <div class="header">
+            <h1>🤖 PHINS AI Claims Bot - Probability Report</h1>
+            <p>Claim #${report.claim_id} | Generated: ${new Date(report.assessment_date).toLocaleString()}</p>
+        </div>
+        
+        <div class="content">
+            <!-- Main Scores -->
+            <div class="score-grid">
+                <div class="score-card ${authProb >= 0.7 ? 'green' : (authProb >= 0.5 ? 'yellow' : 'red')}">
+                    <div class="score-value">${(authProb * 100).toFixed(1)}%</div>
+                    <div class="score-label">Authenticity Probability</div>
+                </div>
+                <div class="score-card ${fraudProb > 0.5 ? 'red' : (fraudProb > 0.3 ? 'yellow' : 'neutral')}">
+                    <div class="score-value">${(fraudProb * 100).toFixed(1)}%</div>
+                    <div class="score-label">Fraud Probability</div>
+                </div>
+                <div class="score-card neutral">
+                    <div class="score-value" style="font-size: 1.2rem; color: ${authColor};">${report.recommendation_display || report.recommendation}</div>
+                    <div class="score-label">AI Recommendation</div>
+                </div>
+            </div>
+            
+            <!-- AI Summary -->
+            <div class="summary-box">
+                <h3 style="color: #0369a1; margin-bottom: 12px;">🤖 AI Analysis Summary</h3>
+                <p>${ai.summary || 'Analysis completed.'}</p>
+            </div>
+            
+            <!-- Component Scores -->
+            <div class="section">
+                <h3>📊 Component Score Breakdown</h3>
+                <div class="component-grid">
+                    ${Object.entries(scores).map(([key, value]) => `
+                        <div class="component">
+                            <div class="component-label">${key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}</div>
+                            <div class="component-value" style="color: ${value >= 0.7 ? '#10b981' : (value >= 0.5 ? '#f59e0b' : '#ef4444')};">${(value * 100).toFixed(0)}%</div>
+                            <div class="bar"><div class="bar-fill" style="width: ${value * 100}%; background: ${value >= 0.7 ? '#10b981' : (value >= 0.5 ? '#f59e0b' : '#ef4444')};"></div></div>
+                        </div>
+                    `).join('')}
+                </div>
+            </div>
+            
+            <!-- Timeline -->
+            <div class="section">
+                <h3>📅 Policy Timeline Analysis</h3>
+                <div class="component-grid">
+                    <div class="component"><div class="component-label">Days Since Policy</div><div class="component-value">${timeline.days_since_policy || 0}</div></div>
+                    <div class="component"><div class="component-label">Years Since Policy</div><div class="component-value">${(timeline.years_since_policy || 0).toFixed(2)}</div></div>
+                    <div class="component"><div class="component-label">Within Contestability</div><div class="component-value" style="color: ${timeline.within_contestability ? '#f59e0b' : '#10b981'};">${timeline.within_contestability ? 'YES' : 'NO'}</div></div>
+                    <div class="component"><div class="component-label">Confidence Level</div><div class="component-value">${((report.confidence_level || 0.75) * 100).toFixed(0)}%</div></div>
+                </div>
+            </div>
+            
+            ${hidden.detected > 0 ? `
+            <!-- Hidden Conditions -->
+            <div class="section" style="background: #fef2f2; border: 1px solid #fecaca;">
+                <h3 style="color: #dc2626;">⚠️ Hidden Conditions Detected (${hidden.detected})</h3>
+                ${(hidden.conditions || []).map(hc => `
+                    <div class="alert red">
+                        <strong>${hc.condition_name}</strong> (ICD: ${hc.icd_code})<br>
+                        <span style="font-size: 0.85rem; color: #666;">${hc.evidence_source}</span><br>
+                        <span style="color: #dc2626;">Concealment Score: ${(hc.deliberate_concealment_score * 100).toFixed(0)}%</span>
+                        ${hc.causal_link_to_claim ? ' | <strong>CAUSALLY LINKED TO CLAIM</strong>' : ''}
+                    </div>
+                `).join('')}
+            </div>
+            ` : ''}
+            
+            ${fraud.count > 0 ? `
+            <!-- Fraud Indicators -->
+            <div class="section" style="background: #fffbeb; border: 1px solid #fde68a;">
+                <h3 style="color: #d97706;">🚨 Fraud Indicators (${fraud.count})</h3>
+                ${(fraud.indicators || []).map(fi => `
+                    <div class="alert ${fi.severity > 0.7 ? 'red' : 'yellow'}">
+                        <strong>${fi.indicator_type.replace(/_/g, ' ').toUpperCase()}</strong>
+                        <span style="float: right;">Severity: ${(fi.severity * 100).toFixed(0)}%</span><br>
+                        <span style="font-size: 0.85rem; color: #666;">${fi.explanation}</span><br>
+                        <em style="font-size: 0.85rem; color: #0369a1;">Recommendation: ${fi.recommendation}</em>
+                    </div>
+                `).join('')}
+            </div>
+            ` : ''}
+            
+            <!-- Key Findings -->
+            <div class="section">
+                <h3>📋 Key Findings</h3>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+                    <div>
+                        <h4 style="color: #dc2626; margin-bottom: 8px;">🔴 Red Flags</h4>
+                        ${(ai.red_flags || []).length > 0 ? 
+                            (ai.red_flags || []).map(f => `<div class="alert red" style="padding: 8px;">${f}</div>`).join('') :
+                            '<p style="color: #10b981;">✅ No red flags detected</p>'
+                        }
+                    </div>
+                    <div>
+                        <h4 style="color: #10b981; margin-bottom: 8px;">🟢 Green Flags</h4>
+                        ${(ai.green_flags || []).length > 0 ?
+                            (ai.green_flags || []).map(f => `<div class="alert green" style="padding: 8px;">${f}</div>`).join('') :
+                            '<p style="color: #666;">No specific green flags</p>'
+                        }
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Decision Explanation -->
+            <div class="section">
+                <h3>📝 Decision Explanation</h3>
+                <p>${report.explanation || 'Assessment completed.'}</p>
+            </div>
+        </div>
+        
+        <div class="footer">
+            <p>PHINS Insurance Platform - AI Claims Bot v${report.metadata?.model_version || '1.0.0'}</p>
+            <p>Report ID: ${report.id} | Risk Level: ${(report.risk_level || 'medium').toUpperCase()}</p>
+            <p>This report is generated by AI and should be reviewed by a qualified claims adjuster.</p>
+        </div>
+    </div>
+</body>
+</html>`;
+            
+            // Create blob and download
+            const blob = new Blob([htmlContent], { type: 'text/html' });
+            const url = URL.createObjectURL(blob);
+            
+            // Open in new window for printing/saving as PDF
+            const printWindow = window.open(url, '_blank');
+            if (printWindow) {
+                printWindow.onload = function() {
+                    printWindow.print();
+                };
+            } else {
+                // Fallback: download as HTML
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `PHINS_Probability_Report_${report.claim_id}_${new Date().toISOString().split('T')[0]}.html`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+            }
+            
+            URL.revokeObjectURL(url);
+            showToast('Report opened for printing/download', 'success');
+        }
+        
+        // Download probability report as JSON
+        function downloadProbabilityReportJSON() {
+            if (!currentProbabilityReport) {
+                showToast('No report available to download', 'error');
+                return;
+            }
+            
+            const jsonContent = JSON.stringify(currentProbabilityReport, null, 2);
+            const blob = new Blob([jsonContent], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `PHINS_Probability_Report_${currentProbabilityReport.claim_id}_${new Date().toISOString().split('T')[0]}.json`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            
+            URL.revokeObjectURL(url);
+            showToast('JSON report downloaded', 'success');
         }
         
         // Close modal on outside click
