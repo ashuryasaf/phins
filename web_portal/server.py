@@ -2131,8 +2131,10 @@ else:
         # Permanent admin accounts - NEVER DELETE
         'asaf@phins.ai': {**hash_password('PHINSadmin2024!'), 'role': 'admin', 'name': 'Asaf PHINS'},
         'asaf@assurance.co.il': {**hash_password('Assurance2024!'), 'role': 'customer', 'name': 'Asaf Assurance', 'customer_id': 'CUST-ASAF-001'},
-        # Customer account for efrat@phins.ai
-        'efrat@phins.ai': {**hash_password('PHINScustomer2024!'), 'role': 'customer', 'name': 'Efrat PHINS', 'customer_id': 'CUST-EFRAT-001'}
+        # Customer accounts
+        'efrat@phins.ai': {**hash_password('PHINScustomer2024!'), 'role': 'customer', 'name': 'Efrat PHINS', 'customer_id': 'CUST-EFRAT-001'},
+        'asi@phins.ai': {**hash_password('PHINScustomer2024!'), 'role': 'customer', 'name': 'Asi PHINS', 'customer_id': 'CUST-ASI-001'},
+        'shosh@phins.ai': {**hash_password('PHINScustomer2024!'), 'role': 'customer', 'name': 'Shosh PHINS', 'customer_id': 'CUST-SHOSH-001'}
     }
 
 # ========== SUSPENDED TEST ACCOUNTS ==========
@@ -6106,6 +6108,188 @@ For claims or questions, please contact:
             
             self._set_json_headers()
             self.wfile.write(json.dumps(validation).encode('utf-8'))
+            return
+        
+        # Link customers with their applications by email
+        # This endpoint checks for matching emails between users, customers, and applications
+        if path == '/api/admin/link-customer-applications':
+            if not require_role(session, ['admin']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Unauthorized. Admin access required.'}).encode('utf-8'))
+                return
+            
+            results = {
+                'success': True,
+                'linked': [],
+                'created_customers': [],
+                'linked_applications': [],
+                'errors': [],
+                'summary': {}
+            }
+            
+            # Step 1: Get all users with customer role or emails we want to check
+            target_emails = ['asi@phins.ai', 'efrat@phins.ai', 'shosh@phins.ai', 'asaf@phins.ai', 'asaf@assurance.co.il']
+            now = datetime.now()
+            
+            # Step 2: For each target email, check and link
+            for email in target_emails:
+                email_lower = email.lower()
+                link_result = {
+                    'email': email,
+                    'actions': [],
+                    'customer_id': None,
+                    'applications': [],
+                    'policies': []
+                }
+                
+                # Check if user exists
+                user_exists = False
+                user_data = None
+                try:
+                    user_data = USERS.get(email)
+                    if user_data:
+                        user_exists = True
+                except:
+                    pass
+                
+                # Find customer record by email
+                customer_id = None
+                customer = None
+                for cust_id, cust in CUSTOMERS.items():
+                    if cust.get('email', '').lower() == email_lower:
+                        customer_id = cust_id
+                        customer = cust
+                        break
+                
+                # If user exists but no customer record, create customer
+                if user_exists and not customer:
+                    # Generate customer ID
+                    name_part = email.split('@')[0].upper()
+                    customer_id = f'CUST-{name_part}-001'
+                    
+                    # Make sure ID is unique
+                    counter = 1
+                    while customer_id in CUSTOMERS:
+                        counter += 1
+                        customer_id = f'CUST-{name_part}-{counter:03d}'
+                    
+                    # Create customer record
+                    customer_name = user_data.get('name', email.split('@')[0].title()) if user_data else email.split('@')[0].title()
+                    CUSTOMERS[customer_id] = {
+                        'id': customer_id,
+                        'name': customer_name,
+                        'email': email,
+                        'phone': '',
+                        'created_date': now.isoformat(),
+                        'status': 'active'
+                    }
+                    customer = CUSTOMERS[customer_id]
+                    
+                    # Update user with customer_id if possible
+                    if user_data and isinstance(USERS, dict):
+                        USERS[email]['customer_id'] = customer_id
+                    
+                    link_result['actions'].append(f'Created customer record {customer_id}')
+                    results['created_customers'].append({
+                        'customer_id': customer_id,
+                        'name': customer_name,
+                        'email': email
+                    })
+                
+                if customer_id:
+                    link_result['customer_id'] = customer_id
+                
+                # Find applications by email
+                email_apps = []
+                for app_id, app in UNDERWRITING_APPLICATIONS.items():
+                    app_email = app.get('customer_email', '') or app.get('applicant_email', '')
+                    if app_email.lower() == email_lower:
+                        email_apps.append(app)
+                        
+                        # Link application to customer if not already linked
+                        if customer_id and app.get('customer_id') != customer_id:
+                            # Update the application with customer_id
+                            try:
+                                UNDERWRITING_APPLICATIONS[app_id]['customer_id'] = customer_id
+                                UNDERWRITING_APPLICATIONS[app_id]['customer_name'] = customer.get('name', '')
+                                link_result['actions'].append(f'Linked application {app_id} to customer {customer_id}')
+                                results['linked_applications'].append({
+                                    'application_id': app_id,
+                                    'customer_id': customer_id,
+                                    'status': app.get('status')
+                                })
+                            except Exception as e:
+                                results['errors'].append(f'Failed to link {app_id}: {str(e)}')
+                        
+                        link_result['applications'].append({
+                            'id': app_id,
+                            'status': app.get('status'),
+                            'policy_type': app.get('policy_type')
+                        })
+                
+                # Find and link policies by customer_id or email
+                for pol_id, pol in POLICIES.items():
+                    pol_customer = pol.get('customer_id')
+                    if pol_customer == customer_id:
+                        link_result['policies'].append({
+                            'id': pol_id,
+                            'type': pol.get('type'),
+                            'status': pol.get('status')
+                        })
+                    # Also check if policy has no customer but matches an application
+                    elif not pol_customer:
+                        for app in email_apps:
+                            if pol.get('id') == app.get('policy_id'):
+                                try:
+                                    POLICIES[pol_id]['customer_id'] = customer_id
+                                    link_result['actions'].append(f'Linked policy {pol_id} to customer {customer_id}')
+                                    link_result['policies'].append({
+                                        'id': pol_id,
+                                        'type': pol.get('type'),
+                                        'status': pol.get('status')
+                                    })
+                                except Exception as e:
+                                    results['errors'].append(f'Failed to link policy {pol_id}: {str(e)}')
+                
+                # Initialize wallets if customer exists and has applications
+                if customer_id and email_apps:
+                    # Initialize Health Wallet if not exists
+                    if customer_id not in HEALTH_WALLETS:
+                        HEALTH_WALLETS[customer_id] = {
+                            'customer_id': customer_id,
+                            'balance': 0.0,
+                            'monthly_deposit': 0.0,
+                            'transactions': [],
+                            'created_at': now.isoformat()
+                        }
+                        link_result['actions'].append('Initialized Health Wallet')
+                    
+                    # Initialize Investment Account if not exists
+                    if customer_id not in INVESTMENT_ACCOUNTS:
+                        INVESTMENT_ACCOUNTS[customer_id] = {
+                            'customer_id': customer_id,
+                            'balance': 0.0,
+                            'index_balance': 0.0,
+                            'bonds_balance': 0.0,
+                            'crypto_balance': 0.0,
+                            'deposits': [],
+                            'created_at': now.isoformat()
+                        }
+                        link_result['actions'].append('Initialized Investment Account')
+                
+                if link_result['actions'] or link_result['applications'] or link_result['customer_id']:
+                    results['linked'].append(link_result)
+            
+            # Summary
+            results['summary'] = {
+                'emails_checked': len(target_emails),
+                'customers_created': len(results['created_customers']),
+                'applications_linked': len(results['linked_applications']),
+                'errors_count': len(results['errors'])
+            }
+            
+            self._set_json_headers()
+            self.wfile.write(json.dumps(results).encode('utf-8'))
             return
         
         # ========== END CUSTOMER DATA & PIPELINE VALIDATION API ==========
@@ -19006,8 +19190,64 @@ def run_server(port: int = PORT) -> None:
             print("   Server will continue with in-memory storage")
             # Don't fail - just fall back to in-memory
     
-    # Seed efrat@phins.ai customer if not exists
+    # Seed customer accounts - asi@phins.ai, efrat@phins.ai, shosh@phins.ai
     print("👤 Initializing customer accounts...")
+    
+    # Initialize additional PHINS customers
+    additional_customers = [
+        {
+            'id': 'CUST-ASI-001',
+            'name': 'Asi PHINS',
+            'email': 'asi@phins.ai',
+            'phone': '+972-50-1111111',
+            'date_of_birth': '1985-03-20'
+        },
+        {
+            'id': 'CUST-SHOSH-001',
+            'name': 'Shosh PHINS',
+            'email': 'shosh@phins.ai',
+            'phone': '+972-50-2222222',
+            'date_of_birth': '1988-09-10'
+        }
+    ]
+    
+    for cust_data in additional_customers:
+        try:
+            cust_id = cust_data['id']
+            cust_exists = False
+            try:
+                cust_exists = cust_id in CUSTOMERS
+            except Exception:
+                cust_exists = False
+            
+            if not cust_exists:
+                CUSTOMERS[cust_id] = {
+                    **cust_data,
+                    'created_date': datetime.now().isoformat(),
+                    'status': 'active'
+                }
+                # Initialize wallets for this customer
+                HEALTH_WALLETS[cust_id] = {
+                    'customer_id': cust_id,
+                    'balance': 0.0,
+                    'monthly_deposit': 0.0,
+                    'transactions': [],
+                    'created_at': datetime.now().isoformat()
+                }
+                INVESTMENT_ACCOUNTS[cust_id] = {
+                    'customer_id': cust_id,
+                    'balance': 0.0,
+                    'index_balance': 0.0,
+                    'bonds_balance': 0.0,
+                    'crypto_balance': 0.0,
+                    'deposits': [],
+                    'created_at': datetime.now().isoformat()
+                }
+                print(f"   ✓ Created customer {cust_data['name']} ({cust_data['email']}) → {cust_id}")
+        except Exception as e:
+            print(f"   ⚠️  Error creating {cust_data['email']}: {e}")
+    
+    # Initialize efrat@phins.ai with full data
     try:
         # Check if customer exists (handle both dict and database wrapper)
         efrat_exists = False

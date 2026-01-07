@@ -1856,14 +1856,38 @@
       }
     }
     
-    // Validate all customers
+    // Validate all customers and link applications
     async function validateAllCustomers() {
       try {
+        // Step 1: First link customers with their applications by email
+        const linkingDiv = document.createElement('div');
+        linkingDiv.innerHTML = '🔗 Linking customers with applications...';
+        linkingDiv.style.cssText = 'position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.2); z-index: 10000; text-align: center;';
+        document.body.appendChild(linkingDiv);
+        
+        let linkResults = null;
+        try {
+          const linkResponse = await fetch('/api/admin/link-customer-applications', {
+            headers: { 'Authorization': `Bearer ${token}` }
+          });
+          
+          if (linkResponse.ok) {
+            linkResults = await linkResponse.json();
+            console.log('Link results:', linkResults);
+          }
+        } catch (linkErr) {
+          console.error('Linking error:', linkErr);
+        }
+        
+        linkingDiv.innerHTML = '🔍 Validating all customers...';
+        
+        // Step 2: Get all customers
         const response = await fetch('/api/admin/customers', {
           headers: { 'Authorization': `Bearer ${token}` }
         });
         
         if (!response.ok) {
+          document.body.removeChild(linkingDiv);
           alert('Failed to load customers');
           return;
         }
@@ -1872,6 +1896,7 @@
         const customers = data.customers || [];
         
         if (customers.length === 0) {
+          document.body.removeChild(linkingDiv);
           alert('No customers to validate');
           return;
         }
@@ -1883,7 +1908,11 @@
           errors: []
         };
         
-        for (const customer of customers) {
+        // Step 3: Validate each customer
+        for (let i = 0; i < customers.length; i++) {
+          const customer = customers[i];
+          linkingDiv.innerHTML = `🔍 Validating customer ${i + 1}/${customers.length}...`;
+          
           try {
             const validateResponse = await fetch(`/api/admin/pipeline-validate/${customer.id}`, {
               headers: { 'Authorization': `Bearer ${token}` }
@@ -1903,10 +1932,39 @@
           }
         }
         
+        document.body.removeChild(linkingDiv);
+        
+        // Build result message
         let message = `🔍 Validation Complete!\n\n`;
-        message += `Total Customers: ${results.total}\n`;
-        message += `✓ Valid: ${results.valid}\n`;
-        message += `⚠ Needs Action: ${results.needsAction}\n\n`;
+        
+        // Show linking results first
+        if (linkResults && linkResults.summary) {
+          message += `📊 Data Integrity Check:\n`;
+          message += `• Emails checked: ${linkResults.summary.emails_checked}\n`;
+          message += `• New customers created: ${linkResults.summary.customers_created}\n`;
+          message += `• Applications linked: ${linkResults.summary.applications_linked}\n\n`;
+          
+          if (linkResults.created_customers && linkResults.created_customers.length > 0) {
+            message += `✨ New Customer Accounts Created:\n`;
+            linkResults.created_customers.forEach(c => {
+              message += `  • ${c.name} (${c.email}) → ${c.customer_id}\n`;
+            });
+            message += `\n`;
+          }
+          
+          if (linkResults.linked_applications && linkResults.linked_applications.length > 0) {
+            message += `🔗 Applications Linked:\n`;
+            linkResults.linked_applications.forEach(a => {
+              message += `  • ${a.application_id} → ${a.customer_id}\n`;
+            });
+            message += `\n`;
+          }
+        }
+        
+        message += `👥 Customer Validation:\n`;
+        message += `• Total Customers: ${results.total}\n`;
+        message += `• ✓ Valid: ${results.valid}\n`;
+        message += `• ⚠ Needs Action: ${results.needsAction}\n\n`;
         
         if (results.errors.length > 0) {
           message += `Issues Found:\n`;
@@ -1917,6 +1975,11 @@
         }
         
         alert(message);
+        
+        // Refresh data displays
+        loadCustomerList();
+        loadUnderwritingApplications();
+        loadDashboardStats();
         
         // Offer to process all pipelines if there are issues
         if (results.needsAction > 0) {
