@@ -19243,7 +19243,55 @@ def run_server(port: int = PORT) -> None:
         }
     ]
     
-    for cust_data in additional_customers:
+    # Define PHINS customers with their policy and application data
+    phins_customer_data = [
+        {
+            'id': 'CUST-ASI-001',
+            'name': 'Asi PHINS',
+            'email': 'asi@phins.ai',
+            'phone': '+972-50-1111111',
+            'date_of_birth': '1985-03-20',
+            'age': 40,
+            'gender': 'male',
+            'occupation': 'Software Engineer',
+            'policy_id': 'POL-ASI-UNIFIED-001',
+            'policy_type': 'phins_unified',
+            'coverage_amount': 400000.0,
+            'annual_premium': 4800.0,
+            'monthly_premium': 400.0,
+            'policy_status': 'pending_underwriting',
+            'app_id': 'UW-ASI-001',
+            'app_status': 'pending',
+            'risk_score': 'low',
+            'bmi': 24,
+            'smoking_status': 'never',
+            'disability_percentage': 0
+        },
+        {
+            'id': 'CUST-SHOSH-001',
+            'name': 'Shosh PHINS',
+            'email': 'shosh@phins.ai',
+            'phone': '+972-50-2222222',
+            'date_of_birth': '1988-09-10',
+            'age': 37,
+            'gender': 'female',
+            'occupation': 'Marketing Director',
+            'policy_id': 'POL-SHOSH-UNIFIED-001',
+            'policy_type': 'phins_unified',
+            'coverage_amount': 450000.0,
+            'annual_premium': 5200.0,
+            'monthly_premium': 433.33,
+            'policy_status': 'pending_underwriting',
+            'app_id': 'UW-SHOSH-001',
+            'app_status': 'pending',
+            'risk_score': 'low',
+            'bmi': 23,
+            'smoking_status': 'never',
+            'disability_percentage': 0
+        }
+    ]
+    
+    for cust_data in phins_customer_data:
         try:
             cust_id = cust_data['id']
             cust_exists = False
@@ -19254,18 +19302,80 @@ def run_server(port: int = PORT) -> None:
             
             if not cust_exists:
                 CUSTOMERS[cust_id] = {
-                    **cust_data,
-                    'created_date': datetime.now().isoformat(),
+                    'id': cust_id,
+                    'name': cust_data['name'],
+                    'email': cust_data['email'],
+                    'phone': cust_data['phone'],
+                    'date_of_birth': cust_data['date_of_birth'],
+                    'age': cust_data['age'],
+                    'gender': cust_data['gender'],
+                    'occupation': cust_data['occupation'],
+                    'created_date': now.isoformat(),
                     'status': 'active'
                 }
-                # Initialize wallets for this customer
+                print(f"   ✓ Created customer {cust_data['name']} ({cust_data['email']}) → {cust_id}")
+            
+            # Initialize/update policy
+            pol_id = cust_data['policy_id']
+            if pol_id not in POLICIES:
+                POLICIES[pol_id] = {
+                    'id': pol_id,
+                    'customer_id': cust_id,
+                    'type': cust_data['policy_type'],
+                    'coverage_amount': cust_data['coverage_amount'],
+                    'annual_premium': cust_data['annual_premium'],
+                    'monthly_premium': cust_data['monthly_premium'],
+                    'status': cust_data['policy_status'],
+                    'risk_score': cust_data['risk_score'],
+                    'underwriting_id': cust_data['app_id'],
+                    'start_date': now.isoformat(),
+                    'end_date': (now + timedelta(days=365)).isoformat(),
+                    'created_date': now.isoformat()
+                }
+                print(f"     → Policy: {pol_id}")
+            
+            # Initialize/update underwriting application
+            app_id = cust_data['app_id']
+            if app_id not in UNDERWRITING_APPLICATIONS:
+                UNDERWRITING_APPLICATIONS[app_id] = {
+                    'id': app_id,
+                    'policy_id': pol_id,
+                    'customer_id': cust_id,
+                    'customer_name': cust_data['name'],
+                    'customer_email': cust_data['email'],
+                    'policy_type': cust_data['policy_type'],
+                    'coverage_amount': cust_data['coverage_amount'],
+                    'annual_premium': cust_data['annual_premium'],
+                    'monthly_premium': cust_data['monthly_premium'],
+                    'age': cust_data['age'],
+                    'gender': cust_data['gender'],
+                    'occupation': cust_data['occupation'],
+                    'status': cust_data['app_status'],
+                    'risk_score': cust_data['risk_score'],
+                    'risk_assessment': cust_data['risk_score'],
+                    'bmi': cust_data['bmi'],
+                    'smoking_status': cust_data['smoking_status'],
+                    'disability_percentage': cust_data['disability_percentage'],
+                    'medical_conditions': [],
+                    'identity_verified': True,
+                    'medical_exam_required': False,
+                    'submitted_date': now.isoformat(),
+                    'created_date': now.isoformat(),
+                    'updated_date': now.isoformat()
+                }
+                print(f"     → Application: {app_id}")
+            
+            # Initialize wallets
+            if cust_id not in HEALTH_WALLETS:
                 HEALTH_WALLETS[cust_id] = {
                     'customer_id': cust_id,
                     'balance': 0.0,
-                    'monthly_deposit': 0.0,
+                    'monthly_deposit': cust_data['monthly_premium'] * 0.2,
                     'transactions': [],
-                    'created_at': datetime.now().isoformat()
+                    'created_at': now.isoformat()
                 }
+            
+            if cust_id not in INVESTMENT_ACCOUNTS:
                 INVESTMENT_ACCOUNTS[cust_id] = {
                     'customer_id': cust_id,
                     'balance': 0.0,
@@ -19273,9 +19383,8 @@ def run_server(port: int = PORT) -> None:
                     'bonds_balance': 0.0,
                     'crypto_balance': 0.0,
                     'deposits': [],
-                    'created_at': datetime.now().isoformat()
+                    'created_at': now.isoformat()
                 }
-                print(f"   ✓ Created customer {cust_data['name']} ({cust_data['email']}) → {cust_id}")
         except Exception as e:
             print(f"   ⚠️  Error creating {cust_data['email']}: {e}")
     
@@ -19389,9 +19498,41 @@ def run_server(port: int = PORT) -> None:
                 'created_at': datetime.now().isoformat()
             }
             
-            print("✓ Customer efrat@phins.ai (CUST-EFRAT-001) initialized with policy and wallets")
+            # Create underwriting application for Efrat (approved - has active policy)
+            efrat_uw_id = 'UW-EFRAT-001'
+            if efrat_uw_id not in UNDERWRITING_APPLICATIONS:
+                UNDERWRITING_APPLICATIONS[efrat_uw_id] = {
+                    'id': efrat_uw_id,
+                    'policy_id': efrat_policy_id,
+                    'customer_id': 'CUST-EFRAT-001',
+                    'customer_name': 'Efrat PHINS',
+                    'customer_email': 'efrat@phins.ai',
+                    'policy_type': 'phins_unified',
+                    'coverage_amount': 500000.0,
+                    'annual_premium': 5600.0,
+                    'monthly_premium': 466.67,
+                    'age': 35,
+                    'gender': 'female',
+                    'occupation': 'Product Manager',
+                    'status': 'approved',
+                    'risk_score': 'low',
+                    'risk_assessment': 'low',
+                    'bmi': 22,
+                    'smoking_status': 'never',
+                    'disability_percentage': 0,
+                    'medical_conditions': [],
+                    'identity_verified': True,
+                    'medical_exam_required': False,
+                    'decision_date': datetime.now().isoformat(),
+                    'decided_by': 'system_auto_approve',
+                    'submitted_date': datetime.now().isoformat(),
+                    'created_date': datetime.now().isoformat(),
+                    'updated_date': datetime.now().isoformat()
+                }
+            
+            print("✓ Customer efrat@phins.ai (CUST-EFRAT-001) initialized with policy, application, and wallets")
         else:
-            # Customer exists, but ensure policy exists too
+            # Customer exists, but ensure policy and application exist too
             efrat_policy_id = 'POL-EFRAT-UNIFIED-001'
             if efrat_policy_id not in POLICIES:
                 POLICIES[efrat_policy_id] = {
@@ -19423,6 +19564,40 @@ def run_server(port: int = PORT) -> None:
                     }
                 }
                 print("✓ Policy POL-EFRAT-UNIFIED-001 created for efrat@phins.ai")
+            
+            # Ensure underwriting application exists
+            efrat_uw_id = 'UW-EFRAT-001'
+            if efrat_uw_id not in UNDERWRITING_APPLICATIONS:
+                UNDERWRITING_APPLICATIONS[efrat_uw_id] = {
+                    'id': efrat_uw_id,
+                    'policy_id': 'POL-EFRAT-UNIFIED-001',
+                    'customer_id': 'CUST-EFRAT-001',
+                    'customer_name': 'Efrat PHINS',
+                    'customer_email': 'efrat@phins.ai',
+                    'policy_type': 'phins_unified',
+                    'coverage_amount': 500000.0,
+                    'annual_premium': 5600.0,
+                    'monthly_premium': 466.67,
+                    'age': 35,
+                    'gender': 'female',
+                    'occupation': 'Product Manager',
+                    'status': 'approved',
+                    'risk_score': 'low',
+                    'risk_assessment': 'low',
+                    'bmi': 22,
+                    'smoking_status': 'never',
+                    'disability_percentage': 0,
+                    'medical_conditions': [],
+                    'identity_verified': True,
+                    'medical_exam_required': False,
+                    'decision_date': datetime.now().isoformat(),
+                    'decided_by': 'system_auto_approve',
+                    'submitted_date': datetime.now().isoformat(),
+                    'created_date': datetime.now().isoformat(),
+                    'updated_date': datetime.now().isoformat()
+                }
+                print("✓ Underwriting application UW-EFRAT-001 created for efrat@phins.ai")
+            
             print("✓ Customer efrat@phins.ai already exists")
     except Exception as e:
         print(f"⚠️  Customer initialization skipped (database issue): {e}")

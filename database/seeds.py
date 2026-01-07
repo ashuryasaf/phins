@@ -508,7 +508,255 @@ def seed_sample_data(session=None):
             logger.info(f"Primary customer {primary_customer.email} already exists, skipping...")
         
         # =================================================================
+        # PHINS CUSTOMER ACCOUNTS - PERMANENT DATA (efrat, asi, shosh)
+        # These customers are primary platform users with full data persistence
+        # =================================================================
+        phins_customers = [
+            {
+                'id': 'CUST-EFRAT-001',
+                'name': 'Efrat PHINS',
+                'email': 'efrat@phins.ai',
+                'phone': '+972-50-9876543',
+                'dob': '1990-06-15',
+                'age': 35,
+                'gender': 'female',
+                'occupation': 'Product Manager',
+                'password': 'PHINScustomer2024!',
+                'policy': {
+                    'id': 'POL-EFRAT-UNIFIED-001',
+                    'type': 'phins_unified',
+                    'coverage_amount': 500000.0,
+                    'annual_premium': 5600.0,
+                    'monthly_premium': 466.67,
+                    'status': 'active',
+                    'risk_score': 'low'
+                },
+                'application': {
+                    'id': 'UW-EFRAT-001',
+                    'status': 'approved',
+                    'risk_score': 'low',
+                    'bmi': 22,
+                    'smoking_status': 'never',
+                    'disability_percentage': 0,
+                    'medical_conditions': []
+                },
+                'wallet_balance': 5000.0,
+                'investment_balance': 10000.0
+            },
+            {
+                'id': 'CUST-ASI-001',
+                'name': 'Asi PHINS',
+                'email': 'asi@phins.ai',
+                'phone': '+972-50-1111111',
+                'dob': '1985-03-20',
+                'age': 40,
+                'gender': 'male',
+                'occupation': 'Software Engineer',
+                'password': 'PHINScustomer2024!',
+                'policy': {
+                    'id': 'POL-ASI-UNIFIED-001',
+                    'type': 'phins_unified',
+                    'coverage_amount': 400000.0,
+                    'annual_premium': 4800.0,
+                    'monthly_premium': 400.0,
+                    'status': 'pending_underwriting',
+                    'risk_score': 'low'
+                },
+                'application': {
+                    'id': 'UW-ASI-001',
+                    'status': 'pending',
+                    'risk_score': 'low',
+                    'bmi': 24,
+                    'smoking_status': 'never',
+                    'disability_percentage': 0,
+                    'medical_conditions': []
+                },
+                'wallet_balance': 0.0,
+                'investment_balance': 0.0
+            },
+            {
+                'id': 'CUST-SHOSH-001',
+                'name': 'Shosh PHINS',
+                'email': 'shosh@phins.ai',
+                'phone': '+972-50-2222222',
+                'dob': '1988-09-10',
+                'age': 37,
+                'gender': 'female',
+                'occupation': 'Marketing Director',
+                'password': 'PHINScustomer2024!',
+                'policy': {
+                    'id': 'POL-SHOSH-UNIFIED-001',
+                    'type': 'phins_unified',
+                    'coverage_amount': 450000.0,
+                    'annual_premium': 5200.0,
+                    'monthly_premium': 433.33,
+                    'status': 'pending_underwriting',
+                    'risk_score': 'low'
+                },
+                'application': {
+                    'id': 'UW-SHOSH-001',
+                    'status': 'pending',
+                    'risk_score': 'low',
+                    'bmi': 23,
+                    'smoking_status': 'never',
+                    'disability_percentage': 0,
+                    'medical_conditions': []
+                },
+                'wallet_balance': 0.0,
+                'investment_balance': 0.0
+            }
+        ]
+        
+        # Import additional in-memory structures
+        try:
+            from web_portal.server import HEALTH_WALLETS, INVESTMENT_ACCOUNTS
+            sync_wallets = True
+        except ImportError:
+            sync_wallets = False
+        
+        for phins_cust in phins_customers:
+            existing = customer_repo.find_one_by(email=phins_cust['email'])
+            if existing:
+                logger.info(f"PHINS customer {phins_cust['email']} already exists, syncing to memory...")
+            else:
+                pwd = hash_password(phins_cust['password'])
+                customer = customer_repo.create(
+                    id=phins_cust['id'],
+                    name=phins_cust['name'],
+                    email=phins_cust['email'],
+                    phone=phins_cust['phone'],
+                    dob=phins_cust['dob'],
+                    age=phins_cust['age'],
+                    gender=phins_cust['gender'],
+                    occupation=phins_cust['occupation'],
+                    password_hash=pwd['hash'],
+                    password_salt=pwd['salt'],
+                    portal_active=True
+                )
+                logger.info(f"Created PHINS customer: {phins_cust['email']} → {phins_cust['id']}")
+            
+            # Create/verify policy
+            pol_data = phins_cust['policy']
+            existing_policy = policy_repo.find_one_by(id=pol_data['id'])
+            if not existing_policy:
+                policy_repo.create(
+                    id=pol_data['id'],
+                    customer_id=phins_cust['id'],
+                    type=pol_data['type'],
+                    coverage_amount=pol_data['coverage_amount'],
+                    annual_premium=pol_data['annual_premium'],
+                    monthly_premium=pol_data['monthly_premium'],
+                    status=pol_data['status'],
+                    risk_score=pol_data['risk_score'],
+                    start_date=now,
+                    end_date=now + timedelta(days=365)
+                )
+                logger.info(f"Created policy: {pol_data['id']} for {phins_cust['email']}")
+            
+            # Create/verify underwriting application
+            app_data = phins_cust['application']
+            existing_app = underwriting_repo.find_one_by(id=app_data['id'])
+            if not existing_app:
+                underwriting_repo.create(
+                    id=app_data['id'],
+                    policy_id=pol_data['id'],
+                    customer_id=phins_cust['id'],
+                    status=app_data['status'],
+                    risk_assessment=app_data['risk_score'],
+                    risk_score=app_data['risk_score'],
+                    submitted_date=now,
+                    created_date=now
+                )
+                logger.info(f"Created underwriting application: {app_data['id']} for {phins_cust['email']}")
+            
+            # Sync to memory
+            if sync_to_memory:
+                CUSTOMERS[phins_cust['id']] = {
+                    'id': phins_cust['id'],
+                    'name': phins_cust['name'],
+                    'email': phins_cust['email'],
+                    'phone': phins_cust['phone'],
+                    'date_of_birth': phins_cust['dob'],
+                    'age': phins_cust['age'],
+                    'gender': phins_cust['gender'],
+                    'occupation': phins_cust['occupation'],
+                    'created_date': now.isoformat(),
+                    'status': 'active'
+                }
+                
+                POLICIES[pol_data['id']] = {
+                    'id': pol_data['id'],
+                    'customer_id': phins_cust['id'],
+                    'type': pol_data['type'],
+                    'coverage_amount': pol_data['coverage_amount'],
+                    'annual_premium': pol_data['annual_premium'],
+                    'monthly_premium': pol_data['monthly_premium'],
+                    'status': pol_data['status'],
+                    'risk_score': pol_data['risk_score'],
+                    'start_date': now.isoformat(),
+                    'end_date': (now + timedelta(days=365)).isoformat(),
+                    'created_date': now.isoformat()
+                }
+                
+                UNDERWRITING_APPLICATIONS[app_data['id']] = {
+                    'id': app_data['id'],
+                    'policy_id': pol_data['id'],
+                    'customer_id': phins_cust['id'],
+                    'customer_name': phins_cust['name'],
+                    'customer_email': phins_cust['email'],
+                    'policy_type': pol_data['type'],
+                    'coverage_amount': pol_data['coverage_amount'],
+                    'annual_premium': pol_data['annual_premium'],
+                    'monthly_premium': pol_data['monthly_premium'],
+                    'age': phins_cust['age'],
+                    'gender': phins_cust['gender'],
+                    'occupation': phins_cust['occupation'],
+                    'risk_score': app_data['risk_score'],
+                    'status': app_data['status'],
+                    'risk_assessment': app_data['risk_score'],
+                    'bmi': app_data.get('bmi'),
+                    'smoking_status': app_data.get('smoking_status'),
+                    'disability_percentage': app_data.get('disability_percentage', 0),
+                    'medical_conditions': app_data.get('medical_conditions', []),
+                    'medical_exam_required': False,
+                    'submitted_date': now.isoformat(),
+                    'created_date': now.isoformat(),
+                    'updated_date': now.isoformat()
+                }
+            
+            # Initialize wallets
+            if sync_wallets:
+                if phins_cust['id'] not in HEALTH_WALLETS:
+                    HEALTH_WALLETS[phins_cust['id']] = {
+                        'customer_id': phins_cust['id'],
+                        'balance': phins_cust['wallet_balance'],
+                        'monthly_deposit': pol_data['monthly_premium'] * 0.2,
+                        'transactions': [] if phins_cust['wallet_balance'] == 0 else [{
+                            'id': f'INIT-{phins_cust["id"]}',
+                            'type': 'deposit',
+                            'amount': phins_cust['wallet_balance'],
+                            'timestamp': now.isoformat(),
+                            'description': 'Initial policy savings'
+                        }],
+                        'created_at': now.isoformat()
+                    }
+                
+                if phins_cust['id'] not in INVESTMENT_ACCOUNTS:
+                    INVESTMENT_ACCOUNTS[phins_cust['id']] = {
+                        'customer_id': phins_cust['id'],
+                        'balance': phins_cust['investment_balance'],
+                        'index_balance': phins_cust['investment_balance'] * 0.6,
+                        'bonds_balance': phins_cust['investment_balance'] * 0.3,
+                        'crypto_balance': phins_cust['investment_balance'] * 0.1,
+                        'deposits': [],
+                        'created_at': now.isoformat()
+                    }
+            
+            logger.info(f"Synced {phins_cust['email']} to in-memory structures")
+        
+        # =================================================================
         # ADDITIONAL TEST CUSTOMERS WITH PENDING UNDERWRITING
+        # (For testing purposes - can be suspended)
         # =================================================================
         additional_customers = [
             {
