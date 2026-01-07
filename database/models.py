@@ -293,10 +293,39 @@ class UnderwritingApplication(Base):
     additional_documents_required = Column(Boolean, default=False)
     notes = Column(Text)
     
+    # Demographic data
+    gender = Column(String(20))
+    occupation = Column(String(100))
+    
+    # Medical assessment data - for risk reports
+    disability_percentage = Column(Integer)  # 0-100
+    disability_type = Column(String(200))
+    disability_status = Column(String(50))  # stable, progressive, etc.
+    disability_treatment = Column(Text)
+    disability_notes = Column(Text)
+    
+    # BMI data
+    bmi = Column(Float)
+    height_cm = Column(Float)
+    weight_kg = Column(Float)
+    bmi_notes = Column(Text)
+    
+    # Lifestyle data
+    smoking_status = Column(String(20))  # never, former, current
+    alcohol_use = Column(String(20))  # none, moderate, heavy
+    exercise_frequency = Column(String(20))  # never, weekly, daily
+    
+    # Identity verification
+    identity_verified = Column(Boolean, default=False)
+    premium_adjustment = Column(Integer, default=0)  # Percentage loading
+    
     # JSON fields stored as text
     questionnaire_responses = Column(Text)  # JSON string
     payment_setup = Column(Text)  # JSON string
     health_wallet = Column(Text)  # JSON string
+    medical_conditions = Column(Text)  # JSON string - array of conditions
+    documents = Column(Text)  # JSON string - array of verified documents
+    data_sources = Column(Text)  # JSON string - tracking data origins
     
     submitted_date = Column(DateTime, default=datetime.utcnow, nullable=False)
     decision_date = Column(DateTime)
@@ -313,10 +342,22 @@ class UnderwritingApplication(Base):
                 return {}
             if isinstance(val, dict):
                 return val
+            if isinstance(val, list):
+                return val
             try:
                 return json_module.loads(val)
             except:
                 return {}
+        
+        def safe_json_loads_list(val):
+            if val is None:
+                return []
+            if isinstance(val, list):
+                return val
+            try:
+                return json_module.loads(val)
+            except:
+                return []
         
         return {
             'id': self.id,
@@ -333,9 +374,34 @@ class UnderwritingApplication(Base):
             'medical_exam_required': self.medical_exam_required,
             'additional_documents_required': self.additional_documents_required,
             'notes': self.notes,
+            # Demographic data
+            'gender': self.gender,
+            'occupation': self.occupation,
+            # Medical assessment data
+            'disability_percentage': self.disability_percentage,
+            'disability_type': self.disability_type,
+            'disability_status': self.disability_status,
+            'disability_treatment': self.disability_treatment,
+            'disability_notes': self.disability_notes,
+            'bmi': self.bmi,
+            'height_cm': self.height_cm,
+            'weight_kg': self.weight_kg,
+            'bmi_notes': self.bmi_notes,
+            # Lifestyle data
+            'smoking_status': self.smoking_status,
+            'alcohol_use': self.alcohol_use,
+            'exercise_frequency': self.exercise_frequency,
+            # Identity verification
+            'identity_verified': self.identity_verified,
+            'premium_adjustment': self.premium_adjustment,
+            # JSON fields
             'questionnaire_responses': safe_json_loads(self.questionnaire_responses),
             'payment_setup': safe_json_loads(self.payment_setup),
             'health_wallet': safe_json_loads(self.health_wallet),
+            'medical_conditions': safe_json_loads_list(self.medical_conditions),
+            'documents': safe_json_loads_list(self.documents),
+            'data_sources': safe_json_loads(self.data_sources),
+            # Timestamps
             'submitted_date': self.submitted_date.isoformat() if self.submitted_date else None,
             'decision_date': self.decision_date.isoformat() if self.decision_date else None,
             'decided_by': self.decided_by,
