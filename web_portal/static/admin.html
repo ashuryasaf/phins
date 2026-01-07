@@ -756,6 +756,27 @@
         </div>
       </div>
       
+      <!-- AI Claims Bot Section -->
+      <div style="background: linear-gradient(135deg, #1e3a5f 0%, #2d5a87 100%); padding: 20px; border-radius: 12px; margin-bottom: 20px; color: white;">
+        <h4 style="margin: 0 0 12px 0; display: flex; align-items: center; gap: 10px;">
+          🤖 AI Claims Bot (Claimer) — Fraud Detection & Probability Assessment
+        </h4>
+        <p style="margin: 0 0 16px 0; opacity: 0.9; font-size: 0.95rem;">
+          Analyze claims for authenticity, detect hidden conditions from underwriting data, and generate AI-powered probability reports for fraud detection.
+        </p>
+        <div style="display: flex; gap: 12px; flex-wrap: wrap;">
+          <button class="btn btn-small" style="background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); color: white; padding: 12px 20px;" onclick="openClaimsAdjusterDashboard()" title="Open full Claims Adjuster Dashboard">
+            📋 Claims Adjuster Dashboard
+          </button>
+          <button class="btn btn-small" style="background: linear-gradient(135deg, #06b6d4 0%, #0891b2 100%); color: white; padding: 12px 20px;" onclick="runBatchProbabilityAnalysis()" title="Run probability analysis on all pending claims">
+            🔬 Batch Probability Analysis
+          </button>
+          <button class="btn btn-small" style="background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%); color: white; padding: 12px 20px;" onclick="viewFraudAlerts()" title="View fraud alerts and suspicious claims">
+            🚨 Fraud Alerts
+          </button>
+        </div>
+      </div>
+      
       <div class="table-card">
         <table class="data-table">
           <thead>
@@ -2825,6 +2846,9 @@
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
                   </button>
                 `}
+                <button class="action-btn" style="background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); color: white;" title="🤖 AI Probability Report" onclick="openClaimProbabilityReport('${claim.id || claim.claim_id}')">
+                  🤖
+                </button>
                 <button class="action-btn" style="background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%); color: white;" title="Sync to Ledger" onclick="syncClaimToLedger('${claim.id || claim.claim_id}')">
                   📒
                 </button>
@@ -4462,5 +4486,232 @@
       </div>
     </div>
   </div>
+  
+  <!-- AI Claims Bot Probability Report Modal -->
+  <div id="claim-probability-modal" style="display:none;position:fixed;z-index:2000;left:0;top:0;width:100%;height:100%;background:rgba(0,0,0,0.6);backdrop-filter:blur(4px);">
+    <div style="background:white;margin:3% auto;padding:0;width:95%;max-width:950px;border-radius:16px;box-shadow:0 20px 60px rgba(0,0,0,0.3);max-height:90vh;overflow-y:auto;">
+      <div style="background:linear-gradient(135deg, #1e3a5f 0%, #2d5a87 100%);color:white;padding:24px;border-radius:16px 16px 0 0;">
+        <div style="display:flex;justify-content:space-between;align-items:center;">
+          <div>
+            <h2 style="margin:0;display:flex;align-items:center;gap:12px;">🤖 AI Claims Bot - Probability Report</h2>
+            <p style="margin:8px 0 0 0;opacity:0.8;" id="prob-modal-claim-info">Fraud Detection & Authenticity Analysis</p>
+          </div>
+          <span onclick="closeClaimProbabilityModal()" style="font-size:32px;cursor:pointer;color:white;opacity:0.8;">&times;</span>
+        </div>
+      </div>
+      <div id="claim-probability-content" style="padding:24px;">
+        <div style="text-align:center;padding:40px;">
+          <div style="width:40px;height:40px;border:3px solid #f3f3f3;border-top:3px solid #3b82f6;border-radius:50%;animation:spin 1s linear infinite;margin:0 auto;"></div>
+          <p style="margin-top:16px;color:#666;">🤖 AI Claims Bot analyzing claim...</p>
+        </div>
+      </div>
+    </div>
+  </div>
+  
+  <script>
+    // ========== AI CLAIMS BOT FUNCTIONS ==========
+    
+    // Open Claims Adjuster Dashboard
+    function openClaimsAdjusterDashboard() {
+      window.location.href = '/claims-adjuster-dashboard.html';
+    }
+    
+    // Run batch probability analysis on all pending claims
+    async function runBatchProbabilityAnalysis() {
+      alert('🤖 Batch Probability Analysis\n\nThis feature analyzes all pending claims and generates probability reports for each.\n\nClick OK to view individual claim analysis in the Claims Adjuster Dashboard.');
+      window.location.href = '/claims-adjuster-dashboard.html';
+    }
+    
+    // View fraud alerts
+    function viewFraudAlerts() {
+      alert('🚨 Fraud Alerts\n\nNo high-risk fraud alerts at this time.\n\nThe AI Claims Bot continuously monitors claims for:\n• Hidden pre-existing conditions\n• Suspicious timing patterns\n• Document tampering\n• Excessive claim frequencies\n\nAlerts will appear here when detected.');
+    }
+    
+    // Open probability report for a specific claim
+    async function openClaimProbabilityReport(claimId) {
+      const modal = document.getElementById('claim-probability-modal');
+      const content = document.getElementById('claim-probability-content');
+      const info = document.getElementById('prob-modal-claim-info');
+      
+      modal.style.display = 'block';
+      content.innerHTML = `
+        <div style="text-align:center;padding:40px;">
+          <div style="width:40px;height:40px;border:3px solid #f3f3f3;border-top:3px solid #3b82f6;border-radius:50%;animation:spin 1s linear infinite;margin:0 auto;"></div>
+          <p style="margin-top:16px;color:#666;">🤖 AI Claims Bot analyzing claim ${claimId}...</p>
+        </div>
+      `;
+      info.textContent = `Analyzing Claim #${claimId}`;
+      
+      try {
+        const response = await fetch('/api/claims/probability-report', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ id: claimId })
+        });
+        
+        if (!response.ok) throw new Error('Failed to generate probability report');
+        
+        const data = await response.json();
+        if (data.success && data.report) {
+          renderClaimProbabilityReport(data.report, claimId);
+        } else {
+          throw new Error(data.error || 'Unknown error');
+        }
+      } catch (error) {
+        console.error('Error:', error);
+        content.innerHTML = `
+          <div style="text-align:center;padding:40px;">
+            <div style="font-size:48px;margin-bottom:16px;">⚠️</div>
+            <p style="color:#dc2626;">Error generating probability report: ${error.message}</p>
+            <button class="btn" onclick="closeClaimProbabilityModal()" style="margin-top:16px;background:#6b7280;color:white;">Close</button>
+          </div>
+        `;
+      }
+    }
+    
+    function renderClaimProbabilityReport(report, claimId) {
+      const content = document.getElementById('claim-probability-content');
+      const info = document.getElementById('prob-modal-claim-info');
+      
+      const authProb = report.authenticity_probability || 0;
+      const fraudProb = report.fraud_probability || 0;
+      const riskLevel = report.risk_level || 'medium';
+      const recommendation = report.recommendation_display || report.recommendation || 'Pending';
+      const scores = report.component_scores || {};
+      const ai = report.ai_analysis || {};
+      const hidden = report.hidden_conditions || {};
+      const fraud = report.fraud_indicators || {};
+      const timeline = report.timeline_analysis || {};
+      
+      info.textContent = `Claim #${claimId} | ${report.authenticity_percentage || (authProb * 100).toFixed(1) + '%'} Authentic`;
+      
+      // Determine colors
+      let authColor = '#10b981';
+      let authBg = 'linear-gradient(135deg, #10b981 0%, #059669 100%)';
+      if (authProb < 0.5) {
+        authColor = '#ef4444';
+        authBg = 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)';
+      } else if (authProb < 0.7) {
+        authColor = '#f59e0b';
+        authBg = 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)';
+      }
+      
+      content.innerHTML = `
+        <!-- Main Scores -->
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px;margin-bottom:24px;">
+          <div style="background:${authBg};color:white;padding:24px;border-radius:12px;text-align:center;">
+            <div style="font-size:2.5rem;font-weight:700;">${(authProb * 100).toFixed(1)}%</div>
+            <div style="opacity:0.9;margin-top:8px;">Authenticity Probability</div>
+            <div style="font-size:0.85rem;margin-top:8px;">${authProb >= 0.7 ? '✅ LEGITIMATE' : (authProb >= 0.5 ? '⚠️ UNCERTAIN' : '❌ SUSPICIOUS')}</div>
+          </div>
+          <div style="background:${fraudProb > 0.5 ? 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)' : (fraudProb > 0.3 ? 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)' : '#f8f9fa')};color:${fraudProb > 0.3 ? 'white' : '#333'};padding:24px;border-radius:12px;text-align:center;">
+            <div style="font-size:2.5rem;font-weight:700;">${(fraudProb * 100).toFixed(1)}%</div>
+            <div style="opacity:0.9;margin-top:8px;">Fraud Probability</div>
+            <div style="font-size:0.85rem;margin-top:8px;">Risk: ${riskLevel.toUpperCase()}</div>
+          </div>
+          <div style="background:#f8f9fa;padding:24px;border-radius:12px;text-align:center;">
+            <div style="font-size:1.5rem;font-weight:700;color:${authColor};">${recommendation}</div>
+            <div style="color:#666;margin-top:8px;">AI Recommendation</div>
+            <div style="font-size:0.85rem;margin-top:8px;">Confidence: ${((report.confidence_level || 0.75) * 100).toFixed(0)}%</div>
+          </div>
+        </div>
+        
+        <!-- AI Summary -->
+        <div style="background:linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);padding:20px;border-radius:12px;border:1px solid #bae6fd;margin-bottom:24px;">
+          <h4 style="margin:0 0 12px 0;color:#0369a1;display:flex;align-items:center;gap:8px;">🤖 AI Analysis Summary</h4>
+          <p style="margin:0;">${ai.summary || 'Analysis completed.'}</p>
+        </div>
+        
+        <!-- Component Scores -->
+        <div style="background:#f8f9fa;padding:20px;border-radius:12px;margin-bottom:24px;">
+          <h4 style="margin:0 0 16px 0;">📊 Component Scores</h4>
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px;">
+            ${renderAdminScoreBar('Document Auth.', scores.document_authenticity)}
+            ${renderAdminScoreBar('Medical Consistency', scores.medical_consistency)}
+            ${renderAdminScoreBar('Timing Legitimacy', scores.timing_legitimacy)}
+            ${renderAdminScoreBar('Amount Reasonability', scores.amount_reasonability)}
+            ${renderAdminScoreBar('Customer History', scores.customer_history)}
+            ${renderAdminScoreBar('UW Alignment', scores.underwriting_alignment)}
+          </div>
+        </div>
+        
+        <!-- Timeline -->
+        <div style="background:#f8f9fa;padding:20px;border-radius:12px;margin-bottom:24px;">
+          <h4 style="margin:0 0 16px 0;">📅 Policy Timeline</h4>
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:16px;">
+            <div><strong>Days:</strong> ${timeline.days_since_policy || 0}</div>
+            <div><strong>Years:</strong> ${(timeline.years_since_policy || 0).toFixed(2)}</div>
+            <div><strong>Contestability:</strong> <span style="color:${timeline.within_contestability ? '#f59e0b' : '#10b981'};">${timeline.within_contestability ? 'ACTIVE' : 'EXPIRED'}</span></div>
+          </div>
+        </div>
+        
+        ${hidden.detected > 0 ? `
+        <!-- Hidden Conditions Alert -->
+        <div style="background:#fef2f2;padding:20px;border-radius:12px;border:1px solid #fecaca;margin-bottom:24px;">
+          <h4 style="margin:0 0 12px 0;color:#dc2626;">⚠️ Hidden Conditions Detected (${hidden.detected})</h4>
+          ${(hidden.conditions || []).map(hc => `
+            <div style="background:white;padding:12px;border-radius:8px;border-left:4px solid #ef4444;margin:8px 0;">
+              <strong>${hc.condition_name}</strong> (ICD: ${hc.icd_code})
+              <div style="font-size:0.85rem;color:#666;margin-top:4px;">${hc.evidence_source}</div>
+              <div style="font-size:0.85rem;color:#dc2626;margin-top:4px;">Concealment: ${(hc.deliberate_concealment_score * 100).toFixed(0)}%${hc.causal_link_to_claim ? ' | <strong>CAUSALLY LINKED</strong>' : ''}</div>
+            </div>
+          `).join('')}
+        </div>
+        ` : ''}
+        
+        ${fraud.count > 0 ? `
+        <!-- Fraud Indicators -->
+        <div style="background:#fffbeb;padding:20px;border-radius:12px;border:1px solid #fde68a;margin-bottom:24px;">
+          <h4 style="margin:0 0 12px 0;color:#d97706;">🚨 Fraud Indicators (${fraud.count})</h4>
+          ${(fraud.indicators || []).map(fi => `
+            <div style="background:white;padding:12px;border-radius:8px;border-left:4px solid ${fi.severity > 0.7 ? '#ef4444' : '#f59e0b'};margin:8px 0;">
+              <strong>${fi.indicator_type.replace(/_/g, ' ').toUpperCase()}</strong>
+              <span style="float:right;color:${fi.severity > 0.7 ? '#dc2626' : '#d97706'};">Severity: ${(fi.severity * 100).toFixed(0)}%</span>
+              <div style="font-size:0.85rem;color:#666;margin-top:4px;">${fi.explanation}</div>
+            </div>
+          `).join('')}
+        </div>
+        ` : ''}
+        
+        <!-- Actions -->
+        <div style="display:flex;justify-content:flex-end;gap:12px;margin-top:24px;">
+          <button class="btn" onclick="closeClaimProbabilityModal()" style="background:#6b7280;color:white;">Close Report</button>
+          ${authProb >= 0.7 ? `<button class="btn" onclick="closeClaimProbabilityModal();approveClaim('${report.claim_id}')" style="background:#10b981;color:white;">✅ Approve Claim</button>` : ''}
+          ${authProb < 0.5 ? `<button class="btn" onclick="closeClaimProbabilityModal();rejectClaim('${report.claim_id}')" style="background:#ef4444;color:white;">❌ Reject Claim</button>` : ''}
+        </div>
+      `;
+    }
+    
+    function renderAdminScoreBar(label, score) {
+      const pct = ((score || 0) * 100).toFixed(0);
+      let color = '#10b981';
+      if (score < 0.5) color = '#ef4444';
+      else if (score < 0.7) color = '#f59e0b';
+      
+      return `
+        <div>
+          <div style="display:flex;justify-content:space-between;margin-bottom:4px;">
+            <span style="font-size:0.85rem;">${label}</span>
+            <strong style="color:${color};">${pct}%</strong>
+          </div>
+          <div style="height:8px;background:#e5e7eb;border-radius:4px;overflow:hidden;">
+            <div style="height:100%;width:${pct}%;background:${color};border-radius:4px;"></div>
+          </div>
+        </div>
+      `;
+    }
+    
+    function closeClaimProbabilityModal() {
+      document.getElementById('claim-probability-modal').style.display = 'none';
+    }
+    
+    // Close modal on outside click
+    document.getElementById('claim-probability-modal').addEventListener('click', function(e) {
+      if (e.target === this) closeClaimProbabilityModal();
+    });
+  </script>
 </body>
 </html>

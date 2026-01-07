@@ -434,6 +434,112 @@
             from { transform: translateX(100%); opacity: 0; }
             to { transform: translateX(0); opacity: 1; }
         }
+        
+        /* Probability Report Button */
+        .btn-claimer {
+            background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+            color: white;
+        }
+        .btn-claimer:hover {
+            background: linear-gradient(135deg, #d97706 0%, #b45309 100%);
+            box-shadow: 0 6px 20px rgba(245, 158, 11, 0.4);
+        }
+        
+        /* Probability Report Modal */
+        .probability-modal {
+            max-width: 900px;
+        }
+        .prob-header {
+            background: linear-gradient(135deg, #1a1f36 0%, #2d3561 100%);
+            color: white;
+            padding: 24px;
+            border-radius: 12px 12px 0 0;
+            margin: -30px -30px 20px -30px;
+        }
+        .prob-score-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 16px;
+            margin: 20px 0;
+        }
+        .prob-score-card {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 12px;
+            text-align: center;
+        }
+        .prob-score-card.highlight {
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+            color: white;
+        }
+        .prob-score-card.warning {
+            background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+            color: white;
+        }
+        .prob-score-card.danger {
+            background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+            color: white;
+        }
+        .prob-score-value {
+            font-size: 2.5rem;
+            font-weight: 700;
+        }
+        .prob-score-label {
+            font-size: 0.9rem;
+            opacity: 0.9;
+            margin-top: 8px;
+        }
+        .prob-section {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 12px;
+            margin: 16px 0;
+        }
+        .prob-section h4 {
+            margin: 0 0 16px 0;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .prob-indicator {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px;
+            background: white;
+            border-radius: 8px;
+            margin: 8px 0;
+            border-left: 4px solid #e5e7eb;
+        }
+        .prob-indicator.red { border-left-color: #ef4444; background: #fef2f2; }
+        .prob-indicator.green { border-left-color: #10b981; background: #ecfdf5; }
+        .prob-indicator.yellow { border-left-color: #f59e0b; background: #fffbeb; }
+        .prob-bar {
+            height: 8px;
+            background: #e5e7eb;
+            border-radius: 4px;
+            overflow: hidden;
+            margin: 8px 0;
+        }
+        .prob-bar-fill {
+            height: 100%;
+            border-radius: 4px;
+            transition: width 0.5s ease;
+        }
+        .ai-summary {
+            background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
+            padding: 20px;
+            border-radius: 12px;
+            border: 1px solid #bae6fd;
+            margin: 16px 0;
+        }
+        .ai-summary h4 {
+            color: #0369a1;
+            margin: 0 0 12px 0;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
     </style>
 </head>
 <body>
@@ -550,6 +656,27 @@
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="15" y1="9" x2="9" y2="15"></line><line x1="9" y1="9" x2="15" y2="15"></line></svg>
                     Cancel
                 </button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Probability Report Modal -->
+    <div id="probability-modal" class="modal">
+        <div class="modal-content probability-modal">
+            <div class="prob-header">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <div>
+                        <h2 style="margin: 0; display: flex; align-items: center; gap: 12px;">
+                            🤖 AI Claims Bot - Probability Report
+                        </h2>
+                        <p style="margin: 8px 0 0 0; opacity: 0.8;" id="prob-claim-info">Claim Analysis</p>
+                    </div>
+                    <span class="close" onclick="closeProbabilityModal()" style="color: white; font-size: 32px;">&times;</span>
+                </div>
+            </div>
+            
+            <div id="probability-content">
+                <div class="loading-spinner"><div class="spinner"></div></div>
             </div>
         </div>
     </div>
@@ -683,9 +810,13 @@
                                 Review Claim
                             </button>
                         ` : ''}
+                        <button class="btn btn-claimer" onclick="openProbabilityReport('${claim.id}')">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm0 18a8 8 0 1 1 8-8 8 8 0 0 1-8 8z"></path><path d="M12 6v6l4 2"></path></svg>
+                            🤖 Claimer AI
+                        </button>
                         <button class="btn btn-secondary" onclick="viewCustomerRiskReport('${claim.customer_id}')">
                             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
-                            Risk Report
+                            UW Risk Report
                         </button>
                         ${(claim.status === 'Approved' || claim.status === 'approved') && !claim.payment_date ? `
                             <button class="btn btn-pay" onclick="payClaim('${claim.id}')">
@@ -909,11 +1040,243 @@
             }
         }
         
+        // ========== PROBABILITY REPORT FUNCTIONS ==========
+        
+        async function openProbabilityReport(claimId) {
+            document.getElementById('probability-modal').style.display = 'block';
+            document.getElementById('probability-content').innerHTML = '<div class="loading-spinner"><div class="spinner"></div></div><p style="text-align: center; margin-top: 16px;">🤖 AI Claims Bot analyzing claim...</p>';
+            
+            const claim = allClaims.find(c => c.id === claimId);
+            if (claim) {
+                document.getElementById('prob-claim-info').textContent = `Claim #${claimId} | ${claim.customer_name || claim.customer_id || 'Customer'} | $${formatNumber(claim.claimed_amount || 0)}`;
+            }
+            
+            try {
+                const response = await fetch('/api/claims/probability-report', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ id: claimId })
+                });
+                
+                if (!response.ok) {
+                    throw new Error('Failed to generate probability report');
+                }
+                
+                const data = await response.json();
+                if (data.success && data.report) {
+                    renderProbabilityReport(data.report, claim);
+                } else {
+                    throw new Error(data.error || 'Unknown error');
+                }
+            } catch (error) {
+                console.error('Error generating probability report:', error);
+                document.getElementById('probability-content').innerHTML = `
+                    <div class="empty-state">
+                        <div class="empty-state-icon">⚠️</div>
+                        <p>Error generating probability report: ${error.message}</p>
+                        <button class="btn btn-secondary" onclick="closeProbabilityModal()">Close</button>
+                    </div>
+                `;
+            }
+        }
+        
+        function renderProbabilityReport(report, claim) {
+            const authProb = report.authenticity_probability || 0;
+            const fraudProb = report.fraud_probability || 0;
+            const riskLevel = report.risk_level || 'medium';
+            const recommendation = report.recommendation_display || report.recommendation || 'Pending';
+            
+            // Determine colors based on authenticity
+            let authClass = 'highlight';
+            let authColor = '#10b981';
+            if (authProb < 0.5) {
+                authClass = 'danger';
+                authColor = '#ef4444';
+            } else if (authProb < 0.7) {
+                authClass = 'warning';
+                authColor = '#f59e0b';
+            }
+            
+            const scores = report.component_scores || {};
+            const ai = report.ai_analysis || {};
+            const hidden = report.hidden_conditions || {};
+            const fraud = report.fraud_indicators || {};
+            const timeline = report.timeline_analysis || {};
+            
+            let html = `
+                <!-- Main Scores -->
+                <div class="prob-score-grid">
+                    <div class="prob-score-card ${authClass}">
+                        <div class="prob-score-value">${(authProb * 100).toFixed(1)}%</div>
+                        <div class="prob-score-label">Authenticity Probability</div>
+                        <div style="font-size: 0.8rem; margin-top: 8px;">Claim appears ${authProb >= 0.7 ? 'LEGITIMATE' : (authProb >= 0.5 ? 'UNCERTAIN' : 'SUSPICIOUS')}</div>
+                    </div>
+                    <div class="prob-score-card ${fraudProb > 0.5 ? 'danger' : (fraudProb > 0.3 ? 'warning' : '')}">
+                        <div class="prob-score-value">${(fraudProb * 100).toFixed(1)}%</div>
+                        <div class="prob-score-label">Fraud Probability</div>
+                        <div style="font-size: 0.8rem; margin-top: 8px;">Risk Level: ${riskLevel.toUpperCase()}</div>
+                    </div>
+                    <div class="prob-score-card">
+                        <div class="prob-score-value" style="font-size: 1.5rem; color: ${authProb >= 0.7 ? '#10b981' : (authProb >= 0.5 ? '#f59e0b' : '#ef4444')};">${recommendation}</div>
+                        <div class="prob-score-label">AI Recommendation</div>
+                        <div style="font-size: 0.8rem; margin-top: 8px;">Confidence: ${((report.confidence_level || 0.75) * 100).toFixed(0)}%</div>
+                    </div>
+                </div>
+                
+                <!-- AI Summary -->
+                <div class="ai-summary">
+                    <h4>🤖 AI Analysis Summary</h4>
+                    <p style="margin: 0;">${ai.summary || 'Analysis completed.'}</p>
+                </div>
+                
+                <!-- Component Scores -->
+                <div class="prob-section">
+                    <h4>📊 Component Score Breakdown</h4>
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 16px;">
+                        ${renderScoreBar('Document Authenticity', scores.document_authenticity)}
+                        ${renderScoreBar('Medical Consistency', scores.medical_consistency)}
+                        ${renderScoreBar('Timing Legitimacy', scores.timing_legitimacy)}
+                        ${renderScoreBar('Amount Reasonability', scores.amount_reasonability)}
+                        ${renderScoreBar('Customer History', scores.customer_history)}
+                        ${renderScoreBar('Underwriting Alignment', scores.underwriting_alignment)}
+                    </div>
+                </div>
+                
+                <!-- Timeline Analysis -->
+                <div class="prob-section">
+                    <h4>📅 Policy Timeline Analysis</h4>
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px;">
+                        <div>
+                            <strong>Days Since Policy:</strong> ${timeline.days_since_policy || 0}
+                        </div>
+                        <div>
+                            <strong>Years Since Policy:</strong> ${(timeline.years_since_policy || 0).toFixed(2)}
+                        </div>
+                        <div>
+                            <strong>Within Contestability:</strong> 
+                            <span style="color: ${timeline.within_contestability ? '#f59e0b' : '#10b981'};">
+                                ${timeline.within_contestability ? 'YES (< 2 years)' : 'NO (> 2 years)'}
+                            </span>
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            // Hidden Conditions
+            if (hidden.detected > 0) {
+                html += `
+                    <div class="prob-section" style="background: #fef2f2; border: 1px solid #fecaca;">
+                        <h4 style="color: #dc2626;">⚠️ Hidden Conditions Detected (${hidden.detected})</h4>
+                        <p style="color: #991b1b; margin-bottom: 16px;">The following conditions were found in the claim but were NOT declared during underwriting:</p>
+                        ${(hidden.conditions || []).map(hc => `
+                            <div class="prob-indicator red">
+                                <div style="flex: 1;">
+                                    <strong>${hc.condition_name}</strong> (ICD: ${hc.icd_code})
+                                    <div style="font-size: 0.85rem; color: #666; margin-top: 4px;">${hc.evidence_source}</div>
+                                    <div style="font-size: 0.85rem; margin-top: 4px;">
+                                        <span style="color: #dc2626;">Concealment Score: ${(hc.deliberate_concealment_score * 100).toFixed(0)}%</span>
+                                        ${hc.causal_link_to_claim ? ' | <strong style="color: #dc2626;">CAUSALLY LINKED TO CLAIM</strong>' : ''}
+                                    </div>
+                                </div>
+                            </div>
+                        `).join('')}
+                    </div>
+                `;
+            }
+            
+            // Fraud Indicators
+            if (fraud.count > 0) {
+                html += `
+                    <div class="prob-section" style="background: #fffbeb; border: 1px solid #fde68a;">
+                        <h4 style="color: #d97706;">🚨 Fraud Indicators (${fraud.count})</h4>
+                        ${(fraud.indicators || []).map(fi => `
+                            <div class="prob-indicator ${fi.severity > 0.7 ? 'red' : 'yellow'}">
+                                <div style="flex: 1;">
+                                    <strong>${fi.indicator_type.replace(/_/g, ' ').toUpperCase()}</strong>
+                                    <span style="float: right; color: ${fi.severity > 0.7 ? '#dc2626' : '#d97706'};">Severity: ${(fi.severity * 100).toFixed(0)}%</span>
+                                    <div style="font-size: 0.85rem; color: #666; margin-top: 4px;">${fi.explanation}</div>
+                                    <div style="font-size: 0.85rem; color: #0369a1; margin-top: 4px;"><em>Recommendation: ${fi.recommendation}</em></div>
+                                </div>
+                            </div>
+                        `).join('')}
+                    </div>
+                `;
+            }
+            
+            // Key Findings
+            html += `
+                <div class="prob-section">
+                    <h4>📋 Key Findings</h4>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+                        <div>
+                            <h5 style="color: #dc2626; margin-bottom: 8px;">🔴 Red Flags</h5>
+                            ${(ai.red_flags || []).length > 0 ? 
+                                (ai.red_flags || []).map(f => `<div class="prob-indicator red" style="padding: 8px;">${f}</div>`).join('') :
+                                '<div style="color: #10b981;">✅ No red flags detected</div>'
+                            }
+                        </div>
+                        <div>
+                            <h5 style="color: #10b981; margin-bottom: 8px;">🟢 Green Flags</h5>
+                            ${(ai.green_flags || []).length > 0 ?
+                                (ai.green_flags || []).map(f => `<div class="prob-indicator green" style="padding: 8px;">${f}</div>`).join('') :
+                                '<div style="color: #666;">No specific green flags</div>'
+                            }
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Explanation -->
+                <div class="prob-section">
+                    <h4>📝 Decision Explanation</h4>
+                    <p style="margin: 0;">${report.explanation || 'Assessment completed.'}</p>
+                </div>
+                
+                <!-- Actions -->
+                <div style="display: flex; justify-content: flex-end; gap: 12px; margin-top: 24px;">
+                    <button class="btn btn-secondary" onclick="closeProbabilityModal()">Close Report</button>
+                    ${authProb >= 0.7 ? `<button class="btn btn-approve" onclick="closeProbabilityModal(); openReview('${report.claim_id}');">Proceed to Approve</button>` : ''}
+                    ${authProb < 0.5 ? `<button class="btn btn-reject" onclick="closeProbabilityModal(); openReview('${report.claim_id}');">Review for Rejection</button>` : ''}
+                </div>
+            `;
+            
+            document.getElementById('probability-content').innerHTML = html;
+        }
+        
+        function renderScoreBar(label, score) {
+            const pct = ((score || 0) * 100).toFixed(0);
+            let color = '#10b981';
+            if (score < 0.5) color = '#ef4444';
+            else if (score < 0.7) color = '#f59e0b';
+            
+            return `
+                <div>
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+                        <span>${label}</span>
+                        <strong style="color: ${color};">${pct}%</strong>
+                    </div>
+                    <div class="prob-bar">
+                        <div class="prob-bar-fill" style="width: ${pct}%; background: ${color};"></div>
+                    </div>
+                </div>
+            `;
+        }
+        
+        function closeProbabilityModal() {
+            document.getElementById('probability-modal').style.display = 'none';
+        }
+        
         // Close modal on outside click
         window.onclick = function(event) {
             const modal = document.getElementById('review-modal');
+            const probModal = document.getElementById('probability-modal');
             if (event.target === modal) {
                 closeModal();
+            }
+            if (event.target === probModal) {
+                closeProbabilityModal();
             }
         }
         
@@ -921,6 +1284,7 @@
         document.addEventListener('keydown', function(e) {
             if (e.key === 'Escape') {
                 closeModal();
+                closeProbabilityModal();
             }
         });
         
