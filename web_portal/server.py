@@ -4232,11 +4232,56 @@ For claims or questions, please contact:
             gender = target_app.get('gender') or questionnaire.get('gender') or target_customer.get('gender')
             occupation = target_app.get('occupation') or questionnaire.get('occupation') or target_customer.get('occupation')
             
-            # Build medical conditions ONLY from actual application data
+            # Build medical conditions from the application's medical_conditions array first
+            # This is the primary source of conditions data
+            app_conditions = target_app.get('medical_conditions', [])
             medical_conditions = []
             
-            # Add disability ONLY if it's actually recorded in the application
-            if disability_pct is not None and disability_pct > 0:
+            # Track what condition types we have from the array to avoid duplicates
+            has_disability_from_array = False
+            has_obesity_from_array = False
+            
+            # Process the stored medical_conditions array first (this is the authoritative source)
+            if isinstance(app_conditions, list):
+                for cond in app_conditions:
+                    if isinstance(cond, dict):
+                        cond_name = cond.get('condition', '').lower()
+                        if 'disability' in cond_name or 'mobility' in cond_name or 'impairment' in cond_name:
+                            has_disability_from_array = True
+                        if 'obesity' in cond_name or 'bmi' in cond_name:
+                            has_obesity_from_array = True
+                        
+                        processed_cond = {
+                            'condition': cond.get('condition', 'Unknown Condition'),
+                            'icd_code': cond.get('icd_code'),
+                            'severity': cond.get('severity', 'moderate'),
+                            'status': cond.get('status'),
+                            'treatment': cond.get('treatment'),
+                            'risk_impact': cond.get('risk_impact', 0.1),
+                            'loading_percentage': cond.get('loading_percentage', 10),
+                            'exclusion_recommended': cond.get('exclusion_recommended', False),
+                            'notes': cond.get('notes')
+                        }
+                        medical_conditions.append(processed_cond)
+                    elif isinstance(cond, str):
+                        cond_lower = cond.lower()
+                        if 'disability' in cond_lower or 'mobility' in cond_lower:
+                            has_disability_from_array = True
+                        if 'obesity' in cond_lower:
+                            has_obesity_from_array = True
+                        medical_conditions.append({
+                            'condition': cond,
+                            'icd_code': None,
+                            'severity': 'moderate',
+                            'status': None,
+                            'treatment': None,
+                            'risk_impact': 0.1,
+                            'loading_percentage': 10,
+                            'exclusion_recommended': False
+                        })
+            
+            # Only add disability from direct fields if not already in the array
+            if disability_pct is not None and disability_pct > 0 and not has_disability_from_array:
                 disability_type = target_app.get('disability_type', 'Physical')
                 disability_severity = 'severe' if disability_pct >= 50 else 'moderate' if disability_pct >= 25 else 'mild'
                 medical_conditions.append({
@@ -4245,14 +4290,14 @@ For claims or questions, please contact:
                     'severity': disability_severity,
                     'status': target_app.get('disability_status', 'chronic'),
                     'treatment': target_app.get('disability_treatment', 'Ongoing management'),
-                    'risk_impact': disability_pct / 100 * 0.6,  # 60% of disability % as risk
+                    'risk_impact': disability_pct / 100 * 0.6,
                     'loading_percentage': min(disability_pct, 50),
                     'exclusion_recommended': disability_pct >= 50,
                     'notes': target_app.get('disability_notes')
                 })
             
-            # Add obesity ONLY if BMI is actually recorded
-            if bmi is not None and bmi >= 30:
+            # Only add obesity from direct fields if not already in the array
+            if bmi is not None and bmi >= 30 and not has_obesity_from_array:
                 bmi_class = 'Class III (Severe)' if bmi >= 40 else 'Class II' if bmi >= 35 else 'Class I'
                 obesity_severity = 'severe' if bmi >= 40 else 'moderate' if bmi >= 35 else 'mild'
                 medical_conditions.append({
@@ -4267,35 +4312,6 @@ For claims or questions, please contact:
                     'notes': f'BMI {bmi:.1f}' if bmi else None
                 })
             
-            # Add conditions from application's medical_conditions field
-            app_conditions = target_app.get('medical_conditions', [])
-            if isinstance(app_conditions, list):
-                for cond in app_conditions:
-                    if isinstance(cond, dict):
-                        # Ensure required fields have defaults only from the condition itself
-                        processed_cond = {
-                            'condition': cond.get('condition', 'Unknown Condition'),
-                            'icd_code': cond.get('icd_code'),
-                            'severity': cond.get('severity', 'moderate'),
-                            'status': cond.get('status'),
-                            'treatment': cond.get('treatment'),
-                            'risk_impact': cond.get('risk_impact', 0.1),
-                            'loading_percentage': cond.get('loading_percentage', 10),
-                            'exclusion_recommended': cond.get('exclusion_recommended', False),
-                            'notes': cond.get('notes')
-                        }
-                        medical_conditions.append(processed_cond)
-                    elif isinstance(cond, str):
-                        medical_conditions.append({
-                            'condition': cond,
-                            'icd_code': None,
-                            'severity': 'moderate',
-                            'status': None,
-                            'treatment': None,
-                            'risk_impact': 0.1,
-                            'loading_percentage': 10,
-                            'exclusion_recommended': False
-                        })
             
             # ====== CALCULATE RISK SCORES FROM ACTUAL DATA ======
             base_risk = 0.10  # Base risk for any applicant
@@ -5707,39 +5723,12 @@ For claims or questions, please contact:
                     'updated_date': now.isoformat()
                 }
                 
-                # Debug: log the medical_data being applied
-                print(f"[REFRESH] Medical data to apply: disability_percentage={medical_data.get('disability_percentage')}, bmi={medical_data.get('bmi')}, smoking_status={medical_data.get('smoking_status')}")
-                
-                # Debug: log state before update
-                before_state = {
-                    'disability_percentage': UNDERWRITING_APPLICATIONS[app_id].get('disability_percentage'),
-                    'bmi': UNDERWRITING_APPLICATIONS[app_id].get('bmi'),
-                    'smoking_status': UNDERWRITING_APPLICATIONS[app_id].get('smoking_status')
-                }
-                print(f"[REFRESH] Before update for {app_id}: {before_state}")
-                
                 # Create a completely new dict with merged data
                 old_data = dict(UNDERWRITING_APPLICATIONS[app_id])
                 new_data = {**old_data, **medical_data}
                 
-                # Debug: log the merged data
-                merged_state = {
-                    'disability_percentage': new_data.get('disability_percentage'),
-                    'bmi': new_data.get('bmi'),
-                    'smoking_status': new_data.get('smoking_status')
-                }
-                print(f"[REFRESH] Merged data: {merged_state}")
-                
                 # Replace the entry entirely
                 UNDERWRITING_APPLICATIONS[app_id] = new_data
-                
-                # Debug: log state after update
-                after_state = {
-                    'disability_percentage': UNDERWRITING_APPLICATIONS[app_id].get('disability_percentage'),
-                    'bmi': UNDERWRITING_APPLICATIONS[app_id].get('bmi'),
-                    'smoking_status': UNDERWRITING_APPLICATIONS[app_id].get('smoking_status')
-                }
-                print(f"[REFRESH] After update for {app_id}: {after_state}")
                 
                 # Verify the update worked by reading back the data
                 updated_app = UNDERWRITING_APPLICATIONS.get(app_id, {})
@@ -5756,17 +5745,6 @@ For claims or questions, please contact:
                         'bmi': updated_app.get('bmi'),
                         'smoking_status': updated_app.get('smoking_status'),
                         'medical_conditions_count': len(updated_app.get('medical_conditions', []))
-                    },
-                    'debug': {
-                        'before': before_state,
-                        'merged': merged_state,
-                        'after': after_state,
-                        'app_id_used': app_id,
-                        'medical_data_input': {
-                            'disability_percentage': medical_data.get('disability_percentage'),
-                            'bmi': medical_data.get('bmi'),
-                            'smoking_status': medical_data.get('smoking_status')
-                        }
                     }
                 }).encode('utf-8'))
             else:
