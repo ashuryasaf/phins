@@ -19071,9 +19071,16 @@ def run_server(port: int = PORT) -> None:
     print("📋 Initializing underwriting applications with verified pipeline data...")
     try:
         uw_asaf_id = f"UW-ASAF-{now.strftime('%Y%m%d')}-001"
-        if uw_asaf_id not in UNDERWRITING_APPLICATIONS:
+        # Always ensure medical data is present (update if exists, create if not)
+        existing_app = UNDERWRITING_APPLICATIONS.get(uw_asaf_id)
+        needs_update = existing_app and not existing_app.get('disability_percentage')
+        
+        if uw_asaf_id not in UNDERWRITING_APPLICATIONS or needs_update:
             # Medical metadata - verified from applicant submission
+            # If updating, preserve existing timestamps and IDs
+            base_data = existing_app or {}
             UNDERWRITING_APPLICATIONS[uw_asaf_id] = {
+                **base_data,  # Preserve any existing data
                 'id': uw_asaf_id,
                 'policy_id': 'POL-ASAF-HEALTH-001',
                 'customer_id': 'CUST-ASAF-001',
@@ -19155,13 +19162,15 @@ def run_server(port: int = PORT) -> None:
                     'documents': 'document_verification_service'
                 }
             }
-            print(f"   ✓ Created underwriting application: {uw_asaf_id} for asaf@assurance.co.il")
+            action = "Updated" if needs_update else "Created"
+            print(f"   ✓ {action} underwriting application: {uw_asaf_id} for asaf@assurance.co.il")
             print(f"     Age: 39 | Gender: Male | Occupation: Business Owner")
             print(f"     Disability: 30% (Mobility Impairment) | BMI: 32.0 (Obese Class I)")
             print(f"     Smoking: Never | Medical Conditions: 2")
             print(f"     Risk Level: MODERATE | Premium Loading: +35%")
         else:
-            print(f"   ℹ️  Underwriting application {uw_asaf_id} already exists")
+            # Application exists with full medical data
+            print(f"   ℹ️  Underwriting application {uw_asaf_id} already exists with medical data")
     except Exception as e:
         print(f"⚠️  Underwriting initialization error: {e}")
     
