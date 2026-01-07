@@ -291,14 +291,68 @@
         <!-- Customer Projection Tab -->
         <div id="projection-tab" class="tab-content active">
             <div class="section">
-                <h2>Long-Term Customer Projection Calculator</h2>
-                <p>Calculate actuarially-sound premiums based on coverage, savings, ADL level, and term using unified actuarial tables.</p>
+                <h2>📊 Long-Term Customer Projection Calculator</h2>
+                <p>Calculate actuarially-sound premiums using real customer data from policies and applications, with AI-powered BI assessments.</p>
+                
+                <!-- Customer/Policy Selection Section -->
+                <div style="background: linear-gradient(135deg, #1e3a5f 0%, #2d5a87 100%); border-radius: 12px; padding: 20px; margin-bottom: 20px; color: white;">
+                    <h3 style="margin: 0 0 16px 0; display: flex; align-items: center; gap: 10px;">
+                        🔍 Select Customer & Policy
+                        <span id="customer-data-status" style="font-size: 0.8rem; font-weight: normal; margin-left: auto; padding: 4px 12px; background: rgba(255,255,255,0.2); border-radius: 20px;">Manual Mode</span>
+                    </h3>
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 16px;">
+                        <div class="form-group" style="margin-bottom: 0;">
+                            <label style="color: rgba(255,255,255,0.9);">Search Customer (Email)</label>
+                            <div style="display: flex; gap: 8px;">
+                                <input type="text" id="proj-customer-search" placeholder="e.g., efrat@phins.ai" style="flex: 1; padding: 10px; border-radius: 8px; border: none;">
+                                <button class="btn" onclick="searchCustomerForProjection()" style="background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); color: white; white-space: nowrap;">
+                                    🔍 Search
+                                </button>
+                            </div>
+                        </div>
+                        <div class="form-group" style="margin-bottom: 0;">
+                            <label style="color: rgba(255,255,255,0.9);">Select Customer</label>
+                            <select id="proj-customer-select" onchange="loadCustomerPolicies()" style="width: 100%; padding: 10px; border-radius: 8px; border: none;">
+                                <option value="">-- Select Customer --</option>
+                            </select>
+                        </div>
+                        <div class="form-group" style="margin-bottom: 0;">
+                            <label style="color: rgba(255,255,255,0.9);">Select Policy</label>
+                            <select id="proj-policy-select" onchange="loadPolicyDataForProjection()" style="width: 100%; padding: 10px; border-radius: 8px; border: none;">
+                                <option value="">-- Select Policy --</option>
+                            </select>
+                        </div>
+                        <div style="display: flex; align-items: flex-end; gap: 8px;">
+                            <button class="btn" onclick="loadAllCustomersForProjection()" style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: white; flex: 1;">
+                                📋 Load All Customers
+                            </button>
+                            <button class="btn" onclick="clearCustomerSelection()" style="background: linear-gradient(135deg, #6b7280 0%, #4b5563 100%); color: white;">
+                                🔄 Clear
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <!-- Selected Customer Info Card -->
+                    <div id="selected-customer-info" style="display: none; margin-top: 16px; background: rgba(255,255,255,0.1); border-radius: 8px; padding: 16px;">
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; font-size: 0.9rem;">
+                            <div><strong>Name:</strong> <span id="info-customer-name">-</span></div>
+                            <div><strong>Email:</strong> <span id="info-customer-email">-</span></div>
+                            <div><strong>Age:</strong> <span id="info-customer-age">-</span></div>
+                            <div><strong>Policy:</strong> <span id="info-policy-id">-</span></div>
+                            <div><strong>Coverage:</strong> <span id="info-coverage">-</span></div>
+                            <div><strong>Status:</strong> <span id="info-policy-status">-</span></div>
+                            <div><strong>Disability:</strong> <span id="info-disability">-</span></div>
+                            <div><strong>BMI:</strong> <span id="info-bmi">-</span></div>
+                        </div>
+                    </div>
+                </div>
                 
                 <!-- Actuarial Source Information -->
                 <div class="actuarial-info" style="background: linear-gradient(135deg, #e8f4fd 0%, #d4edda 100%); border-radius: 8px; padding: 15px; margin-bottom: 20px; border-left: 4px solid #28a745;">
                     <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px;">
                         <span style="font-size: 1.2rem;">📊</span>
                         <strong style="color: #155724;">Data Source: PHINS_ACTUARIAL_TABLES_V1</strong>
+                        <span id="data-source-indicator" style="margin-left: auto; font-size: 0.85rem; padding: 4px 10px; background: #fef3c7; color: #92400e; border-radius: 12px;">Manual Input</span>
                     </div>
                     <div style="font-size: 0.9rem; color: #333;">
                         <strong>Risk Cover Calculation Components:</strong>
@@ -347,9 +401,21 @@
                 
                 <div style="display: flex; gap: 10px; flex-wrap: wrap;">
                     <button class="btn btn-primary" onclick="calculateProjection()">📊 Calculate Projection</button>
+                    <button class="btn" onclick="runAIProjectionAssessment()" style="background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%); color: white;">🤖 AI BI Assessment</button>
                     <button class="btn btn-secondary" onclick="exportProjection('csv')" title="Export as CSV">📊 Export CSV</button>
                     <button class="btn btn-secondary" onclick="exportProjection('pdf')" title="Export as PDF">📄 Export PDF</button>
                     <button class="btn btn-secondary" onclick="printReport('projection-results')" title="Print Report">🖨️ Print</button>
+                </div>
+                
+                <!-- AI BI Assessment Section -->
+                <div id="ai-bi-assessment" style="display: none; margin-top: 20px; background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%); border-radius: 12px; padding: 20px; border: 1px solid #0ea5e9;">
+                    <h3 style="margin: 0 0 16px 0; color: #0369a1; display: flex; align-items: center; gap: 10px;">
+                        🤖 AI Business Intelligence Assessment
+                        <span id="ai-assessment-status" style="font-size: 0.8rem; font-weight: normal; margin-left: auto; padding: 4px 12px; background: #dbeafe; color: #1e40af; border-radius: 20px;">Ready</span>
+                    </h3>
+                    <div id="ai-assessment-content">
+                        <!-- AI assessment will be populated here -->
+                    </div>
                 </div>
                 
                 <div id="projection-results" style="margin-top: 30px;"></div>
@@ -618,6 +684,545 @@
             } catch (err) {
                 console.error('Error loading stats:', err);
             }
+        }
+        
+        // ========== CUSTOMER PROJECTION - CUSTOMER/POLICY SELECTION ==========
+        
+        // Store loaded customer and policy data
+        let projectionCustomers = [];
+        let projectionPolicies = [];
+        let selectedCustomerData = null;
+        let selectedPolicyData = null;
+        let selectedApplicationData = null;
+        
+        // Load all customers for projection dropdown
+        async function loadAllCustomersForProjection() {
+            const select = document.getElementById('proj-customer-select');
+            select.innerHTML = '<option value="">Loading customers...</option>';
+            
+            try {
+                const response = await fetch('/api/customers', {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                
+                if (!response.ok) throw new Error('Failed to load customers');
+                
+                const data = await response.json();
+                projectionCustomers = data.customers || data || [];
+                
+                select.innerHTML = '<option value="">-- Select Customer --</option>';
+                projectionCustomers.forEach(c => {
+                    const name = c.name || c.full_name || `${c.first_name || ''} ${c.last_name || ''}`.trim() || c.email;
+                    const status = c.status || 'active';
+                    select.innerHTML += `<option value="${c.id}" data-email="${c.email || ''}">${name} (${c.email || c.id}) - ${status}</option>`;
+                });
+                
+                document.getElementById('customer-data-status').textContent = `${projectionCustomers.length} Customers Loaded`;
+                document.getElementById('customer-data-status').style.background = 'rgba(16, 185, 129, 0.3)';
+            } catch (err) {
+                console.error('Error loading customers:', err);
+                select.innerHTML = '<option value="">-- Error loading customers --</option>';
+            }
+        }
+        
+        // Search customer by email
+        async function searchCustomerForProjection() {
+            const searchInput = document.getElementById('proj-customer-search').value.trim();
+            if (!searchInput) {
+                alert('Please enter a customer email to search');
+                return;
+            }
+            
+            const select = document.getElementById('proj-customer-select');
+            select.innerHTML = '<option value="">Searching...</option>';
+            
+            try {
+                // First load all customers if not already loaded
+                if (projectionCustomers.length === 0) {
+                    const response = await fetch('/api/customers', {
+                        headers: { 'Authorization': `Bearer ${token}` }
+                    });
+                    if (response.ok) {
+                        const data = await response.json();
+                        projectionCustomers = data.customers || data || [];
+                    }
+                }
+                
+                // Filter by email (partial match)
+                const filtered = projectionCustomers.filter(c => 
+                    (c.email || '').toLowerCase().includes(searchInput.toLowerCase()) ||
+                    (c.name || '').toLowerCase().includes(searchInput.toLowerCase())
+                );
+                
+                select.innerHTML = '<option value="">-- Select Customer --</option>';
+                if (filtered.length === 0) {
+                    select.innerHTML += '<option value="" disabled>No customers found matching "' + searchInput + '"</option>';
+                    document.getElementById('customer-data-status').textContent = 'No Results';
+                    document.getElementById('customer-data-status').style.background = 'rgba(239, 68, 68, 0.3)';
+                } else {
+                    filtered.forEach(c => {
+                        const name = c.name || c.full_name || `${c.first_name || ''} ${c.last_name || ''}`.trim() || c.email;
+                        const status = c.status || 'active';
+                        select.innerHTML += `<option value="${c.id}" data-email="${c.email || ''}">${name} (${c.email || c.id}) - ${status}</option>`;
+                    });
+                    document.getElementById('customer-data-status').textContent = `${filtered.length} Found`;
+                    document.getElementById('customer-data-status').style.background = 'rgba(16, 185, 129, 0.3)';
+                    
+                    // Auto-select if only one result
+                    if (filtered.length === 1) {
+                        select.value = filtered[0].id;
+                        loadCustomerPolicies();
+                    }
+                }
+            } catch (err) {
+                console.error('Search error:', err);
+                select.innerHTML = '<option value="">-- Search failed --</option>';
+            }
+        }
+        
+        // Load policies for selected customer
+        async function loadCustomerPolicies() {
+            const customerId = document.getElementById('proj-customer-select').value;
+            const policySelect = document.getElementById('proj-policy-select');
+            
+            if (!customerId) {
+                policySelect.innerHTML = '<option value="">-- Select Policy --</option>';
+                document.getElementById('selected-customer-info').style.display = 'none';
+                return;
+            }
+            
+            policySelect.innerHTML = '<option value="">Loading policies...</option>';
+            
+            try {
+                // Get customer details
+                selectedCustomerData = projectionCustomers.find(c => c.id === customerId);
+                
+                // Load policies
+                const response = await fetch('/api/policies', {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                
+                if (!response.ok) throw new Error('Failed to load policies');
+                
+                const data = await response.json();
+                const allPolicies = data.policies || data || [];
+                
+                // Filter policies for this customer
+                projectionPolicies = allPolicies.filter(p => 
+                    p.customer_id === customerId || 
+                    (selectedCustomerData && p.customer_email === selectedCustomerData.email)
+                );
+                
+                policySelect.innerHTML = '<option value="">-- Select Policy --</option>';
+                if (projectionPolicies.length === 0) {
+                    policySelect.innerHTML += '<option value="" disabled>No policies found for this customer</option>';
+                } else {
+                    projectionPolicies.forEach(p => {
+                        const status = p.status || 'active';
+                        const coverage = p.coverage_amount || p.coverage || 0;
+                        policySelect.innerHTML += `<option value="${p.id}">${p.id} - ${p.type || 'Health'} ($${Number(coverage).toLocaleString()}) - ${status}</option>`;
+                    });
+                    
+                    // Auto-select first active policy
+                    const activePolicy = projectionPolicies.find(p => (p.status || '').toLowerCase() === 'active');
+                    if (activePolicy) {
+                        policySelect.value = activePolicy.id;
+                        loadPolicyDataForProjection();
+                    }
+                }
+                
+                // Update customer info display
+                updateCustomerInfoDisplay();
+                
+            } catch (err) {
+                console.error('Error loading policies:', err);
+                policySelect.innerHTML = '<option value="">-- Error loading policies --</option>';
+            }
+        }
+        
+        // Load policy data and application data for projection
+        async function loadPolicyDataForProjection() {
+            const policyId = document.getElementById('proj-policy-select').value;
+            
+            if (!policyId) {
+                document.getElementById('data-source-indicator').textContent = 'Manual Input';
+                document.getElementById('data-source-indicator').style.background = '#fef3c7';
+                document.getElementById('data-source-indicator').style.color = '#92400e';
+                return;
+            }
+            
+            selectedPolicyData = projectionPolicies.find(p => p.id === policyId);
+            
+            // Try to load underwriting application data
+            try {
+                const response = await fetch('/api/underwriting/applications', {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    const applications = data.applications || data || [];
+                    
+                    // Find application for this customer/policy
+                    selectedApplicationData = applications.find(a => 
+                        a.policy_id === policyId ||
+                        a.customer_id === selectedCustomerData?.id ||
+                        (a.customer_email || '').toLowerCase() === (selectedCustomerData?.email || '').toLowerCase()
+                    );
+                }
+            } catch (err) {
+                console.error('Error loading application data:', err);
+            }
+            
+            // Populate form fields from policy/application data
+            populateProjectionFormFromData();
+            updateCustomerInfoDisplay();
+        }
+        
+        // Populate projection form from loaded data
+        function populateProjectionFormFromData() {
+            if (!selectedPolicyData && !selectedApplicationData) return;
+            
+            // Coverage from policy
+            if (selectedPolicyData?.coverage_amount || selectedPolicyData?.coverage) {
+                document.getElementById('proj-coverage').value = selectedPolicyData.coverage_amount || selectedPolicyData.coverage;
+            }
+            
+            // Age from application or customer
+            let age = null;
+            if (selectedApplicationData?.age) {
+                age = selectedApplicationData.age;
+            } else if (selectedCustomerData?.date_of_birth || selectedCustomerData?.dob) {
+                const dob = new Date(selectedCustomerData.date_of_birth || selectedCustomerData.dob);
+                const today = new Date();
+                age = Math.floor((today - dob) / (365.25 * 24 * 60 * 60 * 1000));
+            }
+            if (age && age > 0 && age < 100) {
+                document.getElementById('proj-age').value = age;
+            }
+            
+            // ADL Level from disability percentage
+            let disabilityPct = selectedApplicationData?.disability_percentage || 0;
+            if (disabilityPct > 0) {
+                // Map disability percentage to ADL level (higher disability = higher ADL level)
+                let adlLevel = Math.min(10, Math.max(1, Math.ceil(disabilityPct / 10)));
+                document.getElementById('proj-adl').value = adlLevel;
+            }
+            
+            // Savings allocation from policy
+            if (selectedPolicyData?.savings_percentage || selectedPolicyData?.savings_allocation) {
+                document.getElementById('proj-savings').value = selectedPolicyData.savings_percentage || selectedPolicyData.savings_allocation || 50;
+            }
+            
+            // Term from policy
+            if (selectedPolicyData?.term_years || selectedPolicyData?.term) {
+                document.getElementById('proj-term').value = selectedPolicyData.term_years || selectedPolicyData.term;
+            }
+            
+            // Update data source indicator
+            document.getElementById('data-source-indicator').textContent = '✓ Real Customer Data';
+            document.getElementById('data-source-indicator').style.background = '#d1fae5';
+            document.getElementById('data-source-indicator').style.color = '#065f46';
+        }
+        
+        // Update customer info display
+        function updateCustomerInfoDisplay() {
+            const infoDiv = document.getElementById('selected-customer-info');
+            
+            if (!selectedCustomerData) {
+                infoDiv.style.display = 'none';
+                return;
+            }
+            
+            infoDiv.style.display = 'block';
+            
+            const name = selectedCustomerData.name || selectedCustomerData.full_name || 
+                         `${selectedCustomerData.first_name || ''} ${selectedCustomerData.last_name || ''}`.trim() || 'N/A';
+            
+            document.getElementById('info-customer-name').textContent = name;
+            document.getElementById('info-customer-email').textContent = selectedCustomerData.email || 'N/A';
+            
+            // Age
+            let age = 'N/A';
+            if (selectedApplicationData?.age) {
+                age = selectedApplicationData.age;
+            } else if (selectedCustomerData?.date_of_birth || selectedCustomerData?.dob) {
+                const dob = new Date(selectedCustomerData.date_of_birth || selectedCustomerData.dob);
+                const today = new Date();
+                age = Math.floor((today - dob) / (365.25 * 24 * 60 * 60 * 1000));
+            }
+            document.getElementById('info-customer-age').textContent = age;
+            
+            // Policy info
+            if (selectedPolicyData) {
+                document.getElementById('info-policy-id').textContent = selectedPolicyData.id;
+                document.getElementById('info-coverage').textContent = '$' + Number(selectedPolicyData.coverage_amount || selectedPolicyData.coverage || 0).toLocaleString();
+                document.getElementById('info-policy-status').textContent = selectedPolicyData.status || 'active';
+                document.getElementById('info-policy-status').style.color = 
+                    (selectedPolicyData.status || '').toLowerCase() === 'active' ? '#10b981' : '#f59e0b';
+            } else {
+                document.getElementById('info-policy-id').textContent = '-';
+                document.getElementById('info-coverage').textContent = '-';
+                document.getElementById('info-policy-status').textContent = '-';
+            }
+            
+            // Application data
+            if (selectedApplicationData) {
+                const disabilityPct = selectedApplicationData.disability_percentage || 0;
+                document.getElementById('info-disability').textContent = disabilityPct > 0 ? `${disabilityPct}%` : 'None';
+                
+                const bmi = selectedApplicationData.bmi || 0;
+                let bmiText = bmi > 0 ? bmi.toFixed(1) : 'N/A';
+                if (bmi >= 30) bmiText += ' (Obese)';
+                else if (bmi >= 25) bmiText += ' (Overweight)';
+                document.getElementById('info-bmi').textContent = bmiText;
+            } else {
+                document.getElementById('info-disability').textContent = 'N/A';
+                document.getElementById('info-bmi').textContent = 'N/A';
+            }
+        }
+        
+        // Clear customer selection
+        function clearCustomerSelection() {
+            document.getElementById('proj-customer-search').value = '';
+            document.getElementById('proj-customer-select').value = '';
+            document.getElementById('proj-policy-select').innerHTML = '<option value="">-- Select Policy --</option>';
+            document.getElementById('selected-customer-info').style.display = 'none';
+            document.getElementById('customer-data-status').textContent = 'Manual Mode';
+            document.getElementById('customer-data-status').style.background = 'rgba(255,255,255,0.2)';
+            document.getElementById('data-source-indicator').textContent = 'Manual Input';
+            document.getElementById('data-source-indicator').style.background = '#fef3c7';
+            document.getElementById('data-source-indicator').style.color = '#92400e';
+            document.getElementById('ai-bi-assessment').style.display = 'none';
+            
+            selectedCustomerData = null;
+            selectedPolicyData = null;
+            selectedApplicationData = null;
+            
+            // Reset form to defaults
+            document.getElementById('proj-coverage').value = 250000;
+            document.getElementById('proj-savings').value = 50;
+            document.getElementById('proj-adl').value = 5;
+            document.getElementById('proj-term').value = 25;
+            document.getElementById('proj-age').value = 35;
+        }
+        
+        // Run AI BI Assessment
+        async function runAIProjectionAssessment() {
+            const assessmentDiv = document.getElementById('ai-bi-assessment');
+            const contentDiv = document.getElementById('ai-assessment-content');
+            const statusSpan = document.getElementById('ai-assessment-status');
+            
+            assessmentDiv.style.display = 'block';
+            statusSpan.textContent = 'Analyzing...';
+            statusSpan.style.background = '#fef3c7';
+            statusSpan.style.color = '#92400e';
+            contentDiv.innerHTML = '<div class="loading">🤖 AI analyzing customer profile and generating BI assessment...</div>';
+            
+            // Gather data for assessment
+            const coverage = parseFloat(document.getElementById('proj-coverage').value) || 250000;
+            const savingsPct = parseFloat(document.getElementById('proj-savings').value) || 50;
+            const adlLevel = parseInt(document.getElementById('proj-adl').value) || 5;
+            const termYears = parseInt(document.getElementById('proj-term').value) || 25;
+            const age = parseInt(document.getElementById('proj-age').value) || 35;
+            
+            // Generate AI assessment
+            setTimeout(() => {
+                const assessment = generateAIAssessment(coverage, savingsPct, adlLevel, termYears, age);
+                renderAIAssessment(assessment);
+                statusSpan.textContent = 'Complete';
+                statusSpan.style.background = '#d1fae5';
+                statusSpan.style.color = '#065f46';
+            }, 1500);
+        }
+        
+        // Generate AI BI Assessment (client-side simulation)
+        function generateAIAssessment(coverage, savingsPct, adlLevel, termYears, age) {
+            // Risk scoring
+            let riskScore = 50; // Base score
+            
+            // Age factor
+            if (age < 30) riskScore -= 15;
+            else if (age < 40) riskScore -= 10;
+            else if (age < 50) riskScore += 5;
+            else if (age < 60) riskScore += 15;
+            else riskScore += 25;
+            
+            // ADL factor
+            riskScore += (adlLevel - 5) * 5;
+            
+            // Coverage factor
+            if (coverage > 500000) riskScore += 10;
+            else if (coverage < 100000) riskScore -= 5;
+            
+            // Application data factors
+            if (selectedApplicationData) {
+                const disabilityPct = selectedApplicationData.disability_percentage || 0;
+                if (disabilityPct > 50) riskScore += 20;
+                else if (disabilityPct > 20) riskScore += 10;
+                
+                const bmi = selectedApplicationData.bmi || 0;
+                if (bmi >= 35) riskScore += 15;
+                else if (bmi >= 30) riskScore += 8;
+                else if (bmi >= 25) riskScore += 3;
+                
+                const smoking = (selectedApplicationData.smoking_status || '').toLowerCase();
+                if (smoking === 'current' || smoking === 'smoker') riskScore += 20;
+                else if (smoking === 'former') riskScore += 5;
+            }
+            
+            riskScore = Math.max(0, Math.min(100, riskScore));
+            
+            // Profitability projection
+            const annualPremium = coverage * 0.03 * (1 + adlLevel * 0.08);
+            const expectedClaims = coverage * (riskScore / 1000) * termYears;
+            const projectedProfit = (annualPremium * termYears) - expectedClaims;
+            const profitMargin = projectedProfit / (annualPremium * termYears) * 100;
+            
+            // Generate insights
+            const insights = [];
+            const recommendations = [];
+            const risks = [];
+            
+            if (age > 55) {
+                insights.push('Customer age indicates higher mortality risk');
+                recommendations.push('Consider shorter term options or enhanced medical underwriting');
+            }
+            
+            if (adlLevel > 6) {
+                insights.push('High ADL dependency level increases claim probability');
+                risks.push('Elevated disability claim risk');
+                recommendations.push('Recommend comprehensive care management program');
+            }
+            
+            if (selectedApplicationData?.disability_percentage > 30) {
+                insights.push(`Existing ${selectedApplicationData.disability_percentage}% disability status factored into projections`);
+                risks.push('Pre-existing condition may accelerate claims');
+            }
+            
+            if (selectedApplicationData?.bmi >= 30) {
+                insights.push('Obesity indicator (BMI ≥ 30) identified');
+                risks.push('Health complications more likely');
+                recommendations.push('Consider wellness program incentives');
+            }
+            
+            if (savingsPct < 30) {
+                insights.push('Low savings allocation reduces policy value accumulation');
+                recommendations.push('Consider increasing savings component for better customer retention');
+            }
+            
+            if (profitMargin > 30) {
+                insights.push('Strong projected profitability');
+            } else if (profitMargin < 10) {
+                insights.push('Thin profit margins - review pricing');
+                risks.push('Policy may become unprofitable');
+            }
+            
+            // Customer-specific insights
+            if (selectedCustomerData) {
+                insights.push(`Real data loaded for ${selectedCustomerData.email}`);
+            } else {
+                insights.push('Using manual input data - recommend loading real customer data');
+            }
+            
+            return {
+                riskScore,
+                riskLevel: riskScore > 70 ? 'High' : (riskScore > 40 ? 'Moderate' : 'Low'),
+                profitability: {
+                    annualPremium,
+                    totalPremiums: annualPremium * termYears,
+                    expectedClaims,
+                    projectedProfit,
+                    profitMargin
+                },
+                insights,
+                recommendations,
+                risks,
+                dataQuality: selectedCustomerData ? 'Real Customer Data' : 'Manual Input'
+            };
+        }
+        
+        // Render AI Assessment
+        function renderAIAssessment(assessment) {
+            const contentDiv = document.getElementById('ai-assessment-content');
+            
+            const riskColor = assessment.riskLevel === 'High' ? '#ef4444' : 
+                             (assessment.riskLevel === 'Moderate' ? '#f59e0b' : '#10b981');
+            
+            contentDiv.innerHTML = `
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 20px;">
+                    <div style="background: white; padding: 16px; border-radius: 8px; text-align: center; border: 2px solid ${riskColor};">
+                        <div style="font-size: 2rem; font-weight: 700; color: ${riskColor};">${assessment.riskScore}</div>
+                        <div style="font-size: 0.85rem; color: #666;">Risk Score</div>
+                        <div style="font-size: 0.9rem; font-weight: 600; color: ${riskColor}; margin-top: 4px;">${assessment.riskLevel} Risk</div>
+                    </div>
+                    <div style="background: white; padding: 16px; border-radius: 8px; text-align: center;">
+                        <div style="font-size: 1.5rem; font-weight: 700; color: #0369a1;">$${Number(assessment.profitability.projectedProfit).toLocaleString(undefined, {maximumFractionDigits: 0})}</div>
+                        <div style="font-size: 0.85rem; color: #666;">Projected ${document.getElementById('proj-term').value}yr Profit</div>
+                        <div style="font-size: 0.9rem; color: ${assessment.profitability.profitMargin > 20 ? '#10b981' : '#f59e0b'}; margin-top: 4px;">
+                            ${assessment.profitability.profitMargin.toFixed(1)}% Margin
+                        </div>
+                    </div>
+                    <div style="background: white; padding: 16px; border-radius: 8px; text-align: center;">
+                        <div style="font-size: 1.5rem; font-weight: 700; color: #7c3aed;">$${Number(assessment.profitability.expectedClaims).toLocaleString(undefined, {maximumFractionDigits: 0})}</div>
+                        <div style="font-size: 0.85rem; color: #666;">Expected Claims</div>
+                        <div style="font-size: 0.9rem; color: #666; margin-top: 4px;">Over policy term</div>
+                    </div>
+                    <div style="background: white; padding: 16px; border-radius: 8px; text-align: center;">
+                        <div style="font-size: 1rem; font-weight: 600; color: ${assessment.dataQuality.includes('Real') ? '#10b981' : '#f59e0b'};">
+                            ${assessment.dataQuality.includes('Real') ? '✓' : '⚠'} ${assessment.dataQuality}
+                        </div>
+                        <div style="font-size: 0.85rem; color: #666; margin-top: 8px;">Data Source</div>
+                    </div>
+                </div>
+                
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px;">
+                    <!-- Insights -->
+                    <div style="background: white; padding: 16px; border-radius: 8px;">
+                        <h4 style="margin: 0 0 12px 0; color: #0369a1; display: flex; align-items: center; gap: 8px;">
+                            💡 AI Insights
+                        </h4>
+                        ${assessment.insights.length > 0 ? 
+                            assessment.insights.map(i => `
+                                <div style="padding: 8px; background: #f0f9ff; border-radius: 6px; margin-bottom: 8px; font-size: 0.9rem; border-left: 3px solid #0ea5e9;">
+                                    ${i}
+                                </div>
+                            `).join('') :
+                            '<p style="color: #666; font-size: 0.9rem;">No specific insights for this profile.</p>'
+                        }
+                    </div>
+                    
+                    <!-- Recommendations -->
+                    <div style="background: white; padding: 16px; border-radius: 8px;">
+                        <h4 style="margin: 0 0 12px 0; color: #059669; display: flex; align-items: center; gap: 8px;">
+                            ✅ Recommendations
+                        </h4>
+                        ${assessment.recommendations.length > 0 ? 
+                            assessment.recommendations.map(r => `
+                                <div style="padding: 8px; background: #ecfdf5; border-radius: 6px; margin-bottom: 8px; font-size: 0.9rem; border-left: 3px solid #10b981;">
+                                    ${r}
+                                </div>
+                            `).join('') :
+                            '<p style="color: #666; font-size: 0.9rem;">No specific recommendations.</p>'
+                        }
+                    </div>
+                    
+                    <!-- Risk Factors -->
+                    <div style="background: white; padding: 16px; border-radius: 8px;">
+                        <h4 style="margin: 0 0 12px 0; color: #dc2626; display: flex; align-items: center; gap: 8px;">
+                            ⚠️ Risk Factors
+                        </h4>
+                        ${assessment.risks.length > 0 ? 
+                            assessment.risks.map(r => `
+                                <div style="padding: 8px; background: #fef2f2; border-radius: 6px; margin-bottom: 8px; font-size: 0.9rem; border-left: 3px solid #ef4444;">
+                                    ${r}
+                                </div>
+                            `).join('') :
+                            '<p style="color: #10b981; font-size: 0.9rem;">✓ No significant risk factors identified.</p>'
+                        }
+                    </div>
+                </div>
+            `;
         }
         
         // Calculate customer projection
