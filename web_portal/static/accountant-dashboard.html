@@ -1327,23 +1327,108 @@
                 // Build customer info header if real data
                 let customerInfoHtml = '';
                 if (selectedCustomerData) {
-                    const custName = selectedCustomerData.name || selectedCustomerData.full_name || selectedCustomerData.email;
+                    const custName = selectedCustomerData.name || selectedCustomerData.full_name || 
+                                    `${selectedCustomerData.first_name || ''} ${selectedCustomerData.last_name || ''}`.trim() || 
+                                    selectedCustomerData.email;
+                    const custId = selectedCustomerData.id || 'N/A';
+                    const custEmail = selectedCustomerData.email || 'N/A';
+                    const custMobile = selectedCustomerData.mobile || selectedCustomerData.phone || selectedCustomerData.telephone || 'N/A';
+                    const custAddress = selectedCustomerData.address || selectedCustomerData.street_address || 
+                                       (selectedCustomerData.city ? `${selectedCustomerData.city}, ${selectedCustomerData.country || ''}` : 'N/A');
+                    const issuanceDate = selectedPolicyData?.start_date || selectedPolicyData?.issuance_date || 
+                                        selectedPolicyData?.created_at || new Date().toISOString().split('T')[0];
+                    const policyType = selectedPolicyData?.type || 'PHINS Unified';
+                    
+                    // Generate QR code URL using QR Code API
+                    const qrData = encodeURIComponent(`https://phins-portal-production.up.railway.app/login.html?email=${custEmail}`);
+                    const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=${qrData}&bgcolor=ffffff&color=1e3a5f`;
+                    
                     customerInfoHtml = `
-                        <div style="background: linear-gradient(135deg, #1e3a5f 0%, #2d5a87 100%); color: white; border-radius: 8px; padding: 15px; margin-bottom: 20px;">
-                            <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 10px;">
-                                <span style="font-size: 1.5rem;">👤</span>
-                                <strong style="font-size: 1.1rem;">Real Customer Projection</strong>
-                                <span style="margin-left: auto; background: rgba(16, 185, 129, 0.3); padding: 4px 12px; border-radius: 12px; font-size: 0.85rem;">✓ Verified Data</span>
+                        <div style="background: linear-gradient(135deg, #1e3a5f 0%, #2d5a87 100%); color: white; border-radius: 12px; padding: 20px; margin-bottom: 20px; box-shadow: 0 4px 15px rgba(0,0,0,0.2);">
+                            <!-- Header with QR Code -->
+                            <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 15px;">
+                                <div style="display: flex; align-items: center; gap: 12px;">
+                                    <div style="width: 50px; height: 50px; background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%); border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 1.5rem;">
+                                        🛡️
+                                    </div>
+                                    <div>
+                                        <h3 style="margin: 0; font-size: 1.3rem;">PHINS Customer Projection</h3>
+                                        <p style="margin: 4px 0 0 0; opacity: 0.8; font-size: 0.9rem;">Insurance & Investment Portfolio</p>
+                                    </div>
+                                </div>
+                                <div style="text-align: center;">
+                                    <img src="${qrCodeUrl}" alt="QR Login" style="width: 80px; height: 80px; border-radius: 8px; border: 3px solid white;">
+                                    <p style="margin: 5px 0 0 0; font-size: 0.7rem; opacity: 0.8;">Scan to Login</p>
+                                </div>
                             </div>
-                            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; font-size: 0.9rem; opacity: 0.95;">
-                                <div><strong>Customer:</strong> ${custName}</div>
-                                <div><strong>Email:</strong> ${selectedCustomerData.email || 'N/A'}</div>
-                                <div><strong>Policy:</strong> ${selectedPolicyData?.id || 'N/A'}</div>
-                                <div><strong>Policy Status:</strong> <span style="color: ${(selectedPolicyData?.status || '').toLowerCase() === 'active' ? '#4ade80' : '#fbbf24'};">${selectedPolicyData?.status || 'N/A'}</span></div>
-                                ${selectedApplicationData ? `
-                                    <div><strong>Disability:</strong> ${selectedApplicationData.disability_percentage || 0}%</div>
-                                    <div><strong>BMI:</strong> ${selectedApplicationData.bmi || 'N/A'}</div>
-                                ` : ''}
+                            
+                            <!-- Customer Details Grid -->
+                            <div style="background: rgba(255,255,255,0.1); border-radius: 8px; padding: 15px;">
+                                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; font-size: 0.9rem;">
+                                    <div style="display: flex; flex-direction: column;">
+                                        <span style="opacity: 0.7; font-size: 0.75rem; text-transform: uppercase;">Customer Name</span>
+                                        <strong style="font-size: 1.1rem;">${custName}</strong>
+                                    </div>
+                                    <div style="display: flex; flex-direction: column;">
+                                        <span style="opacity: 0.7; font-size: 0.75rem; text-transform: uppercase;">Customer ID</span>
+                                        <strong>${custId}</strong>
+                                    </div>
+                                    <div style="display: flex; flex-direction: column;">
+                                        <span style="opacity: 0.7; font-size: 0.75rem; text-transform: uppercase;">Email</span>
+                                        <strong>${custEmail}</strong>
+                                    </div>
+                                    <div style="display: flex; flex-direction: column;">
+                                        <span style="opacity: 0.7; font-size: 0.75rem; text-transform: uppercase;">Mobile</span>
+                                        <strong>${custMobile}</strong>
+                                    </div>
+                                    <div style="display: flex; flex-direction: column;">
+                                        <span style="opacity: 0.7; font-size: 0.75rem; text-transform: uppercase;">Address</span>
+                                        <strong>${custAddress}</strong>
+                                    </div>
+                                    <div style="display: flex; flex-direction: column;">
+                                        <span style="opacity: 0.7; font-size: 0.75rem; text-transform: uppercase;">Policy Issuance Date</span>
+                                        <strong>${new Date(issuanceDate).toLocaleDateString('en-GB', {day: '2-digit', month: 'short', year: 'numeric'})}</strong>
+                                    </div>
+                                </div>
+                                
+                                <!-- Policy & Health Info Row -->
+                                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-top: 15px; padding-top: 15px; border-top: 1px solid rgba(255,255,255,0.2);">
+                                    <div style="display: flex; flex-direction: column;">
+                                        <span style="opacity: 0.7; font-size: 0.75rem; text-transform: uppercase;">Policy ID</span>
+                                        <strong>${selectedPolicyData?.id || 'N/A'}</strong>
+                                    </div>
+                                    <div style="display: flex; flex-direction: column;">
+                                        <span style="opacity: 0.7; font-size: 0.75rem; text-transform: uppercase;">Policy Type</span>
+                                        <strong>${policyType}</strong>
+                                    </div>
+                                    <div style="display: flex; flex-direction: column;">
+                                        <span style="opacity: 0.7; font-size: 0.75rem; text-transform: uppercase;">Status</span>
+                                        <strong style="color: ${(selectedPolicyData?.status || '').toLowerCase() === 'active' ? '#4ade80' : '#fbbf24'};">
+                                            ${selectedPolicyData?.status || 'N/A'}
+                                        </strong>
+                                    </div>
+                                    ${selectedApplicationData ? `
+                                        <div style="display: flex; flex-direction: column;">
+                                            <span style="opacity: 0.7; font-size: 0.75rem; text-transform: uppercase;">Disability</span>
+                                            <strong>${selectedApplicationData.disability_percentage || 0}%</strong>
+                                        </div>
+                                        <div style="display: flex; flex-direction: column;">
+                                            <span style="opacity: 0.7; font-size: 0.75rem; text-transform: uppercase;">BMI</span>
+                                            <strong>${selectedApplicationData.bmi || 'N/A'}</strong>
+                                        </div>
+                                        <div style="display: flex; flex-direction: column;">
+                                            <span style="opacity: 0.7; font-size: 0.75rem; text-transform: uppercase;">Age</span>
+                                            <strong>${selectedApplicationData.age || 'N/A'}</strong>
+                                        </div>
+                                    ` : ''}
+                                </div>
+                            </div>
+                            
+                            <!-- Verified Badge -->
+                            <div style="display: flex; justify-content: flex-end; margin-top: 10px;">
+                                <span style="background: rgba(16, 185, 129, 0.3); padding: 6px 14px; border-radius: 20px; font-size: 0.8rem; display: flex; align-items: center; gap: 6px;">
+                                    ✓ Verified Customer Data
+                                </span>
                             </div>
                         </div>
                     `;
