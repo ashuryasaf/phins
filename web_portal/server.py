@@ -5623,6 +5623,106 @@ For claims or questions, please contact:
             }).encode('utf-8'))
             return
         
+        # Admin: Refresh application medical data
+        if path == '/api/admin/refresh-medical-data':
+            if not require_role(session, ['admin']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Unauthorized. Admin access required.'}).encode('utf-8'))
+                return
+            
+            app_id = qs.get('id', [None])[0]
+            email = qs.get('email', [None])[0]
+            
+            # Find target application
+            target_app = None
+            if app_id:
+                target_app = UNDERWRITING_APPLICATIONS.get(app_id)
+            elif email:
+                for app in UNDERWRITING_APPLICATIONS.values():
+                    if app.get('customer_email', '').lower() == email.lower():
+                        target_app = app
+                        app_id = app.get('id')
+                        break
+            
+            if not target_app:
+                self._set_json_headers(404)
+                self.wfile.write(json.dumps({'error': 'Application not found'}).encode('utf-8'))
+                return
+            
+            # Check if this is the asaf@assurance.co.il application
+            if target_app.get('customer_email', '').lower() == 'asaf@assurance.co.il':
+                # Refresh with complete medical data
+                now = datetime.now()
+                medical_data = {
+                    'age': 39,
+                    'gender': 'male',
+                    'occupation': 'Business Owner',
+                    'disability_percentage': 30,
+                    'disability_type': 'Mobility Impairment - Lower Limb',
+                    'disability_status': 'stable',
+                    'disability_treatment': 'Physiotherapy, mobility aids, annual orthopaedic review',
+                    'disability_notes': 'Result of injury in 2020. 30% disability rating. Stable condition.',
+                    'bmi': 32,
+                    'height_cm': 175,
+                    'weight_kg': 98,
+                    'bmi_notes': 'BMI 32.0 (Class I Obesity). Patient engaged with weight management program.',
+                    'smoking_status': 'never',
+                    'alcohol_use': 'moderate',
+                    'exercise_frequency': 'weekly',
+                    'medical_conditions': [
+                        {
+                            'condition': 'Obesity',
+                            'icd_code': 'E66.9',
+                            'severity': 'moderate',
+                            'status': 'active',
+                            'treatment': 'Dietary management, exercise program, nutritionist consultations',
+                            'risk_impact': 0.07,
+                            'loading_percentage': 15,
+                            'exclusion_recommended': False,
+                            'notes': 'BMI 32.0 (Class I Obesity). Patient engaged with weight management program.',
+                            'diagnosed_date': '2023-05-15'
+                        },
+                        {
+                            'condition': 'Mobility Impairment - Lower Limb',
+                            'icd_code': 'M62.50',
+                            'severity': 'moderate',
+                            'status': 'stable',
+                            'treatment': 'Physiotherapy, mobility aids, annual orthopaedic review',
+                            'risk_impact': 0.18,
+                            'loading_percentage': 20,
+                            'exclusion_recommended': True,
+                            'notes': 'Result of injury in 2020. 30% disability rating. Stable condition.',
+                            'diagnosed_date': '2020-08-10'
+                        }
+                    ],
+                    'documents': [
+                        {'type': 'national_id', 'verified': True, 'authenticity_score': 0.95, 'expiry_status': 'valid', 'flags': None},
+                        {'type': 'proof_of_address', 'verified': True, 'authenticity_score': 0.92, 'expiry_status': 'valid', 'flags': None},
+                        {'type': 'disability_certificate', 'verified': True, 'authenticity_score': 0.98, 'expiry_status': 'valid', 'flags': 'DISABILITY_DECLARED'},
+                        {'type': 'medical_report', 'verified': True, 'authenticity_score': 0.96, 'expiry_status': 'valid', 'flags': 'MULTIPLE_CONDITIONS'}
+                    ],
+                    'identity_verified': True,
+                    'medical_exam_required': True,
+                    'premium_adjustment': 35,
+                    'updated_date': now.isoformat()
+                }
+                
+                # Update the application with medical data
+                UNDERWRITING_APPLICATIONS[app_id].update(medical_data)
+                
+                self._set_json_headers()
+                self.wfile.write(json.dumps({
+                    'success': True,
+                    'application_id': app_id,
+                    'medical_data_refreshed': True,
+                    'fields_updated': list(medical_data.keys()),
+                    'message': 'Medical data refreshed for asaf@assurance.co.il application'
+                }).encode('utf-8'))
+            else:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'Manual refresh only available for demo applications'}).encode('utf-8'))
+            return
+        
         # Customer allocation preferences (GET)
         if path == '/api/customer/allocation':
             requested_customer_id = qs.get('customer_id', [''])[0]
