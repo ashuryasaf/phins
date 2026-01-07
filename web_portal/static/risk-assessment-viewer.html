@@ -6,39 +6,81 @@
     <title>Risk Assessment Report - PHINS</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; line-height: 1.6; color: #333; background: #f5f5f5; }
-        .container { max-width: 1000px; margin: 0 auto; padding: 20px; }
-        .report { background: white; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); overflow: hidden; }
-        .header { background: linear-gradient(135deg, #1a237e 0%, #0d47a1 100%); color: white; padding: 30px; }
-        .header h1 { font-size: 24px; margin-bottom: 10px; }
-        .header .subtitle { opacity: 0.9; font-size: 14px; }
-        .header .report-id { font-family: monospace; background: rgba(255,255,255,0.1); padding: 5px 10px; border-radius: 4px; display: inline-block; margin-top: 10px; }
-        .header-actions { display: flex; gap: 10px; margin-top: 15px; flex-wrap: wrap; }
-        .header-btn { padding: 10px 20px; border-radius: 6px; border: none; cursor: pointer; font-weight: 600; display: flex; align-items: center; gap: 8px; transition: all 0.2s; }
-        .header-btn:hover { transform: translateY(-2px); }
+        html, body { height: 100%; overflow: hidden; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; line-height: 1.6; color: #333; background: #f5f5f5; display: flex; flex-direction: column; }
+        
+        /* Fixed Header */
+        .fixed-header {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            z-index: 1000;
+            background: linear-gradient(135deg, #1a237e 0%, #0d47a1 100%);
+            color: white;
+            padding: 15px 30px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+        }
+        .fixed-header-inner {
+            max-width: 1000px;
+            margin: 0 auto;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 15px;
+        }
+        .fixed-header h1 { font-size: 20px; margin: 0; display: flex; align-items: center; gap: 10px; }
+        .fixed-header .report-meta { font-size: 12px; opacity: 0.9; }
+        .fixed-header-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+        .header-btn { padding: 8px 16px; border-radius: 6px; border: none; cursor: pointer; font-weight: 600; display: flex; align-items: center; gap: 6px; transition: all 0.2s; font-size: 13px; }
+        .header-btn:hover { transform: translateY(-1px); box-shadow: 0 2px 8px rgba(0,0,0,0.2); }
         .header-btn.download { background: #28a745; color: white; }
         .header-btn.print { background: #6c757d; color: white; }
         .header-btn.approve { background: #10b981; color: white; }
         .header-btn.reject { background: #ef4444; color: white; }
         .header-btn.back { background: rgba(255,255,255,0.2); color: white; border: 1px solid rgba(255,255,255,0.3); }
+        
+        /* Scrollable Content Area */
+        .scroll-container {
+            flex: 1;
+            overflow-y: auto;
+            margin-top: 70px; /* Height of fixed header */
+            padding-bottom: 20px;
+        }
+        .container { max-width: 1000px; margin: 0 auto; padding: 20px; }
+        .report { background: white; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); overflow: hidden; }
+        
+        /* Report Header Banner */
+        .report-banner { 
+            background: linear-gradient(135deg, #1a237e 0%, #303f9f 50%, #0d47a1 100%); 
+            color: white; 
+            padding: 25px 30px; 
+            border-bottom: 3px solid #ffc107;
+        }
+        .report-banner h2 { font-size: 22px; margin-bottom: 8px; display: flex; align-items: center; gap: 10px; }
+        .report-banner .subtitle { opacity: 0.9; font-size: 14px; margin-bottom: 10px; }
+        .report-banner .report-id { font-family: 'Courier New', monospace; background: rgba(255,255,255,0.15); padding: 6px 12px; border-radius: 4px; display: inline-block; font-size: 13px; }
+        
         .section { padding: 25px 30px; border-bottom: 1px solid #eee; }
         .section:last-child { border-bottom: none; }
         .section-title { font-size: 18px; font-weight: 600; color: #1a237e; margin-bottom: 20px; display: flex; align-items: center; }
         .section-title::before { content: ''; width: 4px; height: 24px; background: #1a237e; margin-right: 10px; border-radius: 2px; }
         .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; }
-        .card { background: #f8f9fa; border-radius: 8px; padding: 15px; }
-        .card-label { font-size: 12px; color: #666; text-transform: uppercase; letter-spacing: 0.5px; }
+        .card { background: #f8f9fa; border-radius: 8px; padding: 15px; border: 1px solid #e9ecef; }
+        .card-label { font-size: 11px; color: #666; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600; }
         .card-value { font-size: 18px; font-weight: 600; color: #333; margin-top: 5px; }
+        .card-value.highlight { color: #1a237e; }
         .risk-score { text-align: center; padding: 30px; }
-        .risk-gauge { width: 200px; height: 200px; border-radius: 50%; margin: 0 auto 20px; display: flex; align-items: center; justify-content: center; }
-        .risk-gauge-inner { width: 160px; height: 160px; border-radius: 50%; background: white; display: flex; flex-direction: column; align-items: center; justify-content: center; box-shadow: inset 0 2px 10px rgba(0,0,0,0.1); }
-        .risk-gauge-value { font-size: 36px; font-weight: 700; }
-        .risk-gauge-label { font-size: 12px; color: #666; }
-        .risk-category { display: inline-block; padding: 8px 20px; color: white; border-radius: 20px; font-weight: 600; font-size: 14px; }
+        .risk-gauge { width: 180px; height: 180px; border-radius: 50%; margin: 0 auto 20px; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
+        .risk-gauge-inner { width: 140px; height: 140px; border-radius: 50%; background: white; display: flex; flex-direction: column; align-items: center; justify-content: center; box-shadow: inset 0 2px 10px rgba(0,0,0,0.1); }
+        .risk-gauge-value { font-size: 32px; font-weight: 700; }
+        .risk-gauge-label { font-size: 11px; color: #666; text-transform: uppercase; }
+        .risk-category { display: inline-block; padding: 8px 24px; color: white; border-radius: 20px; font-weight: 600; font-size: 14px; text-transform: uppercase; letter-spacing: 0.5px; }
         .score-bar { height: 8px; background: #e0e0e0; border-radius: 4px; margin: 8px 0; overflow: hidden; }
         .score-bar-fill { height: 100%; border-radius: 4px; transition: width 0.5s ease; }
         .recommendation-box { color: white; padding: 25px; border-radius: 8px; margin-bottom: 20px; }
-        .recommendation-type { font-size: 20px; font-weight: 700; margin-bottom: 10px; }
+        .recommendation-type { font-size: 22px; font-weight: 700; margin-bottom: 10px; text-transform: uppercase; letter-spacing: 1px; }
         .recommendation-confidence { opacity: 0.9; font-size: 14px; }
         .rationale { background: #f8f9fa; padding: 20px; border-radius: 8px; border-left: 4px solid; }
         .condition-card { border-radius: 8px; padding: 15px; margin-bottom: 10px; border: 1px solid; }
@@ -46,7 +88,7 @@
         .condition-card.condition-moderate { background: #fff3cd; border-color: #ffc107; }
         .condition-card.condition-mild { background: #d4edda; border-color: #28a745; }
         .factor-list { list-style: none; }
-        .factor-item { padding: 12px 15px; background: #f8f9fa; border-radius: 6px; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; }
+        .factor-item { padding: 12px 15px; background: #f8f9fa; border-radius: 6px; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; border: 1px solid #e9ecef; }
         .factor-impact { padding: 4px 12px; border-radius: 12px; font-size: 12px; font-weight: 600; white-space: nowrap; }
         .factor-impact.high { background: #f8d7da; color: #721c24; }
         .factor-impact.medium { background: #fff3cd; color: #856404; }
@@ -61,39 +103,90 @@
         .document-verified { background: #d4edda; color: #155724; }
         .document-pending { background: #fff3cd; color: #856404; }
         .document-failed { background: #f8d7da; color: #721c24; }
-        .footer { background: #f8f9fa; padding: 20px 30px; text-align: center; font-size: 12px; color: #666; }
+        .footer { background: #f8f9fa; padding: 20px 30px; text-align: center; font-size: 12px; color: #666; border-top: 1px solid #e9ecef; }
         table { width: 100%; border-collapse: collapse; }
         th, td { padding: 12px; text-align: left; border-bottom: 1px solid #eee; }
-        th { background: #f8f9fa; font-weight: 600; color: #333; }
+        th { background: #f8f9fa; font-weight: 600; color: #333; position: sticky; top: 0; }
         .loading { text-align: center; padding: 60px; }
         .loading-spinner { width: 50px; height: 50px; border: 4px solid #e0e0e0; border-top-color: #1a237e; border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto 20px; }
         @keyframes spin { to { transform: rotate(360deg); } }
         .error-box { background: #f8d7da; border: 1px solid #f5c6cb; border-radius: 8px; padding: 30px; text-align: center; color: #721c24; margin: 20px 0; }
         .no-data { color: #666; font-style: italic; }
+        
+        /* Quick Stats Bar */
+        .quick-stats {
+            display: flex;
+            gap: 15px;
+            padding: 15px 30px;
+            background: #f8f9fa;
+            border-bottom: 1px solid #e9ecef;
+            flex-wrap: wrap;
+        }
+        .quick-stat {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 15px;
+            background: white;
+            border-radius: 6px;
+            border: 1px solid #e9ecef;
+            font-size: 13px;
+        }
+        .quick-stat-label { color: #666; }
+        .quick-stat-value { font-weight: 600; color: #333; }
+        .quick-stat-value.age { color: #1a237e; }
+        .quick-stat-value.risk-low { color: #28a745; }
+        .quick-stat-value.risk-moderate { color: #ffc107; }
+        .quick-stat-value.risk-high { color: #dc3545; }
+        
         @media print {
+            .fixed-header { position: static; }
+            .scroll-container { margin-top: 0; overflow: visible; }
             .container { max-width: 100%; padding: 0; }
             .report { box-shadow: none; }
-            .header-actions { display: none; }
+            .fixed-header-actions { display: none; }
         }
         @media (max-width: 768px) {
+            .fixed-header { padding: 10px 15px; }
+            .fixed-header h1 { font-size: 16px; }
+            .scroll-container { margin-top: 60px; }
             .container { padding: 10px; }
-            .header, .section { padding: 20px; }
+            .section { padding: 20px; }
             .grid { grid-template-columns: 1fr 1fr; }
             .risk-gauge { width: 150px; height: 150px; }
             .risk-gauge-inner { width: 120px; height: 120px; }
             .risk-gauge-value { font-size: 28px; }
+            .quick-stats { padding: 10px 15px; }
         }
         @media (max-width: 480px) {
             .grid { grid-template-columns: 1fr; }
+            .fixed-header-inner { flex-direction: column; align-items: flex-start; }
         }
     </style>
 </head>
 <body>
-    <div class="container">
-        <div id="report-container">
-            <div class="loading">
-                <div class="loading-spinner"></div>
-                <p>Loading risk assessment report...</p>
+    <!-- Fixed Header -->
+    <div class="fixed-header" id="fixed-header">
+        <div class="fixed-header-inner">
+            <div>
+                <h1>🔒 Risk Assessment Report</h1>
+                <div class="report-meta" id="header-meta">Loading...</div>
+            </div>
+            <div class="fixed-header-actions" id="header-actions">
+                <button class="header-btn back" onclick="window.history.back()">← Back</button>
+                <button class="header-btn print" onclick="window.print()">🖨️ Print</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Scrollable Content -->
+    <div class="scroll-container">
+        <div class="container">
+            <div id="report-container">
+                <div class="loading">
+                    <div class="loading-spinner"></div>
+                    <p>Loading risk assessment report...</p>
+                </div>
             </div>
         </div>
     </div>
@@ -216,20 +309,58 @@
             // Generate assessor ID from report
             const assessorId = 'RRG-' + (report.report_id || '').slice(-8);
             
+            // Update fixed header
+            const headerMeta = document.getElementById('header-meta');
+            headerMeta.textContent = `${report.applicant?.name || 'N/A'} | ${report.application_id || 'N/A'} | ${formattedDate}`;
+            
+            // Update header actions
+            const headerActions = document.getElementById('header-actions');
+            headerActions.innerHTML = `
+                <button class="header-btn back" onclick="window.history.back()">← Back</button>
+                <button class="header-btn print" onclick="window.print()">🖨️ Print</button>
+                ${report.recommendation?.type?.includes('approve') ? `
+                    <button class="header-btn approve" onclick="approveApplication()">✓ Approve</button>
+                ` : ''}
+                <button class="header-btn reject" onclick="rejectApplication()">✗ Reject</button>
+            `;
+            
+            // Determine risk class for quick stats
+            const riskClass = riskScore <= 30 ? 'risk-low' : riskScore <= 60 ? 'risk-moderate' : 'risk-high';
+            
             container.innerHTML = `
                 <div class="report">
-                    <!-- Header -->
-                    <div class="header">
-                        <h1>🔒 UNDERWRITING RISK ASSESSMENT REPORT</h1>
-                        <div class="subtitle">AI-Powered Comprehensive Risk Analysis</div>
+                    <!-- Report Banner -->
+                    <div class="report-banner">
+                        <h2>🔒 UNDERWRITING RISK ASSESSMENT</h2>
+                        <div class="subtitle">AI-Powered Comprehensive Risk Analysis | PHINS Platform</div>
                         <div class="report-id">Report ID: ${report.report_id || 'N/A'}</div>
-                        <div class="header-actions">
-                            <button class="header-btn back" onclick="window.history.back()">← Back</button>
-                            <button class="header-btn print" onclick="window.print()">🖨️ Print</button>
-                            ${report.recommendation?.type?.includes('approve') ? `
-                                <button class="header-btn approve" onclick="approveApplication()">✓ Approve</button>
-                            ` : ''}
-                            <button class="header-btn reject" onclick="rejectApplication()">✗ Reject</button>
+                    </div>
+                    
+                    <!-- Quick Stats Bar -->
+                    <div class="quick-stats">
+                        <div class="quick-stat">
+                            <span class="quick-stat-label">Applicant:</span>
+                            <span class="quick-stat-value">${report.applicant?.name || 'N/A'}</span>
+                        </div>
+                        <div class="quick-stat">
+                            <span class="quick-stat-label">Age:</span>
+                            <span class="quick-stat-value age">${report.applicant?.age || 'N/A'} years</span>
+                        </div>
+                        <div class="quick-stat">
+                            <span class="quick-stat-label">Disability:</span>
+                            <span class="quick-stat-value">${report.medical_assessment?.disability_percentage > 0 ? report.medical_assessment.disability_percentage + '%' : 'None'}</span>
+                        </div>
+                        <div class="quick-stat">
+                            <span class="quick-stat-label">BMI:</span>
+                            <span class="quick-stat-value">${report.medical_assessment?.bmi_category || 'N/A'}</span>
+                        </div>
+                        <div class="quick-stat">
+                            <span class="quick-stat-label">Smoking:</span>
+                            <span class="quick-stat-value">${formatSmokingStatus(report.medical_assessment?.smoking_status)}</span>
+                        </div>
+                        <div class="quick-stat">
+                            <span class="quick-stat-label">Risk:</span>
+                            <span class="quick-stat-value ${riskClass}">${riskCategory}</span>
                         </div>
                     </div>
                     

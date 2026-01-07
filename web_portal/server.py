@@ -5670,7 +5670,7 @@ For claims or questions, please contact:
                 # Refresh with complete medical data
                 now = datetime.now()
                 medical_data = {
-                    'age': 39,
+                    'age': 47,  # Correct age as per applicant data
                     'gender': 'male',
                     'occupation': 'Business Owner',
                     'disability_percentage': 30,
@@ -10959,7 +10959,7 @@ For claims or questions, please contact:
                             'annual_premium': 6000,
                             'monthly_premium': 500,
                             # Medical data for pipeline integrity
-                            'age': 39,
+                            'age': 47,  # Correct age
                             'gender': 'male',
                             'occupation': 'Business Owner',
                             'disability_percentage': 30,
@@ -19270,7 +19270,7 @@ def run_server(port: int = PORT) -> None:
                 'risk_score': 'moderate',
                 'risk_assessment': 'moderate',
                 # Demographic data - from application form
-                'age': 39,
+                'age': 47,  # Correct age as per applicant data
                 'gender': 'male',
                 'occupation': 'Business Owner',
                 # Medical assessment data - from medical questionnaire/exam
@@ -19340,7 +19340,7 @@ def run_server(port: int = PORT) -> None:
             }
             action = "Updated" if needs_update else "Created"
             print(f"   ✓ {action} underwriting application: {uw_asaf_id} for asaf@assurance.co.il")
-            print(f"     Age: 39 | Gender: Male | Occupation: Business Owner")
+            print(f"     Age: 47 | Gender: Male | Occupation: Business Owner")
             print(f"     Disability: 30% (Mobility Impairment) | BMI: 32.0 (Obese Class I)")
             print(f"     Smoking: Never | Medical Conditions: 2")
             print(f"     Risk Level: MODERATE | Premium Loading: +35%")

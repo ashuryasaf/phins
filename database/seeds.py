@@ -440,7 +440,7 @@ def seed_sample_data(session=None):
                             'risk_score': 'moderate',
                             'risk_assessment': 'moderate',
                             # Demographic data
-                            'age': 39,
+                            'age': 47,  # Correct age as per applicant data
                             'gender': 'male',
                             'occupation': 'Business Owner',
                             # Medical data - verified from pipeline
