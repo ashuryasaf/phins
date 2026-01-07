@@ -1313,26 +1313,37 @@
                 const response = await fetch(url, { headers: { 'Authorization': `Bearer ${token}` } });
                 const data = await response.json();
                 
-                // Store projection data with customer info for other reports
+                // Store projection data with customer info for other reports (with fallbacks)
+                const custAge = selectedApplicationData?.age ?? selectedCustomerData?.age ?? null;
+                const custDisability = selectedApplicationData?.disability_percentage ?? selectedCustomerData?.disability_percentage ?? 0;
+                const custBmi = selectedApplicationData?.bmi ?? selectedCustomerData?.bmi ?? null;
+                const custSmoking = selectedApplicationData?.smoking_status ?? 'unknown';
+                
                 lastProjectionData = {
                     ...data,
                     customer_info: selectedCustomerData ? {
                         id: selectedCustomerData.id,
-                        name: selectedCustomerData.name || selectedCustomerData.email,
-                        email: selectedCustomerData.email
+                        name: selectedCustomerData.name || selectedCustomerData.full_name || selectedCustomerData.email,
+                        email: selectedCustomerData.email,
+                        phone: selectedCustomerData.phone || selectedCustomerData.mobile,
+                        address: selectedCustomerData.address || selectedCustomerData.city || 'N/A',
+                        age: custAge
                     } : null,
                     policy_info: selectedPolicyData ? {
                         id: selectedPolicyData.id,
-                        type: selectedPolicyData.type,
-                        status: selectedPolicyData.status
+                        type: selectedPolicyData.type || 'phins_unified',
+                        status: selectedPolicyData.status || 'active',
+                        coverage_amount: selectedPolicyData.coverage_amount || selectedPolicyData.coverage,
+                        start_date: selectedPolicyData.start_date || selectedPolicyData.created_date
                     } : null,
-                    application_info: selectedApplicationData ? {
-                        id: selectedApplicationData.id,
-                        disability_percentage: selectedApplicationData.disability_percentage,
-                        bmi: selectedApplicationData.bmi,
-                        smoking_status: selectedApplicationData.smoking_status,
-                        medical_conditions: selectedApplicationData.medical_conditions
-                    } : null,
+                    application_info: {
+                        id: selectedApplicationData?.id,
+                        age: custAge,
+                        disability_percentage: custDisability,
+                        bmi: custBmi,
+                        smoking_status: custSmoking,
+                        medical_conditions: selectedApplicationData?.medical_conditions || []
+                    },
                     data_source: selectedCustomerData ? 'real_customer' : 'manual_input'
                 };
                 
@@ -1424,20 +1435,18 @@
                                             ${selectedPolicyData?.status || 'N/A'}
                                         </strong>
                                     </div>
-                                    ${selectedApplicationData ? `
-                                        <div style="display: flex; flex-direction: column;">
-                                            <span style="opacity: 0.7; font-size: 0.75rem; text-transform: uppercase;">Disability</span>
-                                            <strong>${selectedApplicationData.disability_percentage || 0}%</strong>
-                                        </div>
-                                        <div style="display: flex; flex-direction: column;">
-                                            <span style="opacity: 0.7; font-size: 0.75rem; text-transform: uppercase;">BMI</span>
-                                            <strong>${selectedApplicationData.bmi || 'N/A'}</strong>
-                                        </div>
-                                        <div style="display: flex; flex-direction: column;">
-                                            <span style="opacity: 0.7; font-size: 0.75rem; text-transform: uppercase;">Age</span>
-                                            <strong>${selectedApplicationData.age || 'N/A'}</strong>
-                                        </div>
-                                    ` : ''}
+                                    <div style="display: flex; flex-direction: column;">
+                                        <span style="opacity: 0.7; font-size: 0.75rem; text-transform: uppercase;">Disability</span>
+                                        <strong>${selectedApplicationData?.disability_percentage ?? selectedCustomerData?.disability_percentage ?? 0}%</strong>
+                                    </div>
+                                    <div style="display: flex; flex-direction: column;">
+                                        <span style="opacity: 0.7; font-size: 0.75rem; text-transform: uppercase;">BMI</span>
+                                        <strong>${selectedApplicationData?.bmi ?? selectedCustomerData?.bmi ?? 'N/A'}</strong>
+                                    </div>
+                                    <div style="display: flex; flex-direction: column;">
+                                        <span style="opacity: 0.7; font-size: 0.75rem; text-transform: uppercase;">Age</span>
+                                        <strong>${selectedApplicationData?.age ?? selectedCustomerData?.age ?? 'N/A'}</strong>
+                                    </div>
                                 </div>
                             </div>
                             
@@ -2600,12 +2609,18 @@
                 // Build customer header for real data
                 let customerHeader = '';
                 if (dataSource === 'real_customer') {
+                    // Get health data from application or customer
+                    const disabilityPct = appInfo.disability_percentage ?? selectedCustomerData?.disability_percentage ?? 0;
+                    const bmiVal = appInfo.bmi ?? selectedCustomerData?.bmi ?? 'N/A';
+                    const smokingVal = appInfo.smoking_status ?? 'N/A';
+                    const ageVal = appInfo.age ?? selectedCustomerData?.age ?? selectedApplicationData?.age ?? 'N/A';
+                    
                     customerHeader = `
                         <div class="summary-box" style="background: linear-gradient(135deg, #1e3a5f 0%, #2d5a87 100%); color: white; margin-bottom: 20px;">
                             <h3 style="color: white;">👤 Customer Information (Verified Data)</h3>
-                            <p><strong>Customer:</strong> ${custInfo.name || custInfo.email || 'N/A'} | <strong>Email:</strong> ${custInfo.email || 'N/A'}</p>
+                            <p><strong>Customer ID:</strong> ${custInfo.id || 'N/A'} | <strong>Name:</strong> ${custInfo.name || custInfo.email || 'N/A'} | <strong>Email:</strong> ${custInfo.email || 'N/A'}</p>
                             <p><strong>Policy:</strong> ${policyInfo.id || 'N/A'} | <strong>Status:</strong> ${policyInfo.status || 'N/A'} | <strong>Type:</strong> ${policyInfo.type || 'N/A'}</p>
-                            ${appInfo.disability_percentage ? `<p><strong>Disability:</strong> ${appInfo.disability_percentage}% | <strong>BMI:</strong> ${appInfo.bmi || 'N/A'} | <strong>Smoking:</strong> ${appInfo.smoking_status || 'N/A'}</p>` : ''}
+                            <p><strong>Age:</strong> ${ageVal} | <strong>Disability:</strong> ${disabilityPct}% | <strong>BMI:</strong> ${bmiVal} | <strong>Smoking:</strong> ${smokingVal}</p>
                         </div>
                     `;
                 }
