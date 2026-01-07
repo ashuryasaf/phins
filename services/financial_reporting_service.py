@@ -738,10 +738,20 @@ class FinancialReportingService:
                     return default
             
             # Claims paid includes both 'paid' and 'approved' status (approved = ready to pay)
-            claims_paid_amt = sum(safe_num(c.get('paid_amount', c.get('approved_amount', 0))) 
-                                  for c in self._claims.values() if _status_in(c, ['paid', 'approved']))
-            claims_pending_amt = sum(safe_num(c.get('claimed_amount', 0)) for c in self._claims.values() 
-                                     if _status_in(c, ['pending', 'under_review']))
+            # Check for approved_amount first, then paid_amount, then claimed_amount as fallback
+            claims_paid_amt = 0
+            for c in self._claims.values():
+                status = (c.get('status') or '').lower()
+                if status in ['paid', 'approved']:
+                    amt = safe_num(c.get('approved_amount')) or safe_num(c.get('paid_amount')) or safe_num(c.get('claimed_amount', 0))
+                    claims_paid_amt += amt
+            
+            # Claims pending - sum of claimed amounts for pending/under review claims
+            claims_pending_amt = 0
+            for c in self._claims.values():
+                status = (c.get('status') or '').lower().replace(' ', '_')
+                if status in ['pending', 'under_review']:
+                    claims_pending_amt += safe_num(c.get('claimed_amount', 0))
             
             # Calculate total annual revenue from active policies
             total_revenue = 0

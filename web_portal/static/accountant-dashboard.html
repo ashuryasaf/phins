@@ -708,18 +708,44 @@
                 document.getElementById('outstanding-ar').textContent = formatCurrency(data.outstanding_ar);
                 document.getElementById('claims-liability').textContent = formatCurrency(data.claims_pending);
                 
-                const lossRatio = data.total_collected > 0 
-                    ? ((data.claims_paid || 0) / data.total_collected * 100).toFixed(1) 
+                // Loss Ratio = Claims Paid / Total Revenue (or Collected if available)
+                // If no collected yet, use revenue as base for loss ratio estimation
+                const baseForLossRatio = data.total_collected > 0 ? data.total_collected : data.total_revenue;
+                const lossRatio = baseForLossRatio > 0 
+                    ? ((data.claims_paid || 0) / baseForLossRatio * 100).toFixed(1) 
                     : '0';
                 document.getElementById('loss-ratio').textContent = lossRatio + '%';
+                
+                // Color code loss ratio
+                const lossRatioEl = document.getElementById('loss-ratio');
+                const lossRatioVal = parseFloat(lossRatio);
+                if (lossRatioVal > 80) {
+                    lossRatioEl.style.color = '#dc3545'; // Red - concerning
+                } else if (lossRatioVal > 60) {
+                    lossRatioEl.style.color = '#f59e0b'; // Orange - caution
+                } else {
+                    lossRatioEl.style.color = '#10b981'; // Green - healthy
+                }
                 
                 // Load portfolio for solvency
                 const portfolioResp = await fetch('/api/financial/portfolio-report', {
                     headers: { 'Authorization': `Bearer ${token}` }
                 });
                 const portfolio = await portfolioResp.json();
-                document.getElementById('solvency-ratio').textContent = 
-                    (portfolio.summary?.solvency_ratio || 0).toFixed(2);
+                const solvencyRatio = portfolio.summary?.solvency_ratio || 0;
+                const solvencyEl = document.getElementById('solvency-ratio');
+                solvencyEl.textContent = solvencyRatio.toFixed(2);
+                
+                // Color code solvency ratio (>= 1.0 is healthy)
+                if (solvencyRatio >= 1.5) {
+                    solvencyEl.style.color = '#10b981'; // Green - excellent
+                } else if (solvencyRatio >= 1.0) {
+                    solvencyEl.style.color = '#059669'; // Dark green - healthy
+                } else if (solvencyRatio >= 0.7) {
+                    solvencyEl.style.color = '#f59e0b'; // Orange - caution
+                } else {
+                    solvencyEl.style.color = '#dc3545'; // Red - concerning
+                }
             } catch (err) {
                 console.error('Error loading stats:', err);
             }
