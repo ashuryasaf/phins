@@ -5707,8 +5707,14 @@ For claims or questions, please contact:
                     'updated_date': now.isoformat()
                 }
                 
-                # Update the application with medical data
-                UNDERWRITING_APPLICATIONS[app_id].update(medical_data)
+                # Update the application with medical data - use direct assignment
+                # to ensure the reference is updated in the global dict
+                current_app = UNDERWRITING_APPLICATIONS[app_id]
+                for key, value in medical_data.items():
+                    current_app[key] = value
+                
+                # Also update in-place to be extra sure
+                UNDERWRITING_APPLICATIONS[app_id] = current_app
                 
                 # Verify the update worked by reading back the data
                 updated_app = UNDERWRITING_APPLICATIONS.get(app_id, {})
@@ -5725,6 +5731,10 @@ For claims or questions, please contact:
                         'bmi': updated_app.get('bmi'),
                         'smoking_status': updated_app.get('smoking_status'),
                         'medical_conditions_count': len(updated_app.get('medical_conditions', []))
+                    },
+                    'debug': {
+                        'app_id_used': app_id,
+                        'apps_in_memory': list(UNDERWRITING_APPLICATIONS.keys())
                     }
                 }).encode('utf-8'))
             else:
