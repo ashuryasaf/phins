@@ -5707,14 +5707,28 @@ For claims or questions, please contact:
                     'updated_date': now.isoformat()
                 }
                 
-                # Update the application with medical data - use direct assignment
-                # to ensure the reference is updated in the global dict
-                current_app = UNDERWRITING_APPLICATIONS[app_id]
-                for key, value in medical_data.items():
-                    current_app[key] = value
+                # Debug: log state before update
+                before_state = {
+                    'disability_percentage': UNDERWRITING_APPLICATIONS[app_id].get('disability_percentage'),
+                    'bmi': UNDERWRITING_APPLICATIONS[app_id].get('bmi'),
+                    'smoking_status': UNDERWRITING_APPLICATIONS[app_id].get('smoking_status')
+                }
+                print(f"[REFRESH] Before update for {app_id}: {before_state}")
                 
-                # Also update in-place to be extra sure
-                UNDERWRITING_APPLICATIONS[app_id] = current_app
+                # Create a completely new dict with merged data
+                old_data = dict(UNDERWRITING_APPLICATIONS[app_id])
+                new_data = {**old_data, **medical_data}
+                
+                # Replace the entry entirely
+                UNDERWRITING_APPLICATIONS[app_id] = new_data
+                
+                # Debug: log state after update
+                after_state = {
+                    'disability_percentage': UNDERWRITING_APPLICATIONS[app_id].get('disability_percentage'),
+                    'bmi': UNDERWRITING_APPLICATIONS[app_id].get('bmi'),
+                    'smoking_status': UNDERWRITING_APPLICATIONS[app_id].get('smoking_status')
+                }
+                print(f"[REFRESH] After update for {app_id}: {after_state}")
                 
                 # Verify the update worked by reading back the data
                 updated_app = UNDERWRITING_APPLICATIONS.get(app_id, {})
@@ -5733,8 +5747,9 @@ For claims or questions, please contact:
                         'medical_conditions_count': len(updated_app.get('medical_conditions', []))
                     },
                     'debug': {
-                        'app_id_used': app_id,
-                        'apps_in_memory': list(UNDERWRITING_APPLICATIONS.keys())
+                        'before': before_state,
+                        'after': after_state,
+                        'app_id_used': app_id
                     }
                 }).encode('utf-8'))
             else:
