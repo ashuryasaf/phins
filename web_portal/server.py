@@ -3559,6 +3559,80 @@ For claims or questions, please contact:
                 self.wfile.write(json.dumps(payload).encode('utf-8'))
             return
         
+        # Underwriting Applications API Endpoint
+        if path == '/api/underwriting/applications':
+            if not session and not PHINS_TEST_MODE:
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Unauthorized'}).encode('utf-8'))
+                return
+            
+            user = get_session_user(session) or {}
+            role = (user.get('role') or '').lower() if session else 'admin'
+            session_customer_id = (user.get('customer_id') or session.get('customer_id')) if session else None
+            
+            # Get specific application by ID
+            app_id = qs.get('id', [None])[0]
+            if app_id:
+                app = UNDERWRITING_APPLICATIONS.get(app_id)
+                if app:
+                    # Customers can only view their own applications
+                    if role != 'customer' or (session_customer_id and app.get('customer_id') == session_customer_id):
+                        self._set_json_headers()
+                        self.wfile.write(json.dumps(app).encode('utf-8'))
+                    else:
+                        self._set_json_headers(403)
+                        self.wfile.write(json.dumps({'error': 'Access denied'}).encode('utf-8'))
+                else:
+                    self._set_json_headers(404)
+                    self.wfile.write(json.dumps({'error': f'Application {app_id} not found'}).encode('utf-8'))
+                return
+            
+            # Get all applications (with role-based filtering)
+            all_apps = []
+            for app_id, app in UNDERWRITING_APPLICATIONS.items():
+                if role == 'customer':
+                    if session_customer_id and app.get('customer_id') == session_customer_id:
+                        all_apps.append(app)
+                else:
+                    # Admins, underwriters, actuaries can see all
+                    all_apps.append(app)
+            
+            # Enrich with customer info
+            for app in all_apps:
+                customer_id = app.get('customer_id')
+                customer = CUSTOMERS.get(customer_id, {})
+                if customer:
+                    app['customer_name'] = customer.get('name') or customer.get('full_name') or f"{customer.get('first_name', '')} {customer.get('last_name', '')}".strip()
+            
+            # Apply filters
+            status_filter = qs.get('status', [None])[0]
+            if status_filter:
+                all_apps = [a for a in all_apps if status_eq(a, status_filter)]
+            
+            email_filter = qs.get('email', [None])[0]
+            if email_filter:
+                all_apps = [a for a in all_apps if email_filter.lower() in (a.get('customer_email', '') or '').lower()]
+            
+            # Pagination
+            page = int(qs.get('page', [1])[0])
+            page_size = int(qs.get('page_size', [100])[0])
+            page = max(1, page)
+            page_size = max(1, min(500, page_size))
+            start = (page - 1) * page_size
+            end = start + page_size
+            page_items = all_apps[start:end]
+            
+            payload = {
+                'items': page_items,
+                'applications': page_items,
+                'page': page,
+                'page_size': page_size,
+                'total': len(all_apps)
+            }
+            self._set_json_headers()
+            self.wfile.write(json.dumps(payload).encode('utf-8'))
+            return
+        
         # Policy Document Download Endpoint - Comprehensive PDF Generation
         if path.startswith('/api/policies/') and path.endswith('/document'):
             policy_id = path.split('/')[3]
