@@ -847,32 +847,33 @@ def update_customer_allocation(customer_id: str, allocations: Dict[str, float]) 
 
 def calculate_age_adjusted_premium(base_premium: float, age: int, policy_type: str = 'life', 
                                     adl_level: int = 5, coverage_amount: float = None,
-                                    use_actuarial: bool = True) -> Dict[str, float]:
+                                    use_actuarial: bool = True,
+                                    term_years: int = 25,
+                                    savings_pct: float = 0.5) -> Dict[str, float]:
     """
-    Calculate age-adjusted premium based on actuarial tables.
+    Calculate age-adjusted premium based on UNIFIED actuarial tables.
     
-    This function now uses the SAME actuarial basis as FinancialReportingService:
-    - Mortality rates by age bracket
+    IMPORTANT: This function now uses the EXACT SAME actuarial basis as 
+    FinancialReportingService.calculate_premium() to ensure data integrity 
+    across all premium calculations (risk cover, projections, billing).
+    
+    Actuarial Components (PHINS_ACTUARIAL_TABLES_V1):
+    - Mortality rates by age bracket (per 1000 lives)
     - ADL risk multipliers (1-10 scale)
-    - Lapse rates
-    - Risk component vs savings component split
+    - Lapse rates by policy year
+    - Discount rate (3.5%) for present value calculations
     
-    Age Premium Ratio Examples (45yo baseline = 1.0):
-    - Age 35: base × 0.85 (lower mortality risk)
-    - Age 45: base × 1.0 (baseline)
-    - Age 50: base × 1.30 (higher mortality)
-    - Age 55: base × 1.60
-    - Age 60: base × 2.0
+    ADL Risk Adjustment (Activities of Daily Living):
+    - ADL 1-3: 0.6x - 0.85x (low risk - independent)
+    - ADL 4-5: 0.95x - 1.0x (medium risk - baseline)
+    - ADL 6-7: 1.15x - 1.35x (high risk - significant assistance)
+    - ADL 8+:  1.6x - 2.5x (very high risk - total dependence)
     
-    ADL Risk Adjustment (applied on top of age factor):
-    - ADL 1-3: 0.6x - 0.85x (low risk)
-    - ADL 4-5: 0.95x - 1.0x (medium risk)
-    - ADL 6-7: 1.15x - 1.35x (high risk)
-    - ADL 8+:  1.6x - 2.5x (very high risk)
-    
-    Returns monthly and annual premium amounts with full breakdown.
+    Returns monthly and annual premium amounts with full actuarial breakdown.
     """
-    # ========== ACTUARIAL TABLES (Same as FinancialReportingService) ==========
+    import math
+    
+    # ========== ACTUARIAL TABLES (UNIFIED - Same as FinancialReportingService) ==========
     
     # Mortality rates by age bracket (per 1000 lives per year)
     MORTALITY_RATES = {
@@ -898,6 +899,19 @@ def calculate_age_adjusted_premium(base_premium: float, age: int, policy_type: s
         9: 1.9,
         10: 2.5,  # Very high risk - total dependence
     }
+    
+    # Lapse rates by policy year (same as FinancialReportingService)
+    LAPSE_RATES = {
+        1: 0.08,   # 8% lapse in year 1
+        2: 0.05,
+        3: 0.04,
+        (4, 10): 0.03,
+        (11, 25): 0.02,
+        (26, 100): 0.01,
+    }
+    
+    # Discount rate for present value calculations (same as FinancialReportingService)
+    DISCOUNT_RATE = 0.035  # 3.5% annual
     
     # Age adjustment factors by policy type (derived from mortality tables)
     AGE_FACTORS = {
@@ -931,6 +945,29 @@ def calculate_age_adjusted_premium(base_premium: float, age: int, policy_type: s
         }
     }
     
+    # ========== HELPER FUNCTIONS (Match FinancialReportingService) ==========
+    
+    def get_mortality_rate(check_age: int) -> float:
+        """Get mortality rate per 1000 lives for given age"""
+        for (low, high), rate in MORTALITY_RATES.items():
+            if low <= check_age < high:
+                return rate / 1000.0
+        return 0.075  # Default for very old ages
+    
+    def get_adl_multiplier(level: int) -> float:
+        """Get risk multiplier based on ADL level (1-10)"""
+        level = max(1, min(10, level))
+        return ADL_RISK_MULTIPLIERS.get(level, 1.0)
+    
+    def get_lapse_rate(policy_year: int) -> float:
+        """Get lapse rate for given policy year"""
+        if policy_year in LAPSE_RATES:
+            return LAPSE_RATES[policy_year]
+        for key, rate in LAPSE_RATES.items():
+            if isinstance(key, tuple) and key[0] <= policy_year <= key[1]:
+                return rate
+        return 0.01
+    
     # ========== CALCULATE AGE FACTOR ==========
     factors = AGE_FACTORS.get(policy_type, AGE_FACTORS['life'])
     age_factor = 1.0
@@ -941,36 +978,65 @@ def calculate_age_adjusted_premium(base_premium: float, age: int, policy_type: s
     
     # ========== CALCULATE ADL RISK MULTIPLIER ==========
     adl_level = max(1, min(10, adl_level))  # Clamp to 1-10
-    adl_multiplier = ADL_RISK_MULTIPLIERS.get(adl_level, 1.0)
+    adl_multiplier = get_adl_multiplier(adl_level)
     
     # ========== GET MORTALITY RATE ==========
-    mortality_rate = 0.0025  # Default
-    for (min_age, max_age), rate in MORTALITY_RATES.items():
-        if min_age <= age < max_age:
-            mortality_rate = rate / 1000.0
-            break
+    mortality_rate = get_mortality_rate(age)
     
     # ========== CALCULATE PREMIUM COMPONENTS ==========
     if use_actuarial and policy_type in ['life', 'health']:
-        # Full actuarial calculation
-        # Combined factor = age_factor × adl_multiplier
-        combined_factor = age_factor * adl_multiplier
+        # =====================================================================
+        # FULL ACTUARIAL CALCULATION (Same as FinancialReportingService)
+        # Uses: Mortality rates + ADL multipliers + Lapse rates + Discount rate
+        # =====================================================================
         
-        # Risk component (based on mortality and ADL)
-        risk_premium = base_premium * combined_factor * 0.5  # 50% risk coverage
+        # Use coverage_amount if provided, else use base_premium as proxy
+        coverage = coverage_amount if coverage_amount and coverage_amount > 0 else base_premium * 10
         
-        # Savings component (not affected by risk)
-        savings_premium = base_premium * 0.5  # 50% savings
+        # Calculate mortality cost (PV of expected death benefit over term)
+        mortality_cost = 0.0
+        for year in range(1, term_years + 1):
+            current_age = age + year - 1
+            qx = get_mortality_rate(current_age)
+            adl_mult = get_adl_multiplier(adl_level)
+            adjusted_qx = qx * adl_mult
+            
+            # Probability of surviving to year, then dying
+            px_prev = 1.0
+            for y in range(year - 1):
+                px_prev *= (1 - get_mortality_rate(age + y) * get_adl_multiplier(adl_level))
+            death_prob = px_prev * adjusted_qx
+            
+            # Lapse-adjusted probability
+            lapse_survival = 1.0
+            for y in range(year):
+                lapse_survival *= (1 - get_lapse_rate(y + 1))
+            adjusted_death_prob = death_prob * lapse_survival
+            
+            # Discount death benefit to present value
+            discount_factor = (1 + DISCOUNT_RATE) ** (-year)
+            mortality_cost += coverage * adjusted_death_prob * discount_factor
+        
+        # Risk premium (mortality cost spread over term)
+        risk_premium_annual = mortality_cost / term_years
+        
+        # Savings component (target accumulation)
+        savings_allocation = coverage * savings_pct
+        savings_premium_annual = savings_allocation / term_years
         
         # Expense loading (15% of risk premium)
-        expense_loading = risk_premium * 0.15
+        expense_loading = risk_premium_annual * 0.15
         
-        # Total premium
-        annual_premium = risk_premium + savings_premium + expense_loading
+        # Total annual premium
+        annual_premium = risk_premium_annual + savings_premium_annual + expense_loading
         monthly_premium = annual_premium / 12
+        
+        # Combined factor (for reference/display)
+        combined_factor = age_factor * adl_multiplier
         
         return {
             'base_premium': base_premium,
+            'coverage_amount': coverage,
             'age': age,
             'policy_type': policy_type,
             'age_factor': round(age_factor, 3),
@@ -978,15 +1044,20 @@ def calculate_age_adjusted_premium(base_premium: float, age: int, policy_type: s
             'adl_multiplier': round(adl_multiplier, 3),
             'combined_factor': round(combined_factor, 3),
             'mortality_rate': round(mortality_rate, 6),
-            'risk_premium': round(risk_premium, 2),
-            'savings_premium': round(savings_premium, 2),
+            'mortality_cost_pv': round(mortality_cost, 2),
+            'risk_premium': round(risk_premium_annual, 2),
+            'savings_premium': round(savings_premium_annual, 2),
             'expense_loading': round(expense_loading, 2),
             'annual_premium': round(annual_premium, 2),
             'monthly_premium': round(monthly_premium, 2),
-            'actuarial_source': 'PHINS_ACTUARIAL_TABLES_V1'
+            'term_years': term_years,
+            'discount_rate': DISCOUNT_RATE,
+            'lapse_adjusted': True,
+            'actuarial_source': 'PHINS_ACTUARIAL_TABLES_V1',
+            'calculation_method': 'PV(Mortality × ADL × Lapse Survival × Coverage)'
         }
     else:
-        # Simple calculation for auto/property
+        # Simple calculation for auto/property (no life-related actuarial)
         annual_premium = base_premium * age_factor
         monthly_premium = annual_premium / 12
         
@@ -1067,14 +1138,19 @@ def calculate_monthly_distribution(customer_id: str) -> Dict[str, Any]:
             risk_score = policy.get('risk_score', 'medium')
             adl_level = RISK_TO_ADL_MAP.get(risk_score, 5)
             
-            # Calculate age-adjusted premium with FULL actuarial basis (age + ADL)
+            # Calculate age-adjusted premium with FULL actuarial basis (age + ADL + Lapse + Discount)
+            # Pass savings_pct from allocation to ensure consistent calculation base
+            savings_pct_decimal = allocation['savings_pct'] / 100.0
+            
             age_info = calculate_age_adjusted_premium(
                 annual_premium, 
                 customer_age, 
                 policy_type,
                 adl_level=adl_level,
                 coverage_amount=policy.get('coverage_amount', 0),
-                use_actuarial=True
+                use_actuarial=True,
+                term_years=25,  # Standard term for consistent actuarial basis
+                savings_pct=savings_pct_decimal
             )
             
             total_monthly_premium += monthly_premium
@@ -1096,7 +1172,13 @@ def calculate_monthly_distribution(customer_id: str) -> Dict[str, Any]:
                 'age_factor': age_info['age_factor'],
                 'adl_multiplier': age_info.get('adl_multiplier', 1.0),
                 'combined_factor': age_info.get('combined_factor', age_info['age_factor']),
-                'actuarial_source': age_info.get('actuarial_source', 'PHINS_ACTUARIAL_TABLES_V1')
+                'mortality_rate': age_info.get('mortality_rate', 0.0025),
+                'mortality_cost_pv': age_info.get('mortality_cost_pv', 0),
+                'risk_premium_actuarial': age_info.get('risk_premium', annual_premium * 0.5),
+                'savings_premium_actuarial': age_info.get('savings_premium', annual_premium * 0.5),
+                'lapse_adjusted': age_info.get('lapse_adjusted', True),
+                'actuarial_source': age_info.get('actuarial_source', 'PHINS_ACTUARIAL_TABLES_V1'),
+                'calculation_method': age_info.get('calculation_method', 'PV(Mortality × ADL × Lapse Survival × Coverage)')
             })
     
     # Calculate savings portion (cumulative from all policies)
@@ -1139,13 +1221,19 @@ def calculate_monthly_distribution(customer_id: str) -> Dict[str, Any]:
                 'crypto': crypto_amount
             }
         },
-        # Actuarial breakdown (consistent with Long-Term Projection Calculator)
+        # Actuarial breakdown (UNIFIED with Long-Term Projection Calculator)
         'actuarial_data': {
             'total_risk_premium': round(total_risk_premium, 2),
             'total_savings_premium': round(total_savings_premium, 2),
             'data_source': 'PHINS_ACTUARIAL_TABLES_V1',
-            'calculation_method': 'Mortality + ADL Risk + Lapse Rate',
-            'note': 'Risk premiums adjusted for age and ADL level per actuarial tables'
+            'calculation_method': 'PV(Mortality × ADL × Lapse Survival × Coverage)',
+            'components': {
+                'mortality_rates': 'Age-banded (0-30, 30-40, 40-50, 50-60, 60-70, 70-80, 80+)',
+                'adl_multipliers': '1-10 scale (0.6x - 2.5x)',
+                'lapse_rates': 'Policy-year adjusted (Year 1: 8% → Year 25+: 1%)',
+                'discount_rate': '3.5% annual for present value'
+            },
+            'note': 'Risk cover calculated using same actuarial basis as Long-Term Customer Projection'
         },
         # Annual projections (for financial planning)
         'annual_projection': {
