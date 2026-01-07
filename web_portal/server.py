@@ -5707,6 +5707,9 @@ For claims or questions, please contact:
                     'updated_date': now.isoformat()
                 }
                 
+                # Debug: log the medical_data being applied
+                print(f"[REFRESH] Medical data to apply: disability_percentage={medical_data.get('disability_percentage')}, bmi={medical_data.get('bmi')}, smoking_status={medical_data.get('smoking_status')}")
+                
                 # Debug: log state before update
                 before_state = {
                     'disability_percentage': UNDERWRITING_APPLICATIONS[app_id].get('disability_percentage'),
@@ -5718,6 +5721,14 @@ For claims or questions, please contact:
                 # Create a completely new dict with merged data
                 old_data = dict(UNDERWRITING_APPLICATIONS[app_id])
                 new_data = {**old_data, **medical_data}
+                
+                # Debug: log the merged data
+                merged_state = {
+                    'disability_percentage': new_data.get('disability_percentage'),
+                    'bmi': new_data.get('bmi'),
+                    'smoking_status': new_data.get('smoking_status')
+                }
+                print(f"[REFRESH] Merged data: {merged_state}")
                 
                 # Replace the entry entirely
                 UNDERWRITING_APPLICATIONS[app_id] = new_data
