@@ -728,20 +728,50 @@ class FinancialReportingService:
         }
         
         if dashboard_type == 'accountant':
+            # Helper to safely get numeric value
+            def safe_num(val, default=0):
+                if val is None:
+                    return default
+                try:
+                    return float(val)
+                except (TypeError, ValueError):
+                    return default
+            
             # Claims paid includes both 'paid' and 'approved' status (approved = ready to pay)
-            claims_paid_amt = sum(c.get('paid_amount', c.get('approved_amount', 0)) 
+            claims_paid_amt = sum(safe_num(c.get('paid_amount', c.get('approved_amount', 0))) 
                                   for c in self._claims.values() if _status_in(c, ['paid', 'approved']))
-            claims_pending_amt = sum(c.get('claimed_amount', 0) for c in self._claims.values() 
+            claims_pending_amt = sum(safe_num(c.get('claimed_amount', 0)) for c in self._claims.values() 
                                      if _status_in(c, ['pending', 'under_review']))
+            
+            # Calculate total annual revenue from active policies
+            total_revenue = 0
+            for p in self._policies.values():
+                if _status_eq(p, 'active'):
+                    premium = safe_num(p.get('annual_premium', 0))
+                    if premium == 0:
+                        # Estimate from coverage if no premium set (3% of coverage)
+                        coverage = safe_num(p.get('coverage_amount', 0))
+                        premium = coverage * 0.03
+                    total_revenue += premium
+            
+            # Calculate billing totals
+            total_billed = sum(safe_num(b.get('amount_due', b.get('amount', 0))) for b in self._billing.values())
+            total_collected = sum(safe_num(b.get('amount_paid', 0)) for b in self._billing.values())
+            
+            # Outstanding A/R - only for unpaid bills
+            outstanding_ar = 0
+            for b in self._billing.values():
+                if (b.get('status') or '').lower() != 'paid':
+                    due = safe_num(b.get('amount_due', b.get('amount', 0)))
+                    paid = safe_num(b.get('amount_paid', 0))
+                    outstanding_ar += max(0, due - paid)
             
             return {
                 **base_data,
-                'total_revenue': sum(p.get('annual_premium', 0) for p in self._policies.values() 
-                                    if _status_eq(p, 'active')),
-                'total_billed': sum(b.get('amount_due', b.get('amount', 0)) for b in self._billing.values()),
-                'total_collected': sum(b.get('amount_paid', 0) for b in self._billing.values()),
-                'outstanding_ar': sum((b.get('amount_due', b.get('amount', 0)) - b.get('amount_paid', 0)) 
-                                     for b in self._billing.values() if (b.get('status') or '').lower() != 'paid'),
+                'total_revenue': total_revenue,
+                'total_billed': total_billed,
+                'total_collected': total_collected,
+                'outstanding_ar': outstanding_ar,
                 'claims_paid': claims_paid_amt,
                 'claims_pending': claims_pending_amt,
             }
