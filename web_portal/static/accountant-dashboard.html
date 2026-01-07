@@ -870,11 +870,12 @@
                         policySelect.innerHTML += `<option value="${p.id}">${p.id} - ${p.type || 'Health'} ($${Number(coverage).toLocaleString()}) - ${status}</option>`;
                     });
                     
-                    // Auto-select first active policy
+                    // Auto-select first policy (prefer active, but select any if no active)
                     const activePolicy = projectionPolicies.find(p => (p.status || '').toLowerCase() === 'active');
-                    if (activePolicy) {
-                        policySelect.value = activePolicy.id;
-                        loadPolicyDataForProjection();
+                    const firstPolicy = activePolicy || projectionPolicies[0];
+                    if (firstPolicy) {
+                        policySelect.value = firstPolicy.id;
+                        await loadPolicyDataForProjection();
                     }
                 }
                 
@@ -935,10 +936,12 @@
                 document.getElementById('proj-coverage').value = selectedPolicyData.coverage_amount || selectedPolicyData.coverage;
             }
             
-            // Age from application or customer
+            // Age from application or customer (check multiple sources)
             let age = null;
             if (selectedApplicationData?.age) {
                 age = selectedApplicationData.age;
+            } else if (selectedCustomerData?.age) {
+                age = selectedCustomerData.age;
             } else if (selectedCustomerData?.date_of_birth || selectedCustomerData?.dob) {
                 const dob = new Date(selectedCustomerData.date_of_birth || selectedCustomerData.dob);
                 const today = new Date();
@@ -989,10 +992,12 @@
             document.getElementById('info-customer-name').textContent = name;
             document.getElementById('info-customer-email').textContent = selectedCustomerData.email || 'N/A';
             
-            // Age
+            // Age - check multiple sources
             let age = 'N/A';
             if (selectedApplicationData?.age) {
                 age = selectedApplicationData.age;
+            } else if (selectedCustomerData?.age) {
+                age = selectedCustomerData.age;
             } else if (selectedCustomerData?.date_of_birth || selectedCustomerData?.dob) {
                 const dob = new Date(selectedCustomerData.date_of_birth || selectedCustomerData.dob);
                 const today = new Date();
@@ -1000,33 +1005,45 @@
             }
             document.getElementById('info-customer-age').textContent = age;
             
-            // Policy info
-            if (selectedPolicyData) {
-                document.getElementById('info-policy-id').textContent = selectedPolicyData.id;
-                document.getElementById('info-coverage').textContent = '$' + Number(selectedPolicyData.coverage_amount || selectedPolicyData.coverage || 0).toLocaleString();
-                document.getElementById('info-policy-status').textContent = selectedPolicyData.status || 'active';
+            // Policy info - check selectedPolicyData first, then try to get from projectionPolicies
+            let policyData = selectedPolicyData;
+            if (!policyData && projectionPolicies.length > 0) {
+                policyData = projectionPolicies[0];
+            }
+            
+            if (policyData) {
+                document.getElementById('info-policy-id').textContent = policyData.id;
+                document.getElementById('info-coverage').textContent = '$' + Number(policyData.coverage_amount || policyData.coverage || 0).toLocaleString();
+                const status = policyData.status || 'active';
+                document.getElementById('info-policy-status').textContent = status;
                 document.getElementById('info-policy-status').style.color = 
-                    (selectedPolicyData.status || '').toLowerCase() === 'active' ? '#10b981' : '#f59e0b';
+                    status.toLowerCase() === 'active' ? '#10b981' : '#f59e0b';
             } else {
                 document.getElementById('info-policy-id').textContent = '-';
                 document.getElementById('info-coverage').textContent = '-';
                 document.getElementById('info-policy-status').textContent = '-';
             }
             
-            // Application data
-            if (selectedApplicationData) {
-                const disabilityPct = selectedApplicationData.disability_percentage || 0;
-                document.getElementById('info-disability').textContent = disabilityPct > 0 ? `${disabilityPct}%` : 'None';
-                
-                const bmi = selectedApplicationData.bmi || 0;
-                let bmiText = bmi > 0 ? bmi.toFixed(1) : 'N/A';
-                if (bmi >= 30) bmiText += ' (Obese)';
-                else if (bmi >= 25) bmiText += ' (Overweight)';
-                document.getElementById('info-bmi').textContent = bmiText;
-            } else {
-                document.getElementById('info-disability').textContent = 'N/A';
-                document.getElementById('info-bmi').textContent = 'N/A';
-            }
+            // Application/Medical data - check multiple sources
+            const disabilityPct = selectedApplicationData?.disability_percentage ?? selectedCustomerData?.disability_percentage ?? 0;
+            document.getElementById('info-disability').textContent = disabilityPct > 0 ? `${disabilityPct}%` : 'None';
+            
+            const bmi = selectedApplicationData?.bmi ?? selectedCustomerData?.bmi ?? 0;
+            let bmiText = bmi > 0 ? Number(bmi).toFixed(1) : 'N/A';
+            if (bmi >= 30) bmiText += ' (Obese)';
+            else if (bmi >= 25) bmiText += ' (Overweight)';
+            document.getElementById('info-bmi').textContent = bmiText;
+            
+            // Log for debugging
+            console.log('Customer Info Updated:', {
+                name, 
+                age, 
+                policy: policyData?.id,
+                coverage: policyData?.coverage_amount,
+                disability: disabilityPct,
+                bmi: bmi,
+                hasApplicationData: !!selectedApplicationData
+            });
         }
         
         // Clear customer selection
