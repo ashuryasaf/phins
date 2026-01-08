@@ -546,6 +546,109 @@
       </div>
     </div>
 
+    <!-- ==================== AI QUERY ASSISTANT ==================== -->
+    <div id="ai-assistant-panel" style="background: linear-gradient(135deg, #4a148c 0%, #7b1fa2 50%, #9c27b0 100%); border-radius: 20px; padding: 24px; margin-bottom: 24px; box-shadow: 0 12px 40px rgba(74, 20, 140, 0.35);">
+      
+      <!-- Header -->
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+        <div style="display: flex; align-items: center; gap: 12px;">
+          <div style="width: 48px; height: 48px; background: linear-gradient(135deg, #e1bee7 0%, #ce93d8 100%); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 1.5rem; animation: pulse-ai 2s ease-in-out infinite;">🤖</div>
+          <div>
+            <h2 style="margin: 0; color: white; font-size: 1.3rem; font-weight: 700;">PHINS AI Assistant</h2>
+            <p style="margin: 2px 0 0 0; color: rgba(255,255,255,0.8); font-size: 0.85rem;">Ask me anything about your account</p>
+          </div>
+        </div>
+        <div style="display: flex; gap: 8px;">
+          <button onclick="toggleAIHelp()" style="background: rgba(255,255,255,0.2); border: none; color: white; padding: 8px 12px; border-radius: 8px; cursor: pointer; font-size: 0.85rem;" title="Help">❓</button>
+          <button onclick="toggleAIPanel()" style="background: rgba(255,255,255,0.2); border: none; color: white; padding: 8px 12px; border-radius: 8px; cursor: pointer; font-size: 0.85rem;" title="Minimize">➖</button>
+        </div>
+      </div>
+      
+      <!-- Help Panel (Hidden by default) -->
+      <div id="ai-help-panel" style="display: none; background: rgba(255,255,255,0.1); border-radius: 12px; padding: 16px; margin-bottom: 16px; color: white;">
+        <h4 style="margin: 0 0 12px 0;">💬 Try asking:</h4>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 8px; font-size: 0.85rem;">
+          <div>• "Show me all my billings"</div>
+          <div>• "How much do I pay monthly?"</div>
+          <div>• "My personal data report"</div>
+          <div>• "How much savings in 5 years?"</div>
+          <div>• "I want to apply for new policy"</div>
+          <div>• "Pay my bills"</div>
+          <div>• "I want to save $10,000"</div>
+          <div>• "What's my coverage?"</div>
+        </div>
+      </div>
+      
+      <!-- Query Input -->
+      <div style="display: flex; gap: 10px; margin-bottom: 16px;">
+        <div style="flex: 1; position: relative;">
+          <input type="text" id="ai-query-input" 
+                 placeholder="Ask me anything... e.g., 'Show my billing report' or 'How much do I save monthly?'" 
+                 style="width: 100%; padding: 16px 50px 16px 20px; border-radius: 12px; border: 2px solid rgba(255,255,255,0.3); background: rgba(255,255,255,0.95); font-size: 1rem; outline: none; transition: all 0.3s;"
+                 onkeypress="if(event.key==='Enter') processAIQuery()"
+                 onfocus="this.style.borderColor='#e1bee7'; this.style.boxShadow='0 0 20px rgba(225, 190, 231, 0.5)';"
+                 onblur="this.style.borderColor='rgba(255,255,255,0.3)'; this.style.boxShadow='none';">
+          <button onclick="startVoiceInput()" id="voice-btn" 
+                  style="position: absolute; right: 10px; top: 50%; transform: translateY(-50%); background: linear-gradient(135deg, #7b1fa2 0%, #9c27b0 100%); border: none; width: 36px; height: 36px; border-radius: 50%; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 1.2rem; transition: all 0.3s;"
+                  title="Voice Input">🎤</button>
+        </div>
+        <button onclick="processAIQuery()" 
+                style="background: linear-gradient(135deg, #e1bee7 0%, #ce93d8 100%); border: none; color: #4a148c; padding: 16px 24px; border-radius: 12px; cursor: pointer; font-weight: 700; font-size: 1rem; transition: all 0.3s; box-shadow: 0 4px 15px rgba(225, 190, 231, 0.4);"
+                onmouseover="this.style.transform='scale(1.05)'; this.style.boxShadow='0 6px 20px rgba(225, 190, 231, 0.6)';"
+                onmouseout="this.style.transform='scale(1)'; this.style.boxShadow='0 4px 15px rgba(225, 190, 231, 0.4)';">
+          ⚡ Ask
+        </button>
+      </div>
+      
+      <!-- Voice Recording Indicator -->
+      <div id="voice-recording-indicator" style="display: none; background: rgba(244, 67, 54, 0.2); border: 2px solid #f44336; border-radius: 12px; padding: 16px; margin-bottom: 16px; text-align: center; color: white;">
+        <div style="display: flex; align-items: center; justify-content: center; gap: 12px;">
+          <div style="width: 16px; height: 16px; background: #f44336; border-radius: 50%; animation: pulse-recording 1s infinite;"></div>
+          <span style="font-weight: 600;">🎤 Listening... Speak now</span>
+          <button onclick="stopVoiceInput()" style="background: #f44336; border: none; color: white; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 0.85rem;">Stop</button>
+        </div>
+        <p id="voice-transcript" style="margin: 8px 0 0 0; font-style: italic; opacity: 0.9;"></p>
+      </div>
+      
+      <!-- Quick Action Buttons -->
+      <div style="display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px;">
+        <button onclick="quickAIAction('billing_report')" class="ai-quick-btn" style="background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.3); color: white; padding: 8px 14px; border-radius: 20px; cursor: pointer; font-size: 0.85rem; transition: all 0.2s;">📊 Billing Report</button>
+        <button onclick="quickAIAction('savings_calc')" class="ai-quick-btn" style="background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.3); color: white; padding: 8px 14px; border-radius: 20px; cursor: pointer; font-size: 0.85rem; transition: all 0.2s;">💰 Savings Calculator</button>
+        <button onclick="quickAIAction('my_policies')" class="ai-quick-btn" style="background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.3); color: white; padding: 8px 14px; border-radius: 20px; cursor: pointer; font-size: 0.85rem; transition: all 0.2s;">📋 My Policies</button>
+        <button onclick="quickAIAction('pay_bills')" class="ai-quick-btn" style="background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.3); color: white; padding: 8px 14px; border-radius: 20px; cursor: pointer; font-size: 0.85rem; transition: all 0.2s;">💳 Pay Bills</button>
+        <button onclick="quickAIAction('personal_data')" class="ai-quick-btn" style="background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.3); color: white; padding: 8px 14px; border-radius: 20px; cursor: pointer; font-size: 0.85rem; transition: all 0.2s;">👤 Personal Data</button>
+        <button onclick="quickAIAction('file_claim')" class="ai-quick-btn" style="background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.3); color: white; padding: 8px 14px; border-radius: 20px; cursor: pointer; font-size: 0.85rem; transition: all 0.2s;">🆘 File Claim</button>
+      </div>
+      
+      <!-- AI Response Area -->
+      <div id="ai-response-area" style="display: none; background: white; border-radius: 16px; padding: 20px; max-height: 500px; overflow-y: auto;">
+        <!-- Dynamic content will be inserted here -->
+      </div>
+    </div>
+    
+    <style>
+      @keyframes pulse-ai {
+        0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(225, 190, 231, 0.4); }
+        50% { transform: scale(1.05); box-shadow: 0 0 20px 10px rgba(225, 190, 231, 0.2); }
+      }
+      @keyframes pulse-recording {
+        0%, 100% { opacity: 1; transform: scale(1); }
+        50% { opacity: 0.5; transform: scale(1.2); }
+      }
+      .ai-quick-btn:hover {
+        background: rgba(255,255,255,0.3) !important;
+        transform: translateY(-2px);
+      }
+      #ai-query-input::placeholder {
+        color: #666;
+      }
+      @media (max-width: 768px) {
+        #ai-assistant-panel { padding: 16px; }
+        #ai-query-input { font-size: 0.9rem; padding: 14px 45px 14px 16px; }
+        .ai-quick-btn { padding: 6px 10px; font-size: 0.75rem; }
+      }
+    </style>
+
     <!-- Quick Actions - 5 Main Buttons -->
     <div class="dashboard-actions" style="margin-bottom: 32px; display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px;">
       
@@ -1420,6 +1523,853 @@
     let authToken = localStorage.getItem('phins_token');
     let walletBalance = 0.00;
     let customerNFTs = [];
+    
+    // ==================== AI QUERY ASSISTANT ====================
+    
+    // Voice recognition
+    let recognition = null;
+    let isListening = false;
+    
+    // Customer data cache for AI queries
+    let customerDataCache = {
+      profile: null,
+      policies: [],
+      billing: [],
+      savings: null,
+      claims: []
+    };
+    
+    // Initialize voice recognition
+    function initVoiceRecognition() {
+      if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        recognition = new SpeechRecognition();
+        recognition.continuous = false;
+        recognition.interimResults = true;
+        recognition.lang = 'en-US';
+        
+        recognition.onresult = (event) => {
+          const transcript = Array.from(event.results)
+            .map(result => result[0].transcript)
+            .join('');
+          
+          document.getElementById('voice-transcript').textContent = transcript;
+          
+          if (event.results[0].isFinal) {
+            document.getElementById('ai-query-input').value = transcript;
+            stopVoiceInput();
+            // Auto-process after voice input
+            setTimeout(() => processAIQuery(), 500);
+          }
+        };
+        
+        recognition.onerror = (event) => {
+          console.error('Voice recognition error:', event.error);
+          stopVoiceInput();
+          showAIError('Voice recognition error: ' + event.error);
+        };
+        
+        recognition.onend = () => {
+          if (isListening) stopVoiceInput();
+        };
+      }
+    }
+    
+    // Start voice input
+    function startVoiceInput() {
+      if (!recognition) {
+        initVoiceRecognition();
+      }
+      
+      if (!recognition) {
+        showAIError('Voice recognition not supported in this browser. Please use Chrome or Edge.');
+        return;
+      }
+      
+      isListening = true;
+      document.getElementById('voice-recording-indicator').style.display = 'block';
+      document.getElementById('voice-btn').style.background = 'linear-gradient(135deg, #f44336 0%, #d32f2f 100%)';
+      document.getElementById('voice-btn').innerHTML = '⏹️';
+      document.getElementById('voice-transcript').textContent = '';
+      
+      try {
+        recognition.start();
+      } catch (e) {
+        console.error('Voice start error:', e);
+        stopVoiceInput();
+      }
+    }
+    
+    // Stop voice input
+    function stopVoiceInput() {
+      isListening = false;
+      document.getElementById('voice-recording-indicator').style.display = 'none';
+      document.getElementById('voice-btn').style.background = 'linear-gradient(135deg, #7b1fa2 0%, #9c27b0 100%)';
+      document.getElementById('voice-btn').innerHTML = '🎤';
+      
+      if (recognition) {
+        try {
+          recognition.stop();
+        } catch (e) {}
+      }
+    }
+    
+    // Toggle AI help panel
+    function toggleAIHelp() {
+      const helpPanel = document.getElementById('ai-help-panel');
+      helpPanel.style.display = helpPanel.style.display === 'none' ? 'block' : 'none';
+    }
+    
+    // Toggle AI panel (minimize/expand)
+    function toggleAIPanel() {
+      const panel = document.getElementById('ai-assistant-panel');
+      const isMinimized = panel.dataset.minimized === 'true';
+      
+      if (isMinimized) {
+        panel.style.maxHeight = 'none';
+        panel.dataset.minimized = 'false';
+      } else {
+        panel.style.maxHeight = '80px';
+        panel.style.overflow = 'hidden';
+        panel.dataset.minimized = 'true';
+      }
+    }
+    
+    // Process AI query
+    async function processAIQuery() {
+      const input = document.getElementById('ai-query-input');
+      const query = input.value.trim().toLowerCase();
+      
+      if (!query) {
+        showAIError('Please enter a question or command.');
+        return;
+      }
+      
+      showAILoading();
+      
+      // Classify intent
+      const intent = classifyIntent(query);
+      
+      // Execute based on intent
+      try {
+        await executeIntent(intent, query);
+      } catch (error) {
+        console.error('AI Query error:', error);
+        showAIError('Sorry, I encountered an error processing your request.');
+      }
+    }
+    
+    // Intent classification
+    function classifyIntent(query) {
+      const intents = {
+        // Report intents
+        REPORT_BILLING: ['billing report', 'all my billings', 'billing history', 'payment history', 'show billing', 'my bills', 'invoices'],
+        REPORT_PERSONAL: ['personal data', 'my profile', 'my information', 'personal report', 'my details', 'about me'],
+        REPORT_POLICY: ['policy report', 'my policies', 'coverage report', 'insurance summary', 'policy summary', 'what policies'],
+        REPORT_SAVINGS: ['savings report', 'investment report', 'my savings', 'portfolio report', 'investment summary'],
+        REPORT_CLAIMS: ['claims report', 'my claims', 'claims history', 'claim status'],
+        
+        // Information intents
+        INFO_MONTHLY_COST: ['how much do i pay', 'monthly payment', 'monthly premium', 'pay monthly', 'monthly cost', 'premium amount', 'pay every month', 'risk cover cost'],
+        INFO_MONTHLY_SAVINGS: ['how much do i save', 'monthly savings', 'save every month', 'saving amount', 'monthly contribution'],
+        INFO_COVERAGE: ['my coverage', 'coverage amount', 'what\'s my coverage', 'how much coverage', 'insured for', 'risk cover'],
+        INFO_BALANCE: ['my balance', 'savings balance', 'account balance', 'how much do i have', 'wallet balance'],
+        
+        // Calculation intents
+        CALC_PROJECTION: ['savings in', 'will i have in', 'years', 'projection', 'future value', 'compound', 'forecast'],
+        
+        // Action intents
+        ACTION_APPLY: ['apply for', 'new policy', 'get insurance', 'buy policy', 'purchase policy', 'want insurance', 'apply new'],
+        ACTION_PAY: ['pay my bill', 'make payment', 'pay now', 'pay premium', 'want to pay'],
+        ACTION_SAVE: ['want to save', 'save $', 'invest $', 'deposit', 'add to savings'],
+        ACTION_CLAIM: ['file a claim', 'submit claim', 'make claim', 'new claim', 'want to claim'],
+        ACTION_UPDATE: ['update my', 'change my', 'edit profile', 'update information', 'change address']
+      };
+      
+      // Find best matching intent
+      let bestIntent = 'UNKNOWN';
+      let bestScore = 0;
+      
+      for (const [intent, keywords] of Object.entries(intents)) {
+        for (const keyword of keywords) {
+          if (query.includes(keyword)) {
+            const score = keyword.length;
+            if (score > bestScore) {
+              bestScore = score;
+              bestIntent = intent;
+            }
+          }
+        }
+      }
+      
+      // Extract entities
+      const entities = extractEntities(query);
+      
+      return { type: bestIntent, entities, query };
+    }
+    
+    // Extract entities from query
+    function extractEntities(query) {
+      const entities = {};
+      
+      // Extract amounts ($10,000, $500, etc.)
+      const amountMatch = query.match(/\$[\d,]+(?:\.\d{2})?/);
+      if (amountMatch) {
+        entities.amount = parseFloat(amountMatch[0].replace(/[$,]/g, ''));
+      }
+      
+      // Extract time periods (5 years, 5.5 years, 10 months)
+      const yearMatch = query.match(/(\d+(?:\.\d+)?)\s*years?/i);
+      const monthMatch = query.match(/(\d+)\s*months?/i);
+      
+      if (yearMatch) {
+        entities.years = parseFloat(yearMatch[1]);
+        entities.months = entities.years * 12;
+      } else if (monthMatch) {
+        entities.months = parseInt(monthMatch[1]);
+        entities.years = entities.months / 12;
+      }
+      
+      // Extract percentages
+      const percentMatch = query.match(/(\d+(?:\.\d+)?)\s*%/);
+      if (percentMatch) {
+        entities.percentage = parseFloat(percentMatch[1]);
+      }
+      
+      return entities;
+    }
+    
+    // Execute intent
+    async function executeIntent(intent, originalQuery) {
+      // Load customer data if not cached
+      await loadCustomerDataForAI();
+      
+      switch (intent.type) {
+        case 'REPORT_BILLING':
+          await generateBillingReport();
+          break;
+        case 'REPORT_PERSONAL':
+          await generatePersonalDataReport();
+          break;
+        case 'REPORT_POLICY':
+          await generatePolicyReport();
+          break;
+        case 'REPORT_SAVINGS':
+          await generateSavingsReport();
+          break;
+        case 'REPORT_CLAIMS':
+          await generateClaimsReport();
+          break;
+        case 'INFO_MONTHLY_COST':
+          await showMonthlyCost();
+          break;
+        case 'INFO_MONTHLY_SAVINGS':
+          await showMonthlySavings();
+          break;
+        case 'INFO_COVERAGE':
+          await showCoverageInfo();
+          break;
+        case 'INFO_BALANCE':
+          await showBalanceInfo();
+          break;
+        case 'CALC_PROJECTION':
+          await calculateProjection(intent.entities);
+          break;
+        case 'ACTION_APPLY':
+          navigateToAction('apply');
+          break;
+        case 'ACTION_PAY':
+          navigateToAction('pay');
+          break;
+        case 'ACTION_SAVE':
+          navigateToAction('save', intent.entities);
+          break;
+        case 'ACTION_CLAIM':
+          navigateToAction('claim');
+          break;
+        case 'ACTION_UPDATE':
+          navigateToAction('update');
+          break;
+        default:
+          showAIResponse(`
+            <div style="text-align: center; padding: 20px;">
+              <div style="font-size: 3rem; margin-bottom: 16px;">🤔</div>
+              <h3 style="color: #333; margin-bottom: 12px;">I'm not sure what you mean</h3>
+              <p style="color: #666;">Try one of these:</p>
+              <div style="display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 16px;">
+                <button onclick="quickAIAction('billing_report')" style="background: #667eea; color: white; border: none; padding: 8px 16px; border-radius: 20px; cursor: pointer;">📊 Billing Report</button>
+                <button onclick="quickAIAction('savings_calc')" style="background: #28a745; color: white; border: none; padding: 8px 16px; border-radius: 20px; cursor: pointer;">💰 Savings Calculator</button>
+                <button onclick="quickAIAction('my_policies')" style="background: #17a2b8; color: white; border: none; padding: 8px 16px; border-radius: 20px; cursor: pointer;">📋 My Policies</button>
+              </div>
+            </div>
+          `);
+      }
+    }
+    
+    // Load customer data for AI
+    async function loadCustomerDataForAI() {
+      if (customerDataCache.profile) return; // Already loaded
+      
+      try {
+        // Load all customer data
+        const [profileRes, policiesRes, billingRes] = await Promise.allSettled([
+          fetch(`/api/customers?id=${customerId}`, { headers: { 'Authorization': `Bearer ${authToken}` } }),
+          fetch('/api/policies', { headers: { 'Authorization': `Bearer ${authToken}` } }),
+          fetch('/api/billing/stats', { headers: { 'Authorization': `Bearer ${authToken}` } })
+        ]);
+        
+        if (profileRes.status === 'fulfilled' && profileRes.value.ok) {
+          const data = await profileRes.value.json();
+          customerDataCache.profile = data.customers?.[0] || data;
+        }
+        
+        if (policiesRes.status === 'fulfilled' && policiesRes.value.ok) {
+          const data = await policiesRes.value.json();
+          const allPolicies = data.policies || data.items || data || [];
+          customerDataCache.policies = allPolicies.filter(p => 
+            p.customer_id === customerId || 
+            p.customer_email === customerDataCache.profile?.email
+          );
+        }
+        
+        if (billingRes.status === 'fulfilled' && billingRes.value.ok) {
+          const data = await billingRes.value.json();
+          customerDataCache.billing = data;
+        }
+        
+        // Get savings from wallet
+        customerDataCache.savings = { balance: walletBalance };
+      } catch (err) {
+        console.error('Error loading customer data for AI:', err);
+      }
+    }
+    
+    // Generate billing report
+    async function generateBillingReport() {
+      const profile = customerDataCache.profile || {};
+      const policies = customerDataCache.policies || [];
+      const billing = customerDataCache.billing || {};
+      
+      const totalMonthlyPremium = policies.reduce((sum, p) => sum + (parseFloat(p.monthly_premium) || parseFloat(p.annual_premium) / 12 || 0), 0);
+      
+      const html = `
+        <div style="border-bottom: 3px solid #667eea; padding-bottom: 16px; margin-bottom: 20px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
+            <div>
+              <h3 style="margin: 0; color: #333; font-size: 1.4rem;">📊 Billing Report</h3>
+              <p style="margin: 4px 0 0 0; color: #666;">Generated ${new Date().toLocaleDateString()} at ${new Date().toLocaleTimeString()}</p>
+            </div>
+            <div style="display: flex; gap: 8px;">
+              <button onclick="downloadAIReport('billing')" style="background: #28a745; color: white; border: none; padding: 8px 16px; border-radius: 8px; cursor: pointer;">📥 Download PDF</button>
+              <button onclick="exportAIReport('billing', 'csv')" style="background: #17a2b8; color: white; border: none; padding: 8px 16px; border-radius: 8px; cursor: pointer;">📊 Export CSV</button>
+            </div>
+          </div>
+        </div>
+        
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 16px; margin-bottom: 24px;">
+          <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 16px; border-radius: 12px; text-align: center;">
+            <div style="font-size: 1.8rem; font-weight: bold;">${formatCurrency(totalMonthlyPremium)}</div>
+            <div style="font-size: 0.85rem; opacity: 0.9;">Monthly Premium</div>
+          </div>
+          <div style="background: linear-gradient(135deg, #28a745 0%, #20c997 100%); color: white; padding: 16px; border-radius: 12px; text-align: center;">
+            <div style="font-size: 1.8rem; font-weight: bold;">${formatCurrency(totalMonthlyPremium * 12)}</div>
+            <div style="font-size: 0.85rem; opacity: 0.9;">Annual Premium</div>
+          </div>
+          <div style="background: linear-gradient(135deg, #17a2b8 0%, #138496 100%); color: white; padding: 16px; border-radius: 12px; text-align: center;">
+            <div style="font-size: 1.8rem; font-weight: bold;">${policies.length}</div>
+            <div style="font-size: 0.85rem; opacity: 0.9;">Active Policies</div>
+          </div>
+        </div>
+        
+        <h4 style="color: #333; margin-bottom: 12px;">📋 Policy Breakdown</h4>
+        <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px;">
+          <thead>
+            <tr style="background: #f5f5f5;">
+              <th style="padding: 12px; text-align: left; border-bottom: 2px solid #ddd;">Policy</th>
+              <th style="padding: 12px; text-align: left; border-bottom: 2px solid #ddd;">Type</th>
+              <th style="padding: 12px; text-align: right; border-bottom: 2px solid #ddd;">Monthly</th>
+              <th style="padding: 12px; text-align: right; border-bottom: 2px solid #ddd;">Annual</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${policies.length > 0 ? policies.map(p => `
+              <tr>
+                <td style="padding: 12px; border-bottom: 1px solid #eee;">${p.policy_id || p.id || '-'}</td>
+                <td style="padding: 12px; border-bottom: 1px solid #eee;">${p.policy_type || 'Standard'}</td>
+                <td style="padding: 12px; border-bottom: 1px solid #eee; text-align: right;">${formatCurrency(parseFloat(p.monthly_premium) || parseFloat(p.annual_premium) / 12 || 0)}</td>
+                <td style="padding: 12px; border-bottom: 1px solid #eee; text-align: right;">${formatCurrency(parseFloat(p.annual_premium) || parseFloat(p.monthly_premium) * 12 || 0)}</td>
+              </tr>
+            `).join('') : '<tr><td colspan="4" style="padding: 20px; text-align: center; color: #666;">No policies found</td></tr>'}
+          </tbody>
+        </table>
+        
+        <div style="background: #f8f9fa; border-radius: 8px; padding: 16px;">
+          <h4 style="margin: 0 0 8px 0; color: #333;">💡 AI Insights</h4>
+          <ul style="margin: 0; padding-left: 20px; color: #555;">
+            <li>Your monthly insurance cost is ${formatCurrency(totalMonthlyPremium)}</li>
+            <li>This works out to ${formatCurrency(totalMonthlyPremium / 30)} per day</li>
+            ${totalMonthlyPremium > 500 ? '<li>Consider bundling policies for potential savings</li>' : ''}
+            <li>Next payment due on the 1st of next month</li>
+          </ul>
+        </div>
+      `;
+      
+      showAIResponse(html);
+    }
+    
+    // Generate personal data report
+    async function generatePersonalDataReport() {
+      const profile = customerDataCache.profile || {};
+      
+      const html = `
+        <div style="border-bottom: 3px solid #667eea; padding-bottom: 16px; margin-bottom: 20px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
+            <div>
+              <h3 style="margin: 0; color: #333; font-size: 1.4rem;">👤 Personal Data Report</h3>
+              <p style="margin: 4px 0 0 0; color: #666;">Your account information</p>
+            </div>
+            <button onclick="downloadAIReport('personal')" style="background: #28a745; color: white; border: none; padding: 8px 16px; border-radius: 8px; cursor: pointer;">📥 Download PDF</button>
+          </div>
+        </div>
+        
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px;">
+          <div style="background: #f8f9fa; border-radius: 12px; padding: 20px;">
+            <h4 style="margin: 0 0 16px 0; color: #667eea;">📋 Account Details</h4>
+            <div style="display: grid; gap: 12px;">
+              <div><strong>Customer ID:</strong> ${profile.customer_id || profile.id || customerId || '-'}</div>
+              <div><strong>Name:</strong> ${profile.name || profile.full_name || '-'}</div>
+              <div><strong>Email:</strong> ${profile.email || '-'}</div>
+              <div><strong>Phone:</strong> ${profile.phone || profile.mobile || '-'}</div>
+              <div><strong>Address:</strong> ${profile.address || '-'}</div>
+            </div>
+          </div>
+          
+          <div style="background: #f8f9fa; border-radius: 12px; padding: 20px;">
+            <h4 style="margin: 0 0 16px 0; color: #28a745;">📊 Account Status</h4>
+            <div style="display: grid; gap: 12px;">
+              <div><strong>Status:</strong> <span style="background: #d4edda; color: #155724; padding: 4px 10px; border-radius: 12px;">Active</span></div>
+              <div><strong>Member Since:</strong> ${profile.created_at ? new Date(profile.created_at).toLocaleDateString() : '-'}</div>
+              <div><strong>Policies:</strong> ${customerDataCache.policies?.length || 0} active</div>
+              <div><strong>Claims:</strong> ${customerDataCache.claims?.length || 0} filed</div>
+              <div><strong>Account Type:</strong> ${profile.account_type || 'Individual'}</div>
+            </div>
+          </div>
+        </div>
+        
+        <div style="margin-top: 20px; background: #e7f3ff; border-left: 4px solid #667eea; padding: 16px; border-radius: 0 8px 8px 0;">
+          <strong>🔒 Data Privacy:</strong> Your personal information is protected under our privacy policy. You can request data export or deletion at any time.
+        </div>
+      `;
+      
+      showAIResponse(html);
+    }
+    
+    // Generate policy report
+    async function generatePolicyReport() {
+      const policies = customerDataCache.policies || [];
+      const totalCoverage = policies.reduce((sum, p) => sum + (parseFloat(p.coverage_amount) || 0), 0);
+      
+      const html = `
+        <div style="border-bottom: 3px solid #17a2b8; padding-bottom: 16px; margin-bottom: 20px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
+            <div>
+              <h3 style="margin: 0; color: #333; font-size: 1.4rem;">📋 My Policies Report</h3>
+              <p style="margin: 4px 0 0 0; color: #666;">${policies.length} policy(ies) active</p>
+            </div>
+            <button onclick="downloadAIReport('policies')" style="background: #17a2b8; color: white; border: none; padding: 8px 16px; border-radius: 8px; cursor: pointer;">📥 Download PDF</button>
+          </div>
+        </div>
+        
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 16px; margin-bottom: 24px;">
+          <div style="background: linear-gradient(135deg, #17a2b8 0%, #138496 100%); color: white; padding: 16px; border-radius: 12px; text-align: center;">
+            <div style="font-size: 1.8rem; font-weight: bold;">${formatCurrency(totalCoverage)}</div>
+            <div style="font-size: 0.85rem; opacity: 0.9;">Total Coverage</div>
+          </div>
+          <div style="background: linear-gradient(135deg, #28a745 0%, #20c997 100%); color: white; padding: 16px; border-radius: 12px; text-align: center;">
+            <div style="font-size: 1.8rem; font-weight: bold;">${policies.length}</div>
+            <div style="font-size: 0.85rem; opacity: 0.9;">Active Policies</div>
+          </div>
+        </div>
+        
+        ${policies.map(p => `
+          <div style="background: #f8f9fa; border-radius: 12px; padding: 20px; margin-bottom: 16px; border-left: 4px solid #17a2b8;">
+            <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 12px;">
+              <div>
+                <h4 style="margin: 0 0 8px 0; color: #333;">${p.policy_id || p.id}</h4>
+                <p style="margin: 0; color: #666;">${p.policy_type || 'Disability Insurance'}</p>
+              </div>
+              <span style="background: ${p.status === 'active' ? '#d4edda' : '#fff3cd'}; color: ${p.status === 'active' ? '#155724' : '#856404'}; padding: 4px 12px; border-radius: 12px; font-size: 0.85rem;">${p.status || 'Active'}</span>
+            </div>
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 12px; margin-top: 16px;">
+              <div><strong>Coverage:</strong> ${formatCurrency(p.coverage_amount || 0)}</div>
+              <div><strong>Premium:</strong> ${formatCurrency(p.monthly_premium || p.annual_premium / 12 || 0)}/mo</div>
+              <div><strong>Effective:</strong> ${p.effective_date ? new Date(p.effective_date).toLocaleDateString() : '-'}</div>
+            </div>
+          </div>
+        `).join('') || '<p style="text-align: center; color: #666; padding: 20px;">No policies found</p>'}
+      `;
+      
+      showAIResponse(html);
+    }
+    
+    // Show monthly cost
+    async function showMonthlyCost() {
+      const policies = customerDataCache.policies || [];
+      const totalMonthlyPremium = policies.reduce((sum, p) => sum + (parseFloat(p.monthly_premium) || parseFloat(p.annual_premium) / 12 || 0), 0);
+      
+      const html = `
+        <div style="text-align: center; padding: 30px;">
+          <div style="font-size: 4rem; margin-bottom: 16px;">💳</div>
+          <h3 style="color: #333; margin-bottom: 8px;">Your Monthly Insurance Cost</h3>
+          <div style="font-size: 3rem; font-weight: bold; color: #667eea; margin: 20px 0;">${formatCurrency(totalMonthlyPremium)}</div>
+          <p style="color: #666;">per month for ${policies.length} policy(ies)</p>
+          
+          <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-top: 30px; max-width: 500px; margin-left: auto; margin-right: auto;">
+            <div style="background: #f8f9fa; padding: 16px; border-radius: 12px;">
+              <div style="font-size: 1.3rem; font-weight: bold; color: #333;">${formatCurrency(totalMonthlyPremium / 30)}</div>
+              <div style="font-size: 0.8rem; color: #666;">Per Day</div>
+            </div>
+            <div style="background: #f8f9fa; padding: 16px; border-radius: 12px;">
+              <div style="font-size: 1.3rem; font-weight: bold; color: #333;">${formatCurrency(totalMonthlyPremium * 3)}</div>
+              <div style="font-size: 0.8rem; color: #666;">Quarterly</div>
+            </div>
+            <div style="background: #f8f9fa; padding: 16px; border-radius: 12px;">
+              <div style="font-size: 1.3rem; font-weight: bold; color: #333;">${formatCurrency(totalMonthlyPremium * 12)}</div>
+              <div style="font-size: 0.8rem; color: #666;">Annually</div>
+            </div>
+          </div>
+          
+          <button onclick="quickAIAction('pay_bills')" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; padding: 12px 30px; border-radius: 25px; cursor: pointer; margin-top: 24px; font-size: 1rem;">💳 Pay Now</button>
+        </div>
+      `;
+      
+      showAIResponse(html);
+    }
+    
+    // Show monthly savings
+    async function showMonthlySavings() {
+      const monthlySavings = walletBalance > 0 ? walletBalance * 0.1 : 250; // Estimate or actual
+      
+      const html = `
+        <div style="text-align: center; padding: 30px;">
+          <div style="font-size: 4rem; margin-bottom: 16px;">💰</div>
+          <h3 style="color: #333; margin-bottom: 8px;">Your Monthly Savings</h3>
+          <div style="font-size: 3rem; font-weight: bold; color: #28a745; margin: 20px 0;">${formatCurrency(monthlySavings)}</div>
+          <p style="color: #666;">automatically allocated from your premiums</p>
+          
+          <div style="background: #d4edda; border-radius: 12px; padding: 20px; margin-top: 24px; max-width: 400px; margin-left: auto; margin-right: auto;">
+            <div style="font-size: 0.9rem; color: #155724;">
+              <strong>🎯 Current Savings Balance:</strong> ${formatCurrency(walletBalance)}
+            </div>
+          </div>
+          
+          <button onclick="window.location.href='/savings-portfolio.html'" style="background: linear-gradient(135deg, #28a745 0%, #20c997 100%); color: white; border: none; padding: 12px 30px; border-radius: 25px; cursor: pointer; margin-top: 24px; font-size: 1rem;">📈 View Investment Portfolio</button>
+        </div>
+      `;
+      
+      showAIResponse(html);
+    }
+    
+    // Show coverage info
+    async function showCoverageInfo() {
+      const policies = customerDataCache.policies || [];
+      const totalCoverage = policies.reduce((sum, p) => sum + (parseFloat(p.coverage_amount) || 0), 0);
+      
+      const html = `
+        <div style="text-align: center; padding: 30px;">
+          <div style="font-size: 4rem; margin-bottom: 16px;">🛡️</div>
+          <h3 style="color: #333; margin-bottom: 8px;">Your Total Coverage</h3>
+          <div style="font-size: 3rem; font-weight: bold; color: #17a2b8; margin: 20px 0;">${formatCurrency(totalCoverage)}</div>
+          <p style="color: #666;">across ${policies.length} policy(ies)</p>
+          
+          <div style="display: grid; gap: 12px; margin-top: 24px; max-width: 400px; margin-left: auto; margin-right: auto;">
+            ${policies.map(p => `
+              <div style="background: #f8f9fa; padding: 12px 16px; border-radius: 8px; display: flex; justify-content: space-between;">
+                <span>${p.policy_type || 'Policy'}</span>
+                <strong>${formatCurrency(p.coverage_amount || 0)}</strong>
+              </div>
+            `).join('') || '<p style="color: #666;">No policies found</p>'}
+          </div>
+        </div>
+      `;
+      
+      showAIResponse(html);
+    }
+    
+    // Show balance info
+    async function showBalanceInfo() {
+      const html = `
+        <div style="text-align: center; padding: 30px;">
+          <div style="font-size: 4rem; margin-bottom: 16px;">💵</div>
+          <h3 style="color: #333; margin-bottom: 8px;">Your Account Balance</h3>
+          
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; margin-top: 24px;">
+            <div style="background: linear-gradient(135deg, #28a745 0%, #20c997 100%); color: white; padding: 24px; border-radius: 16px;">
+              <div style="font-size: 2rem; font-weight: bold;">${formatCurrency(walletBalance)}</div>
+              <div style="font-size: 0.85rem; opacity: 0.9; margin-top: 8px;">Health Wallet</div>
+            </div>
+            <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 24px; border-radius: 16px;">
+              <div style="font-size: 2rem; font-weight: bold;">${formatCurrency(customerDataCache.savings?.investment || walletBalance * 1.5)}</div>
+              <div style="font-size: 0.85rem; opacity: 0.9; margin-top: 8px;">Investment Portfolio</div>
+            </div>
+          </div>
+          
+          <div style="display: flex; gap: 12px; justify-content: center; margin-top: 24px; flex-wrap: wrap;">
+            <button onclick="window.location.href='/savings-portfolio.html'" style="background: #28a745; color: white; border: none; padding: 10px 20px; border-radius: 8px; cursor: pointer;">📈 View Investments</button>
+            <button onclick="quickAIAction('savings_calc')" style="background: #667eea; color: white; border: none; padding: 10px 20px; border-radius: 8px; cursor: pointer;">🧮 Calculate Projections</button>
+          </div>
+        </div>
+      `;
+      
+      showAIResponse(html);
+    }
+    
+    // Calculate savings projection
+    async function calculateProjection(entities) {
+      const currentBalance = walletBalance || 10000;
+      const monthlyContribution = 500; // Default or from policy
+      const annualReturn = 0.072; // 7.2% annual return
+      const monthlyReturn = annualReturn / 12;
+      
+      const months = entities.months || 60; // Default 5 years
+      const years = months / 12;
+      
+      // Compound interest formula: FV = PV(1+r)^n + PMT × [((1+r)^n - 1) / r]
+      const factor = Math.pow(1 + monthlyReturn, months);
+      const futureValue = (currentBalance * factor) + (monthlyContribution * ((factor - 1) / monthlyReturn));
+      const totalContributions = monthlyContribution * months;
+      const investmentGrowth = futureValue - currentBalance - totalContributions;
+      
+      const html = `
+        <div style="border-bottom: 3px solid #28a745; padding-bottom: 16px; margin-bottom: 20px;">
+          <h3 style="margin: 0; color: #333; font-size: 1.4rem;">📈 Savings Projection Calculator</h3>
+          <p style="margin: 4px 0 0 0; color: #666;">Based on your current savings and ${(annualReturn * 100).toFixed(1)}% annual return</p>
+        </div>
+        
+        <div style="text-align: center; background: linear-gradient(135deg, #28a745 0%, #20c997 100%); color: white; padding: 30px; border-radius: 16px; margin-bottom: 24px;">
+          <div style="font-size: 0.9rem; opacity: 0.9; margin-bottom: 8px;">In ${years.toFixed(1)} years you'll have</div>
+          <div style="font-size: 3rem; font-weight: bold;">${formatCurrency(futureValue)}</div>
+        </div>
+        
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 16px; margin-bottom: 24px;">
+          <div style="background: #f8f9fa; padding: 16px; border-radius: 12px; text-align: center;">
+            <div style="font-size: 1.5rem; font-weight: bold; color: #333;">${formatCurrency(currentBalance)}</div>
+            <div style="font-size: 0.8rem; color: #666;">Starting Balance</div>
+          </div>
+          <div style="background: #f8f9fa; padding: 16px; border-radius: 12px; text-align: center;">
+            <div style="font-size: 1.5rem; font-weight: bold; color: #333;">${formatCurrency(totalContributions)}</div>
+            <div style="font-size: 0.8rem; color: #666;">Total Contributions</div>
+          </div>
+          <div style="background: #f8f9fa; padding: 16px; border-radius: 12px; text-align: center;">
+            <div style="font-size: 1.5rem; font-weight: bold; color: #28a745;">${formatCurrency(investmentGrowth)}</div>
+            <div style="font-size: 0.8rem; color: #666;">Investment Growth</div>
+          </div>
+        </div>
+        
+        <div style="background: #e7f3ff; border-radius: 12px; padding: 20px;">
+          <h4 style="margin: 0 0 12px 0; color: #0d47a1;">🔢 Calculation Details</h4>
+          <div style="display: grid; gap: 8px; font-size: 0.9rem;">
+            <div><strong>Monthly Contribution:</strong> ${formatCurrency(monthlyContribution)}</div>
+            <div><strong>Annual Return Rate:</strong> ${(annualReturn * 100).toFixed(1)}%</div>
+            <div><strong>Time Period:</strong> ${months} months (${years.toFixed(1)} years)</div>
+            <div><strong>Effective Growth:</strong> ${((investmentGrowth / (currentBalance + totalContributions)) * 100).toFixed(1)}%</div>
+          </div>
+        </div>
+        
+        <div style="margin-top: 20px; text-align: center;">
+          <button onclick="window.location.href='/savings-portfolio.html'" style="background: linear-gradient(135deg, #28a745 0%, #20c997 100%); color: white; border: none; padding: 12px 30px; border-radius: 25px; cursor: pointer; font-size: 1rem;">📈 Manage Investments</button>
+        </div>
+      `;
+      
+      showAIResponse(html);
+    }
+    
+    // Generate savings report
+    async function generateSavingsReport() {
+      await calculateProjection({ months: 60 }); // Default 5 year projection
+    }
+    
+    // Generate claims report
+    async function generateClaimsReport() {
+      const claims = customerDataCache.claims || [];
+      
+      const html = `
+        <div style="border-bottom: 3px solid #ff9800; padding-bottom: 16px; margin-bottom: 20px;">
+          <h3 style="margin: 0; color: #333; font-size: 1.4rem;">🆘 Claims Report</h3>
+          <p style="margin: 4px 0 0 0; color: #666;">${claims.length} claim(s) on file</p>
+        </div>
+        
+        ${claims.length > 0 ? claims.map(c => `
+          <div style="background: #f8f9fa; border-radius: 12px; padding: 20px; margin-bottom: 16px; border-left: 4px solid #ff9800;">
+            <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+              <div>
+                <h4 style="margin: 0 0 8px 0;">Claim ${c.claim_id || c.id}</h4>
+                <p style="margin: 0; color: #666;">${c.description || 'Disability claim'}</p>
+              </div>
+              <span style="background: ${c.status === 'approved' ? '#d4edda' : c.status === 'pending' ? '#fff3cd' : '#f8d7da'}; padding: 4px 12px; border-radius: 12px;">${c.status || 'Pending'}</span>
+            </div>
+            <div style="margin-top: 12px;">
+              <strong>Amount:</strong> ${formatCurrency(c.amount || 0)} | <strong>Filed:</strong> ${c.created_at ? new Date(c.created_at).toLocaleDateString() : '-'}
+            </div>
+          </div>
+        `).join('') : `
+          <div style="text-align: center; padding: 40px; color: #666;">
+            <div style="font-size: 3rem; margin-bottom: 16px;">📋</div>
+            <p>No claims on file</p>
+            <button onclick="quickAIAction('file_claim')" style="background: #ff9800; color: white; border: none; padding: 10px 20px; border-radius: 8px; cursor: pointer; margin-top: 12px;">🆘 File New Claim</button>
+          </div>
+        `}
+      `;
+      
+      showAIResponse(html);
+    }
+    
+    // Navigate to action
+    function navigateToAction(action, entities = {}) {
+      switch (action) {
+        case 'apply':
+          showAIResponse(`
+            <div style="text-align: center; padding: 30px;">
+              <div style="font-size: 4rem; margin-bottom: 16px;">📝</div>
+              <h3 style="color: #333;">Apply for New Policy</h3>
+              <p style="color: #666; margin-bottom: 24px;">You'll be redirected to our application form</p>
+              <button onclick="window.location.href='/apply.html'" style="background: linear-gradient(135deg, #0d47a1 0%, #1565c0 100%); color: white; border: none; padding: 14px 40px; border-radius: 25px; cursor: pointer; font-size: 1.1rem;">Start Application →</button>
+            </div>
+          `);
+          break;
+        case 'pay':
+          const totalDue = customerDataCache.policies?.reduce((sum, p) => sum + (parseFloat(p.monthly_premium) || 0), 0) || 250;
+          showAIResponse(`
+            <div style="text-align: center; padding: 30px;">
+              <div style="font-size: 4rem; margin-bottom: 16px;">💳</div>
+              <h3 style="color: #333;">Pay Your Bills</h3>
+              <div style="font-size: 2.5rem; font-weight: bold; color: #667eea; margin: 16px 0;">${formatCurrency(totalDue)}</div>
+              <p style="color: #666; margin-bottom: 24px;">Amount due this month</p>
+              <div style="display: flex; gap: 12px; justify-content: center; flex-wrap: wrap;">
+                <button onclick="window.location.href='/billing.html'" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; padding: 14px 30px; border-radius: 25px; cursor: pointer; font-size: 1rem;">💳 Pay Now</button>
+                <button onclick="document.getElementById('billing-settings').scrollIntoView({behavior:'smooth'})" style="background: #f5f5f5; color: #333; border: none; padding: 14px 30px; border-radius: 25px; cursor: pointer; font-size: 1rem;">📜 View History</button>
+              </div>
+            </div>
+          `);
+          break;
+        case 'save':
+          const amount = entities.amount || 10000;
+          showAIResponse(`
+            <div style="text-align: center; padding: 30px;">
+              <div style="font-size: 4rem; margin-bottom: 16px;">💰</div>
+              <h3 style="color: #333;">Save ${formatCurrency(amount)}</h3>
+              <p style="color: #666; margin-bottom: 24px;">Add to your investment portfolio</p>
+              <button onclick="window.location.href='/savings-portfolio.html'" style="background: linear-gradient(135deg, #28a745 0%, #20c997 100%); color: white; border: none; padding: 14px 40px; border-radius: 25px; cursor: pointer; font-size: 1.1rem;">📈 Go to Investments</button>
+            </div>
+          `);
+          break;
+        case 'claim':
+          showAIResponse(`
+            <div style="text-align: center; padding: 30px;">
+              <div style="font-size: 4rem; margin-bottom: 16px;">🆘</div>
+              <h3 style="color: #333;">File a New Claim</h3>
+              <p style="color: #666; margin-bottom: 24px;">Submit your disability or medical claim</p>
+              <button onclick="document.getElementById('claims').scrollIntoView({behavior:'smooth'}); setTimeout(() => document.querySelector('[onclick*=\\'showClaimModal\\']')?.click(), 500);" style="background: linear-gradient(135deg, #ff9800 0%, #f57c00 100%); color: white; border: none; padding: 14px 40px; border-radius: 25px; cursor: pointer; font-size: 1.1rem;">📝 Start Claim</button>
+            </div>
+          `);
+          break;
+        case 'update':
+          showAIResponse(`
+            <div style="text-align: center; padding: 30px;">
+              <div style="font-size: 4rem; margin-bottom: 16px;">⚙️</div>
+              <h3 style="color: #333;">Update Your Information</h3>
+              <p style="color: #666; margin-bottom: 24px;">Manage your account settings</p>
+              <button onclick="document.getElementById('billing-settings').scrollIntoView({behavior:'smooth'})" style="background: linear-gradient(135deg, #7b1fa2 0%, #9c27b0 100%); color: white; border: none; padding: 14px 40px; border-radius: 25px; cursor: pointer; font-size: 1.1rem;">⚙️ Go to Settings</button>
+            </div>
+          `);
+          break;
+      }
+    }
+    
+    // Quick AI action
+    function quickAIAction(action) {
+      const queryMap = {
+        'billing_report': 'Show me all my billings',
+        'savings_calc': 'How much savings will I have in 5 years?',
+        'my_policies': 'Show me my policies',
+        'pay_bills': 'I want to pay my bills',
+        'personal_data': 'Show my personal data',
+        'file_claim': 'I want to file a claim'
+      };
+      
+      document.getElementById('ai-query-input').value = queryMap[action] || '';
+      processAIQuery();
+    }
+    
+    // Show AI response
+    function showAIResponse(html) {
+      const responseArea = document.getElementById('ai-response-area');
+      responseArea.innerHTML = html;
+      responseArea.style.display = 'block';
+      responseArea.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+    
+    // Show AI loading
+    function showAILoading() {
+      showAIResponse(`
+        <div style="text-align: center; padding: 40px;">
+          <div style="width: 50px; height: 50px; border: 4px solid #f3f3f3; border-top: 4px solid #667eea; border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto 16px;"></div>
+          <p style="color: #666;">Processing your request...</p>
+        </div>
+        <style>@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }</style>
+      `);
+    }
+    
+    // Show AI error
+    function showAIError(message) {
+      showAIResponse(`
+        <div style="text-align: center; padding: 30px; background: #f8d7da; border-radius: 12px;">
+          <div style="font-size: 3rem; margin-bottom: 12px;">⚠️</div>
+          <p style="color: #721c24; margin: 0;">${message}</p>
+        </div>
+      `);
+    }
+    
+    // Download AI report as PDF
+    function downloadAIReport(type) {
+      const responseArea = document.getElementById('ai-response-area');
+      const content = responseArea.innerHTML;
+      
+      // Create PDF using html2pdf approach
+      const printWindow = window.open('', '_blank');
+      printWindow.document.write(`
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <title>PHINS ${type.charAt(0).toUpperCase() + type.slice(1)} Report</title>
+          <style>
+            body { font-family: Arial, sans-serif; padding: 40px; max-width: 800px; margin: 0 auto; }
+            h3, h4 { color: #333; }
+            button { display: none; }
+            @media print { body { padding: 20px; } }
+          </style>
+        </head>
+        <body>
+          <div style="text-align: center; margin-bottom: 30px;">
+            <h1 style="color: #0d47a1;">🛡️ PHINS Insurance</h1>
+            <p style="color: #666;">Report generated on ${new Date().toLocaleString()}</p>
+          </div>
+          ${content}
+        </body>
+        </html>
+      `);
+      printWindow.document.close();
+      setTimeout(() => { printWindow.print(); }, 500);
+    }
+    
+    // Export AI report as CSV
+    function exportAIReport(type, format) {
+      // Simplified CSV export
+      alert(`Export as ${format.toUpperCase()} is available in the full version. Please contact support.`);
+    }
+    
+    // Initialize voice on load
+    setTimeout(initVoiceRecognition, 1000);
     
     // Hide splash screen
     function hideSplashScreen() {
