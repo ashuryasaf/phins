@@ -841,16 +841,42 @@
             policySelect.innerHTML = '<option value="">Loading policies...</option>';
             
             try {
-                // Get customer details
+                // Ensure we have customers loaded - fetch if not available
+                if (!projectionCustomers || projectionCustomers.length === 0) {
+                    console.log('Customers not loaded, fetching...');
+                    const custResponse = await fetch('/api/customers', {
+                        headers: { 'Authorization': `Bearer ${token}` }
+                    });
+                    if (custResponse.ok) {
+                        const custData = await custResponse.json();
+                        projectionCustomers = custData.customers || custData || [];
+                        console.log('Loaded', projectionCustomers.length, 'customers');
+                    }
+                }
+                
+                // Get customer details from loaded customers
                 selectedCustomerData = projectionCustomers.find(c => c.id === customerId);
-                console.log('Selected customer:', selectedCustomerData?.email, 'ID:', customerId);
+                
+                // If still not found, try to get from the select option data attribute
+                if (!selectedCustomerData) {
+                    const selectedOption = document.getElementById('proj-customer-select').selectedOptions[0];
+                    const email = selectedOption?.getAttribute('data-email');
+                    if (email) {
+                        selectedCustomerData = { id: customerId, email: email };
+                        console.log('Using email from option:', email);
+                    }
+                }
+                
+                console.log('Selected customer:', selectedCustomerData?.email || 'unknown', 'ID:', customerId);
                 
                 // Load policies
                 const response = await fetch('/api/policies', {
                     headers: { 'Authorization': `Bearer ${token}` }
                 });
                 
-                if (!response.ok) throw new Error('Failed to load policies');
+                if (!response.ok) {
+                    throw new Error(`Failed to load policies: ${response.status} ${response.statusText}`);
+                }
                 
                 const data = await response.json();
                 const allPolicies = data.policies || data.items || data || [];
@@ -896,7 +922,8 @@
                 
             } catch (err) {
                 console.error('Error loading policies:', err);
-                policySelect.innerHTML = '<option value="">-- Error loading policies --</option>';
+                console.error('Stack:', err.stack);
+                policySelect.innerHTML = `<option value="">-- Error: ${err.message} --</option>`;
             }
         }
         
