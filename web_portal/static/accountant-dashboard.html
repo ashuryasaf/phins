@@ -909,14 +909,25 @@
                 
                 if (response.ok) {
                     const data = await response.json();
-                    const applications = data.applications || data || [];
+                    const applications = data.applications || data.items || data || [];
                     
-                    // Find application for this customer/policy
+                    console.log('Applications loaded:', applications.length, 'for customer:', selectedCustomerData?.email);
+                    
+                    // Find application for this customer/policy - try multiple matching strategies
                     selectedApplicationData = applications.find(a => 
                         a.policy_id === policyId ||
                         a.customer_id === selectedCustomerData?.id ||
                         (a.customer_email || '').toLowerCase() === (selectedCustomerData?.email || '').toLowerCase()
                     );
+                    
+                    // If no match found, try broader search
+                    if (!selectedApplicationData && selectedCustomerData?.email) {
+                        selectedApplicationData = applications.find(a => 
+                            (a.customer_email || a.email || '').toLowerCase().includes(selectedCustomerData.email.split('@')[0].toLowerCase())
+                        );
+                    }
+                    
+                    console.log('Selected application:', selectedApplicationData?.id, 'Age:', selectedApplicationData?.age, 'BMI:', selectedApplicationData?.bmi);
                 }
             } catch (err) {
                 console.error('Error loading application data:', err);
@@ -1367,6 +1378,14 @@
                                         selectedPolicyData?.created_at || new Date().toISOString().split('T')[0];
                     const policyType = selectedPolicyData?.type || 'PHINS Unified';
                     
+                    // Get health data with multiple fallbacks (application > customer > form input > default)
+                    const formAge = document.getElementById('proj-age')?.value;
+                    const reportAge = selectedApplicationData?.age ?? selectedCustomerData?.age ?? (formAge && formAge > 0 ? parseInt(formAge) : null) ?? 'N/A';
+                    const reportDisability = selectedApplicationData?.disability_percentage ?? selectedCustomerData?.disability_percentage ?? 0;
+                    const reportBmi = selectedApplicationData?.bmi ?? selectedCustomerData?.bmi ?? 'N/A';
+                    const reportCoverage = selectedPolicyData?.coverage_amount ?? selectedPolicyData?.coverage ?? document.getElementById('proj-coverage')?.value ?? 0;
+                    const reportStatus = selectedPolicyData?.status ?? 'N/A';
+                    
                     // Generate QR code URL using QR Code API
                     const qrData = encodeURIComponent(`https://phins-portal-production.up.railway.app/login.html?email=${custEmail}`);
                     const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=${qrData}&bgcolor=ffffff&color=1e3a5f`;
@@ -1430,22 +1449,26 @@
                                         <strong>${policyType}</strong>
                                     </div>
                                     <div style="display: flex; flex-direction: column;">
+                                        <span style="opacity: 0.7; font-size: 0.75rem; text-transform: uppercase;">Coverage</span>
+                                        <strong>$${Number(reportCoverage).toLocaleString()}</strong>
+                                    </div>
+                                    <div style="display: flex; flex-direction: column;">
                                         <span style="opacity: 0.7; font-size: 0.75rem; text-transform: uppercase;">Status</span>
-                                        <strong style="color: ${(selectedPolicyData?.status || '').toLowerCase() === 'active' ? '#4ade80' : '#fbbf24'};">
-                                            ${selectedPolicyData?.status || 'N/A'}
+                                        <strong style="color: ${reportStatus.toLowerCase() === 'active' ? '#4ade80' : '#fbbf24'};">
+                                            ${reportStatus}
                                         </strong>
                                     </div>
                                     <div style="display: flex; flex-direction: column;">
+                                        <span style="opacity: 0.7; font-size: 0.75rem; text-transform: uppercase;">Age</span>
+                                        <strong>${reportAge}</strong>
+                                    </div>
+                                    <div style="display: flex; flex-direction: column;">
                                         <span style="opacity: 0.7; font-size: 0.75rem; text-transform: uppercase;">Disability</span>
-                                        <strong>${selectedApplicationData?.disability_percentage ?? selectedCustomerData?.disability_percentage ?? 0}%</strong>
+                                        <strong>${reportDisability}%</strong>
                                     </div>
                                     <div style="display: flex; flex-direction: column;">
                                         <span style="opacity: 0.7; font-size: 0.75rem; text-transform: uppercase;">BMI</span>
-                                        <strong>${selectedApplicationData?.bmi ?? selectedCustomerData?.bmi ?? 'N/A'}</strong>
-                                    </div>
-                                    <div style="display: flex; flex-direction: column;">
-                                        <span style="opacity: 0.7; font-size: 0.75rem; text-transform: uppercase;">Age</span>
-                                        <strong>${selectedApplicationData?.age ?? selectedCustomerData?.age ?? 'N/A'}</strong>
+                                        <strong>${reportBmi !== 'N/A' && reportBmi > 0 ? Number(reportBmi).toFixed(1) : 'N/A'}</strong>
                                     </div>
                                 </div>
                             </div>
@@ -2609,18 +2632,20 @@
                 // Build customer header for real data
                 let customerHeader = '';
                 if (dataSource === 'real_customer') {
-                    // Get health data from application or customer
-                    const disabilityPct = appInfo.disability_percentage ?? selectedCustomerData?.disability_percentage ?? 0;
-                    const bmiVal = appInfo.bmi ?? selectedCustomerData?.bmi ?? 'N/A';
-                    const smokingVal = appInfo.smoking_status ?? 'N/A';
-                    const ageVal = appInfo.age ?? selectedCustomerData?.age ?? selectedApplicationData?.age ?? 'N/A';
+                    // Get health data from application or customer (multiple fallbacks)
+                    const scenarioAge = s.customer_age || document.getElementById('proj-age')?.value;
+                    const disabilityPct = appInfo.disability_percentage ?? selectedCustomerData?.disability_percentage ?? selectedApplicationData?.disability_percentage ?? 0;
+                    const bmiVal = appInfo.bmi ?? selectedCustomerData?.bmi ?? selectedApplicationData?.bmi ?? 'N/A';
+                    const smokingVal = appInfo.smoking_status ?? selectedApplicationData?.smoking_status ?? 'unknown';
+                    const ageVal = appInfo.age ?? selectedCustomerData?.age ?? selectedApplicationData?.age ?? scenarioAge ?? 'N/A';
+                    const coverageVal = policyInfo.coverage_amount ?? selectedPolicyData?.coverage_amount ?? s.coverage ?? 0;
                     
                     customerHeader = `
                         <div class="summary-box" style="background: linear-gradient(135deg, #1e3a5f 0%, #2d5a87 100%); color: white; margin-bottom: 20px;">
                             <h3 style="color: white;">👤 Customer Information (Verified Data)</h3>
                             <p><strong>Customer ID:</strong> ${custInfo.id || 'N/A'} | <strong>Name:</strong> ${custInfo.name || custInfo.email || 'N/A'} | <strong>Email:</strong> ${custInfo.email || 'N/A'}</p>
-                            <p><strong>Policy:</strong> ${policyInfo.id || 'N/A'} | <strong>Status:</strong> ${policyInfo.status || 'N/A'} | <strong>Type:</strong> ${policyInfo.type || 'N/A'}</p>
-                            <p><strong>Age:</strong> ${ageVal} | <strong>Disability:</strong> ${disabilityPct}% | <strong>BMI:</strong> ${bmiVal} | <strong>Smoking:</strong> ${smokingVal}</p>
+                            <p><strong>Policy:</strong> ${policyInfo.id || 'N/A'} | <strong>Coverage:</strong> $${Number(coverageVal).toLocaleString()} | <strong>Status:</strong> ${policyInfo.status || 'N/A'} | <strong>Type:</strong> ${policyInfo.type || 'N/A'}</p>
+                            <p><strong>Age:</strong> ${ageVal} | <strong>Disability:</strong> ${disabilityPct}% | <strong>BMI:</strong> ${bmiVal !== 'N/A' && bmiVal > 0 ? Number(bmiVal).toFixed(1) : 'N/A'} | <strong>Smoking:</strong> ${smokingVal}</p>
                         </div>
                     `;
                 }
