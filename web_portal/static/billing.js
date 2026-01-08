@@ -83,18 +83,30 @@ function displayPaymentMethods(methods) {
     google_pay: '🔵',
     bitcoin: '₿',
     ethereum: '⟠',
-    usdc: '💵'
+    usdc: '💵',
+    bank_transfer: '🏦',
+    debit_card: '💳'
   };
   
+  // Compact card design for payment methods
   container.innerHTML = methods.map(method => `
     <div class="payment-method-card ${method.id === selectedPaymentMethod ? 'selected' : ''}" 
          onclick="selectPaymentMethod('${method.id}')" 
-         data-method="${method.id}">
-      <div class="icon">${icons[method.id] || '💰'}</div>
-      <div class="name">${method.name}</div>
-      <div class="badge test">TEST</div>
+         data-method="${method.id}"
+         style="padding: 8px; min-height: auto;">
+      <div class="icon" style="font-size: 1.5rem; margin-bottom: 4px;">${icons[method.id] || '💰'}</div>
+      <div class="name" style="font-size: 0.8rem;">${method.name}</div>
+      <div class="badge test" style="font-size: 0.6rem; padding: 1px 4px; margin-top: 2px;">${method.gateway === 'crypto' ? 'CRYPTO' : 'TEST'}</div>
     </div>
   `).join('');
+  
+  // Update connection status
+  const statusEl = document.getElementById('payment-methods-status');
+  if (statusEl && methods.length > 0) {
+    statusEl.textContent = `✓ ${methods.length} Methods`;
+    statusEl.style.background = '#d1fae5';
+    statusEl.style.color = '#065f46';
+  }
 }
 
 function selectPaymentMethod(methodId) {
@@ -506,6 +518,7 @@ function validateAmount() {
 
 async function loadStats() {
   try {
+    // Fetch billing stats from pipeline
     const response = await fetch('/api/billing/stats', {
       headers: {
         'Authorization': `Bearer ${localStorage.getItem('phins_token')}`
@@ -517,7 +530,9 @@ async function loadStats() {
       successful_payments: 0,
       failed_payments: 0,
       total_revenue: 0,
-      pending_alerts: 0
+      pending_alerts: 0,
+      collection_rate: 0,
+      avg_payment_time: 0
     };
     
     if (response.ok) {
@@ -525,31 +540,66 @@ async function loadStats() {
       stats = { ...stats, ...data };
     }
     
+    // Try to get additional stats from financial service
+    try {
+      const finResponse = await fetch('/api/financial/dashboard-summary?type=billing', {
+        headers: { 'Authorization': `Bearer ${localStorage.getItem('phins_token')}` }
+      });
+      if (finResponse.ok) {
+        const finData = await finResponse.json();
+        stats.total_revenue = finData.total_revenue || stats.total_revenue;
+        stats.collection_rate = finData.collection_rate || stats.collection_rate || 
+          (stats.total_revenue > 0 ? Math.round((stats.successful_payments / Math.max(stats.total_transactions, 1)) * 100) : 0);
+      }
+    } catch (e) {
+      // Calculate collection rate from available data
+      stats.collection_rate = stats.total_transactions > 0 
+        ? Math.round((stats.successful_payments / stats.total_transactions) * 100) 
+        : 0;
+    }
+    
     const grid = document.getElementById('stats-grid');
+    if (!grid) return;
+    
+    // Compact stat card design with gradients
     grid.innerHTML = `
-      <div class="stat-card">
+      <div class="stat-card compact" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
         <div class="stat-value">${stats.total_transactions}</div>
-        <div class="stat-label">Total Transactions</div>
+        <div class="stat-label">Transactions</div>
       </div>
-      <div class="stat-card">
+      <div class="stat-card compact" style="background: linear-gradient(135deg, #28a745 0%, #20c997 100%);">
         <div class="stat-value">${stats.successful_payments}</div>
         <div class="stat-label">Successful</div>
       </div>
-      <div class="stat-card">
+      <div class="stat-card compact" style="background: linear-gradient(135deg, #dc3545 0%, #c82333 100%);">
         <div class="stat-value">${stats.failed_payments}</div>
         <div class="stat-label">Failed</div>
       </div>
-      <div class="stat-card">
+      <div class="stat-card compact" style="background: linear-gradient(135deg, #17a2b8 0%, #138496 100%);">
         <div class="stat-value">$${Number(stats.total_revenue).toLocaleString()}</div>
-        <div class="stat-label">Total Revenue</div>
+        <div class="stat-label">Revenue</div>
       </div>
-      <div class="stat-card">
+      <div class="stat-card compact" style="background: linear-gradient(135deg, ${stats.collection_rate >= 90 ? '#28a745' : stats.collection_rate >= 70 ? '#ffc107' : '#dc3545'} 0%, ${stats.collection_rate >= 90 ? '#20c997' : stats.collection_rate >= 70 ? '#e0a800' : '#c82333'} 100%);">
+        <div class="stat-value">${stats.collection_rate}%</div>
+        <div class="stat-label">Collection Rate</div>
+      </div>
+      <div class="stat-card compact" style="background: linear-gradient(135deg, ${stats.pending_alerts > 0 ? '#dc3545' : '#6c757d'} 0%, ${stats.pending_alerts > 0 ? '#c82333' : '#5a6268'} 100%);">
         <div class="stat-value">${stats.pending_alerts}</div>
-        <div class="stat-label">Fraud Alerts</div>
+        <div class="stat-label">Alerts</div>
       </div>
     `;
+    
+    // Show pipeline validation status
+    const pipelineStatus = document.getElementById('pipeline-validation-status');
+    if (pipelineStatus) {
+      pipelineStatus.style.display = 'block';
+    }
   } catch (err) {
     console.error('Failed to load stats:', err);
+    const grid = document.getElementById('stats-grid');
+    if (grid) {
+      grid.innerHTML = `<p class="muted" style="grid-column: 1/-1; text-align: center; color: #dc3545;">⚠️ Failed to load stats from pipeline</p>`;
+    }
   }
 }
 
@@ -2844,4 +2894,200 @@ document.addEventListener('DOMContentLoaded', () => {
       populateBillingFormFields();
     });
   }
+  
+  // Initialize pipeline validation
+  validatePipelineConnection();
+  
+  // Update fraud alert count
+  updateFraudAlertCount();
 });
+
+// ==================== PIPELINE VALIDATION & REFRESH FUNCTIONS ====================
+
+// Validate connection to PHINS pipeline
+async function validatePipelineConnection() {
+  const statusElement = document.getElementById('pipeline-validation-status');
+  const statusText = document.getElementById('pipeline-status-text');
+  const lastSync = document.getElementById('pipeline-last-sync');
+  
+  if (!statusElement || !statusText) return;
+  
+  statusElement.style.display = 'block';
+  statusText.textContent = 'Connecting...';
+  statusText.style.color = '#ffc107';
+  
+  try {
+    // Check multiple pipeline endpoints
+    const checks = await Promise.allSettled([
+      fetch('/api/billing/stats', { headers: { 'Authorization': `Bearer ${localStorage.getItem('phins_token')}` } }),
+      fetch('/api/customers', { headers: { 'Authorization': `Bearer ${localStorage.getItem('phins_token')}` } }),
+      fetch('/api/policies', { headers: { 'Authorization': `Bearer ${localStorage.getItem('phins_token')}` } })
+    ]);
+    
+    const successCount = checks.filter(c => c.status === 'fulfilled' && c.value.ok).length;
+    
+    if (successCount === 3) {
+      statusText.textContent = '✓ All Systems Connected';
+      statusText.style.color = '#28a745';
+      statusElement.style.background = '#d4edda';
+    } else if (successCount > 0) {
+      statusText.textContent = `⚠️ Partial (${successCount}/3 services)`;
+      statusText.style.color = '#856404';
+      statusElement.style.background = '#fff3cd';
+    } else {
+      statusText.textContent = '❌ Disconnected';
+      statusText.style.color = '#dc3545';
+      statusElement.style.background = '#f8d7da';
+    }
+    
+    if (lastSync) {
+      lastSync.textContent = 'Last sync: ' + new Date().toLocaleTimeString();
+    }
+  } catch (err) {
+    console.error('Pipeline validation error:', err);
+    statusText.textContent = '❌ Error';
+    statusText.style.color = '#dc3545';
+  }
+}
+
+// Refresh billing stats
+async function refreshBillingStats() {
+  const grid = document.getElementById('stats-grid');
+  if (grid) {
+    grid.innerHTML = '<p class="muted" style="grid-column: 1/-1; text-align: center;">🔄 Refreshing...</p>';
+  }
+  
+  await loadStats();
+  await validatePipelineConnection();
+  
+  // Show notification
+  showNotification('Stats refreshed from pipeline', 'success');
+}
+
+// Refresh payment methods from pipeline
+async function refreshPaymentMethods() {
+  const statusEl = document.getElementById('payment-methods-status');
+  if (statusEl) {
+    statusEl.textContent = '🔄 Syncing...';
+    statusEl.style.background = '#fff3cd';
+    statusEl.style.color = '#856404';
+  }
+  
+  await loadPaymentMethods();
+  
+  // Verify connection to payment gateway pipeline
+  try {
+    const response = await fetch('/api/payment/methods', {
+      headers: { 'Authorization': `Bearer ${localStorage.getItem('phins_token')}` }
+    });
+    
+    if (statusEl) {
+      if (response.ok) {
+        statusEl.textContent = '✓ Connected';
+        statusEl.style.background = '#d1fae5';
+        statusEl.style.color = '#065f46';
+      } else {
+        statusEl.textContent = '⚠️ Limited';
+        statusEl.style.background = '#fff3cd';
+        statusEl.style.color = '#856404';
+      }
+    }
+  } catch (err) {
+    if (statusEl) {
+      statusEl.textContent = '❌ Offline';
+      statusEl.style.background = '#fee2e2';
+      statusEl.style.color = '#991b1b';
+    }
+  }
+}
+
+// Update fraud alert count badge
+async function updateFraudAlertCount() {
+  const countEl = document.getElementById('fraud-alert-count');
+  if (!countEl) return;
+  
+  try {
+    const response = await fetch('/api/billing/fraud-alerts', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${localStorage.getItem('phins_token')}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({})
+    });
+    
+    if (response.ok) {
+      const data = await response.json();
+      const alerts = data.alerts || [];
+      const activeAlerts = alerts.filter(a => a.status !== 'resolved').length;
+      
+      countEl.textContent = `${activeAlerts} Active`;
+      
+      if (activeAlerts > 0) {
+        countEl.style.background = '#f8d7da';
+        countEl.style.color = '#721c24';
+      } else {
+        countEl.style.background = '#d4edda';
+        countEl.style.color = '#155724';
+      }
+    }
+  } catch (err) {
+    console.error('Error updating fraud alert count:', err);
+  }
+}
+
+// Show notification toast
+function showNotification(message, type = 'info') {
+  // Remove existing notifications
+  const existing = document.querySelector('.billing-notification');
+  if (existing) existing.remove();
+  
+  const colors = {
+    success: { bg: '#d4edda', border: '#28a745', text: '#155724' },
+    error: { bg: '#f8d7da', border: '#dc3545', text: '#721c24' },
+    info: { bg: '#d1ecf1', border: '#17a2b8', text: '#0c5460' },
+    warning: { bg: '#fff3cd', border: '#ffc107', text: '#856404' }
+  };
+  
+  const style = colors[type] || colors.info;
+  
+  const notification = document.createElement('div');
+  notification.className = 'billing-notification';
+  notification.style.cssText = `
+    position: fixed;
+    top: 80px;
+    right: 20px;
+    padding: 12px 20px;
+    background: ${style.bg};
+    border-left: 4px solid ${style.border};
+    color: ${style.text};
+    border-radius: 4px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    z-index: 9999;
+    animation: slideIn 0.3s ease;
+    font-weight: 500;
+  `;
+  notification.innerHTML = message;
+  
+  document.body.appendChild(notification);
+  
+  // Auto remove after 3 seconds
+  setTimeout(() => {
+    notification.style.animation = 'slideOut 0.3s ease';
+    setTimeout(() => notification.remove(), 300);
+  }, 3000);
+}
+
+// Add CSS for notifications
+const notificationStyles = document.createElement('style');
+notificationStyles.textContent = `
+  @keyframes slideIn {
+    from { transform: translateX(100%); opacity: 0; }
+    to { transform: translateX(0); opacity: 1; }
+  }
+  @keyframes slideOut {
+    from { transform: translateX(0); opacity: 1; }
+    to { transform: translateX(100%); opacity: 0; }
+  }
+`;
+document.head.appendChild(notificationStyles);
