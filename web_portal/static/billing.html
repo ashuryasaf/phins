@@ -520,23 +520,110 @@
       </div>
       
       <form id="payment-form">
-        <!-- Policy & Customer Information -->
-        <fieldset style="border: 1px solid #ddd; padding: 1rem; border-radius: 8px; margin-bottom: 1rem;">
-          <legend style="font-weight: bold; padding: 0 0.5rem;">📋 Policy Information</legend>
+        <!-- Customer & Policy Selection Panel -->
+        <fieldset style="border: 2px solid #667eea; padding: 1.5rem; border-radius: 12px; margin-bottom: 1.5rem; background: linear-gradient(135deg, #f8f9ff 0%, #e8ecff 100%);">
+          <legend style="font-weight: bold; padding: 0 1rem; color: #667eea; font-size: 1.1rem;">🔍 Select Customer & Policy</legend>
           
-          <label>Customer ID:
-            <input type="text" name="customer_id" id="customer_id" required placeholder="CUST-12345">
-          </label>
-          
-          <label>Policy ID:
-            <input type="text" name="policy_id" id="policy_id" required placeholder="POL-20251212-1234">
-          </label>
-          
-          <div id="premium-info" style="display: none; background: #f8f9fa; padding: 1rem; border-radius: 4px; margin-top: 0.5rem;">
-            <strong>Premium Details:</strong>
-            <div id="premium-details"></div>
+          <!-- Customer Search -->
+          <div style="display: grid; grid-template-columns: 1fr auto; gap: 1rem; margin-bottom: 1rem;">
+            <label style="margin: 0;">
+              <span style="font-weight: 600; color: #333;">Search Customer by Email:</span>
+              <input type="text" id="billing-customer-search" placeholder="Enter email (e.g., efrat@phins.ai)" style="width: 100%;">
+            </label>
+            <div style="display: flex; gap: 0.5rem; align-items: flex-end;">
+              <button type="button" class="btn" onclick="searchCustomerForBilling()" style="padding: 0.5rem 1rem;">🔍 Search</button>
+              <button type="button" class="btn" onclick="loadAllCustomersForBilling()" style="padding: 0.5rem 1rem; background: #28a745;">📋 Load All</button>
+            </div>
           </div>
+          
+          <!-- Customer Selection -->
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1rem;">
+            <label style="margin: 0;">
+              <span style="font-weight: 600; color: #333;">Select Customer:</span>
+              <select id="billing-customer-select" onchange="loadCustomerPoliciesForBilling()" style="width: 100%;">
+                <option value="">-- Select Customer --</option>
+              </select>
+            </label>
+            <label style="margin: 0;">
+              <span style="font-weight: 600; color: #333;">Select Policy:</span>
+              <select id="billing-policy-select" onchange="loadPolicyDataForBilling()" style="width: 100%;">
+                <option value="">-- Select Policy --</option>
+              </select>
+            </label>
+          </div>
+          
+          <!-- Selected Customer Info Card -->
+          <div id="billing-customer-info" style="display: none; background: white; border-radius: 8px; padding: 1rem; border: 1px solid #ddd; margin-top: 1rem;">
+            <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 1rem;">
+              <div style="flex: 1; min-width: 200px;">
+                <h4 style="margin: 0 0 0.5rem 0; color: #667eea;">👤 Customer Details</h4>
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 0.5rem; font-size: 0.9rem;">
+                  <div><strong>Name:</strong> <span id="billing-info-name">-</span></div>
+                  <div><strong>Email:</strong> <span id="billing-info-email">-</span></div>
+                  <div><strong>Phone:</strong> <span id="billing-info-phone">-</span></div>
+                  <div><strong>Age:</strong> <span id="billing-info-age">-</span></div>
+                </div>
+              </div>
+              <div style="flex: 1; min-width: 200px;">
+                <h4 style="margin: 0 0 0.5rem 0; color: #28a745;">📋 Policy Details</h4>
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 0.5rem; font-size: 0.9rem;">
+                  <div><strong>Policy ID:</strong> <span id="billing-info-policy">-</span></div>
+                  <div><strong>Coverage:</strong> <span id="billing-info-coverage">-</span></div>
+                  <div><strong>Status:</strong> <span id="billing-info-status">-</span></div>
+                  <div><strong>Type:</strong> <span id="billing-info-type">-</span></div>
+                </div>
+              </div>
+              <div style="flex: 1; min-width: 200px;">
+                <h4 style="margin: 0 0 0.5rem 0; color: #ffc107;">💰 Premium Info</h4>
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 0.5rem; font-size: 0.9rem;">
+                  <div><strong>Monthly:</strong> <span id="billing-info-monthly" style="color: #28a745; font-weight: bold;">-</span></div>
+                  <div><strong>Annual:</strong> <span id="billing-info-annual" style="color: #667eea; font-weight: bold;">-</span></div>
+                  <div><strong>Due Date:</strong> <span id="billing-info-due">-</span></div>
+                </div>
+              </div>
+            </div>
+            
+            <!-- AI Assessment Button -->
+            <div style="margin-top: 1rem; padding-top: 1rem; border-top: 1px solid #eee; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem;">
+              <button type="button" class="btn" onclick="runBillingAIAssessment()" style="background: linear-gradient(135deg, #6f42c1 0%, #9c27b0 100%); color: white;">
+                🤖 AI Billing Assessment
+              </button>
+              <button type="button" class="btn" onclick="clearBillingCustomerSelection()" style="background: #dc3545; color: white;">
+                🗑️ Clear Selection
+              </button>
+            </div>
+          </div>
+          
+          <!-- AI Assessment Results -->
+          <div id="billing-ai-assessment" style="display: none; margin-top: 1rem;"></div>
         </fieldset>
+        
+        <!-- Hidden fields for form submission -->
+        <input type="hidden" name="customer_id" id="customer_id">
+        <input type="hidden" name="policy_id" id="policy_id">
+        
+        <!-- Legacy Manual Input (collapsed by default) -->
+        <details style="margin-bottom: 1rem;">
+          <summary style="cursor: pointer; padding: 0.5rem; background: #f5f5f5; border-radius: 4px; font-weight: 600;">
+            📝 Manual Entry (Click to expand)
+          </summary>
+          <fieldset style="border: 1px solid #ddd; padding: 1rem; border-radius: 8px; margin-top: 0.5rem;">
+            <legend style="font-weight: bold; padding: 0 0.5rem;">📋 Manual Policy Information</legend>
+            
+            <label>Customer ID (Manual):
+              <input type="text" id="manual_customer_id" placeholder="CUST-12345" onchange="syncManualToHidden()">
+            </label>
+            
+            <label>Policy ID (Manual):
+              <input type="text" id="manual_policy_id" placeholder="POL-20251212-1234" onchange="syncManualToHidden(); lookupPolicyPremium()">
+            </label>
+            
+            <div id="premium-info" style="display: none; background: #f8f9fa; padding: 1rem; border-radius: 4px; margin-top: 0.5rem;">
+              <strong>Premium Details:</strong>
+              <div id="premium-details"></div>
+            </div>
+          </fieldset>
+        </details>
         
         <!-- Payment Amount & Type -->
         <fieldset style="border: 1px solid #ddd; padding: 1rem; border-radius: 8px; margin-bottom: 1rem;">

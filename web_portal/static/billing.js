@@ -35,6 +35,13 @@ document.addEventListener('DOMContentLoaded', () => {
 let selectedPaymentMethod = 'credit_card';
 let availablePaymentMethods = [];
 
+// Billing customer/policy data
+let billingCustomers = [];
+let billingPolicies = [];
+let selectedBillingCustomer = null;
+let selectedBillingPolicy = null;
+let selectedBillingApplication = null;
+
 // Load available payment methods from gateway
 async function loadPaymentMethods() {
   try {
@@ -2251,3 +2258,590 @@ function exportLedger(format) {
     exportPDF('Transaction Ledger Report', content);
   }
 }
+
+// ========== CUSTOMER & POLICY SELECTION FOR BILLING ==========
+
+// Load all customers for billing
+async function loadAllCustomersForBilling() {
+  const token = localStorage.getItem('phins_token');
+  const select = document.getElementById('billing-customer-select');
+  
+  select.innerHTML = '<option value="">Loading customers...</option>';
+  
+  try {
+    const response = await fetch('/api/customers', {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    
+    if (!response.ok) throw new Error('Failed to load customers');
+    
+    const data = await response.json();
+    billingCustomers = data.customers || data || [];
+    
+    select.innerHTML = '<option value="">-- Select Customer --</option>';
+    
+    if (billingCustomers.length === 0) {
+      select.innerHTML += '<option value="" disabled>No customers found</option>';
+      return;
+    }
+    
+    billingCustomers.forEach(c => {
+      const name = c.name || c.full_name || `${c.first_name || ''} ${c.last_name || ''}`.trim() || c.email;
+      select.innerHTML += `<option value="${c.id}">${name} (${c.email})</option>`;
+    });
+    
+    console.log(`Loaded ${billingCustomers.length} customers for billing`);
+    
+  } catch (err) {
+    console.error('Error loading customers:', err);
+    select.innerHTML = '<option value="">-- Error loading customers --</option>';
+  }
+}
+
+// Search customer by email
+function searchCustomerForBilling() {
+  const searchInput = document.getElementById('billing-customer-search').value.toLowerCase().trim();
+  const select = document.getElementById('billing-customer-select');
+  
+  if (!searchInput) {
+    loadAllCustomersForBilling();
+    return;
+  }
+  
+  // First ensure we have customers loaded
+  if (billingCustomers.length === 0) {
+    loadAllCustomersForBilling().then(() => {
+      filterBillingCustomers(searchInput);
+    });
+  } else {
+    filterBillingCustomers(searchInput);
+  }
+}
+
+function filterBillingCustomers(searchTerm) {
+  const select = document.getElementById('billing-customer-select');
+  const filtered = billingCustomers.filter(c => 
+    (c.email || '').toLowerCase().includes(searchTerm) ||
+    (c.name || '').toLowerCase().includes(searchTerm)
+  );
+  
+  select.innerHTML = '<option value="">-- Select Customer --</option>';
+  
+  if (filtered.length === 0) {
+    select.innerHTML += '<option value="" disabled>No matching customers</option>';
+    return;
+  }
+  
+  filtered.forEach(c => {
+    const name = c.name || c.full_name || `${c.first_name || ''} ${c.last_name || ''}`.trim() || c.email;
+    select.innerHTML += `<option value="${c.id}">${name} (${c.email})</option>`;
+  });
+  
+  // Auto-select if only one match
+  if (filtered.length === 1) {
+    select.value = filtered[0].id;
+    loadCustomerPoliciesForBilling();
+  }
+}
+
+// Load policies for selected customer
+async function loadCustomerPoliciesForBilling() {
+  const token = localStorage.getItem('phins_token');
+  const customerId = document.getElementById('billing-customer-select').value;
+  const policySelect = document.getElementById('billing-policy-select');
+  
+  if (!customerId) {
+    policySelect.innerHTML = '<option value="">-- Select Policy --</option>';
+    document.getElementById('billing-customer-info').style.display = 'none';
+    clearBillingFormFields();
+    return;
+  }
+  
+  policySelect.innerHTML = '<option value="">Loading policies...</option>';
+  
+  // Get selected customer data
+  selectedBillingCustomer = billingCustomers.find(c => c.id === customerId);
+  
+  try {
+    const response = await fetch('/api/policies', {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    
+    if (!response.ok) throw new Error('Failed to load policies');
+    
+    const data = await response.json();
+    const allPolicies = data.policies || data || [];
+    
+    // Filter policies for this customer
+    billingPolicies = allPolicies.filter(p => 
+      p.customer_id === customerId || 
+      (selectedBillingCustomer && (p.customer_email || '').toLowerCase() === (selectedBillingCustomer.email || '').toLowerCase())
+    );
+    
+    policySelect.innerHTML = '<option value="">-- Select Policy --</option>';
+    
+    if (billingPolicies.length === 0) {
+      policySelect.innerHTML += '<option value="" disabled>No policies found for this customer</option>';
+    } else {
+      billingPolicies.forEach(p => {
+        const status = p.status || 'active';
+        const coverage = p.coverage_amount || p.coverage || 0;
+        const premium = p.monthly_premium || 0;
+        policySelect.innerHTML += `<option value="${p.id}">${p.id} - $${Number(coverage).toLocaleString()} coverage - $${Number(premium).toFixed(2)}/mo - ${status}</option>`;
+      });
+      
+      // Auto-select first policy (prefer active)
+      const activePolicy = billingPolicies.find(p => (p.status || '').toLowerCase() === 'active');
+      const firstPolicy = activePolicy || billingPolicies[0];
+      if (firstPolicy) {
+        policySelect.value = firstPolicy.id;
+        await loadPolicyDataForBilling();
+      }
+    }
+    
+    // Update customer info display
+    updateBillingCustomerInfo();
+    
+  } catch (err) {
+    console.error('Error loading policies:', err);
+    policySelect.innerHTML = '<option value="">-- Error loading policies --</option>';
+  }
+}
+
+// Load policy data and application data
+async function loadPolicyDataForBilling() {
+  const token = localStorage.getItem('phins_token');
+  const policyId = document.getElementById('billing-policy-select').value;
+  
+  if (!policyId) {
+    return;
+  }
+  
+  selectedBillingPolicy = billingPolicies.find(p => p.id === policyId);
+  
+  // Try to load underwriting application data
+  try {
+    const response = await fetch('/api/underwriting/applications', {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    
+    if (response.ok) {
+      const data = await response.json();
+      const applications = data.applications || data.items || [];
+      
+      // Find application for this customer/policy
+      selectedBillingApplication = applications.find(a => 
+        a.policy_id === policyId ||
+        a.customer_id === selectedBillingCustomer?.id ||
+        (a.customer_email || '').toLowerCase() === (selectedBillingCustomer?.email || '').toLowerCase()
+      );
+    }
+  } catch (err) {
+    console.error('Error loading application data:', err);
+  }
+  
+  // Update display and form fields
+  updateBillingCustomerInfo();
+  populateBillingFormFields();
+}
+
+// Update customer info display card
+function updateBillingCustomerInfo() {
+  const infoDiv = document.getElementById('billing-customer-info');
+  
+  if (!selectedBillingCustomer) {
+    infoDiv.style.display = 'none';
+    return;
+  }
+  
+  infoDiv.style.display = 'block';
+  
+  // Customer details
+  const name = selectedBillingCustomer.name || selectedBillingCustomer.full_name || 
+               `${selectedBillingCustomer.first_name || ''} ${selectedBillingCustomer.last_name || ''}`.trim() || 'N/A';
+  document.getElementById('billing-info-name').textContent = name;
+  document.getElementById('billing-info-email').textContent = selectedBillingCustomer.email || 'N/A';
+  document.getElementById('billing-info-phone').textContent = selectedBillingCustomer.phone || selectedBillingCustomer.mobile || 'N/A';
+  
+  // Age from application or customer
+  const age = selectedBillingApplication?.age ?? selectedBillingCustomer?.age ?? 'N/A';
+  document.getElementById('billing-info-age').textContent = age;
+  
+  // Policy details
+  if (selectedBillingPolicy) {
+    document.getElementById('billing-info-policy').textContent = selectedBillingPolicy.id;
+    document.getElementById('billing-info-coverage').textContent = '$' + Number(selectedBillingPolicy.coverage_amount || 0).toLocaleString();
+    document.getElementById('billing-info-status').textContent = selectedBillingPolicy.status || 'N/A';
+    document.getElementById('billing-info-status').style.color = 
+      (selectedBillingPolicy.status || '').toLowerCase() === 'active' ? '#28a745' : '#ffc107';
+    document.getElementById('billing-info-type').textContent = selectedBillingPolicy.type || 'N/A';
+    
+    // Premium info
+    const monthly = selectedBillingPolicy.monthly_premium || 0;
+    const annual = selectedBillingPolicy.annual_premium || (monthly * 12);
+    document.getElementById('billing-info-monthly').textContent = '$' + Number(monthly).toFixed(2);
+    document.getElementById('billing-info-annual').textContent = '$' + Number(annual).toFixed(2);
+    
+    // Calculate next due date (simple: next month)
+    const nextDue = new Date();
+    nextDue.setMonth(nextDue.getMonth() + 1);
+    nextDue.setDate(1);
+    document.getElementById('billing-info-due').textContent = nextDue.toLocaleDateString('en-GB', {day: '2-digit', month: 'short', year: 'numeric'});
+  } else {
+    document.getElementById('billing-info-policy').textContent = '-';
+    document.getElementById('billing-info-coverage').textContent = '-';
+    document.getElementById('billing-info-status').textContent = '-';
+    document.getElementById('billing-info-type').textContent = '-';
+    document.getElementById('billing-info-monthly').textContent = '-';
+    document.getElementById('billing-info-annual').textContent = '-';
+    document.getElementById('billing-info-due').textContent = '-';
+  }
+  
+  console.log('Billing info updated:', {
+    customer: name,
+    age: age,
+    policy: selectedBillingPolicy?.id,
+    monthly: selectedBillingPolicy?.monthly_premium
+  });
+}
+
+// Populate billing form fields from selected data
+function populateBillingFormFields() {
+  if (!selectedBillingCustomer || !selectedBillingPolicy) return;
+  
+  // Set hidden form fields
+  document.getElementById('customer_id').value = selectedBillingCustomer.id;
+  document.getElementById('policy_id').value = selectedBillingPolicy.id;
+  
+  // Auto-fill payment amount based on payment type
+  const paymentType = document.getElementById('payment_type').value;
+  const amountInput = document.getElementById('payment_amount');
+  
+  if (selectedBillingPolicy) {
+    const monthly = selectedBillingPolicy.monthly_premium || 0;
+    const annual = selectedBillingPolicy.annual_premium || (monthly * 12);
+    const quarterly = selectedBillingPolicy.quarterly_premium || (monthly * 3);
+    
+    switch (paymentType) {
+      case 'premium':
+        amountInput.value = monthly.toFixed(2);
+        break;
+      case 'quarterly_premium':
+        amountInput.value = quarterly.toFixed(2);
+        break;
+      case 'annual_premium':
+        amountInput.value = annual.toFixed(2);
+        break;
+      default:
+        amountInput.value = monthly.toFixed(2);
+    }
+    
+    validateAmount();
+  }
+}
+
+// Clear billing form fields
+function clearBillingFormFields() {
+  document.getElementById('customer_id').value = '';
+  document.getElementById('policy_id').value = '';
+  document.getElementById('payment_amount').value = '';
+}
+
+// Clear customer selection
+function clearBillingCustomerSelection() {
+  document.getElementById('billing-customer-search').value = '';
+  document.getElementById('billing-customer-select').value = '';
+  document.getElementById('billing-policy-select').innerHTML = '<option value="">-- Select Policy --</option>';
+  document.getElementById('billing-customer-info').style.display = 'none';
+  document.getElementById('billing-ai-assessment').style.display = 'none';
+  
+  selectedBillingCustomer = null;
+  selectedBillingPolicy = null;
+  selectedBillingApplication = null;
+  
+  clearBillingFormFields();
+}
+
+// Sync manual entry to hidden fields
+function syncManualToHidden() {
+  const manualCustomer = document.getElementById('manual_customer_id')?.value;
+  const manualPolicy = document.getElementById('manual_policy_id')?.value;
+  
+  if (manualCustomer) document.getElementById('customer_id').value = manualCustomer;
+  if (manualPolicy) document.getElementById('policy_id').value = manualPolicy;
+}
+
+// ========== AI BILLING ASSESSMENT ==========
+
+function runBillingAIAssessment() {
+  if (!selectedBillingCustomer || !selectedBillingPolicy) {
+    alert('Please select a customer and policy first');
+    return;
+  }
+  
+  const assessmentDiv = document.getElementById('billing-ai-assessment');
+  assessmentDiv.style.display = 'block';
+  assessmentDiv.innerHTML = '<div style="text-align: center; padding: 2rem;"><div style="font-size: 2rem;">🤖</div><p>Running AI Billing Assessment...</p></div>';
+  
+  // Simulate AI assessment (in production, this would call a backend service)
+  setTimeout(() => {
+    const assessment = generateBillingAIAssessment();
+    renderBillingAIAssessment(assessment);
+  }, 1000);
+}
+
+function generateBillingAIAssessment() {
+  const customer = selectedBillingCustomer;
+  const policy = selectedBillingPolicy;
+  const app = selectedBillingApplication;
+  
+  // Risk factors
+  let riskScore = 20; // Base score (low risk)
+  let riskFactors = [];
+  let recommendations = [];
+  let insights = [];
+  
+  // Age factor
+  const age = app?.age ?? customer?.age ?? 35;
+  if (age > 60) {
+    riskScore += 15;
+    riskFactors.push(`Higher age (${age}) increases claim likelihood`);
+  } else if (age < 25) {
+    riskScore += 5;
+    riskFactors.push(`Younger age may indicate lower payment history`);
+  } else {
+    insights.push(`Age ${age} is within optimal range for premium stability`);
+  }
+  
+  // Disability factor
+  const disability = app?.disability_percentage ?? 0;
+  if (disability > 50) {
+    riskScore += 20;
+    riskFactors.push(`High disability (${disability}%) - increased ADL claim potential`);
+    recommendations.push('Consider premium adjustment for disability coverage');
+  } else if (disability > 0) {
+    riskScore += 10;
+    insights.push(`Moderate disability (${disability}%) factored into premium`);
+  }
+  
+  // BMI factor
+  const bmi = app?.bmi ?? 24;
+  if (bmi >= 30) {
+    riskScore += 10;
+    riskFactors.push(`BMI ${bmi} (Obese) - higher health risk`);
+  } else if (bmi >= 25) {
+    riskScore += 5;
+    insights.push(`BMI ${bmi} (Overweight) - moderate health consideration`);
+  } else {
+    insights.push(`BMI ${bmi} - healthy weight range`);
+  }
+  
+  // Policy status
+  const status = (policy?.status || '').toLowerCase();
+  if (status === 'active') {
+    insights.push('Policy is active - ready for premium collection');
+    recommendations.push('Proceed with standard billing cycle');
+  } else if (status === 'pending_underwriting') {
+    riskScore += 5;
+    riskFactors.push('Policy pending underwriting - billing may be deferred');
+    recommendations.push('Complete underwriting before billing');
+  } else if (status === 'lapsed') {
+    riskScore += 30;
+    riskFactors.push('Policy has lapsed - reinstatement required');
+    recommendations.push('Apply reinstatement fee before premium collection');
+  }
+  
+  // Coverage amount
+  const coverage = policy?.coverage_amount || 0;
+  if (coverage > 500000) {
+    riskScore += 10;
+    insights.push(`High coverage ($${coverage.toLocaleString()}) - premium reflects comprehensive protection`);
+    recommendations.push('Verify identity before processing large premium');
+  }
+  
+  // Payment prediction
+  const paymentScore = Math.max(0, 100 - riskScore);
+  let paymentPrediction = 'HIGH';
+  let paymentColor = '#28a745';
+  
+  if (paymentScore < 50) {
+    paymentPrediction = 'LOW';
+    paymentColor = '#dc3545';
+    recommendations.push('Consider payment plan options');
+    recommendations.push('Send payment reminder before due date');
+  } else if (paymentScore < 75) {
+    paymentPrediction = 'MODERATE';
+    paymentColor = '#ffc107';
+    recommendations.push('Monitor payment timeline closely');
+  } else {
+    recommendations.push('Standard billing process recommended');
+  }
+  
+  // Add positive insights
+  if (insights.length === 0) {
+    insights.push('Customer profile shows standard risk factors');
+  }
+  
+  return {
+    riskScore: Math.min(100, riskScore),
+    paymentProbability: paymentScore,
+    paymentPrediction,
+    paymentColor,
+    riskFactors,
+    recommendations,
+    insights,
+    customerData: {
+      name: customer?.name || customer?.email,
+      age,
+      disability,
+      bmi,
+      policyStatus: status,
+      coverage,
+      monthlyPremium: policy?.monthly_premium || 0
+    }
+  };
+}
+
+function renderBillingAIAssessment(assessment) {
+  const assessmentDiv = document.getElementById('billing-ai-assessment');
+  
+  assessmentDiv.innerHTML = `
+    <div style="background: linear-gradient(135deg, #1e3a5f 0%, #2d5a87 100%); border-radius: 12px; padding: 20px; color: white; margin-top: 1rem;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; flex-wrap: wrap; gap: 10px;">
+        <h3 style="margin: 0; font-size: 1.2rem;">🤖 AI Billing Assessment</h3>
+        <span style="background: rgba(255,255,255,0.2); padding: 4px 12px; border-radius: 20px; font-size: 0.8rem;">
+          ${new Date().toLocaleString()}
+        </span>
+      </div>
+      
+      <!-- Main Scores -->
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 15px; margin-bottom: 20px;">
+        <div style="background: rgba(255,255,255,0.1); border-radius: 8px; padding: 15px; text-align: center;">
+          <div style="font-size: 2rem; font-weight: bold; color: ${assessment.paymentColor};">${assessment.paymentProbability}%</div>
+          <div style="font-size: 0.85rem; opacity: 0.8;">Payment Probability</div>
+          <div style="margin-top: 5px; font-weight: bold; color: ${assessment.paymentColor};">${assessment.paymentPrediction}</div>
+        </div>
+        <div style="background: rgba(255,255,255,0.1); border-radius: 8px; padding: 15px; text-align: center;">
+          <div style="font-size: 2rem; font-weight: bold; color: ${assessment.riskScore > 50 ? '#dc3545' : assessment.riskScore > 30 ? '#ffc107' : '#28a745'};">${assessment.riskScore}%</div>
+          <div style="font-size: 0.85rem; opacity: 0.8;">Risk Score</div>
+          <div style="margin-top: 5px; font-weight: bold;">${assessment.riskScore > 50 ? 'HIGH' : assessment.riskScore > 30 ? 'MODERATE' : 'LOW'}</div>
+        </div>
+        <div style="background: rgba(255,255,255,0.1); border-radius: 8px; padding: 15px; text-align: center;">
+          <div style="font-size: 2rem; font-weight: bold; color: #4facfe;">$${assessment.customerData.monthlyPremium.toFixed(2)}</div>
+          <div style="font-size: 0.85rem; opacity: 0.8;">Monthly Premium</div>
+          <div style="margin-top: 5px; font-size: 0.8rem; opacity: 0.7;">Due next billing</div>
+        </div>
+      </div>
+      
+      <!-- Customer Summary -->
+      <div style="background: rgba(255,255,255,0.05); border-radius: 8px; padding: 12px; margin-bottom: 15px;">
+        <div style="font-weight: 600; margin-bottom: 8px;">📊 Customer Profile</div>
+        <div style="display: flex; flex-wrap: wrap; gap: 15px; font-size: 0.9rem;">
+          <span>👤 ${assessment.customerData.name}</span>
+          <span>🎂 Age: ${assessment.customerData.age}</span>
+          <span>♿ Disability: ${assessment.customerData.disability}%</span>
+          <span>📏 BMI: ${assessment.customerData.bmi}</span>
+          <span>📋 Status: ${assessment.customerData.policyStatus}</span>
+          <span>💰 Coverage: $${assessment.customerData.coverage.toLocaleString()}</span>
+        </div>
+      </div>
+      
+      <!-- Risk Factors -->
+      ${assessment.riskFactors.length > 0 ? `
+        <div style="margin-bottom: 15px;">
+          <div style="font-weight: 600; margin-bottom: 8px; color: #ff6b6b;">⚠️ Risk Factors</div>
+          <div style="background: rgba(220,53,69,0.2); border-radius: 8px; padding: 10px;">
+            ${assessment.riskFactors.map(f => `<div style="padding: 4px 0; font-size: 0.9rem;">• ${f}</div>`).join('')}
+          </div>
+        </div>
+      ` : ''}
+      
+      <!-- Insights -->
+      ${assessment.insights.length > 0 ? `
+        <div style="margin-bottom: 15px;">
+          <div style="font-weight: 600; margin-bottom: 8px; color: #4facfe;">💡 Insights</div>
+          <div style="background: rgba(79,172,254,0.2); border-radius: 8px; padding: 10px;">
+            ${assessment.insights.map(i => `<div style="padding: 4px 0; font-size: 0.9rem;">• ${i}</div>`).join('')}
+          </div>
+        </div>
+      ` : ''}
+      
+      <!-- Recommendations -->
+      <div style="margin-bottom: 10px;">
+        <div style="font-weight: 600; margin-bottom: 8px; color: #28a745;">✅ Recommendations</div>
+        <div style="background: rgba(40,167,69,0.2); border-radius: 8px; padding: 10px;">
+          ${assessment.recommendations.map(r => `<div style="padding: 4px 0; font-size: 0.9rem;">• ${r}</div>`).join('')}
+        </div>
+      </div>
+      
+      <!-- Action Buttons -->
+      <div style="display: flex; gap: 10px; margin-top: 15px; flex-wrap: wrap;">
+        <button type="button" onclick="applyRecommendedPaymentType()" class="btn" style="background: #28a745; color: white;">
+          ✓ Apply Recommendations
+        </button>
+        <button type="button" onclick="downloadBillingAssessment()" class="btn" style="background: rgba(255,255,255,0.2); color: white;">
+          📄 Download Report
+        </button>
+      </div>
+    </div>
+  `;
+}
+
+// Apply recommended payment type based on assessment
+function applyRecommendedPaymentType() {
+  if (!selectedBillingPolicy) return;
+  
+  // Set payment type to monthly premium
+  document.getElementById('payment_type').value = 'premium';
+  document.getElementById('payment_amount').value = (selectedBillingPolicy.monthly_premium || 0).toFixed(2);
+  validateAmount();
+  
+  alert('✅ Recommendations applied!\n\nPayment type set to Monthly Premium.\nAmount set to $' + (selectedBillingPolicy.monthly_premium || 0).toFixed(2));
+}
+
+// Download billing assessment as PDF
+function downloadBillingAssessment() {
+  if (!selectedBillingCustomer || !selectedBillingPolicy) {
+    alert('No assessment data available');
+    return;
+  }
+  
+  const assessment = generateBillingAIAssessment();
+  const content = `
+    <div class="summary-box" style="background: linear-gradient(135deg, #1e3a5f 0%, #2d5a87 100%); color: white; padding: 20px; border-radius: 8px;">
+      <h3 style="color: white;">Customer: ${assessment.customerData.name}</h3>
+      <p>Age: ${assessment.customerData.age} | Disability: ${assessment.customerData.disability}% | BMI: ${assessment.customerData.bmi}</p>
+      <p>Policy Status: ${assessment.customerData.policyStatus} | Coverage: $${assessment.customerData.coverage.toLocaleString()}</p>
+    </div>
+    
+    <h3>AI Assessment Results</h3>
+    <div class="summary-box">
+      <div class="metric"><span class="metric-value" style="color: ${assessment.paymentColor};">${assessment.paymentProbability}%</span><br><span class="metric-label">Payment Probability</span></div>
+      <div class="metric"><span class="metric-value">${assessment.riskScore}%</span><br><span class="metric-label">Risk Score</span></div>
+      <div class="metric"><span class="metric-value">$${assessment.customerData.monthlyPremium.toFixed(2)}</span><br><span class="metric-label">Monthly Premium</span></div>
+    </div>
+    
+    ${assessment.riskFactors.length > 0 ? `
+      <h4>⚠️ Risk Factors</h4>
+      <ul>${assessment.riskFactors.map(f => `<li>${f}</li>`).join('')}</ul>
+    ` : ''}
+    
+    <h4>💡 Insights</h4>
+    <ul>${assessment.insights.map(i => `<li>${i}</li>`).join('')}</ul>
+    
+    <h4>✅ Recommendations</h4>
+    <ul>${assessment.recommendations.map(r => `<li>${r}</li>`).join('')}</ul>
+  `;
+  
+  exportPDF('AI Billing Assessment - ' + assessment.customerData.name, content);
+}
+
+// Update payment amount when payment type changes
+document.addEventListener('DOMContentLoaded', () => {
+  const paymentTypeSelect = document.getElementById('payment_type');
+  if (paymentTypeSelect) {
+    paymentTypeSelect.addEventListener('change', () => {
+      populateBillingFormFields();
+    });
+  }
+});
