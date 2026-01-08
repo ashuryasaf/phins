@@ -1206,6 +1206,143 @@
         </div>
       </div>
     </section>
+    
+    <!-- ==================== PLATFORM DESIGN MANAGEMENT ==================== -->
+    <section id="design-management" class="section-content" style="background: linear-gradient(135deg, #7b1fa2 0%, #9c27b0 50%, #ab47bc 100%); color: white; border-radius: 16px; padding: 28px; margin-top: 24px; box-shadow: 0 8px 30px rgba(123, 31, 162, 0.25);">
+      <div class="section-header" style="margin-bottom: 24px;">
+        <div>
+          <h2 style="color: white; margin: 0;">🎨 Platform Design Management</h2>
+          <p style="opacity: 0.8; margin: 4px 0 0 0; font-size: 0.9rem;">Control landing page content, video, and brand settings</p>
+        </div>
+        <button onclick="loadDesignSettings()" style="background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.3); color: white; padding: 8px 16px; border-radius: 8px; cursor: pointer; font-weight: 600;">🔄 Refresh</button>
+      </div>
+      
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(350px, 1fr)); gap: 20px;">
+        
+        <!-- Video Settings -->
+        <div style="background: rgba(255,255,255,0.1); border-radius: 12px; padding: 20px; border: 1px solid rgba(255,255,255,0.15);">
+          <h4 style="margin: 0 0 16px 0; display: flex; align-items: center; gap: 8px;">
+            <span style="background: #e91e63; padding: 6px 10px; border-radius: 8px;">📹</span>
+            Landing Page Video
+          </h4>
+          
+          <div style="margin-bottom: 16px;">
+            <label style="display: block; margin-bottom: 6px; font-size: 0.9rem; opacity: 0.9;">Video URL (YouTube, Vimeo, or direct MP4)</label>
+            <input type="text" id="design-video-url" placeholder="https://youtube.com/watch?v=... or video URL" style="width: 100%; padding: 12px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.3); background: rgba(255,255,255,0.1); color: white; font-size: 0.95rem;">
+          </div>
+          
+          <div style="margin-bottom: 16px;">
+            <label style="display: block; margin-bottom: 6px; font-size: 0.9rem; opacity: 0.9;">Video Poster/Thumbnail URL (optional)</label>
+            <input type="text" id="design-video-poster" placeholder="https://example.com/poster.jpg" style="width: 100%; padding: 12px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.3); background: rgba(255,255,255,0.1); color: white; font-size: 0.95rem;">
+          </div>
+          
+          <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+            <button onclick="saveVideoSettings()" style="background: linear-gradient(135deg, #4caf50 0%, #66bb6a 100%); border: none; color: white; padding: 10px 20px; border-radius: 8px; cursor: pointer; font-weight: 600;">💾 Save Video</button>
+            <button onclick="previewVideo()" style="background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.3); color: white; padding: 10px 20px; border-radius: 8px; cursor: pointer; font-weight: 600;">👁️ Preview</button>
+            <button onclick="removeVideo()" style="background: linear-gradient(135deg, #ef5350 0%, #e53935 100%); border: none; color: white; padding: 10px 20px; border-radius: 8px; cursor: pointer; font-weight: 600;">🗑️ Remove</button>
+          </div>
+          
+          <!-- Video Preview -->
+          <div id="video-preview-container" style="margin-top: 16px; display: none;">
+            <div style="background: rgba(0,0,0,0.3); border-radius: 8px; overflow: hidden; position: relative; padding-bottom: 56.25%;">
+              <div id="video-preview" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%;"></div>
+            </div>
+          </div>
+        </div>
+        
+        <!-- Brand Settings -->
+        <div style="background: rgba(255,255,255,0.1); border-radius: 12px; padding: 20px; border: 1px solid rgba(255,255,255,0.15);">
+          <h4 style="margin: 0 0 16px 0; display: flex; align-items: center; gap: 8px;">
+            <span style="background: #ff9800; padding: 6px 10px; border-radius: 8px;">🎨</span>
+            Brand Settings
+          </h4>
+          
+          <div style="margin-bottom: 16px;">
+            <label style="display: block; margin-bottom: 6px; font-size: 0.9rem; opacity: 0.9;">Tagline / Subtitle</label>
+            <input type="text" id="design-tagline" placeholder="Comprehensive Protection for Your Future" style="width: 100%; padding: 12px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.3); background: rgba(255,255,255,0.1); color: white; font-size: 0.95rem;">
+          </div>
+          
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px;">
+            <div>
+              <label style="display: block; margin-bottom: 6px; font-size: 0.9rem; opacity: 0.9;">Primary Color</label>
+              <input type="color" id="design-primary-color" value="#0d47a1" style="width: 100%; height: 40px; border-radius: 8px; border: none; cursor: pointer;">
+            </div>
+            <div>
+              <label style="display: block; margin-bottom: 6px; font-size: 0.9rem; opacity: 0.9;">Accent Color</label>
+              <input type="color" id="design-accent-color" value="#ff6b35" style="width: 100%; height: 40px; border-radius: 8px; border: none; cursor: pointer;">
+            </div>
+          </div>
+          
+          <button onclick="saveBrandSettings()" style="background: linear-gradient(135deg, #4caf50 0%, #66bb6a 100%); border: none; color: white; padding: 10px 20px; border-radius: 8px; cursor: pointer; font-weight: 600; width: 100%;">💾 Save Brand Settings</button>
+        </div>
+        
+        <!-- Content Visibility -->
+        <div style="background: rgba(255,255,255,0.1); border-radius: 12px; padding: 20px; border: 1px solid rgba(255,255,255,0.15);">
+          <h4 style="margin: 0 0 16px 0; display: flex; align-items: center; gap: 8px;">
+            <span style="background: #2196f3; padding: 6px 10px; border-radius: 8px;">📝</span>
+            Landing Page Content Visibility
+          </h4>
+          
+          <div style="display: flex; flex-direction: column; gap: 12px;">
+            <label style="display: flex; align-items: center; gap: 10px; cursor: pointer; padding: 10px; background: rgba(255,255,255,0.05); border-radius: 8px;">
+              <input type="checkbox" id="show-video" checked style="width: 20px; height: 20px; cursor: pointer;">
+              <span>📹 Show Video Section</span>
+            </label>
+            <label style="display: flex; align-items: center; gap: 10px; cursor: pointer; padding: 10px; background: rgba(255,255,255,0.05); border-radius: 8px;">
+              <input type="checkbox" id="show-contact" checked style="width: 20px; height: 20px; cursor: pointer;">
+              <span>📞 Show Contact Section</span>
+            </label>
+            <label style="display: flex; align-items: center; gap: 10px; cursor: pointer; padding: 10px; background: rgba(255,255,255,0.05); border-radius: 8px;">
+              <input type="checkbox" id="show-quote-form" style="width: 20px; height: 20px; cursor: pointer;">
+              <span>📋 Show Quote Form (Not Recommended - reveals pricing)</span>
+            </label>
+            <label style="display: flex; align-items: center; gap: 10px; cursor: pointer; padding: 10px; background: rgba(255,255,255,0.05); border-radius: 8px;">
+              <input type="checkbox" id="show-products" style="width: 20px; height: 20px; cursor: pointer;">
+              <span>🛡️ Show Products Section (Not Recommended)</span>
+            </label>
+            <label style="display: flex; align-items: center; gap: 10px; cursor: pointer; padding: 10px; background: rgba(255,255,255,0.05); border-radius: 8px;">
+              <input type="checkbox" id="show-underwriting" style="width: 20px; height: 20px; cursor: pointer;">
+              <span>📋 Show Underwriting Info (Not Recommended - reveals process)</span>
+            </label>
+          </div>
+          
+          <button onclick="saveVisibilitySettings()" style="background: linear-gradient(135deg, #4caf50 0%, #66bb6a 100%); border: none; color: white; padding: 10px 20px; border-radius: 8px; cursor: pointer; font-weight: 600; width: 100%; margin-top: 16px;">💾 Save Visibility Settings</button>
+        </div>
+        
+        <!-- Current Status -->
+        <div style="background: rgba(255,255,255,0.1); border-radius: 12px; padding: 20px; border: 1px solid rgba(255,255,255,0.15);">
+          <h4 style="margin: 0 0 16px 0; display: flex; align-items: center; gap: 8px;">
+            <span style="background: #4caf50; padding: 6px 10px; border-radius: 8px;">✅</span>
+            Current Landing Page Status
+          </h4>
+          
+          <div id="design-status" style="display: flex; flex-direction: column; gap: 10px;">
+            <div style="display: flex; justify-content: space-between; padding: 10px; background: rgba(0,0,0,0.2); border-radius: 8px;">
+              <span>Video Configured:</span>
+              <span id="status-video" style="font-weight: 600;">❌ No</span>
+            </div>
+            <div style="display: flex; justify-content: space-between; padding: 10px; background: rgba(0,0,0,0.2); border-radius: 8px;">
+              <span>Tagline Set:</span>
+              <span id="status-tagline" style="font-weight: 600;">Default</span>
+            </div>
+            <div style="display: flex; justify-content: space-between; padding: 10px; background: rgba(0,0,0,0.2); border-radius: 8px;">
+              <span>Video Visible:</span>
+              <span id="status-video-visible" style="font-weight: 600;">✅ Yes</span>
+            </div>
+            <div style="display: flex; justify-content: space-between; padding: 10px; background: rgba(0,0,0,0.2); border-radius: 8px;">
+              <span>Contact Visible:</span>
+              <span id="status-contact-visible" style="font-weight: 600;">✅ Yes</span>
+            </div>
+          </div>
+          
+          <div style="margin-top: 16px; padding: 12px; background: rgba(76, 175, 80, 0.2); border-radius: 8px; border: 1px solid rgba(76, 175, 80, 0.3);">
+            <p style="margin: 0; font-size: 0.9rem; opacity: 0.9;">
+              ✅ <strong>Security:</strong> Landing page is currently minimal and secure. Detailed product info is only visible to authenticated customers.
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
   </main>
 
   <footer class="footer">
@@ -4712,6 +4849,217 @@
     document.getElementById('claim-probability-modal').addEventListener('click', function(e) {
       if (e.target === this) closeClaimProbabilityModal();
     });
+    
+    // ==================== DESIGN MANAGEMENT FUNCTIONS ====================
+    
+    // Load design settings on page load
+    document.addEventListener('DOMContentLoaded', () => {
+      loadDesignSettings();
+    });
+    
+    // Load design settings from API
+    async function loadDesignSettings() {
+      try {
+        const response = await fetch('/api/design/settings', {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        
+        if (response.ok) {
+          const settings = await response.json();
+          
+          // Populate form fields
+          document.getElementById('design-video-url').value = settings.video_url || '';
+          document.getElementById('design-video-poster').value = settings.video_poster || '';
+          document.getElementById('design-tagline').value = settings.tagline || '';
+          document.getElementById('design-primary-color').value = settings.primary_color || '#0d47a1';
+          document.getElementById('design-accent-color').value = settings.accent_color || '#ff6b35';
+          
+          // Visibility checkboxes
+          document.getElementById('show-video').checked = settings.show_video !== false;
+          document.getElementById('show-contact').checked = settings.show_contact !== false;
+          document.getElementById('show-quote-form').checked = settings.show_quote_form === true;
+          document.getElementById('show-products').checked = settings.show_products === true;
+          document.getElementById('show-underwriting').checked = settings.show_underwriting === true;
+          
+          // Update status
+          updateDesignStatus(settings);
+        }
+      } catch (err) {
+        console.log('Design settings not yet configured');
+      }
+    }
+    
+    // Update design status display
+    function updateDesignStatus(settings) {
+      document.getElementById('status-video').textContent = settings.video_url ? '✅ Yes' : '❌ No';
+      document.getElementById('status-video').style.color = settings.video_url ? '#4caf50' : '#ef5350';
+      
+      document.getElementById('status-tagline').textContent = settings.tagline || 'Default';
+      
+      document.getElementById('status-video-visible').textContent = settings.show_video !== false ? '✅ Yes' : '❌ No';
+      document.getElementById('status-contact-visible').textContent = settings.show_contact !== false ? '✅ Yes' : '❌ No';
+    }
+    
+    // Save video settings
+    async function saveVideoSettings() {
+      const videoUrl = document.getElementById('design-video-url').value.trim();
+      const videoPoster = document.getElementById('design-video-poster').value.trim();
+      
+      try {
+        const response = await fetch('/api/design/settings', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            video_url: videoUrl,
+            video_poster: videoPoster
+          })
+        });
+        
+        if (response.ok) {
+          showDesignNotification('✅ Video settings saved successfully!', 'success');
+          loadDesignSettings();
+        } else {
+          showDesignNotification('❌ Failed to save video settings', 'error');
+        }
+      } catch (err) {
+        showDesignNotification('❌ Error: ' + err.message, 'error');
+      }
+    }
+    
+    // Preview video
+    function previewVideo() {
+      const videoUrl = document.getElementById('design-video-url').value.trim();
+      const container = document.getElementById('video-preview-container');
+      const preview = document.getElementById('video-preview');
+      
+      if (!videoUrl) {
+        showDesignNotification('⚠️ Please enter a video URL first', 'warning');
+        return;
+      }
+      
+      container.style.display = 'block';
+      
+      // Determine video type and render
+      if (videoUrl.includes('youtube.com') || videoUrl.includes('youtu.be')) {
+        let embedUrl = videoUrl;
+        if (videoUrl.includes('watch?v=')) {
+          embedUrl = videoUrl.replace('watch?v=', 'embed/');
+        } else if (videoUrl.includes('youtu.be/')) {
+          embedUrl = videoUrl.replace('youtu.be/', 'youtube.com/embed/');
+        }
+        preview.innerHTML = `<iframe src="${embedUrl}" style="width:100%;height:100%;border:none;" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>`;
+      } else if (videoUrl.includes('vimeo.com')) {
+        const vimeoId = videoUrl.split('/').pop();
+        preview.innerHTML = `<iframe src="https://player.vimeo.com/video/${vimeoId}" style="width:100%;height:100%;border:none;" allow="autoplay; fullscreen; picture-in-picture" allowfullscreen></iframe>`;
+      } else {
+        preview.innerHTML = `<video controls style="width:100%;height:100%;"><source src="${videoUrl}" type="video/mp4">Your browser does not support video.</video>`;
+      }
+    }
+    
+    // Remove video
+    async function removeVideo() {
+      if (!confirm('Remove video from landing page?')) return;
+      
+      document.getElementById('design-video-url').value = '';
+      document.getElementById('design-video-poster').value = '';
+      document.getElementById('video-preview-container').style.display = 'none';
+      
+      await saveVideoSettings();
+    }
+    
+    // Save brand settings
+    async function saveBrandSettings() {
+      const tagline = document.getElementById('design-tagline').value.trim();
+      const primaryColor = document.getElementById('design-primary-color').value;
+      const accentColor = document.getElementById('design-accent-color').value;
+      
+      try {
+        const response = await fetch('/api/design/settings', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            tagline: tagline,
+            primary_color: primaryColor,
+            accent_color: accentColor
+          })
+        });
+        
+        if (response.ok) {
+          showDesignNotification('✅ Brand settings saved successfully!', 'success');
+          loadDesignSettings();
+        } else {
+          showDesignNotification('❌ Failed to save brand settings', 'error');
+        }
+      } catch (err) {
+        showDesignNotification('❌ Error: ' + err.message, 'error');
+      }
+    }
+    
+    // Save visibility settings
+    async function saveVisibilitySettings() {
+      const showVideo = document.getElementById('show-video').checked;
+      const showContact = document.getElementById('show-contact').checked;
+      const showQuoteForm = document.getElementById('show-quote-form').checked;
+      const showProducts = document.getElementById('show-products').checked;
+      const showUnderwriting = document.getElementById('show-underwriting').checked;
+      
+      try {
+        const response = await fetch('/api/design/settings', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            show_video: showVideo,
+            show_contact: showContact,
+            show_quote_form: showQuoteForm,
+            show_products: showProducts,
+            show_underwriting: showUnderwriting
+          })
+        });
+        
+        if (response.ok) {
+          showDesignNotification('✅ Visibility settings saved successfully!', 'success');
+          loadDesignSettings();
+        } else {
+          showDesignNotification('❌ Failed to save visibility settings', 'error');
+        }
+      } catch (err) {
+        showDesignNotification('❌ Error: ' + err.message, 'error');
+      }
+    }
+    
+    // Show design notification
+    function showDesignNotification(message, type) {
+      const colors = {
+        success: { bg: '#d4edda', border: '#28a745', color: '#155724' },
+        error: { bg: '#f8d7da', border: '#dc3545', color: '#721c24' },
+        warning: { bg: '#fff3cd', border: '#ffc107', color: '#856404' }
+      };
+      const style = colors[type] || colors.success;
+      
+      const notification = document.createElement('div');
+      notification.style.cssText = `
+        position: fixed; top: 80px; right: 20px; padding: 16px 24px;
+        background: ${style.bg}; border-left: 4px solid ${style.border}; color: ${style.color};
+        border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        z-index: 10000; font-weight: 600; animation: slideIn 0.3s ease;
+      `;
+      notification.textContent = message;
+      document.body.appendChild(notification);
+      
+      setTimeout(() => {
+        notification.style.animation = 'slideOut 0.3s ease';
+        setTimeout(() => notification.remove(), 300);
+      }, 3000);
+    }
   </script>
 </body>
 </html>

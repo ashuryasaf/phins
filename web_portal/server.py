@@ -129,6 +129,22 @@ INVESTMENT_ACCOUNTS: Dict[str, Dict[str, Any]] = {}  # customer_id -> {balance, 
 # Transaction ledger - master ledger for all financial transactions
 TRANSACTION_LEDGER: Dict[str, Dict[str, Any]] = {}  # tx_id -> transaction data
 
+# Design settings - for landing page customization (admin-managed)
+DESIGN_SETTINGS: Dict[str, Any] = {
+    'video_url': '',
+    'video_poster': '',
+    'tagline': 'Comprehensive Protection for Your Future',
+    'primary_color': '#0d47a1',
+    'accent_color': '#ff6b35',
+    'show_video': True,
+    'show_contact': True,
+    'show_quote_form': False,
+    'show_products': False,
+    'show_underwriting': False,
+    'updated_at': None,
+    'updated_by': None
+}
+
 # ========== PHINS MAIN BALANCE SHEET (GENERAL RESERVES) ==========
 # Central company balance sheet for all financial operations
 # Accessible by: admin, accountant, underwriter, claims_adjuster
@@ -2562,6 +2578,25 @@ For claims or questions, please contact:
                 'customer_id': session.get('customer_id'),
                 'expires': session.get('expires')
             }).encode('utf-8'))
+            return
+        
+        # Design settings endpoint (GET) - public for landing page, all data for admin
+        if path == '/api/design/settings':
+            # Return design settings (public endpoint for landing page to load video)
+            self._set_json_headers(200)
+            # Only return public-safe settings if not admin
+            if require_role(session, ['admin']):
+                self.wfile.write(json.dumps(DESIGN_SETTINGS).encode('utf-8'))
+            else:
+                # Public view - only return what's needed for landing page
+                public_settings = {
+                    'video_url': DESIGN_SETTINGS.get('video_url', '') if DESIGN_SETTINGS.get('show_video', True) else '',
+                    'video_poster': DESIGN_SETTINGS.get('video_poster', '') if DESIGN_SETTINGS.get('show_video', True) else '',
+                    'tagline': DESIGN_SETTINGS.get('tagline', 'Comprehensive Protection for Your Future'),
+                    'show_video': DESIGN_SETTINGS.get('show_video', True),
+                    'show_contact': DESIGN_SETTINGS.get('show_contact', True)
+                }
+                self.wfile.write(json.dumps(public_settings).encode('utf-8'))
             return
         
         # Security monitoring endpoint (Admin only)
@@ -9523,6 +9558,49 @@ For claims or questions, please contact:
         if path == '/api/submit-quote':
             self.handle_quote_submission()
             return
+        
+        # Design settings endpoint (POST) - Admin only
+        if path == '/api/design/settings':
+            # Get auth token
+            auth_header = self.headers.get('Authorization', '')
+            token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+            session = validate_session(token) if token else None
+            
+            # Check admin role
+            if not require_role(session, ['admin']):
+                self.send_response(403)
+                self.send_header('Content-Type', 'application/json')
+                self.end_headers()
+                self.wfile.write(json.dumps({'error': 'Admin access required'}).encode('utf-8'))
+                return
+            
+            # Parse request body
+            length = int(self.headers.get('Content-Length', 0))
+            body = self.rfile.read(length).decode('utf-8') if length else '{}'
+            
+            try:
+                data = json.loads(body)
+                
+                # Update only provided fields
+                for key in ['video_url', 'video_poster', 'tagline', 'primary_color', 'accent_color',
+                           'show_video', 'show_contact', 'show_quote_form', 'show_products', 'show_underwriting']:
+                    if key in data:
+                        DESIGN_SETTINGS[key] = data[key]
+                
+                DESIGN_SETTINGS['updated_at'] = datetime.now().isoformat()
+                DESIGN_SETTINGS['updated_by'] = session.get('username', 'admin')
+                
+                self._set_json_headers(200)
+                self.wfile.write(json.dumps({
+                    'success': True,
+                    'message': 'Design settings updated successfully',
+                    'settings': DESIGN_SETTINGS
+                }).encode('utf-8'))
+                return
+            except json.JSONDecodeError:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'Invalid JSON'}).encode('utf-8'))
+                return
         
         # Regular JSON POST requests
         length = int(self.headers.get('Content-Length', 0))
