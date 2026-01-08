@@ -929,16 +929,25 @@
         
         // Load policy data and application data for projection
         async function loadPolicyDataForProjection() {
-            const policyId = document.getElementById('proj-policy-select').value;
+            const policySelectEl = document.getElementById('proj-policy-select');
+            const policyId = policySelectEl?.value;
+            
+            // Helper function for safe element updates
+            const setIndicatorSafe = (text, bg, color) => {
+                const el = document.getElementById('data-source-indicator');
+                if (el) {
+                    el.textContent = text;
+                    el.style.background = bg;
+                    el.style.color = color;
+                }
+            };
             
             if (!policyId) {
-                document.getElementById('data-source-indicator').textContent = 'Manual Input';
-                document.getElementById('data-source-indicator').style.background = '#fef3c7';
-                document.getElementById('data-source-indicator').style.color = '#92400e';
+                setIndicatorSafe('Manual Input', '#fef3c7', '#92400e');
                 return;
             }
             
-            selectedPolicyData = projectionPolicies.find(p => p.id === policyId);
+            selectedPolicyData = projectionPolicies?.find(p => p.id === policyId) || null;
             
             // Try to load underwriting application data
             try {
@@ -1019,15 +1028,24 @@
                 document.getElementById('proj-term').value = selectedPolicyData.term_years || selectedPolicyData.term;
             }
             
-            // Update data source indicator
-            document.getElementById('data-source-indicator').textContent = '✓ Real Customer Data';
-            document.getElementById('data-source-indicator').style.background = '#d1fae5';
-            document.getElementById('data-source-indicator').style.color = '#065f46';
+            // Update data source indicator safely
+            const indicator = document.getElementById('data-source-indicator');
+            if (indicator) {
+                indicator.textContent = '✓ Real Customer Data';
+                indicator.style.background = '#d1fae5';
+                indicator.style.color = '#065f46';
+            }
         }
         
-        // Update customer info display
+        // Update customer info display - with null safety
         function updateCustomerInfoDisplay() {
             const infoDiv = document.getElementById('selected-customer-info');
+            
+            // Null safety - check if elements exist
+            if (!infoDiv) {
+                console.warn('selected-customer-info element not found');
+                return;
+            }
             
             if (!selectedCustomerData) {
                 infoDiv.style.display = 'none';
@@ -1039,8 +1057,20 @@
             const name = selectedCustomerData.name || selectedCustomerData.full_name || 
                          `${selectedCustomerData.first_name || ''} ${selectedCustomerData.last_name || ''}`.trim() || 'N/A';
             
-            document.getElementById('info-customer-name').textContent = name;
-            document.getElementById('info-customer-email').textContent = selectedCustomerData.email || 'N/A';
+            // Safely set text content with null checks
+            const setTextSafe = (id, value) => {
+                const el = document.getElementById(id);
+                if (el) el.textContent = value;
+                else console.warn(`Element ${id} not found`);
+            };
+            
+            const setStyleSafe = (id, prop, value) => {
+                const el = document.getElementById(id);
+                if (el) el.style[prop] = value;
+            };
+            
+            setTextSafe('info-customer-name', name);
+            setTextSafe('info-customer-email', selectedCustomerData.email || 'N/A');
             
             // Age - check multiple sources
             let age = 'N/A';
@@ -1053,36 +1083,35 @@
                 const today = new Date();
                 age = Math.floor((today - dob) / (365.25 * 24 * 60 * 60 * 1000));
             }
-            document.getElementById('info-customer-age').textContent = age;
+            setTextSafe('info-customer-age', age);
             
             // Policy info - check selectedPolicyData first, then try to get from projectionPolicies
             let policyData = selectedPolicyData;
-            if (!policyData && projectionPolicies.length > 0) {
+            if (!policyData && projectionPolicies && projectionPolicies.length > 0) {
                 policyData = projectionPolicies[0];
             }
             
             if (policyData) {
-                document.getElementById('info-policy-id').textContent = policyData.id;
-                document.getElementById('info-coverage').textContent = '$' + Number(policyData.coverage_amount || policyData.coverage || 0).toLocaleString();
+                setTextSafe('info-policy-id', policyData.id);
+                setTextSafe('info-coverage', '$' + Number(policyData.coverage_amount || policyData.coverage || 0).toLocaleString());
                 const status = policyData.status || 'active';
-                document.getElementById('info-policy-status').textContent = status;
-                document.getElementById('info-policy-status').style.color = 
-                    status.toLowerCase() === 'active' ? '#10b981' : '#f59e0b';
+                setTextSafe('info-policy-status', status);
+                setStyleSafe('info-policy-status', 'color', status.toLowerCase() === 'active' ? '#10b981' : '#f59e0b');
             } else {
-                document.getElementById('info-policy-id').textContent = '-';
-                document.getElementById('info-coverage').textContent = '-';
-                document.getElementById('info-policy-status').textContent = '-';
+                setTextSafe('info-policy-id', '-');
+                setTextSafe('info-coverage', '-');
+                setTextSafe('info-policy-status', '-');
             }
             
             // Application/Medical data - check multiple sources
             const disabilityPct = selectedApplicationData?.disability_percentage ?? selectedCustomerData?.disability_percentage ?? 0;
-            document.getElementById('info-disability').textContent = disabilityPct > 0 ? `${disabilityPct}%` : 'None';
+            setTextSafe('info-disability', disabilityPct > 0 ? `${disabilityPct}%` : 'None');
             
             const bmi = selectedApplicationData?.bmi ?? selectedCustomerData?.bmi ?? 0;
             let bmiText = bmi > 0 ? Number(bmi).toFixed(1) : 'N/A';
             if (bmi >= 30) bmiText += ' (Obese)';
             else if (bmi >= 25) bmiText += ' (Overweight)';
-            document.getElementById('info-bmi').textContent = bmiText;
+            setTextSafe('info-bmi', bmiText);
             
             // Log for debugging
             console.log('Customer Info Updated:', {
@@ -1096,28 +1125,34 @@
             });
         }
         
-        // Clear customer selection
+        // Clear customer selection - with null safety
         function clearCustomerSelection() {
-            document.getElementById('proj-customer-search').value = '';
-            document.getElementById('proj-customer-select').value = '';
-            document.getElementById('proj-policy-select').innerHTML = '<option value="">-- Select Policy --</option>';
-            document.getElementById('selected-customer-info').style.display = 'none';
-            document.getElementById('customer-data-status').textContent = 'Manual Mode';
-            document.getElementById('customer-data-status').style.background = 'rgba(255,255,255,0.2)';
-            document.getElementById('data-source-indicator').textContent = 'Manual Input';
-            document.getElementById('data-source-indicator').style.background = '#fef3c7';
-            document.getElementById('data-source-indicator').style.color = '#92400e';
-            document.getElementById('ai-bi-assessment').style.display = 'none';
+            // Helper for safe element updates
+            const setValSafe = (id, val) => { const el = document.getElementById(id); if (el) el.value = val; };
+            const setHtmlSafe = (id, html) => { const el = document.getElementById(id); if (el) el.innerHTML = html; };
+            const setStyleSafe = (id, prop, val) => { const el = document.getElementById(id); if (el) el.style[prop] = val; };
+            const setTextSafe = (id, text) => { const el = document.getElementById(id); if (el) el.textContent = text; };
+            
+            setValSafe('proj-customer-search', '');
+            setValSafe('proj-customer-select', '');
+            setHtmlSafe('proj-policy-select', '<option value="">-- Select Policy --</option>');
+            setStyleSafe('selected-customer-info', 'display', 'none');
+            setTextSafe('customer-data-status', 'Manual Mode');
+            setStyleSafe('customer-data-status', 'background', 'rgba(255,255,255,0.2)');
+            setTextSafe('data-source-indicator', 'Manual Input');
+            setStyleSafe('data-source-indicator', 'background', '#fef3c7');
+            setStyleSafe('data-source-indicator', 'color', '#92400e');
+            setStyleSafe('ai-bi-assessment', 'display', 'none');
             
             selectedCustomerData = null;
             selectedPolicyData = null;
             selectedApplicationData = null;
             
             // Reset form to defaults
-            document.getElementById('proj-coverage').value = 250000;
-            document.getElementById('proj-savings').value = 50;
-            document.getElementById('proj-adl').value = 5;
-            document.getElementById('proj-term').value = 25;
+            setValSafe('proj-coverage', 250000);
+            setValSafe('proj-savings', 50);
+            setValSafe('proj-adl', 5);
+            setValSafe('proj-term', 25);
             document.getElementById('proj-age').value = 35;
         }
         
