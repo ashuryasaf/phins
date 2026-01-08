@@ -843,6 +843,7 @@
             try {
                 // Get customer details
                 selectedCustomerData = projectionCustomers.find(c => c.id === customerId);
+                console.log('Selected customer:', selectedCustomerData?.email, 'ID:', customerId);
                 
                 // Load policies
                 const response = await fetch('/api/policies', {
@@ -852,22 +853,32 @@
                 if (!response.ok) throw new Error('Failed to load policies');
                 
                 const data = await response.json();
-                const allPolicies = data.policies || data || [];
+                const allPolicies = data.policies || data.items || data || [];
+                console.log('Total policies loaded:', allPolicies.length);
                 
-                // Filter policies for this customer
-                projectionPolicies = allPolicies.filter(p => 
-                    p.customer_id === customerId || 
-                    (selectedCustomerData && p.customer_email === selectedCustomerData.email)
-                );
+                // Filter policies for this customer (case-insensitive email match)
+                const customerEmail = (selectedCustomerData?.email || '').toLowerCase();
+                projectionPolicies = allPolicies.filter(p => {
+                    const matchById = p.customer_id === customerId;
+                    const matchByEmail = customerEmail && (p.customer_email || '').toLowerCase() === customerEmail;
+                    // Also try partial ID match (e.g., CUST-EFRAT matches POL-EFRAT)
+                    const customerPrefix = customerId.replace('CUST-', '').split('-')[0];
+                    const matchByPrefix = p.id && p.id.toUpperCase().includes(customerPrefix.toUpperCase());
+                    return matchById || matchByEmail || matchByPrefix;
+                });
+                
+                console.log('Filtered policies for customer:', projectionPolicies.length);
                 
                 policySelect.innerHTML = '<option value="">-- Select Policy --</option>';
                 if (projectionPolicies.length === 0) {
                     policySelect.innerHTML += '<option value="" disabled>No policies found for this customer</option>';
+                    console.log('No policies found. Customer ID:', customerId, 'Email:', customerEmail);
                 } else {
                     projectionPolicies.forEach(p => {
                         const status = p.status || 'active';
                         const coverage = p.coverage_amount || p.coverage || 0;
-                        policySelect.innerHTML += `<option value="${p.id}">${p.id} - ${p.type || 'Health'} ($${Number(coverage).toLocaleString()}) - ${status}</option>`;
+                        const premium = p.monthly_premium ? ` - $${Number(p.monthly_premium).toFixed(0)}/mo` : '';
+                        policySelect.innerHTML += `<option value="${p.id}">${p.id} - ${p.type || 'PHINS'} ($${Number(coverage).toLocaleString()})${premium} - ${status}</option>`;
                     });
                     
                     // Auto-select first policy (prefer active, but select any if no active)
@@ -875,6 +886,7 @@
                     const firstPolicy = activePolicy || projectionPolicies[0];
                     if (firstPolicy) {
                         policySelect.value = firstPolicy.id;
+                        console.log('Auto-selected policy:', firstPolicy.id);
                         await loadPolicyDataForProjection();
                     }
                 }
