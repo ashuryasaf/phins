@@ -132,7 +132,13 @@ def seed_default_users(session=None):
             # Check if user already exists
             existing_user = user_repo.get_by_username(user_data['username'])
             if existing_user:
-                logger.info(f"User '{user_data['username']}' already exists, skipping...")
+                # Update role if it has changed (important for role changes like media_ad)
+                if existing_user.role != user_data['role']:
+                    existing_user.role = user_data['role']
+                    session.commit()
+                    logger.info(f"Updated user '{user_data['username']}' role to: {user_data['role']}")
+                else:
+                    logger.info(f"User '{user_data['username']}' already exists with correct role, skipping...")
                 continue
             
             # Hash password
