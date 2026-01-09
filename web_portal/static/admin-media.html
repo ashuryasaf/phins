@@ -1,0 +1,1326 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PHINS Admin - Media Management</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: linear-gradient(135deg, #1a1f36 0%, #2d3561 100%);
+            min-height: 100vh;
+            color: white;
+        }
+        
+        /* Header */
+        .admin-header {
+            background: rgba(0,0,0,0.3);
+            padding: 16px 24px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+        }
+        .header-left {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            text-decoration: none;
+            color: white;
+        }
+        .logo-icon {
+            width: 40px;
+            height: 40px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.3rem;
+        }
+        .logo-text { font-size: 1.3rem; font-weight: 700; }
+        .page-title {
+            font-size: 1.1rem;
+            color: rgba(255,255,255,0.7);
+            padding-left: 16px;
+            border-left: 1px solid rgba(255,255,255,0.2);
+        }
+        .header-right {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .btn {
+            padding: 10px 18px;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            text-decoration: none;
+            font-size: 0.9rem;
+            border: none;
+        }
+        .btn-secondary {
+            background: rgba(255,255,255,0.1);
+            color: white;
+            border: 1px solid rgba(255,255,255,0.2);
+        }
+        .btn-secondary:hover { background: rgba(255,255,255,0.2); }
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 4px 15px rgba(102,126,234,0.4); }
+        .btn-danger {
+            background: linear-gradient(135deg, #ef5350 0%, #e53935 100%);
+            color: white;
+        }
+        
+        /* Main Container */
+        .main-container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 24px;
+        }
+        
+        /* Stats Bar */
+        .stats-bar {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+        .stat-card {
+            background: rgba(255,255,255,0.08);
+            border-radius: 12px;
+            padding: 20px;
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+        .stat-value {
+            font-size: 1.8rem;
+            font-weight: 700;
+            margin-bottom: 4px;
+        }
+        .stat-label {
+            font-size: 0.85rem;
+            color: rgba(255,255,255,0.6);
+        }
+        .stat-card.videos .stat-value { color: #ff6b6b; }
+        .stat-card.images .stat-value { color: #4facfe; }
+        .stat-card.documents .stat-value { color: #2ed573; }
+        .stat-card.storage .stat-value { color: #ffa502; }
+        
+        /* Upload Section */
+        .upload-section {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 16px;
+            padding: 24px;
+            margin-bottom: 24px;
+        }
+        .upload-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        .upload-header h2 {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 1.3rem;
+        }
+        .upload-tabs {
+            display: flex;
+            gap: 8px;
+        }
+        .upload-tab {
+            padding: 8px 16px;
+            border-radius: 8px;
+            cursor: pointer;
+            background: rgba(255,255,255,0.15);
+            border: 1px solid rgba(255,255,255,0.2);
+            color: white;
+            font-weight: 500;
+            transition: all 0.2s;
+        }
+        .upload-tab.active {
+            background: rgba(255,255,255,0.3);
+            border-color: rgba(255,255,255,0.4);
+        }
+        .upload-tab:hover { background: rgba(255,255,255,0.25); }
+        
+        /* Drop Zone */
+        .drop-zone {
+            border: 3px dashed rgba(255,255,255,0.4);
+            border-radius: 16px;
+            padding: 50px 30px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s;
+            background: rgba(255,255,255,0.05);
+        }
+        .drop-zone:hover, .drop-zone.dragover {
+            border-color: white;
+            background: rgba(255,255,255,0.1);
+        }
+        .drop-zone-icon {
+            font-size: 4rem;
+            margin-bottom: 16px;
+        }
+        .drop-zone-text {
+            font-size: 1.2rem;
+            margin-bottom: 8px;
+        }
+        .drop-zone-hint {
+            font-size: 0.9rem;
+            color: rgba(255,255,255,0.7);
+        }
+        .drop-zone-formats {
+            margin-top: 16px;
+            font-size: 0.8rem;
+            color: rgba(255,255,255,0.5);
+        }
+        
+        /* URL Input */
+        .url-input-section {
+            display: none;
+            margin-top: 20px;
+        }
+        .url-input-section.active { display: block; }
+        .url-input-group {
+            display: flex;
+            gap: 12px;
+        }
+        .url-input {
+            flex: 1;
+            padding: 14px 18px;
+            border-radius: 10px;
+            border: 1px solid rgba(255,255,255,0.3);
+            background: rgba(255,255,255,0.1);
+            color: white;
+            font-size: 1rem;
+        }
+        .url-input::placeholder { color: rgba(255,255,255,0.5); }
+        .url-input:focus { outline: none; border-color: rgba(255,255,255,0.6); }
+        
+        /* Upload Progress */
+        .upload-progress {
+            display: none;
+            margin-top: 20px;
+            background: rgba(255,255,255,0.1);
+            border-radius: 12px;
+            padding: 20px;
+        }
+        .upload-progress.active { display: block; }
+        .progress-file {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            margin-bottom: 12px;
+        }
+        .progress-file-icon { font-size: 2rem; }
+        .progress-file-info { flex: 1; }
+        .progress-file-name { font-weight: 600; margin-bottom: 4px; }
+        .progress-file-size { font-size: 0.85rem; color: rgba(255,255,255,0.6); }
+        .progress-bar-container {
+            background: rgba(255,255,255,0.2);
+            border-radius: 10px;
+            height: 10px;
+            overflow: hidden;
+        }
+        .progress-bar {
+            height: 100%;
+            background: linear-gradient(90deg, #4facfe 0%, #00f2fe 100%);
+            border-radius: 10px;
+            width: 0%;
+            transition: width 0.3s;
+        }
+        .progress-text {
+            text-align: center;
+            margin-top: 10px;
+            font-size: 0.9rem;
+            color: rgba(255,255,255,0.8);
+        }
+        
+        /* Media Library */
+        .library-section {
+            background: rgba(255,255,255,0.05);
+            border-radius: 16px;
+            padding: 24px;
+            border: 1px solid rgba(255,255,255,0.1);
+            margin-bottom: 24px;
+        }
+        .library-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+            gap: 12px;
+        }
+        .library-header h2 {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 1.3rem;
+        }
+        .library-filters {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+        .filter-btn {
+            padding: 8px 16px;
+            border-radius: 20px;
+            cursor: pointer;
+            background: rgba(255,255,255,0.1);
+            border: 1px solid rgba(255,255,255,0.2);
+            color: white;
+            font-size: 0.85rem;
+            transition: all 0.2s;
+        }
+        .filter-btn.active {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-color: transparent;
+        }
+        .filter-btn:hover { background: rgba(255,255,255,0.2); }
+        
+        /* Media Grid */
+        .media-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+            gap: 20px;
+        }
+        .media-card {
+            background: rgba(255,255,255,0.08);
+            border-radius: 12px;
+            overflow: hidden;
+            border: 1px solid rgba(255,255,255,0.1);
+            transition: all 0.3s;
+            position: relative;
+        }
+        .media-card:hover {
+            transform: translateY(-4px);
+            border-color: rgba(255,255,255,0.3);
+            box-shadow: 0 8px 30px rgba(0,0,0,0.3);
+        }
+        .media-card.selected {
+            border-color: #4facfe;
+            box-shadow: 0 0 0 2px rgba(79,172,254,0.3);
+        }
+        .media-thumbnail {
+            aspect-ratio: 16/10;
+            background: rgba(0,0,0,0.3);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+            overflow: hidden;
+        }
+        .media-thumbnail img,
+        .media-thumbnail video {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+        .media-thumbnail-icon {
+            font-size: 3rem;
+            opacity: 0.7;
+        }
+        .media-type-badge {
+            position: absolute;
+            top: 8px;
+            left: 8px;
+            padding: 4px 10px;
+            border-radius: 6px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+        .media-type-badge.video { background: #ff6b6b; }
+        .media-type-badge.image { background: #4facfe; }
+        .media-type-badge.document { background: #2ed573; }
+        .media-duration {
+            position: absolute;
+            bottom: 8px;
+            right: 8px;
+            background: rgba(0,0,0,0.7);
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 0.75rem;
+        }
+        .media-info {
+            padding: 14px;
+        }
+        .media-name {
+            font-weight: 600;
+            margin-bottom: 6px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .media-meta {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.8rem;
+            color: rgba(255,255,255,0.5);
+        }
+        .media-actions {
+            display: flex;
+            gap: 6px;
+            padding: 0 14px 14px;
+        }
+        .media-action-btn {
+            flex: 1;
+            padding: 8px;
+            border-radius: 6px;
+            border: none;
+            cursor: pointer;
+            font-size: 0.8rem;
+            font-weight: 500;
+            transition: all 0.2s;
+        }
+        .media-action-btn.use {
+            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+            color: white;
+        }
+        .media-action-btn.preview {
+            background: rgba(255,255,255,0.1);
+            color: white;
+        }
+        .media-action-btn.delete {
+            background: rgba(239,83,80,0.2);
+            color: #ef5350;
+        }
+        .media-action-btn:hover { transform: scale(1.02); }
+        
+        /* Landing Page Assignments */
+        .assignments-section {
+            background: linear-gradient(135deg, #2ed573 0%, #1dd1a1 100%);
+            border-radius: 16px;
+            padding: 24px;
+            margin-bottom: 24px;
+        }
+        .assignments-section h2 {
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .assignment-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 16px;
+        }
+        .assignment-card {
+            background: rgba(255,255,255,0.15);
+            border-radius: 12px;
+            padding: 16px;
+        }
+        .assignment-label {
+            font-weight: 600;
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .assignment-select {
+            width: 100%;
+            padding: 12px;
+            border-radius: 8px;
+            border: 1px solid rgba(255,255,255,0.3);
+            background: rgba(255,255,255,0.1);
+            color: white;
+            font-size: 0.95rem;
+            cursor: pointer;
+        }
+        .assignment-select option { background: #2d3561; color: white; }
+        .assignment-status {
+            margin-top: 8px;
+            font-size: 0.85rem;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .assignment-status.active { color: #fff; }
+        .assignment-status.inactive { color: rgba(255,255,255,0.6); }
+        
+        /* Empty State */
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: rgba(255,255,255,0.5);
+        }
+        .empty-state-icon { font-size: 4rem; margin-bottom: 16px; }
+        .empty-state h3 { font-size: 1.3rem; margin-bottom: 8px; color: rgba(255,255,255,0.7); }
+        
+        /* Modal */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.8);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+        .modal-overlay.active { display: flex; }
+        .modal-content {
+            background: #2d3561;
+            border-radius: 16px;
+            max-width: 900px;
+            width: 90%;
+            max-height: 90vh;
+            overflow: auto;
+        }
+        .modal-header {
+            padding: 20px 24px;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .modal-header h3 { font-size: 1.2rem; }
+        .modal-close {
+            background: none;
+            border: none;
+            color: white;
+            font-size: 1.5rem;
+            cursor: pointer;
+            opacity: 0.7;
+        }
+        .modal-close:hover { opacity: 1; }
+        .modal-body { padding: 24px; }
+        .preview-container {
+            aspect-ratio: 16/9;
+            background: #000;
+            border-radius: 12px;
+            overflow: hidden;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .preview-container video,
+        .preview-container img {
+            max-width: 100%;
+            max-height: 100%;
+            object-fit: contain;
+        }
+        .preview-details {
+            margin-top: 20px;
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 16px;
+        }
+        .preview-detail {
+            background: rgba(255,255,255,0.05);
+            padding: 12px;
+            border-radius: 8px;
+        }
+        .preview-detail-label {
+            font-size: 0.8rem;
+            color: rgba(255,255,255,0.5);
+            margin-bottom: 4px;
+        }
+        .preview-detail-value { font-weight: 600; }
+        
+        /* Toast */
+        .toast-container {
+            position: fixed;
+            top: 24px;
+            right: 24px;
+            z-index: 2000;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        .toast {
+            background: #2d3561;
+            padding: 16px 24px;
+            border-radius: 12px;
+            box-shadow: 0 8px 30px rgba(0,0,0,0.3);
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            animation: slideIn 0.3s ease;
+            border-left: 4px solid;
+        }
+        .toast.success { border-color: #2ed573; }
+        .toast.error { border-color: #ef5350; }
+        .toast.info { border-color: #4facfe; }
+        @keyframes slideIn {
+            from { transform: translateX(100%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+        
+        /* Responsive */
+        @media (max-width: 768px) {
+            .admin-header { flex-direction: column; gap: 12px; }
+            .header-left { flex-direction: column; text-align: center; }
+            .page-title { border-left: none; padding-left: 0; padding-top: 8px; border-top: 1px solid rgba(255,255,255,0.2); }
+            .upload-header { flex-direction: column; gap: 12px; }
+            .library-header { flex-direction: column; align-items: flex-start; }
+            .media-grid { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); }
+        }
+    </style>
+</head>
+<body>
+    <!-- Header -->
+    <header class="admin-header">
+        <div class="header-left">
+            <a href="/admin.html" class="logo">
+                <div class="logo-icon">🛡️</div>
+                <span class="logo-text">PHINS</span>
+            </a>
+            <span class="page-title">📁 Media Management Dashboard</span>
+        </div>
+        <div class="header-right">
+            <a href="/admin.html" class="btn btn-secondary">← Back to Admin</a>
+            <button onclick="saveAllAssignments()" class="btn btn-primary">💾 Save Changes</button>
+        </div>
+    </header>
+    
+    <!-- Main Container -->
+    <div class="main-container">
+        <!-- Stats Bar -->
+        <div class="stats-bar">
+            <div class="stat-card videos">
+                <div class="stat-value" id="stat-videos">0</div>
+                <div class="stat-label">🎬 Videos</div>
+            </div>
+            <div class="stat-card images">
+                <div class="stat-value" id="stat-images">0</div>
+                <div class="stat-label">🖼️ Images</div>
+            </div>
+            <div class="stat-card documents">
+                <div class="stat-value" id="stat-documents">0</div>
+                <div class="stat-label">📄 Documents</div>
+            </div>
+            <div class="stat-card storage">
+                <div class="stat-value" id="stat-storage">0 MB</div>
+                <div class="stat-label">💾 Total Storage Used</div>
+            </div>
+        </div>
+        
+        <!-- Upload Section -->
+        <section class="upload-section">
+            <div class="upload-header">
+                <h2>📤 Upload Media</h2>
+                <div class="upload-tabs">
+                    <button class="upload-tab active" onclick="switchUploadTab('file')">📁 Upload File</button>
+                    <button class="upload-tab" onclick="switchUploadTab('url')">🔗 From URL</button>
+                </div>
+            </div>
+            
+            <!-- File Upload -->
+            <div id="file-upload-zone" class="drop-zone" onclick="document.getElementById('file-input').click()">
+                <div class="drop-zone-icon">📁</div>
+                <div class="drop-zone-text">Drag & drop files here or click to browse</div>
+                <div class="drop-zone-hint">Maximum file size: 100MB</div>
+                <div class="drop-zone-formats">
+                    Supported: MP4, MOV, AVI, WebM • JPG, PNG, GIF, WebP • PDF, DOC, DOCX
+                </div>
+            </div>
+            <input type="file" id="file-input" style="display: none" multiple 
+                   accept="video/*,image/*,.pdf,.doc,.docx" onchange="handleFileSelect(event)">
+            
+            <!-- URL Input -->
+            <div id="url-upload-zone" class="url-input-section">
+                <div class="url-input-group">
+                    <input type="text" id="url-input" class="url-input" 
+                           placeholder="Enter URL (YouTube, Vimeo, direct file link, or image URL)">
+                    <button onclick="addFromUrl()" class="btn btn-primary">➕ Add</button>
+                </div>
+            </div>
+            
+            <!-- Upload Progress -->
+            <div id="upload-progress" class="upload-progress">
+                <div class="progress-file">
+                    <div class="progress-file-icon" id="progress-icon">📁</div>
+                    <div class="progress-file-info">
+                        <div class="progress-file-name" id="progress-filename">filename.mp4</div>
+                        <div class="progress-file-size" id="progress-filesize">52 MB</div>
+                    </div>
+                </div>
+                <div class="progress-bar-container">
+                    <div class="progress-bar" id="progress-bar"></div>
+                </div>
+                <div class="progress-text" id="progress-text">Uploading... 0%</div>
+            </div>
+        </section>
+        
+        <!-- Media Library -->
+        <section class="library-section">
+            <div class="library-header">
+                <h2>📚 Media Library</h2>
+                <div class="library-filters">
+                    <button class="filter-btn active" onclick="filterMedia('all')">All</button>
+                    <button class="filter-btn" onclick="filterMedia('video')">🎬 Videos</button>
+                    <button class="filter-btn" onclick="filterMedia('image')">🖼️ Images</button>
+                    <button class="filter-btn" onclick="filterMedia('document')">📄 Documents</button>
+                </div>
+            </div>
+            
+            <div class="media-grid" id="media-grid">
+                <!-- Media cards will be inserted here -->
+            </div>
+            
+            <div class="empty-state" id="empty-state" style="display: none;">
+                <div class="empty-state-icon">📭</div>
+                <h3>No media files yet</h3>
+                <p>Upload files or add from URL to get started</p>
+            </div>
+        </section>
+        
+        <!-- Landing Page Assignments -->
+        <section class="assignments-section">
+            <h2>🎯 Landing Page Assignments</h2>
+            <div class="assignment-grid">
+                <div class="assignment-card">
+                    <div class="assignment-label">🎬 Hero Video</div>
+                    <select id="assign-hero-video" class="assignment-select" onchange="updateAssignment('hero_video')">
+                        <option value="">-- No Video --</option>
+                    </select>
+                    <div class="assignment-status" id="status-hero-video">
+                        <span>⚪</span> Not configured
+                    </div>
+                </div>
+                <div class="assignment-card">
+                    <div class="assignment-label">🖼️ Hero Background</div>
+                    <select id="assign-hero-background" class="assignment-select" onchange="updateAssignment('hero_background')">
+                        <option value="">-- No Image --</option>
+                    </select>
+                    <div class="assignment-status" id="status-hero-background">
+                        <span>⚪</span> Not configured
+                    </div>
+                </div>
+                <div class="assignment-card">
+                    <div class="assignment-label">📸 Video Thumbnail</div>
+                    <select id="assign-video-poster" class="assignment-select" onchange="updateAssignment('video_poster')">
+                        <option value="">-- Auto Generate --</option>
+                    </select>
+                    <div class="assignment-status" id="status-video-poster">
+                        <span>⚪</span> Not configured
+                    </div>
+                </div>
+                <div class="assignment-card">
+                    <div class="assignment-label">🏷️ Promo Banner</div>
+                    <select id="assign-promo-banner" class="assignment-select" onchange="updateAssignment('promo_banner')">
+                        <option value="">-- No Banner --</option>
+                    </select>
+                    <div class="assignment-status" id="status-promo-banner">
+                        <span>⚪</span> Not configured
+                    </div>
+                </div>
+            </div>
+            <div style="margin-top: 20px; display: flex; gap: 12px; flex-wrap: wrap;">
+                <button onclick="saveAllAssignments()" class="btn btn-primary">💾 Save Assignments</button>
+                <a href="/" target="_blank" class="btn btn-secondary">👁️ Preview Landing Page</a>
+            </div>
+        </section>
+    </div>
+    
+    <!-- Preview Modal -->
+    <div class="modal-overlay" id="preview-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="preview-title">Media Preview</h3>
+                <button class="modal-close" onclick="closePreviewModal()">×</button>
+            </div>
+            <div class="modal-body">
+                <div class="preview-container" id="preview-container">
+                    <!-- Preview content -->
+                </div>
+                <div class="preview-details" id="preview-details">
+                    <!-- Details will be inserted here -->
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Toast Container -->
+    <div class="toast-container" id="toast-container"></div>
+    
+    <script>
+        // ==================== STATE ====================
+        let mediaAssets = [];
+        let currentFilter = 'all';
+        let assignments = {
+            hero_video: '',
+            hero_background: '',
+            video_poster: '',
+            promo_banner: ''
+        };
+        const token = localStorage.getItem('token');
+        
+        // ==================== INITIALIZATION ====================
+        document.addEventListener('DOMContentLoaded', () => {
+            if (!token) {
+                window.location.href = '/login.html';
+                return;
+            }
+            loadMediaAssets();
+            loadAssignments();
+            setupDragAndDrop();
+        });
+        
+        // ==================== API FUNCTIONS ====================
+        async function loadMediaAssets() {
+            try {
+                const response = await fetch('/api/media', {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                if (response.ok) {
+                    const data = await response.json();
+                    mediaAssets = Array.isArray(data) ? data : (data.assets || []);
+                    renderMediaGrid();
+                    updateStats();
+                    populateAssignmentSelects();
+                }
+            } catch (e) {
+                console.error('Error loading media:', e);
+                showToast('Error loading media library', 'error');
+            }
+        }
+        
+        async function loadAssignments() {
+            try {
+                const response = await fetch('/api/design/settings', {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                if (response.ok) {
+                    const settings = await response.json();
+                    assignments.hero_video = settings.hero_video_id || settings.video_url || '';
+                    assignments.hero_background = settings.hero_background_id || '';
+                    assignments.video_poster = settings.video_poster_id || settings.video_poster || '';
+                    assignments.promo_banner = settings.promo_banner_id || '';
+                    updateAssignmentUI();
+                }
+            } catch (e) {
+                console.warn('Could not load assignments:', e);
+            }
+        }
+        
+        async function saveAllAssignments() {
+            try {
+                const response = await fetch('/api/design/settings', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        hero_video_id: assignments.hero_video,
+                        hero_background_id: assignments.hero_background,
+                        video_poster_id: assignments.video_poster,
+                        promo_banner_id: assignments.promo_banner,
+                        // Also save the URLs for backward compatibility
+                        video_url: getMediaUrl(assignments.hero_video),
+                        video_poster: getMediaUrl(assignments.video_poster)
+                    })
+                });
+                
+                if (response.ok) {
+                    showToast('✅ Assignments saved successfully!', 'success');
+                    updateAssignmentUI();
+                } else {
+                    showToast('Failed to save assignments', 'error');
+                }
+            } catch (e) {
+                showToast('Error: ' + e.message, 'error');
+            }
+        }
+        
+        async function uploadFile(file) {
+            const progressSection = document.getElementById('upload-progress');
+            const progressBar = document.getElementById('progress-bar');
+            const progressText = document.getElementById('progress-text');
+            const progressFilename = document.getElementById('progress-filename');
+            const progressFilesize = document.getElementById('progress-filesize');
+            const progressIcon = document.getElementById('progress-icon');
+            
+            // Show progress
+            progressSection.classList.add('active');
+            progressFilename.textContent = file.name;
+            progressFilesize.textContent = formatFileSize(file.size);
+            progressIcon.textContent = getFileTypeIcon(file.type);
+            progressBar.style.width = '0%';
+            progressText.textContent = 'Preparing upload...';
+            
+            try {
+                // For now, use base64 encoding for smaller files
+                // For large files (>5MB), we'll simulate cloud upload
+                if (file.size > 5 * 1024 * 1024) {
+                    // Simulate chunked upload for large files
+                    await simulateChunkedUpload(file, (progress) => {
+                        progressBar.style.width = progress + '%';
+                        progressText.textContent = `Uploading... ${progress}%`;
+                    });
+                }
+                
+                // Convert to base64 for storage (for demo - in production use cloud storage)
+                const base64 = await fileToBase64(file);
+                
+                // Determine media type
+                let mediaType = 'document';
+                if (file.type.startsWith('video/')) mediaType = 'video';
+                else if (file.type.startsWith('image/')) mediaType = 'image';
+                
+                // Upload to server
+                progressText.textContent = 'Saving to library...';
+                progressBar.style.width = '90%';
+                
+                const response = await fetch('/api/media', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        name: file.name,
+                        type: mediaType,
+                        format: file.type,
+                        size: file.size,
+                        data: base64,
+                        source: 'upload'
+                    })
+                });
+                
+                if (response.ok) {
+                    progressBar.style.width = '100%';
+                    progressText.textContent = '✅ Upload complete!';
+                    showToast(`✅ ${file.name} uploaded successfully!`, 'success');
+                    
+                    setTimeout(() => {
+                        progressSection.classList.remove('active');
+                        loadMediaAssets();
+                    }, 1500);
+                } else {
+                    throw new Error('Upload failed');
+                }
+            } catch (e) {
+                progressText.textContent = '❌ Upload failed: ' + e.message;
+                showToast('Upload failed: ' + e.message, 'error');
+                setTimeout(() => progressSection.classList.remove('active'), 3000);
+            }
+        }
+        
+        async function addFromUrl() {
+            const urlInput = document.getElementById('url-input');
+            const url = urlInput.value.trim();
+            
+            if (!url) {
+                showToast('Please enter a URL', 'error');
+                return;
+            }
+            
+            try {
+                // Determine type from URL
+                let mediaType = 'video';
+                let name = url.split('/').pop() || 'media';
+                
+                if (url.includes('youtube.com') || url.includes('youtu.be')) {
+                    mediaType = 'video';
+                    name = 'YouTube Video';
+                } else if (url.includes('vimeo.com')) {
+                    mediaType = 'video';
+                    name = 'Vimeo Video';
+                } else if (/\.(jpg|jpeg|png|gif|webp)$/i.test(url)) {
+                    mediaType = 'image';
+                } else if (/\.(pdf|doc|docx)$/i.test(url)) {
+                    mediaType = 'document';
+                }
+                
+                const response = await fetch('/api/media', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        name: name,
+                        type: mediaType,
+                        url: url,
+                        source: 'url'
+                    })
+                });
+                
+                if (response.ok) {
+                    showToast('✅ Media added from URL!', 'success');
+                    urlInput.value = '';
+                    loadMediaAssets();
+                } else {
+                    throw new Error('Failed to add media');
+                }
+            } catch (e) {
+                showToast('Error: ' + e.message, 'error');
+            }
+        }
+        
+        async function deleteMedia(id) {
+            if (!confirm('Delete this media file? This cannot be undone.')) return;
+            
+            try {
+                const response = await fetch(`/api/media/${id}`, {
+                    method: 'DELETE',
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                
+                if (response.ok) {
+                    showToast('Media deleted', 'success');
+                    loadMediaAssets();
+                } else {
+                    throw new Error('Delete failed');
+                }
+            } catch (e) {
+                showToast('Error: ' + e.message, 'error');
+            }
+        }
+        
+        // ==================== UI FUNCTIONS ====================
+        function renderMediaGrid() {
+            const grid = document.getElementById('media-grid');
+            const emptyState = document.getElementById('empty-state');
+            
+            let filtered = mediaAssets;
+            if (currentFilter !== 'all') {
+                filtered = mediaAssets.filter(m => m.type === currentFilter);
+            }
+            
+            if (filtered.length === 0) {
+                grid.innerHTML = '';
+                emptyState.style.display = 'block';
+                return;
+            }
+            
+            emptyState.style.display = 'none';
+            grid.innerHTML = filtered.map(media => `
+                <div class="media-card" data-id="${media.id}">
+                    <div class="media-thumbnail">
+                        ${renderThumbnail(media)}
+                        <span class="media-type-badge ${media.type}">${media.type}</span>
+                        ${media.duration ? `<span class="media-duration">${formatDuration(media.duration)}</span>` : ''}
+                    </div>
+                    <div class="media-info">
+                        <div class="media-name" title="${media.name}">${media.name}</div>
+                        <div class="media-meta">
+                            <span>${formatFileSize(media.size || 0)}</span>
+                            <span>${formatDate(media.uploaded_at)}</span>
+                        </div>
+                    </div>
+                    <div class="media-actions">
+                        <button class="media-action-btn use" onclick="useMedia('${media.id}')">Use</button>
+                        <button class="media-action-btn preview" onclick="previewMedia('${media.id}')">👁️</button>
+                        <button class="media-action-btn delete" onclick="deleteMedia('${media.id}')">🗑️</button>
+                    </div>
+                </div>
+            `).join('');
+        }
+        
+        function renderThumbnail(media) {
+            if (media.thumbnail) {
+                return `<img src="${media.thumbnail}" alt="${media.name}">`;
+            }
+            if (media.type === 'image' && media.url) {
+                return `<img src="${media.url}" alt="${media.name}">`;
+            }
+            if (media.type === 'image' && media.data) {
+                return `<img src="${media.data}" alt="${media.name}">`;
+            }
+            const icons = { video: '🎬', image: '🖼️', document: '📄' };
+            return `<div class="media-thumbnail-icon">${icons[media.type] || '📁'}</div>`;
+        }
+        
+        function updateStats() {
+            const videos = mediaAssets.filter(m => m.type === 'video').length;
+            const images = mediaAssets.filter(m => m.type === 'image').length;
+            const documents = mediaAssets.filter(m => m.type === 'document').length;
+            const totalSize = mediaAssets.reduce((sum, m) => sum + (m.size || 0), 0);
+            
+            document.getElementById('stat-videos').textContent = videos;
+            document.getElementById('stat-images').textContent = images;
+            document.getElementById('stat-documents').textContent = documents;
+            document.getElementById('stat-storage').textContent = formatFileSize(totalSize);
+        }
+        
+        function populateAssignmentSelects() {
+            const videoSelect = document.getElementById('assign-hero-video');
+            const bgSelect = document.getElementById('assign-hero-background');
+            const posterSelect = document.getElementById('assign-video-poster');
+            const bannerSelect = document.getElementById('assign-promo-banner');
+            
+            // Videos
+            const videos = mediaAssets.filter(m => m.type === 'video');
+            videoSelect.innerHTML = '<option value="">-- No Video --</option>' +
+                videos.map(v => `<option value="${v.id}">${v.name}</option>`).join('');
+            
+            // Images
+            const images = mediaAssets.filter(m => m.type === 'image');
+            const imageOptions = '<option value="">-- None --</option>' +
+                images.map(i => `<option value="${i.id}">${i.name}</option>`).join('');
+            bgSelect.innerHTML = imageOptions.replace('-- None --', '-- No Image --');
+            posterSelect.innerHTML = '<option value="">-- Auto Generate --</option>' +
+                images.map(i => `<option value="${i.id}">${i.name}</option>`).join('');
+            bannerSelect.innerHTML = imageOptions.replace('-- None --', '-- No Banner --');
+            
+            // Set current values
+            videoSelect.value = assignments.hero_video;
+            bgSelect.value = assignments.hero_background;
+            posterSelect.value = assignments.video_poster;
+            bannerSelect.value = assignments.promo_banner;
+        }
+        
+        function updateAssignment(type) {
+            const select = document.getElementById(`assign-${type.replace('_', '-')}`);
+            assignments[type] = select.value;
+            updateAssignmentUI();
+        }
+        
+        function updateAssignmentUI() {
+            ['hero_video', 'hero_background', 'video_poster', 'promo_banner'].forEach(key => {
+                const statusEl = document.getElementById(`status-${key.replace('_', '-')}`);
+                const value = assignments[key];
+                if (value) {
+                    const media = mediaAssets.find(m => m.id === value);
+                    statusEl.innerHTML = `<span>✅</span> ${media ? media.name : 'Configured'}`;
+                    statusEl.className = 'assignment-status active';
+                } else {
+                    statusEl.innerHTML = '<span>⚪</span> Not configured';
+                    statusEl.className = 'assignment-status inactive';
+                }
+            });
+        }
+        
+        function getMediaUrl(id) {
+            if (!id) return '';
+            const media = mediaAssets.find(m => m.id === id);
+            return media ? (media.url || media.data || '') : '';
+        }
+        
+        function useMedia(id) {
+            const media = mediaAssets.find(m => m.id === id);
+            if (!media) return;
+            
+            if (media.type === 'video') {
+                document.getElementById('assign-hero-video').value = id;
+                assignments.hero_video = id;
+            } else if (media.type === 'image') {
+                document.getElementById('assign-hero-background').value = id;
+                assignments.hero_background = id;
+            }
+            
+            updateAssignmentUI();
+            showToast(`${media.name} selected for landing page`, 'success');
+        }
+        
+        function previewMedia(id) {
+            const media = mediaAssets.find(m => m.id === id);
+            if (!media) return;
+            
+            const modal = document.getElementById('preview-modal');
+            const container = document.getElementById('preview-container');
+            const title = document.getElementById('preview-title');
+            const details = document.getElementById('preview-details');
+            
+            title.textContent = media.name;
+            
+            // Render preview
+            if (media.type === 'video') {
+                const url = media.url || media.data;
+                if (url.includes('youtube.com') || url.includes('youtu.be')) {
+                    let embedUrl = url.replace('watch?v=', 'embed/').replace('youtu.be/', 'youtube.com/embed/');
+                    container.innerHTML = `<iframe src="${embedUrl}" style="width:100%;height:100%;border:none;" allowfullscreen></iframe>`;
+                } else if (url.includes('vimeo.com')) {
+                    const vimeoId = url.split('/').pop();
+                    container.innerHTML = `<iframe src="https://player.vimeo.com/video/${vimeoId}" style="width:100%;height:100%;border:none;" allowfullscreen></iframe>`;
+                } else {
+                    container.innerHTML = `<video controls autoplay style="width:100%;height:100%;"><source src="${url}">Your browser does not support video.</video>`;
+                }
+            } else if (media.type === 'image') {
+                container.innerHTML = `<img src="${media.url || media.data}" alt="${media.name}">`;
+            } else {
+                container.innerHTML = `<div style="text-align:center;padding:40px;"><div style="font-size:4rem;">📄</div><p>${media.name}</p><a href="${media.url || media.data}" target="_blank" class="btn btn-primary" style="margin-top:20px;">Open Document</a></div>`;
+            }
+            
+            // Render details
+            details.innerHTML = `
+                <div class="preview-detail">
+                    <div class="preview-detail-label">Type</div>
+                    <div class="preview-detail-value">${media.type}</div>
+                </div>
+                <div class="preview-detail">
+                    <div class="preview-detail-label">Format</div>
+                    <div class="preview-detail-value">${media.format || 'Unknown'}</div>
+                </div>
+                <div class="preview-detail">
+                    <div class="preview-detail-label">Size</div>
+                    <div class="preview-detail-value">${formatFileSize(media.size || 0)}</div>
+                </div>
+                <div class="preview-detail">
+                    <div class="preview-detail-label">Uploaded</div>
+                    <div class="preview-detail-value">${formatDate(media.uploaded_at)}</div>
+                </div>
+                <div class="preview-detail">
+                    <div class="preview-detail-label">Source</div>
+                    <div class="preview-detail-value">${media.source || 'Unknown'}</div>
+                </div>
+                <div class="preview-detail">
+                    <div class="preview-detail-label">ID</div>
+                    <div class="preview-detail-value" style="font-size:0.8rem;">${media.id}</div>
+                </div>
+            `;
+            
+            modal.classList.add('active');
+        }
+        
+        function closePreviewModal() {
+            const modal = document.getElementById('preview-modal');
+            const container = document.getElementById('preview-container');
+            modal.classList.remove('active');
+            container.innerHTML = '';
+        }
+        
+        function filterMedia(type) {
+            currentFilter = type;
+            document.querySelectorAll('.filter-btn').forEach(btn => btn.classList.remove('active'));
+            event.target.classList.add('active');
+            renderMediaGrid();
+        }
+        
+        function switchUploadTab(tab) {
+            document.querySelectorAll('.upload-tab').forEach(t => t.classList.remove('active'));
+            event.target.classList.add('active');
+            
+            document.getElementById('file-upload-zone').style.display = tab === 'file' ? 'block' : 'none';
+            document.getElementById('url-upload-zone').classList.toggle('active', tab === 'url');
+        }
+        
+        // ==================== DRAG & DROP ====================
+        function setupDragAndDrop() {
+            const dropZone = document.getElementById('file-upload-zone');
+            
+            ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+                dropZone.addEventListener(eventName, preventDefaults);
+            });
+            
+            ['dragenter', 'dragover'].forEach(eventName => {
+                dropZone.addEventListener(eventName, () => dropZone.classList.add('dragover'));
+            });
+            
+            ['dragleave', 'drop'].forEach(eventName => {
+                dropZone.addEventListener(eventName, () => dropZone.classList.remove('dragover'));
+            });
+            
+            dropZone.addEventListener('drop', handleDrop);
+        }
+        
+        function preventDefaults(e) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+        
+        function handleDrop(e) {
+            const files = e.dataTransfer.files;
+            handleFiles(files);
+        }
+        
+        function handleFileSelect(e) {
+            const files = e.target.files;
+            handleFiles(files);
+        }
+        
+        function handleFiles(files) {
+            [...files].forEach(file => {
+                // Validate file size (100MB max)
+                if (file.size > 100 * 1024 * 1024) {
+                    showToast(`${file.name} is too large (max 100MB)`, 'error');
+                    return;
+                }
+                uploadFile(file);
+            });
+        }
+        
+        // ==================== UTILITIES ====================
+        function fileToBase64(file) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => resolve(reader.result);
+                reader.onerror = reject;
+                reader.readAsDataURL(file);
+            });
+        }
+        
+        async function simulateChunkedUpload(file, onProgress) {
+            const chunkSize = 1024 * 1024; // 1MB chunks
+            const totalChunks = Math.ceil(file.size / chunkSize);
+            
+            for (let i = 0; i < totalChunks; i++) {
+                await new Promise(resolve => setTimeout(resolve, 50));
+                const progress = Math.round(((i + 1) / totalChunks) * 85);
+                onProgress(progress);
+            }
+        }
+        
+        function formatFileSize(bytes) {
+            if (!bytes || bytes === 0) return '0 B';
+            const k = 1024;
+            const sizes = ['B', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+        }
+        
+        function formatDuration(seconds) {
+            if (!seconds) return '';
+            const m = Math.floor(seconds / 60);
+            const s = Math.floor(seconds % 60);
+            return `${m}:${s.toString().padStart(2, '0')}`;
+        }
+        
+        function formatDate(dateStr) {
+            if (!dateStr) return 'Unknown';
+            const date = new Date(dateStr);
+            return date.toLocaleDateString();
+        }
+        
+        function getFileTypeIcon(mimeType) {
+            if (mimeType.startsWith('video/')) return '🎬';
+            if (mimeType.startsWith('image/')) return '🖼️';
+            return '📄';
+        }
+        
+        function showToast(message, type = 'info') {
+            const container = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+            toast.className = `toast ${type}`;
+            toast.innerHTML = `<span>${message}</span>`;
+            container.appendChild(toast);
+            
+            setTimeout(() => {
+                toast.style.opacity = '0';
+                setTimeout(() => toast.remove(), 300);
+            }, 4000);
+        }
+        
+        // Close modal on escape
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') closePreviewModal();
+        });
+        
+        // Close modal on overlay click
+        document.getElementById('preview-modal').addEventListener('click', (e) => {
+            if (e.target.id === 'preview-modal') closePreviewModal();
+        });
+    </script>
+</body>
+</html>

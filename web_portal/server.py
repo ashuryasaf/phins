@@ -149,9 +149,18 @@ DESIGN_SETTINGS: Dict[str, Any] = {
     'show_quote_form': False,
     'show_products': False,
     'show_underwriting': False,
+    'hero_video_id': '',
+    'hero_background_id': '',
+    'video_poster_id': '',
+    'promo_banner_id': '',
     'updated_at': None,
     'updated_by': None
 }
+
+# Media Assets - centralized storage for videos, images, documents
+# Managed via Admin Media Dashboard (/admin-media.html)
+# Indexed by asset_id -> {id, name, type, format, size, url, data, thumbnail, source, uploaded_at, uploaded_by}
+MEDIA_ASSETS: Dict[str, Dict[str, Any]] = {}
 
 # ========== PHINS MAIN BALANCE SHEET (GENERAL RESERVES) ==========
 # Central company balance sheet for all financial operations
@@ -508,7 +517,7 @@ def save_ledger_data():
             
             data = {
                 'saved_at': datetime.now().isoformat(),
-                'version': '1.5',
+                'version': '1.6',
                 'health_wallets': HEALTH_WALLETS,
                 'medical_purchases': MEDICAL_PURCHASES,
                 'nft_ledger': NFT_LEDGER,
@@ -528,7 +537,10 @@ def save_ledger_data():
                 'claims': dict(CLAIMS),
                 'claim_files': CLAIM_FILES,
                 # v1.5 additions - Underwriting Files
-                'underwriting_files': UNDERWRITING_FILES
+                'underwriting_files': UNDERWRITING_FILES,
+                # v1.6 additions - Media Assets and Design Settings
+                'media_assets': MEDIA_ASSETS,
+                'design_settings': DESIGN_SETTINGS
             }
             
             # Write to temp file first, then rename for atomic operation
@@ -548,6 +560,7 @@ def load_ledger_data():
     """Load ledger data from persistent storage on startup"""
     global HEALTH_WALLETS, MEDICAL_PURCHASES, NFT_LEDGER, CUSTOMER_ALLOCATIONS, INVESTMENT_ACCOUNTS, TRANSACTION_LEDGER
     global BILLING, POLICIES, CUSTOMERS, UNDERWRITING_APPLICATIONS, PHINS_BALANCE_SHEET, CLAIMS, CLAIM_FILES, UNDERWRITING_FILES
+    global MEDIA_ASSETS, DESIGN_SETTINGS
     global _loaded_algo_balances, _loaded_trading_bots
     
     # Temporary storage for algo data until services are initialized
@@ -610,6 +623,17 @@ def load_ledger_data():
             if loaded_uw_files:
                 UNDERWRITING_FILES.update(loaded_uw_files)
                 print(f"  - Underwriting Files: {len(UNDERWRITING_FILES)} files loaded from persistence")
+        
+        # Load Media Assets and Design Settings (v1.6+)
+        if data.get('version', '1.0') >= '1.6':
+            loaded_media = data.get('media_assets', {})
+            loaded_design = data.get('design_settings', {})
+            if loaded_media:
+                MEDIA_ASSETS.update(loaded_media)
+                print(f"  - Media Assets: {len(MEDIA_ASSETS)} assets loaded from persistence")
+            if loaded_design:
+                DESIGN_SETTINGS.update(loaded_design)
+                print(f"  - Design Settings: Loaded (video: {'✓' if DESIGN_SETTINGS.get('hero_video_id') or DESIGN_SETTINGS.get('video_url') else '✗'})")
         
         print(f"[PERSISTENCE] Loaded ledger data from {LEDGER_PERSISTENCE_FILE}")
         print(f"  - Health Wallets: {len(HEALTH_WALLETS)}")
@@ -2620,14 +2644,64 @@ For claims or questions, please contact:
                 self.wfile.write(json.dumps(DESIGN_SETTINGS).encode('utf-8'))
             else:
                 # Public view - only return what's needed for landing page
+                # Include resolved URLs from media assets
+                hero_video_url = ''
+                video_poster_url = ''
+                hero_video_id = DESIGN_SETTINGS.get('hero_video_id', '')
+                video_poster_id = DESIGN_SETTINGS.get('video_poster_id', '')
+                
+                if hero_video_id and hero_video_id in MEDIA_ASSETS:
+                    media = MEDIA_ASSETS[hero_video_id]
+                    hero_video_url = media.get('url') or media.get('data', '')
+                elif DESIGN_SETTINGS.get('video_url'):
+                    hero_video_url = DESIGN_SETTINGS.get('video_url', '')
+                
+                if video_poster_id and video_poster_id in MEDIA_ASSETS:
+                    media = MEDIA_ASSETS[video_poster_id]
+                    video_poster_url = media.get('url') or media.get('data', '')
+                elif DESIGN_SETTINGS.get('video_poster'):
+                    video_poster_url = DESIGN_SETTINGS.get('video_poster', '')
+                
                 public_settings = {
-                    'video_url': DESIGN_SETTINGS.get('video_url', '') if DESIGN_SETTINGS.get('show_video', True) else '',
-                    'video_poster': DESIGN_SETTINGS.get('video_poster', '') if DESIGN_SETTINGS.get('show_video', True) else '',
+                    'video_url': hero_video_url if DESIGN_SETTINGS.get('show_video', True) else '',
+                    'video_poster': video_poster_url if DESIGN_SETTINGS.get('show_video', True) else '',
                     'tagline': DESIGN_SETTINGS.get('tagline', 'Comprehensive Protection for Your Future'),
                     'show_video': DESIGN_SETTINGS.get('show_video', True),
                     'show_contact': DESIGN_SETTINGS.get('show_contact', True)
                 }
                 self.wfile.write(json.dumps(public_settings).encode('utf-8'))
+            return
+        
+        # ========== MEDIA ASSETS API (Admin Media Dashboard) ==========
+        # GET /api/media - List all media assets
+        # GET /api/media/{id} - Get specific media asset
+        if path == '/api/media' or path.startswith('/api/media/'):
+            if not require_role(session, ['admin']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Admin access required'}).encode('utf-8'))
+                return
+            
+            # Check if requesting specific asset
+            if path.startswith('/api/media/') and len(path.split('/')) > 3:
+                asset_id = path.split('/')[3]
+                if asset_id in MEDIA_ASSETS:
+                    self._set_json_headers(200)
+                    self.wfile.write(json.dumps(MEDIA_ASSETS[asset_id]).encode('utf-8'))
+                else:
+                    self._set_json_headers(404)
+                    self.wfile.write(json.dumps({'error': 'Media asset not found'}).encode('utf-8'))
+                return
+            
+            # Return all media assets
+            assets_list = list(MEDIA_ASSETS.values())
+            # Sort by upload date (newest first)
+            assets_list.sort(key=lambda x: x.get('uploaded_at', ''), reverse=True)
+            
+            self._set_json_headers(200)
+            self.wfile.write(json.dumps({
+                'assets': assets_list,
+                'total': len(assets_list)
+            }).encode('utf-8'))
             return
         
         # Security monitoring endpoint (Admin only)
@@ -9660,12 +9734,16 @@ For claims or questions, please contact:
                 
                 # Update only provided fields
                 for key in ['video_url', 'video_poster', 'tagline', 'primary_color', 'accent_color',
-                           'show_video', 'show_contact', 'show_quote_form', 'show_products', 'show_underwriting']:
+                           'show_video', 'show_contact', 'show_quote_form', 'show_products', 'show_underwriting',
+                           'hero_video_id', 'hero_background_id', 'video_poster_id', 'promo_banner_id']:
                     if key in data:
                         DESIGN_SETTINGS[key] = data[key]
                 
                 DESIGN_SETTINGS['updated_at'] = datetime.now().isoformat()
                 DESIGN_SETTINGS['updated_by'] = session.get('username', 'admin')
+                
+                # Persist settings
+                save_ledger_data()
                 
                 self._set_json_headers(200)
                 self.wfile.write(json.dumps({
@@ -9674,6 +9752,65 @@ For claims or questions, please contact:
                     'settings': DESIGN_SETTINGS
                 }).encode('utf-8'))
                 return
+            except json.JSONDecodeError:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'Invalid JSON'}).encode('utf-8'))
+                return
+        
+        # ========== MEDIA ASSETS API - POST/DELETE ==========
+        # POST /api/media - Create new media asset
+        if path == '/api/media':
+            # Get auth token
+            auth_header = self.headers.get('Authorization', '')
+            token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+            session = validate_session(token) if token else None
+            
+            if not require_role(session, ['admin']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Admin access required'}).encode('utf-8'))
+                return
+            
+            # Parse request body
+            length = int(self.headers.get('Content-Length', 0))
+            body = self.rfile.read(length).decode('utf-8') if length else '{}'
+            
+            try:
+                data = json.loads(body)
+                
+                # Generate unique ID
+                import uuid
+                asset_id = f"media-{uuid.uuid4().hex[:12]}"
+                
+                # Create asset record
+                asset = {
+                    'id': asset_id,
+                    'name': data.get('name', 'Unnamed'),
+                    'type': data.get('type', 'document'),  # video, image, document
+                    'format': data.get('format', ''),
+                    'size': data.get('size', 0),
+                    'url': data.get('url', ''),
+                    'data': data.get('data', ''),  # base64 for uploaded files
+                    'thumbnail': data.get('thumbnail', ''),
+                    'duration': data.get('duration'),
+                    'source': data.get('source', 'upload'),  # upload, url
+                    'uploaded_at': datetime.now().isoformat(),
+                    'uploaded_by': session.get('username', 'admin')
+                }
+                
+                # Store asset
+                MEDIA_ASSETS[asset_id] = asset
+                
+                # Persist
+                save_ledger_data()
+                
+                self._set_json_headers(201)
+                self.wfile.write(json.dumps({
+                    'success': True,
+                    'message': 'Media asset created',
+                    'asset': asset
+                }).encode('utf-8'))
+                return
+                
             except json.JSONDecodeError:
                 self._set_json_headers(400)
                 self.wfile.write(json.dumps({'error': 'Invalid JSON'}).encode('utf-8'))
@@ -19918,6 +20055,55 @@ For claims or questions, please contact:
             'annual': base_premium,
             'currency': 'USD'
         }
+
+    def do_DELETE(self):
+        """Handle DELETE requests"""
+        parsed = urlparse(self.path)
+        path = parsed.path
+        
+        # Get auth token
+        auth_header = self.headers.get('Authorization', '')
+        token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+        session = validate_session(token) if token else None
+        
+        # ========== DELETE /api/media/{id} - Delete media asset ==========
+        if path.startswith('/api/media/'):
+            if not require_role(session, ['admin']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Admin access required'}).encode('utf-8'))
+                return
+            
+            # Extract asset ID
+            parts = path.split('/')
+            if len(parts) >= 4:
+                asset_id = parts[3]
+                
+                if asset_id in MEDIA_ASSETS:
+                    # Remove the asset
+                    deleted = MEDIA_ASSETS.pop(asset_id)
+                    
+                    # Clear any references in design settings
+                    for key in ['hero_video_id', 'hero_background_id', 'video_poster_id', 'promo_banner_id']:
+                        if DESIGN_SETTINGS.get(key) == asset_id:
+                            DESIGN_SETTINGS[key] = ''
+                    
+                    # Persist
+                    save_ledger_data()
+                    
+                    self._set_json_headers(200)
+                    self.wfile.write(json.dumps({
+                        'success': True,
+                        'message': f'Media asset {deleted.get("name", asset_id)} deleted',
+                        'id': asset_id
+                    }).encode('utf-8'))
+                else:
+                    self._set_json_headers(404)
+                    self.wfile.write(json.dumps({'error': 'Media asset not found'}).encode('utf-8'))
+                return
+        
+        # Default 404 for unhandled DELETE requests
+        self._set_json_headers(404)
+        self.wfile.write(json.dumps({'error': 'Not found'}).encode('utf-8'))
 
 
 def run_server(port: int = PORT) -> None:
