@@ -1,0 +1,15 @@
+MEDIA_ASSETS: Dict[str, Dict[str, Any]] = {}
+
+# ========== PHINS MAIN BALANCE SHEET (GENERAL RESERVES) ==========
+# Central company balance sheet for all financial operations
+# Accessible by: admin, accountant, underwriter, claims_adjuster
+PHINS_BALANCE_SHEET: Dict[str, Any] = {
+    'account_id': 'PHINS-MAIN-001',
+    'name': 'PHINS General Reserves',
+    'created_at': None,  # Set on first use
+    'last_updated': None,
+    
+--
+                'media_assets': MEDIA_ASSETS,
+                'design_settings': DESIGN_SETTINGS
+            }

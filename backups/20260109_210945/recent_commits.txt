@@ -1,0 +1,20 @@
+4daeaf3 Fix: Use correct localStorage key 'phins_token' instead of 'token'
+074937e Fix Media Dashboard token retrieval timing issue
+8327811 Fix: Update existing users' roles in database seed
+359a0ac Create restricted 'media' role for media_ad user
+15253d9 Fix Media Dashboard redirect loop - remove aggressive session pre-validation
+8c428ed Fix admin access to Media Dashboard
+1e9df5b Add media_ad admin account for Media Dashboard access
+08553f8 Add Media Dashboard links to admin navigation and quick actions
+9509d09 Add Admin Media Dashboard for managing videos, images, and documents
+cb14824 Fix toLowerCase error on non-string medical_conditions field
+1bf246d Enhance accumulative risk report with improved data integrity and downloads
+e376c28 Add accumulative risk analysis report to claims adjuster dashboard
+87c4141 Add underwriting document storage and fix application/issuance dates
+b91b0d6 Fix claims pipeline: persist claims, add file storage, fix status filtering
+92961b2 Add business plan files for direct download (temporary)
+edc7fb6 feat: Add PHINS business plan documents
+1155e6d Redesign landing page for security + add admin Design tab
+c1d0b9e feat: Redesign landing page for security and admin control
+64d5fdf Add AI Query Assistant to customer dashboard with voice support
+0e6602b Reorganize billing dashboard: payment processing first, optimize layout

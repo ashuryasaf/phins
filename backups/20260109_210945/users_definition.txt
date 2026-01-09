@@ -1,0 +1,51 @@
+    USERS: Dict[str, Dict[str, Any]] = {
+        'admin': {**hash_password('PDadmin123@'), 'role': 'admin', 'name': 'Admin User'},
+        'underwriter': {**hash_password('PDadmin123@'), 'role': 'underwriter', 'name': 'John Underwriter'},
+        'claims_adjuster': {**hash_password('PDadmin123@'), 'role': 'claims', 'name': 'Jane Claims'},
+        'accountant': {**hash_password('PDadmin123@'), 'role': 'accountant', 'name': 'Bob Accountant'},
+        'actuary': {**hash_password('PDadmin123@'), 'role': 'actuary', 'name': 'Actuary User'},
+        'supplier': {**hash_password('PDadmin123@'), 'role': 'supplier', 'name': 'Supplier User'},
+        'media_ad': {**hash_password('PDadmin123@'), 'role': 'media', 'name': 'Media Admin'},
+        # Permanent admin accounts - NEVER DELETE
+        'asaf@phins.ai': {**hash_password('PHINSadmin2024!'), 'role': 'admin', 'name': 'Asaf PHINS'},
+        'asaf@assurance.co.il': {**hash_password('Assurance2024!'), 'role': 'customer', 'name': 'Asaf Assurance', 'customer_id': 'CUST-ASAF-001'},
+        # Customer accounts
+        'efrat@phins.ai': {**hash_password('PHINScustomer2024!'), 'role': 'customer', 'name': 'Efrat PHINS', 'customer_id': 'CUST-EFRAT-001'},
+        'asi@phins.ai': {**hash_password('PHINScustomer2024!'), 'role': 'customer', 'name': 'Asi PHINS', 'customer_id': 'CUST-ASI-001'},
+        'shosh@phins.ai': {**hash_password('PHINScustomer2024!'), 'role': 'customer', 'name': 'Shosh PHINS', 'customer_id': 'CUST-SHOSH-001'}
+    }
+
+# ========== SUSPENDED TEST ACCOUNTS ==========
+# Test accounts that should NOT appear in admin dashboards, reports, or data aggregations
+# These accounts can still LOGIN but their data is hidden from platform displays
+# To reactivate: Remove customer_id from this set
+SUSPENDED_TEST_ACCOUNTS: set = {
+    'CUST-TEST-100',  # Sara Cohen - Test account
+    'CUST-TEST-101',  # Test account
+    'CUST-TEST-102',  # Test account
+}
+
+def is_suspended_account(customer_id: str) -> bool:
+    """Check if a customer_id is in the suspended test accounts list"""
+    if not customer_id:
+        return False
+    return customer_id in SUSPENDED_TEST_ACCOUNTS or customer_id.upper() in SUSPENDED_TEST_ACCOUNTS
+
+def filter_suspended_accounts(items: list, customer_id_field: str = 'customer_id') -> list:
+    """Filter out suspended test accounts from a list of items"""
+    return [item for item in items if not is_suspended_account(item.get(customer_id_field, ''))]
+
+
+def get_mock_statement(customer_id: str) -> Dict[str, Any]:
+    """Generate premium statement from actual policy data"""
+    # Get customer's active policies (case-insensitive)
+    customer_policies = [p for p in POLICIES.values() 
+                        if p.get('customer_id') == customer_id and status_eq(p, 'active')]
+    
+    # Calculate total monthly premium
+    total_premium = sum(p.get('monthly_premium', 0) for p in customer_policies)
+    
+    # Standard allocation: 75% risk, 25% savings
+    risk_pct = 0.75
+    savings_pct = 0.25
+    

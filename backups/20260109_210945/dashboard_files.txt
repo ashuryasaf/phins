@@ -1,0 +1,11 @@
+=== Dashboard Files ===
+-rw-r--r-- 1 ubuntu ubuntu 204240 Jan  8 00:56 web_portal/static/accountant-dashboard.html
+-rw-r--r-- 1 ubuntu ubuntu   9582 Jan  7 00:14 web_portal/static/actuary-dashboard.html
+-rw-r--r-- 1 ubuntu ubuntu 118753 Jan  9 14:55 web_portal/static/claims-adjuster-dashboard.html
+-rw-r--r-- 1 ubuntu ubuntu 322873 Jan  8 15:12 web_portal/static/dashboard.html
+-rw-r--r-- 1 ubuntu ubuntu   3995 Jan  7 00:13 web_portal/static/supplier-dashboard.html
+-rw-r--r-- 1 ubuntu ubuntu  51849 Jan  7 00:14 web_portal/static/underwriter-dashboard.html
+
+=== Portal Files ===
+-rw-r--r-- 1 ubuntu ubuntu 637 Jan  7 00:13 web_portal/static/admin-portal.html
+-rw-r--r-- 1 ubuntu ubuntu 655 Jan  7 00:13 web_portal/static/client-portal.html
