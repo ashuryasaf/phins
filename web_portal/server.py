@@ -2238,21 +2238,22 @@ def validate_amount(amount: Any) -> bool:
         return False
 
 # Fallback in-memory users (always available for admin access)
+# PRODUCTION PASSWORDS - Updated 2026-01-10
 _FALLBACK_USERS: Dict[str, Dict[str, Any]] = {
-    'admin': {**hash_password('PDadmin123@'), 'role': 'admin', 'name': 'Admin User'},
-    'underwriter': {**hash_password('PDadmin123@'), 'role': 'underwriter', 'name': 'John Underwriter'},
-    'claims_adjuster': {**hash_password('PDadmin123@'), 'role': 'claims', 'name': 'Jane Claims'},
-    'accountant': {**hash_password('PDadmin123@'), 'role': 'accountant', 'name': 'Bob Accountant'},
-    'actuary': {**hash_password('PDadmin123@'), 'role': 'actuary', 'name': 'Actuary User'},
-    'supplier': {**hash_password('PDadmin123@'), 'role': 'supplier', 'name': 'Supplier User'},
-    'media_ad': {**hash_password('PDadmin123@'), 'role': 'media', 'name': 'Media Admin'},
+    'admin': {**hash_password('PDa11wrt129@'), 'role': 'admin', 'name': 'Admin User'},
+    'underwriter': {**hash_password('PDu12ndr128!'), 'role': 'underwriter', 'name': 'John Underwriter'},
+    'claims_adjuster': {**hash_password('Dcl13dj11py@'), 'role': 'claims', 'name': 'Jane Claims'},
+    'accountant': {**hash_password('Dac14tnt72t!'), 'role': 'accountant', 'name': 'Bob Accountant'},
+    'actuary': {**hash_password('Pac7tre77st@'), 'role': 'actuary', 'name': 'Actuary User'},
+    'supplier': {**hash_password('PDa11wrt129@'), 'role': 'supplier', 'name': 'Supplier User'},
+    'media_ad': {**hash_password('Dmd55ad23!'), 'role': 'media', 'name': 'Media Admin'},
     # Permanent admin accounts - NEVER DELETE
-    'asaf@phins.ai': {**hash_password('PHINSadmin2024!'), 'role': 'admin', 'name': 'Asaf PHINS'},
-    'asaf@assurance.co.il': {**hash_password('Assurance2024!'), 'role': 'customer', 'name': 'Asaf Assurance', 'customer_id': 'CUST-ASAF-001'},
+    'asaf@phins.ai': {**hash_password('PHcre11sf78@'), 'role': 'admin', 'name': 'Asaf PHINS'},
+    'asaf@assurance.co.il': {**hash_password('Afs8a71hu11!'), 'role': 'customer', 'name': 'Asaf Assurance', 'customer_id': 'CUST-ASAF-001'},
     # Customer accounts
-    'efrat@phins.ai': {**hash_password('PHINScustomer2024!'), 'role': 'customer', 'name': 'Efrat PHINS', 'customer_id': 'CUST-EFRAT-001'},
-    'asi@phins.ai': {**hash_password('PHINScustomer2024!'), 'role': 'customer', 'name': 'Asi PHINS', 'customer_id': 'CUST-ASI-001'},
-    'shosh@phins.ai': {**hash_password('PHINScustomer2024!'), 'role': 'customer', 'name': 'Shosh PHINS', 'customer_id': 'CUST-SHOSH-001'}
+    'efrat@phins.ai': {**hash_password('INS3fmls212@'), 'role': 'customer', 'name': 'Efrat PHINS', 'customer_id': 'CUST-EFRAT-001'},
+    'asi@phins.ai': {**hash_password('HIS43cus21me!'), 'role': 'customer', 'name': 'Asi PHINS', 'customer_id': 'CUST-ASI-001'},
+    'shosh@phins.ai': {**hash_password('Sma52ma11mi@'), 'role': 'customer', 'name': 'Shosh PHINS', 'customer_id': 'CUST-SHOSH-001'}
 }
 
 # Store hashed passwords
@@ -2341,21 +2342,22 @@ if USE_DATABASE and database_enabled:
     
     USERS = UserDictWrapper()
 else:
+    # PRODUCTION PASSWORDS - Updated 2026-01-10
     USERS: Dict[str, Dict[str, Any]] = {
-        'admin': {**hash_password('PDadmin123@'), 'role': 'admin', 'name': 'Admin User'},
-        'underwriter': {**hash_password('PDadmin123@'), 'role': 'underwriter', 'name': 'John Underwriter'},
-        'claims_adjuster': {**hash_password('PDadmin123@'), 'role': 'claims', 'name': 'Jane Claims'},
-        'accountant': {**hash_password('PDadmin123@'), 'role': 'accountant', 'name': 'Bob Accountant'},
-        'actuary': {**hash_password('PDadmin123@'), 'role': 'actuary', 'name': 'Actuary User'},
-        'supplier': {**hash_password('PDadmin123@'), 'role': 'supplier', 'name': 'Supplier User'},
-        'media_ad': {**hash_password('PDadmin123@'), 'role': 'media', 'name': 'Media Admin'},
+        'admin': {**hash_password('PDa11wrt129@'), 'role': 'admin', 'name': 'Admin User'},
+        'underwriter': {**hash_password('PDu12ndr128!'), 'role': 'underwriter', 'name': 'John Underwriter'},
+        'claims_adjuster': {**hash_password('Dcl13dj11py@'), 'role': 'claims', 'name': 'Jane Claims'},
+        'accountant': {**hash_password('Dac14tnt72t!'), 'role': 'accountant', 'name': 'Bob Accountant'},
+        'actuary': {**hash_password('Pac7tre77st@'), 'role': 'actuary', 'name': 'Actuary User'},
+        'supplier': {**hash_password('PDa11wrt129@'), 'role': 'supplier', 'name': 'Supplier User'},
+        'media_ad': {**hash_password('Dmd55ad23!'), 'role': 'media', 'name': 'Media Admin'},
         # Permanent admin accounts - NEVER DELETE
-        'asaf@phins.ai': {**hash_password('PHINSadmin2024!'), 'role': 'admin', 'name': 'Asaf PHINS'},
-        'asaf@assurance.co.il': {**hash_password('Assurance2024!'), 'role': 'customer', 'name': 'Asaf Assurance', 'customer_id': 'CUST-ASAF-001'},
+        'asaf@phins.ai': {**hash_password('PHcre11sf78@'), 'role': 'admin', 'name': 'Asaf PHINS'},
+        'asaf@assurance.co.il': {**hash_password('Afs8a71hu11!'), 'role': 'customer', 'name': 'Asaf Assurance', 'customer_id': 'CUST-ASAF-001'},
         # Customer accounts
-        'efrat@phins.ai': {**hash_password('PHINScustomer2024!'), 'role': 'customer', 'name': 'Efrat PHINS', 'customer_id': 'CUST-EFRAT-001'},
-        'asi@phins.ai': {**hash_password('PHINScustomer2024!'), 'role': 'customer', 'name': 'Asi PHINS', 'customer_id': 'CUST-ASI-001'},
-        'shosh@phins.ai': {**hash_password('PHINScustomer2024!'), 'role': 'customer', 'name': 'Shosh PHINS', 'customer_id': 'CUST-SHOSH-001'}
+        'efrat@phins.ai': {**hash_password('INS3fmls212@'), 'role': 'customer', 'name': 'Efrat PHINS', 'customer_id': 'CUST-EFRAT-001'},
+        'asi@phins.ai': {**hash_password('HIS43cus21me!'), 'role': 'customer', 'name': 'Asi PHINS', 'customer_id': 'CUST-ASI-001'},
+        'shosh@phins.ai': {**hash_password('Sma52ma11mi@'), 'role': 'customer', 'name': 'Shosh PHINS', 'customer_id': 'CUST-SHOSH-001'}
     }
 
 # ========== SUSPENDED TEST ACCOUNTS ==========

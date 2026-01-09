@@ -39,71 +39,69 @@ def seed_default_users(session=None):
     try:
         user_repo = UserRepository(session)
         
-        # Default users (password: PDadmin123@ for all system accounts)
+        # PRODUCTION PASSWORDS - Updated 2026-01-10
         default_users = [
             {
                 'username': 'admin',
-                'password': 'PDadmin123@',
+                'password': 'PDa11wrt129@',
                 'role': 'admin',
                 'name': 'Admin User',
                 'email': 'admin@phins.ai'
             },
             {
                 'username': 'actuary',
-                'password': 'PDadmin123@',
+                'password': 'Pac7tre77st@',
                 'role': 'actuary',
                 'name': 'Actuary User',
                 'email': 'actuary@phins.ai'
             },
             {
                 'username': 'supplier',
-                'password': 'PDadmin123@',
+                'password': 'PDa11wrt129@',
                 'role': 'supplier',
                 'name': 'Supplier User',
                 'email': 'supplier@phins.ai'
             },
             {
                 'username': 'underwriter',
-                'password': 'PDadmin123@',
+                'password': 'PDu12ndr128!',
                 'role': 'underwriter',
                 'name': 'John Underwriter',
                 'email': 'underwriter@phins.ai'
             },
             {
                 'username': 'claims_adjuster',
-                'password': 'PDadmin123@',
+                'password': 'Dcl13dj11py@',
                 'role': 'claims',
                 'name': 'Jane Claims',
                 'email': 'claims@phins.ai'
             },
             {
                 'username': 'accountant',
-                'password': 'PDadmin123@',
+                'password': 'Dac14tnt72t!',
                 'role': 'accountant',
                 'name': 'Bob Accountant',
                 'email': 'accountant@phins.ai'
             },
             {
                 'username': 'media_ad',
-                'password': 'PDadmin123@',
+                'password': 'Dmd55ad23!',
                 'role': 'media',
                 'name': 'Media Admin',
                 'email': 'media@phins.ai'
             },
             # Primary customer account (links to CUST-ASAF-001 in customers table)
-            # NOTE: Password must match the one in seed_sample_data for customers table
             {
                 'username': 'asaf@assurance.co.il',
-                'password': 'Assurance2024!',
+                'password': 'Afs8a71hu11!',
                 'role': 'customer',
                 'name': 'Asaf Assurance',
                 'email': 'asaf@assurance.co.il'
             },
             # Admin account for asaf@phins.ai - PERSISTENT ACCOUNT
-            # This account is always seeded and should never be deleted
             {
                 'username': 'asaf@phins.ai',
-                'password': 'PHINSadmin2024!',
+                'password': 'PHcre11sf78@',
                 'role': 'admin',
                 'name': 'Asaf PHINS',
                 'email': 'asaf@phins.ai'
@@ -111,7 +109,7 @@ def seed_default_users(session=None):
             # Customer account for efrat@phins.ai - PERSISTENT ACCOUNT
             {
                 'username': 'efrat@phins.ai',
-                'password': 'PHINScustomer2024!',
+                'password': 'INS3fmls212@',
                 'role': 'customer',
                 'name': 'Efrat PHINS',
                 'email': 'efrat@phins.ai'
@@ -119,7 +117,7 @@ def seed_default_users(session=None):
             # Customer account for asi@phins.ai - PERSISTENT ACCOUNT
             {
                 'username': 'asi@phins.ai',
-                'password': 'PHINScustomer2024!',
+                'password': 'HIS43cus21me!',
                 'role': 'customer',
                 'name': 'Asi PHINS',
                 'email': 'asi@phins.ai'
@@ -127,7 +125,7 @@ def seed_default_users(session=None):
             # Customer account for shosh@phins.ai - PERSISTENT ACCOUNT
             {
                 'username': 'shosh@phins.ai',
-                'password': 'PHINScustomer2024!',
+                'password': 'Sma52ma11mi@',
                 'role': 'customer',
                 'name': 'Shosh PHINS',
                 'email': 'shosh@phins.ai'
