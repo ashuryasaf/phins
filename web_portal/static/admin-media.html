@@ -766,49 +766,21 @@
         
         // ==================== INITIALIZATION ====================
         document.addEventListener('DOMContentLoaded', async () => {
+            console.log('Media Dashboard: Initializing...');
+            console.log('Token exists:', !!token);
+            
             if (!token) {
+                console.log('No token found, redirecting to login');
                 window.location.href = '/login.html';
                 return;
             }
             
-            // Validate session first
-            const isValid = await validateSession();
-            if (!isValid) {
-                showToast('Session expired. Please login again.', 'error');
-                setTimeout(() => {
-                    localStorage.removeItem('token');
-                    window.location.href = '/login.html';
-                }, 2000);
-                return;
-            }
-            
+            // Try to load media directly - the API will return 403 if not admin
+            // This is more reliable than pre-validating the session
             loadMediaAssets();
             loadAssignments();
             setupDragAndDrop();
         });
-        
-        // Validate session and check admin role
-        async function validateSession() {
-            try {
-                const response = await fetch('/api/session/validate', {
-                    headers: { 'Authorization': `Bearer ${token}` }
-                });
-                if (response.ok) {
-                    const data = await response.json();
-                    if (data.valid && data.role === 'admin') {
-                        return true;
-                    } else if (data.valid && data.role !== 'admin') {
-                        showToast('Access denied. Admin role required.', 'error');
-                        setTimeout(() => window.location.href = '/admin.html', 2000);
-                        return false;
-                    }
-                }
-                return false;
-            } catch (e) {
-                console.error('Session validation error:', e);
-                return false;
-            }
-        }
         
         // ==================== API FUNCTIONS ====================
         async function loadMediaAssets() {
