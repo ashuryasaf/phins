@@ -9990,8 +9990,7 @@ For claims or questions, please contact:
             try:
                 data = json.loads(body)
                 
-                # Generate unique ID
-                import uuid
+                # Generate unique ID (uuid is imported at module level)
                 asset_id = f"media-{uuid.uuid4().hex[:12]}"
                 
                 # Create asset record
@@ -10046,8 +10045,7 @@ For claims or questions, please contact:
             try:
                 data = json.loads(body)
                 
-                # Generate unique code
-                import secrets
+                # Generate unique code (secrets is imported at module level)
                 code = f"PHINS-2026-{secrets.token_hex(4).upper()}"
                 
                 # Calculate expiration (default 30 days)
