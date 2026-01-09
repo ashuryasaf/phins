@@ -2,6 +2,7 @@
 let currentStep = 1;
 const totalSteps = 5;
 let formData = {};
+let applicationFiles = [];  // Store uploaded files for submission
 
 // PHINS Contract allocation state
 let phinsAllocation = {
@@ -1146,10 +1147,19 @@ async function handleSubmit(e) {
     // Show loading state
     const submitBtn = document.getElementById('submit-btn');
     const originalText = submitBtn.textContent;
-    submitBtn.textContent = 'Submitting...';
+    submitBtn.textContent = 'Preparing files...';
     submitBtn.disabled = true;
     
     try {
+        // Prepare files for submission
+        const filesData = await prepareFilesForSubmission();
+        if (filesData.length > 0) {
+            submissionData.files = filesData;
+            submissionData.files_count = applicationFiles.length;
+        }
+        
+        submitBtn.textContent = 'Submitting...';
+        
         const response = await fetch('/api/policies/create', {
             method: 'POST',
             headers: {
@@ -1227,4 +1237,157 @@ function calculateRiskScore() {
     if (riskPoints <= 5) return 'medium';
     if (riskPoints <= 8) return 'high';
     return 'very_high';
+}
+
+// ========== FILE UPLOAD FUNCTIONS ==========
+
+function handleDragOver(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    const dropZone = document.getElementById('file-drop-zone');
+    if (dropZone) {
+        dropZone.style.borderColor = '#0d47a1';
+        dropZone.style.background = '#e3f2fd';
+    }
+}
+
+function handleDragLeave(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    const dropZone = document.getElementById('file-drop-zone');
+    if (dropZone) {
+        dropZone.style.borderColor = '#ccc';
+        dropZone.style.background = '#fafafa';
+    }
+}
+
+function handleFileDrop(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    handleDragLeave(e);
+    
+    const files = e.dataTransfer.files;
+    processApplicationFiles(files);
+}
+
+function handleApplicationFiles(e) {
+    const files = e.target.files;
+    processApplicationFiles(files);
+}
+
+function processApplicationFiles(files) {
+    const maxSize = 5 * 1024 * 1024; // 5MB
+    const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'application/pdf', 
+                          'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'];
+    
+    for (let file of files) {
+        // Validate file
+        if (!allowedTypes.some(type => file.type.startsWith(type.split('/')[0]) || file.type === type)) {
+            alert(`File "${file.name}" is not an accepted format.`);
+            continue;
+        }
+        if (file.size > maxSize) {
+            alert(`File "${file.name}" exceeds 5MB limit.`);
+            continue;
+        }
+        if (applicationFiles.length >= 10) {
+            alert('Maximum 10 files allowed.');
+            break;
+        }
+        
+        // Add to files array
+        applicationFiles.push(file);
+    }
+    
+    updateFilesDisplay();
+}
+
+function updateFilesDisplay() {
+    const container = document.getElementById('uploaded-files-list');
+    if (!container) return;
+    
+    if (applicationFiles.length === 0) {
+        container.innerHTML = '';
+        return;
+    }
+    
+    container.innerHTML = `
+        <div style="font-weight: 600; margin-bottom: 8px;">📎 ${applicationFiles.length} file(s) selected:</div>
+        ${applicationFiles.map((file, index) => `
+            <div style="display: flex; align-items: center; justify-content: space-between; padding: 10px; background: #f5f5f5; border-radius: 8px; margin-bottom: 8px;">
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <span style="font-size: 1.5rem;">${getFileIcon(file.type)}</span>
+                    <div>
+                        <div style="font-weight: 500;">${file.name}</div>
+                        <div style="font-size: 0.8rem; color: #666;">${formatFileSize(file.size)}</div>
+                    </div>
+                </div>
+                <button type="button" onclick="removeApplicationFile(${index})" style="background: #ff5252; color: white; border: none; padding: 4px 12px; border-radius: 4px; cursor: pointer; font-size: 0.85rem;">✕ Remove</button>
+            </div>
+        `).join('')}
+    `;
+}
+
+function removeApplicationFile(index) {
+    applicationFiles.splice(index, 1);
+    updateFilesDisplay();
+}
+
+function getFileIcon(mimeType) {
+    if (mimeType.startsWith('image/')) return '🖼️';
+    if (mimeType === 'application/pdf') return '📄';
+    if (mimeType.includes('word')) return '📝';
+    return '📎';
+}
+
+function formatFileSize(bytes) {
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+    return (bytes / (1024 * 1024)).toFixed(2) + ' MB';
+}
+
+async function fileToBase64(file) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.readAsDataURL(file);
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = error => reject(error);
+    });
+}
+
+async function prepareFilesForSubmission() {
+    const filesData = [];
+    for (let file of applicationFiles) {
+        try {
+            // Only include base64 for files under 2MB to avoid payload issues
+            if (file.size < 2 * 1024 * 1024) {
+                const base64 = await fileToBase64(file);
+                filesData.push({
+                    name: file.name,
+                    type: file.type,
+                    size: file.size,
+                    data: base64
+                });
+            } else {
+                // For larger files, just include metadata
+                filesData.push({
+                    name: file.name,
+                    type: file.type,
+                    size: file.size,
+                    data: null,
+                    note: 'File too large for inline upload'
+                });
+            }
+        } catch (e) {
+            console.warn('Error encoding file:', file.name, e);
+            filesData.push({
+                name: file.name,
+                type: file.type,
+                size: file.size,
+                data: null,
+                error: 'Failed to encode'
+            });
+        }
+    }
+    return filesData;
 }

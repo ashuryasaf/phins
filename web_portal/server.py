@@ -133,6 +133,10 @@ TRANSACTION_LEDGER: Dict[str, Dict[str, Any]] = {}  # tx_id -> transaction data
 # Indexed by file_id -> {claim_id, file_name, file_type, file_size, file_data (base64), uploaded_at}
 CLAIM_FILES: Dict[str, Dict[str, Any]] = {}  # file_id -> file data with base64 content
 
+# Underwriting files storage - stores documents uploaded with insurance applications
+# Indexed by file_id -> {application_id, file_name, file_type, file_size, file_data (base64), uploaded_at}
+UNDERWRITING_FILES: Dict[str, Dict[str, Any]] = {}  # file_id -> file data with base64 content
+
 # Design settings - for landing page customization (admin-managed)
 DESIGN_SETTINGS: Dict[str, Any] = {
     'video_url': '',
@@ -504,7 +508,7 @@ def save_ledger_data():
             
             data = {
                 'saved_at': datetime.now().isoformat(),
-                'version': '1.4',
+                'version': '1.5',
                 'health_wallets': HEALTH_WALLETS,
                 'medical_purchases': MEDICAL_PURCHASES,
                 'nft_ledger': NFT_LEDGER,
@@ -522,7 +526,9 @@ def save_ledger_data():
                 'phins_balance_sheet': PHINS_BALANCE_SHEET,
                 # v1.4 additions - Claims and Claim Files
                 'claims': dict(CLAIMS),
-                'claim_files': CLAIM_FILES
+                'claim_files': CLAIM_FILES,
+                # v1.5 additions - Underwriting Files
+                'underwriting_files': UNDERWRITING_FILES
             }
             
             # Write to temp file first, then rename for atomic operation
@@ -541,7 +547,7 @@ def save_ledger_data():
 def load_ledger_data():
     """Load ledger data from persistent storage on startup"""
     global HEALTH_WALLETS, MEDICAL_PURCHASES, NFT_LEDGER, CUSTOMER_ALLOCATIONS, INVESTMENT_ACCOUNTS, TRANSACTION_LEDGER
-    global BILLING, POLICIES, CUSTOMERS, UNDERWRITING_APPLICATIONS, PHINS_BALANCE_SHEET, CLAIMS, CLAIM_FILES
+    global BILLING, POLICIES, CUSTOMERS, UNDERWRITING_APPLICATIONS, PHINS_BALANCE_SHEET, CLAIMS, CLAIM_FILES, UNDERWRITING_FILES
     global _loaded_algo_balances, _loaded_trading_bots
     
     # Temporary storage for algo data until services are initialized
@@ -597,6 +603,13 @@ def load_ledger_data():
             if loaded_claim_files:
                 CLAIM_FILES.update(loaded_claim_files)
                 print(f"  - Claim Files: {len(CLAIM_FILES)} files loaded from persistence")
+        
+        # Load Underwriting Files (v1.5+)
+        if data.get('version', '1.0') >= '1.5':
+            loaded_uw_files = data.get('underwriting_files', {})
+            if loaded_uw_files:
+                UNDERWRITING_FILES.update(loaded_uw_files)
+                print(f"  - Underwriting Files: {len(UNDERWRITING_FILES)} files loaded from persistence")
         
         print(f"[PERSISTENCE] Loaded ledger data from {LEDGER_PERSISTENCE_FILE}")
         print(f"  - Health Wallets: {len(HEALTH_WALLETS)}")
@@ -4213,6 +4226,7 @@ For claims or questions, please contact:
             def enrich_underwriting_app(app):
                 """Enrich underwriting application with policy and customer data"""
                 enriched = dict(app)  # Copy to avoid modifying original
+                app_id = app.get('id', '')
                 
                 # Lookup linked policy
                 policy_id = app.get('policy_id')
@@ -4232,6 +4246,11 @@ For claims or questions, please contact:
                         enriched['risk_assessment'] = policy.get('risk_score', 'medium')
                     # Policy status
                     enriched['policy_status'] = policy.get('status', 'pending')
+                    # Add issuance/application date from policy if available
+                    if policy.get('issuance_date'):
+                        enriched['issuance_date'] = policy.get('issuance_date')
+                    if policy.get('application_date'):
+                        enriched['application_date'] = policy.get('application_date')
                 
                 # Lookup linked customer
                 customer_id = app.get('customer_id')
@@ -4242,12 +4261,33 @@ For claims or questions, please contact:
                         enriched['customer_name'] = customer.get('name') or customer.get('full_name') or customer_id
                     if not enriched.get('customer_email'):
                         enriched['customer_email'] = customer.get('email', '')
+                    if not enriched.get('customer_phone'):
+                        enriched['customer_phone'] = customer.get('phone', '')
+                    if not enriched.get('customer_address'):
+                        enriched['customer_address'] = customer.get('address', '')
                     if not enriched.get('age') and customer.get('date_of_birth'):
                         try:
                             dob = datetime.fromisoformat(customer['date_of_birth'].replace('Z', '+00:00'))
                             enriched['age'] = (datetime.now() - dob).days // 365
                         except Exception:
                             pass
+                    elif not enriched.get('age') and customer.get('dob'):
+                        try:
+                            dob = datetime.fromisoformat(customer['dob'].replace('Z', '+00:00'))
+                            enriched['age'] = (datetime.now() - dob).days // 365
+                        except Exception:
+                            pass
+                
+                # Count attached files from UNDERWRITING_FILES
+                files_count = sum(1 for f in UNDERWRITING_FILES.values() if f.get('application_id') == app_id)
+                enriched['files_count'] = files_count
+                enriched['has_documents'] = files_count > 0
+                
+                # Ensure application/issuance date is set (for pipeline integrity)
+                if not enriched.get('application_date'):
+                    enriched['application_date'] = enriched.get('submitted_date') or enriched.get('created_date')
+                if not enriched.get('issuance_date'):
+                    enriched['issuance_date'] = enriched.get('submitted_date') or enriched.get('created_date')
                 
                 return enriched
             
@@ -12596,6 +12636,36 @@ For claims or questions, please contact:
                             'created_at': datetime.now().isoformat()
                         }
                 
+                # Process uploaded files if present
+                files_data = data.get('files', [])
+                files_count = data.get('files_count', len(files_data) if files_data else 0)
+                files_metadata = []
+                
+                if files_data:
+                    for i, file_info in enumerate(files_data[:10]):  # Limit to 10 files
+                        file_id = f"UW-FILE-{uw_id}-{i+1:03d}"
+                        file_meta = {
+                            'id': file_id,
+                            'name': file_info.get('name', f'file_{i+1}'),
+                            'type': file_info.get('type', 'application/octet-stream'),
+                            'size': file_info.get('size', 0),
+                            'uploaded_at': datetime.now().isoformat()
+                        }
+                        files_metadata.append(file_meta)
+                        
+                        # Store full file data in UNDERWRITING_FILES
+                        UNDERWRITING_FILES[file_id] = {
+                            **file_meta,
+                            'application_id': uw_id,
+                            'customer_id': customer_id,
+                            'data': file_info.get('data'),  # Base64 encoded
+                            'note': file_info.get('note', ''),
+                            'error': file_info.get('error', '')
+                        }
+                        print(f"   📄 Stored UW file {file_id}: {file_meta['name']} ({file_meta['size']} bytes)")
+                
+                submitted_at = datetime.now().isoformat()
+                
                 UNDERWRITING_APPLICATIONS[uw_id] = {
                     'id': uw_id,
                     'policy_id': policy_id,
@@ -12610,8 +12680,13 @@ For claims or questions, please contact:
                     'risk_assessment': data.get('risk_score', 'medium'),
                     'questionnaire_responses': data.get('questionnaire', {}),
                     'medical_exam_required': data.get('medical_exam_required', False),
-                    'submitted_date': datetime.now().isoformat(),
-                    'created_date': datetime.now().isoformat(),
+                    'submitted_date': submitted_at,
+                    'created_date': submitted_at,
+                    'issuance_date': submitted_at,  # Application date = Issuance date
+                    'application_date': submitted_at,
+                    # Files attached to application
+                    'files': files_metadata,
+                    'files_count': files_count,
                     # Payment and billing info (stored securely)
                     'payment_setup': {
                         'card_last4': card_last4,
@@ -12643,9 +12718,11 @@ For claims or questions, please contact:
                     'status': 'pending_underwriting',
                     'underwriting_id': uw_id,
                     'risk_score': data.get('risk_score', 'medium'),
-                    'start_date': data.get('start_date', datetime.now().isoformat()),
+                    'start_date': data.get('start_date', submitted_at),
                     'end_date': data.get('end_date', (datetime.now() + timedelta(days=365)).isoformat()),
-                    'created_date': datetime.now().isoformat(),
+                    'created_date': submitted_at,
+                    'application_date': submitted_at,  # Date application was filed
+                    'issuance_date': submitted_at,  # Issuance date = application date
                     # Billing configuration (from application Step 4)
                     'billing': {
                         'frequency': billing_frequency,
@@ -12776,6 +12853,11 @@ For claims or questions, please contact:
                         audit.log(actor, 'create', 'policy', policy_id, {'customer_id': customer_id, 'safe': True})
                     except Exception:
                         pass
+                
+                # Save ledger data to persist application and files
+                save_ledger_data()
+                print(f"✅ Application {uw_id} created and persisted with {files_count} files")
+                
                 self._set_json_headers(201)
                 self.wfile.write(json.dumps({'policy': policy, 'underwriting': UNDERWRITING_APPLICATIONS[uw_id], 'customer': CUSTOMERS[customer_id]}).encode('utf-8'))
             except Exception as e:
@@ -13210,6 +13292,9 @@ For claims or questions, please contact:
                 policy['approval_date'] = now.isoformat()
                 policy['effective_date'] = now.isoformat()
                 policy['approved_by'] = data.get('approved_by', 'admin')
+                # Set application/issuance date from the original submission
+                policy['application_date'] = app.get('submitted_date') or app.get('created_date') or now.isoformat()
+                policy['issuance_date'] = app.get('submitted_date') or app.get('created_date') or now.isoformat()
                 
                 # PIPELINE STEP: Generate billing record
                 bill_id = f"BILL-{now.strftime('%Y%m%d%H%M%S')}-{random.randint(1000,9999)}"
@@ -14096,6 +14181,102 @@ For claims or questions, please contact:
                     self.wfile.write(json.dumps({
                         'success': True,
                         'claim_id': claim_id,
+                        'files': files_list,
+                        'total_files': len(files_list)
+                    }).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+        
+        # ========== UNDERWRITING FILES ENDPOINT ==========
+        # Upload or retrieve files attached to underwriting applications
+        if path == '/api/underwriting/files':
+            try:
+                data = json.loads(body or '{}')
+                app_id = data.get('application_id') or data.get('id')
+                file_id = data.get('file_id')
+                action = data.get('action', 'list')  # 'list', 'get', 'upload'
+                
+                if not app_id:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'Application ID is required'}).encode('utf-8'))
+                    return
+                
+                app = UNDERWRITING_APPLICATIONS.get(app_id)
+                if not app:
+                    self._set_json_headers(404)
+                    self.wfile.write(json.dumps({'error': f'Application {app_id} not found'}).encode('utf-8'))
+                    return
+                
+                if action == 'upload' and data.get('files'):
+                    # Upload new files
+                    files_data = data.get('files', [])
+                    uploaded_files = []
+                    
+                    for i, file_info in enumerate(files_data[:10]):  # Limit to 10 files
+                        new_file_id = f"UW-FILE-{app_id}-{i+1:03d}-{random.randint(1000,9999)}"
+                        file_meta = {
+                            'id': new_file_id,
+                            'application_id': app_id,
+                            'name': file_info.get('name', f'file_{i+1}'),
+                            'type': file_info.get('type', 'application/octet-stream'),
+                            'size': file_info.get('size', 0),
+                            'data': file_info.get('data'),  # Base64 encoded
+                            'uploaded_at': datetime.now().isoformat(),
+                            'uploaded_by': data.get('uploaded_by', 'customer')
+                        }
+                        UNDERWRITING_FILES[new_file_id] = file_meta
+                        uploaded_files.append({
+                            'id': new_file_id,
+                            'name': file_meta['name'],
+                            'type': file_meta['type'],
+                            'size': file_meta['size']
+                        })
+                        print(f"   📄 Stored UW file {new_file_id}: {file_meta['name']} ({file_meta['size']} bytes)")
+                    
+                    # Update application with file count
+                    app['files_count'] = len([f for f in UNDERWRITING_FILES.values() if f.get('application_id') == app_id])
+                    UNDERWRITING_APPLICATIONS[app_id] = app
+                    save_ledger_data()
+                    
+                    self._set_json_headers(200)
+                    self.wfile.write(json.dumps({
+                        'success': True,
+                        'message': f'Uploaded {len(uploaded_files)} files',
+                        'files': uploaded_files
+                    }).encode('utf-8'))
+                
+                elif file_id:
+                    # Return specific file
+                    file_data = UNDERWRITING_FILES.get(file_id)
+                    if file_data and file_data.get('application_id') == app_id:
+                        self._set_json_headers(200)
+                        self.wfile.write(json.dumps({
+                            'success': True,
+                            'file': file_data
+                        }).encode('utf-8'))
+                    else:
+                        self._set_json_headers(404)
+                        self.wfile.write(json.dumps({'error': f'File {file_id} not found for application {app_id}'}).encode('utf-8'))
+                else:
+                    # Return all files metadata for this application
+                    files_list = []
+                    for fid, finfo in UNDERWRITING_FILES.items():
+                        if finfo.get('application_id') == app_id:
+                            files_list.append({
+                                'id': fid,
+                                'name': finfo.get('name', ''),
+                                'type': finfo.get('type', ''),
+                                'size': finfo.get('size', 0),
+                                'uploaded_at': finfo.get('uploaded_at', ''),
+                                'has_data': bool(finfo.get('data'))
+                            })
+                    
+                    self._set_json_headers(200)
+                    self.wfile.write(json.dumps({
+                        'success': True,
+                        'application_id': app_id,
                         'files': files_list,
                         'total_files': len(files_list)
                     }).encode('utf-8'))

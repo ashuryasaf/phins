@@ -588,6 +588,32 @@
                             <label for="medications">Current Medications (if any)</label>
                             <textarea id="medications" rows="3" placeholder="List any medications you're currently taking, or write 'None'"></textarea>
                         </div>
+                        
+                        <!-- Supporting Documents Upload -->
+                        <div class="form-section" style="margin-top: 24px; padding-top: 24px; border-top: 1px solid #eee;">
+                            <h3>📎 Supporting Documents (Optional)</h3>
+                            <p style="color: #666; font-size: 0.9rem; margin-bottom: 12px;">Upload any relevant medical documents, disability certificates, or identification documents to expedite your application review.</p>
+                            
+                            <div id="file-drop-zone" style="border: 2px dashed #ccc; border-radius: 12px; padding: 30px; text-align: center; background: #fafafa; cursor: pointer; transition: all 0.3s;" onclick="document.getElementById('application-files').click()" ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)" ondrop="handleFileDrop(event)">
+                                <div style="font-size: 2.5rem; margin-bottom: 12px;">📁</div>
+                                <div style="font-weight: 600; margin-bottom: 8px;">Drag & Drop Files Here</div>
+                                <div style="color: #888; font-size: 0.85rem;">or click to browse</div>
+                                <input type="file" id="application-files" multiple accept="image/*,application/pdf,.doc,.docx" style="display: none;" onchange="handleApplicationFiles(event)">
+                                <div style="color: #666; font-size: 0.75rem; margin-top: 12px;">Accepted: Images, PDF, Word documents (max 5MB each)</div>
+                            </div>
+                            
+                            <div id="uploaded-files-list" style="margin-top: 16px;"></div>
+                            
+                            <div class="info-box" style="margin-top: 16px; background: #e8f5e9; border-left: 4px solid #4caf50;">
+                                <strong>Recommended Documents:</strong>
+                                <ul style="margin: 8px 0 0 20px; padding: 0;">
+                                    <li>Valid ID (passport, driver's license)</li>
+                                    <li>Recent medical examination results</li>
+                                    <li>Disability certificate (if applicable)</li>
+                                    <li>Previous insurance policy documents</li>
+                                </ul>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
