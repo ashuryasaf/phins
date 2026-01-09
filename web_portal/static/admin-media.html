@@ -762,12 +762,19 @@
             video_poster: '',
             promo_banner: ''
         };
-        const token = localStorage.getItem('token');
+        
+        // Token must be retrieved inside functions, not at script load time
+        function getToken() {
+            return localStorage.getItem('token');
+        }
         
         // ==================== INITIALIZATION ====================
         document.addEventListener('DOMContentLoaded', async () => {
+            // Get token after DOM is ready
+            const token = getToken();
             console.log('Media Dashboard: Initializing...');
             console.log('Token exists:', !!token);
+            console.log('Token value:', token ? token.substring(0, 20) + '...' : 'null');
             
             if (!token) {
                 console.log('No token found, redirecting to login');
@@ -775,8 +782,7 @@
                 return;
             }
             
-            // Try to load media directly - the API will return 403 if not admin
-            // This is more reliable than pre-validating the session
+            // Try to load media directly - the API will return 403 if not authorized
             loadMediaAssets();
             loadAssignments();
             setupDragAndDrop();
@@ -784,6 +790,7 @@
         
         // ==================== API FUNCTIONS ====================
         async function loadMediaAssets() {
+            const token = getToken();
             try {
                 const response = await fetch('/api/media', {
                     headers: { 'Authorization': `Bearer ${token}` }
@@ -811,6 +818,7 @@
         }
         
         async function loadAssignments() {
+            const token = getToken();
             try {
                 const response = await fetch('/api/design/settings', {
                     headers: { 'Authorization': `Bearer ${token}` }
@@ -829,6 +837,7 @@
         }
         
         async function saveAllAssignments() {
+            const token = getToken();
             try {
                 const response = await fetch('/api/design/settings', {
                     method: 'POST',
@@ -897,6 +906,7 @@
                 progressText.textContent = 'Saving to library...';
                 progressBar.style.width = '90%';
                 
+                const token = getToken();
                 const response = await fetch('/api/media', {
                     method: 'POST',
                     headers: {
@@ -941,6 +951,7 @@
                 return;
             }
             
+            const token = getToken();
             try {
                 // Determine type from URL
                 let mediaType = 'video';
@@ -987,6 +998,7 @@
         async function deleteMedia(id) {
             if (!confirm('Delete this media file? This cannot be undone.')) return;
             
+            const token = getToken();
             try {
                 const response = await fetch(`/api/media/${id}`, {
                     method: 'DELETE',
