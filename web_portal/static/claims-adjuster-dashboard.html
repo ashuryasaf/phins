@@ -1664,6 +1664,16 @@
             }
         }
         
+        // Helper function to safely convert any value to lowercase string
+        // Handles strings, arrays, objects, and null/undefined
+        function safeToLowerString(value) {
+            if (!value) return '';
+            if (typeof value === 'string') return value.toLowerCase();
+            if (Array.isArray(value)) return value.map(v => String(v)).join(' ').toLowerCase();
+            if (typeof value === 'object') return JSON.stringify(value).toLowerCase();
+            return String(value).toLowerCase();
+        }
+        
         function calculateClaimRiskLevel(claim) {
             let riskScore = 0;
             let riskFactors = [];
@@ -1711,7 +1721,7 @@
             }
             
             // 4. Underwriting Risk Score
-            const uwRisk = (uwApp.risk_score || uwApp.risk_assessment || '').toLowerCase();
+            const uwRisk = safeToLowerString(uwApp.risk_score || uwApp.risk_assessment);
             if (uwRisk === 'high' || uwRisk === 'very_high') {
                 riskScore += 20;
                 riskFactors.push({ factor: 'High UW Risk Profile', impact: 'high', details: `Underwriting rated as ${uwRisk}` });
@@ -1737,7 +1747,7 @@
             }
             
             // 7. Claim Type Risk
-            const claimType = (claim.type || '').toLowerCase();
+            const claimType = safeToLowerString(claim.type);
             if (claimType.includes('disability') || claimType.includes('total')) {
                 riskScore += 15;
                 riskFactors.push({ factor: 'Disability/Total Claim', impact: 'medium', details: 'Full coverage claim type' });
@@ -1795,8 +1805,8 @@
             const uwApp = riskAnalysis.uwData || {};
             
             // Check for discrepancies between claim and underwriting
-            const claimType = (claim.type || '').toLowerCase();
-            const uwConditions = (uwApp.medical_conditions || uwApp.questionnaire_responses?.conditions || '').toLowerCase();
+            const claimType = safeToLowerString(claim.type);
+            const uwConditions = safeToLowerString(uwApp.medical_conditions || uwApp.questionnaire_responses?.conditions);
             
             // Early claim after specific medical history
             if (claimType.includes('cardiac') || claimType.includes('heart')) {
