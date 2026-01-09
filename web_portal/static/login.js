@@ -54,6 +54,9 @@ document.addEventListener('DOMContentLoaded', function () {
             
             if (role === 'admin') {
               window.location.href = '/admin-portal.html';
+            } else if (role === 'media') {
+              // Media admin - restricted to media dashboard only
+              window.location.href = '/admin-media.html';
             } else if (role === 'actuary') {
               window.location.href = '/actuary-dashboard.html';
             } else if (role === 'supplier') {

@@ -80,7 +80,7 @@ def seed_default_users(session=None):
             {
                 'username': 'media_ad',
                 'password': 'PDadmin123@',
-                'role': 'admin',
+                'role': 'media',
                 'name': 'Media Admin',
                 'email': 'media@phins.ai'
             },

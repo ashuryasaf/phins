@@ -2199,7 +2199,7 @@ else:
         'accountant': {**hash_password('PDadmin123@'), 'role': 'accountant', 'name': 'Bob Accountant'},
         'actuary': {**hash_password('PDadmin123@'), 'role': 'actuary', 'name': 'Actuary User'},
         'supplier': {**hash_password('PDadmin123@'), 'role': 'supplier', 'name': 'Supplier User'},
-        'media_ad': {**hash_password('PDadmin123@'), 'role': 'admin', 'name': 'Media Admin'},
+        'media_ad': {**hash_password('PDadmin123@'), 'role': 'media', 'name': 'Media Admin'},
         # Permanent admin accounts - NEVER DELETE
         'asaf@phins.ai': {**hash_password('PHINSadmin2024!'), 'role': 'admin', 'name': 'Asaf PHINS'},
         'asaf@assurance.co.il': {**hash_password('Assurance2024!'), 'role': 'customer', 'name': 'Asaf Assurance', 'customer_id': 'CUST-ASAF-001'},
@@ -2636,12 +2636,12 @@ For claims or questions, please contact:
             }).encode('utf-8'))
             return
         
-        # Design settings endpoint (GET) - public for landing page, all data for admin
+        # Design settings endpoint (GET) - public for landing page, all data for admin/media
         if path == '/api/design/settings':
             # Return design settings (public endpoint for landing page to load video)
             self._set_json_headers(200)
-            # Only return public-safe settings if not admin
-            if require_role(session, ['admin']):
+            # Only return full settings if admin or media role
+            if require_role(session, ['admin', 'media']):
                 self.wfile.write(json.dumps(DESIGN_SETTINGS).encode('utf-8'))
             else:
                 # Public view - only return what's needed for landing page
@@ -2676,10 +2676,11 @@ For claims or questions, please contact:
         # ========== MEDIA ASSETS API (Admin Media Dashboard) ==========
         # GET /api/media - List all media assets
         # GET /api/media/{id} - Get specific media asset
+        # Roles: admin, media (media_ad user has 'media' role - restricted to media dashboard only)
         if path == '/api/media' or path.startswith('/api/media/'):
-            if not require_role(session, ['admin']):
+            if not require_role(session, ['admin', 'media']):
                 self._set_json_headers(403)
-                self.wfile.write(json.dumps({'error': 'Admin access required'}).encode('utf-8'))
+                self.wfile.write(json.dumps({'error': 'Media admin access required'}).encode('utf-8'))
                 return
             
             # Check if requesting specific asset
@@ -9711,19 +9712,19 @@ For claims or questions, please contact:
             self.handle_quote_submission()
             return
         
-        # Design settings endpoint (POST) - Admin only
+        # Design settings endpoint (POST) - Admin or Media role
         if path == '/api/design/settings':
             # Get auth token
             auth_header = self.headers.get('Authorization', '')
             token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
             session = validate_session(token) if token else None
             
-            # Check admin role
-            if not require_role(session, ['admin']):
+            # Check admin or media role
+            if not require_role(session, ['admin', 'media']):
                 self.send_response(403)
                 self.send_header('Content-Type', 'application/json')
                 self.end_headers()
-                self.wfile.write(json.dumps({'error': 'Admin access required'}).encode('utf-8'))
+                self.wfile.write(json.dumps({'error': 'Media admin access required'}).encode('utf-8'))
                 return
             
             # Parse request body
@@ -9760,15 +9761,16 @@ For claims or questions, please contact:
         
         # ========== MEDIA ASSETS API - POST/DELETE ==========
         # POST /api/media - Create new media asset
+        # Roles: admin, media (media_ad user has 'media' role - restricted to media dashboard only)
         if path == '/api/media':
             # Get auth token
             auth_header = self.headers.get('Authorization', '')
             token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
             session = validate_session(token) if token else None
             
-            if not require_role(session, ['admin']):
+            if not require_role(session, ['admin', 'media']):
                 self._set_json_headers(403)
-                self.wfile.write(json.dumps({'error': 'Admin access required'}).encode('utf-8'))
+                self.wfile.write(json.dumps({'error': 'Media admin access required'}).encode('utf-8'))
                 return
             
             # Parse request body
@@ -20068,10 +20070,11 @@ For claims or questions, please contact:
         session = validate_session(token) if token else None
         
         # ========== DELETE /api/media/{id} - Delete media asset ==========
+        # Roles: admin, media (media_ad user has 'media' role - restricted to media dashboard only)
         if path.startswith('/api/media/'):
-            if not require_role(session, ['admin']):
+            if not require_role(session, ['admin', 'media']):
                 self._set_json_headers(403)
-                self.wfile.write(json.dumps({'error': 'Admin access required'}).encode('utf-8'))
+                self.wfile.write(json.dumps({'error': 'Media admin access required'}).encode('utf-8'))
                 return
             
             # Extract asset ID
