@@ -1255,8 +1255,39 @@
         </div>
         <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
           <button onclick="generateInvitationCode()" style="background: linear-gradient(135deg, #28a745 0%, #20c997 100%); border: none; color: white; padding: 12px 24px; border-radius: 8px; cursor: pointer; font-weight: 600; font-size: 1rem;">🎫 Generate Code</button>
-          <div id="generated-code-display" style="display: none; background: rgba(0,0,0,0.2); padding: 12px 20px; border-radius: 8px; font-family: monospace; font-size: 1.2rem; letter-spacing: 2px;"></div>
-          <button id="copy-code-btn" style="display: none; background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.3); color: white; padding: 10px 16px; border-radius: 8px; cursor: pointer;" onclick="copyGeneratedCode()">📋 Copy</button>
+        </div>
+        
+        <!-- Generated Code Display with QR -->
+        <div id="invitation-result-panel" style="display: none; margin-top: 20px; background: rgba(255,255,255,0.95); color: #333; border-radius: 12px; padding: 24px;">
+          <h4 style="margin: 0 0 16px 0; color: #28a745; font-size: 1.1rem;">✅ Invitation Code Generated!</h4>
+          
+          <div style="display: grid; grid-template-columns: 1fr auto; gap: 20px; align-items: start;">
+            <!-- Left: Code Details -->
+            <div>
+              <div style="background: #f8f9fa; padding: 16px; border-radius: 8px; margin-bottom: 16px;">
+                <label style="display: block; font-size: 0.85rem; color: #666; margin-bottom: 4px;">Invitation Code</label>
+                <div id="generated-code-display" style="font-family: monospace; font-size: 1.4rem; font-weight: bold; color: #0d47a1; letter-spacing: 2px;"></div>
+              </div>
+              
+              <div style="background: #f8f9fa; padding: 16px; border-radius: 8px; margin-bottom: 16px;">
+                <label style="display: block; font-size: 0.85rem; color: #666; margin-bottom: 4px;">Registration Link</label>
+                <input type="text" id="invitation-link" readonly style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px; font-size: 0.9rem; background: white;">
+              </div>
+              
+              <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                <button onclick="copyGeneratedCode()" style="background: #0d47a1; color: white; border: none; padding: 10px 16px; border-radius: 6px; cursor: pointer; font-weight: 600;">📋 Copy Code</button>
+                <button onclick="copyInvitationLink()" style="background: #1976d2; color: white; border: none; padding: 10px 16px; border-radius: 6px; cursor: pointer; font-weight: 600;">🔗 Copy Link</button>
+                <button onclick="shareInvitation()" style="background: #25D366; color: white; border: none; padding: 10px 16px; border-radius: 6px; cursor: pointer; font-weight: 600;">📤 Share</button>
+                <button onclick="downloadInvitationQR()" style="background: #6c757d; color: white; border: none; padding: 10px 16px; border-radius: 6px; cursor: pointer; font-weight: 600;">⬇️ Download QR</button>
+              </div>
+            </div>
+            
+            <!-- Right: QR Code -->
+            <div style="text-align: center;">
+              <div id="invitation-qr-code" style="background: white; padding: 16px; border-radius: 12px; display: inline-block; box-shadow: 0 4px 12px rgba(0,0,0,0.1);"></div>
+              <p style="margin: 8px 0 0 0; font-size: 0.85rem; color: #666;">Scan to Register</p>
+            </div>
+          </div>
         </div>
       </div>
       
@@ -4989,6 +5020,8 @@
       }
     }
     
+    let lastInvitationLink = '';
+    
     async function generateInvitationCode() {
       const maxUses = document.getElementById('invite-max-uses').value;
       const expiresDays = document.getElementById('invite-expires').value;
@@ -5015,13 +5048,20 @@
         const data = await response.json();
         lastGeneratedCode = data.invitation.code;
         
-        // Show generated code
-        const display = document.getElementById('generated-code-display');
-        const copyBtn = document.getElementById('copy-code-btn');
+        // Generate registration link with code pre-filled
+        const baseUrl = window.location.origin;
+        lastInvitationLink = `${baseUrl}/register.html?code=${encodeURIComponent(lastGeneratedCode)}`;
         
-        display.textContent = lastGeneratedCode;
-        display.style.display = 'block';
-        copyBtn.style.display = 'block';
+        // Show result panel
+        const resultPanel = document.getElementById('invitation-result-panel');
+        resultPanel.style.display = 'block';
+        
+        // Update code display
+        document.getElementById('generated-code-display').textContent = lastGeneratedCode;
+        document.getElementById('invitation-link').value = lastInvitationLink;
+        
+        // Generate QR Code
+        generateInvitationQR(lastInvitationLink);
         
         // Clear notes input
         document.getElementById('invite-notes').value = '';
@@ -5030,7 +5070,10 @@
         loadInvitationCodes();
         
         // Show success toast
-        showToast('✅ Invitation code generated: ' + lastGeneratedCode);
+        showToast('✅ Invitation code generated with QR!');
+        
+        // Scroll to result
+        resultPanel.scrollIntoView({ behavior: 'smooth', block: 'center' });
         
       } catch (error) {
         console.error('Error generating code:', error);
@@ -5038,21 +5081,88 @@
       }
     }
     
+    function generateInvitationQR(url) {
+      const qrContainer = document.getElementById('invitation-qr-code');
+      qrContainer.innerHTML = '';
+      
+      // Use QR Code API (free, no library needed)
+      const qrImg = document.createElement('img');
+      qrImg.src = `https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(url)}&bgcolor=ffffff&color=0d47a1`;
+      qrImg.alt = 'Registration QR Code';
+      qrImg.style.width = '180px';
+      qrImg.style.height = '180px';
+      qrImg.id = 'qr-image';
+      qrContainer.appendChild(qrImg);
+    }
+    
     function copyGeneratedCode() {
       if (lastGeneratedCode) {
         navigator.clipboard.writeText(lastGeneratedCode).then(() => {
           showToast('📋 Code copied to clipboard!');
         }).catch(() => {
-          // Fallback
-          const textArea = document.createElement('textarea');
-          textArea.value = lastGeneratedCode;
-          document.body.appendChild(textArea);
-          textArea.select();
-          document.execCommand('copy');
-          document.body.removeChild(textArea);
+          fallbackCopy(lastGeneratedCode);
           showToast('📋 Code copied to clipboard!');
         });
       }
+    }
+    
+    function copyInvitationLink() {
+      if (lastInvitationLink) {
+        navigator.clipboard.writeText(lastInvitationLink).then(() => {
+          showToast('🔗 Registration link copied!');
+        }).catch(() => {
+          fallbackCopy(lastInvitationLink);
+          showToast('🔗 Registration link copied!');
+        });
+      }
+    }
+    
+    function fallbackCopy(text) {
+      const textArea = document.createElement('textarea');
+      textArea.value = text;
+      document.body.appendChild(textArea);
+      textArea.select();
+      document.execCommand('copy');
+      document.body.removeChild(textArea);
+    }
+    
+    async function shareInvitation() {
+      const shareText = `🎟️ You're Invited to PHINS!\n\nUse this code to register:\n${lastGeneratedCode}\n\nOr click the link below:\n${lastInvitationLink}\n\nWelcome to PHINS Portal! 🛡️`;
+      
+      if (navigator.share) {
+        try {
+          await navigator.share({
+            title: '🎟️ PHINS Invitation',
+            text: shareText,
+            url: lastInvitationLink
+          });
+          showToast('📤 Invitation shared!');
+        } catch (err) {
+          if (err.name !== 'AbortError') {
+            // Fallback to copy
+            copyInvitationLink();
+          }
+        }
+      } else {
+        // Fallback: Open email client
+        const mailtoLink = `mailto:?subject=${encodeURIComponent('🎟️ PHINS Invitation')}&body=${encodeURIComponent(shareText)}`;
+        window.open(mailtoLink);
+      }
+    }
+    
+    function downloadInvitationQR() {
+      const qrImg = document.getElementById('qr-image');
+      if (!qrImg) return;
+      
+      // Create download link
+      const link = document.createElement('a');
+      link.href = qrImg.src;
+      link.download = `PHINS-Invitation-${lastGeneratedCode}.png`;
+      link.target = '_blank';
+      
+      // For cross-origin images, open in new tab
+      window.open(qrImg.src, '_blank');
+      showToast('⬇️ QR Code opened - right-click to save');
     }
     
     // ==================== DESIGN SETTINGS ====================

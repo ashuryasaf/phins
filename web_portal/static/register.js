@@ -10,6 +10,21 @@ document.addEventListener('DOMContentLoaded', function () {
 
   let isCodeValid = false;
 
+  // ========== AUTO-FILL FROM URL PARAMETER ==========
+  const urlParams = new URLSearchParams(window.location.search);
+  const codeFromUrl = urlParams.get('code');
+  
+  if (codeFromUrl) {
+    invitationCodeInput.value = codeFromUrl.toUpperCase();
+    // Auto-validate the code from URL
+    setTimeout(() => {
+      validateInvitationCode(codeFromUrl.toUpperCase());
+    }, 300);
+    // Show welcome message
+    msg.innerHTML = '🎟️ Invitation code detected! Please complete your registration.';
+    msg.style.color = '#28a745';
+  }
+
   // ========== INVITATION CODE VALIDATION ==========
   let codeValidationTimeout = null;
   

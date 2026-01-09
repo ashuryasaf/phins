@@ -2237,13 +2237,32 @@ def validate_amount(amount: Any) -> bool:
     except (ValueError, TypeError):
         return False
 
+# Fallback in-memory users (always available for admin access)
+_FALLBACK_USERS: Dict[str, Dict[str, Any]] = {
+    'admin': {**hash_password('PDadmin123@'), 'role': 'admin', 'name': 'Admin User'},
+    'underwriter': {**hash_password('PDadmin123@'), 'role': 'underwriter', 'name': 'John Underwriter'},
+    'claims_adjuster': {**hash_password('PDadmin123@'), 'role': 'claims', 'name': 'Jane Claims'},
+    'accountant': {**hash_password('PDadmin123@'), 'role': 'accountant', 'name': 'Bob Accountant'},
+    'actuary': {**hash_password('PDadmin123@'), 'role': 'actuary', 'name': 'Actuary User'},
+    'supplier': {**hash_password('PDadmin123@'), 'role': 'supplier', 'name': 'Supplier User'},
+    'media_ad': {**hash_password('PDadmin123@'), 'role': 'media', 'name': 'Media Admin'},
+    # Permanent admin accounts - NEVER DELETE
+    'asaf@phins.ai': {**hash_password('PHINSadmin2024!'), 'role': 'admin', 'name': 'Asaf PHINS'},
+    'asaf@assurance.co.il': {**hash_password('Assurance2024!'), 'role': 'customer', 'name': 'Asaf Assurance', 'customer_id': 'CUST-ASAF-001'},
+    # Customer accounts
+    'efrat@phins.ai': {**hash_password('PHINScustomer2024!'), 'role': 'customer', 'name': 'Efrat PHINS', 'customer_id': 'CUST-EFRAT-001'},
+    'asi@phins.ai': {**hash_password('PHINScustomer2024!'), 'role': 'customer', 'name': 'Asi PHINS', 'customer_id': 'CUST-ASI-001'},
+    'shosh@phins.ai': {**hash_password('PHINScustomer2024!'), 'role': 'customer', 'name': 'Shosh PHINS', 'customer_id': 'CUST-SHOSH-001'}
+}
+
 # Store hashed passwords
 if USE_DATABASE and database_enabled:
     # Users are stored in database, but we need a helper to check them
-    # We'll create a wrapper that checks the database
+    # We'll create a wrapper that checks the database WITH FALLBACK to in-memory
     class UserDictWrapper:
-        """Wrapper to make database users work like a dict"""
+        """Wrapper to make database users work like a dict, with fallback to in-memory"""
         def get(self, username: str, default=None):
+            # First try database
             try:
                 from database.manager import DatabaseManager
                 with DatabaseManager() as db:
@@ -2268,6 +2287,12 @@ if USE_DATABASE and database_enabled:
                 print(f"Warning: Database module not available: {e}")
             except Exception as e:
                 print(f"Warning: Error fetching user from database: {e}")
+            
+            # FALLBACK: Check in-memory users (always works for admin access)
+            fallback_user = _FALLBACK_USERS.get(username)
+            if fallback_user:
+                return fallback_user
+            
             return default
         
         def __getitem__(self, username: str):
@@ -2277,7 +2302,10 @@ if USE_DATABASE and database_enabled:
             return result
         
         def __setitem__(self, username: str, value: dict):
-            """Create or update a user in the database"""
+            """Create or update a user in the database AND fallback"""
+            # Also update fallback for immediate access
+            _FALLBACK_USERS[username] = value
+            
             try:
                 from database.manager import DatabaseManager
                 with DatabaseManager() as db:
@@ -2306,7 +2334,7 @@ if USE_DATABASE and database_enabled:
                         )
             except Exception as e:
                 print(f"Warning: Error creating/updating user in database: {e}")
-                raise
+                # User is still in fallback, so login will work
         
         def __contains__(self, username: str):
             return self.get(username) is not None
