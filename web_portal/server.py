@@ -2199,6 +2199,7 @@ else:
         'accountant': {**hash_password('PDadmin123@'), 'role': 'accountant', 'name': 'Bob Accountant'},
         'actuary': {**hash_password('PDadmin123@'), 'role': 'actuary', 'name': 'Actuary User'},
         'supplier': {**hash_password('PDadmin123@'), 'role': 'supplier', 'name': 'Supplier User'},
+        'media_ad': {**hash_password('PDadmin123@'), 'role': 'admin', 'name': 'Media Admin'},
         # Permanent admin accounts - NEVER DELETE
         'asaf@phins.ai': {**hash_password('PHINSadmin2024!'), 'role': 'admin', 'name': 'Asaf PHINS'},
         'asaf@assurance.co.il': {**hash_password('Assurance2024!'), 'role': 'customer', 'name': 'Asaf Assurance', 'customer_id': 'CUST-ASAF-001'},
