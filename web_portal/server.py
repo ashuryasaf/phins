@@ -10139,18 +10139,35 @@ For claims or questions, please contact:
                 name = None
                 
                 # 1. Check internal users (admin, underwriter, etc.)
+                staff_user = None
                 try:
                     staff_user = USERS.get(username)
-                    legacy_ok = ALLOW_LEGACY_DEMO_PASSWORDS and username in LEGACY_DEMO_PASSWORDS and password == LEGACY_DEMO_PASSWORDS[username]
-
-                    if staff_user and (verify_password(password, staff_user['hash'], staff_user['salt']) or legacy_ok):
-                        user = staff_user
-                        customer_id = staff_user.get('customer_id')
-                        role = staff_user['role']
-                        name = staff_user['name']
+                    if staff_user:
+                        # Check legacy passwords first (simple string match)
+                        legacy_ok = ALLOW_LEGACY_DEMO_PASSWORDS and username in LEGACY_DEMO_PASSWORDS and password == LEGACY_DEMO_PASSWORDS[username]
+                        
+                        # Get hash and salt safely
+                        stored_hash = staff_user.get('hash', '')
+                        stored_salt = staff_user.get('salt', '')
+                        
+                        # Verify password
+                        password_ok = False
+                        if stored_hash and stored_salt:
+                            try:
+                                password_ok = verify_password(password, stored_hash, stored_salt)
+                            except Exception as pe:
+                                print(f"Password verify error: {pe}")
+                                password_ok = False
+                        
+                        if password_ok or legacy_ok:
+                            user = staff_user
+                            customer_id = staff_user.get('customer_id')
+                            role = staff_user.get('role', 'customer')
+                            name = staff_user.get('name', username)
                 except Exception as e:
                     print(f"Staff user check error: {e}")
-                    staff_user = None
+                    import traceback
+                    traceback.print_exc()
                 
                 # 2. Check customers table (by email) - for customer logins
                 # This runs if: no user found OR user found but password failed (handles password mismatch between tables)
@@ -10182,7 +10199,24 @@ For claims or questions, please contact:
                         import traceback
                         traceback.print_exc()
                 
-                # 3. Fallback: Check in-memory CUSTOMERS dictionary
+                # 3. DIRECT FALLBACK: Check _FALLBACK_USERS if USERS.get() failed
+                # This ensures admin access even if database/wrapper has issues
+                if not user and username in _FALLBACK_USERS:
+                    try:
+                        fallback = _FALLBACK_USERS[username]
+                        legacy_ok = ALLOW_LEGACY_DEMO_PASSWORDS and username in LEGACY_DEMO_PASSWORDS and password == LEGACY_DEMO_PASSWORDS[username]
+                        password_ok = verify_password(password, fallback.get('hash', ''), fallback.get('salt', ''))
+                        
+                        if password_ok or legacy_ok:
+                            user = fallback
+                            customer_id = fallback.get('customer_id')
+                            role = fallback.get('role', 'customer')
+                            name = fallback.get('name', username)
+                            print(f"[AUTH] User {username} authenticated via direct fallback")
+                    except Exception as fe:
+                        print(f"Direct fallback auth error: {fe}")
+                
+                # 4. Fallback: Check in-memory CUSTOMERS dictionary
                 # This runs for both DB and non-DB modes to catch passwords set via admin endpoint
                 if not user:
                     for cust_id, cust in CUSTOMERS.items():
