@@ -692,6 +692,9 @@
           <a href="/admin-media.html" class="btn btn-small" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; text-decoration: none;">
             📁 Media Dashboard
           </a>
+          <a href="#invitation-management" class="btn btn-small" style="background: linear-gradient(135deg, #ff6b35 0%, #f7931e 100%); color: white; text-decoration: none;">
+            🎟️ Invitation Codes
+          </a>
         </div>
         <!-- Progress indicator -->
         <div id="pipeline-progress" style="display: none; margin-top: 12px;">
@@ -1207,6 +1210,77 @@
           <div id="analytics-predictions">
             <div style="color: rgba(255,255,255,0.6); font-size: 0.9rem;">Loading...</div>
           </div>
+        </div>
+      </div>
+    </section>
+    
+    <!-- ==================== INVITATION CODE MANAGEMENT ==================== -->
+    <section id="invitation-management" class="section-content" style="background: linear-gradient(135deg, #ff6b35 0%, #f7931e 100%); color: white; border-radius: 16px; padding: 28px; margin-top: 24px; box-shadow: 0 8px 30px rgba(255, 107, 53, 0.25);">
+      <div class="section-header" style="margin-bottom: 24px;">
+        <div>
+          <h2 style="color: white; margin: 0;">🎟️ Invitation Code Management</h2>
+          <p style="opacity: 0.9; margin: 4px 0 0 0; font-size: 0.9rem;">Generate and manage registration invitation codes</p>
+        </div>
+        <button onclick="loadInvitationCodes()" style="background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.3); color: white; padding: 8px 16px; border-radius: 8px; cursor: pointer; font-weight: 600;">🔄 Refresh</button>
+      </div>
+      
+      <!-- Generate New Code -->
+      <div style="background: rgba(255,255,255,0.15); border-radius: 12px; padding: 20px; margin-bottom: 20px;">
+        <h3 style="margin: 0 0 16px 0; font-size: 1.1rem;">✨ Generate New Invitation Code</h3>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 16px;">
+          <div>
+            <label style="display: block; margin-bottom: 6px; font-size: 0.9rem; opacity: 0.9;">Max Uses</label>
+            <select id="invite-max-uses" style="width: 100%; padding: 10px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.3); background: rgba(255,255,255,0.1); color: white;">
+              <option value="1">1 use (single)</option>
+              <option value="5">5 uses</option>
+              <option value="10">10 uses</option>
+              <option value="25">25 uses</option>
+              <option value="100">100 uses</option>
+            </select>
+          </div>
+          <div>
+            <label style="display: block; margin-bottom: 6px; font-size: 0.9rem; opacity: 0.9;">Expires In</label>
+            <select id="invite-expires" style="width: 100%; padding: 10px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.3); background: rgba(255,255,255,0.1); color: white;">
+              <option value="7">7 days</option>
+              <option value="14">14 days</option>
+              <option value="30" selected>30 days</option>
+              <option value="60">60 days</option>
+              <option value="90">90 days</option>
+            </select>
+          </div>
+          <div>
+            <label style="display: block; margin-bottom: 6px; font-size: 0.9rem; opacity: 0.9;">Notes (optional)</label>
+            <input type="text" id="invite-notes" placeholder="e.g., VIP referral" style="width: 100%; padding: 10px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.3); background: rgba(255,255,255,0.1); color: white;">
+          </div>
+        </div>
+        <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
+          <button onclick="generateInvitationCode()" style="background: linear-gradient(135deg, #28a745 0%, #20c997 100%); border: none; color: white; padding: 12px 24px; border-radius: 8px; cursor: pointer; font-weight: 600; font-size: 1rem;">🎫 Generate Code</button>
+          <div id="generated-code-display" style="display: none; background: rgba(0,0,0,0.2); padding: 12px 20px; border-radius: 8px; font-family: monospace; font-size: 1.2rem; letter-spacing: 2px;"></div>
+          <button id="copy-code-btn" style="display: none; background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.3); color: white; padding: 10px 16px; border-radius: 8px; cursor: pointer;" onclick="copyGeneratedCode()">📋 Copy</button>
+        </div>
+      </div>
+      
+      <!-- Active Codes List -->
+      <div style="background: rgba(255,255,255,0.1); border-radius: 12px; padding: 20px;">
+        <h3 style="margin: 0 0 16px 0; font-size: 1.1rem; display: flex; justify-content: space-between; align-items: center;">
+          📋 Invitation Codes
+          <span id="codes-count" style="font-size: 0.9rem; opacity: 0.8;">Loading...</span>
+        </h3>
+        <div style="max-height: 300px; overflow-y: auto;">
+          <table style="width: 100%; border-collapse: collapse; font-size: 0.9rem;">
+            <thead>
+              <tr style="border-bottom: 2px solid rgba(255,255,255,0.2);">
+                <th style="text-align: left; padding: 10px 8px;">Code</th>
+                <th style="text-align: center; padding: 10px 8px;">Uses</th>
+                <th style="text-align: left; padding: 10px 8px;">Expires</th>
+                <th style="text-align: left; padding: 10px 8px;">Status</th>
+                <th style="text-align: left; padding: 10px 8px;">Notes</th>
+              </tr>
+            </thead>
+            <tbody id="invitation-codes-list">
+              <tr><td colspan="5" style="text-align: center; padding: 20px; opacity: 0.7;">Loading...</td></tr>
+            </tbody>
+          </table>
         </div>
       </div>
     </section>
@@ -4862,8 +4936,126 @@
     // Load design settings on page load
     document.addEventListener('DOMContentLoaded', () => {
       loadDesignSettings();
+      loadInvitationCodes();
     });
     
+    // ==================== INVITATION CODE MANAGEMENT ====================
+    let lastGeneratedCode = '';
+    
+    async function loadInvitationCodes() {
+      const tbody = document.getElementById('invitation-codes-list');
+      const countSpan = document.getElementById('codes-count');
+      
+      try {
+        const response = await fetch('/api/invitations', {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        
+        if (!response.ok) {
+          throw new Error('Failed to load invitation codes');
+        }
+        
+        const data = await response.json();
+        countSpan.textContent = `${data.active || 0} active / ${data.total || 0} total`;
+        
+        if (!data.codes || data.codes.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; padding: 20px; opacity: 0.7;">No invitation codes yet. Generate one above!</td></tr>';
+          return;
+        }
+        
+        tbody.innerHTML = data.codes.map(code => {
+          const status = code.status || 'unknown';
+          const statusBadge = status === 'active' 
+            ? '<span style="background: #28a745; padding: 4px 10px; border-radius: 20px; font-size: 0.8rem;">✅ Active</span>'
+            : status === 'used'
+            ? '<span style="background: #6c757d; padding: 4px 10px; border-radius: 20px; font-size: 0.8rem;">⚫ Used</span>'
+            : '<span style="background: #dc3545; padding: 4px 10px; border-radius: 20px; font-size: 0.8rem;">❌ Expired</span>';
+          
+          const expiresDate = code.expires_at ? new Date(code.expires_at).toLocaleDateString() : 'Never';
+          const isExpired = code.expires_at && new Date(code.expires_at) < new Date();
+          
+          return `<tr style="border-bottom: 1px solid rgba(255,255,255,0.1);">
+            <td style="padding: 12px 8px; font-family: monospace; letter-spacing: 1px;">${code.code}</td>
+            <td style="padding: 12px 8px; text-align: center;">${code.used_count || 0}/${code.max_uses || 1}</td>
+            <td style="padding: 12px 8px; ${isExpired ? 'color: #ffcccc;' : ''}">${expiresDate}</td>
+            <td style="padding: 12px 8px;">${statusBadge}</td>
+            <td style="padding: 12px 8px; font-size: 0.85rem; opacity: 0.8;">${code.notes || '-'}</td>
+          </tr>`;
+        }).join('');
+        
+      } catch (error) {
+        console.error('Error loading invitation codes:', error);
+        tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; padding: 20px; color: #ffcccc;">Error loading codes</td></tr>';
+      }
+    }
+    
+    async function generateInvitationCode() {
+      const maxUses = document.getElementById('invite-max-uses').value;
+      const expiresDays = document.getElementById('invite-expires').value;
+      const notes = document.getElementById('invite-notes').value;
+      
+      try {
+        const response = await fetch('/api/invitations', {
+          method: 'POST',
+          headers: { 
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            max_uses: parseInt(maxUses),
+            expires_days: parseInt(expiresDays),
+            notes: notes
+          })
+        });
+        
+        if (!response.ok) {
+          throw new Error('Failed to generate code');
+        }
+        
+        const data = await response.json();
+        lastGeneratedCode = data.invitation.code;
+        
+        // Show generated code
+        const display = document.getElementById('generated-code-display');
+        const copyBtn = document.getElementById('copy-code-btn');
+        
+        display.textContent = lastGeneratedCode;
+        display.style.display = 'block';
+        copyBtn.style.display = 'block';
+        
+        // Clear notes input
+        document.getElementById('invite-notes').value = '';
+        
+        // Reload codes list
+        loadInvitationCodes();
+        
+        // Show success toast
+        showToast('✅ Invitation code generated: ' + lastGeneratedCode);
+        
+      } catch (error) {
+        console.error('Error generating code:', error);
+        showToast('❌ Failed to generate invitation code');
+      }
+    }
+    
+    function copyGeneratedCode() {
+      if (lastGeneratedCode) {
+        navigator.clipboard.writeText(lastGeneratedCode).then(() => {
+          showToast('📋 Code copied to clipboard!');
+        }).catch(() => {
+          // Fallback
+          const textArea = document.createElement('textarea');
+          textArea.value = lastGeneratedCode;
+          document.body.appendChild(textArea);
+          textArea.select();
+          document.execCommand('copy');
+          document.body.removeChild(textArea);
+          showToast('📋 Code copied to clipboard!');
+        });
+      }
+    }
+    
+    // ==================== DESIGN SETTINGS ====================
     // Load design settings from API
     async function loadDesignSettings() {
       try {

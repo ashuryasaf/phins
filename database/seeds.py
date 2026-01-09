@@ -2,11 +2,14 @@
 Database Seed Data
 
 Populates the database with default users and sample data.
+Includes dynamic customer loading for persistence across restarts.
 """
 
 import hashlib
 import secrets
 import random
+import json
+import os
 from datetime import datetime, timedelta
 import logging
 
@@ -14,6 +17,9 @@ from database import get_db_session, init_database
 from database.repositories import UserRepository
 
 logger = logging.getLogger(__name__)
+
+# Path to dynamic customers file (created by registration)
+DYNAMIC_CUSTOMERS_FILE = os.path.join(os.path.dirname(__file__), 'dynamic_customers.json')
 
 
 def hash_password(password: str) -> dict:
@@ -158,6 +164,9 @@ def seed_default_users(session=None):
         
         logger.info("Default users seeded successfully")
         
+        # ========== LOAD DYNAMIC CUSTOMERS (from registration) ==========
+        seed_dynamic_customers(session, user_repo)
+        
     except Exception as e:
         logger.error(f"Error seeding users: {e}")
         if should_close:
@@ -166,6 +175,54 @@ def seed_default_users(session=None):
     finally:
         if should_close:
             session.close()
+
+
+def seed_dynamic_customers(session, user_repo):
+    """Load dynamically registered customers from JSON file"""
+    try:
+        if not os.path.exists(DYNAMIC_CUSTOMERS_FILE):
+            logger.info("No dynamic customers file found, skipping...")
+            return
+        
+        with open(DYNAMIC_CUSTOMERS_FILE, 'r') as f:
+            dynamic_customers = json.load(f)
+        
+        if not dynamic_customers:
+            logger.info("Dynamic customers file is empty")
+            return
+        
+        for customer in dynamic_customers:
+            username = customer.get('username', customer.get('email', ''))
+            if not username:
+                continue
+            
+            # Check if already exists
+            existing_user = user_repo.get_by_username(username)
+            if existing_user:
+                logger.info(f"Dynamic customer '{username}' already exists, skipping...")
+                continue
+            
+            # Hash password
+            password_hash = hash_password(customer.get('password', 'PHINScustomer2024!'))
+            
+            # Create user
+            user_repo.create(
+                username=username,
+                password_hash=password_hash['hash'],
+                password_salt=password_hash['salt'],
+                role='customer',
+                name=customer.get('name', username),
+                email=customer.get('email', username),
+                active=True
+            )
+            logger.info(f"Created dynamic customer: {username}")
+        
+        logger.info(f"Dynamic customers loaded: {len(dynamic_customers)} processed")
+        
+    except json.JSONDecodeError as e:
+        logger.error(f"Error parsing dynamic customers file: {e}")
+    except Exception as e:
+        logger.error(f"Error loading dynamic customers: {e}")
 
 
 def seed_sample_data(session=None):

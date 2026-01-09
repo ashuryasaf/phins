@@ -162,6 +162,16 @@ DESIGN_SETTINGS: Dict[str, Any] = {
 # Indexed by asset_id -> {id, name, type, format, size, url, data, thumbnail, source, uploaded_at, uploaded_by}
 MEDIA_ASSETS: Dict[str, Dict[str, Any]] = {}
 
+# ========== INVITATION CODES (Registration by Invitation Only) ==========
+# Invitation codes for new user registration
+# Indexed by code -> {code, created_at, created_by, expires_at, max_uses, used_count, used_by, status, notes}
+INVITATION_CODES: Dict[str, Dict[str, Any]] = {}
+
+# ========== REGISTERED CUSTOMERS (New - for persistence) ==========
+# All customers registered via invitation system - saved to seeds on creation
+# Indexed by customer_id -> full customer record with all dates
+REGISTERED_CUSTOMERS: Dict[str, Dict[str, Any]] = {}
+
 # ========== PHINS MAIN BALANCE SHEET (GENERAL RESERVES) ==========
 # Central company balance sheet for all financial operations
 # Accessible by: admin, accountant, underwriter, claims_adjuster
@@ -517,7 +527,7 @@ def save_ledger_data():
             
             data = {
                 'saved_at': datetime.now().isoformat(),
-                'version': '1.6',
+                'version': '1.7',
                 'health_wallets': HEALTH_WALLETS,
                 'medical_purchases': MEDICAL_PURCHASES,
                 'nft_ledger': NFT_LEDGER,
@@ -540,7 +550,10 @@ def save_ledger_data():
                 'underwriting_files': UNDERWRITING_FILES,
                 # v1.6 additions - Media Assets and Design Settings
                 'media_assets': MEDIA_ASSETS,
-                'design_settings': DESIGN_SETTINGS
+                'design_settings': DESIGN_SETTINGS,
+                # v1.7 additions - Invitation Codes and Registered Customers
+                'invitation_codes': INVITATION_CODES,
+                'registered_customers': REGISTERED_CUSTOMERS
             }
             
             # Write to temp file first, then rename for atomic operation
@@ -556,11 +569,104 @@ def save_ledger_data():
     except Exception as e:
         print(f"[PERSISTENCE] Error saving ledger data: {e}")
 
+def append_customer_to_seeds(email: str, password: str, name: str, customer_id: str, registered_at: str):
+    """Append newly registered customer to dynamic seeds file for restart persistence"""
+    try:
+        seeds_file = os.path.join(os.path.dirname(__file__), '..', 'database', 'dynamic_customers.json')
+        
+        # Load existing dynamic customers
+        dynamic_customers = []
+        if os.path.exists(seeds_file):
+            with open(seeds_file, 'r') as f:
+                dynamic_customers = json.load(f)
+        
+        # Add new customer
+        dynamic_customers.append({
+            'username': email,
+            'password': password,
+            'name': name,
+            'role': 'customer',
+            'customer_id': customer_id,
+            'email': email,
+            'registered_at': registered_at
+        })
+        
+        # Save back
+        with open(seeds_file, 'w') as f:
+            json.dump(dynamic_customers, f, indent=2)
+        
+        print(f"[SEEDS] Appended new customer {email} to dynamic seeds file")
+    except Exception as e:
+        print(f"[SEEDS] Error appending customer to seeds: {e}")
+
+def load_dynamic_customers():
+    """Load dynamically registered customers from JSON file into USERS dictionary"""
+    global USERS, CUSTOMERS, REGISTERED_CUSTOMERS
+    
+    seeds_file = os.path.join(os.path.dirname(__file__), '..', 'database', 'dynamic_customers.json')
+    
+    try:
+        if not os.path.exists(seeds_file):
+            print("[DYNAMIC] No dynamic customers file found")
+            return 0
+        
+        with open(seeds_file, 'r') as f:
+            dynamic_customers = json.load(f)
+        
+        if not dynamic_customers:
+            print("[DYNAMIC] Dynamic customers file is empty")
+            return 0
+        
+        loaded_count = 0
+        for customer in dynamic_customers:
+            email = customer.get('email') or customer.get('username')
+            if not email:
+                continue
+            
+            # Skip if already exists
+            if email in USERS:
+                continue
+            
+            # Hash password and add to USERS
+            pwd_hash = hash_password(customer.get('password', 'PHINScustomer2024!'))
+            USERS[email] = {
+                'hash': pwd_hash['hash'],
+                'salt': pwd_hash['salt'],
+                'role': 'customer',
+                'name': customer.get('name', email),
+                'customer_id': customer.get('customer_id', f"CUST-{email}")
+            }
+            
+            # Also add to CUSTOMERS if customer_id is present
+            customer_id = customer.get('customer_id')
+            if customer_id and customer_id not in CUSTOMERS:
+                CUSTOMERS[customer_id] = {
+                    'id': customer_id,
+                    'name': customer.get('name', email),
+                    'email': email,
+                    'phone': customer.get('phone', ''),
+                    'registered_at': customer.get('registered_at', datetime.now().isoformat()),
+                    'created_date': customer.get('registered_at', datetime.now().isoformat())
+                }
+                REGISTERED_CUSTOMERS[customer_id] = CUSTOMERS[customer_id]
+            
+            loaded_count += 1
+        
+        print(f"[DYNAMIC] Loaded {loaded_count} dynamic customers from seeds file")
+        return loaded_count
+        
+    except json.JSONDecodeError as e:
+        print(f"[DYNAMIC] Error parsing dynamic customers file: {e}")
+        return 0
+    except Exception as e:
+        print(f"[DYNAMIC] Error loading dynamic customers: {e}")
+        return 0
+
 def load_ledger_data():
     """Load ledger data from persistent storage on startup"""
     global HEALTH_WALLETS, MEDICAL_PURCHASES, NFT_LEDGER, CUSTOMER_ALLOCATIONS, INVESTMENT_ACCOUNTS, TRANSACTION_LEDGER
     global BILLING, POLICIES, CUSTOMERS, UNDERWRITING_APPLICATIONS, PHINS_BALANCE_SHEET, CLAIMS, CLAIM_FILES, UNDERWRITING_FILES
-    global MEDIA_ASSETS, DESIGN_SETTINGS
+    global MEDIA_ASSETS, DESIGN_SETTINGS, INVITATION_CODES, REGISTERED_CUSTOMERS
     global _loaded_algo_balances, _loaded_trading_bots
     
     # Temporary storage for algo data until services are initialized
@@ -634,6 +740,21 @@ def load_ledger_data():
             if loaded_design:
                 DESIGN_SETTINGS.update(loaded_design)
                 print(f"  - Design Settings: Loaded (video: {'✓' if DESIGN_SETTINGS.get('hero_video_id') or DESIGN_SETTINGS.get('video_url') else '✗'})")
+        
+        # Load Invitation Codes and Registered Customers (v1.7+)
+        if data.get('version', '1.0') >= '1.7':
+            loaded_invitations = data.get('invitation_codes', {})
+            loaded_registered = data.get('registered_customers', {})
+            if loaded_invitations:
+                INVITATION_CODES.update(loaded_invitations)
+                print(f"  - Invitation Codes: {len(INVITATION_CODES)} codes loaded from persistence")
+            if loaded_registered:
+                REGISTERED_CUSTOMERS.update(loaded_registered)
+                # Also restore to CUSTOMERS if not already there
+                for cust_id, cust_data in loaded_registered.items():
+                    if cust_id not in CUSTOMERS:
+                        CUSTOMERS[cust_id] = cust_data
+                print(f"  - Registered Customers: {len(REGISTERED_CUSTOMERS)} customers loaded from persistence")
         
         print(f"[PERSISTENCE] Loaded ledger data from {LEDGER_PERSISTENCE_FILE}")
         print(f"  - Health Wallets: {len(HEALTH_WALLETS)}")
@@ -2703,6 +2824,67 @@ For claims or questions, please contact:
             self.wfile.write(json.dumps({
                 'assets': assets_list,
                 'total': len(assets_list)
+            }).encode('utf-8'))
+            return
+        
+        # ========== INVITATION CODES API ==========
+        # GET /api/invitations - List all invitation codes (Admin only)
+        # GET /api/invitations/validate?code=XXX - Validate a code (Public for registration)
+        if path == '/api/invitations' or path.startswith('/api/invitations/'):
+            # Validate endpoint is public (for registration form)
+            if path == '/api/invitations/validate':
+                code = qs.get('code', [''])[0].strip().upper()
+                if not code:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'valid': False, 'error': 'No code provided'}).encode('utf-8'))
+                    return
+                
+                invitation = INVITATION_CODES.get(code)
+                if not invitation:
+                    self._set_json_headers(200)
+                    self.wfile.write(json.dumps({'valid': False, 'error': 'Invalid invitation code'}).encode('utf-8'))
+                    return
+                
+                # Check if expired
+                if invitation.get('expires_at'):
+                    expires = datetime.fromisoformat(invitation['expires_at'])
+                    if datetime.now() > expires:
+                        self._set_json_headers(200)
+                        self.wfile.write(json.dumps({'valid': False, 'error': 'Invitation code has expired'}).encode('utf-8'))
+                        return
+                
+                # Check if already used up
+                if invitation.get('used_count', 0) >= invitation.get('max_uses', 1):
+                    self._set_json_headers(200)
+                    self.wfile.write(json.dumps({'valid': False, 'error': 'Invitation code has already been used'}).encode('utf-8'))
+                    return
+                
+                # Check status
+                if invitation.get('status') != 'active':
+                    self._set_json_headers(200)
+                    self.wfile.write(json.dumps({'valid': False, 'error': 'Invitation code is not active'}).encode('utf-8'))
+                    return
+                
+                self._set_json_headers(200)
+                self.wfile.write(json.dumps({'valid': True, 'code': code}).encode('utf-8'))
+                return
+            
+            # All other invitation endpoints require admin
+            if not require_role(session, ['admin']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Admin access required'}).encode('utf-8'))
+                return
+            
+            # Return all invitation codes
+            codes_list = list(INVITATION_CODES.values())
+            codes_list.sort(key=lambda x: x.get('created_at', ''), reverse=True)
+            
+            self._set_json_headers(200)
+            self.wfile.write(json.dumps({
+                'codes': codes_list,
+                'total': len(codes_list),
+                'active': len([c for c in codes_list if c.get('status') == 'active']),
+                'used': len([c for c in codes_list if c.get('status') == 'used'])
             }).encode('utf-8'))
             return
         
@@ -9819,6 +10001,59 @@ For claims or questions, please contact:
                 self.wfile.write(json.dumps({'error': 'Invalid JSON'}).encode('utf-8'))
                 return
         
+        # ========== POST /api/invitations - Create new invitation code ==========
+        if path == '/api/invitations':
+            auth_header = self.headers.get('Authorization', '')
+            token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+            session = validate_session(token) if token else None
+            
+            if not require_role(session, ['admin']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Admin access required'}).encode('utf-8'))
+                return
+            
+            length = int(self.headers.get('Content-Length', 0))
+            body = self.rfile.read(length).decode('utf-8') if length else '{}'
+            
+            try:
+                data = json.loads(body)
+                
+                # Generate unique code
+                import secrets
+                code = f"PHINS-2026-{secrets.token_hex(4).upper()}"
+                
+                # Calculate expiration (default 30 days)
+                expires_days = int(data.get('expires_days', 30))
+                expires_at = (datetime.now() + timedelta(days=expires_days)).isoformat()
+                
+                invitation = {
+                    'code': code,
+                    'created_at': datetime.now().isoformat(),
+                    'created_by': session.get('username', 'admin'),
+                    'expires_at': expires_at,
+                    'max_uses': int(data.get('max_uses', 1)),
+                    'used_count': 0,
+                    'used_by': [],
+                    'status': 'active',
+                    'notes': data.get('notes', '')
+                }
+                
+                INVITATION_CODES[code] = invitation
+                save_ledger_data()
+                
+                self._set_json_headers(201)
+                self.wfile.write(json.dumps({
+                    'success': True,
+                    'message': 'Invitation code created',
+                    'invitation': invitation
+                }).encode('utf-8'))
+                return
+                
+            except json.JSONDecodeError:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'Invalid JSON'}).encode('utf-8'))
+                return
+        
         # Regular JSON POST requests
         length = int(self.headers.get('Content-Length', 0))
         content_type = (self.headers.get('Content-Type') or '').lower()
@@ -10031,8 +10266,9 @@ For claims or questions, please contact:
             }).encode('utf-8'))
             return
         
-        # User Registration Endpoint
+        # User Registration Endpoint (INVITATION ONLY)
         if path == '/api/register':
+            client_ip = self.client_address[0]
             try:
                 data = json.loads(body)
                 name = sanitize_input(data.get('name', ''), 100)
@@ -10040,8 +10276,57 @@ For claims or questions, please contact:
                 phone = sanitize_input(data.get('phone', ''), 20)
                 dob = data.get('dob', '')
                 password = data.get('password', '')
+                invitation_code = data.get('invitation_code', '').strip().upper()
                 
-                # Validation
+                # ========== INVITATION CODE VALIDATION (REQUIRED) ==========
+                if not invitation_code:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({
+                        'error': 'Invitation code is required',
+                        'code': 'INVITATION_REQUIRED'
+                    }).encode('utf-8'))
+                    return
+                
+                # Validate invitation code
+                invitation = INVITATION_CODES.get(invitation_code)
+                if not invitation:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({
+                        'error': 'Invalid invitation code',
+                        'code': 'INVALID_CODE'
+                    }).encode('utf-8'))
+                    return
+                
+                # Check if expired
+                if invitation.get('expires_at'):
+                    expires = datetime.fromisoformat(invitation['expires_at'])
+                    if datetime.now() > expires:
+                        self._set_json_headers(400)
+                        self.wfile.write(json.dumps({
+                            'error': 'Invitation code has expired',
+                            'code': 'CODE_EXPIRED'
+                        }).encode('utf-8'))
+                        return
+                
+                # Check if already used up
+                if invitation.get('used_count', 0) >= invitation.get('max_uses', 1):
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({
+                        'error': 'Invitation code has already been used',
+                        'code': 'CODE_USED'
+                    }).encode('utf-8'))
+                    return
+                
+                # Check status
+                if invitation.get('status') != 'active':
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({
+                        'error': 'Invitation code is not active',
+                        'code': 'CODE_INACTIVE'
+                    }).encode('utf-8'))
+                    return
+                
+                # ========== STANDARD VALIDATION ==========
                 if not name or not email or not password:
                     self._set_json_headers(400)
                     self.wfile.write(json.dumps({'error': 'Name, email, and password are required'}).encode('utf-8'))
@@ -10065,17 +10350,40 @@ For claims or questions, please contact:
                     self.wfile.write(json.dumps({'error': 'Email already registered'}).encode('utf-8'))
                     return
                 
-                # Create customer record
+                # ========== CREATE CUSTOMER WITH FULL TRACKING ==========
                 customer_id = generate_customer_id()
+                registration_date = datetime.now().isoformat()
+                
+                # Enhanced customer record with all tracking fields
+                customer_record = {
+                    'id': customer_id,
+                    'name': name,
+                    'email': email,
+                    'phone': phone,
+                    'dob': dob,
+                    # Registration tracking
+                    'invitation_code': invitation_code,
+                    'registered_at': registration_date,
+                    'registered_ip': client_ip,
+                    'created_date': registration_date,
+                    # Application tracking (will be populated)
+                    'applications': [],
+                    # Policy tracking (will be populated)
+                    'policies': [],
+                    # Claims tracking (will be populated)
+                    'claims': [],
+                    # Financial tracking
+                    'wallet': {'balance': 0, 'transactions': []},
+                    'investments': {'positions': [], 'total_value': 0},
+                    # Metadata
+                    'last_login': None,
+                    'updated_at': registration_date
+                }
+                
                 with STATE_LOCK:
-                    CUSTOMERS[customer_id] = {
-                        'id': customer_id,
-                        'name': name,
-                        'email': email,
-                        'phone': phone,
-                        'dob': dob,
-                        'created_date': datetime.now().isoformat()
-                    }
+                    CUSTOMERS[customer_id] = customer_record
+                    # Also save to registered customers for persistence
+                    REGISTERED_CUSTOMERS[customer_id] = customer_record
                 
                 # Create user account
                 pwd_hash = hash_password(password)
@@ -10088,17 +10396,36 @@ For claims or questions, please contact:
                         'customer_id': customer_id
                     }
                 
+                # ========== MARK INVITATION CODE AS USED ==========
+                with STATE_LOCK:
+                    invitation['used_count'] = invitation.get('used_count', 0) + 1
+                    invitation['used_by'].append({
+                        'email': email,
+                        'customer_id': customer_id,
+                        'used_at': registration_date
+                    })
+                    if invitation['used_count'] >= invitation.get('max_uses', 1):
+                        invitation['status'] = 'used'
+                
+                # ========== PERSIST ALL DATA ==========
+                save_ledger_data()
+                
+                # Also append to dynamic seeds file for server restart persistence
+                append_customer_to_seeds(email, password, name, customer_id, registration_date)
+                
                 self._set_json_headers(201)
                 self.wfile.write(json.dumps({
                     'success': True,
                     'customer_id': customer_id,
                     'email': email,
+                    'registered_at': registration_date,
                     'message': 'Account created successfully. Please login with your credentials.'
                 }).encode('utf-8'))
             except json.JSONDecodeError:
                 self._set_json_headers(400)
                 self.wfile.write(json.dumps({'error': 'Invalid JSON payload'}).encode('utf-8'))
-            except Exception:
+            except Exception as e:
+                print(f"Registration error: {e}")
                 self._set_json_headers(500)
                 self.wfile.write(json.dumps({'error': 'Registration failed'}).encode('utf-8'))
             return
@@ -20117,6 +20444,12 @@ def run_server(port: int = PORT) -> None:
         print("✓ Ledger data restored from persistent storage")
     else:
         print("ℹ️  Starting with fresh ledger data")
+    
+    # Load dynamic customers from registration
+    print("👥 Loading dynamic customers...")
+    dynamic_count = load_dynamic_customers()
+    if dynamic_count > 0:
+        print(f"✓ Loaded {dynamic_count} dynamically registered customers")
     
     # Initialize PHINS Balance Sheet (General Reserves)
     print("💰 Initializing PHINS Balance Sheet...")
