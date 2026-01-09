@@ -77,6 +77,13 @@ def seed_default_users(session=None):
                 'name': 'Bob Accountant',
                 'email': 'accountant@phins.ai'
             },
+            {
+                'username': 'media_ad',
+                'password': 'PDadmin123@',
+                'role': 'admin',
+                'name': 'Media Admin',
+                'email': 'media@phins.ai'
+            },
             # Primary customer account (links to CUST-ASAF-001 in customers table)
             # NOTE: Password must match the one in seed_sample_data for customers table
             {

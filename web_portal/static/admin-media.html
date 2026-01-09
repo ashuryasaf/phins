@@ -765,15 +765,50 @@
         const token = localStorage.getItem('token');
         
         // ==================== INITIALIZATION ====================
-        document.addEventListener('DOMContentLoaded', () => {
+        document.addEventListener('DOMContentLoaded', async () => {
             if (!token) {
                 window.location.href = '/login.html';
                 return;
             }
+            
+            // Validate session first
+            const isValid = await validateSession();
+            if (!isValid) {
+                showToast('Session expired. Please login again.', 'error');
+                setTimeout(() => {
+                    localStorage.removeItem('token');
+                    window.location.href = '/login.html';
+                }, 2000);
+                return;
+            }
+            
             loadMediaAssets();
             loadAssignments();
             setupDragAndDrop();
         });
+        
+        // Validate session and check admin role
+        async function validateSession() {
+            try {
+                const response = await fetch('/api/session/validate', {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                if (response.ok) {
+                    const data = await response.json();
+                    if (data.valid && data.role === 'admin') {
+                        return true;
+                    } else if (data.valid && data.role !== 'admin') {
+                        showToast('Access denied. Admin role required.', 'error');
+                        setTimeout(() => window.location.href = '/admin.html', 2000);
+                        return false;
+                    }
+                }
+                return false;
+            } catch (e) {
+                console.error('Session validation error:', e);
+                return false;
+            }
+        }
         
         // ==================== API FUNCTIONS ====================
         async function loadMediaAssets() {
@@ -787,6 +822,15 @@
                     renderMediaGrid();
                     updateStats();
                     populateAssignmentSelects();
+                } else if (response.status === 403) {
+                    showToast('Access denied. Admin privileges required.', 'error');
+                    setTimeout(() => window.location.href = '/admin.html', 2000);
+                } else if (response.status === 401) {
+                    showToast('Session expired. Please login again.', 'error');
+                    setTimeout(() => {
+                        localStorage.removeItem('token');
+                        window.location.href = '/login.html';
+                    }, 2000);
                 }
             } catch (e) {
                 console.error('Error loading media:', e);
