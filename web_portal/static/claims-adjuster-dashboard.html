@@ -630,12 +630,12 @@
             <h2>📋 Claims Queue</h2>
             <div class="filter-bar">
                 <select id="status-filter" class="filter-select" onchange="filterClaims()">
-                    <option value="all">All Claims</option>
-                    <option value="Pending" selected>Pending</option>
-                    <option value="Under Review">Under Review</option>
-                    <option value="Approved">Approved</option>
-                    <option value="Paid">Paid</option>
-                    <option value="Rejected">Rejected</option>
+                    <option value="all" selected>All Claims</option>
+                    <option value="pending">Pending</option>
+                    <option value="under review">Under Review</option>
+                    <option value="approved">Approved</option>
+                    <option value="paid">Paid</option>
+                    <option value="rejected">Rejected</option>
                 </select>
                 <select id="priority-filter" class="filter-select" onchange="filterClaims()">
                     <option value="all">All Priorities</option>
@@ -772,15 +772,15 @@
         }
         
         function filterClaims() {
-            const statusFilter = document.getElementById('status-filter').value;
+            const statusFilter = document.getElementById('status-filter').value.toLowerCase();
             const priorityFilter = document.getElementById('priority-filter').value;
             const searchTerm = document.getElementById('search-input').value.toLowerCase();
             
             let filtered = allClaims;
             
-            // Status filter
+            // Status filter (case-insensitive comparison)
             if (statusFilter !== 'all') {
-                filtered = filtered.filter(c => c.status === statusFilter);
+                filtered = filtered.filter(c => (c.status || '').toLowerCase() === statusFilter);
             }
             
             // Priority filter

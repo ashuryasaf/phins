@@ -129,6 +129,10 @@ INVESTMENT_ACCOUNTS: Dict[str, Dict[str, Any]] = {}  # customer_id -> {balance, 
 # Transaction ledger - master ledger for all financial transactions
 TRANSACTION_LEDGER: Dict[str, Dict[str, Any]] = {}  # tx_id -> transaction data
 
+# Claim files storage - stores uploaded documents for claims
+# Indexed by file_id -> {claim_id, file_name, file_type, file_size, file_data (base64), uploaded_at}
+CLAIM_FILES: Dict[str, Dict[str, Any]] = {}  # file_id -> file data with base64 content
+
 # Design settings - for landing page customization (admin-managed)
 DESIGN_SETTINGS: Dict[str, Any] = {
     'video_url': '',
@@ -500,7 +504,7 @@ def save_ledger_data():
             
             data = {
                 'saved_at': datetime.now().isoformat(),
-                'version': '1.3',
+                'version': '1.4',
                 'health_wallets': HEALTH_WALLETS,
                 'medical_purchases': MEDICAL_PURCHASES,
                 'nft_ledger': NFT_LEDGER,
@@ -515,7 +519,10 @@ def save_ledger_data():
                 'algo_trading_balances': algo_balances,
                 'trading_bots': trading_bots,
                 # v1.3 additions - PHINS Main Balance Sheet
-                'phins_balance_sheet': PHINS_BALANCE_SHEET
+                'phins_balance_sheet': PHINS_BALANCE_SHEET,
+                # v1.4 additions - Claims and Claim Files
+                'claims': dict(CLAIMS),
+                'claim_files': CLAIM_FILES
             }
             
             # Write to temp file first, then rename for atomic operation
@@ -534,7 +541,7 @@ def save_ledger_data():
 def load_ledger_data():
     """Load ledger data from persistent storage on startup"""
     global HEALTH_WALLETS, MEDICAL_PURCHASES, NFT_LEDGER, CUSTOMER_ALLOCATIONS, INVESTMENT_ACCOUNTS, TRANSACTION_LEDGER
-    global BILLING, POLICIES, CUSTOMERS, UNDERWRITING_APPLICATIONS, PHINS_BALANCE_SHEET
+    global BILLING, POLICIES, CUSTOMERS, UNDERWRITING_APPLICATIONS, PHINS_BALANCE_SHEET, CLAIMS, CLAIM_FILES
     global _loaded_algo_balances, _loaded_trading_bots
     
     # Temporary storage for algo data until services are initialized
@@ -579,6 +586,17 @@ def load_ledger_data():
             if loaded_bs:
                 PHINS_BALANCE_SHEET.update(loaded_bs)
                 print(f"  - PHINS Balance Sheet: Claims Reserve ${PHINS_BALANCE_SHEET.get('claims_reserve', 0):,.2f}")
+        
+        # Load Claims and Claim Files (v1.4+)
+        if data.get('version', '1.0') >= '1.4':
+            loaded_claims = data.get('claims', {})
+            loaded_claim_files = data.get('claim_files', {})
+            if loaded_claims:
+                CLAIMS.update(loaded_claims)
+                print(f"  - Claims: {len(CLAIMS)} claims loaded from persistence")
+            if loaded_claim_files:
+                CLAIM_FILES.update(loaded_claim_files)
+                print(f"  - Claim Files: {len(CLAIM_FILES)} files loaded from persistence")
         
         print(f"[PERSISTENCE] Loaded ledger data from {LEDGER_PERSISTENCE_FILE}")
         print(f"  - Health Wallets: {len(HEALTH_WALLETS)}")
@@ -4148,6 +4166,25 @@ For claims or questions, please contact:
                 else:
                     # Admin/staff view: Filter out suspended test accounts
                     claims_list = [c for c in claims_list if not is_suspended_account(c.get('customer_id', ''))]
+                
+                # Enrich claims with customer data for admin/staff view
+                def enrich_claim(claim: Dict[str, Any]) -> Dict[str, Any]:
+                    """Add customer_name and other enrichment data to claim"""
+                    enriched = dict(claim)
+                    cust_id = claim.get('customer_id', '')
+                    customer = CUSTOMERS.get(cust_id, {})
+                    if not enriched.get('customer_name') and customer:
+                        enriched['customer_name'] = customer.get('name', customer.get('email', cust_id))
+                        enriched['customer_email'] = customer.get('email', '')
+                    # Ensure policy info is available
+                    policy_id = claim.get('policy_id', '')
+                    if policy_id and not enriched.get('policy_type'):
+                        policy = POLICIES.get(policy_id, {})
+                        enriched['policy_type'] = policy.get('type', policy.get('policy_type', ''))
+                        enriched['policy_coverage'] = policy.get('coverage_amount', policy.get('coverage', 0))
+                    return enriched
+                
+                claims_list = [enrich_claim(c) for c in claims_list]
 
                 # Always return the paginated response shape (tests/clients rely on it)
                 page = int(qs.get('page', ['1'])[0])
@@ -13623,18 +13660,29 @@ For claims or questions, please contact:
                         }).encode('utf-8'))
                         return
                 
-                # Store file metadata (base64 data stored separately or in files table)
+                # Store file metadata AND file data in CLAIM_FILES
                 files_metadata = []
                 if files_data:
                     for i, file_info in enumerate(files_data[:10]):  # Limit to 10 files
                         file_id = f"FILE-{claim_id}-{i+1:03d}"
-                        files_metadata.append({
+                        file_meta = {
                             'id': file_id,
                             'name': file_info.get('name', f'file_{i+1}'),
                             'type': file_info.get('type', 'application/octet-stream'),
                             'size': file_info.get('size', 0),
                             'uploaded_at': datetime.now().isoformat()
-                        })
+                        }
+                        files_metadata.append(file_meta)
+                        
+                        # Store full file data including base64 in CLAIM_FILES for persistence
+                        CLAIM_FILES[file_id] = {
+                            **file_meta,
+                            'claim_id': claim_id,
+                            'data': file_info.get('data'),  # Base64 encoded file content
+                            'note': file_info.get('note', ''),
+                            'error': file_info.get('error', '')
+                        }
+                        print(f"   📄 Stored file {file_id}: {file_meta['name']} ({file_meta['size']} bytes)")
                 
                 claim = {
                     'id': claim_id,
@@ -13680,6 +13728,38 @@ For claims or questions, please contact:
                 
                 # Now store the complete claim with all fields including NFT token
                 CLAIMS[claim_id] = claim
+                print(f"✅ Claim {claim_id} stored in memory for customer {data.get('customer_id')}")
+                
+                # Persist claim to database for data integrity
+                try:
+                    if USE_DATABASE and database_enabled:
+                        from database.manager import DatabaseManager
+                        from database.repositories.claim_repository import ClaimRepository
+                        with DatabaseManager() as db:
+                            claim_repo = ClaimRepository(db.session)
+                            # Check if claim already exists
+                            existing = claim_repo.get_by_id(claim_id)
+                            if not existing:
+                                claim_repo.create(
+                                    id=claim_id,
+                                    policy_id=policy_id,
+                                    customer_id=data.get('customer_id'),
+                                    type=claim_type,
+                                    description=description,
+                                    claimed_amount=claimed_amount,
+                                    status='pending',
+                                    incident_date=incident_date,
+                                    provider=provider,
+                                    payment_destination=payment_destination,
+                                    bank_details=json.dumps(bank_details) if bank_details else None,
+                                    files_metadata=json.dumps(files_metadata) if files_metadata else None,
+                                    files_count=files_count,
+                                    nft_token_id=claim.get('nft_token_id'),
+                                    ledger_tx_id=claim.get('ledger_tx_id')
+                                )
+                                print(f"   💾 Claim {claim_id} persisted to database")
+                except Exception as db_err:
+                    print(f"   ⚠️ Database persistence note: {db_err}")
                 
                 if audit:
                     actor = session.get('username') if session else 'system'
@@ -13687,6 +13767,9 @@ For claims or questions, please contact:
                         audit.log(actor, 'create', 'claim', claim_id, {'policy_id': claim.get('policy_id'), 'claimed_amount': claim.get('claimed_amount')})
                     except Exception:
                         pass
+                
+                # Save ledger data to persist new claim and files
+                save_ledger_data()
                 
                 self._set_json_headers(201)
                 self.wfile.write(json.dumps(claim).encode('utf-8'))
@@ -13955,6 +14038,67 @@ For claims or questions, please contact:
                 else:
                     self._set_json_headers(400)
                     self.wfile.write(json.dumps({'error': 'Claim not approved or not found'}).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+        
+        # ========== CLAIM FILES ENDPOINT ==========
+        # Retrieve files attached to a claim (for viewing/downloading)
+        if path == '/api/claims/files':
+            try:
+                data = json.loads(body or '{}')
+                claim_id = data.get('claim_id') or data.get('id')
+                file_id = data.get('file_id')
+                
+                if not claim_id:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'Claim ID is required'}).encode('utf-8'))
+                    return
+                
+                claim = CLAIMS.get(claim_id)
+                if not claim:
+                    self._set_json_headers(404)
+                    self.wfile.write(json.dumps({'error': f'Claim {claim_id} not found'}).encode('utf-8'))
+                    return
+                
+                # Get files for this claim from CLAIM_FILES storage
+                claim_file_ids = [f['id'] for f in claim.get('files', [])]
+                
+                if file_id:
+                    # Return specific file
+                    file_data = CLAIM_FILES.get(file_id)
+                    if file_data and file_data.get('claim_id') == claim_id:
+                        self._set_json_headers(200)
+                        self.wfile.write(json.dumps({
+                            'success': True,
+                            'file': file_data
+                        }).encode('utf-8'))
+                    else:
+                        self._set_json_headers(404)
+                        self.wfile.write(json.dumps({'error': f'File {file_id} not found for claim {claim_id}'}).encode('utf-8'))
+                else:
+                    # Return all files metadata for this claim
+                    files_list = []
+                    for fid in claim_file_ids:
+                        file_info = CLAIM_FILES.get(fid, {})
+                        # Return metadata only, not full base64 data (too large)
+                        files_list.append({
+                            'id': fid,
+                            'name': file_info.get('name', ''),
+                            'type': file_info.get('type', ''),
+                            'size': file_info.get('size', 0),
+                            'uploaded_at': file_info.get('uploaded_at', ''),
+                            'has_data': bool(file_info.get('data'))
+                        })
+                    
+                    self._set_json_headers(200)
+                    self.wfile.write(json.dumps({
+                        'success': True,
+                        'claim_id': claim_id,
+                        'files': files_list,
+                        'total_files': len(files_list)
+                    }).encode('utf-8'))
             except Exception as e:
                 self._set_json_headers(400)
                 self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
@@ -20337,6 +20481,44 @@ def run_server(port: int = PORT) -> None:
             print(f"✓ Service transactions already exist ({len(MEDICAL_PURCHASES)} records)")
     except Exception as e:
         print(f"⚠️  Service transaction initialization skipped: {e}")
+    
+    # Load claims from database (DATA INTEGRITY: Restore persisted claims)
+    print("📋 Loading claims from database...")
+    db_claims_loaded = 0
+    try:
+        if USE_DATABASE and database_enabled:
+            from database.manager import DatabaseManager
+            from database.repositories.claim_repository import ClaimRepository
+            with DatabaseManager() as db:
+                claim_repo = ClaimRepository(db.session)
+                db_claims = claim_repo.get_all()
+                for db_claim in db_claims:
+                    claim_dict = db_claim.to_dict() if hasattr(db_claim, 'to_dict') else {
+                        'id': db_claim.id,
+                        'policy_id': db_claim.policy_id,
+                        'customer_id': db_claim.customer_id,
+                        'type': db_claim.type,
+                        'description': db_claim.description,
+                        'claimed_amount': db_claim.claimed_amount,
+                        'approved_amount': db_claim.approved_amount,
+                        'status': db_claim.status,
+                        'filed_date': db_claim.filed_date.isoformat() if db_claim.filed_date else None,
+                        'approval_date': db_claim.approval_date.isoformat() if db_claim.approval_date else None,
+                        'payment_date': db_claim.payment_date.isoformat() if db_claim.payment_date else None,
+                        'incident_date': db_claim.incident_date,
+                        'provider': db_claim.provider,
+                        'payment_destination': db_claim.payment_destination,
+                        'nft_token_id': db_claim.nft_token_id,
+                        'ledger_tx_id': db_claim.ledger_tx_id,
+                        'files_count': db_claim.files_count or 0
+                    }
+                    # Only load if not already in memory (preserve runtime state)
+                    if claim_dict['id'] not in CLAIMS:
+                        CLAIMS[claim_dict['id']] = claim_dict
+                        db_claims_loaded += 1
+                print(f"   ✓ Loaded {db_claims_loaded} claims from database")
+    except Exception as db_err:
+        print(f"   ℹ️ Database claims loading: {db_err}")
     
     # Initialize sample claims for Asaf (always update to ensure correct status)
     print("📋 Initializing sample claims...")
