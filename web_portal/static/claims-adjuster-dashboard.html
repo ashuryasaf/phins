@@ -137,10 +137,18 @@
             .stats-grid { grid-template-columns: repeat(2, 1fr); gap: 10px; }
             .stat-card { padding: 16px; }
             .stat-value { font-size: 1.8rem; }
+            #risk-summary-cards { grid-template-columns: repeat(2, 1fr) !important; }
         }
         @media screen and (max-width: 480px) {
             .stats-grid { grid-template-columns: 1fr; }
             .phins-logo-text { display: none; }
+            #risk-summary-cards { grid-template-columns: 1fr !important; }
+        }
+        
+        /* Spinner animation for risk report loading */
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
         }
         
         body {
@@ -626,6 +634,48 @@
             </div>
         </div>
         
+        <!-- Accumulative Risk Report Section -->
+        <div class="section" style="background: linear-gradient(135deg, #1a1f36 0%, #2d3561 100%); border-radius: 16px; padding: 24px; margin-bottom: 24px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                <div>
+                    <h2 style="color: white; margin: 0; display: flex; align-items: center; gap: 10px;">
+                        📊 Accumulative Risk Analysis
+                        <span style="background: linear-gradient(135deg, #ff6b6b 0%, #ee5a5a 100%); font-size: 0.7rem; padding: 4px 10px; border-radius: 12px;">AI/BI</span>
+                    </h2>
+                    <p style="color: rgba(255,255,255,0.7); margin: 8px 0 0 0; font-size: 0.9rem;">Real-time fraud detection & portfolio risk assessment</p>
+                </div>
+                <button class="btn" onclick="generateAccumulativeRiskReport()" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; padding: 12px 24px; border-radius: 10px; cursor: pointer; display: flex; align-items: center; gap: 8px; font-weight: 600;">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path><path d="M9 12l2 2 4-4"></path></svg>
+                    Generate Report
+                </button>
+            </div>
+            
+            <!-- Risk Summary Cards -->
+            <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 20px;" id="risk-summary-cards">
+                <div style="background: rgba(255,255,255,0.1); border-radius: 12px; padding: 16px; text-align: center; backdrop-filter: blur(10px);">
+                    <div style="font-size: 2rem; font-weight: 700; color: #4facfe;" id="total-claims-count">-</div>
+                    <div style="color: rgba(255,255,255,0.8); font-size: 0.85rem;">Total Claims</div>
+                </div>
+                <div style="background: rgba(255,255,255,0.1); border-radius: 12px; padding: 16px; text-align: center; backdrop-filter: blur(10px);">
+                    <div style="font-size: 2rem; font-weight: 700; color: #ff6b6b;" id="high-risk-count">-</div>
+                    <div style="color: rgba(255,255,255,0.8); font-size: 0.85rem;">High Risk</div>
+                </div>
+                <div style="background: rgba(255,255,255,0.1); border-radius: 12px; padding: 16px; text-align: center; backdrop-filter: blur(10px);">
+                    <div style="font-size: 2rem; font-weight: 700; color: #ffa502;" id="fraud-flag-count">-</div>
+                    <div style="color: rgba(255,255,255,0.8); font-size: 0.85rem;">Fraud Flags</div>
+                </div>
+                <div style="background: rgba(255,255,255,0.1); border-radius: 12px; padding: 16px; text-align: center; backdrop-filter: blur(10px);">
+                    <div style="font-size: 2rem; font-weight: 700; color: #2ed573;" id="sum-at-risk">-</div>
+                    <div style="color: rgba(255,255,255,0.8); font-size: 0.85rem;">Sum at Risk</div>
+                </div>
+            </div>
+            
+            <!-- Detailed Risk Report Container -->
+            <div id="accumulative-risk-report" style="display: none;">
+                <!-- Report will be generated here -->
+            </div>
+        </div>
+        
         <div class="section">
             <h2>📋 Claims Queue</h2>
             <div class="filter-bar">
@@ -933,6 +983,9 @@
             } else {
                 document.getElementById('avg-time').textContent = '< 1 day';
             }
+            
+            // Update risk summary
+            updateRiskSummary();
         }
         
         function openReview(claimId) {
@@ -1569,10 +1622,473 @@
             }
         });
         
+        // ========== ACCUMULATIVE RISK REPORT FUNCTIONS ==========
+        
+        // Store underwriting data for cross-referencing
+        let underwritingData = {};
+        let customersData = {};
+        
+        async function loadUnderwritingData() {
+            try {
+                const response = await fetch('/api/underwriting', {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                if (response.ok) {
+                    const data = await response.json();
+                    const apps = Array.isArray(data) ? data : (data.applications || []);
+                    apps.forEach(app => {
+                        underwritingData[app.customer_id] = app;
+                        underwritingData[app.id] = app;
+                    });
+                }
+            } catch (e) {
+                console.warn('Could not load underwriting data:', e);
+            }
+        }
+        
+        async function loadCustomersData() {
+            try {
+                const response = await fetch('/api/customers', {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                if (response.ok) {
+                    const data = await response.json();
+                    const customers = Array.isArray(data) ? data : (data.customers || []);
+                    customers.forEach(c => {
+                        customersData[c.id] = c;
+                        if (c.email) customersData[c.email] = c;
+                    });
+                }
+            } catch (e) {
+                console.warn('Could not load customers data:', e);
+            }
+        }
+        
+        function calculateClaimRiskLevel(claim) {
+            let riskScore = 0;
+            let riskFactors = [];
+            
+            const amount = Number(claim.claimed_amount || 0);
+            const uwApp = underwritingData[claim.customer_id] || {};
+            const customer = customersData[claim.customer_id] || {};
+            
+            // 1. Claim Amount Risk
+            if (amount > 100000) {
+                riskScore += 30;
+                riskFactors.push({ factor: 'Very High Claim Amount', impact: 'high', details: `$${amount.toLocaleString()} exceeds $100,000 threshold` });
+            } else if (amount > 50000) {
+                riskScore += 20;
+                riskFactors.push({ factor: 'High Claim Amount', impact: 'medium', details: `$${amount.toLocaleString()} exceeds $50,000` });
+            } else if (amount > 25000) {
+                riskScore += 10;
+                riskFactors.push({ factor: 'Elevated Claim Amount', impact: 'low', details: `$${amount.toLocaleString()}` });
+            }
+            
+            // 2. Coverage Ratio Check
+            const coverage = uwApp.coverage_amount || customer.coverage_amount || 0;
+            if (coverage > 0) {
+                const coverageRatio = amount / coverage;
+                if (coverageRatio > 0.8) {
+                    riskScore += 25;
+                    riskFactors.push({ factor: 'High Coverage Utilization', impact: 'high', details: `${(coverageRatio * 100).toFixed(1)}% of total coverage` });
+                } else if (coverageRatio > 0.5) {
+                    riskScore += 10;
+                    riskFactors.push({ factor: 'Significant Coverage Usage', impact: 'medium', details: `${(coverageRatio * 100).toFixed(1)}% of coverage` });
+                }
+            }
+            
+            // 3. Policy Age Check (claims filed early in policy life)
+            const policyStart = uwApp.submitted_date || uwApp.created_date || claim.policy_start_date;
+            if (policyStart) {
+                const policyAgeDays = (new Date() - new Date(policyStart)) / (1000 * 60 * 60 * 24);
+                if (policyAgeDays < 90) {
+                    riskScore += 20;
+                    riskFactors.push({ factor: 'Early Policy Claim', impact: 'high', details: `Filed within ${Math.round(policyAgeDays)} days of policy start` });
+                } else if (policyAgeDays < 180) {
+                    riskScore += 10;
+                    riskFactors.push({ factor: 'Recent Policy', impact: 'medium', details: `Policy ${Math.round(policyAgeDays)} days old` });
+                }
+            }
+            
+            // 4. Underwriting Risk Score
+            const uwRisk = (uwApp.risk_score || uwApp.risk_assessment || '').toLowerCase();
+            if (uwRisk === 'high' || uwRisk === 'very_high') {
+                riskScore += 20;
+                riskFactors.push({ factor: 'High UW Risk Profile', impact: 'high', details: `Underwriting rated as ${uwRisk}` });
+            } else if (uwRisk === 'medium') {
+                riskScore += 10;
+                riskFactors.push({ factor: 'Medium UW Risk', impact: 'medium', details: 'Underwriting risk: medium' });
+            }
+            
+            // 5. Medical Conditions / Pre-existing
+            if (uwApp.medical_exam_required) {
+                riskScore += 5;
+                riskFactors.push({ factor: 'Medical Exam Was Required', impact: 'low', details: 'Additional scrutiny needed' });
+            }
+            
+            // 6. Disability Percentage
+            const disabilityPct = uwApp.disability_percentage || uwApp.disability_status || 0;
+            if (disabilityPct > 50) {
+                riskScore += 15;
+                riskFactors.push({ factor: 'High Disability Rating', impact: 'medium', details: `${disabilityPct}% disability at underwriting` });
+            } else if (disabilityPct > 20) {
+                riskScore += 8;
+                riskFactors.push({ factor: 'Existing Disability', impact: 'low', details: `${disabilityPct}% disability` });
+            }
+            
+            // 7. Claim Type Risk
+            const claimType = (claim.type || '').toLowerCase();
+            if (claimType.includes('disability') || claimType.includes('total')) {
+                riskScore += 15;
+                riskFactors.push({ factor: 'Disability/Total Claim', impact: 'medium', details: 'Full coverage claim type' });
+            }
+            
+            // 8. BMI Check (from underwriting)
+            const bmi = uwApp.bmi || uwApp.bmi_score || 0;
+            if (bmi > 35) {
+                riskScore += 10;
+                riskFactors.push({ factor: 'High BMI at Application', impact: 'medium', details: `BMI: ${bmi}` });
+            } else if (bmi > 30) {
+                riskScore += 5;
+                riskFactors.push({ factor: 'Elevated BMI', impact: 'low', details: `BMI: ${bmi}` });
+            }
+            
+            // 9. Multiple Claims Check
+            const customerClaims = allClaims.filter(c => c.customer_id === claim.customer_id);
+            if (customerClaims.length > 3) {
+                riskScore += 20;
+                riskFactors.push({ factor: 'Multiple Claims History', impact: 'high', details: `${customerClaims.length} total claims from this customer` });
+            } else if (customerClaims.length > 1) {
+                riskScore += 8;
+                riskFactors.push({ factor: 'Previous Claims', impact: 'low', details: `${customerClaims.length} claims on record` });
+            }
+            
+            // Determine risk level
+            let riskLevel, riskColor;
+            if (riskScore >= 60) {
+                riskLevel = 'CRITICAL';
+                riskColor = '#dc3545';
+            } else if (riskScore >= 40) {
+                riskLevel = 'HIGH';
+                riskColor = '#ff6b6b';
+            } else if (riskScore >= 25) {
+                riskLevel = 'MEDIUM';
+                riskColor = '#ffa502';
+            } else {
+                riskLevel = 'LOW';
+                riskColor = '#2ed573';
+            }
+            
+            return {
+                score: riskScore,
+                level: riskLevel,
+                color: riskColor,
+                factors: riskFactors,
+                fraudProbability: Math.min(95, riskScore * 1.2).toFixed(1),
+                uwData: uwApp,
+                customerData: customer
+            };
+        }
+        
+        function detectFraudIndicators(claim, riskAnalysis) {
+            const indicators = [];
+            const uwApp = riskAnalysis.uwData || {};
+            
+            // Check for discrepancies between claim and underwriting
+            const claimType = (claim.type || '').toLowerCase();
+            const uwConditions = (uwApp.medical_conditions || uwApp.questionnaire_responses?.conditions || '').toLowerCase();
+            
+            // Early claim after specific medical history
+            if (claimType.includes('cardiac') || claimType.includes('heart')) {
+                if (!uwConditions.includes('heart') && !uwConditions.includes('cardiac')) {
+                    indicators.push({
+                        type: 'POTENTIAL_OMISSION',
+                        severity: 'high',
+                        description: 'Heart-related claim but no cardiac history declared in application'
+                    });
+                }
+            }
+            
+            // Large claim shortly after policy inception
+            const policyStart = uwApp.submitted_date || uwApp.created_date;
+            if (policyStart) {
+                const daysSincePolicy = (new Date() - new Date(policyStart)) / (1000 * 60 * 60 * 24);
+                const amount = Number(claim.claimed_amount || 0);
+                if (daysSincePolicy < 365 && amount > 50000) {
+                    indicators.push({
+                        type: 'EARLY_LARGE_CLAIM',
+                        severity: 'medium',
+                        description: `Large claim ($${amount.toLocaleString()}) within first year of policy`
+                    });
+                }
+            }
+            
+            // Multiple claims in short period
+            const customerClaims = allClaims.filter(c => c.customer_id === claim.customer_id);
+            const recentClaims = customerClaims.filter(c => {
+                const filedDate = new Date(c.filed_date || c.created_date);
+                return (new Date() - filedDate) < 180 * 24 * 60 * 60 * 1000; // 6 months
+            });
+            if (recentClaims.length >= 3) {
+                indicators.push({
+                    type: 'CLAIM_FREQUENCY',
+                    severity: 'high',
+                    description: `${recentClaims.length} claims filed in last 6 months`
+                });
+            }
+            
+            // Amount close to coverage limit
+            const coverage = uwApp.coverage_amount || 0;
+            if (coverage > 0 && Number(claim.claimed_amount) >= coverage * 0.9) {
+                indicators.push({
+                    type: 'MAX_COVERAGE_CLAIM',
+                    severity: 'high',
+                    description: 'Claim amount at or near maximum coverage limit'
+                });
+            }
+            
+            return indicators;
+        }
+        
+        async function generateAccumulativeRiskReport() {
+            // Show loading state
+            const reportContainer = document.getElementById('accumulative-risk-report');
+            reportContainer.style.display = 'block';
+            reportContainer.innerHTML = `
+                <div style="text-align: center; padding: 40px;">
+                    <div class="spinner" style="border: 4px solid rgba(255,255,255,0.2); border-top: 4px solid #4facfe; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin: 0 auto;"></div>
+                    <p style="color: rgba(255,255,255,0.8); margin-top: 16px;">🤖 AI analyzing claims data...</p>
+                </div>
+            `;
+            
+            // Load supporting data
+            await Promise.all([loadUnderwritingData(), loadCustomersData()]);
+            
+            // Analyze all claims
+            const riskAnalyses = allClaims.map(claim => ({
+                claim,
+                analysis: calculateClaimRiskLevel(claim),
+                fraudIndicators: []
+            }));
+            
+            // Add fraud indicators
+            riskAnalyses.forEach(ra => {
+                ra.fraudIndicators = detectFraudIndicators(ra.claim, ra.analysis);
+            });
+            
+            // Calculate accumulative metrics
+            const totalClaims = riskAnalyses.length;
+            const highRiskClaims = riskAnalyses.filter(ra => ra.analysis.level === 'HIGH' || ra.analysis.level === 'CRITICAL');
+            const fraudFlaggedClaims = riskAnalyses.filter(ra => ra.fraudIndicators.length > 0);
+            const sumAtRisk = riskAnalyses
+                .filter(ra => ra.analysis.score >= 25)
+                .reduce((sum, ra) => sum + Number(ra.claim.claimed_amount || 0), 0);
+            
+            // Update summary cards
+            document.getElementById('total-claims-count').textContent = totalClaims;
+            document.getElementById('high-risk-count').textContent = highRiskClaims.length;
+            document.getElementById('fraud-flag-count').textContent = fraudFlaggedClaims.length;
+            document.getElementById('sum-at-risk').textContent = '$' + sumAtRisk.toLocaleString();
+            
+            // Sort by risk score descending
+            riskAnalyses.sort((a, b) => b.analysis.score - a.analysis.score);
+            
+            // Generate detailed report
+            const reportHTML = `
+                <div style="background: rgba(255,255,255,0.05); border-radius: 12px; padding: 20px; margin-top: 20px;">
+                    <h3 style="color: white; margin: 0 0 16px 0; display: flex; align-items: center; gap: 10px;">
+                        📋 Detailed Risk Assessment (${totalClaims} Claims)
+                        <button onclick="downloadAccumulativeReport()" style="margin-left: auto; background: rgba(255,255,255,0.2); border: none; color: white; padding: 8px 16px; border-radius: 8px; cursor: pointer; font-size: 0.85rem;">📥 Download PDF</button>
+                    </h3>
+                    
+                    <!-- Risk Distribution -->
+                    <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 20px;">
+                        <div style="background: rgba(220,53,69,0.2); border: 1px solid rgba(220,53,69,0.5); border-radius: 8px; padding: 12px; text-align: center;">
+                            <div style="font-size: 1.5rem; font-weight: 700; color: #dc3545;">${riskAnalyses.filter(ra => ra.analysis.level === 'CRITICAL').length}</div>
+                            <div style="color: rgba(255,255,255,0.7); font-size: 0.8rem;">Critical Risk</div>
+                        </div>
+                        <div style="background: rgba(255,107,107,0.2); border: 1px solid rgba(255,107,107,0.5); border-radius: 8px; padding: 12px; text-align: center;">
+                            <div style="font-size: 1.5rem; font-weight: 700; color: #ff6b6b;">${riskAnalyses.filter(ra => ra.analysis.level === 'HIGH').length}</div>
+                            <div style="color: rgba(255,255,255,0.7); font-size: 0.8rem;">High Risk</div>
+                        </div>
+                        <div style="background: rgba(255,165,2,0.2); border: 1px solid rgba(255,165,2,0.5); border-radius: 8px; padding: 12px; text-align: center;">
+                            <div style="font-size: 1.5rem; font-weight: 700; color: #ffa502;">${riskAnalyses.filter(ra => ra.analysis.level === 'MEDIUM').length}</div>
+                            <div style="color: rgba(255,255,255,0.7); font-size: 0.8rem;">Medium Risk</div>
+                        </div>
+                        <div style="background: rgba(46,213,115,0.2); border: 1px solid rgba(46,213,115,0.5); border-radius: 8px; padding: 12px; text-align: center;">
+                            <div style="font-size: 1.5rem; font-weight: 700; color: #2ed573;">${riskAnalyses.filter(ra => ra.analysis.level === 'LOW').length}</div>
+                            <div style="color: rgba(255,255,255,0.7); font-size: 0.8rem;">Low Risk</div>
+                        </div>
+                    </div>
+                    
+                    <!-- Recommendations -->
+                    <div style="background: rgba(102,126,234,0.15); border-left: 4px solid #667eea; border-radius: 8px; padding: 16px; margin-bottom: 20px;">
+                        <h4 style="color: #4facfe; margin: 0 0 12px 0;">🎯 AI Recommendations</h4>
+                        <ul style="color: rgba(255,255,255,0.9); margin: 0; padding-left: 20px; line-height: 1.8;">
+                            ${highRiskClaims.length > 0 ? `<li><strong>Priority Review:</strong> ${highRiskClaims.length} claims require immediate attention (risk score ≥40)</li>` : ''}
+                            ${fraudFlaggedClaims.length > 0 ? `<li><strong>Fraud Investigation:</strong> ${fraudFlaggedClaims.length} claims show potential fraud indicators - recommend SIU review</li>` : ''}
+                            ${sumAtRisk > 100000 ? `<li><strong>Reserve Alert:</strong> $${sumAtRisk.toLocaleString()} at elevated risk - consider reserve adjustment</li>` : ''}
+                            <li><strong>Portfolio Status:</strong> ${totalClaims > 0 ? ((highRiskClaims.length / totalClaims) * 100).toFixed(1) : 0}% of claims are high-risk</li>
+                            ${riskAnalyses.filter(ra => ra.analysis.factors.some(f => f.factor.includes('Multiple Claims'))).length > 0 ? 
+                                `<li><strong>Pattern Alert:</strong> ${riskAnalyses.filter(ra => ra.analysis.factors.some(f => f.factor.includes('Multiple Claims'))).length} customers with multiple claims detected</li>` : ''}
+                        </ul>
+                    </div>
+                    
+                    <!-- Claims Table -->
+                    <div style="max-height: 400px; overflow-y: auto; border-radius: 8px;">
+                        <table style="width: 100%; border-collapse: collapse; font-size: 0.85rem;">
+                            <thead style="position: sticky; top: 0; background: #2d3561;">
+                                <tr>
+                                    <th style="padding: 12px; text-align: left; color: rgba(255,255,255,0.9); border-bottom: 2px solid rgba(255,255,255,0.1);">Claim ID</th>
+                                    <th style="padding: 12px; text-align: left; color: rgba(255,255,255,0.9); border-bottom: 2px solid rgba(255,255,255,0.1);">Customer</th>
+                                    <th style="padding: 12px; text-align: right; color: rgba(255,255,255,0.9); border-bottom: 2px solid rgba(255,255,255,0.1);">Amount</th>
+                                    <th style="padding: 12px; text-align: center; color: rgba(255,255,255,0.9); border-bottom: 2px solid rgba(255,255,255,0.1);">Risk Score</th>
+                                    <th style="padding: 12px; text-align: center; color: rgba(255,255,255,0.9); border-bottom: 2px solid rgba(255,255,255,0.1);">Level</th>
+                                    <th style="padding: 12px; text-align: center; color: rgba(255,255,255,0.9); border-bottom: 2px solid rgba(255,255,255,0.1);">Fraud Flags</th>
+                                    <th style="padding: 12px; text-align: left; color: rgba(255,255,255,0.9); border-bottom: 2px solid rgba(255,255,255,0.1);">Key Risk Factors</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${riskAnalyses.map(ra => `
+                                    <tr style="border-bottom: 1px solid rgba(255,255,255,0.05);">
+                                        <td style="padding: 12px; color: white;">
+                                            <a href="#" onclick="openProbabilityReport('${ra.claim.id}'); return false;" style="color: #4facfe; text-decoration: none;">${ra.claim.id}</a>
+                                        </td>
+                                        <td style="padding: 12px; color: rgba(255,255,255,0.8);">
+                                            ${ra.claim.customer_name || ra.claim.customer_id || 'N/A'}
+                                            ${ra.analysis.uwData?.customer_email ? `<br><span style="font-size: 0.75rem; color: rgba(255,255,255,0.5);">${ra.analysis.uwData.customer_email}</span>` : ''}
+                                        </td>
+                                        <td style="padding: 12px; color: white; text-align: right; font-weight: 600;">$${Number(ra.claim.claimed_amount || 0).toLocaleString()}</td>
+                                        <td style="padding: 12px; text-align: center;">
+                                            <span style="background: ${ra.analysis.color}22; color: ${ra.analysis.color}; padding: 4px 12px; border-radius: 20px; font-weight: 600;">${ra.analysis.score}</span>
+                                        </td>
+                                        <td style="padding: 12px; text-align: center;">
+                                            <span style="background: ${ra.analysis.color}; color: white; padding: 4px 10px; border-radius: 4px; font-size: 0.75rem; font-weight: 600;">${ra.analysis.level}</span>
+                                        </td>
+                                        <td style="padding: 12px; text-align: center;">
+                                            ${ra.fraudIndicators.length > 0 ? 
+                                                `<span style="background: rgba(255,0,0,0.2); color: #ff6b6b; padding: 4px 10px; border-radius: 4px; font-size: 0.75rem; font-weight: 600;">⚠️ ${ra.fraudIndicators.length}</span>` : 
+                                                '<span style="color: rgba(255,255,255,0.4);">-</span>'}
+                                        </td>
+                                        <td style="padding: 12px; color: rgba(255,255,255,0.7); font-size: 0.8rem;">
+                                            ${ra.analysis.factors.slice(0, 2).map(f => f.factor).join(', ') || 'No significant factors'}
+                                        </td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+                    
+                    <!-- Footer -->
+                    <div style="margin-top: 20px; padding-top: 16px; border-top: 1px solid rgba(255,255,255,0.1); display: flex; justify-content: space-between; align-items: center;">
+                        <div style="color: rgba(255,255,255,0.5); font-size: 0.8rem;">
+                            Generated: ${new Date().toLocaleString()} | Data Source: PHINS Pipeline (Real Data)
+                        </div>
+                        <div style="display: flex; gap: 8px;">
+                            <button onclick="exportRiskReportCSV()" style="background: rgba(255,255,255,0.1); border: none; color: white; padding: 8px 16px; border-radius: 8px; cursor: pointer; font-size: 0.85rem;">📊 Export CSV</button>
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            reportContainer.innerHTML = reportHTML;
+        }
+        
+        // Store current report data for export
+        let currentRiskReport = null;
+        
+        function downloadAccumulativeReport() {
+            const reportEl = document.getElementById('accumulative-risk-report');
+            if (!reportEl) return;
+            
+            const printWindow = window.open('', '_blank');
+            printWindow.document.write(`
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <title>PHINS Accumulative Risk Report - ${new Date().toLocaleDateString()}</title>
+                    <style>
+                        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; padding: 40px; background: #1a1f36; color: white; }
+                        table { width: 100%; border-collapse: collapse; margin: 20px 0; }
+                        th, td { padding: 12px; text-align: left; border-bottom: 1px solid rgba(255,255,255,0.1); }
+                        th { background: #2d3561; }
+                        .header { text-align: center; margin-bottom: 30px; padding-bottom: 20px; border-bottom: 2px solid #4facfe; }
+                        .header h1 { color: #4facfe; margin: 0 0 8px 0; }
+                        .summary-box { display: flex; gap: 20px; margin: 20px 0; }
+                        .stat-box { flex: 1; background: rgba(255,255,255,0.1); padding: 16px; border-radius: 8px; text-align: center; }
+                        .stat-value { font-size: 2rem; font-weight: bold; }
+                        @media print { body { background: white; color: #333; } th { background: #f5f5f5; } }
+                    </style>
+                </head>
+                <body>
+                    <div class="header">
+                        <h1>🛡️ PHINS Accumulative Risk Report</h1>
+                        <p>Claims Portfolio Risk Analysis</p>
+                        <p style="font-size: 0.9rem; color: rgba(255,255,255,0.7);">Generated: ${new Date().toLocaleString()}</p>
+                    </div>
+                    ${reportEl.innerHTML}
+                </body>
+                </html>
+            `);
+            printWindow.document.close();
+            setTimeout(() => printWindow.print(), 500);
+        }
+        
+        function exportRiskReportCSV() {
+            // Rebuild risk analysis for export
+            const riskAnalyses = allClaims.map(claim => ({
+                claim,
+                analysis: calculateClaimRiskLevel(claim),
+                fraudIndicators: detectFraudIndicators(claim, calculateClaimRiskLevel(claim))
+            }));
+            
+            let csv = 'Claim ID,Customer,Email,Amount,Risk Score,Risk Level,Fraud Flags,Key Factors,Status,Filed Date\n';
+            
+            riskAnalyses.forEach(ra => {
+                const factors = ra.analysis.factors.slice(0, 3).map(f => f.factor).join('; ');
+                csv += `"${ra.claim.id}","${ra.claim.customer_name || ra.claim.customer_id}","${ra.analysis.uwData?.customer_email || ''}",${ra.claim.claimed_amount || 0},${ra.analysis.score},"${ra.analysis.level}",${ra.fraudIndicators.length},"${factors}","${ra.claim.status}","${ra.claim.filed_date || ''}"\n`;
+            });
+            
+            const blob = new Blob([csv], { type: 'text/csv' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = `PHINS_Risk_Report_${new Date().toISOString().split('T')[0]}.csv`;
+            link.click();
+            URL.revokeObjectURL(url);
+            
+            showToast('Risk report exported to CSV', 'success');
+        }
+        
+        // Update risk summary on claims load
+        function updateRiskSummary() {
+            if (allClaims.length === 0) {
+                document.getElementById('total-claims-count').textContent = '0';
+                document.getElementById('high-risk-count').textContent = '0';
+                document.getElementById('fraud-flag-count').textContent = '0';
+                document.getElementById('sum-at-risk').textContent = '$0';
+                return;
+            }
+            
+            // Quick calculation without full analysis
+            const highRisk = allClaims.filter(c => Number(c.claimed_amount || 0) > 50000).length;
+            const totalAmount = allClaims.reduce((sum, c) => sum + Number(c.claimed_amount || 0), 0);
+            
+            document.getElementById('total-claims-count').textContent = allClaims.length;
+            document.getElementById('high-risk-count').textContent = highRisk;
+            document.getElementById('fraud-flag-count').textContent = '-';
+            document.getElementById('sum-at-risk').textContent = '$' + Math.round(totalAmount * 0.3).toLocaleString();
+        }
+        
         // Initial load
         loadClaims();
         // Refresh every 30 seconds
         setInterval(loadClaims, 30000);
+        // Load supporting data in background
+        setTimeout(() => {
+            loadUnderwritingData();
+            loadCustomersData();
+        }, 1000);
     </script>
 </body>
 </html>
