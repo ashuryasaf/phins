@@ -2,14 +2,12 @@
 """
 Generate Comprehensive Risk Assessment Report
 =============================================
-Generates a full AI executive risk assessment report for:
-Application #UW-20260106-6316
+Generates a full AI executive risk assessment report using SYNTHETIC test data.
 
-Applicant Profile:
-- Age: 47 years
-- Disability: 30% 
-- Medical Conditions: Obesity (Class I), Hypertension
-- Policy Type: Life Insurance
+SECURITY NOTE:
+This script uses synthetic/anonymized data for testing and demonstration purposes.
+NO REAL PII should ever be committed to this file or generated reports.
+Reports are saved to /workspace/reports/ which is gitignored.
 
 This script generates a downloadable HTML report with:
 - Full risk assessment breakdown
@@ -24,6 +22,8 @@ Author: PHINS Platform
 import os
 import sys
 import json
+import secrets
+import random
 from datetime import datetime, date
 
 # Import services
@@ -48,173 +48,183 @@ from services.underwriting_bot_service import (
 )
 
 
+def _generate_synthetic_id(prefix: str) -> str:
+    """Generate a synthetic ID for testing"""
+    return f"{prefix}-{datetime.now().strftime('%Y%m%d')}-{secrets.token_hex(4).upper()}"
+
+
 def create_application_data():
-    """Create the specific application data for UW-20260106-6316"""
+    """
+    Create SYNTHETIC application data for testing the risk assessment pipeline.
     
-    # Application details
-    application_id = "UW-20260106-6316"
+    SECURITY: All data in this function is synthetic/fake and should not
+    resemble any real person. No real PII should be used here.
+    """
     
-    # Customer data (47-year-old with disability)
+    # Generate unique synthetic IDs
+    application_id = _generate_synthetic_id("UW")
+    customer_id = _generate_synthetic_id("CUST")
+    
+    # SYNTHETIC customer data - clearly fake/test data
     customer_data = {
-        'id': 'CUST-20260106-6316',
-        'name': 'Michael Thompson',
-        'email': 'michael.thompson@email.com',
-        'phone': '+44 7700 123456',
-        'dob': '1979-03-15',
-        'age': 47,
-        'gender': 'male',
-        'address': '45 Wellington Road',
-        'city': 'Birmingham',
-        'location': 'Birmingham, West Midlands',
-        'state': 'West Midlands',
-        'zip': 'B15 2QJ',
-        'occupation': 'Retail Manager',
-        'marital_status': 'married',
-        'dependents': 2,
-        'annual_income': 52000,
-        'created_date': '2026-01-06T10:00:00'
+        'id': customer_id,
+        'name': 'Test Applicant',  # Generic test name
+        'email': f'test.applicant.{secrets.token_hex(4)}@example.test',  # Fake domain
+        'phone': '+1-555-0100',  # Reserved test number range
+        'dob': '1977-01-01',  # Generic date
+        'age': 48,
+        'gender': 'unspecified',
+        'address': '123 Test Street',
+        'city': 'Test City',
+        'location': 'Test Region',
+        'state': 'Test State',
+        'zip': '00000',  # Invalid zip for testing
+        'occupation': 'Test Occupation',
+        'marital_status': 'unspecified',
+        'dependents': 0,
+        'annual_income': 50000,
+        'created_date': datetime.now().isoformat()
     }
     
-    # Medical data (30% disability, obesity)
+    # SYNTHETIC medical data for testing elevated risk scenarios
     medical_data = {
         'disability_percentage': 30,
-        'disability_type': 'Mobility Impairment - Lower Limb',
-        'disability_cause': 'Road Traffic Accident (2019)',
+        'disability_type': 'Mobility Impairment - Test Scenario',
+        'disability_cause': 'Test Scenario - Historical Injury',
         'disability_certified': True,
-        'disability_certificate_date': '2020-01-15',
-        'bmi': 32.5,
+        'disability_certificate_date': '2020-01-01',
+        'bmi': 32.0,
         'bmi_category': 'Obese Class I',
-        'height_cm': 178,
-        'weight_kg': 103,
-        'blood_pressure': '142/88',
-        'cholesterol_total': 5.8,
+        'height_cm': 175,
+        'weight_kg': 98,
+        'blood_pressure': '140/90',
+        'cholesterol_total': 5.5,
         'smoking_status': 'non_smoker',
-        'alcohol_units_weekly': 8,
+        'alcohol_units_weekly': 5,
         'exercise_hours_weekly': 2,
         'family_history': {
             'heart_disease': True,
             'diabetes': False,
             'cancer': False,
-            'stroke': True
+            'stroke': False
         },
         'conditions': [
             {
                 'name': 'Obesity',
                 'icd_code': 'E66.9',
                 'severity': 'moderate',
-                'diagnosed_date': '2021-06-20',
+                'diagnosed_date': '2021-01-01',
                 'status': 'active',
-                'treatment': 'Dietary management, exercise program, nutritionist consultations',
+                'treatment': 'Lifestyle modifications',
                 'risk_impact': 0.25,
                 'exclusion_recommended': False,
                 'loading_percentage': 15,
-                'notes': 'BMI 32.5 (Class I Obesity). Patient engaged with weight management program. No recent complications.'
+                'notes': 'Test condition - Class I Obesity'
             },
             {
-                'name': 'Essential Hypertension',
+                'name': 'Hypertension',
                 'icd_code': 'I10',
                 'severity': 'mild',
-                'diagnosed_date': '2022-03-10',
+                'diagnosed_date': '2022-01-01',
                 'status': 'controlled',
-                'treatment': 'Lisinopril 10mg daily, lifestyle modifications',
+                'treatment': 'Medication and lifestyle',
                 'risk_impact': 0.20,
                 'exclusion_recommended': False,
                 'loading_percentage': 10,
-                'notes': 'Blood pressure well controlled on medication. Regular monitoring in place.'
+                'notes': 'Test condition - controlled hypertension'
             },
             {
-                'name': 'Mobility Impairment - Left Leg',
+                'name': 'Mobility Impairment',
                 'icd_code': 'M62.50',
                 'severity': 'moderate',
-                'diagnosed_date': '2019-08-15',
+                'diagnosed_date': '2019-01-01',
                 'status': 'stable',
-                'treatment': 'Physiotherapy, mobility aids, annual orthopaedic review',
+                'treatment': 'Physical therapy',
                 'risk_impact': 0.15,
                 'exclusion_recommended': True,
                 'loading_percentage': 0,
-                'notes': 'Result of RTA in 2019. 30% disability rating. Stable condition, uses walking stick.'
+                'notes': 'Test condition - stable mobility impairment'
             }
         ],
         'medications': [
-            {'name': 'Lisinopril', 'dosage': '10mg', 'frequency': 'once daily', 'purpose': 'Hypertension'},
-            {'name': 'Paracetamol', 'dosage': '500mg', 'frequency': 'as needed', 'purpose': 'Pain management'},
-            {'name': 'Vitamin D3', 'dosage': '1000IU', 'frequency': 'once daily', 'purpose': 'Supplement'}
+            {'name': 'Test Medication A', 'dosage': '10mg', 'frequency': 'daily', 'purpose': 'Test purpose'},
+            {'name': 'Test Medication B', 'dosage': '500mg', 'frequency': 'as needed', 'purpose': 'Test purpose'}
         ],
         'recent_tests': {
-            'date': '2025-11-15',
-            'glucose_fasting': 5.2,
-            'hba1c': 5.4,
+            'date': '2025-01-01',
+            'glucose_fasting': 5.0,
+            'hba1c': 5.5,
             'liver_function': 'Normal',
             'kidney_function': 'Normal',
-            'ecg': 'Normal sinus rhythm'
+            'ecg': 'Normal'
         }
     }
     
-    # Documents submitted
+    # SYNTHETIC documents - no real document numbers
     documents = [
         {
             'type': 'passport',
-            'id': 'DOC-PASS-001',
+            'id': f'DOC-PASS-{secrets.token_hex(4)}',
             'verified': True,
             'authenticity_score': 0.95,
             'expiry_status': 'valid',
             'extracted_data': {
-                'full_name': 'MICHAEL JAMES THOMPSON',
-                'date_of_birth': '1979-03-15',
-                'nationality': 'BRITISH',
-                'passport_number': 'AB1234567',
-                'expiry_date': '2030-05-20'
+                'full_name': 'TEST APPLICANT',
+                'date_of_birth': '1977-01-01',
+                'nationality': 'TEST',
+                'passport_number': f'TEST{secrets.token_hex(4).upper()}',  # Clearly fake
+                'expiry_date': '2030-01-01'
             },
             'flags': []
         },
         {
             'type': 'driving_licence',
-            'id': 'DOC-DL-001',
+            'id': f'DOC-DL-{secrets.token_hex(4)}',
             'verified': True,
             'authenticity_score': 0.92,
             'expiry_status': 'valid',
             'extracted_data': {
-                'full_name': 'MICHAEL JAMES THOMPSON',
-                'date_of_birth': '1979-03-15',
-                'licence_number': 'THOMP903155MJ9AB',
-                'categories': 'B - Automatic only',
-                'restrictions': 'Automatic transmission only due to mobility'
+                'full_name': 'TEST APPLICANT',
+                'date_of_birth': '1977-01-01',
+                'licence_number': f'TEST{secrets.token_hex(6).upper()}',  # Clearly fake
+                'categories': 'B',
+                'restrictions': 'Test restriction'
             },
             'flags': ['RESTRICTION_NOTED']
         },
         {
             'type': 'disability_certificate',
-            'id': 'DOC-DC-001',
+            'id': f'DOC-DC-{secrets.token_hex(4)}',
             'verified': True,
             'authenticity_score': 0.98,
             'expiry_status': 'valid',
             'extracted_data': {
-                'full_name': 'MICHAEL JAMES THOMPSON',
-                'disability_type': 'Mobility Impairment - Lower Limb',
+                'full_name': 'TEST APPLICANT',
+                'disability_type': 'Mobility Impairment - Test',
                 'disability_percentage': 30,
-                'issue_date': '2020-01-15',
-                'valid_until': '2027-01-14',
-                'issuing_authority': 'Department for Work and Pensions'
+                'issue_date': '2020-01-01',
+                'valid_until': '2027-01-01',
+                'issuing_authority': 'Test Authority'
             },
             'flags': ['DISABILITY_DECLARED']
         },
         {
             'type': 'medical_report',
-            'id': 'DOC-MED-001',
+            'id': f'DOC-MED-{secrets.token_hex(4)}',
             'verified': True,
             'authenticity_score': 0.96,
             'expiry_status': 'valid',
             'extracted_data': {
-                'provider': 'Birmingham NHS Trust',
-                'report_date': '2025-11-20',
-                'physician': 'Dr. Sarah Williams',
+                'provider': 'Test Medical Provider',
+                'report_date': '2025-01-01',
+                'physician': 'Dr. Test',
                 'conditions': ['Obesity', 'Hypertension', 'Mobility Impairment']
             },
             'flags': ['MULTIPLE_CONDITIONS']
         },
         {
             'type': 'photo',
-            'id': 'DOC-PHOTO-001',
+            'id': f'DOC-PHOTO-{secrets.token_hex(4)}',
             'verified': True,
             'authenticity_score': 0.94,
             'expiry_status': 'valid',
@@ -226,7 +236,7 @@ def create_application_data():
         },
         {
             'type': 'video_verification',
-            'id': 'DOC-VIDEO-001',
+            'id': f'DOC-VIDEO-{secrets.token_hex(4)}',
             'verified': True,
             'authenticity_score': 0.93,
             'expiry_status': 'valid',
@@ -239,15 +249,15 @@ def create_application_data():
         }
     ]
     
-    # Policy data
+    # SYNTHETIC policy data
     policy_data = {
-        'id': 'POL-20260106-6316',
+        'id': _generate_synthetic_id("POL"),
         'type': 'Life Insurance',
         'coverage_amount': 350000,
         'annual_premium_base': 1850,
         'term_years': 20,
-        'beneficiaries': ['Spouse - Sarah Thompson', 'Children - Emma & James Thompson'],
-        'start_date': '2026-02-01'
+        'beneficiaries': ['Test Beneficiary 1', 'Test Beneficiary 2'],
+        'start_date': '2026-01-01'
     }
     
     return application_id, customer_data, medical_data, documents, policy_data

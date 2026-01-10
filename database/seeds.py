@@ -3,6 +3,16 @@ Database Seed Data
 
 Populates the database with default users and sample data.
 Includes dynamic customer loading for persistence across restarts.
+
+SECURITY NOTE:
+All passwords are loaded from environment variables. If not set, random
+unusable passwords are generated (users won't be able to login until
+proper passwords are configured via environment variables).
+
+Required environment variables:
+- PHINS_ADMIN_PASSWORD, PHINS_UNDERWRITER_PASSWORD, etc. for system users
+- PHINS_USER_{NAME}_PASSWORD for named user accounts
+- PHINS_DEFAULT_CUSTOMER_PASSWORD for test customers (optional)
 """
 
 import hashlib
@@ -29,6 +39,25 @@ def hash_password(password: str) -> dict:
     return {'hash': hashed.hex(), 'salt': salt}
 
 
+def _get_env_password(env_var: str, username: str) -> str:
+    """
+    Get password from environment variable or generate random unusable password.
+    
+    Args:
+        env_var: Environment variable name
+        username: Username for logging
+        
+    Returns:
+        Password string from env var or random password
+    """
+    password = os.environ.get(env_var)
+    if password:
+        return password
+    else:
+        logger.warning(f"⚠️  No password configured for '{username}'. Set {env_var} environment variable.")
+        return secrets.token_urlsafe(32)  # Random password that cannot be guessed
+
+
 def seed_default_users(session=None):
     """Create default system users"""
     should_close = False
@@ -39,53 +68,53 @@ def seed_default_users(session=None):
     try:
         user_repo = UserRepository(session)
         
-        # PRODUCTION PASSWORDS - Updated 2026-01-10
+        # System users - passwords loaded from environment variables
         default_users = [
             {
                 'username': 'admin',
-                'password': 'PDa11wrt129@',
+                'password': _get_env_password('PHINS_ADMIN_PASSWORD', 'admin'),
                 'role': 'admin',
                 'name': 'Admin User',
                 'email': 'admin@phins.ai'
             },
             {
                 'username': 'actuary',
-                'password': 'Pac7tre77st@',
+                'password': _get_env_password('PHINS_ACTUARY_PASSWORD', 'actuary'),
                 'role': 'actuary',
                 'name': 'Actuary User',
                 'email': 'actuary@phins.ai'
             },
             {
                 'username': 'supplier',
-                'password': 'PDa11wrt129@',
+                'password': _get_env_password('PHINS_SUPPLIER_PASSWORD', 'supplier'),
                 'role': 'supplier',
                 'name': 'Supplier User',
                 'email': 'supplier@phins.ai'
             },
             {
                 'username': 'underwriter',
-                'password': 'PDu12ndr128!',
+                'password': _get_env_password('PHINS_UNDERWRITER_PASSWORD', 'underwriter'),
                 'role': 'underwriter',
                 'name': 'John Underwriter',
                 'email': 'underwriter@phins.ai'
             },
             {
                 'username': 'claims_adjuster',
-                'password': 'Dcl13dj11py@',
+                'password': _get_env_password('PHINS_CLAIMS_PASSWORD', 'claims_adjuster'),
                 'role': 'claims',
                 'name': 'Jane Claims',
                 'email': 'claims@phins.ai'
             },
             {
                 'username': 'accountant',
-                'password': 'Dac14tnt72t!',
+                'password': _get_env_password('PHINS_ACCOUNTANT_PASSWORD', 'accountant'),
                 'role': 'accountant',
                 'name': 'Bob Accountant',
                 'email': 'accountant@phins.ai'
             },
             {
                 'username': 'media_ad',
-                'password': 'Dmd55ad23!',
+                'password': _get_env_password('PHINS_MEDIA_PASSWORD', 'media_ad'),
                 'role': 'media',
                 'name': 'Media Admin',
                 'email': 'media@phins.ai'
@@ -93,7 +122,7 @@ def seed_default_users(session=None):
             # Primary customer account (links to CUST-ASAF-001 in customers table)
             {
                 'username': 'asaf@assurance.co.il',
-                'password': 'Afs8a71hu11!',
+                'password': _get_env_password('PHINS_USER_ASAF_ASSURANCE_PASSWORD', 'asaf@assurance.co.il'),
                 'role': 'customer',
                 'name': 'Asaf Assurance',
                 'email': 'asaf@assurance.co.il'
@@ -101,7 +130,7 @@ def seed_default_users(session=None):
             # Admin account for asaf@phins.ai - PERSISTENT ACCOUNT
             {
                 'username': 'asaf@phins.ai',
-                'password': 'PHcre11sf78@',
+                'password': _get_env_password('PHINS_USER_ASAF_PHINS_PASSWORD', 'asaf@phins.ai'),
                 'role': 'admin',
                 'name': 'Asaf PHINS',
                 'email': 'asaf@phins.ai'
@@ -109,7 +138,7 @@ def seed_default_users(session=None):
             # Customer account for efrat@phins.ai - PERSISTENT ACCOUNT
             {
                 'username': 'efrat@phins.ai',
-                'password': 'INS3fmls212@',
+                'password': _get_env_password('PHINS_USER_EFRAT_PASSWORD', 'efrat@phins.ai'),
                 'role': 'customer',
                 'name': 'Efrat PHINS',
                 'email': 'efrat@phins.ai'
@@ -117,7 +146,7 @@ def seed_default_users(session=None):
             # Customer account for asi@phins.ai - PERSISTENT ACCOUNT
             {
                 'username': 'asi@phins.ai',
-                'password': 'HIS43cus21me!',
+                'password': _get_env_password('PHINS_USER_ASI_PASSWORD', 'asi@phins.ai'),
                 'role': 'customer',
                 'name': 'Asi PHINS',
                 'email': 'asi@phins.ai'
@@ -125,7 +154,7 @@ def seed_default_users(session=None):
             # Customer account for shosh@phins.ai - PERSISTENT ACCOUNT
             {
                 'username': 'shosh@phins.ai',
-                'password': 'Sma52ma11mi@',
+                'password': _get_env_password('PHINS_USER_SHOSH_PASSWORD', 'shosh@phins.ai'),
                 'role': 'customer',
                 'name': 'Shosh PHINS',
                 'email': 'shosh@phins.ai'
@@ -200,8 +229,9 @@ def seed_dynamic_customers(session, user_repo):
                 logger.info(f"Dynamic customer '{username}' already exists, skipping...")
                 continue
             
-            # Hash password
-            password_hash = hash_password(customer.get('password', 'PHINScustomer2024!'))
+            # Hash password - use env var for default or generate random
+            default_cust_pwd = os.environ.get('PHINS_DEFAULT_CUSTOMER_PASSWORD', secrets.token_urlsafe(32))
+            password_hash = hash_password(customer.get('password', default_cust_pwd))
             
             # Create user
             user_repo.create(
@@ -258,7 +288,7 @@ def seed_sample_data(session=None):
         
         primary_customer = customer_repo.find_one_by(email='asaf@assurance.co.il')
         if not primary_customer:
-            pwd = hash_password('Assurance2024!')
+            pwd = hash_password(_get_env_password('PHINS_USER_ASAF_ASSURANCE_PASSWORD', 'asaf@assurance.co.il'))
             primary_customer = customer_repo.create(
                 id='CUST-ASAF-001',
                 name='Asaf Assurance',
@@ -589,7 +619,7 @@ def seed_sample_data(session=None):
                 'age': 35,
                 'gender': 'female',
                 'occupation': 'Product Manager',
-                'password': 'PHINScustomer2024!',
+                'password': _get_env_password('PHINS_USER_EFRAT_PASSWORD', 'efrat@phins.ai'),
                 'policy': {
                     'id': 'POL-EFRAT-UNIFIED-001',
                     'type': 'phins_unified',
@@ -620,7 +650,7 @@ def seed_sample_data(session=None):
                 'age': 40,
                 'gender': 'male',
                 'occupation': 'Software Engineer',
-                'password': 'PHINScustomer2024!',
+                'password': _get_env_password('PHINS_USER_ASI_PASSWORD', 'asi@phins.ai'),
                 'policy': {
                     'id': 'POL-ASI-UNIFIED-001',
                     'type': 'phins_unified',
@@ -651,7 +681,7 @@ def seed_sample_data(session=None):
                 'age': 37,
                 'gender': 'female',
                 'occupation': 'Marketing Director',
-                'password': 'PHINScustomer2024!',
+                'password': _get_env_password('PHINS_USER_SHOSH_PASSWORD', 'shosh@phins.ai'),
                 'policy': {
                     'id': 'POL-SHOSH-UNIFIED-001',
                     'type': 'phins_unified',
@@ -864,7 +894,9 @@ def seed_sample_data(session=None):
                 logger.info(f"Customer {cust_data['email']} already exists, skipping...")
                 continue
             
-            pwd = hash_password('Test123!')
+            # Test accounts - use env var or random password
+            test_pwd = _get_env_password('PHINS_TEST_CUSTOMER_PASSWORD', cust_data['email'])
+            pwd = hash_password(test_pwd)
             customer = customer_repo.create(
                 id=cust_data['id'],
                 name=cust_data['name'],

@@ -26,6 +26,87 @@ import json
 import uuid
 import re
 import math
+import os
+
+
+# ============================================================================
+# SECURITY - Path Validation
+# ============================================================================
+
+# Allowed base directories for file uploads (configurable via environment)
+ALLOWED_UPLOAD_DIRS = [
+    '/workspace/uploads',
+    '/tmp/phins_uploads',
+    os.environ.get('PHINS_UPLOAD_DIR', '/workspace/uploads')
+]
+
+def validate_file_path(file_path: str, file_name: str) -> Tuple[bool, str, str]:
+    """
+    Validate file path to prevent path traversal attacks.
+    
+    Args:
+        file_path: The file path to validate
+        file_name: The original file name
+        
+    Returns:
+        Tuple of (is_valid, sanitized_path, error_message)
+    """
+    if not file_path:
+        return True, "", ""  # Empty path is OK (file content may be provided directly)
+    
+    # Check for path traversal attempts
+    dangerous_patterns = ['../', '..\\', '%2e%2e', '%252e', '/etc/', '/proc/', '/sys/']
+    file_path_lower = file_path.lower()
+    for pattern in dangerous_patterns:
+        if pattern in file_path_lower:
+            return False, "", f"Security error: Path traversal attempt detected ({pattern})"
+    
+    # Normalize the path
+    try:
+        normalized = os.path.normpath(file_path)
+        abs_path = os.path.abspath(normalized)
+    except Exception as e:
+        return False, "", f"Invalid path: {e}"
+    
+    # Check if path is within allowed directories
+    is_allowed = False
+    for allowed_dir in ALLOWED_UPLOAD_DIRS:
+        if allowed_dir and abs_path.startswith(os.path.abspath(allowed_dir)):
+            is_allowed = True
+            break
+    
+    if not is_allowed:
+        # If not in allowed dir, generate a safe path
+        safe_dir = os.environ.get('PHINS_UPLOAD_DIR', '/workspace/uploads')
+        # Sanitize filename - remove any path components and dangerous chars
+        safe_name = os.path.basename(file_name) if file_name else 'unnamed'
+        safe_name = re.sub(r'[^\w\-_\.]', '_', safe_name)
+        abs_path = os.path.join(safe_dir, safe_name)
+    
+    return True, abs_path, ""
+
+
+def sanitize_filename(filename: str) -> str:
+    """Sanitize a filename to prevent security issues."""
+    if not filename:
+        return f"file_{uuid.uuid4().hex[:8]}"
+    
+    # Get just the filename, not any path
+    filename = os.path.basename(filename)
+    
+    # Remove/replace dangerous characters
+    safe_name = re.sub(r'[^\w\-_\.]', '_', filename)
+    
+    # Ensure it doesn't start with a dot (hidden file)
+    if safe_name.startswith('.'):
+        safe_name = '_' + safe_name[1:]
+    
+    # Limit length
+    if len(safe_name) > 255:
+        name, ext = os.path.splitext(safe_name)
+        safe_name = name[:250] + ext
+    
+    return safe_name or f"file_{uuid.uuid4().hex[:8]}"
 
 
 # ============================================================================
@@ -504,38 +585,42 @@ class OfficialDocumentAnalyzer:
         
         # Simulated OCR and document analysis
         # In production, would use actual OCR and document verification services
+        # NOTE: All values below are SYNTHETIC TEST DATA - not real document numbers
+        
+        import secrets as _secrets
+        _test_id = _secrets.token_hex(4).upper()
         
         if doc_type == 'passport':
             result['extracted_fields'] = {
-                'full_name': 'JOHN SMITH',  # Simulated
-                'date_of_birth': '1985-06-15',
-                'nationality': 'BRITISH',
-                'passport_number': 'AB123456',
-                'issue_date': '2020-01-15',
-                'expiry_date': '2030-01-14',
-                'gender': 'M'
+                'full_name': 'TEST APPLICANT',  # Synthetic test data
+                'date_of_birth': '1985-01-01',
+                'nationality': 'TEST',
+                'passport_number': f'TEST{_test_id}',  # Clearly fake number
+                'issue_date': '2020-01-01',
+                'expiry_date': '2030-01-01',
+                'gender': 'U'
             }
         elif doc_type == 'driving_licence':
             result['extracted_fields'] = {
-                'full_name': 'JOHN SMITH',
-                'date_of_birth': '1985-06-15',
-                'licence_number': 'SMITH806159J99AB',
+                'full_name': 'TEST APPLICANT',
+                'date_of_birth': '1985-01-01',
+                'licence_number': f'TEST{_test_id}LIC',  # Clearly fake number
                 'categories': 'B',
-                'expiry_date': '2025-06-15'
+                'expiry_date': '2025-01-01'
             }
         elif doc_type == 'national_insurance':
             result['extracted_fields'] = {
-                'full_name': 'JOHN SMITH',
-                'ni_number': 'AB123456C',
-                'date_of_birth': '1985-06-15'
+                'full_name': 'TEST APPLICANT',
+                'ni_number': f'TE{_test_id[:6]}T',  # Clearly fake NI format
+                'date_of_birth': '1985-01-01'
             }
         elif doc_type == 'disability_certificate':
             result['extracted_fields'] = {
-                'full_name': 'JOHN SMITH',
+                'full_name': 'TEST APPLICANT',
                 'disability_type': 'mobility',
                 'disability_level': 'moderate',
                 'valid_until': '2026-12-31',
-                'issuing_authority': 'DWP'
+                'issuing_authority': 'TEST_AUTHORITY'
             }
             # Add risk consideration for disability
             result['flags'].append('DISABILITY_DECLARED')
@@ -1175,10 +1260,18 @@ class UnderwritingBotService:
         Add metadata item to assessment.
         
         This creates a new metadata record - never modifies customer data.
+        
+        Security: File paths are validated to prevent path traversal attacks.
         """
         assessment = self.assessments.get(assessment_id)
         if not assessment:
             raise ValueError(f"Assessment {assessment_id} not found")
+        
+        # SECURITY: Validate and sanitize file path
+        safe_file_name = sanitize_filename(file_name)
+        is_valid, safe_path, error = validate_file_path(file_path, safe_file_name)
+        if not is_valid:
+            raise ValueError(f"Invalid file path: {error}")
         
         # Update assessment status
         if assessment.status == AssessmentStatus.INITIATED:
@@ -1194,8 +1287,8 @@ class UnderwritingBotService:
             underwriting_id=assessment.underwriting_id,
             customer_id=assessment.customer_id,
             metadata_type=metadata_type,
-            file_name=file_name,
-            file_path=file_path,
+            file_name=safe_file_name,  # Use sanitized filename
+            file_path=safe_path,  # Use validated path
             file_hash=file_hash,
             file_size_bytes=file_size,
             mime_type=mime_type,

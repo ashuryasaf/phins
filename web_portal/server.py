@@ -628,7 +628,9 @@ def load_dynamic_customers():
                 continue
             
             # Hash password and add to USERS
-            pwd_hash = hash_password(customer.get('password', 'PHINScustomer2024!'))
+            # SECURITY: Default password from env var, or generate random unusable password
+            default_pwd = os.environ.get('PHINS_DEFAULT_CUSTOMER_PASSWORD', secrets.token_urlsafe(32))
+            pwd_hash = hash_password(customer.get('password', default_pwd))
             USERS[email] = {
                 'hash': pwd_hash['hash'],
                 'salt': pwd_hash['salt'],
@@ -2237,24 +2239,65 @@ def validate_amount(amount: Any) -> bool:
     except (ValueError, TypeError):
         return False
 
+# =============================================================================
+# SECURE CREDENTIAL MANAGEMENT
+# =============================================================================
+# Credentials are loaded from environment variables. If not set, a random
+# password is generated that will not allow login (secure by default).
+# 
+# Required environment variables for user authentication:
+#   PHINS_ADMIN_PASSWORD - Admin user password
+#   PHINS_UNDERWRITER_PASSWORD - Underwriter password
+#   PHINS_CLAIMS_PASSWORD - Claims adjuster password
+#   PHINS_ACCOUNTANT_PASSWORD - Accountant password
+#   PHINS_ACTUARY_PASSWORD - Actuary password
+#   PHINS_SUPPLIER_PASSWORD - Supplier password
+#   PHINS_MEDIA_PASSWORD - Media admin password
+#   PHINS_USER_{EMAIL}_PASSWORD - For specific user accounts (replace @ with _AT_ and . with _DOT_)
+# =============================================================================
+
+def _get_secure_password(env_var_name: str, username: str) -> dict:
+    """
+    Get password from environment variable or generate unusable random password.
+    
+    Args:
+        env_var_name: Name of environment variable containing the password
+        username: Username for logging purposes
+        
+    Returns:
+        Dictionary with 'hash' and 'salt' keys
+    """
+    password = os.environ.get(env_var_name)
+    if password:
+        return hash_password(password)
+    else:
+        # Generate a random password that will be impossible to guess
+        # This ensures the system starts but users cannot login without proper env config
+        random_pwd = secrets.token_urlsafe(32)
+        print(f"⚠️  WARNING: No password configured for user '{username}'. Set {env_var_name} environment variable.")
+        return hash_password(random_pwd)
+
+def _build_fallback_users() -> Dict[str, Dict[str, Any]]:
+    """Build fallback users dictionary with passwords from environment variables."""
+    return {
+        'admin': {**_get_secure_password('PHINS_ADMIN_PASSWORD', 'admin'), 'role': 'admin', 'name': 'Admin User'},
+        'underwriter': {**_get_secure_password('PHINS_UNDERWRITER_PASSWORD', 'underwriter'), 'role': 'underwriter', 'name': 'John Underwriter'},
+        'claims_adjuster': {**_get_secure_password('PHINS_CLAIMS_PASSWORD', 'claims_adjuster'), 'role': 'claims', 'name': 'Jane Claims'},
+        'accountant': {**_get_secure_password('PHINS_ACCOUNTANT_PASSWORD', 'accountant'), 'role': 'accountant', 'name': 'Bob Accountant'},
+        'actuary': {**_get_secure_password('PHINS_ACTUARY_PASSWORD', 'actuary'), 'role': 'actuary', 'name': 'Actuary User'},
+        'supplier': {**_get_secure_password('PHINS_SUPPLIER_PASSWORD', 'supplier'), 'role': 'supplier', 'name': 'Supplier User'},
+        'media_ad': {**_get_secure_password('PHINS_MEDIA_PASSWORD', 'media_ad'), 'role': 'media', 'name': 'Media Admin'},
+        # Named accounts - use email-based env vars (replace special chars)
+        'asaf@phins.ai': {**_get_secure_password('PHINS_USER_ASAF_PHINS_PASSWORD', 'asaf@phins.ai'), 'role': 'admin', 'name': 'Asaf PHINS'},
+        'asaf@assurance.co.il': {**_get_secure_password('PHINS_USER_ASAF_ASSURANCE_PASSWORD', 'asaf@assurance.co.il'), 'role': 'customer', 'name': 'Asaf Assurance', 'customer_id': 'CUST-ASAF-001'},
+        'efrat@phins.ai': {**_get_secure_password('PHINS_USER_EFRAT_PASSWORD', 'efrat@phins.ai'), 'role': 'customer', 'name': 'Efrat PHINS', 'customer_id': 'CUST-EFRAT-001'},
+        'asi@phins.ai': {**_get_secure_password('PHINS_USER_ASI_PASSWORD', 'asi@phins.ai'), 'role': 'customer', 'name': 'Asi PHINS', 'customer_id': 'CUST-ASI-001'},
+        'shosh@phins.ai': {**_get_secure_password('PHINS_USER_SHOSH_PASSWORD', 'shosh@phins.ai'), 'role': 'customer', 'name': 'Shosh PHINS', 'customer_id': 'CUST-SHOSH-001'}
+    }
+
 # Fallback in-memory users (always available for admin access)
-# PRODUCTION PASSWORDS - Updated 2026-01-10
-_FALLBACK_USERS: Dict[str, Dict[str, Any]] = {
-    'admin': {**hash_password('PDa11wrt129@'), 'role': 'admin', 'name': 'Admin User'},
-    'underwriter': {**hash_password('PDu12ndr128!'), 'role': 'underwriter', 'name': 'John Underwriter'},
-    'claims_adjuster': {**hash_password('Dcl13dj11py@'), 'role': 'claims', 'name': 'Jane Claims'},
-    'accountant': {**hash_password('Dac14tnt72t!'), 'role': 'accountant', 'name': 'Bob Accountant'},
-    'actuary': {**hash_password('Pac7tre77st@'), 'role': 'actuary', 'name': 'Actuary User'},
-    'supplier': {**hash_password('PDa11wrt129@'), 'role': 'supplier', 'name': 'Supplier User'},
-    'media_ad': {**hash_password('Dmd55ad23!'), 'role': 'media', 'name': 'Media Admin'},
-    # Permanent admin accounts - NEVER DELETE
-    'asaf@phins.ai': {**hash_password('PHcre11sf78@'), 'role': 'admin', 'name': 'Asaf PHINS'},
-    'asaf@assurance.co.il': {**hash_password('Afs8a71hu11!'), 'role': 'customer', 'name': 'Asaf Assurance', 'customer_id': 'CUST-ASAF-001'},
-    # Customer accounts
-    'efrat@phins.ai': {**hash_password('INS3fmls212@'), 'role': 'customer', 'name': 'Efrat PHINS', 'customer_id': 'CUST-EFRAT-001'},
-    'asi@phins.ai': {**hash_password('HIS43cus21me!'), 'role': 'customer', 'name': 'Asi PHINS', 'customer_id': 'CUST-ASI-001'},
-    'shosh@phins.ai': {**hash_password('Sma52ma11mi@'), 'role': 'customer', 'name': 'Shosh PHINS', 'customer_id': 'CUST-SHOSH-001'}
-}
+# Passwords loaded from environment variables - see _get_secure_password()
+_FALLBACK_USERS: Dict[str, Dict[str, Any]] = _build_fallback_users()
 
 # Store hashed passwords
 if USE_DATABASE and database_enabled:
@@ -2342,23 +2385,8 @@ if USE_DATABASE and database_enabled:
     
     USERS = UserDictWrapper()
 else:
-    # PRODUCTION PASSWORDS - Updated 2026-01-10
-    USERS: Dict[str, Dict[str, Any]] = {
-        'admin': {**hash_password('PDa11wrt129@'), 'role': 'admin', 'name': 'Admin User'},
-        'underwriter': {**hash_password('PDu12ndr128!'), 'role': 'underwriter', 'name': 'John Underwriter'},
-        'claims_adjuster': {**hash_password('Dcl13dj11py@'), 'role': 'claims', 'name': 'Jane Claims'},
-        'accountant': {**hash_password('Dac14tnt72t!'), 'role': 'accountant', 'name': 'Bob Accountant'},
-        'actuary': {**hash_password('Pac7tre77st@'), 'role': 'actuary', 'name': 'Actuary User'},
-        'supplier': {**hash_password('PDa11wrt129@'), 'role': 'supplier', 'name': 'Supplier User'},
-        'media_ad': {**hash_password('Dmd55ad23!'), 'role': 'media', 'name': 'Media Admin'},
-        # Permanent admin accounts - NEVER DELETE
-        'asaf@phins.ai': {**hash_password('PHcre11sf78@'), 'role': 'admin', 'name': 'Asaf PHINS'},
-        'asaf@assurance.co.il': {**hash_password('Afs8a71hu11!'), 'role': 'customer', 'name': 'Asaf Assurance', 'customer_id': 'CUST-ASAF-001'},
-        # Customer accounts
-        'efrat@phins.ai': {**hash_password('INS3fmls212@'), 'role': 'customer', 'name': 'Efrat PHINS', 'customer_id': 'CUST-EFRAT-001'},
-        'asi@phins.ai': {**hash_password('HIS43cus21me!'), 'role': 'customer', 'name': 'Asi PHINS', 'customer_id': 'CUST-ASI-001'},
-        'shosh@phins.ai': {**hash_password('Sma52ma11mi@'), 'role': 'customer', 'name': 'Shosh PHINS', 'customer_id': 'CUST-SHOSH-001'}
-    }
+    # Non-database mode: Use fallback users with passwords from environment variables
+    USERS: Dict[str, Dict[str, Any]] = _build_fallback_users()
 
 # ========== SUSPENDED TEST ACCOUNTS ==========
 # Test accounts that should NOT appear in admin dashboards, reports, or data aggregations
@@ -11736,9 +11764,10 @@ For claims or questions, please contact:
                         'success': True,
                         'message': 'Database seeded successfully',
                         'accounts': {
-                            # NOTE: legacy short demo passwords (like admin123) are disabled in production by default.
-                            'admin': {'username': 'admin', 'password': 'PDadmin123@'},
-                            'customer': {'email': 'asaf@assurance.co.il', 'password': 'Assurance2024!'}
+                            # SECURITY: Passwords are NOT returned in API responses.
+                            # Configure credentials via environment variables.
+                            'admin': {'username': 'admin', 'password': '[SET VIA PHINS_ADMIN_PASSWORD ENV VAR]'},
+                            'customer': {'email': 'asaf@assurance.co.il', 'password': '[SET VIA PHINS_USER_ASAF_ASSURANCE_PASSWORD ENV VAR]'}
                         }
                     }).encode('utf-8'))
                 else:
@@ -20553,10 +20582,10 @@ def run_server(port: int = PORT) -> None:
                 with DatabaseManager() as db:
                     user_repo = UserRepository(db.session)
                     
-                    # Users to ensure exist
+                    # Users to ensure exist - passwords from environment variables
                     ensure_users = [
-                        {'username': 'asi@phins.ai', 'password': 'PHINScustomer2024!', 'role': 'customer', 'name': 'Asi PHINS'},
-                        {'username': 'shosh@phins.ai', 'password': 'PHINScustomer2024!', 'role': 'customer', 'name': 'Shosh PHINS'}
+                        {'username': 'asi@phins.ai', 'password': os.environ.get('PHINS_USER_ASI_PASSWORD', secrets.token_urlsafe(32)), 'role': 'customer', 'name': 'Asi PHINS'},
+                        {'username': 'shosh@phins.ai', 'password': os.environ.get('PHINS_USER_SHOSH_PASSWORD', secrets.token_urlsafe(32)), 'role': 'customer', 'name': 'Shosh PHINS'}
                     ]
                     
                     for user_data in ensure_users:
