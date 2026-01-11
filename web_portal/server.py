@@ -904,7 +904,7 @@ REAL_TIME_CONFIG = {
     },
     # Webhook Configuration
     'webhooks': {
-        'base_url': os.environ.get('WEBHOOK_BASE_URL', 'https://phins-portal-production.up.railway.app'),
+        'base_url': os.environ.get('WEBHOOK_BASE_URL', ''),  # Set via WEBHOOK_BASE_URL env var
         'endpoints': {
             'stripe': '/webhooks/stripe',
             'paypal': '/webhooks/paypal',

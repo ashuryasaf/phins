@@ -178,5 +178,77 @@
     "customer_id": "CUST-57289",
     "email": "duplicate@example.com",
     "registered_at": "2026-01-11T16:21:46.363799"
+  },
+  {
+    "username": "newcustomer@example.com",
+    "password": "secure123456",
+    "name": "New Customer",
+    "role": "customer",
+    "customer_id": "CUST-70723",
+    "email": "newcustomer@example.com",
+    "registered_at": "2026-01-11T16:52:37.223284"
+  },
+  {
+    "username": "pipeline_test_165313@example.com",
+    "password": "SecurePass123!",
+    "name": "Pipeline Test Customer",
+    "role": "customer",
+    "customer_id": "CUST-88749",
+    "email": "pipeline_test_165313@example.com",
+    "registered_at": "2026-01-11T16:53:13.317032"
+  },
+  {
+    "username": "premium_test_165314@example.com",
+    "password": "SecurePass123!",
+    "name": "Premium Test Customer",
+    "role": "customer",
+    "customer_id": "CUST-65284",
+    "email": "premium_test_165314@example.com",
+    "registered_at": "2026-01-11T16:53:14.351148"
+  },
+  {
+    "username": "duplicate@example.com",
+    "password": "password123",
+    "name": "Duplicate Test",
+    "role": "customer",
+    "customer_id": "CUST-84807",
+    "email": "duplicate@example.com",
+    "registered_at": "2026-01-11T16:53:30.790388"
+  },
+  {
+    "username": "newcustomer@example.com",
+    "password": "secure123456",
+    "name": "New Customer",
+    "role": "customer",
+    "customer_id": "CUST-78946",
+    "email": "newcustomer@example.com",
+    "registered_at": "2026-01-11T16:54:03.222516"
+  },
+  {
+    "username": "pipeline_test_165441@example.com",
+    "password": "SecurePass123!",
+    "name": "Pipeline Test Customer",
+    "role": "customer",
+    "customer_id": "CUST-73927",
+    "email": "pipeline_test_165441@example.com",
+    "registered_at": "2026-01-11T16:54:41.341855"
+  },
+  {
+    "username": "premium_test_165441@example.com",
+    "password": "SecurePass123!",
+    "name": "Premium Test Customer",
+    "role": "customer",
+    "customer_id": "CUST-58347",
+    "email": "premium_test_165441@example.com",
+    "registered_at": "2026-01-11T16:54:41.875265"
+  },
+  {
+    "username": "duplicate@example.com",
+    "password": "password123",
+    "name": "Duplicate Test",
+    "role": "customer",
+    "customer_id": "CUST-73568",
+    "email": "duplicate@example.com",
+    "registered_at": "2026-01-11T16:54:57.802386"
   }
 ]

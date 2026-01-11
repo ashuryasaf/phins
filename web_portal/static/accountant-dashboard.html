@@ -1460,8 +1460,8 @@
                     const reportCoverage = selectedPolicyData?.coverage_amount ?? selectedPolicyData?.coverage ?? document.getElementById('proj-coverage')?.value ?? 0;
                     const reportStatus = selectedPolicyData?.status ?? 'N/A';
                     
-                    // Generate QR code URL using QR Code API
-                    const qrData = encodeURIComponent(`https://phins-portal-production.up.railway.app/login.html?email=${custEmail}`);
+                    // Generate QR code URL using QR Code API - use current domain
+                    const qrData = encodeURIComponent(`${window.location.origin}/login.html?email=${custEmail}`);
                     const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=${qrData}&bgcolor=ffffff&color=1e3a5f`;
                     
                     customerInfoHtml = `

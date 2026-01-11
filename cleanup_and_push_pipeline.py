@@ -72,7 +72,7 @@ def main():
         print(f"  ❌ Server not reachable at {SERVER_URL}")
         print(f"     Error: {metrics.get('error')}")
         print("\n  Usage: python3 cleanup_and_push_pipeline.py [server_url]")
-        print("  Example: python3 cleanup_and_push_pipeline.py https://phins-portal-production.up.railway.app")
+        print("  Example: python3 cleanup_and_push_pipeline.py https://your-deployment.up.railway.app")
         return
     
     print(f"  ✓ Server is reachable")
