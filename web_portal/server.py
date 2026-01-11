@@ -13263,6 +13263,7 @@ For claims or questions, please contact:
                     'files': files_metadata,
                     'files_count': files_count,
                     # Payment and billing info (stored securely)
+                    # Include savings_percentage from payment_setup request for data integrity tracking
                     'payment_setup': {
                         'card_last4': card_last4,
                         'card_type': card_type,
@@ -13271,11 +13272,16 @@ For claims or questions, please contact:
                         'expiry_year': payment_info.get('expiry_year', ''),
                         'billing_frequency': billing_frequency,
                         'auto_pay': auto_pay,
-                        'payment_token': payment_token  # Hashed token, not raw card
+                        'payment_token': payment_token,  # Hashed token, not raw card
+                        # Savings percentage - critical for data integrity through pipeline
+                        'savings_percentage': data.get('payment_setup', {}).get('savings_percentage', 0)
                     },
                     'health_wallet': {
                         'enabled': health_wallet_enabled,
-                        'monthly_deposit': monthly_deposit
+                        'monthly_deposit': monthly_deposit,
+                        # Allocation percentage - must match savings_percentage for integrity
+                        'allocation_percentage': health_wallet_info.get('allocation_percentage', 
+                                                   data.get('payment_setup', {}).get('savings_percentage', 0))
                     }
                 }
                 
@@ -13309,9 +13315,12 @@ For claims or questions, please contact:
                         } if card_last4 else None,
                         'next_billing_date': (datetime.now() + timedelta(days=30)).isoformat()
                     },
+                    # Health wallet with allocation percentage - critical for data integrity
                     'health_wallet': {
                         'enabled': health_wallet_enabled,
-                        'monthly_deposit': monthly_deposit
+                        'monthly_deposit': monthly_deposit,
+                        'allocation_percentage': health_wallet_info.get('allocation_percentage',
+                                                   data.get('payment_setup', {}).get('savings_percentage', 0))
                     }
                 }
                 
