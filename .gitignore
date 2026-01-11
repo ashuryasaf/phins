@@ -21,9 +21,72 @@ rad.json
 #Test results file
 TestResults.xml
 
-# Python cache and compiled files
+# =============================================================================
+# SECURITY - Sensitive files that should NEVER be committed
+# =============================================================================
+
+# Environment files (contain secrets)
+.env
+.env.local
+.env.development
+.env.staging
+.env.production
+.env.*.local
+
+# Credential files
+credentials.json
+secrets.json
+*.credentials
+service-account*.json
+
+# Private keys and certificates
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+id_rsa
+id_dsa
+id_ecdsa
+id_ed25519
+
+# AWS credentials
+.aws/credentials
+
+# =============================================================================
+# Python
+# =============================================================================
+
+# Cache and compiled files
 __pycache__/
 *.pyc
+*.pyo
+*.pyd
+.Python
+*.py[cod]
+
+# Virtual environments
+venv/
+.venv/
+ENV/
+env/
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+*.egg
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+
+# =============================================================================
+# Database
+# =============================================================================
 
 # Database files
 *.db
@@ -31,6 +94,89 @@ __pycache__/
 *.sqlite3
 phins.db
 
+# Database dumps (may contain sensitive data)
+*.sql
+*.dump
+!schema.sql
+
+# =============================================================================
+# IDE and Editor
+# =============================================================================
+
+# JetBrains IDEs
+.idea/
+
+# VS Code (optional, uncomment if needed)
+# .vscode/
+
+# Vim
+*.swp
+*.swo
+*~
+
+# =============================================================================
+# OS Generated
+# =============================================================================
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Linux
+*~
+
+# =============================================================================
+# Logs and temporary files
+# =============================================================================
+
+# Logs
+*.log
+logs/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+*.temp
+
+# =============================================================================
+# Test outputs and reports
+# =============================================================================
+
 # Test reports (generated during test runs)
 test_report.html
 test_results.json
+bandit-report.json
+
+# Coverage reports
+coverage/
+.nyc_output/
+
+# =============================================================================
+# Node.js (if applicable)
+# =============================================================================
+
+node_modules/
+npm-debug.log
+yarn-error.log
+
+# =============================================================================
+# Generated files
+# =============================================================================
+
+# Compiled assets
+*.min.js
+*.min.css
+
+# Generated documentation
+docs/_build/

@@ -1,0 +1,9 @@
+# SECURITY: Report files contain sensitive PII and should NEVER be committed
+# Generated reports are created at runtime and stored locally only
+*.json
+*.html
+*.txt
+*.pdf
+
+# Keep this .gitignore file
+!.gitignore

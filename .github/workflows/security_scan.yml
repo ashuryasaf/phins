@@ -1,0 +1,209 @@
+name: Security Scan
+
+on:
+  push:
+    branches: [main, master, develop]
+  pull_request:
+    branches: [main, master, develop]
+  schedule:
+    # Run weekly on Sundays at midnight
+    - cron: '0 0 * * 0'
+
+jobs:
+  credential-scan:
+    name: Scan for Hardcoded Credentials
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Full history for thorough scanning
+      
+      - name: Run Gitleaks (Credential Scanner)
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}  # Optional for enterprise
+        continue-on-error: false
+      
+      - name: Check for common credential patterns
+        run: |
+          echo "🔍 Scanning for hardcoded credentials..."
+          
+          # Patterns that indicate hardcoded secrets
+          PATTERNS=(
+            "password\s*=\s*['\"][^'\"]+['\"]"
+            "secret\s*=\s*['\"][^'\"]+['\"]"
+            "api_key\s*=\s*['\"][^'\"]+['\"]"
+            "apikey\s*=\s*['\"][^'\"]+['\"]"
+            "token\s*=\s*['\"][^'\"]+['\"]"
+            "AWS_SECRET"
+            "PRIVATE_KEY"
+            "-----BEGIN.*PRIVATE KEY-----"
+          )
+          
+          FOUND_ISSUES=0
+          
+          for pattern in "${PATTERNS[@]}"; do
+            echo "Checking pattern: $pattern"
+            # Exclude test files, examples, and config templates
+            MATCHES=$(grep -rniE "$pattern" \
+              --include="*.py" \
+              --include="*.js" \
+              --include="*.ts" \
+              --include="*.json" \
+              --include="*.yml" \
+              --include="*.yaml" \
+              --exclude-dir=".git" \
+              --exclude-dir="node_modules" \
+              --exclude-dir="__pycache__" \
+              --exclude="*.example" \
+              --exclude="*.sample" \
+              --exclude="*test*" \
+              --exclude="*spec*" \
+              . 2>/dev/null || true)
+            
+            if [ -n "$MATCHES" ]; then
+              # Filter out environment variable references (os.environ, process.env)
+              FILTERED=$(echo "$MATCHES" | grep -v "os\.environ" | grep -v "process\.env" | grep -v "getenv" | grep -v "\.example" | grep -v "CHANGE_ME" || true)
+              
+              if [ -n "$FILTERED" ]; then
+                echo "⚠️  Potential hardcoded credential found:"
+                echo "$FILTERED"
+                FOUND_ISSUES=$((FOUND_ISSUES + 1))
+              fi
+            fi
+          done
+          
+          if [ $FOUND_ISSUES -gt 0 ]; then
+            echo ""
+            echo "❌ Found $FOUND_ISSUES potential credential issues!"
+            echo "Please review the matches above and ensure no secrets are hardcoded."
+            echo ""
+            echo "Best practices:"
+            echo "  - Use environment variables for all secrets"
+            echo "  - Store secrets in a secrets manager"
+            echo "  - Never commit .env files"
+            exit 1
+          else
+            echo "✅ No obvious hardcoded credentials found"
+          fi
+      
+      - name: Check for sensitive file patterns
+        run: |
+          echo "🔍 Checking for sensitive files..."
+          
+          SENSITIVE_FILES=(
+            ".env"
+            ".env.local"
+            ".env.production"
+            "credentials.json"
+            "secrets.json"
+            "*.pem"
+            "*.key"
+            "id_rsa"
+            "id_dsa"
+            "*.p12"
+            "*.pfx"
+          )
+          
+          FOUND_SENSITIVE=0
+          
+          for pattern in "${SENSITIVE_FILES[@]}"; do
+            MATCHES=$(find . -name "$pattern" -not -path "./.git/*" 2>/dev/null || true)
+            if [ -n "$MATCHES" ]; then
+              echo "⚠️  Sensitive file found: $MATCHES"
+              FOUND_SENSITIVE=$((FOUND_SENSITIVE + 1))
+            fi
+          done
+          
+          if [ $FOUND_SENSITIVE -gt 0 ]; then
+            echo ""
+            echo "❌ Found $FOUND_SENSITIVE sensitive files that should not be committed!"
+            echo "Add these to .gitignore immediately."
+            exit 1
+          else
+            echo "✅ No sensitive files found in repository"
+          fi
+
+  dependency-scan:
+    name: Scan Dependencies for Vulnerabilities
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      
+      - name: Install safety
+        run: pip install safety
+      
+      - name: Check Python dependencies
+        run: |
+          if [ -f requirements.txt ]; then
+            echo "🔍 Scanning Python dependencies for vulnerabilities..."
+            safety check -r requirements.txt --full-report || true
+          else
+            echo "No requirements.txt found, skipping Python dependency scan"
+          fi
+      
+      - name: Check for outdated packages
+        run: |
+          if [ -f requirements.txt ]; then
+            pip install pip-audit
+            pip-audit -r requirements.txt || true
+          fi
+
+  code-security:
+    name: Static Code Security Analysis
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      
+      - name: Install bandit
+        run: pip install bandit
+      
+      - name: Run Bandit security linter
+        run: |
+          echo "🔍 Running Bandit security analysis..."
+          bandit -r . \
+            --exclude "./.git,./node_modules,./__pycache__,./tests,./venv,./.venv" \
+            -f json -o bandit-report.json || true
+          
+          # Display high severity issues
+          if [ -f bandit-report.json ]; then
+            HIGH_ISSUES=$(python3 -c "import json; data=json.load(open('bandit-report.json')); issues=[i for i in data.get('results', []) if i.get('issue_severity') == 'HIGH']; print(len(issues))")
+            
+            if [ "$HIGH_ISSUES" -gt 0 ]; then
+              echo "⚠️  Found $HIGH_ISSUES high severity security issues:"
+              python3 -c "
+import json
+data = json.load(open('bandit-report.json'))
+for issue in data.get('results', []):
+    if issue.get('issue_severity') == 'HIGH':
+        print(f\"  - {issue['filename']}:{issue['line_number']}: {issue['issue_text']}\")
+"
+            else
+              echo "✅ No high severity issues found"
+            fi
+          fi
+      
+      - name: Upload Bandit report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: bandit-security-report
+          path: bandit-report.json
+          retention-days: 30

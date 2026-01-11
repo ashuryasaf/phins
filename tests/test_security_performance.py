@@ -519,14 +519,16 @@ def test_password_strength_requirements():
     time.sleep(0.2)
     
     base = f"http://127.0.0.1:{port}"
+    test_invitation_code = "TESTCODE2026"
     
-    # Try registration with weak password
+    # Try registration with weak password (invitation code provided but password too short)
     try:
         _post(base + "/api/register", {
             "name": "Test User",
             "email": "weak@example.com",
             "password": "weak",  # Too short
-            "phone": "555-1234"
+            "phone": "555-1234",
+            "invitation_code": test_invitation_code
         })
         assert False, "Weak password should be rejected"
     except HTTPError as e:
@@ -543,13 +545,15 @@ def test_duplicate_prevention():
     time.sleep(0.2)
     
     base = f"http://127.0.0.1:{port}"
+    test_invitation_code = "TESTCODE2026"
     
-    # Register user
+    # Register user with invitation code
     _post(base + "/api/register", {
         "name": "Duplicate Test",
         "email": "duplicate@example.com",
         "password": "password123",
-        "phone": "555-1234"
+        "phone": "555-1234",
+        "invitation_code": test_invitation_code
     })
     
     # Try to register again with same email
@@ -558,7 +562,8 @@ def test_duplicate_prevention():
             "name": "Duplicate Test 2",
             "email": "duplicate@example.com",
             "password": "password456",
-            "phone": "555-5678"
+            "phone": "555-5678",
+            "invitation_code": test_invitation_code
         })
         assert False, "Duplicate email should be rejected"
     except HTTPError as e:
