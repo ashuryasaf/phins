@@ -904,7 +904,7 @@ REAL_TIME_CONFIG = {
     },
     # Webhook Configuration
     'webhooks': {
-        'base_url': os.environ.get('WEBHOOK_BASE_URL', 'https://phins-portal-production.up.railway.app'),
+        'base_url': os.environ.get('WEBHOOK_BASE_URL', ''),  # Set via WEBHOOK_BASE_URL env var
         'endpoints': {
             'stripe': '/webhooks/stripe',
             'paypal': '/webhooks/paypal',
@@ -2752,6 +2752,49 @@ For claims or questions, please contact:
         self.send_header("X-Frame-Options", "SAMEORIGIN")
         self.send_header("X-XSS-Protection", "1; mode=block")
         self.end_headers()
+
+    def do_HEAD(self):
+        """Handle HEAD requests.
+        
+        Security + routing MUST match GET, but without sending a response body.
+        """
+        class _HeadWriter:
+            """Proxy writer that discards body bytes after headers."""
+
+            def __init__(self, real_wfile):
+                self._real_wfile = real_wfile
+                self.discard_body = False
+
+            def write(self, data):
+                if self.discard_body:
+                    # Pretend we wrote everything (matches file-like contract).
+                    return 0 if data is None else len(data)
+                return self._real_wfile.write(data)
+
+            def flush(self):
+                # Some handlers flush explicitly; preserve behavior.
+                if hasattr(self._real_wfile, 'flush'):
+                    return self._real_wfile.flush()
+                return None
+
+        original_wfile = self.wfile
+        original_end_headers = self.end_headers
+        head_writer = _HeadWriter(original_wfile)
+        self.wfile = head_writer
+
+        def _end_headers_head():
+            original_end_headers()
+            # After headers are sent, suppress any subsequent body writes.
+            head_writer.discard_body = True
+
+        self.end_headers = _end_headers_head
+        try:
+            # Delegate to GET so that IP blocking, rate limiting, input validation,
+            # auth checks, and existence/404 behavior match exactly.
+            self.do_GET()
+        finally:
+            self.wfile = original_wfile
+            self.end_headers = original_end_headers
 
     def do_GET(self):
         # Periodic cleanup of stale data
@@ -13263,6 +13306,7 @@ For claims or questions, please contact:
                     'files': files_metadata,
                     'files_count': files_count,
                     # Payment and billing info (stored securely)
+                    # Include savings_percentage from payment_setup request for data integrity tracking
                     'payment_setup': {
                         'card_last4': card_last4,
                         'card_type': card_type,
@@ -13271,11 +13315,16 @@ For claims or questions, please contact:
                         'expiry_year': payment_info.get('expiry_year', ''),
                         'billing_frequency': billing_frequency,
                         'auto_pay': auto_pay,
-                        'payment_token': payment_token  # Hashed token, not raw card
+                        'payment_token': payment_token,  # Hashed token, not raw card
+                        # Savings percentage - critical for data integrity through pipeline
+                        'savings_percentage': data.get('payment_setup', {}).get('savings_percentage', 0)
                     },
                     'health_wallet': {
                         'enabled': health_wallet_enabled,
-                        'monthly_deposit': monthly_deposit
+                        'monthly_deposit': monthly_deposit,
+                        # Allocation percentage - must match savings_percentage for integrity
+                        'allocation_percentage': health_wallet_info.get('allocation_percentage', 
+                                                   data.get('payment_setup', {}).get('savings_percentage', 0))
                     }
                 }
                 
@@ -13309,9 +13358,12 @@ For claims or questions, please contact:
                         } if card_last4 else None,
                         'next_billing_date': (datetime.now() + timedelta(days=30)).isoformat()
                     },
+                    # Health wallet with allocation percentage - critical for data integrity
                     'health_wallet': {
                         'enabled': health_wallet_enabled,
-                        'monthly_deposit': monthly_deposit
+                        'monthly_deposit': monthly_deposit,
+                        'allocation_percentage': health_wallet_info.get('allocation_percentage',
+                                                   data.get('payment_setup', {}).get('savings_percentage', 0))
                     }
                 }
                 

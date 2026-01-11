@@ -251,7 +251,7 @@ PHINS represents a transformational opportunity in the $3+ trillion global disab
 **Contact:**
 - **Email:** asaf@phins.ai
 - **Website:** phins.ai
-- **Platform Demo:** phins-portal-production.up.railway.app
+- **Platform Demo:** Contact us for demo access
 
 ---
 
