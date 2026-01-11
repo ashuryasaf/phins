@@ -142,5 +142,41 @@
     "customer_id": "CUST-56571",
     "email": "duplicate@example.com",
     "registered_at": "2026-01-11T01:53:14.736763"
+  },
+  {
+    "username": "newcustomer@example.com",
+    "password": "secure123456",
+    "name": "New Customer",
+    "role": "customer",
+    "customer_id": "CUST-57725",
+    "email": "newcustomer@example.com",
+    "registered_at": "2026-01-11T16:20:53.437687"
+  },
+  {
+    "username": "pipeline_test_162129@example.com",
+    "password": "SecurePass123!",
+    "name": "Pipeline Test Customer",
+    "role": "customer",
+    "customer_id": "CUST-72062",
+    "email": "pipeline_test_162129@example.com",
+    "registered_at": "2026-01-11T16:21:29.943686"
+  },
+  {
+    "username": "premium_test_162130@example.com",
+    "password": "SecurePass123!",
+    "name": "Premium Test Customer",
+    "role": "customer",
+    "customer_id": "CUST-56118",
+    "email": "premium_test_162130@example.com",
+    "registered_at": "2026-01-11T16:21:30.973630"
+  },
+  {
+    "username": "duplicate@example.com",
+    "password": "password123",
+    "name": "Duplicate Test",
+    "role": "customer",
+    "customer_id": "CUST-57289",
+    "email": "duplicate@example.com",
+    "registered_at": "2026-01-11T16:21:46.363799"
   }
 ]

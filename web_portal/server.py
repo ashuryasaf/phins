@@ -2753,6 +2753,35 @@ For claims or questions, please contact:
         self.send_header("X-XSS-Protection", "1; mode=block")
         self.end_headers()
 
+    def do_HEAD(self):
+        """Handle HEAD requests - same as GET but without body"""
+        # For static files, send appropriate headers
+        path = self.path.split('?')[0]
+        
+        # Determine content type based on file extension
+        content_type = 'text/html'
+        if path.endswith('.css'):
+            content_type = 'text/css'
+        elif path.endswith('.js'):
+            content_type = 'application/javascript'
+        elif path.endswith('.json'):
+            content_type = 'application/json'
+        elif path.endswith('.png'):
+            content_type = 'image/png'
+        elif path.endswith('.jpg') or path.endswith('.jpeg'):
+            content_type = 'image/jpeg'
+        elif path.endswith('.svg'):
+            content_type = 'image/svg+xml'
+        elif path.endswith('.ico'):
+            content_type = 'image/x-icon'
+        
+        self.send_response(200)
+        self.send_header('Content-Type', content_type)
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("X-Frame-Options", "SAMEORIGIN")
+        self.send_header("X-XSS-Protection", "1; mode=block")
+        self.end_headers()
+
     def do_GET(self):
         # Periodic cleanup of stale data
         cleanup_stale_data()
