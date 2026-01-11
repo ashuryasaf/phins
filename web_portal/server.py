@@ -2754,33 +2754,47 @@ For claims or questions, please contact:
         self.end_headers()
 
     def do_HEAD(self):
-        """Handle HEAD requests - same as GET but without body"""
-        # For static files, send appropriate headers
-        path = self.path.split('?')[0]
+        """Handle HEAD requests.
         
-        # Determine content type based on file extension
-        content_type = 'text/html'
-        if path.endswith('.css'):
-            content_type = 'text/css'
-        elif path.endswith('.js'):
-            content_type = 'application/javascript'
-        elif path.endswith('.json'):
-            content_type = 'application/json'
-        elif path.endswith('.png'):
-            content_type = 'image/png'
-        elif path.endswith('.jpg') or path.endswith('.jpeg'):
-            content_type = 'image/jpeg'
-        elif path.endswith('.svg'):
-            content_type = 'image/svg+xml'
-        elif path.endswith('.ico'):
-            content_type = 'image/x-icon'
-        
-        self.send_response(200)
-        self.send_header('Content-Type', content_type)
-        self.send_header("X-Content-Type-Options", "nosniff")
-        self.send_header("X-Frame-Options", "SAMEORIGIN")
-        self.send_header("X-XSS-Protection", "1; mode=block")
-        self.end_headers()
+        Security + routing MUST match GET, but without sending a response body.
+        """
+        class _HeadWriter:
+            """Proxy writer that discards body bytes after headers."""
+
+            def __init__(self, real_wfile):
+                self._real_wfile = real_wfile
+                self.discard_body = False
+
+            def write(self, data):
+                if self.discard_body:
+                    # Pretend we wrote everything (matches file-like contract).
+                    return 0 if data is None else len(data)
+                return self._real_wfile.write(data)
+
+            def flush(self):
+                # Some handlers flush explicitly; preserve behavior.
+                if hasattr(self._real_wfile, 'flush'):
+                    return self._real_wfile.flush()
+                return None
+
+        original_wfile = self.wfile
+        original_end_headers = self.end_headers
+        head_writer = _HeadWriter(original_wfile)
+        self.wfile = head_writer
+
+        def _end_headers_head():
+            original_end_headers()
+            # After headers are sent, suppress any subsequent body writes.
+            head_writer.discard_body = True
+
+        self.end_headers = _end_headers_head
+        try:
+            # Delegate to GET so that IP blocking, rate limiting, input validation,
+            # auth checks, and existence/404 behavior match exactly.
+            self.do_GET()
+        finally:
+            self.wfile = original_wfile
+            self.end_headers = original_end_headers
 
     def do_GET(self):
         # Periodic cleanup of stale data
