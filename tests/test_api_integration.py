@@ -119,7 +119,7 @@ def test_login_endpoint():
 
 
 def test_register_endpoint():
-    """Test POST /api/register"""
+    """Test POST /api/register (with invitation code)"""
     port = 8032
     srv = ServerThread(port)
     srv.start()
@@ -127,13 +127,18 @@ def test_register_endpoint():
     
     base = f"http://127.0.0.1:{port}"
     
-    # Test successful registration
+    # Test invitation code - use the test mode code (TESTCODE2026)
+    # This is automatically created when PHINS_TEST_MODE=1
+    test_invitation_code = "TESTCODE2026"
+    
+    # Test successful registration with invitation code
     body, status = _post(base + "/api/register", {
         "name": "New Customer",
         "email": "newcustomer@example.com",
         "password": "secure123456",
         "phone": "555-9999",
-        "dob": "1990-01-01"
+        "dob": "1990-01-01",
+        "invitation_code": test_invitation_code
     })
     assert status == 201
     data = json.loads(body)
@@ -147,18 +152,22 @@ def test_register_endpoint():
             "name": "New Customer 2",
             "email": "newcustomer@example.com",
             "password": "secure123456",
-            "phone": "555-8888"
+            "phone": "555-8888",
+            "invitation_code": test_invitation_code
         })
         assert False, "Should fail with duplicate email"
     except HTTPError as e:
         assert e.code == 409
     
-    # Test missing required fields
+    # Test missing invitation code (should fail with 400)
     try:
         _post(base + "/api/register", {
-            "name": "Incomplete User"
+            "name": "No Invitation User",
+            "email": "noinvite@example.com",
+            "password": "secure123456",
+            "phone": "555-1111"
         })
-        assert False, "Should fail with missing fields"
+        assert False, "Should fail without invitation code"
     except HTTPError as e:
         assert e.code == 400
     

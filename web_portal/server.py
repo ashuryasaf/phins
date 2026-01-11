@@ -1671,6 +1671,23 @@ except Exception:
 # Test mode (makes API/security behavior deterministic for CI)
 PHINS_TEST_MODE = str(os.environ.get('PHINS_TEST_MODE', '')).lower() in ('1', 'true', 'yes', 'y')
 
+# Add test invitation code when in test mode
+# This allows registration tests to work without manually creating invitation codes
+if PHINS_TEST_MODE:
+    TEST_INVITATION_CODE = 'TESTCODE2026'
+    if TEST_INVITATION_CODE not in INVITATION_CODES:
+        INVITATION_CODES[TEST_INVITATION_CODE] = {
+            'code': TEST_INVITATION_CODE,
+            'created_at': datetime.now().isoformat(),
+            'created_by': 'system',
+            'expires_at': None,  # Never expires in test mode
+            'max_uses': 999999,  # Effectively unlimited for tests
+            'used_count': 0,
+            'used_by': [],
+            'status': 'active',
+            'notes': 'Test mode invitation code - automatically created'
+        }
+
 # Security tracking
 # NOTE: Keys are "ip:port" to prevent cross-test/server interference in pytest (many tests start servers on different ports).
 RATE_LIMIT: Dict[str, Dict[str, Any]] = {}  # key -> {count, reset_time}

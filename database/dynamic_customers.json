@@ -1,0 +1,47 @@
+[
+  {
+    "username": "newcustomer@example.com",
+    "password": "secure123456",
+    "name": "New Customer",
+    "role": "customer",
+    "customer_id": "CUST-77857",
+    "email": "newcustomer@example.com",
+    "registered_at": "2026-01-11T00:29:21.170349"
+  },
+  {
+    "username": "duplicate@example.com",
+    "password": "password123",
+    "name": "Duplicate Test",
+    "role": "customer",
+    "customer_id": "CUST-93484",
+    "email": "duplicate@example.com",
+    "registered_at": "2026-01-11T00:29:21.899457"
+  },
+  {
+    "username": "newcustomer@example.com",
+    "password": "secure123456",
+    "name": "New Customer",
+    "role": "customer",
+    "customer_id": "CUST-32112",
+    "email": "newcustomer@example.com",
+    "registered_at": "2026-01-11T00:30:27.500833"
+  },
+  {
+    "username": "duplicate@example.com",
+    "password": "password123",
+    "name": "Duplicate Test",
+    "role": "customer",
+    "customer_id": "CUST-93339",
+    "email": "duplicate@example.com",
+    "registered_at": "2026-01-11T00:31:18.714185"
+  },
+  {
+    "username": "deploytest@example.com",
+    "password": "SecurePass123!",
+    "name": "Deploy Test User",
+    "role": "customer",
+    "customer_id": "CUST-72369",
+    "email": "deploytest@example.com",
+    "registered_at": "2026-01-11T00:32:10.265101"
+  }
+]
