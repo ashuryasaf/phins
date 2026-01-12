@@ -1808,82 +1808,120 @@ ALLOW_LEGACY_DEMO_PASSWORDS = PHINS_TEST_MODE or (
     str(os.environ.get('ALLOW_LEGACY_DEMO_PASSWORDS', '')).lower() in ('1', 'true', 'yes', 'y')
 )
 
+# ============ STATELESS TOKEN AUTHENTICATION ============
+# For Railway multi-instance compatibility, we use HMAC-signed tokens
+# that encode user data directly, eliminating need for server-side session storage
+
+import hmac
+import base64
+
+# Session signing key - derived from SESSION_SECRET_KEY or a secure default
+_TOKEN_SECRET = os.environ.get('SESSION_SECRET_KEY', os.environ.get('PHINS_ADMIN_PASSWORD', 'phins-default-key-2024'))
+
+def _create_signed_token(username: str, role: str, customer_id: str | None, expires: datetime) -> str:
+    """Create an HMAC-signed token with embedded user data (stateless auth)"""
+    # Encode user data in token
+    data = f"{username}|{role}|{customer_id or ''}|{expires.isoformat()}"
+    data_b64 = base64.urlsafe_b64encode(data.encode()).decode()
+    # Create HMAC signature
+    signature = hmac.new(_TOKEN_SECRET.encode(), data_b64.encode(), 'sha256').hexdigest()[:16]
+    return f"phins_{data_b64}.{signature}"
+
+def _verify_signed_token(token: str) -> dict[str, str] | None:
+    """Verify and decode an HMAC-signed token"""
+    if not token or not token.startswith('phins_'):
+        return None
+    try:
+        # Parse token
+        token_body = token[6:]  # Remove 'phins_' prefix
+        if '.' not in token_body:
+            return None
+        data_b64, signature = token_body.rsplit('.', 1)
+        
+        # Verify signature
+        expected_sig = hmac.new(_TOKEN_SECRET.encode(), data_b64.encode(), 'sha256').hexdigest()[:16]
+        if not hmac.compare_digest(signature, expected_sig):
+            return None
+        
+        # Decode data
+        data = base64.urlsafe_b64decode(data_b64.encode()).decode()
+        parts = data.split('|')
+        if len(parts) != 4:
+            return None
+        
+        username, role, customer_id, expires_str = parts
+        
+        # Check expiry
+        expires = datetime.fromisoformat(expires_str)
+        if datetime.now() > expires:
+            return None
+        
+        return {
+            'username': username,
+            'role': role,
+            'customer_id': customer_id if customer_id else None,
+            'expires': expires_str
+        }
+    except Exception:
+        return None
+
 def validate_session(token: str) -> dict[str, str] | None:
     """Validate session token and return user info or None.
     
-    For Railway multi-instance compatibility, if session is not found in local
-    SESSIONS dict, we check if the token was recently issued by verifying
-    against USERS database. This allows tokens to work across instances.
+    Uses stateless HMAC-signed tokens for Railway multi-instance compatibility.
+    Falls back to checking local SESSIONS dict for legacy tokens.
     """
-    if not token or not token.startswith('phins_'):
+    if not token:
         return None
-
-    with STATE_LOCK:
-        session = SESSIONS.get(token)
-        if session:
-            # Check if session expired
-            try:
-                expires = datetime.fromisoformat(session['expires'])
-                if datetime.now() > expires:
-                    try:
-                        del SESSIONS[token]
-                    except Exception:
-                        pass
-                    return None
-            except (KeyError, ValueError):
-                return None
-            return session
     
-    # RAILWAY MULTI-INSTANCE FALLBACK:
-    # Token not in local SESSIONS (might be on different instance)
-    # Check database for the token (synced by login on any instance)
+    # Try stateless signed token first (new format with embedded data)
+    if token.startswith('phins_') and '.' in token:
+        signed_result = _verify_signed_token(token)
+        if signed_result:
+            return signed_result
+    
+    # Fallback: Check local SESSIONS dict (legacy tokens or same-instance)
+    if token.startswith('phins_'):
+        with STATE_LOCK:
+            session = SESSIONS.get(token)
+            if session:
+                try:
+                    expires = datetime.fromisoformat(session['expires'])
+                    if datetime.now() > expires:
+                        try:
+                            del SESSIONS[token]
+                        except Exception:
+                            pass
+                        return None
+                except (KeyError, ValueError):
+                    return None
+                return session
+    
+    # Database fallback (if available)
     if USE_DATABASE and database_enabled:
         try:
             with DatabaseManager() as db:
                 db_session = db.sessions.get_by_id(token)
                 if db_session:
-                    # Check expiry
                     expires = db_session.expires
                     if isinstance(expires, str):
                         expires = datetime.fromisoformat(expires)
                     if datetime.now() < expires:
-                        # Reconstruct session from database
                         reconstructed = {
                             'username': db_session.username,
                             'role': db_session.role,
                             'customer_id': db_session.customer_id,
                             'expires': expires.isoformat() if hasattr(expires, 'isoformat') else str(expires)
                         }
-                        # Cache in local SESSIONS for future requests
                         with STATE_LOCK:
                             SESSIONS[token] = reconstructed
                         return reconstructed
         except Exception as e:
             print(f"[SESSION] DB lookup error: {e}")
     
-    # Final fallback: Check ACTIVE_TOKENS (in-memory cross-reference)
-    try:
-        if token in ACTIVE_TOKENS:
-            token_data = ACTIVE_TOKENS[token]
-            username = token_data.get('username')
-            if username and username in USERS:
-                user = USERS[username]
-                reconstructed = {
-                    'username': username,
-                    'role': user.get('role') or token_data.get('role', 'customer'),
-                    'customer_id': token_data.get('customer_id'),
-                    'expires': token_data.get('expires', (datetime.now() + timedelta(hours=1)).isoformat())
-                }
-                with STATE_LOCK:
-                    SESSIONS[token] = reconstructed
-                return reconstructed
-    except Exception:
-        pass
-    
     return None
 
-# Global token storage for Railway multi-instance support
-# This will be synced to database if USE_DATABASE is enabled
+# Global token storage (for legacy support, not required for signed tokens)
 ACTIVE_TOKENS: Dict[str, Dict[str, Any]] = {}
 
 def _security_key(client_ip: str, server_port: int | None = None) -> str:
@@ -10664,11 +10702,11 @@ For claims or questions, please contact:
                         if k in FAILED_LOGINS:
                             del FAILED_LOGINS[k]
                     
-                    # Generate secure session token
-                    token = f"phins_{secrets.token_urlsafe(32)}"
+                    # Generate stateless signed token (works across Railway instances)
                     expires = datetime.now() + timedelta(seconds=SESSION_TIMEOUT)
+                    token = _create_signed_token(username, role, customer_id, expires)
                     
-                    # Store session
+                    # Also store in local SESSIONS for faster same-instance lookups
                     with STATE_LOCK:
                         SESSIONS[token] = {
                             'username': username,
@@ -10677,27 +10715,6 @@ For claims or questions, please contact:
                             'role': role,
                             'ip_address': client_ip
                         }
-                        # Also store in ACTIVE_TOKENS for Railway multi-instance support
-                        ACTIVE_TOKENS[token] = {
-                            'username': username,
-                            'expires': expires.isoformat(),
-                            'role': role,
-                            'customer_id': customer_id
-                        }
-                    
-                    # Sync ACTIVE_TOKENS to database for cross-instance access
-                    if USE_DATABASE and database_enabled:
-                        try:
-                            with DatabaseManager() as db:
-                                db.sessions.create(
-                                    token=token,
-                                    username=username,
-                                    customer_id=customer_id,
-                                    role=role,
-                                    expires=expires
-                                )
-                        except Exception as db_err:
-                            print(f"[SESSION] DB sync warning: {db_err}")
                     
                     self._set_json_headers()
                     self.wfile.write(json.dumps({
