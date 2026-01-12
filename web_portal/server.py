@@ -2894,6 +2894,21 @@ For claims or questions, please contact:
         # Periodic cleanup of stale data
         cleanup_stale_data()
         
+        # Health check endpoint - bypasses rate limiting for Railway/load balancers
+        if self.path == '/api/health' or self.path == '/health':
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.end_headers()
+            health_status = {
+                'status': 'healthy',
+                'service': 'phins-portal',
+                'timestamp': datetime.now().isoformat(),
+                'database': 'connected' if (USE_DATABASE and database_enabled) else 'in-memory',
+                'version': '2.0.0'
+            }
+            self.wfile.write(json.dumps(health_status).encode('utf-8'))
+            return
+        
         # Security checks
         client_ip = self.client_address[0]
         server_port = int(getattr(self.server, 'server_address', ('', 0))[1] or 0)
