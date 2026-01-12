@@ -21135,6 +21135,9 @@ def run_server(port: int = PORT) -> None:
         }
     ]
     
+    # Define 'now' for all timestamp fields in customer initialization
+    now = datetime.now()
+    
     for cust_data in phins_customer_data:
         try:
             cust_id = cust_data['id']
@@ -22154,6 +22157,8 @@ def run_server(port: int = PORT) -> None:
     # This is a fallback to ensure data integrity on every restart
     print("🔧 Final data integrity check - PHINS customer applications...")
     try:
+        # Define 'now' for timestamp fields
+        now = datetime.now()
         phins_apps = [
             {
                 'id': 'UW-EFRAT-001',
