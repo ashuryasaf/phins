@@ -99,13 +99,16 @@ ROOT = os.path.join(os.path.dirname(__file__), "static")
 
 # Storage - either database-backed or in-memory
 if USE_DATABASE and database_enabled:
-    # Use database-backed dictionaries
+    # Use database-backed dictionaries for persistent data
     POLICIES = DB_POLICIES
     CLAIMS = DB_CLAIMS
     CUSTOMERS = DB_CUSTOMERS
     UNDERWRITING_APPLICATIONS = DB_UNDERWRITING
-    SESSIONS = DB_SESSIONS
     BILLING = DB_BILLING
+    # IMPORTANT: Sessions MUST stay in-memory for Railway compatibility
+    # Database-backed sessions fail on multi-instance Railway deployments
+    SESSIONS: Dict[str, Dict[str, Any]] = {}  # token -> {username, expires, customer_id, role}
+    print("✓ Using database storage with in-memory sessions for Railway compatibility")
 else:
     # In-memory storage for demo purposes
     POLICIES: Dict[str, Dict[str, Any]] = {}
