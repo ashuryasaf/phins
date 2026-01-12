@@ -340,5 +340,14 @@
     "customer_id": "CUST-47357",
     "email": "duplicate@example.com",
     "registered_at": "2026-01-12T01:50:24.898973"
+  },
+  {
+    "username": "newcustomer@example.com",
+    "password": "secure123456",
+    "name": "New Customer",
+    "role": "customer",
+    "customer_id": "CUST-79326",
+    "email": "newcustomer@example.com",
+    "registered_at": "2026-01-12T11:06:50.678244"
   }
 ]
