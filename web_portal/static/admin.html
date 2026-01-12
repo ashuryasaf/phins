@@ -1581,6 +1581,17 @@
       return '$' + formatNumber(n, decimals);
     }
     
+    // CSV escape helper - ensures data integrity in CSV exports
+    function escapeCSV(value) {
+      if (value === null || value === undefined) return '';
+      const str = String(value);
+      // If value contains comma, quote, or newline, wrap in quotes and escape internal quotes
+      if (str.includes(',') || str.includes('"') || str.includes('\n') || str.includes('\r')) {
+        return '"' + str.replace(/"/g, '""') + '"';
+      }
+      return str;
+    }
+    
     // Mobile menu toggle
     function toggleMobileMenu() {
       document.getElementById('mobile-nav').classList.toggle('open');
@@ -4112,10 +4123,18 @@
         const data = await response.json();
         const customers = data.customers || [];
         
-        // Generate CSV
-        let csv = 'Customer ID,Name,Email,Pipeline Stage,Policies,Wallet Balance,Created\\n';
+        // Generate CSV with proper escaping for data integrity
+        let csv = 'Customer ID,Name,Email,Pipeline Stage,Policies,Wallet Balance,Created\n';
         customers.forEach(c => {
-          csv += `${c.id},${c.name || 'N/A'},${c.email || 'N/A'},${c.pipeline_stage || 'N/A'},${c.policies_count || 0},${c.wallet_balance || 0},${c.created_at || 'N/A'}\\n`;
+          csv += [
+            escapeCSV(c.id),
+            escapeCSV(c.name || 'N/A'),
+            escapeCSV(c.email || 'N/A'),
+            escapeCSV(c.pipeline_stage || 'N/A'),
+            c.policies_count || 0,
+            c.wallet_balance || 0,
+            escapeCSV(c.created_at || 'N/A')
+          ].join(',') + '\n';
         });
         
         // Download
@@ -4336,10 +4355,21 @@
           totalInvestment += parseFloat(p.investment_value || 0);
         });
         
-        // Generate CSV report
-        let csv = 'Policy ID,Customer,Email,Type,Coverage,Monthly Premium,Annual Premium,Investment Value,Status,Start Date\\n';
+        // Generate CSV report with proper escaping for data integrity
+        let csv = 'Policy ID,Customer,Email,Type,Coverage,Monthly Premium,Annual Premium,Investment Value,Status,Start Date\n';
         policies.forEach(p => {
-          csv += `${p.id},${p.customer_name || 'N/A'},${p.customer_email || 'N/A'},${p.type || 'N/A'},${p.coverage_amount || 0},${p.monthly_premium || 0},${p.annual_premium || 0},${p.investment_value || 0},${p.status || 'N/A'},${p.start_date || 'N/A'}\\n`;
+          csv += [
+            escapeCSV(p.id),
+            escapeCSV(p.customer_name || 'N/A'),
+            escapeCSV(p.customer_email || 'N/A'),
+            escapeCSV(p.type || 'N/A'),
+            p.coverage_amount || 0,
+            p.monthly_premium || 0,
+            p.annual_premium || 0,
+            p.investment_value || 0,
+            escapeCSV(p.status || 'N/A'),
+            escapeCSV(p.start_date || 'N/A')
+          ].join(',') + '\n';
         });
         
         // Download
@@ -4567,10 +4597,20 @@
           totalApproved += parseFloat(c.amount_approved || 0);
         });
         
-        // Generate CSV report
-        let csv = 'Claim ID,Policy ID,Customer,ADLs,Benefit Type,Amount Claimed,Amount Approved,Status,Date Filed\\n';
+        // Generate CSV report with proper escaping for data integrity
+        let csv = 'Claim ID,Policy ID,Customer,ADLs,Benefit Type,Amount Claimed,Amount Approved,Status,Date Filed\n';
         claims.forEach(c => {
-          csv += `${c.id},${c.policy_id || 'N/A'},${c.customer_name || c.customer_id || 'N/A'},${c.adl_count || c.adls_impaired || 0},${c.benefit_type || 'N/A'},${c.amount || c.amount_claimed || 0},${c.amount_approved || 0},${c.status || 'N/A'},${c.filed_date || c.created_at || 'N/A'}\\n`;
+          csv += [
+            escapeCSV(c.id),
+            escapeCSV(c.policy_id || 'N/A'),
+            escapeCSV(c.customer_name || c.customer_id || 'N/A'),
+            c.adl_count || c.adls_impaired || 0,
+            escapeCSV(c.benefit_type || 'N/A'),
+            c.amount || c.amount_claimed || 0,
+            c.amount_approved || 0,
+            escapeCSV(c.status || 'N/A'),
+            escapeCSV(c.filed_date || c.created_at || 'N/A')
+          ].join(',') + '\n';
         });
         
         // Download
