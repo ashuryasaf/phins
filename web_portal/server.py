@@ -3067,7 +3067,9 @@ For claims or questions, please contact:
         if path == '/api/security/clear-blocks':
             # Allow with admin auth OR special security key for emergency access
             security_key = qs.get('key', [''])[0]
-            is_authorized = require_role(session, ['admin']) or security_key == 'phins-security-2024'
+            # Emergency key from env var, or fallback for backwards compatibility
+            emergency_key = os.environ.get('PHINS_EMERGENCY_UNLOCK_KEY', 'phins-emergency-unlock-2026')
+            is_authorized = require_role(session, ['admin']) or security_key == emergency_key
             
             if not is_authorized:
                 self._set_json_headers(403)
