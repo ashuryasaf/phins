@@ -76,16 +76,28 @@ if USE_DATABASE:
         from database.data_access import BILLING as DB_BILLING
         from database.data_access import USERS_DB as DB_USERS
         
-        database_enabled = True
-        print("✓ Database persistence enabled (data will survive restarts)")
-
-        # Ensure schema exists and default users are present.
-        # This is required for local runs/tests where the DB starts empty.
+        # TEST ACTUAL CONNECTION before enabling database mode
+        # This prevents using broken DatabaseDict wrappers when connection fails
         try:
-            init_database()
-            seed_default_users()
+            if check_database_connection():
+                database_enabled = True
+                print("✓ Database connection verified")
+                
+                # Initialize schema and seed data
+                try:
+                    init_database()
+                    seed_default_users()
+                    print("✓ Database initialized and seeded")
+                except Exception as e:
+                    print(f"Warning: Database init/seed failed: {e}")
+            else:
+                print("⚠️  Database connection check failed - using in-memory storage")
+                USE_DATABASE = False
         except Exception as e:
-            print(f"Warning: Database init/seed failed: {e}")
+            print(f"⚠️  Database connection test failed: {e}")
+            print("   Falling back to in-memory storage with demo data")
+            USE_DATABASE = False
+            
     except ImportError as e:
         print(f"Warning: Database support not available: {e}")
         print("         Falling back to in-memory storage (DATA WILL BE LOST ON RESTART)")
@@ -118,6 +130,7 @@ else:
     UNDERWRITING_APPLICATIONS: Dict[str, Dict[str, Any]] = {}
     SESSIONS: Dict[str, Dict[str, Any]] = {}  # token -> {username, expires, customer_id}
     BILLING: Dict[str, Dict[str, Any]] = {}  # bill_id -> bill data (for metrics)
+    print("✓ Using in-memory storage (demo data will be loaded at startup)")
 
 # Health wallets and medical purchases are always in-memory (not yet in DB schema)
 HEALTH_WALLETS: Dict[str, Dict[str, Any]] = {}  # customer_id -> {balance, transactions, monthly_deposit}
