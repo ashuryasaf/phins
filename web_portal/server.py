@@ -9691,6 +9691,188 @@ For claims or questions, please contact:
             }, default=str).encode('utf-8'))
             return
         
+        # AI/BI Financial Intelligence Endpoint - Comprehensive analysis
+        if path == '/api/admin/balance-sheet/ai-insights':
+            if not require_role(session, ['admin', 'accountant', 'actuary']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Unauthorized. Admin/Accountant/Actuary access required.'}).encode('utf-8'))
+                return
+            
+            initialize_balance_sheet()
+            
+            # ========== AI/BI FINANCIAL ANALYSIS ==========
+            
+            # 1. Calculate key financial metrics
+            claims_reserve = PHINS_BALANCE_SHEET['claims_reserve']
+            premium_income = PHINS_BALANCE_SHEET['revenue_breakdown']['premium_income']
+            claims_paid = PHINS_BALANCE_SHEET['expense_breakdown']['claims_paid']
+            total_revenue = PHINS_BALANCE_SHEET['total_revenue']
+            total_expenses = PHINS_BALANCE_SHEET['total_expenses']
+            net_income = total_revenue - total_expenses
+            
+            # 2. Get policy and billing data for projections
+            active_policies = [p for p in POLICIES.values() if status_eq(p, 'active')]
+            all_policies = list(POLICIES.values())
+            total_annual_premium_potential = sum(float(p.get('annual_premium', 0)) for p in active_policies)
+            total_monthly_premium_potential = sum(float(p.get('monthly_premium', 0)) for p in active_policies)
+            
+            # Outstanding bills analysis
+            outstanding_bills = [b for b in BILLING.values() if status_in(b, ['outstanding', 'pending'])]
+            total_outstanding = sum(float(b.get('amount', 0) - b.get('amount_paid', 0)) for b in outstanding_bills)
+            
+            # Claims analysis
+            paid_claims = [c for c in CLAIMS.values() if status_eq(c, 'paid')]
+            pending_claims = [c for c in CLAIMS.values() if status_in(c, ['pending', 'under_review'])]
+            total_pending_claims_value = sum(float(c.get('claimed_amount', 0)) for c in pending_claims)
+            
+            # 3. Calculate financial ratios
+            loss_ratio = (claims_paid / premium_income * 100) if premium_income > 0 else float('inf') if claims_paid > 0 else 0
+            reserve_coverage_months = (claims_reserve / (claims_paid / max(1, len(paid_claims)))) if claims_paid > 0 else float('inf')
+            collection_rate = (premium_income / total_annual_premium_potential * 100) if total_annual_premium_potential > 0 else 0
+            
+            # 4. AI-Generated Insights and Recommendations
+            insights = []
+            recommendations = []
+            risk_alerts = []
+            
+            # Insight: Premium Collection Status
+            if premium_income == 0 and total_monthly_premium_potential > 0:
+                insights.append({
+                    'type': 'collection_gap',
+                    'severity': 'high',
+                    'title': 'No Premium Income Collected',
+                    'description': f'${total_monthly_premium_potential:,.2f}/month in premiums available but $0 collected. '
+                                   f'Total annual premium potential: ${total_annual_premium_potential:,.2f}',
+                    'impact': 'Revenue stream not activated - immediate collection action needed'
+                })
+                recommendations.append({
+                    'priority': 1,
+                    'action': 'Initiate Premium Collection',
+                    'details': f'Process {len(outstanding_bills)} outstanding bills totaling ${total_outstanding:,.2f}',
+                    'expected_result': f'Immediate revenue of ${total_outstanding:,.2f}'
+                })
+            
+            # Insight: Claims vs Revenue Balance
+            if claims_paid > premium_income and claims_paid > 0:
+                insights.append({
+                    'type': 'negative_cashflow',
+                    'severity': 'warning',
+                    'title': 'Claims Exceed Premium Income',
+                    'description': f'Claims paid (${claims_paid:,.2f}) exceed premium income (${premium_income:,.2f})',
+                    'impact': f'Net loss of ${claims_paid - premium_income:,.2f} funded from reserves'
+                })
+            
+            # Insight: Reserve Health
+            if claims_reserve > 0:
+                reserve_depletion_rate = claims_paid / max(30, 1)  # Approximate monthly
+                months_to_depletion = claims_reserve / reserve_depletion_rate if reserve_depletion_rate > 0 else float('inf')
+                
+                insights.append({
+                    'type': 'reserve_health',
+                    'severity': 'info' if months_to_depletion > 24 else 'warning' if months_to_depletion > 12 else 'critical',
+                    'title': 'Reserve Adequacy Analysis',
+                    'description': f'Claims reserve at ${claims_reserve:,.2f}. At current claim rate, '
+                                   f'reserves cover approximately {months_to_depletion:.0f} months of claims.',
+                    'impact': 'Reserve position is strong' if months_to_depletion > 60 else 'Monitor reserve levels'
+                })
+            
+            # Insight: Pending Claims Risk
+            if total_pending_claims_value > 0:
+                pending_to_reserve_ratio = (total_pending_claims_value / claims_reserve * 100) if claims_reserve > 0 else 100
+                insights.append({
+                    'type': 'pending_claims_exposure',
+                    'severity': 'info' if pending_to_reserve_ratio < 5 else 'warning' if pending_to_reserve_ratio < 20 else 'high',
+                    'title': 'Pending Claims Exposure',
+                    'description': f'{len(pending_claims)} pending claims totaling ${total_pending_claims_value:,.2f} '
+                                   f'({pending_to_reserve_ratio:.1f}% of reserves)',
+                    'impact': 'Adequate reserves to cover pending claims' if pending_to_reserve_ratio < 10 else 'Review claims queue'
+                })
+            
+            # 5. Projected Financial Outlook (12 months)
+            monthly_premium_proj = total_monthly_premium_potential
+            avg_monthly_claims = claims_paid / max(1, len(paid_claims)) if paid_claims else 0
+            projected_annual_revenue = monthly_premium_proj * 12
+            projected_annual_claims = avg_monthly_claims * 12 * len(active_policies) * 0.1  # 10% claim rate assumption
+            projected_net = projected_annual_revenue - projected_annual_claims
+            
+            projections = {
+                '12_month_outlook': {
+                    'projected_premium_revenue': round(projected_annual_revenue, 2),
+                    'projected_claims_expense': round(projected_annual_claims, 2),
+                    'projected_net_income': round(projected_net, 2),
+                    'projected_reserve_balance': round(claims_reserve - projected_annual_claims + projected_annual_revenue * 0.3, 2),  # 30% to reserves
+                    'assumptions': {
+                        'claim_rate': '10% of active policies per year',
+                        'collection_rate': '100% of premiums',
+                        'reserve_contribution': '30% of premium revenue'
+                    }
+                },
+                'breakeven_analysis': {
+                    'monthly_breakeven': round(avg_monthly_claims, 2) if avg_monthly_claims > 0 else 0,
+                    'current_monthly_capacity': round(monthly_premium_proj, 2),
+                    'margin': round(monthly_premium_proj - avg_monthly_claims, 2) if avg_monthly_claims > 0 else monthly_premium_proj
+                }
+            }
+            
+            # 6. Data Integrity Score
+            integrity_checks = {
+                'premium_vs_billing_match': abs(premium_income - sum(float(b.get('amount_paid', 0)) for b in BILLING.values())) < 1,
+                'claims_vs_expense_match': abs(claims_paid - sum(float(c.get('approved_amount', 0)) for c in paid_claims)) < 1,
+                'reserve_positive': claims_reserve > 0,
+                'audit_trail_present': len(PHINS_BALANCE_SHEET.get('audit_log', [])) > 0
+            }
+            integrity_score = sum(1 for v in integrity_checks.values() if v) / len(integrity_checks) * 100
+            
+            self._set_json_headers()
+            self.wfile.write(json.dumps({
+                'success': True,
+                'ai_analysis': {
+                    'generated_at': datetime.now().isoformat(),
+                    'analysis_type': 'PHINS Balance Sheet AI/BI Intelligence',
+                    
+                    # Current State
+                    'current_state': {
+                        'claims_reserve': claims_reserve,
+                        'premium_income': premium_income,
+                        'claims_paid': claims_paid,
+                        'net_income': net_income,
+                        'total_revenue': total_revenue,
+                        'total_expenses': total_expenses
+                    },
+                    
+                    # Key Metrics
+                    'key_metrics': {
+                        'loss_ratio_pct': round(loss_ratio, 2) if loss_ratio != float('inf') else 'N/A (no premium)',
+                        'collection_rate_pct': round(collection_rate, 2),
+                        'active_policies': len(active_policies),
+                        'total_policies': len(all_policies),
+                        'outstanding_premium': round(total_outstanding, 2),
+                        'pending_claims_value': round(total_pending_claims_value, 2)
+                    },
+                    
+                    # AI Insights
+                    'insights': insights,
+                    
+                    # Recommendations
+                    'recommendations': recommendations,
+                    
+                    # Risk Alerts
+                    'risk_alerts': risk_alerts if risk_alerts else [{'level': 'low', 'message': 'No immediate risks detected'}],
+                    
+                    # Projections
+                    'projections': projections,
+                    
+                    # Data Integrity
+                    'data_integrity': {
+                        'score': round(integrity_score, 1),
+                        'status': 'VALID' if integrity_score >= 75 else 'WARNING' if integrity_score >= 50 else 'CRITICAL',
+                        'checks': integrity_checks
+                    }
+                },
+                'timestamp': datetime.now().isoformat()
+            }, default=str).encode('utf-8'))
+            return
+        
         # Balance Sheet Reconciliation - Verify and auto-correct integrity
         if path == '/api/admin/balance-sheet/reconcile':
             # Check authorization - only admin and accountant

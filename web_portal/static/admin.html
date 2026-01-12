@@ -414,6 +414,7 @@
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
         <h3 style="color: white; margin: 0;">🏦 PHINS General Reserves (Balance Sheet)</h3>
         <div style="display: flex; gap: 8px;">
+          <button onclick="loadAIInsights()" class="btn" style="background: rgba(156,39,176,0.4); color: white; border: 1px solid rgba(156,39,176,0.6); padding: 8px 16px; border-radius: 8px; cursor: pointer;" title="AI-powered financial analysis">🤖 AI Insights</button>
           <button onclick="reconcileBalanceSheet()" class="btn" style="background: rgba(76,175,80,0.3); color: white; border: 1px solid rgba(76,175,80,0.5); padding: 8px 16px; border-radius: 8px; cursor: pointer;" title="Verify data integrity">✅ Reconcile</button>
           <button onclick="loadBalanceSheet()" class="btn" style="background: rgba(255,255,255,0.2); color: white; border: 1px solid rgba(255,255,255,0.3); padding: 8px 16px; border-radius: 8px; cursor: pointer;">🔄 Refresh</button>
         </div>
@@ -492,6 +493,79 @@
         </div>
         <div style="font-size: 12px; color: rgba(255,255,255,0.7);">
           Last Updated: <span id="bs-last-updated">-</span>
+        </div>
+      </div>
+      
+      <!-- AI/BI Insights Panel -->
+      <div id="ai-insights-panel" style="margin-top: 16px; display: none;">
+        <div style="background: linear-gradient(135deg, rgba(156,39,176,0.3) 0%, rgba(103,58,183,0.3) 100%); border-radius: 12px; padding: 20px; border: 1px solid rgba(156,39,176,0.5);">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+            <h4 style="color: white; margin: 0;">🤖 AI-Powered Financial Intelligence</h4>
+            <button onclick="document.getElementById('ai-insights-panel').style.display='none'" style="background: none; border: none; color: white; cursor: pointer; font-size: 18px;">✕</button>
+          </div>
+          
+          <!-- Data Integrity Score -->
+          <div style="display: flex; gap: 16px; margin-bottom: 16px; flex-wrap: wrap;">
+            <div style="background: rgba(255,255,255,0.15); border-radius: 10px; padding: 16px; flex: 1; min-width: 150px; text-align: center;">
+              <div style="font-size: 12px; color: rgba(255,255,255,0.8);">Data Integrity</div>
+              <div style="font-size: 32px; font-weight: bold;" id="ai-integrity-score">-</div>
+              <div style="font-size: 11px;" id="ai-integrity-status">-</div>
+            </div>
+            <div style="background: rgba(255,255,255,0.15); border-radius: 10px; padding: 16px; flex: 1; min-width: 150px; text-align: center;">
+              <div style="font-size: 12px; color: rgba(255,255,255,0.8);">Loss Ratio</div>
+              <div style="font-size: 32px; font-weight: bold;" id="ai-loss-ratio">-</div>
+              <div style="font-size: 11px; color: rgba(255,255,255,0.7);">Claims/Premium</div>
+            </div>
+            <div style="background: rgba(255,255,255,0.15); border-radius: 10px; padding: 16px; flex: 1; min-width: 150px; text-align: center;">
+              <div style="font-size: 12px; color: rgba(255,255,255,0.8);">Collection Rate</div>
+              <div style="font-size: 32px; font-weight: bold;" id="ai-collection-rate">-</div>
+              <div style="font-size: 11px; color: rgba(255,255,255,0.7);">Premium Collected</div>
+            </div>
+            <div style="background: rgba(255,255,255,0.15); border-radius: 10px; padding: 16px; flex: 1; min-width: 150px; text-align: center;">
+              <div style="font-size: 12px; color: rgba(255,255,255,0.8);">Outstanding</div>
+              <div style="font-size: 32px; font-weight: bold;" id="ai-outstanding">-</div>
+              <div style="font-size: 11px; color: rgba(255,255,255,0.7);">Uncollected Premium</div>
+            </div>
+          </div>
+          
+          <!-- AI Insights -->
+          <div id="ai-insights-list" style="background: rgba(0,0,0,0.2); border-radius: 10px; padding: 16px; margin-bottom: 16px;">
+            <h5 style="color: #ce93d8; margin: 0 0 12px 0;">💡 AI Insights</h5>
+            <div id="ai-insights-content" style="font-size: 13px; line-height: 1.6;">
+              Loading insights...
+            </div>
+          </div>
+          
+          <!-- Recommendations -->
+          <div id="ai-recommendations-list" style="background: rgba(0,0,0,0.2); border-radius: 10px; padding: 16px; margin-bottom: 16px;">
+            <h5 style="color: #81c784; margin: 0 0 12px 0;">✅ Recommendations</h5>
+            <div id="ai-recommendations-content" style="font-size: 13px; line-height: 1.6;">
+              Loading recommendations...
+            </div>
+          </div>
+          
+          <!-- 12-Month Projections -->
+          <div style="background: rgba(0,0,0,0.2); border-radius: 10px; padding: 16px;">
+            <h5 style="color: #64b5f6; margin: 0 0 12px 0;">📊 12-Month Financial Projections</h5>
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; font-size: 13px;">
+              <div>
+                <span style="color: rgba(255,255,255,0.7);">Projected Revenue:</span>
+                <div style="font-size: 18px; font-weight: bold; color: #81c784;" id="ai-proj-revenue">-</div>
+              </div>
+              <div>
+                <span style="color: rgba(255,255,255,0.7);">Projected Claims:</span>
+                <div style="font-size: 18px; font-weight: bold; color: #ef9a9a;" id="ai-proj-claims">-</div>
+              </div>
+              <div>
+                <span style="color: rgba(255,255,255,0.7);">Projected Net:</span>
+                <div style="font-size: 18px; font-weight: bold;" id="ai-proj-net">-</div>
+              </div>
+              <div>
+                <span style="color: rgba(255,255,255,0.7);">Reserve Balance:</span>
+                <div style="font-size: 18px; font-weight: bold;" id="ai-proj-reserve">-</div>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -2806,6 +2880,92 @@
       } catch (err) {
         alert('Error reconciling balance sheet: ' + err.message);
         console.error('Reconciliation error:', err);
+      }
+    }
+    
+    // Load AI/BI Financial Insights
+    async function loadAIInsights() {
+      try {
+        const response = await fetch('/api/admin/balance-sheet/ai-insights', {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        
+        if (response.ok) {
+          const data = await response.json();
+          const ai = data.ai_analysis;
+          
+          // Show the panel
+          document.getElementById('ai-insights-panel').style.display = 'block';
+          
+          // Update metrics
+          const integrityScore = ai.data_integrity.score;
+          const integrityEl = document.getElementById('ai-integrity-score');
+          integrityEl.textContent = integrityScore + '%';
+          integrityEl.style.color = integrityScore >= 75 ? '#81c784' : integrityScore >= 50 ? '#ffb74d' : '#ef9a9a';
+          
+          const statusEl = document.getElementById('ai-integrity-status');
+          statusEl.textContent = ai.data_integrity.status;
+          statusEl.style.color = ai.data_integrity.status === 'VALID' ? '#81c784' : ai.data_integrity.status === 'WARNING' ? '#ffb74d' : '#ef9a9a';
+          
+          const lossRatio = ai.key_metrics.loss_ratio_pct;
+          document.getElementById('ai-loss-ratio').textContent = typeof lossRatio === 'number' ? lossRatio.toFixed(1) + '%' : lossRatio;
+          
+          document.getElementById('ai-collection-rate').textContent = ai.key_metrics.collection_rate_pct.toFixed(1) + '%';
+          document.getElementById('ai-outstanding').textContent = '$' + ai.key_metrics.outstanding_premium.toLocaleString();
+          
+          // Update insights
+          const insightsContent = document.getElementById('ai-insights-content');
+          if (ai.insights && ai.insights.length > 0) {
+            insightsContent.innerHTML = ai.insights.map(insight => {
+              const sevColor = insight.severity === 'critical' ? '#ef9a9a' : 
+                               insight.severity === 'high' ? '#ffb74d' : 
+                               insight.severity === 'warning' ? '#fff176' : '#81c784';
+              return `
+                <div style="margin-bottom: 12px; padding: 10px; background: rgba(255,255,255,0.05); border-radius: 8px; border-left: 3px solid ${sevColor};">
+                  <div style="font-weight: bold; color: ${sevColor};">${insight.title}</div>
+                  <div style="color: rgba(255,255,255,0.9); margin-top: 4px;">${insight.description}</div>
+                  <div style="color: rgba(255,255,255,0.6); margin-top: 4px; font-size: 12px;"><em>Impact: ${insight.impact}</em></div>
+                </div>
+              `;
+            }).join('');
+          } else {
+            insightsContent.innerHTML = '<div style="color: #81c784;">✅ No issues detected - financial data is healthy</div>';
+          }
+          
+          // Update recommendations
+          const recsContent = document.getElementById('ai-recommendations-content');
+          if (ai.recommendations && ai.recommendations.length > 0) {
+            recsContent.innerHTML = ai.recommendations.map(rec => `
+              <div style="margin-bottom: 12px; padding: 10px; background: rgba(255,255,255,0.05); border-radius: 8px;">
+                <div style="font-weight: bold; color: #81c784;">Priority ${rec.priority}: ${rec.action}</div>
+                <div style="color: rgba(255,255,255,0.9); margin-top: 4px;">${rec.details}</div>
+                <div style="color: #64b5f6; margin-top: 4px; font-size: 12px;"><em>Expected: ${rec.expected_result}</em></div>
+              </div>
+            `).join('');
+          } else {
+            recsContent.innerHTML = '<div style="color: #81c784;">✅ No immediate actions required</div>';
+          }
+          
+          // Update projections
+          const proj = ai.projections['12_month_outlook'];
+          document.getElementById('ai-proj-revenue').textContent = '$' + proj.projected_premium_revenue.toLocaleString();
+          document.getElementById('ai-proj-claims').textContent = '$' + proj.projected_claims_expense.toLocaleString();
+          
+          const netEl = document.getElementById('ai-proj-net');
+          netEl.textContent = '$' + proj.projected_net_income.toLocaleString();
+          netEl.style.color = proj.projected_net_income >= 0 ? '#81c784' : '#ef9a9a';
+          
+          document.getElementById('ai-proj-reserve').textContent = '$' + proj.projected_reserve_balance.toLocaleString();
+          
+          console.log('AI Insights loaded:', ai);
+        } else if (response.status === 403) {
+          alert('⚠️ Access Denied: Admin/Accountant/Actuary role required for AI Insights');
+        } else {
+          alert('Failed to load AI insights: ' + response.status);
+        }
+      } catch (err) {
+        alert('Error loading AI insights: ' + err.message);
+        console.error('AI Insights error:', err);
       }
     }
     
