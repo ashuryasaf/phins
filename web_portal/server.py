@@ -94,7 +94,8 @@ else:
     print("⚠️  WARNING: Running in volatile in-memory mode (USE_DATABASE=false)")
     print("   Data will be LOST when server restarts. Set USE_DATABASE=true for persistence.")
 
-PORT = 8000
+# Railway provides PORT via environment variable; default to 8000 for local dev
+PORT = int(os.environ.get('PORT', 8000))
 ROOT = os.path.join(os.path.dirname(__file__), "static")
 
 # Storage - either database-backed or in-memory
