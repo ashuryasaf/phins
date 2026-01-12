@@ -3845,6 +3845,43 @@ For claims or questions, please contact:
                 self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
             return
 
+        # Database connection diagnostic (no auth for debugging)
+        if path == '/api/diagnostics/db-test':
+            result = {
+                'database_url_set': bool(os.environ.get('DATABASE_URL')),
+                'use_database_env': os.environ.get('USE_DATABASE', 'not set'),
+                'database_enabled_flag': database_enabled,
+                'use_database_flag': USE_DATABASE,
+                'connection_test': None,
+                'error': None
+            }
+            
+            # Try to test actual connection
+            db_url = os.environ.get('DATABASE_URL', '')
+            if db_url:
+                # Show URL format (hide password)
+                import re
+                safe_url = re.sub(r':([^:@]+)@', ':****@', db_url)
+                result['database_url_format'] = safe_url
+                
+                # Test connection
+                try:
+                    from sqlalchemy import create_engine, text
+                    test_engine = create_engine(db_url, pool_pre_ping=True)
+                    with test_engine.connect() as conn:
+                        conn.execute(text("SELECT 1"))
+                    result['connection_test'] = 'SUCCESS'
+                    test_engine.dispose()
+                except Exception as e:
+                    result['connection_test'] = 'FAILED'
+                    result['error'] = str(e)[:500]
+            else:
+                result['error'] = 'DATABASE_URL not set'
+            
+            self._set_json_headers()
+            self.wfile.write(json.dumps(result, indent=2).encode('utf-8'))
+            return
+
         # Diagnostic endpoint to check env var status (no auth required for debugging)
         if path == '/api/diagnostics/env-check':
             # Only show if env vars are SET, not their values (security)
