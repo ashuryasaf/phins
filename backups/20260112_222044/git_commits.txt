@@ -1,0 +1,20 @@
+6205562 fix: Resolve Railway deployment waiting/skipped issues
+b089bb1 feat: Add database connection diagnostic endpoint /api/diagnostics/db-test
+a27bf8d fix: Define sync_to_memory variable before use in seeds.py
+e37d190 fix: Properly fall back to in-memory storage when database connection fails
+715d159 fix: Use PORT environment variable for Railway deployment
+1e0c13b feat: Add health check endpoint for Railway deployment monitoring
+f07fad6 fix: resolve 'now' variable not defined error in customer initialization
+f070a96 fix: Implement stateless HMAC-signed tokens for Railway
+e1bc58c chore: Force Railway deployment for session fix
+8c7100f fix: Add database-backed session lookup for Railway multi-instance
+0c6161a fix: Use in-memory sessions for Railway multi-instance compatibility
+b4687e3 Add new customer entry to dynamic_customers.json
+8393a4d fix: Add reserve integrity check and auto-fix endpoint
+c9f03e5 Add new customer data to database
+95470e3 feat: Add AI/BI financial intelligence endpoint and UI
+4efb7f3 feat: Add diagnostic endpoint for env var troubleshooting
+084abb1 chore: Force Railway deployment trigger
+77a8347 Merge security fixes and deployment trigger
+3bf63b9 chore: Trigger Railway deployment
+9f56ae4 Refactor security key check to use env var
