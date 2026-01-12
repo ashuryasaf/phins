@@ -3722,6 +3722,31 @@ For claims or questions, please contact:
                 self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
             return
 
+        # Diagnostic endpoint to check env var status (no auth required for debugging)
+        if path == '/api/diagnostics/env-check':
+            # Only show if env vars are SET, not their values (security)
+            env_status = {
+                'PHINS_ADMIN_PASSWORD': bool(os.environ.get('PHINS_ADMIN_PASSWORD')),
+                'PHINS_UNDERWRITER_PASSWORD': bool(os.environ.get('PHINS_UNDERWRITER_PASSWORD')),
+                'PHINS_CLAIMS_PASSWORD': bool(os.environ.get('PHINS_CLAIMS_PASSWORD')),
+                'PHINS_ACCOUNTANT_PASSWORD': bool(os.environ.get('PHINS_ACCOUNTANT_PASSWORD')),
+                'PHINS_ACTUARY_PASSWORD': bool(os.environ.get('PHINS_ACTUARY_PASSWORD')),
+                'PHINS_SUPPLIER_PASSWORD': bool(os.environ.get('PHINS_SUPPLIER_PASSWORD')),
+                'PHINS_MEDIA_PASSWORD': bool(os.environ.get('PHINS_MEDIA_PASSWORD')),
+                'PHINS_USER_ASAF_PHINS_PASSWORD': bool(os.environ.get('PHINS_USER_ASAF_PHINS_PASSWORD')),
+                'DATABASE_URL': bool(os.environ.get('DATABASE_URL')),
+                'USE_DATABASE': os.environ.get('USE_DATABASE', 'not set'),
+            }
+            vars_set = sum(1 for v in env_status.values() if v is True)
+            self._set_json_headers()
+            self.wfile.write(json.dumps({
+                'env_vars_configured': env_status,
+                'total_password_vars_set': vars_set,
+                'all_required_set': vars_set >= 7,
+                'message': 'All password env vars must be set for login to work' if vars_set < 7 else 'Environment configured correctly'
+            }).encode('utf-8'))
+            return
+
         # Platform Metrics Endpoint (for dashboards)
         if path == '/api/metrics':
             try:
