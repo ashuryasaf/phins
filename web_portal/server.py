@@ -9873,6 +9873,81 @@ For claims or questions, please contact:
             }, default=str).encode('utf-8'))
             return
         
+        # Reserve Integrity Check - Verify claims_reserve matches claims paid
+        if path == '/api/admin/balance-sheet/fix-reserve':
+            if not require_role(session, ['admin', 'accountant']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Unauthorized. Admin or Accountant access required.'}).encode('utf-8'))
+                return
+            
+            auto_fix = qs.get('auto_fix', ['false'])[0].lower() == 'true'
+            
+            initialize_balance_sheet()
+            
+            # Calculate expected reserve: initial - all claims paid
+            INITIAL_RESERVE = 3500000.0  # Initial seed capital
+            total_claims_paid = PHINS_BALANCE_SHEET['expense_breakdown']['claims_paid']
+            expected_reserve = INITIAL_RESERVE - total_claims_paid
+            actual_reserve = PHINS_BALANCE_SHEET['claims_reserve']
+            discrepancy = actual_reserve - expected_reserve
+            
+            result = {
+                'success': True,
+                'initial_reserve': INITIAL_RESERVE,
+                'total_claims_paid': total_claims_paid,
+                'expected_reserve': expected_reserve,
+                'actual_reserve': actual_reserve,
+                'discrepancy': discrepancy,
+                'needs_fix': abs(discrepancy) > 0.01
+            }
+            
+            if auto_fix and abs(discrepancy) > 0.01:
+                # Fix the claims_reserve
+                old_reserve = PHINS_BALANCE_SHEET['claims_reserve']
+                PHINS_BALANCE_SHEET['claims_reserve'] = expected_reserve
+                PHINS_BALANCE_SHEET['last_updated'] = datetime.now().isoformat()
+                
+                # Add audit log entry
+                PHINS_BALANCE_SHEET['audit_log'].append({
+                    'action': 'reserve_integrity_fix',
+                    'actor': session.get('username', 'system') if session else 'system',
+                    'timestamp': datetime.now().isoformat(),
+                    'old_reserve': old_reserve,
+                    'new_reserve': expected_reserve,
+                    'discrepancy_fixed': discrepancy
+                })
+                
+                # Add correction transaction
+                PHINS_BALANCE_SHEET['transactions'].append({
+                    'tx_id': f"BS-ADJ-{datetime.now().strftime('%Y%m%d%H%M%S')}-{random.randint(1000, 9999)}",
+                    'type': 'adjustment',
+                    'category': 'claims_reserve',
+                    'amount': -discrepancy,
+                    'description': f'Reserve integrity correction for historical claims (discrepancy: ${discrepancy:,.2f})',
+                    'actor': session.get('username', 'system') if session else 'system',
+                    'balance_after': expected_reserve,
+                    'claims_reserve_after': expected_reserve,
+                    'timestamp': datetime.now().isoformat()
+                })
+                
+                save_ledger_data()
+                
+                result['fix_applied'] = True
+                result['new_reserve'] = expected_reserve
+                result['message'] = f'Reserve corrected from ${old_reserve:,.2f} to ${expected_reserve:,.2f}'
+            else:
+                result['fix_applied'] = False
+                if abs(discrepancy) <= 0.01:
+                    result['message'] = 'Reserve is already correct - no fix needed'
+                else:
+                    result['message'] = f'Discrepancy of ${discrepancy:,.2f} found. Add ?auto_fix=true to correct.'
+            
+            result['timestamp'] = datetime.now().isoformat()
+            
+            self._set_json_headers()
+            self.wfile.write(json.dumps(result, default=str).encode('utf-8'))
+            return
+        
         # Balance Sheet Reconciliation - Verify and auto-correct integrity
         if path == '/api/admin/balance-sheet/reconcile':
             # Check authorization - only admin and accountant
