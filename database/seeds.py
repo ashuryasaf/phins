@@ -712,6 +712,14 @@ def seed_sample_data(session=None):
         except ImportError:
             sync_wallets = False
         
+        # Import main in-memory structures for syncing
+        try:
+            from web_portal.server import CUSTOMERS, POLICIES, UNDERWRITING_APPLICATIONS
+            sync_to_memory = True
+        except ImportError:
+            sync_to_memory = False
+            logger.warning("Could not import in-memory data structures for PHINS customers")
+        
         for phins_cust in phins_customers:
             existing = customer_repo.find_one_by(email=phins_cust['email'])
             if existing:
