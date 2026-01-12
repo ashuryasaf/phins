@@ -1809,29 +1809,82 @@ ALLOW_LEGACY_DEMO_PASSWORDS = PHINS_TEST_MODE or (
 )
 
 def validate_session(token: str) -> dict[str, str] | None:
-    """Validate session token and return user info or None"""
+    """Validate session token and return user info or None.
+    
+    For Railway multi-instance compatibility, if session is not found in local
+    SESSIONS dict, we check if the token was recently issued by verifying
+    against USERS database. This allows tokens to work across instances.
+    """
     if not token or not token.startswith('phins_'):
         return None
 
     with STATE_LOCK:
         session = SESSIONS.get(token)
-        if not session:
-            return None
-
-        # Check if session expired
-        try:
-            expires = datetime.fromisoformat(session['expires'])
-            if datetime.now() > expires:
-                try:
-                    del SESSIONS[token]
-                except Exception:
-                    # Best-effort cleanup (DB-backed dict may not support del in all cases)
-                    pass
+        if session:
+            # Check if session expired
+            try:
+                expires = datetime.fromisoformat(session['expires'])
+                if datetime.now() > expires:
+                    try:
+                        del SESSIONS[token]
+                    except Exception:
+                        pass
+                    return None
+            except (KeyError, ValueError):
                 return None
-        except (KeyError, ValueError):
-            return None
+            return session
+    
+    # RAILWAY MULTI-INSTANCE FALLBACK:
+    # Token not in local SESSIONS (might be on different instance)
+    # Check database for the token (synced by login on any instance)
+    if USE_DATABASE and database_enabled:
+        try:
+            with DatabaseManager() as db:
+                db_session = db.sessions.get_by_id(token)
+                if db_session:
+                    # Check expiry
+                    expires = db_session.expires
+                    if isinstance(expires, str):
+                        expires = datetime.fromisoformat(expires)
+                    if datetime.now() < expires:
+                        # Reconstruct session from database
+                        reconstructed = {
+                            'username': db_session.username,
+                            'role': db_session.role,
+                            'customer_id': db_session.customer_id,
+                            'expires': expires.isoformat() if hasattr(expires, 'isoformat') else str(expires)
+                        }
+                        # Cache in local SESSIONS for future requests
+                        with STATE_LOCK:
+                            SESSIONS[token] = reconstructed
+                        return reconstructed
+        except Exception as e:
+            print(f"[SESSION] DB lookup error: {e}")
+    
+    # Final fallback: Check ACTIVE_TOKENS (in-memory cross-reference)
+    try:
+        if token in ACTIVE_TOKENS:
+            token_data = ACTIVE_TOKENS[token]
+            username = token_data.get('username')
+            if username and username in USERS:
+                user = USERS[username]
+                reconstructed = {
+                    'username': username,
+                    'role': user.get('role') or token_data.get('role', 'customer'),
+                    'customer_id': token_data.get('customer_id'),
+                    'expires': token_data.get('expires', (datetime.now() + timedelta(hours=1)).isoformat())
+                }
+                with STATE_LOCK:
+                    SESSIONS[token] = reconstructed
+                return reconstructed
+    except Exception:
+        pass
+    
+    return None
 
-        return session
+# Global token storage for Railway multi-instance support
+# This will be synced to database if USE_DATABASE is enabled
+ACTIVE_TOKENS: Dict[str, Dict[str, Any]] = {}
 
 def _security_key(client_ip: str, server_port: int | None = None) -> str:
     """Return a key used for per-server security tracking."""
@@ -10624,6 +10677,27 @@ For claims or questions, please contact:
                             'role': role,
                             'ip_address': client_ip
                         }
+                        # Also store in ACTIVE_TOKENS for Railway multi-instance support
+                        ACTIVE_TOKENS[token] = {
+                            'username': username,
+                            'expires': expires.isoformat(),
+                            'role': role,
+                            'customer_id': customer_id
+                        }
+                    
+                    # Sync ACTIVE_TOKENS to database for cross-instance access
+                    if USE_DATABASE and database_enabled:
+                        try:
+                            with DatabaseManager() as db:
+                                db.sessions.create(
+                                    token=token,
+                                    username=username,
+                                    customer_id=customer_id,
+                                    role=role,
+                                    expires=expires
+                                )
+                        except Exception as db_err:
+                            print(f"[SESSION] DB sync warning: {db_err}")
                     
                     self._set_json_headers()
                     self.wfile.write(json.dumps({
