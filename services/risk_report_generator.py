@@ -24,6 +24,7 @@ from enum import Enum
 import json
 import hashlib
 import uuid
+import html  # Security: HTML escaping for XSS prevention
 
 
 class ReportFormat(Enum):
@@ -770,8 +771,25 @@ class RiskReportGenerator:
         
         return min(base_loading, 1.0)  # Cap at 100%
     
+    def _escape_html(self, value: Any) -> str:
+        """
+        Safely escape a value for HTML output to prevent XSS attacks.
+        
+        Args:
+            value: Any value to be rendered in HTML
+            
+        Returns:
+            HTML-escaped string
+        """
+        if value is None:
+            return ''
+        return html.escape(str(value))
+    
     def generate_html_report(self, report: ComprehensiveRiskReport) -> str:
-        """Generate HTML formatted report"""
+        """Generate HTML formatted report with XSS protection"""
+        
+        # SECURITY: Escape all user-provided data
+        esc = self._escape_html
         
         # Risk category colors
         category_colors = {
@@ -797,12 +815,12 @@ class RiskReportGenerator:
         risk_color = category_colors.get(report.risk_category, '#6c757d')
         rec_color = rec_colors.get(report.recommendation.recommendation_type, '#6c757d')
         
-        html = f'''<!DOCTYPE html>
+        html_content = f'''<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Risk Assessment Report - {report.application_id}</title>
+    <title>Risk Assessment Report - {esc(report.application_id)}</title>
     <style>
         * {{ margin: 0; padding: 0; box-sizing: border-box; }}
         body {{ font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; line-height: 1.6; color: #333; background: #f5f5f5; }}
@@ -869,7 +887,7 @@ class RiskReportGenerator:
             <div class="header">
                 <h1>🔒 UNDERWRITING RISK ASSESSMENT REPORT</h1>
                 <div class="subtitle">AI-Powered Comprehensive Risk Analysis</div>
-                <div class="report-id">Report ID: {report.report_id}</div>
+                <div class="report-id">Report ID: {esc(report.report_id)}</div>
             </div>
             
             <!-- Application Info -->
@@ -878,11 +896,11 @@ class RiskReportGenerator:
                 <div class="grid">
                     <div class="card">
                         <div class="card-label">Application ID</div>
-                        <div class="card-value">{report.application_id}</div>
+                        <div class="card-value">{esc(report.application_id)}</div>
                     </div>
                     <div class="card">
                         <div class="card-label">Policy Type</div>
-                        <div class="card-value">{report.policy_type.title()}</div>
+                        <div class="card-value">{esc(report.policy_type.title())}</div>
                     </div>
                     <div class="card">
                         <div class="card-label">Coverage Amount</div>
@@ -901,23 +919,23 @@ class RiskReportGenerator:
                 <div class="grid">
                     <div class="card">
                         <div class="card-label">Full Name</div>
-                        <div class="card-value">{report.applicant_name}</div>
+                        <div class="card-value">{esc(report.applicant_name)}</div>
                     </div>
                     <div class="card">
                         <div class="card-label">Age</div>
-                        <div class="card-value">{report.applicant_age} years</div>
+                        <div class="card-value">{esc(report.applicant_age)} years</div>
                     </div>
                     <div class="card">
                         <div class="card-label">Gender</div>
-                        <div class="card-value">{report.applicant_gender.title()}</div>
+                        <div class="card-value">{esc(report.applicant_gender.title())}</div>
                     </div>
                     <div class="card">
                         <div class="card-label">Occupation</div>
-                        <div class="card-value">{report.applicant_occupation}</div>
+                        <div class="card-value">{esc(report.applicant_occupation)}</div>
                     </div>
                     <div class="card">
                         <div class="card-label">Location</div>
-                        <div class="card-value">{report.applicant_location}</div>
+                        <div class="card-value">{esc(report.applicant_location)}</div>
                     </div>
                     <div class="card">
                         <div class="card-label">Identity Verified</div>
@@ -974,34 +992,34 @@ class RiskReportGenerator:
                 <div class="grid" style="margin-bottom: 20px;">
                     <div class="card">
                         <div class="card-label">Disability Status</div>
-                        <div class="card-value">{report.disability_percentage}% ({report.disability_type})</div>
+                        <div class="card-value">{esc(report.disability_percentage)}% ({esc(report.disability_type)})</div>
                     </div>
                     <div class="card">
                         <div class="card-label">BMI Category</div>
-                        <div class="card-value">{report.bmi_category}</div>
+                        <div class="card-value">{esc(report.bmi_category)}</div>
                     </div>
                     <div class="card">
                         <div class="card-label">Smoking Status</div>
-                        <div class="card-value">{report.smoking_status.replace('_', ' ').title()}</div>
+                        <div class="card-value">{esc(report.smoking_status.replace('_', ' ').title())}</div>
                     </div>
                 </div>
                 
                 <h4 style="margin: 20px 0 15px; color: #333;">Medical Conditions Identified</h4>
                 {''.join([f"""
-                <div class="condition-card condition-{c.severity}">
+                <div class="condition-card condition-{esc(c.severity)}">
                     <div style="display: flex; justify-content: space-between; align-items: center;">
                         <div>
-                            <strong>{c.condition_name}</strong> <span style="opacity: 0.7;">({c.icd_code})</span>
+                            <strong>{esc(c.condition_name)}</strong> <span style="opacity: 0.7;">({esc(c.icd_code)})</span>
                         </div>
-                        <span style="background: rgba(0,0,0,0.1); padding: 4px 12px; border-radius: 12px; font-size: 12px;">{c.severity.upper()}</span>
+                        <span style="background: rgba(0,0,0,0.1); padding: 4px 12px; border-radius: 12px; font-size: 12px;">{esc(c.severity.upper())}</span>
                     </div>
                     <div style="margin-top: 10px; font-size: 14px;">
-                        <div><strong>Status:</strong> {c.current_status.replace('_', ' ').title()}</div>
-                        <div><strong>Treatment:</strong> {c.treatment}</div>
+                        <div><strong>Status:</strong> {esc(c.current_status.replace('_', ' ').title())}</div>
+                        <div><strong>Treatment:</strong> {esc(c.treatment)}</div>
                         <div><strong>Risk Impact:</strong> {c.risk_impact:.1%}</div>
                         {'<div style="color: #dc3545; margin-top: 5px;">⚠️ Exclusion Recommended</div>' if c.exclusion_recommended else ''}
                         {f'<div><strong>Loading:</strong> +{c.loading_percentage:.0f}%</div>' if c.loading_percentage > 0 else ''}
-                        {f'<div style="margin-top: 5px; font-style: italic; opacity: 0.8;">{c.notes}</div>' if c.notes else ''}
+                        {f'<div style="margin-top: 5px; font-style: italic; opacity: 0.8;">{esc(c.notes)}</div>' if c.notes else ''}
                     </div>
                 </div>
                 """ for c in report.medical_conditions]) if report.medical_conditions else '<p style="color: #666;">No significant medical conditions identified.</p>'}
@@ -1014,10 +1032,10 @@ class RiskReportGenerator:
                     {''.join([f"""
                     <li class="factor-item">
                         <div>
-                            <strong>{f.factor_name}</strong>
-                            <div style="font-size: 13px; color: #666;">{f.explanation}</div>
+                            <strong>{esc(f.factor_name)}</strong>
+                            <div style="font-size: 13px; color: #666;">{esc(f.explanation)}</div>
                         </div>
-                        <span class="factor-impact {'high' if f.impact_score > 0.3 else 'medium' if f.impact_score > 0.15 else 'low'}">{f.impact_direction.upper()} {f.impact_score:.1%}</span>
+                        <span class="factor-impact {'high' if f.impact_score > 0.3 else 'medium' if f.impact_score > 0.15 else 'low'}">{esc(f.impact_direction.upper())} {f.impact_score:.1%}</span>
                     </li>
                     """ for f in report.risk_factors])}
                 </ul>
@@ -1039,11 +1057,11 @@ class RiskReportGenerator:
                     <tbody>
                         {''.join([f"""
                         <tr>
-                            <td>{d.document_type.replace('_', ' ').title()}</td>
+                            <td>{esc(d.document_type.replace('_', ' ').title())}</td>
                             <td><span class="document-status {'document-verified' if d.verified else 'document-failed'}">{'✓ Verified' if d.verified else '✗ Failed'}</span></td>
                             <td>{d.authenticity_score:.1%}</td>
-                            <td>{d.expiry_status.replace('_', ' ').title()}</td>
-                            <td>{', '.join(d.flags) if d.flags else '-'}</td>
+                            <td>{esc(d.expiry_status.replace('_', ' ').title())}</td>
+                            <td>{esc(', '.join(d.flags)) if d.flags else '-'}</td>
                         </tr>
                         """ for d in report.documents_verified])}
                     </tbody>
@@ -1061,7 +1079,7 @@ class RiskReportGenerator:
                 
                 <div class="rationale">
                     <strong>Primary Rationale:</strong>
-                    <p style="margin-top: 10px;">{report.recommendation.primary_rationale}</p>
+                    <p style="margin-top: 10px;">{esc(report.recommendation.primary_rationale)}</p>
                 </div>
                 
                 {f"""
@@ -1075,13 +1093,13 @@ class RiskReportGenerator:
                     <div>
                         <h4 style="margin-bottom: 15px;">Supporting Factors</h4>
                         <ul style="padding-left: 20px;">
-                            {''.join([f'<li style="margin-bottom: 8px;">{f}</li>' for f in report.recommendation.supporting_factors])}
+                            {''.join([f'<li style="margin-bottom: 8px;">{esc(f)}</li>' for f in report.recommendation.supporting_factors])}
                         </ul>
                     </div>
                     <div>
                         <h4 style="margin-bottom: 15px;">Risk Mitigations</h4>
                         <ul style="padding-left: 20px;">
-                            {''.join([f'<li style="margin-bottom: 8px;">{m}</li>' for m in report.recommendation.risk_mitigations]) if report.recommendation.risk_mitigations else '<li>No specific mitigations required</li>'}
+                            {''.join([f'<li style="margin-bottom: 8px;">{esc(m)}</li>' for m in report.recommendation.risk_mitigations]) if report.recommendation.risk_mitigations else '<li>No specific mitigations required</li>'}
                         </ul>
                     </div>
                 </div>
@@ -1089,20 +1107,20 @@ class RiskReportGenerator:
                 {f"""
                 <div class="exclusion-list" style="margin-top: 20px;">
                     <h4 style="margin-bottom: 15px; color: #721c24;">⚠️ Recommended Exclusions</h4>
-                    {''.join([f'<div class="exclusion-item">{e}</div>' for e in report.recommendation.exclusions])}
+                    {''.join([f'<div class="exclusion-item">{esc(e)}</div>' for e in report.recommendation.exclusions])}
                 </div>
                 """ if report.recommendation.exclusions else ''}
                 
                 <div class="monitoring-list" style="margin-top: 20px;">
                     <h4 style="margin-bottom: 15px; color: #0c5460;">📋 Monitoring Requirements</h4>
-                    {''.join([f'<div style="padding: 8px 0; border-bottom: 1px solid rgba(0,0,0,0.1);">{m}</div>' for m in report.recommendation.monitoring_requirements])}
+                    {''.join([f'<div style="padding: 8px 0; border-bottom: 1px solid rgba(0,0,0,0.1);">{esc(m)}</div>' for m in report.recommendation.monitoring_requirements])}
                 </div>
                 
                 {f"""
                 <div style="margin-top: 20px; background: #f8f9fa; padding: 15px; border-radius: 8px;">
                     <h4 style="margin-bottom: 10px;">Conditions of Approval</h4>
                     <ul style="padding-left: 20px;">
-                        {''.join([f'<li style="margin-bottom: 5px;">{c}</li>' for c in report.recommendation.conditions])}
+                        {''.join([f'<li style="margin-bottom: 5px;">{esc(c)}</li>' for c in report.recommendation.conditions])}
                     </ul>
                 </div>
                 """ if report.recommendation.conditions else ''}
@@ -1114,9 +1132,9 @@ class RiskReportGenerator:
             
             <!-- Footer -->
             <div class="footer">
-                <p>Generated by PHINS AI Underwriting Bot v{report.model_version}</p>
+                <p>Generated by PHINS AI Underwriting Bot v{esc(report.model_version)}</p>
                 <p>Report Generated: {report.assessment_date.strftime('%d %B %Y at %H:%M:%S')}</p>
-                <p>Processing Time: {report.processing_time_seconds:.2f} seconds | Assessor ID: {report.assessor_id}</p>
+                <p>Processing Time: {report.processing_time_seconds:.2f} seconds | Assessor ID: {esc(report.assessor_id)}</p>
                 <p style="margin-top: 15px; font-size: 10px; opacity: 0.7;">This report is generated by an AI system and should be reviewed by a qualified underwriter before final decision.</p>
             </div>
         </div>
@@ -1124,7 +1142,7 @@ class RiskReportGenerator:
 </body>
 </html>'''
         
-        return html
+        return html_content
     
     def generate_text_report(self, report: ComprehensiveRiskReport) -> str:
         """Generate plain text report"""

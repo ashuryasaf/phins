@@ -4045,8 +4045,8 @@
         let skipped = 0;
         
         for (const customer of customers) {
-          // Try to activate wallet for each customer
-          const walletRes = await fetch(`/api/health-wallet/${customer.id}`, {
+          // Try to activate wallet for each customer (use query param, not path)
+          const walletRes = await fetch(`/api/health-wallet?customer_id=${encodeURIComponent(customer.id)}`, {
             headers: { 'Authorization': `Bearer ${token}` }
           });
           
@@ -4089,7 +4089,7 @@
         const validation = validateRes.ok ? await validateRes.json() : { integrity_status: 'UNKNOWN' };
         
         statusEl.innerHTML = `<span style="color: #10b981;">✓ ${entries.length} entries synced</span>`;
-        alert(`📒 Ledger Sync Complete!\n\n${entries.length} total entries\nIntegrity: ${validation.integrity_status || 'Verified'}\nNFT Verified: ${validation.nft_verified || 0}`);
+        alert(`📒 Ledger Sync Complete!\n\n${entries.length} total entries\nIntegrity: ${validation.integrity_status || 'Verified'}\nNFT Tokens: ${validation.nft_ledger_count || 0}\nIssues Found: ${validation.issues_found || 0}`);
         
         await loadCustomerList();
       } catch (err) {

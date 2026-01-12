@@ -714,7 +714,7 @@ def seed_sample_data(session=None):
         
         # Import main in-memory structures for syncing
         try:
-            from web_portal.server import CUSTOMERS, POLICIES, UNDERWRITING_APPLICATIONS
+            from web_portal.server import CUSTOMERS, POLICIES, UNDERWRITING_APPLICATIONS, BILLING
             sync_to_memory = True
         except ImportError:
             sync_to_memory = False
@@ -774,6 +774,41 @@ def seed_sample_data(session=None):
                     created_date=now
                 )
                 logger.info(f"Created underwriting application: {app_data['id']} for {phins_cust['email']}")
+            
+            # Create billing record for active policies (FIX: CUST-EFRAT-001 validation error)
+            if pol_data['status'] == 'active':
+                bill_id = f"BILL-{pol_data['id'].replace('POL-', '')}"
+                existing_bill = billing_repo.find_one_by(id=bill_id)
+                if not existing_bill:
+                    billing_repo.create(
+                        id=bill_id,
+                        policy_id=pol_data['id'],
+                        customer_id=phins_cust['id'],
+                        amount=pol_data['monthly_premium'],
+                        amount_paid=0.0,
+                        status='outstanding',
+                        due_date=now + timedelta(days=30)
+                    )
+                    logger.info(f"Created billing record: {bill_id} for {phins_cust['email']}")
+                
+                # Sync bill to memory
+                if sync_to_memory:
+                    BILLING[bill_id] = {
+                        'id': bill_id,
+                        'policy_id': pol_data['id'],
+                        'customer_id': phins_cust['id'],
+                        'amount': pol_data['monthly_premium'],
+                        'amount_paid': 0.0,
+                        'status': 'outstanding',
+                        'due_date': (now + timedelta(days=30)).isoformat(),
+                        'paid_date': None,
+                        'payment_method': None,
+                        'transaction_id': None,
+                        'late_fee': 0.0,
+                        'created_date': now.isoformat(),
+                        'updated_date': now.isoformat()
+                    }
+                    logger.info(f"Synced billing record {bill_id} to memory")
             
             # Sync to memory
             if sync_to_memory:

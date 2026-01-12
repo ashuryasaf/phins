@@ -24,7 +24,7 @@ import threading
 import time
 import csv
 import io
-from typing import Dict, Any
+from typing import Dict, Any, Tuple
 
 # ==============================================================================
 # CASE-INSENSITIVE STATUS HELPERS (for data integrity across pipeline)
@@ -587,7 +587,11 @@ def save_ledger_data():
         print(f"[PERSISTENCE] Error saving ledger data: {e}")
 
 def append_customer_to_seeds(email: str, password: str, name: str, customer_id: str, registered_at: str):
-    """Append newly registered customer to dynamic seeds file for restart persistence"""
+    """
+    Append newly registered customer to dynamic seeds file for restart persistence.
+    
+    SECURITY: Passwords are hashed before storage - NEVER store plain-text passwords.
+    """
     try:
         seeds_file = os.path.join(os.path.dirname(__file__), '..', 'database', 'dynamic_customers.json')
         
@@ -597,10 +601,15 @@ def append_customer_to_seeds(email: str, password: str, name: str, customer_id: 
             with open(seeds_file, 'r') as f:
                 dynamic_customers = json.load(f)
         
-        # Add new customer
+        # SECURITY: Hash password before storing
+        pwd_hash = hash_password(password)
+        
+        # Add new customer with hashed password
         dynamic_customers.append({
             'username': email,
-            'password': password,
+            # SECURITY: Store hash and salt, NEVER plain-text password
+            'password_hash': pwd_hash['hash'],
+            'password_salt': pwd_hash['salt'],
             'name': name,
             'role': 'customer',
             'customer_id': customer_id,
@@ -612,12 +621,17 @@ def append_customer_to_seeds(email: str, password: str, name: str, customer_id: 
         with open(seeds_file, 'w') as f:
             json.dump(dynamic_customers, f, indent=2)
         
-        print(f"[SEEDS] Appended new customer {email} to dynamic seeds file")
+        print(f"[SEEDS] Appended new customer {email} to dynamic seeds file (password hashed)")
     except Exception as e:
         print(f"[SEEDS] Error appending customer to seeds: {e}")
 
 def load_dynamic_customers():
-    """Load dynamically registered customers from JSON file into USERS dictionary"""
+    """
+    Load dynamically registered customers from JSON file into USERS dictionary.
+    
+    SECURITY: Supports both pre-hashed passwords (new secure format) and 
+    legacy plain-text passwords (for backward compatibility during migration).
+    """
     global USERS, CUSTOMERS, REGISTERED_CUSTOMERS
     
     seeds_file = os.path.join(os.path.dirname(__file__), '..', 'database', 'dynamic_customers.json')
@@ -635,6 +649,8 @@ def load_dynamic_customers():
             return 0
         
         loaded_count = 0
+        legacy_count = 0
+        
         for customer in dynamic_customers:
             email = customer.get('email') or customer.get('username')
             if not email:
@@ -644,13 +660,28 @@ def load_dynamic_customers():
             if email in USERS:
                 continue
             
-            # Hash password and add to USERS
-            # SECURITY: Default password from env var, or generate random unusable password
-            default_pwd = os.environ.get('PHINS_DEFAULT_CUSTOMER_PASSWORD', secrets.token_urlsafe(32))
-            pwd_hash = hash_password(customer.get('password', default_pwd))
+            # SECURITY: Check if password is already hashed (new secure format)
+            if 'password_hash' in customer and 'password_salt' in customer:
+                # New format: pre-hashed password
+                pwd_hash = customer['password_hash']
+                pwd_salt = customer['password_salt']
+            elif 'password' in customer:
+                # LEGACY: Plain-text password (migrate and hash)
+                # SECURITY: Default password from env var, or generate random unusable password
+                default_pwd = os.environ.get('PHINS_DEFAULT_CUSTOMER_PASSWORD', secrets.token_urlsafe(32))
+                pwd_data = hash_password(customer.get('password', default_pwd))
+                pwd_hash = pwd_data['hash']
+                pwd_salt = pwd_data['salt']
+                legacy_count += 1
+            else:
+                # No password at all - generate unusable random password
+                pwd_data = hash_password(secrets.token_urlsafe(32))
+                pwd_hash = pwd_data['hash']
+                pwd_salt = pwd_data['salt']
+            
             USERS[email] = {
-                'hash': pwd_hash['hash'],
-                'salt': pwd_hash['salt'],
+                'hash': pwd_hash,
+                'salt': pwd_salt,
                 'role': 'customer',
                 'name': customer.get('name', email),
                 'customer_id': customer.get('customer_id', f"CUST-{email}")
@@ -670,6 +701,9 @@ def load_dynamic_customers():
                 REGISTERED_CUSTOMERS[customer_id] = CUSTOMERS[customer_id]
             
             loaded_count += 1
+        
+        if legacy_count > 0:
+            print(f"[DYNAMIC] WARNING: {legacy_count} customers have legacy plain-text passwords. Run password migration.")
         
         print(f"[DYNAMIC] Loaded {loaded_count} dynamic customers from seeds file")
         return loaded_count
@@ -1966,6 +2000,55 @@ def check_rate_limit(client_ip: str, server_port: int | None = None) -> bool:
             RATE_LIMIT[key] = {'count': 1, 'reset_time': now + 60}
             return True
 
+# =============================================================================
+# BULK OPERATION RATE LIMITING
+# =============================================================================
+# Stricter rate limits for bulk admin operations to prevent abuse/DoS
+BULK_RATE_LIMIT: Dict[str, Dict[str, Any]] = {}  # key -> {count, reset_time}
+MAX_BULK_OPERATIONS_PER_MINUTE = 5  # Very restrictive for bulk operations
+
+def check_bulk_rate_limit(client_ip: str, operation_type: str, server_port: int | None = None) -> Tuple[bool, str]:
+    """
+    Check if client has exceeded rate limit for bulk operations.
+    
+    SECURITY: Bulk operations (approve all, process all, etc.) are rate-limited
+    more aggressively than normal operations to prevent:
+    - Denial of Service attacks
+    - Mass data modification
+    - Resource exhaustion
+    
+    Args:
+        client_ip: Client IP address
+        operation_type: Type of bulk operation (e.g., 'bulk_approve', 'bulk_process')
+        server_port: Server port for multi-instance setups
+        
+    Returns:
+        Tuple of (allowed: bool, error_message: str)
+    """
+    if PHINS_TEST_MODE:
+        return True, ""
+    
+    now = datetime.now().timestamp()
+    key = f"{_security_key(client_ip, server_port)}:{operation_type}"
+    
+    with STATE_LOCK:
+        if key in BULK_RATE_LIMIT:
+            limit_data = BULK_RATE_LIMIT[key]
+            # Reset counter if minute has passed
+            if now > limit_data['reset_time']:
+                BULK_RATE_LIMIT[key] = {'count': 1, 'reset_time': now + 60}
+                return True, ""
+            elif limit_data['count'] < MAX_BULK_OPERATIONS_PER_MINUTE:
+                limit_data['count'] += 1
+                remaining = MAX_BULK_OPERATIONS_PER_MINUTE - limit_data['count']
+                return True, f"{remaining} bulk operations remaining this minute"
+            else:
+                wait_time = int(limit_data['reset_time'] - now)
+                return False, f"Bulk operation rate limit exceeded. Please wait {wait_time} seconds."
+        else:
+            BULK_RATE_LIMIT[key] = {'count': 1, 'reset_time': now + 60}
+            return True, ""
+
 def check_login_lockout(client_ip: str, server_port: int | None = None) -> bool:
     """Check if IP is locked out due to failed login attempts"""
     if PHINS_TEST_MODE:
@@ -2737,7 +2820,26 @@ class PortalHandler(BaseHTTPRequestHandler):
         self.send_header("X-Frame-Options", "DENY")
         self.send_header("X-XSS-Protection", "1; mode=block")
         self.send_header("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
-        self.send_header("Content-Security-Policy", "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'")
+        # Strengthened CSP - includes additional restrictions:
+        # - frame-ancestors: Prevents clickjacking (supersedes X-Frame-Options in modern browsers)
+        # - form-action: Restricts form submission targets
+        # - base-uri: Prevents base tag injection attacks
+        # - object-src: Blocks plugin content
+        # - img-src: Allows data: URIs for inline images (QR codes, charts)
+        # - connect-src: Restricts fetch/XHR targets
+        # NOTE: 'unsafe-inline' for script/style is kept for compatibility but should be
+        # migrated to nonce-based CSP in the future for better XSS protection.
+        self.send_header("Content-Security-Policy", 
+            "default-src 'self'; "
+            "script-src 'self' 'unsafe-inline'; "
+            "style-src 'self' 'unsafe-inline'; "
+            "img-src 'self' data: https://api.qrserver.com; "
+            "connect-src 'self'; "
+            "frame-ancestors 'none'; "
+            "form-action 'self'; "
+            "base-uri 'self'; "
+            "object-src 'none'"
+        )
         self.end_headers()
     
     def _generate_text_policy_document(self, policy: Dict, customer: Dict, underwriting: Dict, bills: list, claims: list) -> None:
@@ -7518,7 +7620,12 @@ For claims or questions, please contact:
             role = (user.get('role') or '').lower()
             session_customer_id = user.get('customer_id') or session.get('customer_id')
             
+            # Support both query param (?customer_id=X) and path-style (/X)
             requested_customer_id = qs.get('customer_id', [None])[0]
+            if not requested_customer_id and path != '/api/health-wallet':
+                path_parts = path.split('/')
+                if len(path_parts) >= 4 and path_parts[3].upper().startswith('CUST-'):
+                    requested_customer_id = path_parts[3]
             
             # Customers can only access their own wallet
             if role == 'customer':
@@ -10392,6 +10499,22 @@ For claims or questions, please contact:
         else:
             rel = path.lstrip('/')
             file_path = os.path.join(ROOT, rel)
+        
+        # SECURITY: Prevent path traversal attacks
+        # Normalize the path and verify it's still within ROOT
+        try:
+            file_path = os.path.normpath(file_path)
+            abs_file_path = os.path.abspath(file_path)
+            abs_root = os.path.abspath(ROOT)
+            
+            # Check for path traversal - file must be within ROOT directory
+            if not abs_file_path.startswith(abs_root + os.sep) and abs_file_path != abs_root:
+                log_malicious_attempt(client_ip, 'Path Traversal Attempt', {'path': path})
+                self.send_error(403, 'Access Denied')
+                return
+        except Exception as e:
+            self.send_error(400, 'Invalid path')
+            return
 
         if os.path.isfile(file_path):
             try:
@@ -13326,6 +13449,17 @@ For claims or questions, please contact:
         if path.startswith('/api/admin/pipeline-process/'):
             customer_id = path.split('/')[-1]
             
+            # SECURITY: Rate limit bulk pipeline processing
+            bulk_allowed, bulk_msg = check_bulk_rate_limit(client_ip, 'pipeline_process', server_port)
+            if not bulk_allowed:
+                self._set_json_headers(429)
+                self.wfile.write(json.dumps({
+                    'error': 'Rate limit exceeded for bulk operations',
+                    'message': bulk_msg,
+                    'retry_after': 60
+                }).encode('utf-8'))
+                return
+            
             try:
                 data = json.loads(body) if body else {}
                 auto_advance = data.get('auto_advance', True)
@@ -14302,6 +14436,17 @@ For claims or questions, please contact:
         
         # Approve Underwriting Endpoint - Full Pipeline Validation
         if path == '/api/underwriting/approve':
+            # SECURITY: Rate limit underwriting approvals (especially for bulk approval)
+            bulk_allowed, bulk_msg = check_bulk_rate_limit(client_ip, 'underwriting_approve', server_port)
+            if not bulk_allowed:
+                self._set_json_headers(429)
+                self.wfile.write(json.dumps({
+                    'error': 'Rate limit exceeded for approval operations',
+                    'message': bulk_msg,
+                    'retry_after': 60
+                }).encode('utf-8'))
+                return
+            
             try:
                 data = json.loads(body)
                 uw_id = data.get('id')
@@ -19712,6 +19857,17 @@ For claims or questions, please contact:
         
         # Manually allocate cash balance
         if path == '/api/pipeline/allocate':
+            # SECURITY: Rate limit allocation operations (especially for bulk allocation)
+            bulk_allowed, bulk_msg = check_bulk_rate_limit(client_ip, 'pipeline_allocate', server_port)
+            if not bulk_allowed:
+                self._set_json_headers(429)
+                self.wfile.write(json.dumps({
+                    'error': 'Rate limit exceeded for allocation operations',
+                    'message': bulk_msg,
+                    'retry_after': 60
+                }).encode('utf-8'))
+                return
+            
             if not savings_pipeline_enabled:
                 self._set_json_headers(503)
                 self.wfile.write(json.dumps({'error': 'Savings pipeline service unavailable'}).encode('utf-8'))
@@ -21510,6 +21666,32 @@ def run_server(port: int = PORT) -> None:
                     'updated_date': datetime.now().isoformat()
                 }
                 print("✓ Underwriting application UW-EFRAT-001 created for efrat@phins.ai")
+            
+            # FIX: Ensure billing record exists for active policy (CUST-EFRAT-001 validation fix)
+            # Check if any billing record exists for this customer
+            efrat_has_billing = any(
+                b.get('customer_id') == 'CUST-EFRAT-001' 
+                for b in BILLING.values()
+            )
+            if not efrat_has_billing:
+                efrat_bill_id = 'BILL-EFRAT-UNIFIED-001'
+                BILLING[efrat_bill_id] = {
+                    'id': efrat_bill_id,
+                    'policy_id': 'POL-EFRAT-UNIFIED-001',
+                    'customer_id': 'CUST-EFRAT-001',
+                    'customer_name': 'Efrat PHINS',
+                    'amount': 466.67,
+                    'amount_paid': 466.67,
+                    'status': 'paid',
+                    'due_date': (datetime.now() + timedelta(days=30)).isoformat(),
+                    'paid_date': datetime.now().isoformat(),
+                    'payment_method': 'auto_debit',
+                    'transaction_id': 'TXN-EFRAT-AUTO-001',
+                    'late_fee': 0.0,
+                    'created_date': datetime.now().isoformat(),
+                    'updated_date': datetime.now().isoformat()
+                }
+                print("✓ Billing record BILL-EFRAT-UNIFIED-001 created for efrat@phins.ai")
             
             print("✓ Customer efrat@phins.ai already exists")
     except Exception as e:
