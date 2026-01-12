@@ -2852,34 +2852,58 @@
         
         if (response.ok) {
           const data = await response.json();
+          const fmt = (n) => '$' + (Number(n) || 0).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
           
-          let message = `✅ Balance Sheet Reconciliation Complete\n\n`;
+          // Build comprehensive alert message
+          let message = `✅ Balance Sheet Reconciliation Complete\n`;
+          message += `═══════════════════════════════════\n`;
           message += `Data Valid: ${data.is_valid ? 'Yes ✓' : 'No ⚠️'}\n\n`;
           
           if (data.discrepancies.length > 0) {
-            message += `Discrepancies Found:\n`;
+            message += `⚠️ DISCREPANCIES FOUND:\n`;
             data.discrepancies.forEach(d => {
-              message += `• ${d.field}: Expected $${d.expected.toFixed(2)}, Current $${d.current.toFixed(2)} (Diff: $${d.difference.toFixed(2)})\n`;
+              message += `• ${d.label || d.field}: Expected ${fmt(d.expected)}, Current ${fmt(d.current)} (Diff: ${fmt(d.difference)})\n`;
             });
             message += `\n`;
-          } else {
-            message += `No discrepancies found - data is consistent!\n\n`;
           }
           
           if (data.corrections_made.length > 0) {
-            message += `Corrections Made:\n`;
+            message += `✅ CORRECTIONS APPLIED:\n`;
             data.corrections_made.forEach(c => {
               message += `• ${c}\n`;
             });
+            message += `\n`;
           }
           
-          message += `\n📊 Current Balance Sheet:\n`;
-          message += `• Claims Reserve: $${data.current_balance_sheet.claims_reserve.toLocaleString()}\n`;
-          message += `• Total Revenue: $${data.current_balance_sheet.total_revenue.toLocaleString()}\n`;
-          message += `• Total Expenses: $${data.current_balance_sheet.total_expenses.toLocaleString()}\n`;
-          message += `• Net Income: $${data.current_balance_sheet.net_income.toLocaleString()}`;
+          message += `📊 SUMMARY TOTALS:\n`;
+          message += `• Premiums Collected: ${fmt(data.summary_totals?.total_premiums_collected)}\n`;
+          message += `• Claims Paid: ${fmt(data.summary_totals?.total_claims_paid)}\n`;
+          message += `• Medical Services: ${fmt(data.summary_totals?.total_medical_services)}\n`;
+          message += `• Wallet Deposits: ${fmt(data.summary_totals?.total_wallet_deposits)}\n`;
+          message += `• Investments: ${fmt(data.summary_totals?.total_investments)}\n`;
+          message += `• Net Position: ${fmt(data.summary_totals?.net_position)}\n\n`;
+          
+          message += `🏪 MEDICAL SERVICES:\n`;
+          message += `• Total: ${fmt(data.medical_services?.total_amount)} (${data.medical_services?.total_transactions || 0} transactions)\n`;
+          Object.entries(data.medical_services?.by_category || {}).forEach(([cat, info]) => {
+            message += `  - ${cat}: ${fmt(info.total)} (${info.count})\n`;
+          });
+          message += `\n`;
+          
+          message += `💳 WALLETS & INVESTMENTS:\n`;
+          message += `• Health Wallets: ${fmt(data.health_wallets?.total_balance)} (${data.health_wallets?.active_wallets || 0} active)\n`;
+          message += `• Investments: ${fmt(data.investments?.total_balance)} (${data.investments?.active_accounts || 0} accounts)\n\n`;
+          
+          message += `🏦 BALANCE SHEET:\n`;
+          message += `• Claims Reserve: ${fmt(data.current_balance_sheet?.claims_reserve)}\n`;
+          message += `• Total Revenue: ${fmt(data.current_balance_sheet?.total_revenue)}\n`;
+          message += `• Total Expenses: ${fmt(data.current_balance_sheet?.total_expenses)}\n`;
+          message += `• Net Income: ${fmt(data.current_balance_sheet?.net_income)}`;
           
           alert(message);
+          
+          // Log detailed data to console for debugging
+          console.log('Reconciliation Report:', data);
           
           // Reload balance sheet to show updated values
           if (data.corrections_made.length > 0) {

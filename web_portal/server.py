@@ -10227,7 +10227,9 @@ For claims or questions, please contact:
             
             initialize_balance_sheet()
             
+            # ========== COMPREHENSIVE RECONCILIATION ==========
             # Calculate expected values from actual transaction data
+            
             # 1. Premium Income - from paid bills
             expected_premium_income = sum(
                 float(b.get('amount_paid', 0)) for b in BILLING.values()
@@ -10241,7 +10243,48 @@ For claims or questions, please contact:
                 if status_eq(c, 'paid')
             )
             
-            # 3. Calculate from transaction ledger as secondary source
+            # 3. Medical Equipment/Services (Supplier Payments) - from medical purchases
+            total_medical_purchases = sum(
+                float(p.get('amount', 0)) for p in MEDICAL_PURCHASES.values()
+            )
+            medical_by_category = {}
+            for purchase in MEDICAL_PURCHASES.values():
+                cat = purchase.get('category', 'general')
+                if cat not in medical_by_category:
+                    medical_by_category[cat] = {'count': 0, 'total': 0.0}
+                medical_by_category[cat]['count'] += 1
+                medical_by_category[cat]['total'] += float(purchase.get('amount', 0))
+            
+            # 4. Health Wallet Deposits & Transactions
+            total_wallet_deposits = 0.0
+            total_wallet_balance = 0.0
+            wallet_transaction_count = 0
+            for wallet in HEALTH_WALLETS.values():
+                total_wallet_balance += float(wallet.get('balance', 0))
+                for tx in wallet.get('transactions', []):
+                    wallet_transaction_count += 1
+                    if tx.get('type') in ['deposit', 'initial_deposit']:
+                        total_wallet_deposits += float(tx.get('amount', 0))
+            
+            # 5. Investment Accounts
+            total_investment_balance = 0.0
+            total_investment_deposits = 0.0
+            investment_by_type = {'index': 0.0, 'bonds': 0.0, 'crypto': 0.0}
+            for account in INVESTMENT_ACCOUNTS.values():
+                total_investment_balance += float(account.get('balance', 0))
+                investment_by_type['index'] += float(account.get('index_balance', 0))
+                investment_by_type['bonds'] += float(account.get('bonds_balance', 0))
+                investment_by_type['crypto'] += float(account.get('crypto_balance', 0))
+                for dep in account.get('deposits', []):
+                    total_investment_deposits += float(dep.get('amount', 0))
+            
+            # 6. Supplier Offers/Payments
+            total_supplier_offers = len(SUPPLIER_OFFERS)
+            supplier_offer_value = sum(
+                float(o.get('price', 0) or o.get('amount', 0)) for o in SUPPLIER_OFFERS.values()
+            )
+            
+            # 7. Calculate from transaction ledger as secondary source
             ledger_premium_income = sum(
                 tx.get('amount', 0) for tx in TRANSACTION_LEDGER.values()
                 if tx.get('tx_type') in ['premium_payment', 'bill_paid', 'premium_received']
@@ -10250,21 +10293,28 @@ For claims or questions, please contact:
                 tx.get('amount', 0) for tx in TRANSACTION_LEDGER.values()
                 if tx.get('tx_type') in ['claim_payment', 'claim_paid', 'claims_paid']
             )
+            ledger_medical_payments = sum(
+                tx.get('amount', 0) for tx in TRANSACTION_LEDGER.values()
+                if tx.get('tx_type') in ['medical_purchase', 'supplier_payment', 'health_wallet_purchase']
+            )
             
             # Current values in balance sheet
             current_premium_income = PHINS_BALANCE_SHEET['revenue_breakdown']['premium_income']
             current_claims_paid = PHINS_BALANCE_SHEET['expense_breakdown']['claims_paid']
+            current_supplier_payments = PHINS_BALANCE_SHEET['expense_breakdown']['supplier_payments']
             
-            # Discrepancies
+            # ========== DISCREPANCY DETECTION ==========
             discrepancies = []
             corrections = []
             
             premium_diff = abs(expected_premium_income - current_premium_income)
             claims_diff = abs(expected_claims_paid - current_claims_paid)
+            supplier_diff = abs(total_medical_purchases - current_supplier_payments)
             
             if premium_diff > 0.01:
                 discrepancies.append({
                     'field': 'premium_income',
+                    'label': 'Premium Income',
                     'expected': expected_premium_income,
                     'current': current_premium_income,
                     'difference': expected_premium_income - current_premium_income,
@@ -10281,6 +10331,7 @@ For claims or questions, please contact:
             if claims_diff > 0.01:
                 discrepancies.append({
                     'field': 'claims_paid',
+                    'label': 'Claims Paid',
                     'expected': expected_claims_paid,
                     'current': current_claims_paid,
                     'difference': expected_claims_paid - current_claims_paid,
@@ -10292,6 +10343,23 @@ For claims or questions, please contact:
                     old_total = PHINS_BALANCE_SHEET['total_expenses']
                     PHINS_BALANCE_SHEET['total_expenses'] = sum(PHINS_BALANCE_SHEET['expense_breakdown'].values())
                     corrections.append(f'Claims paid updated: ${current_claims_paid:.2f} -> ${expected_claims_paid:.2f}')
+                    corrections.append(f'Total expenses updated: ${old_total:.2f} -> ${PHINS_BALANCE_SHEET["total_expenses"]:.2f}')
+            
+            if supplier_diff > 0.01:
+                discrepancies.append({
+                    'field': 'supplier_payments',
+                    'label': 'Medical Equipment/Services (Suppliers)',
+                    'expected': total_medical_purchases,
+                    'current': current_supplier_payments,
+                    'difference': total_medical_purchases - current_supplier_payments,
+                    'source': 'medical_purchases'
+                })
+                
+                if auto_correct:
+                    PHINS_BALANCE_SHEET['expense_breakdown']['supplier_payments'] = total_medical_purchases
+                    old_total = PHINS_BALANCE_SHEET['total_expenses']
+                    PHINS_BALANCE_SHEET['total_expenses'] = sum(PHINS_BALANCE_SHEET['expense_breakdown'].values())
+                    corrections.append(f'Supplier payments updated: ${current_supplier_payments:.2f} -> ${total_medical_purchases:.2f}')
                     corrections.append(f'Total expenses updated: ${old_total:.2f} -> ${PHINS_BALANCE_SHEET["total_expenses"]:.2f}')
             
             # Update timestamp if corrections were made
@@ -10308,6 +10376,7 @@ For claims or questions, please contact:
             
             is_valid = len(discrepancies) == 0
             
+            # ========== COMPREHENSIVE REPORT ==========
             self._set_json_headers()
             self.wfile.write(json.dumps({
                 'success': True,
@@ -10315,24 +10384,81 @@ For claims or questions, please contact:
                 'discrepancies': discrepancies,
                 'corrections_made': corrections,
                 'auto_correct_enabled': auto_correct,
+                
+                # Detailed validation sources
                 'validation_sources': {
                     'premium_income': {
                         'from_bills': expected_premium_income,
                         'from_ledger': ledger_premium_income,
-                        'current': current_premium_income
+                        'current': current_premium_income,
+                        'bills_count': len([b for b in BILLING.values() if float(b.get('amount_paid', 0)) > 0])
                     },
                     'claims_paid': {
                         'from_claims': expected_claims_paid,
                         'from_ledger': ledger_claims_paid,
-                        'current': current_claims_paid
+                        'current': current_claims_paid,
+                        'paid_claims_count': len([c for c in CLAIMS.values() if status_eq(c, 'paid')])
+                    },
+                    'supplier_payments': {
+                        'from_medical_purchases': total_medical_purchases,
+                        'from_ledger': ledger_medical_payments,
+                        'current': current_supplier_payments,
+                        'purchases_count': len(MEDICAL_PURCHASES)
                     }
                 },
+                
+                # Medical Equipment/Services Breakdown
+                'medical_services': {
+                    'total_amount': total_medical_purchases,
+                    'total_transactions': len(MEDICAL_PURCHASES),
+                    'by_category': medical_by_category
+                },
+                
+                # Health Wallet Summary
+                'health_wallets': {
+                    'total_balance': total_wallet_balance,
+                    'total_deposits': total_wallet_deposits,
+                    'active_wallets': len(HEALTH_WALLETS),
+                    'total_transactions': wallet_transaction_count
+                },
+                
+                # Investment Accounts Summary
+                'investments': {
+                    'total_balance': total_investment_balance,
+                    'total_deposits': total_investment_deposits,
+                    'active_accounts': len(INVESTMENT_ACCOUNTS),
+                    'by_type': investment_by_type
+                },
+                
+                # Supplier Ecosystem
+                'suppliers': {
+                    'total_offers': total_supplier_offers,
+                    'total_offer_value': supplier_offer_value
+                },
+                
+                # Current Balance Sheet
                 'current_balance_sheet': {
                     'claims_reserve': PHINS_BALANCE_SHEET['claims_reserve'],
+                    'operating_reserve': PHINS_BALANCE_SHEET['operating_reserve'],
+                    'supplier_reserve': PHINS_BALANCE_SHEET['supplier_reserve'],
+                    'investment_reserve': PHINS_BALANCE_SHEET['investment_reserve'],
                     'total_revenue': PHINS_BALANCE_SHEET['total_revenue'],
                     'total_expenses': PHINS_BALANCE_SHEET['total_expenses'],
-                    'net_income': PHINS_BALANCE_SHEET['total_revenue'] - PHINS_BALANCE_SHEET['total_expenses']
+                    'net_income': PHINS_BALANCE_SHEET['total_revenue'] - PHINS_BALANCE_SHEET['total_expenses'],
+                    'revenue_breakdown': PHINS_BALANCE_SHEET['revenue_breakdown'],
+                    'expense_breakdown': PHINS_BALANCE_SHEET['expense_breakdown']
                 },
+                
+                # Summary totals for quick reference
+                'summary_totals': {
+                    'total_premiums_collected': expected_premium_income,
+                    'total_claims_paid': expected_claims_paid,
+                    'total_medical_services': total_medical_purchases,
+                    'total_wallet_deposits': total_wallet_deposits,
+                    'total_investments': total_investment_balance,
+                    'net_position': expected_premium_income - expected_claims_paid - total_medical_purchases
+                },
+                
                 'timestamp': datetime.now().isoformat()
             }, default=str).encode('utf-8'))
             return
