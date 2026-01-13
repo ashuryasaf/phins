@@ -1064,18 +1064,27 @@
       }
       
       try {
-        const res = await fetch('/api/session', {
+        // Use correct endpoint: /api/session/validate
+        const res = await fetch('/api/session/validate', {
           headers: { 'Authorization': `Bearer ${token}` }
         });
         
         if (!res.ok) throw new Error('Invalid session');
         
         const data = await res.json();
+        
+        if (!data.valid) {
+          throw new Error('Session not valid');
+        }
+        
         currentUser = data;
         
-        // Check role
+        // Check role - allow 'admin' and 'actuary'
         const role = (data.role || '').toLowerCase();
+        console.log('User role:', role, 'Username:', data.username);
+        
         if (role !== 'admin' && role !== 'actuary') {
+          console.log('Access denied for role:', role);
           document.getElementById('access-denied').style.display = 'block';
           document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
           return;
@@ -1091,6 +1100,7 @@
         loadIntegrations();
         
       } catch (err) {
+        console.error('Auth error:', err);
         window.location.href = '/admin.html';
       }
     }
