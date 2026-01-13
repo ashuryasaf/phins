@@ -1971,6 +1971,7 @@ LEGACY_DEMO_PASSWORDS: Dict[str, str] = {
     'underwriter': 'under123',
     'claims_adjuster': 'claims123',
     'accountant': 'acct123',
+    'actuary': 'actuary123',
 }
 
 # IMPORTANT:

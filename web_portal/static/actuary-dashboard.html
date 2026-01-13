@@ -1034,7 +1034,7 @@
   
   <script>
     // Global state
-    let token = localStorage.getItem('token');
+    let token = localStorage.getItem('phins_token');
     let currentUser = null;
     let currentTables = null;
     let currentConfig = null;
@@ -1106,7 +1106,7 @@
     }
     
     function logout() {
-      localStorage.removeItem('token');
+      localStorage.removeItem('phins_token');
       window.location.href = '/admin.html';
     }
     
