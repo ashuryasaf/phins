@@ -4071,6 +4071,193 @@ For claims or questions, please contact:
                 self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
             return
 
+        # =====================================================================
+        # ACTUARIAL API ENDPOINTS (Admin/Actuary Only)
+        # Central Source of Truth for All Pricing & Risk
+        # =====================================================================
+        
+        if path == '/api/actuarial/tables':
+            # Get current actuarial tables
+            if not require_role(session, ['admin', 'actuary']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Access denied. Admin or Actuary role required.'}).encode('utf-8'))
+                return
+            try:
+                from services.actuarial_service import get_actuarial_store
+                store = get_actuarial_store()
+                tables = store.get_current_tables()
+                self._set_json_headers()
+                self.wfile.write(json.dumps({
+                    'success': True,
+                    'current_version': store.current_version,
+                    'tables': tables,
+                    'config': {
+                        'decline_threshold': store.config.decline_threshold,
+                        'loadings': store.config.loadings,
+                        'coverage_limits': store.config.coverage_limits,
+                        'disability_exclusion_threshold': store.config.disability_exclusion_threshold,
+                        'expense_loading_pct': store.config.expense_loading_pct,
+                        'profit_margin_pct': store.config.profit_margin_pct,
+                        'discount_rate': store.config.discount_rate
+                    }
+                }).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+        
+        if path == '/api/actuarial/config':
+            # Get underwriting configuration
+            if not require_role(session, ['admin', 'actuary']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Access denied. Admin or Actuary role required.'}).encode('utf-8'))
+                return
+            try:
+                from services.actuarial_service import get_actuarial_store
+                store = get_actuarial_store()
+                config = store.config
+                self._set_json_headers()
+                self.wfile.write(json.dumps({
+                    'success': True,
+                    'config': {
+                        'decline_threshold': config.decline_threshold,
+                        'loadings': config.loadings,
+                        'coverage_limits': config.coverage_limits,
+                        'disability_exclusion_threshold': config.disability_exclusion_threshold,
+                        'expense_loading_pct': config.expense_loading_pct,
+                        'profit_margin_pct': config.profit_margin_pct,
+                        'discount_rate': config.discount_rate,
+                        'last_modified': config.last_modified,
+                        'modified_by': config.modified_by
+                    }
+                }).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+        
+        if path == '/api/actuarial/versions':
+            # Get all table versions
+            if not require_role(session, ['admin', 'actuary']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Access denied'}).encode('utf-8'))
+                return
+            try:
+                from services.actuarial_service import get_actuarial_store
+                store = get_actuarial_store()
+                versions = []
+                for v_id, v_data in store.versions.items():
+                    versions.append({
+                        'version': v_id,
+                        'effective_date': v_data.get('effective_date'),
+                        'created_by': v_data.get('created_by'),
+                        'status': v_data.get('status'),
+                        'is_current': v_id == store.current_version
+                    })
+                self._set_json_headers()
+                self.wfile.write(json.dumps({
+                    'success': True,
+                    'current_version': store.current_version,
+                    'versions': versions
+                }).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+        
+        if path == '/api/actuarial/audit-log':
+            # Get audit log
+            if not require_role(session, ['admin', 'actuary']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Access denied'}).encode('utf-8'))
+                return
+            try:
+                from services.actuarial_service import get_actuarial_store
+                store = get_actuarial_store()
+                limit = int(qs.get('limit', [100])[0])
+                self._set_json_headers()
+                self.wfile.write(json.dumps({
+                    'success': True,
+                    'audit_log': store.get_audit_log(limit)
+                }).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+        
+        if path == '/api/actuarial/automation-metrics':
+            # Get automation quality metrics
+            if not require_role(session, ['admin', 'actuary']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Access denied'}).encode('utf-8'))
+                return
+            try:
+                from services.actuarial_service import AutomationMetrics
+                customer_count = int(qs.get('customer_count', [100000])[0])
+                metrics = AutomationMetrics.calculate_automation_rates(customer_count)
+                self._set_json_headers()
+                self.wfile.write(json.dumps({
+                    'success': True,
+                    'metrics': metrics
+                }).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+        
+        if path == '/api/actuarial/integrations':
+            # Get integration data summaries
+            if not require_role(session, ['admin', 'actuary']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Access denied'}).encode('utf-8'))
+                return
+            try:
+                from services.actuarial_service import ActuarialIntegrations
+                
+                # Get wallet data
+                wallet_summary = {'status': 'available', 'data': {}}
+                try:
+                    total_balance = sum(w.get('balance', 0) for w in HEALTH_WALLETS.values())
+                    active_wallets = len([w for w in HEALTH_WALLETS.values() if w.get('status') == 'active'])
+                    wallet_summary['data'] = {
+                        'total_wallets': len(HEALTH_WALLETS),
+                        'active_wallets': active_wallets,
+                        'total_balance': total_balance
+                    }
+                except:
+                    wallet_summary = {'status': 'not_loaded'}
+                
+                # Get investment data
+                investment_summary = {'status': 'available', 'data': {}}
+                try:
+                    total_balance = sum(a.get('balance', 0) for a in INVESTMENT_ACCOUNTS.values())
+                    investment_summary['data'] = {
+                        'total_accounts': len(INVESTMENT_ACCOUNTS),
+                        'total_balance': total_balance
+                    }
+                except:
+                    investment_summary = {'status': 'not_loaded'}
+                
+                # Community (future)
+                community_summary = {
+                    'status': 'future_development',
+                    'planned_features': ['risk_pools', 'group_discounts', 'referrals']
+                }
+                
+                self._set_json_headers()
+                self.wfile.write(json.dumps({
+                    'success': True,
+                    'integrations': {
+                        'health_wallets': wallet_summary,
+                        'investments': investment_summary,
+                        'communities': community_summary
+                    }
+                }).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+
         # Database connection diagnostic (no auth for debugging)
         if path == '/api/diagnostics/db-test':
             result = {
@@ -10874,6 +11061,148 @@ For claims or questions, please contact:
             except json.JSONDecodeError:
                 self._set_json_headers(400)
                 self.wfile.write(json.dumps({'error': 'Invalid JSON'}).encode('utf-8'))
+                return
+        
+        # =====================================================================
+        # ACTUARIAL API ENDPOINTS - POST (Admin/Actuary Only)
+        # Central Source of Truth for All Pricing & Risk
+        # =====================================================================
+        
+        # POST /api/actuarial/config - Update underwriting configuration
+        if path == '/api/actuarial/config':
+            auth_header = self.headers.get('Authorization', '')
+            token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+            session = validate_session(token) if token else None
+            
+            if not require_role(session, ['admin', 'actuary']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Access denied. Admin or Actuary role required.'}).encode('utf-8'))
+                return
+            
+            length = int(self.headers.get('Content-Length', 0))
+            body = self.rfile.read(length).decode('utf-8') if length else '{}'
+            
+            try:
+                data = json.loads(body)
+                from services.actuarial_service import get_actuarial_store
+                store = get_actuarial_store()
+                
+                result = store.update_config(data, session.get('username', 'admin'))
+                
+                self._set_json_headers(200)
+                self.wfile.write(json.dumps({
+                    'success': True,
+                    'message': 'Underwriting configuration updated',
+                    'config': result['config']
+                }).encode('utf-8'))
+                return
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+                return
+        
+        # POST /api/actuarial/tables - Upload new actuarial tables
+        if path == '/api/actuarial/tables':
+            auth_header = self.headers.get('Authorization', '')
+            token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+            session = validate_session(token) if token else None
+            
+            if not require_role(session, ['admin', 'actuary']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Access denied. Admin or Actuary role required.'}).encode('utf-8'))
+                return
+            
+            length = int(self.headers.get('Content-Length', 0))
+            body = self.rfile.read(length).decode('utf-8') if length else '{}'
+            
+            try:
+                data = json.loads(body)
+                from services.actuarial_service import get_actuarial_store
+                store = get_actuarial_store()
+                
+                tables = data.get('tables', {})
+                effective_date = data.get('effective_date')
+                
+                result = store.upload_new_tables(tables, session.get('username', 'admin'), effective_date)
+                
+                if result['success']:
+                    self._set_json_headers(201)
+                    self.wfile.write(json.dumps({
+                        'success': True,
+                        'message': f"Tables uploaded as version {result['version']}",
+                        'version': result['version']
+                    }).encode('utf-8'))
+                else:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({
+                        'success': False,
+                        'errors': result['errors']
+                    }).encode('utf-8'))
+                return
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+                return
+        
+        # POST /api/actuarial/simulate - Run portfolio simulation
+        if path == '/api/actuarial/simulate':
+            auth_header = self.headers.get('Authorization', '')
+            token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+            session = validate_session(token) if token else None
+            
+            if not require_role(session, ['admin', 'actuary']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Access denied. Admin or Actuary role required.'}).encode('utf-8'))
+                return
+            
+            length = int(self.headers.get('Content-Length', 0))
+            body = self.rfile.read(length).decode('utf-8') if length else '{}'
+            
+            try:
+                data = json.loads(body)
+                from services.actuarial_service import get_portfolio_simulator, SimulationParams
+                
+                # Build simulation parameters
+                params = SimulationParams(
+                    customer_count=int(data.get('customer_count', 100000)),
+                    age_min=int(data.get('age_min', 3)),
+                    age_max=int(data.get('age_max', 55)),
+                    age_distribution=data.get('age_distribution', 'normal'),
+                    age_mean=float(data.get('age_mean', 35.0)),
+                    age_std=float(data.get('age_std', 12.0)),
+                    coverage_min=float(data.get('coverage_min', 50000)),
+                    coverage_max=float(data.get('coverage_max', 2000000)),
+                    coverage_distribution=data.get('coverage_distribution', 'log_normal'),
+                    coverage_median=float(data.get('coverage_median', 250000)),
+                    policy_term_mode=data.get('policy_term_mode', 'random'),
+                    policy_term_fixed=int(data.get('policy_term_fixed', 20)),
+                    policy_term_min=int(data.get('policy_term_min', 5)),
+                    policy_term_max=int(data.get('policy_term_max', 30)),
+                    male_pct=float(data.get('male_pct', 49.0)),
+                    female_pct=float(data.get('female_pct', 51.0)),
+                    ethnicity=data.get('ethnicity', {
+                        'caucasian': 60, 'african': 13, 'hispanic': 18, 'asian': 6, 'other': 3
+                    })
+                )
+                
+                # Run simulation
+                simulator = get_portfolio_simulator()
+                result = simulator.generate_portfolio(params)
+                result['run_by'] = session.get('username', 'admin')
+                
+                self._set_json_headers(200)
+                self.wfile.write(json.dumps({
+                    'success': True,
+                    'simulation': result
+                }).encode('utf-8'))
+                return
+            except Exception as e:
+                import traceback
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({
+                    'error': str(e),
+                    'traceback': traceback.format_exc()
+                }).encode('utf-8'))
                 return
         
         # ========== MEDIA ASSETS API - POST/DELETE ==========
