@@ -40,10 +40,18 @@ def _status_in(item: Dict, statuses: list) -> bool:
 
 
 # ==============================================================================
-# ACTUARIAL CONSTANTS & TABLES
+# ACTUARIAL CONSTANTS & TABLES (V2 - Corrected Risk Model)
+# ==============================================================================
+# 
+# IMPORTANT: This model uses ADDITIVE risk pricing, not multiplicative.
+# Premium = Mortality_Risk + Disability_Risk + Savings + Expenses
+#
+# Previous model flaw: combined_factor = age_factor × adl_multiplier
+# Corrected model: separate mortality and disability risk calculations
 # ==============================================================================
 
 # Mortality rates by age bracket (per 1000 lives per year)
+# Source: Standard mortality tables adjusted for insurance population
 MORTALITY_RATES = {
     (0, 30): 0.5,
     (30, 40): 1.2,
@@ -54,19 +62,83 @@ MORTALITY_RATES = {
     (80, 100): 75.0,
 }
 
-# ADL Risk multipliers (1-10 scale, 5 is baseline medium risk)
-ADL_RISK_MULTIPLIERS = {
-    1: 0.6,   # Very low risk - fully independent
-    2: 0.75,
-    3: 0.85,
-    4: 0.95,
-    5: 1.0,   # Medium risk (baseline)
-    6: 1.15,
-    7: 1.35,
-    8: 1.6,
-    9: 1.9,
-    10: 2.5,  # Very high risk - total dependence
+# DISABILITY INCIDENCE RATES by age bracket (per 1000 lives per year)
+# Source: Industry data for severe disability (2+ ADLs impaired)
+# This is SEPARATE from mortality - represents probability of becoming disabled
+DISABILITY_INCIDENCE_RATES = {
+    (0, 30): 2.0,     # Younger people - lower disability incidence
+    (30, 40): 4.0,
+    (40, 50): 8.0,
+    (50, 60): 15.0,
+    (60, 70): 30.0,
+    (70, 80): 50.0,
+    (80, 100): 80.0,
 }
+
+# ADL MORTALITY multipliers (1-10 scale, 5 is baseline)
+# These adjust MORTALITY risk based on current ADL status
+# Higher ADL = slightly higher mortality due to health conditions
+ADL_MORTALITY_MULTIPLIERS = {
+    1: 0.8,    # Very healthy - lower mortality
+    2: 0.85,
+    3: 0.9,
+    4: 0.95,
+    5: 1.0,    # Baseline
+    6: 1.1,
+    7: 1.2,
+    8: 1.35,
+    9: 1.5,
+    10: 1.8,   # Severely impaired - higher mortality
+}
+
+# ADL DISABILITY INCIDENCE multipliers (1-10 scale, 5 is baseline)
+# CRITICAL: This is the key correction - ADL level predicts DISABILITY claims
+# Someone with higher ADL is MORE likely to progress to claiming disability benefits
+ADL_DISABILITY_INCIDENCE_MULTIPLIERS = {
+    1: 0.3,    # Very healthy - low progression to disability claim
+    2: 0.5,
+    3: 0.7,
+    4: 0.9,
+    5: 1.0,    # Baseline
+    6: 1.5,    # Already showing signs - elevated risk
+    7: 2.0,    # Moderate impairment - high progression risk
+    8: 3.0,    # Significant impairment - very high risk
+    9: 5.0,    # Severe - near-certain to claim
+    10: 8.0,   # Total dependence - will claim immediately
+}
+
+# ADL BENEFIT PERCENTAGES - what % of coverage is paid for disability claim
+# This determines the SIZE of the claim based on severity
+ADL_BENEFIT_PERCENTAGES = {
+    1: 0.0,    # Independent - no disability benefit
+    2: 0.0,
+    3: 0.0,
+    4: 0.25,   # Mild impairment - 25% of coverage
+    5: 0.25,
+    6: 0.50,   # Moderate impairment - 50% of coverage
+    7: 0.50,
+    8: 0.85,   # Severe impairment - 85% of coverage
+    9: 1.0,    # Near-total - 100% of coverage
+    10: 1.0,   # Total dependence - 100% of coverage
+}
+
+# UNDERWRITING RESTRICTIONS by ADL level
+# ADL 7+: Apply special loading or decline
+ADL_UNDERWRITING_RULES = {
+    1: {'accept': True, 'loading': 0.0, 'max_coverage': None},
+    2: {'accept': True, 'loading': 0.0, 'max_coverage': None},
+    3: {'accept': True, 'loading': 0.0, 'max_coverage': None},
+    4: {'accept': True, 'loading': 0.0, 'max_coverage': None},
+    5: {'accept': True, 'loading': 0.0, 'max_coverage': None},
+    6: {'accept': True, 'loading': 0.15, 'max_coverage': 1_000_000},  # 15% loading
+    7: {'accept': True, 'loading': 0.30, 'max_coverage': 750_000},   # 30% loading, reduced coverage
+    8: {'accept': True, 'loading': 0.50, 'max_coverage': 500_000, 'exclude_disability': True},  # 50% loading, exclude disability
+    9: {'accept': False, 'loading': None, 'max_coverage': None, 'reason': 'ADL too high'},  # Decline
+    10: {'accept': False, 'loading': None, 'max_coverage': None, 'reason': 'ADL too high'},  # Decline
+}
+
+# Legacy alias for backward compatibility (use ADL_MORTALITY_MULTIPLIERS instead)
+ADL_RISK_MULTIPLIERS = ADL_MORTALITY_MULTIPLIERS
 
 # Lapse rates by policy year
 LAPSE_RATES = {
@@ -88,6 +160,12 @@ INVESTMENT_RETURNS = {
 # Discount rate for present value calculations
 DISCOUNT_RATE = 0.035  # 3.5% annual
 
+# Expense loading as percentage of risk premium
+EXPENSE_LOADING_PCT = 0.15  # 15%
+
+# Profit margin target (added to break-even premium)
+PROFIT_MARGIN_PCT = 0.10  # 10% target profit margin
+
 
 class FinancialReportingService:
     """
@@ -103,20 +181,51 @@ class FinancialReportingService:
         self._underwriting = underwriting
     
     # ==========================================================================
-    # ACTUARIAL CALCULATIONS
+    # ACTUARIAL CALCULATIONS (V2 - CORRECTED ADDITIVE RISK MODEL)
+    # ==========================================================================
+    # 
+    # IMPORTANT: Premium = Mortality_Risk + Disability_Risk + Savings + Expenses
+    # NOT: Premium = (Mortality × ADL_Multiplier) + Savings + Expenses (OLD/WRONG)
     # ==========================================================================
     
     def get_mortality_rate(self, age: int) -> float:
-        """Get mortality rate per 1000 lives for given age"""
+        """Get base mortality rate per 1000 lives for given age"""
         for (low, high), rate in MORTALITY_RATES.items():
             if low <= age < high:
                 return rate / 1000.0
         return 0.075  # Default for very old ages
     
-    def get_adl_multiplier(self, adl_level: int) -> float:
-        """Get risk multiplier based on ADL level (1-10)"""
+    def get_disability_incidence_rate(self, age: int) -> float:
+        """Get disability incidence rate per 1000 lives for given age (NEW)"""
+        for (low, high), rate in DISABILITY_INCIDENCE_RATES.items():
+            if low <= age < high:
+                return rate / 1000.0
+        return 0.08  # Default for very old ages
+    
+    def get_adl_mortality_multiplier(self, adl_level: int) -> float:
+        """Get MORTALITY risk multiplier based on ADL level (1-10)"""
         adl_level = max(1, min(10, adl_level))
-        return ADL_RISK_MULTIPLIERS.get(adl_level, 1.0)
+        return ADL_MORTALITY_MULTIPLIERS.get(adl_level, 1.0)
+    
+    def get_adl_disability_incidence_multiplier(self, adl_level: int) -> float:
+        """Get DISABILITY INCIDENCE multiplier based on ADL level (1-10) (NEW)
+        
+        This is the critical factor - higher ADL means MORE likely to claim disability.
+        """
+        adl_level = max(1, min(10, adl_level))
+        return ADL_DISABILITY_INCIDENCE_MULTIPLIERS.get(adl_level, 1.0)
+    
+    def get_adl_benefit_percentage(self, adl_level: int) -> float:
+        """Get disability benefit percentage based on ADL level (NEW)
+        
+        Returns the % of coverage paid out for disability claim at this ADL level.
+        """
+        adl_level = max(1, min(10, adl_level))
+        return ADL_BENEFIT_PERCENTAGES.get(adl_level, 0.35)  # Default 35% avg
+    
+    def get_adl_multiplier(self, adl_level: int) -> float:
+        """Legacy method - returns mortality multiplier for backward compatibility"""
+        return self.get_adl_mortality_multiplier(adl_level)
     
     def get_lapse_rate(self, policy_year: int) -> float:
         """Get lapse rate for given policy year"""
@@ -127,63 +236,261 @@ class FinancialReportingService:
                 return rate
         return 0.01
     
-    def calculate_premium(self, coverage: float, age: int, adl_level: int,
-                         savings_pct: float, term_years: int) -> Dict[str, float]:
-        """
-        Calculate actuarially sound premium based on:
-        - Coverage amount
-        - Customer age
-        - ADL risk level
-        - Savings allocation percentage
-        - Policy term in years
+    def check_underwriting_eligibility(self, adl_level: int, coverage: float) -> Dict[str, Any]:
+        """Check if customer is eligible for coverage based on ADL level (NEW)"""
+        adl_level = max(1, min(10, adl_level))
+        rules = ADL_UNDERWRITING_RULES.get(adl_level, ADL_UNDERWRITING_RULES[5])
         
-        Returns breakdown of premium components.
+        result = {
+            'eligible': rules['accept'],
+            'adl_level': adl_level,
+            'requested_coverage': coverage,
+        }
+        
+        if not rules['accept']:
+            result['decline_reason'] = rules.get('reason', 'ADL level too high for coverage')
+            result['approved_coverage'] = 0
+            result['loading'] = None
+        else:
+            max_cov = rules.get('max_coverage')
+            result['loading'] = rules.get('loading', 0)
+            result['exclude_disability'] = rules.get('exclude_disability', False)
+            
+            if max_cov and coverage > max_cov:
+                result['approved_coverage'] = max_cov
+                result['coverage_reduced'] = True
+                result['reduction_reason'] = f'ADL {adl_level} limited to ${max_cov:,} coverage'
+            else:
+                result['approved_coverage'] = coverage
+                result['coverage_reduced'] = False
+        
+        return result
+    
+    def calculate_premium(self, coverage: float, age: int, adl_level: int,
+                         savings_pct: float, term_years: int,
+                         include_profit_margin: bool = True) -> Dict[str, float]:
         """
-        # Base mortality cost (PV of expected death benefit)
-        mortality_cost = 0.0
+        Calculate actuarially sound premium using CORRECTED ADDITIVE RISK MODEL.
+        
+        V2 CORRECTED MODEL:
+        Premium = Mortality_Risk_Premium + Disability_Risk_Premium + Savings + Expenses + Profit
+        
+        Key changes from V1:
+        1. Mortality and disability are calculated SEPARATELY
+        2. ADL affects disability incidence (not just mortality)
+        3. Disability benefit size depends on ADL level
+        4. Underwriting restrictions applied for high ADL
+        5. Profit margin added to ensure sustainability
+        
+        Args:
+            coverage: Face value of policy
+            age: Customer's current age
+            adl_level: ADL score (1-10)
+            savings_pct: % of coverage allocated to savings
+            term_years: Policy term in years
+            include_profit_margin: Whether to add profit margin (default True)
+        
+        Returns:
+            Dict with full premium breakdown
+        """
+        # Check underwriting eligibility first
+        uw_check = self.check_underwriting_eligibility(adl_level, coverage)
+        if not uw_check['eligible']:
+            return {
+                'annual_premium': 0,
+                'monthly_premium': 0,
+                'eligible': False,
+                'decline_reason': uw_check['decline_reason'],
+                'adl_level': adl_level,
+                'customer_age': age
+            }
+        
+        # Use approved coverage (may be reduced for high ADL)
+        approved_coverage = uw_check['approved_coverage']
+        underwriting_loading = uw_check.get('loading', 0)
+        exclude_disability = uw_check.get('exclude_disability', False)
+        
+        # Get ADL multipliers
+        adl_mort_mult = self.get_adl_mortality_multiplier(adl_level)
+        adl_dis_mult = self.get_adl_disability_incidence_multiplier(adl_level)
+        
+        # =======================================================================
+        # MORTALITY RISK CALCULATION (Death Benefit)
+        # =======================================================================
+        mortality_cost_pv = 0.0
         for year in range(1, term_years + 1):
             current_age = age + year - 1
-            qx = self.get_mortality_rate(current_age)
-            adl_mult = self.get_adl_multiplier(adl_level)
-            adjusted_qx = qx * adl_mult
             
-            # Probability of surviving to year, then dying
-            px_prev = math.prod([(1 - self.get_mortality_rate(age + y) * self.get_adl_multiplier(adl_level)) 
-                                 for y in range(year - 1)])
-            death_prob = px_prev * adjusted_qx
+            # Base mortality rate adjusted by ADL
+            qx = self.get_mortality_rate(current_age) * adl_mort_mult
+            
+            # Probability of surviving to start of this year
+            px_prev = 1.0
+            for y in range(year - 1):
+                prev_qx = self.get_mortality_rate(age + y) * adl_mort_mult
+                px_prev *= (1 - prev_qx)
+            
+            # Probability of dying in this year (given survival to start)
+            death_prob = px_prev * qx
             
             # Lapse-adjusted probability
-            lapse_survival = math.prod([(1 - self.get_lapse_rate(y + 1)) for y in range(year)])
+            lapse_survival = 1.0
+            for y in range(year):
+                lapse_survival *= (1 - self.get_lapse_rate(y + 1))
             adjusted_death_prob = death_prob * lapse_survival
             
-            # Discount death benefit to present value
-            discount_factor = (1 + DISCOUNT_RATE) ** (-year)
-            mortality_cost += coverage * adjusted_death_prob * discount_factor
+            # Discount to present value
+            discount = (1 + DISCOUNT_RATE) ** (-year)
+            mortality_cost_pv += approved_coverage * adjusted_death_prob * discount
         
-        # Risk premium (mortality cost spread over term)
-        risk_premium_annual = mortality_cost / term_years
+        # =======================================================================
+        # DISABILITY RISK CALCULATION (NEW - ADL Claim Benefit)
+        # =======================================================================
+        disability_cost_pv = 0.0
+        
+        if not exclude_disability:
+            # Calculate expected disability benefit based on severity distribution
+            # For each year, calculate P(becoming disabled | alive) × expected benefit
+            
+            for year in range(1, term_years + 1):
+                current_age = age + year - 1
+                
+                # Probability of being alive at start of year
+                survival_prob = 1.0
+                for y in range(year - 1):
+                    mort = self.get_mortality_rate(age + y) * adl_mort_mult
+                    survival_prob *= (1 - mort)
+                
+                # Disability incidence rate (adjusted by ADL)
+                dis_rate = self.get_disability_incidence_rate(current_age) * adl_dis_mult
+                
+                # Expected benefit payout
+                # Use weighted average of possible benefit levels based on severity at claim
+                # Conservative assumption: average claim is 45% of coverage
+                # This accounts for mix of mild (25%) to severe (100%) claims
+                if adl_level >= 8:
+                    # High ADL = high benefit claims (85-100%)
+                    expected_benefit_pct = 0.90
+                elif adl_level >= 6:
+                    # Medium-high ADL = medium-high benefit claims (50-85%)
+                    expected_benefit_pct = 0.65
+                elif adl_level >= 4:
+                    # Medium ADL = medium benefit claims (25-50%)
+                    expected_benefit_pct = 0.35
+                else:
+                    # Low ADL = if they claim, it's usually mild (25%)
+                    expected_benefit_pct = 0.25
+                
+                expected_benefit = approved_coverage * expected_benefit_pct
+                
+                # Lapse adjustment
+                lapse_survival = 1.0
+                for y in range(year):
+                    lapse_survival *= (1 - self.get_lapse_rate(y + 1))
+                
+                # Discount to present value
+                discount = (1 + DISCOUNT_RATE) ** (-year)
+                
+                # Add to total disability cost
+                disability_cost_pv += survival_prob * dis_rate * expected_benefit * lapse_survival * discount
+        
+        # =======================================================================
+        # PREMIUM COMPONENTS
+        # =======================================================================
+        
+        # Total risk cost (ADDITIVE, not multiplicative)
+        total_risk_cost_pv = mortality_cost_pv + disability_cost_pv
+        
+        # Annual risk premium (spread over term)
+        mortality_premium_annual = mortality_cost_pv / term_years
+        disability_premium_annual = disability_cost_pv / term_years
+        risk_premium_annual = total_risk_cost_pv / term_years
+        
+        # =======================================================================
+        # MINIMUM PREMIUM FLOOR (when disability excluded for high ADL)
+        # =======================================================================
+        # When we exclude disability for high-risk customers (ADL 8+), we need to
+        # ensure they still pay a fair premium. Otherwise, they get cheap mortality-only
+        # coverage which creates adverse selection.
+        #
+        # Solution: Calculate what disability premium WOULD have been, and require
+        # a minimum risk premium that reflects their actual risk profile.
+        # =======================================================================
+        theoretical_disability_cost_pv = 0.0
+        if exclude_disability and adl_level >= 8:
+            # Calculate what disability would cost (for minimum floor calculation)
+            for year in range(1, term_years + 1):
+                current_age = age + year - 1
+                survival_prob = 1.0
+                for y in range(year - 1):
+                    mort = self.get_mortality_rate(age + y) * adl_mort_mult
+                    survival_prob *= (1 - mort)
+                dis_rate = self.get_disability_incidence_rate(current_age) * adl_dis_mult
+                expected_benefit = approved_coverage * 0.90  # High ADL = high benefit claims
+                lapse_survival = 1.0
+                for y in range(year):
+                    lapse_survival *= (1 - self.get_lapse_rate(y + 1))
+                discount = (1 + DISCOUNT_RATE) ** (-year)
+                theoretical_disability_cost_pv += survival_prob * dis_rate * expected_benefit * lapse_survival * discount
+            
+            # Minimum floor: customer pays for their risk even if we exclude the benefit
+            # This prevents adverse selection - high risk customers can't game the system
+            # They pay the theoretical disability premium, but don't get the benefit
+            # (This is effectively a "risk surcharge" for being high ADL)
+            min_risk_floor = (mortality_cost_pv + theoretical_disability_cost_pv * 0.5) / term_years
+            if risk_premium_annual < min_risk_floor:
+                risk_premium_annual = min_risk_floor
+                # Adjust mortality premium to reflect actual charged risk
+                mortality_premium_annual = risk_premium_annual
+        
+        # Apply underwriting loading if applicable
+        if underwriting_loading > 0:
+            risk_premium_annual *= (1 + underwriting_loading)
+            mortality_premium_annual *= (1 + underwriting_loading)
+            disability_premium_annual *= (1 + underwriting_loading)
         
         # Savings component (target accumulation)
-        savings_allocation = coverage * savings_pct
+        savings_allocation = approved_coverage * savings_pct
         savings_premium_annual = savings_allocation / term_years
         
-        # Expense loading (15% of risk premium)
-        expense_loading = risk_premium_annual * 0.15
+        # Expense loading
+        expense_loading = risk_premium_annual * EXPENSE_LOADING_PCT
+        
+        # Profit margin
+        profit_margin = 0
+        if include_profit_margin:
+            subtotal = risk_premium_annual + savings_premium_annual + expense_loading
+            profit_margin = subtotal * PROFIT_MARGIN_PCT
         
         # Total annual premium
-        total_annual = risk_premium_annual + savings_premium_annual + expense_loading
+        total_annual = risk_premium_annual + savings_premium_annual + expense_loading + profit_margin
         
         return {
             'annual_premium': round(total_annual, 2),
             'monthly_premium': round(total_annual / 12, 2),
             'risk_component': round(risk_premium_annual, 2),
+            'mortality_component': round(mortality_premium_annual, 2),
+            'disability_component': round(disability_premium_annual, 2),
             'savings_component': round(savings_premium_annual, 2),
             'expense_loading': round(expense_loading, 2),
-            'coverage': coverage,
+            'profit_margin': round(profit_margin, 2),
+            'coverage': approved_coverage,
+            'original_coverage': coverage,
+            'coverage_reduced': uw_check.get('coverage_reduced', False),
             'savings_target': round(savings_allocation, 2),
             'term_years': term_years,
             'adl_level': adl_level,
-            'customer_age': age
+            'adl_mortality_multiplier': round(adl_mort_mult, 3),
+            'adl_disability_multiplier': round(adl_dis_mult, 3),
+            'underwriting_loading': round(underwriting_loading, 3),
+            'exclude_disability': exclude_disability,
+            'customer_age': age,
+            'eligible': True,
+            'pv_mortality_risk': round(mortality_cost_pv, 2),
+            'pv_disability_risk': round(disability_cost_pv, 2),
+            'pv_total_risk': round(total_risk_cost_pv, 2),
+            'actuarial_model': 'PHINS_ACTUARIAL_V2_ADDITIVE',
+            'expected_loss_ratio': round((total_risk_cost_pv / (risk_premium_annual * term_years)) * 100, 1) if risk_premium_annual > 0 else 0
         }
     
     def project_policy_value(self, coverage: float, age: int, adl_level: int,
