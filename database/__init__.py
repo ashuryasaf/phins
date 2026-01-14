@@ -184,22 +184,43 @@ def close_database():
         logger.info("Database engine disposed")
 
 
-def check_database_connection() -> bool:
+def check_database_connection(timeout: int = 10) -> bool:
     """
     Check if database connection is working.
+    
+    Args:
+        timeout: Maximum seconds to wait for connection check
     
     Returns:
         True if connection is successful, False otherwise
     """
+    import threading
+    import queue
+    
+    result_queue: queue.Queue[bool] = queue.Queue()
+    
+    def _check():
+        try:
+            from sqlalchemy import text
+            engine = get_engine()
+            with engine.connect() as conn:
+                conn.execute(text("SELECT 1"))
+            result_queue.put(True)
+        except Exception as e:
+            logger.error(f"Database connection check failed: {e}")
+            result_queue.put(False)
+    
+    # Run check in a thread with timeout
+    check_thread = threading.Thread(target=_check, daemon=True)
+    check_thread.start()
+    
     try:
-        from sqlalchemy import text
-        engine = get_engine()
-        with engine.connect() as conn:
-            conn.execute(text("SELECT 1"))
-        logger.info("Database connection check: OK")
-        return True
-    except Exception as e:
-        logger.error(f"Database connection check failed: {e}")
+        result = result_queue.get(timeout=timeout)
+        if result:
+            logger.info("Database connection check: OK")
+        return result
+    except queue.Empty:
+        logger.error(f"Database connection check timed out after {timeout}s")
         return False
 
 

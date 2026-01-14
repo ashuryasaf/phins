@@ -29,6 +29,7 @@ class DatabaseConfig:
     MAX_OVERFLOW = 10
     POOL_TIMEOUT = 30
     POOL_RECYCLE = 3600  # 1 hour
+    CONNECT_TIMEOUT = 10  # Connection attempt timeout in seconds
     
     # Query settings
     # WARNING: ECHO_SQL logs all SQL queries including sensitive data like passwords
@@ -102,6 +103,10 @@ class DatabaseConfig:
                 'max_overflow': cls.MAX_OVERFLOW,
                 'pool_timeout': cls.POOL_TIMEOUT,
                 'pool_recycle': cls.POOL_RECYCLE,
+                'connect_args': {
+                    'connect_timeout': cls.CONNECT_TIMEOUT,  # Timeout for initial connection
+                    'options': f'-c statement_timeout={cls.CONNECT_TIMEOUT * 1000}'  # Query timeout in ms
+                }
             })
         else:
             # SQLite-specific options
