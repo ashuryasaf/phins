@@ -2945,19 +2945,18 @@ class PortalHandler(BaseHTTPRequestHandler):
         self.send_header("X-Frame-Options", "DENY")
         self.send_header("X-XSS-Protection", "1; mode=block")
         self.send_header("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
-        # Strengthened CSP - includes additional restrictions:
+        # Strict CSP for JSON API responses - no script/style execution needed
         # - frame-ancestors: Prevents clickjacking (supersedes X-Frame-Options in modern browsers)
         # - form-action: Restricts form submission targets
         # - base-uri: Prevents base tag injection attacks
         # - object-src: Blocks plugin content
         # - img-src: Allows data: URIs for inline images (QR codes, charts)
         # - connect-src: Restricts fetch/XHR targets
-        # NOTE: 'unsafe-inline' for script/style is kept for compatibility but should be
-        # migrated to nonce-based CSP in the future for better XSS protection.
+        # JSON responses don't need 'unsafe-inline' - scripts/styles aren't executed
         self.send_header("Content-Security-Policy", 
             "default-src 'self'; "
-            "script-src 'self' 'unsafe-inline'; "
-            "style-src 'self' 'unsafe-inline'; "
+            "script-src 'self'; "
+            "style-src 'self'; "
             "img-src 'self' data: https://api.qrserver.com; "
             "connect-src 'self'; "
             "frame-ancestors 'none'; "
@@ -3086,6 +3085,31 @@ For claims or questions, please contact:
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("X-Frame-Options", "SAMEORIGIN")
         self.send_header("X-XSS-Protection", "1; mode=block")
+        self.send_header("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+        # CSP for static files - HTML files need 'unsafe-inline' for existing inline scripts/styles
+        # Future improvement: migrate inline scripts to external files to enable strict CSP
+        if path.endswith('.html'):
+            self.send_header("Content-Security-Policy",
+                "default-src 'self'; "
+                "script-src 'self' 'unsafe-inline'; "
+                "style-src 'self' 'unsafe-inline'; "
+                "img-src 'self' data: https://api.qrserver.com; "
+                "connect-src 'self'; "
+                "frame-ancestors 'self'; "
+                "form-action 'self'; "
+                "base-uri 'self'; "
+                "object-src 'none'"
+            )
+        elif path.endswith('.js') or path.endswith('.css'):
+            # JS/CSS files don't need inline execution permissions
+            self.send_header("Content-Security-Policy",
+                "default-src 'self'; "
+                "script-src 'self'; "
+                "style-src 'self'; "
+                "frame-ancestors 'self'; "
+                "base-uri 'self'; "
+                "object-src 'none'"
+            )
         self.end_headers()
 
     def do_HEAD(self):
