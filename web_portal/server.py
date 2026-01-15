@@ -9456,6 +9456,165 @@ For claims or questions, please contact:
         
         # ========== END UNIFIED BALANCE GET API ==========
         
+        # ========== SECURE NOTIFICATION PIPELINE GET API ==========
+        # OTP status, audit logs, and notification history
+        
+        # GET /api/secure/status - Get operation status
+        if path == '/api/secure/status':
+            operation_id = qs.get('operation_id', [''])[0]
+            
+            if not operation_id:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'operation_id is required'}).encode('utf-8'))
+                return
+            
+            try:
+                from services.secure_notification_pipeline import get_secure_notification_pipeline
+                
+                pipeline = get_secure_notification_pipeline()
+                status = pipeline.get_operation_status(operation_id)
+                
+                if status:
+                    self._set_json_headers(200)
+                    self.wfile.write(json.dumps(status).encode('utf-8'))
+                else:
+                    self._set_json_headers(404)
+                    self.wfile.write(json.dumps({'error': 'Operation not found'}).encode('utf-8'))
+                    
+            except ImportError as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({
+                    'error': 'Secure notification pipeline not available',
+                    'details': str(e)
+                }).encode('utf-8'))
+            return
+        
+        # GET /api/secure/audit - Get audit log
+        if path == '/api/secure/audit':
+            auth_header = self.headers.get('Authorization', '')
+            token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+            session = validate_session(token) if token else None
+            
+            if not session:
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Authentication required'}).encode('utf-8'))
+                return
+            
+            try:
+                from services.secure_notification_pipeline import get_secure_notification_pipeline
+                
+                pipeline = get_secure_notification_pipeline()
+                
+                # Get query params
+                customer_id = qs.get('customer_id', [''])[0] or session.get('customer_id')
+                operation_type = qs.get('operation_type', [''])[0]
+                limit = int(qs.get('limit', ['100'])[0])
+                
+                # Admin can see all, others can only see their own
+                if not require_role(session, ['admin', 'underwriter', 'actuary']):
+                    customer_id = session.get('customer_id')
+                
+                audit_log = pipeline.get_audit_log(
+                    customer_id=customer_id if customer_id else None,
+                    operation_type=operation_type if operation_type else None,
+                    limit=limit
+                )
+                
+                self._set_json_headers(200)
+                self.wfile.write(json.dumps({
+                    'audit_log': audit_log,
+                    'count': len(audit_log)
+                }).encode('utf-8'))
+                
+            except ImportError as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({
+                    'error': 'Secure notification pipeline not available',
+                    'details': str(e)
+                }).encode('utf-8'))
+            return
+        
+        # GET /api/secure/integrity - Get integrity validation for operation
+        if path == '/api/secure/integrity':
+            operation_id = qs.get('operation_id', [''])[0]
+            
+            if not operation_id:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'operation_id is required'}).encode('utf-8'))
+                return
+            
+            try:
+                from services.secure_notification_pipeline import get_secure_notification_pipeline
+                
+                pipeline = get_secure_notification_pipeline()
+                result = pipeline.validate_operation_integrity(operation_id)
+                
+                self._set_json_headers(200)
+                self.wfile.write(json.dumps(result).encode('utf-8'))
+                
+            except ImportError as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({
+                    'error': 'Secure notification pipeline not available',
+                    'details': str(e)
+                }).encode('utf-8'))
+            return
+        
+        # GET /api/notifications/history - Get notification history for customer
+        if path == '/api/notifications/history':
+            auth_header = self.headers.get('Authorization', '')
+            token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+            session = validate_session(token) if token else None
+            
+            if not session:
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Authentication required'}).encode('utf-8'))
+                return
+            
+            try:
+                from services.notification_service import create_notification_service, NotificationChannel
+                
+                notification_service = create_notification_service()
+                
+                # Get query params
+                customer_id = qs.get('customer_id', [''])[0] or session.get('customer_id')
+                channel_str = qs.get('channel', [''])[0]
+                limit = int(qs.get('limit', ['100'])[0])
+                
+                # Admin can see all, others can only see their own
+                if not require_role(session, ['admin', 'underwriter']):
+                    customer_id = session.get('customer_id')
+                
+                # Get channel if specified
+                channel = None
+                if channel_str:
+                    try:
+                        channel = NotificationChannel(channel_str)
+                    except:
+                        pass
+                
+                history = notification_service.get_history(
+                    customer_id=customer_id if customer_id else None,
+                    channel=channel,
+                    limit=limit
+                )
+                
+                self._set_json_headers(200)
+                self.wfile.write(json.dumps({
+                    'history': history,
+                    'count': len(history)
+                }).encode('utf-8'))
+                
+            except ImportError as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({
+                    'error': 'Notification service not available',
+                    'details': str(e)
+                }).encode('utf-8'))
+            return
+        
+        # ========== END SECURE NOTIFICATION PIPELINE GET API ==========
+        
         # ========== PORTFOLIO TRACKER GET API ==========
         # Real-time P&L tracking for investments and algo trading
         
@@ -20598,6 +20757,445 @@ For claims or questions, please contact:
             return
         
         # ========== END SAVINGS PIPELINE POST API ==========
+        
+        # ========== SECURE NOTIFICATION PIPELINE POST API ==========
+        # OTP-validated secure operations for data integrity
+        
+        # POST /api/secure/initiate - Initiate secure operation with OTP
+        if path == '/api/secure/initiate':
+            auth_header = self.headers.get('Authorization', '')
+            token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+            session = validate_session(token) if token else None
+            
+            try:
+                data = json.loads(body)
+                
+                # Initialize secure notification pipeline
+                try:
+                    from services.secure_notification_pipeline import (
+                        get_secure_notification_pipeline,
+                        SecureOperationRequest,
+                        SecureOperationType,
+                        NotificationChannel
+                    )
+                    from services.notification_service import NotificationChannel as NotifChannel
+                    
+                    pipeline = get_secure_notification_pipeline()
+                    
+                    # Get operation type
+                    op_type_str = data.get('operation_type', 'account_registration')
+                    op_type = SecureOperationType(op_type_str) if op_type_str in [e.value for e in SecureOperationType] else SecureOperationType.ACCOUNT_REGISTRATION
+                    
+                    # Get customer ID from session or request
+                    customer_id = data.get('customer_id') or (session.get('customer_id') if session else None)
+                    if not customer_id and session:
+                        customer_id = session.get('username', 'unknown')
+                    
+                    # Get channel preference
+                    channel_str = data.get('channel', 'email').lower()
+                    if channel_str == 'whatsapp':
+                        channel = NotifChannel.SMS  # WhatsApp uses phone number like SMS
+                    elif channel_str == 'sms':
+                        channel = NotifChannel.SMS
+                    else:
+                        channel = NotifChannel.EMAIL
+                    
+                    request = SecureOperationRequest(
+                        operation_type=op_type,
+                        customer_id=customer_id,
+                        email=data.get('email'),
+                        phone=data.get('phone'),
+                        preferred_channel=channel,
+                        operation_data=data.get('operation_data', {}),
+                        amount=float(data['amount']) if data.get('amount') else None,
+                        ip_address=self.client_address[0],
+                        user_agent=self.headers.get('User-Agent'),
+                        device_fingerprint=data.get('device_fingerprint'),
+                        session_id=token
+                    )
+                    
+                    result = pipeline.initiate_secure_operation(request)
+                    
+                    self._set_json_headers(200 if result.success else 400)
+                    self.wfile.write(json.dumps(result.to_dict()).encode('utf-8'))
+                    
+                except ImportError as e:
+                    self._set_json_headers(500)
+                    self.wfile.write(json.dumps({
+                        'error': 'Secure notification pipeline not available',
+                        'details': str(e)
+                    }).encode('utf-8'))
+                    
+            except Exception as e:
+                import traceback
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({
+                    'error': str(e),
+                    'traceback': traceback.format_exc()
+                }).encode('utf-8'))
+            return
+        
+        # POST /api/secure/verify - Verify OTP for secure operation
+        if path == '/api/secure/verify':
+            try:
+                data = json.loads(body)
+                operation_id = data.get('operation_id')
+                otp_code = data.get('otp_code') or data.get('code')
+                
+                if not operation_id or not otp_code:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({
+                        'error': 'operation_id and otp_code are required'
+                    }).encode('utf-8'))
+                    return
+                
+                try:
+                    from services.secure_notification_pipeline import get_secure_notification_pipeline
+                    
+                    pipeline = get_secure_notification_pipeline()
+                    result = pipeline.verify_operation(
+                        operation_id=operation_id,
+                        otp_code=otp_code,
+                        ip_address=self.client_address[0]
+                    )
+                    
+                    self._set_json_headers(200 if result.success else 400)
+                    self.wfile.write(json.dumps(result.to_dict()).encode('utf-8'))
+                    
+                except ImportError as e:
+                    self._set_json_headers(500)
+                    self.wfile.write(json.dumps({
+                        'error': 'Secure notification pipeline not available',
+                        'details': str(e)
+                    }).encode('utf-8'))
+                    
+            except Exception as e:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+        
+        # POST /api/secure/resend - Resend OTP for operation
+        if path == '/api/secure/resend':
+            try:
+                data = json.loads(body)
+                operation_id = data.get('operation_id')
+                
+                if not operation_id:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({
+                        'error': 'operation_id is required'
+                    }).encode('utf-8'))
+                    return
+                
+                try:
+                    from services.secure_notification_pipeline import get_secure_notification_pipeline
+                    from services.notification_service import NotificationChannel
+                    
+                    pipeline = get_secure_notification_pipeline()
+                    
+                    # Get channel if specified
+                    channel_str = data.get('channel')
+                    channel = None
+                    if channel_str:
+                        channel = NotificationChannel(channel_str) if channel_str in [e.value for e in NotificationChannel] else None
+                    
+                    result = pipeline.resend_otp(
+                        operation_id=operation_id,
+                        channel=channel,
+                        ip_address=self.client_address[0]
+                    )
+                    
+                    self._set_json_headers(200 if result.success else 400)
+                    self.wfile.write(json.dumps(result.to_dict()).encode('utf-8'))
+                    
+                except ImportError as e:
+                    self._set_json_headers(500)
+                    self.wfile.write(json.dumps({
+                        'error': 'Secure notification pipeline not available',
+                        'details': str(e)
+                    }).encode('utf-8'))
+                    
+            except Exception as e:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+        
+        # POST /api/notifications/push - Send push notification
+        if path == '/api/notifications/push':
+            auth_header = self.headers.get('Authorization', '')
+            token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+            session = validate_session(token) if token else None
+            
+            # Require authenticated session or system-level access
+            if not session:
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Authentication required'}).encode('utf-8'))
+                return
+            
+            try:
+                data = json.loads(body)
+                
+                try:
+                    from services.secure_notification_pipeline import (
+                        get_secure_notification_pipeline,
+                        PushNotificationRequest,
+                        PushNotificationType,
+                        NotificationPriority
+                    )
+                    from services.notification_service import NotificationChannel
+                    
+                    pipeline = get_secure_notification_pipeline()
+                    
+                    # Get notification type
+                    notif_type_str = data.get('notification_type', 'policy_created')
+                    notif_type = PushNotificationType(notif_type_str) if notif_type_str in [e.value for e in PushNotificationType] else PushNotificationType.POLICY_CREATED
+                    
+                    # Get channels
+                    channels_str = data.get('channels', ['email'])
+                    channels = []
+                    for ch in channels_str:
+                        try:
+                            channels.append(NotificationChannel(ch))
+                        except:
+                            pass
+                    if not channels:
+                        channels = [NotificationChannel.EMAIL]
+                    
+                    # Get priority
+                    priority_str = data.get('priority', 'normal')
+                    try:
+                        from services.notification_service import NotificationPriority as NotifPriority
+                        priority = NotifPriority(priority_str)
+                    except:
+                        priority = NotificationPriority.NORMAL
+                    
+                    request = PushNotificationRequest(
+                        notification_type=notif_type,
+                        customer_id=data.get('customer_id') or session.get('customer_id', ''),
+                        title=data.get('title', 'PHINS Notification'),
+                        message=data.get('message', ''),
+                        data=data.get('data', {}),
+                        channels=channels,
+                        email=data.get('email'),
+                        phone=data.get('phone'),
+                        priority=priority,
+                        reference_id=data.get('reference_id')
+                    )
+                    
+                    result = pipeline.send_push_notification(request)
+                    
+                    self._set_json_headers(200 if result.success else 400)
+                    self.wfile.write(json.dumps(result.to_dict()).encode('utf-8'))
+                    
+                except ImportError as e:
+                    self._set_json_headers(500)
+                    self.wfile.write(json.dumps({
+                        'error': 'Secure notification pipeline not available',
+                        'details': str(e)
+                    }).encode('utf-8'))
+                    
+            except Exception as e:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+        
+        # POST /api/notifications/policy - Send policy notification
+        if path == '/api/notifications/policy':
+            auth_header = self.headers.get('Authorization', '')
+            token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+            session = validate_session(token) if token else None
+            
+            if not session:
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Authentication required'}).encode('utf-8'))
+                return
+            
+            try:
+                data = json.loads(body)
+                
+                try:
+                    from services.secure_notification_pipeline import (
+                        get_secure_notification_pipeline,
+                        PushNotificationType
+                    )
+                    
+                    pipeline = get_secure_notification_pipeline()
+                    
+                    event_type_str = data.get('event_type', 'policy_created')
+                    event_type = PushNotificationType(event_type_str) if event_type_str in [e.value for e in PushNotificationType] else PushNotificationType.POLICY_CREATED
+                    
+                    result = pipeline.notify_policy_event(
+                        event_type=event_type,
+                        customer_id=data.get('customer_id') or session.get('customer_id', ''),
+                        policy_id=data.get('policy_id', ''),
+                        policy_data=data.get('policy_data', {}),
+                        email=data.get('email'),
+                        phone=data.get('phone')
+                    )
+                    
+                    self._set_json_headers(200 if result.success else 400)
+                    self.wfile.write(json.dumps(result.to_dict()).encode('utf-8'))
+                    
+                except ImportError as e:
+                    self._set_json_headers(500)
+                    self.wfile.write(json.dumps({
+                        'error': 'Secure notification pipeline not available',
+                        'details': str(e)
+                    }).encode('utf-8'))
+                    
+            except Exception as e:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+        
+        # POST /api/notifications/claim - Send claim notification
+        if path == '/api/notifications/claim':
+            auth_header = self.headers.get('Authorization', '')
+            token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+            session = validate_session(token) if token else None
+            
+            if not session:
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Authentication required'}).encode('utf-8'))
+                return
+            
+            try:
+                data = json.loads(body)
+                
+                try:
+                    from services.secure_notification_pipeline import (
+                        get_secure_notification_pipeline,
+                        PushNotificationType
+                    )
+                    
+                    pipeline = get_secure_notification_pipeline()
+                    
+                    event_type_str = data.get('event_type', 'claim_submitted')
+                    event_type = PushNotificationType(event_type_str) if event_type_str in [e.value for e in PushNotificationType] else PushNotificationType.CLAIM_SUBMITTED
+                    
+                    result = pipeline.notify_claim_event(
+                        event_type=event_type,
+                        customer_id=data.get('customer_id') or session.get('customer_id', ''),
+                        claim_id=data.get('claim_id', ''),
+                        claim_data=data.get('claim_data', {}),
+                        email=data.get('email'),
+                        phone=data.get('phone')
+                    )
+                    
+                    self._set_json_headers(200 if result.success else 400)
+                    self.wfile.write(json.dumps(result.to_dict()).encode('utf-8'))
+                    
+                except ImportError as e:
+                    self._set_json_headers(500)
+                    self.wfile.write(json.dumps({
+                        'error': 'Secure notification pipeline not available',
+                        'details': str(e)
+                    }).encode('utf-8'))
+                    
+            except Exception as e:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+        
+        # POST /api/notifications/billing - Send billing notification
+        if path == '/api/notifications/billing':
+            auth_header = self.headers.get('Authorization', '')
+            token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+            session = validate_session(token) if token else None
+            
+            if not session:
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Authentication required'}).encode('utf-8'))
+                return
+            
+            try:
+                data = json.loads(body)
+                
+                try:
+                    from services.secure_notification_pipeline import (
+                        get_secure_notification_pipeline,
+                        PushNotificationType
+                    )
+                    
+                    pipeline = get_secure_notification_pipeline()
+                    
+                    event_type_str = data.get('event_type', 'payment_due')
+                    event_type = PushNotificationType(event_type_str) if event_type_str in [e.value for e in PushNotificationType] else PushNotificationType.PAYMENT_DUE
+                    
+                    result = pipeline.notify_billing_event(
+                        event_type=event_type,
+                        customer_id=data.get('customer_id') or session.get('customer_id', ''),
+                        billing_data=data.get('billing_data', {}),
+                        email=data.get('email'),
+                        phone=data.get('phone')
+                    )
+                    
+                    self._set_json_headers(200 if result.success else 400)
+                    self.wfile.write(json.dumps(result.to_dict()).encode('utf-8'))
+                    
+                except ImportError as e:
+                    self._set_json_headers(500)
+                    self.wfile.write(json.dumps({
+                        'error': 'Secure notification pipeline not available',
+                        'details': str(e)
+                    }).encode('utf-8'))
+                    
+            except Exception as e:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+        
+        # POST /api/integrity/validate - Validate data integrity for customer
+        if path == '/api/integrity/validate':
+            auth_header = self.headers.get('Authorization', '')
+            token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+            session = validate_session(token) if token else None
+            
+            if not session:
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Authentication required'}).encode('utf-8'))
+                return
+            
+            try:
+                data = json.loads(body)
+                customer_id = data.get('customer_id') or session.get('customer_id')
+                
+                if not customer_id:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'customer_id is required'}).encode('utf-8'))
+                    return
+                
+                try:
+                    from services.secure_notification_pipeline import get_secure_notification_pipeline
+                    
+                    pipeline = get_secure_notification_pipeline()
+                    
+                    # Run both data integrity and pipeline integrity checks
+                    data_result = pipeline.run_data_integrity_check(
+                        customer_id=customer_id,
+                        auto_correct=data.get('auto_correct', False)
+                    )
+                    
+                    self._set_json_headers(200)
+                    self.wfile.write(json.dumps({
+                        'success': True,
+                        'customer_id': customer_id,
+                        'data_integrity': data_result
+                    }).encode('utf-8'))
+                    
+                except ImportError as e:
+                    self._set_json_headers(500)
+                    self.wfile.write(json.dumps({
+                        'error': 'Integrity service not available',
+                        'details': str(e)
+                    }).encode('utf-8'))
+                    
+            except Exception as e:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+        
+        # ========== END SECURE NOTIFICATION PIPELINE POST API ==========
         
         # ========== END BILLING API ==========
         # Minimal billing endpoints (demo fallback when engine routes are not used)

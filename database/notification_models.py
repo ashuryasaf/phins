@@ -28,6 +28,7 @@ class NotificationChannel(str, enum.Enum):
     """Supported notification delivery channels"""
     EMAIL = "email"
     SMS = "sms"
+    WHATSAPP = "whatsapp"
     PUSH = "push"
     IN_APP = "in_app"
     WEBHOOK = "webhook"
