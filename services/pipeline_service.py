@@ -22,6 +22,22 @@ import uuid
 logger = logging.getLogger(__name__)
 
 
+def _get_status_lower(item: Dict) -> str:
+    """Get item's status in lowercase with spaces converted to underscores."""
+    return (item.get('status') or '').lower().replace(' ', '_')
+
+
+def _status_eq(item: Dict, *statuses: str) -> bool:
+    """Case-insensitive status check."""
+    item_status = _get_status_lower(item)
+    return item_status in [s.lower().replace(' ', '_') for s in statuses]
+
+
+def _status_in(item: Dict, statuses: list) -> bool:
+    """Case-insensitive check if item's status is in a list of statuses."""
+    return _status_eq(item, *statuses)
+
+
 class PipelineService:
     """
     Unified pipeline service for insurance workflow management.
@@ -197,7 +213,9 @@ class PipelineService:
         if not uw_app:
             return {'success': False, 'error': 'Underwriting application not found'}
         
-        if uw_app.get('status') != 'pending':
+        # Case-insensitive status check for data integrity
+        current_status = (uw_app.get('status') or '').lower().replace(' ', '_')
+        if current_status != 'pending':
             return {'success': False, 'error': f"Cannot approve: status is {uw_app.get('status')}"}
         
         now = datetime.now()
@@ -400,7 +418,9 @@ class PipelineService:
         if not policy:
             return {'success': False, 'error': 'Policy not found'}
         
-        if policy.get('status') != 'active':
+        # Case-insensitive status check
+        policy_status = (policy.get('status') or '').lower().replace(' ', '_')
+        if policy_status != 'active':
             return {'success': False, 'error': f"Cannot file claim: policy status is {policy.get('status')}"}
         
         now = datetime.now()
@@ -441,7 +461,7 @@ class PipelineService:
         """Get all pending underwriting applications for admin queue"""
         pending = []
         for uw_id, uw_app in self._underwriting.items():
-            if uw_app.get('status') == 'pending':
+            if _status_eq(uw_app, 'pending'):
                 # Enrich with customer and policy data
                 policy = self._policies.get(uw_app.get('policy_id'), {})
                 customer = self._customers.get(uw_app.get('customer_id'), {})
@@ -468,10 +488,10 @@ class PipelineService:
             'bills': bills,
             'summary': {
                 'total_policies': len(policies),
-                'active_policies': sum(1 for p in policies if p.get('status') == 'active'),
-                'pending_underwriting': sum(1 for p in policies if p.get('status') == 'pending_underwriting'),
-                'open_claims': sum(1 for c in claims if c.get('status') in ('pending', 'under_review')),
-                'outstanding_bills': sum(1 for b in bills if b.get('status') == 'outstanding')
+                'active_policies': sum(1 for p in policies if _status_eq(p, 'active')),
+                'pending_underwriting': sum(1 for p in policies if _status_eq(p, 'pending_underwriting')),
+                'open_claims': sum(1 for c in claims if _status_in(c, ['pending', 'under_review'])),
+                'outstanding_bills': sum(1 for b in bills if _status_eq(b, 'outstanding'))
             }
         }
 
