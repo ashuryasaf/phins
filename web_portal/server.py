@@ -3375,8 +3375,8 @@ For claims or questions, please contact:
             self.wfile.write(json.dumps({
                 'codes': codes_list,
                 'total': len(codes_list),
-                'active': len([c for c in codes_list if c.get('status') == 'active']),
-                'used': len([c for c in codes_list if c.get('status') == 'used'])
+                'active': len([c for c in codes_list if get_status_lower(c) == 'active']),
+                'used': len([c for c in codes_list if get_status_lower(c) == 'used'])
             }).encode('utf-8'))
             return
         
@@ -7137,7 +7137,7 @@ For claims or questions, please contact:
                             'coverage_amount': app_data['coverage_amount'],
                             'annual_premium': app_data['annual_premium'],
                             'monthly_premium': app_data['monthly_premium'],
-                            'status': 'active' if app_data['status'] == 'approved' else 'pending_underwriting',
+                            'status': 'active' if get_status_lower(app_data) == 'approved' else 'pending_underwriting',
                             'risk_score': app_data['risk_score'],
                             'underwriting_id': app_id,
                             'start_date': now.isoformat(),
@@ -7510,7 +7510,7 @@ For claims or questions, please contact:
             
             # Determine if fully valid
             has_errors = len(validation['errors']) > 0
-            has_pending_actions = len([c for c in validation['checks'] if c.get('status') == 'PENDING']) > 0
+            has_pending_actions = len([c for c in validation['checks'] if get_status_lower(c) == 'pending']) > 0
             validation['valid'] = not has_errors and not has_pending_actions
             
             self._set_json_headers()
@@ -23192,7 +23192,7 @@ def run_server(port: int = PORT) -> None:
                         'coverage_amount': app_data['coverage_amount'],
                         'annual_premium': app_data['annual_premium'],
                         'monthly_premium': app_data['monthly_premium'],
-                        'status': 'active' if app_data['status'] == 'approved' else 'pending_underwriting',
+                        'status': 'active' if get_status_lower(app_data) == 'approved' else 'pending_underwriting',
                         'risk_score': app_data['risk_score'],
                         'underwriting_id': app_id,
                         'start_date': now.isoformat(),
