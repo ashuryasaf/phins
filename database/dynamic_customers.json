@@ -388,5 +388,25 @@
     "registered_at": "2026-01-12T11:06:50.678244",
     "password_hash": "20cc60c8d4ec1cd81eef72014fdee94fe795fef9a54297b5c814f0a8b6df47d1",
     "password_salt": "199d83f0832ae28ecb6a6a18a16f6ee4"
+  },
+  {
+    "username": "duplicate@example.com",
+    "password_hash": "a54c5adb32fc740f09fab56e810ada7b2a133e19d74d2131f86b31ab836df339",
+    "password_salt": "3bb6efe0ac31ac858c30421e49efc88e",
+    "name": "Duplicate Test",
+    "role": "customer",
+    "customer_id": "CUST-65857",
+    "email": "duplicate@example.com",
+    "registered_at": "2026-01-17T20:52:18.523871"
+  },
+  {
+    "username": "duplicate@example.com",
+    "password_hash": "336a77360cbdcc46af66870a8c64765292dee465502bef6b58bfc2bddc9e58b6",
+    "password_salt": "2a0817ecfd70db37e0d0c3a70d2a3a50",
+    "name": "Duplicate Test",
+    "role": "customer",
+    "customer_id": "CUST-96690",
+    "email": "duplicate@example.com",
+    "registered_at": "2026-01-17T21:26:07.071486"
   }
 ]

@@ -59,6 +59,31 @@ except ImportError:
     billing_enabled = False
     print("Warning: Billing engine not available. Payment features disabled.")
 
+# Import notification service for OTP validation
+try:
+    from services.notification_service import (
+        NotificationService,
+        OTPService,
+        ClientVerificationService,
+        OTPRequest,
+        NotificationRequest,
+        NotificationChannel,
+        VerificationType,
+        OTPStatus,
+        create_notification_service,
+        MockEmailProvider,
+        MockSMSProvider
+    )
+    notification_service = create_notification_service(use_mock=True)
+    verification_service = ClientVerificationService(notification_service)
+    otp_enabled = True
+    print("✓ OTP/Notification service enabled (client verification ready)")
+except ImportError as e:
+    notification_service = None
+    verification_service = None
+    otp_enabled = False
+    print(f"Warning: Notification service not available: {e}. OTP features disabled.")
+
 # Database support - ENABLED BY DEFAULT for data persistence
 # Set USE_DATABASE=false to use volatile in-memory storage (not recommended)
 USE_DATABASE = os.environ.get('USE_DATABASE', 'true').lower() not in ('false', '0', 'no')
@@ -11551,6 +11576,348 @@ For claims or questions, please contact:
             body = ''
         else:
             body = body_bytes.decode('utf-8') if body_bytes else ''
+        
+        # =============================================================================
+        # OTP VALIDATION ENDPOINTS (for new customer registration and verification)
+        # =============================================================================
+        
+        # Send OTP for email/phone verification
+        if path == '/api/otp/send':
+            client_ip = self.client_address[0]
+            
+            if not otp_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({
+                    'error': 'OTP service is not available',
+                    'code': 'SERVICE_UNAVAILABLE'
+                }).encode('utf-8'))
+                return
+            
+            try:
+                data = json.loads(body)
+                identifier = sanitize_input(data.get('identifier', ''), 254).lower()
+                channel = data.get('channel', 'email').lower()
+                verification_type = data.get('verification_type', 'email_verification').lower()
+                customer_id = data.get('customer_id')
+                
+                if not identifier:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({
+                        'error': 'identifier (email or phone) is required',
+                        'code': 'MISSING_IDENTIFIER'
+                    }).encode('utf-8'))
+                    return
+                
+                # Map channel string to enum
+                channel_map = {
+                    'email': NotificationChannel.EMAIL,
+                    'sms': NotificationChannel.SMS
+                }
+                notification_channel = channel_map.get(channel)
+                if not notification_channel:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({
+                        'error': 'Invalid channel. Use "email" or "sms"',
+                        'code': 'INVALID_CHANNEL'
+                    }).encode('utf-8'))
+                    return
+                
+                # Map verification type string to enum
+                vtype_map = {
+                    'email_verification': VerificationType.EMAIL_VERIFICATION,
+                    'phone_verification': VerificationType.PHONE_VERIFICATION,
+                    'account_activation': VerificationType.ACCOUNT_ACTIVATION,
+                    'password_reset': VerificationType.PASSWORD_RESET,
+                    'two_factor_auth': VerificationType.TWO_FACTOR_AUTH
+                }
+                ver_type = vtype_map.get(verification_type, VerificationType.EMAIL_VERIFICATION)
+                
+                # Send OTP
+                result = notification_service.send_otp(OTPRequest(
+                    identifier=identifier,
+                    channel=notification_channel,
+                    verification_type=ver_type,
+                    customer_id=customer_id,
+                    ip_address=client_ip
+                ))
+                
+                if result.success:
+                    self._set_json_headers(200)
+                    self.wfile.write(json.dumps({
+                        'success': True,
+                        'otp_id': result.otp_id,
+                        'expires_at': result.expires_at.isoformat() if result.expires_at else None,
+                        'attempts_remaining': result.attempts_remaining,
+                        'message': f'Verification code sent to {identifier[:3]}***'
+                    }).encode('utf-8'))
+                else:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({
+                        'success': False,
+                        'error': result.error_message,
+                        'code': result.error_code
+                    }).encode('utf-8'))
+            except json.JSONDecodeError:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'Invalid JSON payload'}).encode('utf-8'))
+            except Exception as e:
+                print(f"OTP send error: {e}")
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': 'Failed to send OTP'}).encode('utf-8'))
+            return
+        
+        # Verify OTP code
+        if path == '/api/otp/verify':
+            client_ip = self.client_address[0]
+            
+            if not otp_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({
+                    'error': 'OTP service is not available',
+                    'code': 'SERVICE_UNAVAILABLE'
+                }).encode('utf-8'))
+                return
+            
+            try:
+                data = json.loads(body)
+                identifier = sanitize_input(data.get('identifier', ''), 254).lower()
+                code = sanitize_input(data.get('code', ''), 10)
+                verification_type = data.get('verification_type', 'email_verification').lower()
+                
+                if not identifier or not code:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({
+                        'error': 'identifier and code are required',
+                        'code': 'MISSING_FIELDS'
+                    }).encode('utf-8'))
+                    return
+                
+                # Map verification type
+                vtype_map = {
+                    'email_verification': VerificationType.EMAIL_VERIFICATION,
+                    'phone_verification': VerificationType.PHONE_VERIFICATION,
+                    'account_activation': VerificationType.ACCOUNT_ACTIVATION,
+                    'password_reset': VerificationType.PASSWORD_RESET,
+                    'two_factor_auth': VerificationType.TWO_FACTOR_AUTH
+                }
+                ver_type = vtype_map.get(verification_type, VerificationType.EMAIL_VERIFICATION)
+                
+                # Verify OTP
+                result = notification_service.verify_otp(
+                    identifier=identifier,
+                    code=code,
+                    verification_type=ver_type,
+                    ip_address=client_ip
+                )
+                
+                if result.success:
+                    self._set_json_headers(200)
+                    self.wfile.write(json.dumps({
+                        'success': True,
+                        'verified': True,
+                        'status': result.status.value if hasattr(result.status, 'value') else str(result.status),
+                        'message': 'Verification successful'
+                    }).encode('utf-8'))
+                else:
+                    status_code = 400
+                    if result.error_code == 'MAX_ATTEMPTS_EXCEEDED':
+                        status_code = 429
+                    elif result.error_code == 'OTP_EXPIRED':
+                        status_code = 410
+                    
+                    self._set_json_headers(status_code)
+                    self.wfile.write(json.dumps({
+                        'success': False,
+                        'verified': False,
+                        'error': result.error_message,
+                        'code': result.error_code,
+                        'attempts_remaining': result.attempts_remaining
+                    }).encode('utf-8'))
+            except json.JSONDecodeError:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'Invalid JSON payload'}).encode('utf-8'))
+            except Exception as e:
+                print(f"OTP verify error: {e}")
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': 'Failed to verify OTP'}).encode('utf-8'))
+            return
+        
+        # Start client verification workflow (for new applications)
+        if path == '/api/verification/initiate':
+            client_ip = self.client_address[0]
+            
+            if not otp_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({
+                    'error': 'Verification service is not available',
+                    'code': 'SERVICE_UNAVAILABLE'
+                }).encode('utf-8'))
+                return
+            
+            try:
+                data = json.loads(body)
+                customer_id = data.get('customer_id')
+                identifier = sanitize_input(data.get('identifier', ''), 254).lower()
+                channel = data.get('channel', 'email').lower()
+                verification_type = data.get('verification_type', 'email_verification').lower()
+                
+                if not identifier:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({
+                        'error': 'identifier (email or phone) is required',
+                        'code': 'MISSING_IDENTIFIER'
+                    }).encode('utf-8'))
+                    return
+                
+                # Map enums
+                channel_map = {'email': NotificationChannel.EMAIL, 'sms': NotificationChannel.SMS}
+                vtype_map = {
+                    'email_verification': VerificationType.EMAIL_VERIFICATION,
+                    'phone_verification': VerificationType.PHONE_VERIFICATION,
+                    'account_activation': VerificationType.ACCOUNT_ACTIVATION
+                }
+                
+                notification_channel = channel_map.get(channel, NotificationChannel.EMAIL)
+                ver_type = vtype_map.get(verification_type, VerificationType.EMAIL_VERIFICATION)
+                
+                result = verification_service.initiate_verification(
+                    customer_id=customer_id or 'pending',
+                    verification_type=ver_type,
+                    identifier=identifier,
+                    channel=notification_channel,
+                    ip_address=client_ip
+                )
+                
+                if result['status'] == 'pending':
+                    self._set_json_headers(200)
+                    self.wfile.write(json.dumps({
+                        'success': True,
+                        'verification_id': result['verification_id'],
+                        'expires_at': result['expires_at'],
+                        'otp_sent': result['otp_sent'],
+                        'message': 'Verification initiated. Check your email/phone for the code.'
+                    }).encode('utf-8'))
+                else:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({
+                        'success': False,
+                        'error': result.get('error', 'Failed to initiate verification')
+                    }).encode('utf-8'))
+            except json.JSONDecodeError:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'Invalid JSON payload'}).encode('utf-8'))
+            except Exception as e:
+                print(f"Verification initiate error: {e}")
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': 'Failed to initiate verification'}).encode('utf-8'))
+            return
+        
+        # Complete verification
+        if path == '/api/verification/verify':
+            client_ip = self.client_address[0]
+            
+            if not otp_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({
+                    'error': 'Verification service is not available',
+                    'code': 'SERVICE_UNAVAILABLE'
+                }).encode('utf-8'))
+                return
+            
+            try:
+                data = json.loads(body)
+                verification_id = data.get('verification_id', '').strip()
+                code = sanitize_input(data.get('code', ''), 10)
+                
+                if not verification_id or not code:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({
+                        'error': 'verification_id and code are required',
+                        'code': 'MISSING_FIELDS'
+                    }).encode('utf-8'))
+                    return
+                
+                result = verification_service.verify(
+                    verification_id=verification_id,
+                    code=code,
+                    ip_address=client_ip
+                )
+                
+                if result['success']:
+                    self._set_json_headers(200)
+                    self.wfile.write(json.dumps({
+                        'success': True,
+                        'verified': True,
+                        'verification_id': result['verification_id'],
+                        'status': result['status'],
+                        'message': 'Verification successful'
+                    }).encode('utf-8'))
+                else:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({
+                        'success': False,
+                        'verified': False,
+                        'error': result.get('error_message', 'Verification failed'),
+                        'code': result.get('error_code'),
+                        'attempts_remaining': result.get('attempts_remaining', 0)
+                    }).encode('utf-8'))
+            except json.JSONDecodeError:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'Invalid JSON payload'}).encode('utf-8'))
+            except Exception as e:
+                print(f"Verification verify error: {e}")
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': 'Failed to verify'}).encode('utf-8'))
+            return
+        
+        # Resend verification code
+        if path == '/api/verification/resend':
+            client_ip = self.client_address[0]
+            
+            if not otp_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({
+                    'error': 'Verification service is not available'
+                }).encode('utf-8'))
+                return
+            
+            try:
+                data = json.loads(body)
+                verification_id = data.get('verification_id', '').strip()
+                
+                if not verification_id:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({
+                        'error': 'verification_id is required'
+                    }).encode('utf-8'))
+                    return
+                
+                result = verification_service.resend_code(
+                    verification_id=verification_id,
+                    ip_address=client_ip
+                )
+                
+                if result['success']:
+                    self._set_json_headers(200)
+                    self.wfile.write(json.dumps({
+                        'success': True,
+                        'message': 'New verification code sent'
+                    }).encode('utf-8'))
+                else:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({
+                        'success': False,
+                        'error': result.get('error_message', 'Failed to resend code'),
+                        'code': result.get('error_code')
+                    }).encode('utf-8'))
+            except json.JSONDecodeError:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'Invalid JSON payload'}).encode('utf-8'))
+            except Exception as e:
+                print(f"Verification resend error: {e}")
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': 'Failed to resend code'}).encode('utf-8'))
+            return
         
         # Demo login endpoint with secure password verification
         if path == '/api/login':
