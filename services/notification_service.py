@@ -149,6 +149,7 @@ logger = logging.getLogger('phins.notifications')
 class NotificationChannel(str, Enum):
     EMAIL = "email"
     SMS = "sms"
+    WHATSAPP = "whatsapp"
     PUSH = "push"
     IN_APP = "in_app"
     WEBHOOK = "webhook"
