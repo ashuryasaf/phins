@@ -637,16 +637,23 @@ class PortfolioSimulator:
         annual_risk_premium = totals['risk_premium']  # Already annual
         annual_savings_premium = totals['savings_premium']  # Already annual
         
-        # Expense loading is on risk premium only
+        # Calculate expense and profit to match individual customer calculations
+        # In _calculate_premium:
+        #   expense = risk_premium * expense_loading_pct
+        #   profit = (risk_premium + savings_premium + expense) * profit_margin_pct
+        #   annual_premium = risk_premium + savings_premium + expense + profit
+        
         expense_amount = annual_risk_premium * config.expense_loading_pct
         
-        # Profit margin is on operational premium (risk + expense), not savings
-        # Savings is pass-through to customer
-        profit_amount = (annual_risk_premium + expense_amount) * config.profit_margin_pct
+        # Profit margin is on (risk + savings + expense) to match _calculate_premium
+        profit_amount = (annual_risk_premium + annual_savings_premium + expense_amount) * config.profit_margin_pct
+        
+        # Verify: components should sum to gross premium
+        calculated_gross = annual_risk_premium + annual_savings_premium + expense_amount + profit_amount
         
         # Net profit calculation:
         # Revenue = Risk Premium + Expense Loading + Profit Margin
-        # Cost = Expected Claims
+        # Cost = Expected Claims (savings is pass-through to customer, not cost)
         # Net = Revenue - Cost
         operating_revenue = annual_risk_premium + expense_amount + profit_amount
         net_profit = operating_revenue - annual_expected_claims
@@ -664,7 +671,9 @@ class PortfolioSimulator:
             'profit_margin': round(profit_amount, 2),
             'net_profit': round(net_profit, 2),
             'net_margin_pct': net_margin_pct,
-            'return_on_risk': round((net_profit / annual_risk_premium) * 100, 2) if annual_risk_premium > 0 else 0
+            'return_on_risk': round((net_profit / annual_risk_premium) * 100, 2) if annual_risk_premium > 0 else 0,
+            'calculated_gross': round(calculated_gross, 2),  # For verification
+            'components_match': abs(totals['annual_premium'] - calculated_gross) < 1
         }
         
         # Build result
