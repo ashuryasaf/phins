@@ -4291,7 +4291,9 @@ For claims or questions, please contact:
                 'database_enabled_flag': database_enabled,
                 'use_database_flag': USE_DATABASE,
                 'connection_test': None,
-                'error': None
+                'error': None,
+                'storage_mode': 'database' if (USE_DATABASE and database_enabled) else 'in-memory',
+                'recommendations': []
             }
             
             # Try to test actual connection
@@ -4302,19 +4304,59 @@ For claims or questions, please contact:
                 safe_url = re.sub(r':([^:@]+)@', ':****@', db_url)
                 result['database_url_format'] = safe_url
                 
+                # Parse and validate URL format
+                if db_url.startswith('postgres://'):
+                    result['url_needs_fix'] = True
+                    result['recommendations'].append('DATABASE_URL uses postgres:// - will be auto-converted to postgresql://')
+                
                 # Test connection
                 try:
                     from sqlalchemy import create_engine, text
-                    test_engine = create_engine(db_url, pool_pre_ping=True)
+                    # Convert postgres:// to postgresql:// for SQLAlchemy
+                    test_url = db_url
+                    if test_url.startswith('postgres://'):
+                        test_url = test_url.replace('postgres://', 'postgresql://', 1)
+                    
+                    test_engine = create_engine(test_url, pool_pre_ping=True, connect_args={'connect_timeout': 10})
                     with test_engine.connect() as conn:
-                        conn.execute(text("SELECT 1"))
+                        # Check if we can query
+                        pg_result = conn.execute(text("SELECT version()"))
+                        version = pg_result.fetchone()
+                        result['postgres_version'] = version[0] if version else 'unknown'
+                        
+                        # Get database name
+                        db_result = conn.execute(text("SELECT current_database()"))
+                        db_name = db_result.fetchone()
+                        result['current_database'] = db_name[0] if db_name else 'unknown'
+                        
                     result['connection_test'] = 'SUCCESS'
                     test_engine.dispose()
                 except Exception as e:
                     result['connection_test'] = 'FAILED'
-                    result['error'] = str(e)[:500]
+                    error_str = str(e)[:500]
+                    result['error'] = error_str
+                    
+                    # Provide helpful troubleshooting recommendations
+                    if 'connection refused' in error_str.lower():
+                        result['recommendations'].append('Database server is not reachable - check if Postgres service is running in Railway')
+                        result['recommendations'].append('FIX: Delete and recreate the Postgres service in Railway dashboard')
+                    elif 'timeout' in error_str.lower():
+                        result['recommendations'].append('Connection timeout - database may be starting up or misconfigured')
+                    elif 'password' in error_str.lower() or 'authentication' in error_str.lower():
+                        result['recommendations'].append('Authentication failed - DATABASE_URL credentials may be incorrect')
+                        result['recommendations'].append('FIX: Recreate Postgres service to get fresh credentials')
+                    elif 'does not exist' in error_str.lower():
+                        result['recommendations'].append('Database does not exist - may need to recreate Postgres service')
+                    elif 'registry' in error_str.lower() or 'image' in error_str.lower():
+                        result['recommendations'].append('Registry connection error - Railway cannot pull Postgres image')
+                        result['recommendations'].append('FIX: Delete Postgres service and create a new one')
+                    else:
+                        result['recommendations'].append('Check Railway dashboard for database service status')
+                        result['recommendations'].append('See RAILWAY_POSTGRES_FIX.md for troubleshooting guide')
             else:
                 result['error'] = 'DATABASE_URL not set'
+                result['recommendations'].append('No DATABASE_URL configured - add a PostgreSQL service in Railway')
+                result['recommendations'].append('Railway auto-injects DATABASE_URL when Postgres service is linked')
             
             self._set_json_headers()
             self.wfile.write(json.dumps(result, indent=2).encode('utf-8'))
