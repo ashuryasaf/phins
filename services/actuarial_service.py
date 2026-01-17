@@ -588,46 +588,83 @@ class PortfolioSimulator:
         if customers:
             avg_term = sum(c['term'] for c in customers) / len(customers)
         
-        # Loss ratio: Expected claims vs Risk premium collected (over term)
-        # Risk premium is designed to cover expected claims, so this should be ~100%
-        total_risk_premium_over_term = totals['risk_premium'] * avg_term
-        loss_ratio_on_risk = round((total_expected_claims / total_risk_premium_over_term) * 100, 2) if total_risk_premium_over_term > 0 else 0
+        # =================================================================
+        # LOSS RATIO CALCULATION (Industry Standard)
+        # =================================================================
+        # Loss Ratio = Expected Claims / Premium Collected (for same period)
+        # 
+        # For annual comparison:
+        # - Annual Expected Claims = Total PV Claims / Average Term
+        # - Annual Premium = Total Annual Premium (already annual)
+        #
+        # For full-term comparison:
+        # - Total Expected Claims (PV)
+        # - Total Premium Over Term = Annual Premium * Average Term
+        # =================================================================
+        
+        # Annualized expected claims
+        annual_expected_claims = total_expected_claims / avg_term if avg_term > 0 else 0
+        
+        # Loss ratio on TOTAL annual premium (the main metric)
+        # This shows what % of collected premium goes to claims
+        loss_ratio = round((annual_expected_claims / totals['annual_premium']) * 100, 2) if totals['annual_premium'] > 0 else 0
+        
+        # Loss ratio on RISK premium only (excludes savings component)
+        # This shows if risk pricing is adequate
+        loss_ratio_on_risk = round((annual_expected_claims / totals['risk_premium']) * 100, 2) if totals['risk_premium'] > 0 else 0
         
         risk_metrics = {
-            'pv_mortality_claims': totals['pv_mortality_claims'],
-            'pv_disability_claims': totals['pv_disability_claims'],
-            'total_expected_claims': total_expected_claims,
-            'total_risk_premium': totals['risk_premium'],
-            'total_savings_premium': totals['savings_premium'],
-            'loss_ratio': loss_ratio_on_risk,  # Claims vs Risk Premium (should be ~100%)
-            'loss_ratio_on_total': round((total_expected_claims / totals['annual_premium']) * 100, 2) if totals['annual_premium'] > 0 else 0,  # Old calculation for reference
+            'pv_mortality_claims': round(totals['pv_mortality_claims'], 2),
+            'pv_disability_claims': round(totals['pv_disability_claims'], 2),
+            'total_expected_claims': round(total_expected_claims, 2),  # PV over full term
+            'annual_expected_claims': round(annual_expected_claims, 2),  # Annualized
+            'total_risk_premium': round(totals['risk_premium'], 2),
+            'total_savings_premium': round(totals['savings_premium'], 2),
+            'loss_ratio': loss_ratio,  # Claims vs Total Premium (annual basis) - KEY METRIC
+            'loss_ratio_on_risk': loss_ratio_on_risk,  # Claims vs Risk Premium only
             'mortality_pct_of_claims': round((totals['pv_mortality_claims'] / total_expected_claims) * 100, 2) if total_expected_claims > 0 else 0,
             'disability_pct_of_claims': round((totals['pv_disability_claims'] / total_expected_claims) * 100, 2) if total_expected_claims > 0 else 0,
-            'reserve_requirement': total_expected_claims * 1.5,  # 150% of expected claims
+            'reserve_requirement': round(total_expected_claims * 1.5, 2),  # 150% of expected claims
             'avg_term_years': round(avg_term, 1)
         }
         
-        # Calculate profitability
+        # =================================================================
+        # PROFITABILITY CALCULATION
+        # =================================================================
         config = self.tables.config
-        # Expense loading is on risk premium only
-        expense_amount = totals['risk_premium'] * config.expense_loading_pct
-        # Profit margin is on total (risk + savings + expense)
-        profit_amount = (totals['risk_premium'] + totals['savings_premium'] + expense_amount) * config.profit_margin_pct
         
-        # Net profit = Total premium - Claims - Expenses
-        # Note: Savings is pass-through to customer, not profit
-        net_profit = totals['risk_premium'] + expense_amount + profit_amount - (total_expected_claims / avg_term)
+        # Annual amounts
+        annual_risk_premium = totals['risk_premium']  # Already annual
+        annual_savings_premium = totals['savings_premium']  # Already annual
+        
+        # Expense loading is on risk premium only
+        expense_amount = annual_risk_premium * config.expense_loading_pct
+        
+        # Profit margin is on operational premium (risk + expense), not savings
+        # Savings is pass-through to customer
+        profit_amount = (annual_risk_premium + expense_amount) * config.profit_margin_pct
+        
+        # Net profit calculation:
+        # Revenue = Risk Premium + Expense Loading + Profit Margin
+        # Cost = Expected Claims
+        # Net = Revenue - Cost
+        operating_revenue = annual_risk_premium + expense_amount + profit_amount
+        net_profit = operating_revenue - annual_expected_claims
+        
+        # Margin percentages
+        net_margin_pct = round((net_profit / totals['annual_premium']) * 100, 2) if totals['annual_premium'] > 0 else 0
         
         profitability = {
-            'gross_premium': totals['annual_premium'],
-            'risk_premium': totals['risk_premium'],
-            'savings_premium': totals['savings_premium'],
-            'expected_claims_annual': round(total_expected_claims / avg_term, 2),
-            'expense_loading': expense_amount,
-            'profit_margin': profit_amount,
+            'gross_premium': round(totals['annual_premium'], 2),
+            'risk_premium': round(annual_risk_premium, 2),
+            'savings_premium': round(annual_savings_premium, 2),
+            'expected_claims': round(annual_expected_claims, 2),  # For frontend compatibility
+            'expected_claims_annual': round(annual_expected_claims, 2),  # Same, explicit name
+            'expense_loading': round(expense_amount, 2),
+            'profit_margin': round(profit_amount, 2),
             'net_profit': round(net_profit, 2),
-            'net_margin_pct': round((profit_amount / totals['annual_premium']) * 100, 2) if totals['annual_premium'] > 0 else 0,
-            'return_on_risk': round((net_profit / totals['risk_premium']) * 100, 2) if totals['risk_premium'] > 0 else 0
+            'net_margin_pct': net_margin_pct,
+            'return_on_risk': round((net_profit / annual_risk_premium) * 100, 2) if annual_risk_premium > 0 else 0
         }
         
         # Build result
@@ -762,7 +799,15 @@ class PortfolioSimulator:
         }
     
     def _calculate_premium(self, customer: Dict, uw_result: Dict) -> Dict:
-        """Calculate premium using central actuarial tables"""
+        """
+        Calculate premium using central actuarial tables.
+        
+        IMPORTANT: Implements mutual exclusivity of claims per actuarial standards:
+        - A customer can have EITHER a mortality claim OR a disability claim, not both
+        - If customer dies, they cannot have a subsequent disability claim
+        - Disability claims are calculated only for survivors who haven't died
+        - This accurately models that policies pay only one major claim per life
+        """
         age = customer['age']
         adl = customer['adl']
         coverage = customer['coverage']
@@ -777,40 +822,62 @@ class PortfolioSimulator:
         adl_mort_mult = self.tables.get_adl_mortality_multiplier(adl)
         adl_dis_mult = self.tables.get_adl_disability_multiplier(adl)
         
-        # Calculate mortality PV
+        # =====================================================================
+        # MUTUAL EXCLUSIVITY MODEL:
+        # For each year, track: alive, dead, disabled
+        # A person who dies cannot become disabled, a person who is disabled
+        # is no longer at risk for new disability (already claimed)
+        # =====================================================================
+        
         pv_mortality = 0
+        pv_disability = 0
+        
+        # State probabilities: start with 100% alive, not disabled
+        prob_alive_not_disabled = 1.0
+        
         for year in range(1, term + 1):
             current_age = age + year - 1
-            qx = self.tables.get_mortality_rate(current_age) * adl_mort_mult
             
-            # Survival to year
-            px = 1.0
-            for y in range(year - 1):
-                px *= (1 - self.tables.get_mortality_rate(age + y) * adl_mort_mult)
+            # Get rates for this year
+            qx = self.tables.get_mortality_rate(current_age) * adl_mort_mult  # Death rate
+            dx = 0.0  # Disability rate
             
-            discount = (1 + discount_rate) ** (-year)
-            pv_mortality += coverage * px * qx * discount
-        
-        # Calculate disability PV
-        pv_disability = 0
-        if not exclude_disability:
-            for year in range(1, term + 1):
-                current_age = age + year - 1
-                
-                # Survival
-                px = 1.0
-                for y in range(year - 1):
-                    px *= (1 - self.tables.get_mortality_rate(age + y) * adl_mort_mult)
-                
-                dis_rate = self.tables.get_disability_rate(current_age) * adl_dis_mult
+            if not exclude_disability:
+                dx = self.tables.get_disability_rate(current_age) * adl_dis_mult
                 benefit_pct = self.tables.get_adl_benefit_pct(adl)
                 if benefit_pct == 0:
                     benefit_pct = 0.35  # Average if would claim
-                
-                discount = (1 + discount_rate) ** (-year)
-                pv_disability += px * dis_rate * coverage * benefit_pct * discount
+            else:
+                benefit_pct = 0
+            
+            # Discount factor for this year
+            discount = (1 + discount_rate) ** (-year)
+            
+            # From the alive-not-disabled population:
+            # - Some die (qx)
+            # - Some become disabled (dx) - only from those who didn't die
+            # - Rest remain alive-not-disabled
+            
+            # Probability of dying this year (from alive-not-disabled)
+            prob_die_this_year = prob_alive_not_disabled * qx
+            
+            # Probability of becoming disabled this year (survivors who weren't disabled)
+            # Apply to those who survived death this year
+            prob_survive_death = prob_alive_not_disabled * (1 - qx)
+            prob_disable_this_year = prob_survive_death * dx
+            
+            # Expected mortality claim: full coverage paid on death
+            pv_mortality += coverage * prob_die_this_year * discount
+            
+            # Expected disability claim: benefit percentage of coverage
+            if not exclude_disability and benefit_pct > 0:
+                pv_disability += coverage * benefit_pct * prob_disable_this_year * discount
+            
+            # Update state for next year
+            # Alive-not-disabled = survived both death and disability
+            prob_alive_not_disabled = prob_survive_death * (1 - dx)
         
-        # Annual premiums
+        # Annual premiums - spread the present value of expected claims over term
         total_risk_pv = pv_mortality + pv_disability
         risk_premium = total_risk_pv / term
         

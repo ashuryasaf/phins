@@ -1410,6 +1410,20 @@
       const fmt = (n) => n?.toLocaleString('en-US', {maximumFractionDigits: 0}) || '0';
       const fmtCurrency = (n) => '$' + fmt(n);
       const fmtPct = (n) => (n || 0).toFixed(1) + '%';
+      const fmtDec = (n) => (n || 0).toLocaleString('en-US', {maximumFractionDigits: 2});
+      
+      // Calculate verification totals for the summary
+      const riskPremium = sim.profitability.risk_premium || 0;
+      const savingsPremium = sim.profitability.savings_premium || 0;
+      const expenseLoading = sim.profitability.expense_loading || 0;
+      const profitMargin = sim.profitability.profit_margin || 0;
+      const expectedClaims = sim.profitability.expected_claims || 0;
+      const grossPremium = sim.profitability.gross_premium || 0;
+      
+      // Verify calculation: Risk + Savings + Expense + Profit = Gross Premium
+      const calculatedGross = riskPremium + savingsPremium + expenseLoading + profitMargin;
+      const premiumDiff = Math.abs(grossPremium - calculatedGross);
+      const premiumMatch = premiumDiff < 1; // Allow $1 rounding difference
       
       let html = `
         <h3 style="margin-bottom:20px;">📊 Simulation Results</h3>
@@ -1440,24 +1454,36 @@
         </div>
         
         <div class="results-section">
-          <h4>⚠️ Risk Analysis</h4>
+          <h4>⚠️ Risk Analysis (Present Value over ${fmtDec(sim.risk_metrics.avg_term_years)} year avg term)</h4>
           <table class="data-table">
-            <tr><td>PV Mortality Claims</td><td><strong>${fmtCurrency(sim.risk_metrics.pv_mortality_claims)}</strong></td></tr>
-            <tr><td>PV Disability Claims</td><td><strong>${fmtCurrency(sim.risk_metrics.pv_disability_claims)}</strong></td></tr>
-            <tr><td>Total Expected Claims</td><td><strong>${fmtCurrency(sim.risk_metrics.total_expected_claims)}</strong></td></tr>
-            <tr><td>Loss Ratio</td><td><strong>${fmtPct(sim.risk_metrics.loss_ratio)}</strong></td></tr>
-            <tr><td>Reserve Requirement (150%)</td><td><strong>${fmtCurrency(sim.risk_metrics.reserve_requirement)}</strong></td></tr>
+            <tr><td>PV Mortality Claims</td><td><strong>${fmtCurrency(sim.risk_metrics.pv_mortality_claims)}</strong></td><td style="color:var(--text-light);">${fmtPct(sim.risk_metrics.mortality_pct_of_claims)} of claims</td></tr>
+            <tr><td>PV Disability Claims</td><td><strong>${fmtCurrency(sim.risk_metrics.pv_disability_claims)}</strong></td><td style="color:var(--text-light);">${fmtPct(sim.risk_metrics.disability_pct_of_claims)} of claims</td></tr>
+            <tr><td>Total Expected Claims (PV)</td><td><strong>${fmtCurrency(sim.risk_metrics.total_expected_claims)}</strong></td><td style="color:var(--text-light);">Full term liability</td></tr>
+            <tr><td>Annual Expected Claims</td><td><strong>${fmtCurrency(sim.risk_metrics.annual_expected_claims || expectedClaims)}</strong></td><td style="color:var(--text-light);">Per year</td></tr>
+            <tr><td>Loss Ratio (Claims / Premium)</td><td><strong>${fmtPct(sim.risk_metrics.loss_ratio)}</strong></td><td style="color:var(--text-light);">Annual basis</td></tr>
+            <tr><td>Reserve Requirement (150%)</td><td><strong>${fmtCurrency(sim.risk_metrics.reserve_requirement)}</strong></td><td style="color:var(--text-light);">Regulatory reserve</td></tr>
           </table>
+          <p style="margin-top:12px;font-size:0.85rem;color:var(--text-light);">
+            ℹ️ <strong>Mutual Exclusivity:</strong> Each customer can have EITHER a mortality OR disability claim (not both). 
+            Once a mortality claim is paid, the policy terminates. This reflects actual insurance claim behavior.
+          </p>
         </div>
         
         <div class="results-section">
-          <h4>💰 Profitability</h4>
+          <h4>💰 Annual Profitability Analysis</h4>
           <table class="data-table">
-            <tr><td>Gross Premium</td><td>${fmtCurrency(sim.profitability.gross_premium)}</td></tr>
-            <tr><td>Expected Claims</td><td>(${fmtCurrency(sim.profitability.expected_claims)})</td></tr>
-            <tr><td>Expense Loading</td><td>(${fmtCurrency(sim.profitability.expense_loading)})</td></tr>
-            <tr><td><strong>Profit Margin</strong></td><td><strong>${fmtCurrency(sim.profitability.profit_margin)}</strong></td></tr>
-            <tr><td><strong>Net Margin %</strong></td><td><strong>${fmtPct(sim.profitability.net_margin_pct)}</strong></td></tr>
+            <tr style="background:var(--bg);"><td colspan="3"><strong>Premium Components</strong></td></tr>
+            <tr><td>Risk Premium</td><td>${fmtCurrency(riskPremium)}</td><td style="color:var(--text-light);">Covers expected claims</td></tr>
+            <tr><td>Savings Premium</td><td>${fmtCurrency(savingsPremium)}</td><td style="color:var(--text-light);">Pass-through to customer</td></tr>
+            <tr><td>Expense Loading</td><td>${fmtCurrency(expenseLoading)}</td><td style="color:var(--text-light);">Operating costs</td></tr>
+            <tr><td>Profit Margin</td><td>${fmtCurrency(profitMargin)}</td><td style="color:var(--text-light);">Target profit</td></tr>
+            <tr style="border-top:2px solid var(--border);"><td><strong>Total Annual Premium</strong></td><td><strong>${fmtCurrency(grossPremium)}</strong></td><td>${premiumMatch ? '✓ Verified' : '⚠️ Diff: ' + fmtCurrency(premiumDiff)}</td></tr>
+            
+            <tr style="background:var(--bg);"><td colspan="3"><strong>Profit Calculation</strong></td></tr>
+            <tr><td>Operating Revenue (Risk + Expense + Profit)</td><td>${fmtCurrency(riskPremium + expenseLoading + profitMargin)}</td><td></td></tr>
+            <tr><td>Less: Expected Claims (Annual)</td><td>(${fmtCurrency(expectedClaims)})</td><td></td></tr>
+            <tr style="border-top:2px solid var(--border);"><td><strong>Net Profit</strong></td><td><strong>${fmtCurrency(sim.profitability.net_profit)}</strong></td><td></td></tr>
+            <tr><td><strong>Net Margin %</strong></td><td><strong>${fmtPct(sim.profitability.net_margin_pct)}</strong></td><td style="color:var(--text-light);">of gross premium</td></tr>
           </table>
         </div>
         
