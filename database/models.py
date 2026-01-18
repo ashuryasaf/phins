@@ -1026,3 +1026,509 @@ class ExtractedFeatureModel(Base):
             'source_location': self.source_location,
             'created_date': self.created_date.isoformat() if self.created_date else None
         }
+
+
+# ============================================================================
+# SUPPLIER ECOSYSTEM MODELS (B2B Marketplace Integration)
+# ============================================================================
+
+
+class SupplierType(str, enum.Enum):
+    """Types of suppliers that can register on the platform"""
+    HEALTHCARE_PROVIDER = "healthcare_provider"  # Doctors, hospitals, clinics
+    PHARMACY = "pharmacy"  # Pharmacies (retail, online, specialty)
+    LEGAL_SERVICE = "legal_service"  # Law firms, attorneys
+    DELIVERY = "delivery"  # Delivery companies, medical transport
+    INVESTMENT_FIRM = "investment_firm"  # Asset managers, pension funds
+    EQUIPMENT_SUPPLIER = "equipment_supplier"  # Medical equipment providers
+    TECH_PROVIDER = "tech_provider"  # Telemedicine, health apps
+    LABORATORY = "laboratory"  # Lab services, imaging centers
+    WELLNESS = "wellness"  # Wellness programs, rehabilitation
+    OTHER = "other"
+
+
+class SupplierStatus(str, enum.Enum):
+    """Supplier application and account status"""
+    PENDING = "pending"  # Application submitted, awaiting review
+    UNDER_REVIEW = "under_review"  # Admin reviewing application
+    APPROVED = "approved"  # Approved and active
+    REJECTED = "rejected"  # Application rejected
+    SUSPENDED = "suspended"  # Temporarily suspended
+    TERMINATED = "terminated"  # Permanently terminated
+
+
+class SupplierVerificationStatus(str, enum.Enum):
+    """Document verification status for suppliers"""
+    PENDING = "pending"
+    VERIFIED = "verified"
+    FAILED = "failed"
+    EXPIRED = "expired"
+
+
+class SupplierAIRecommendation(str, enum.Enum):
+    """AI recommendation for supplier applications"""
+    APPROVE = "approve"
+    REVIEW = "review"
+    REJECT = "reject"
+
+
+class Supplier(Base):
+    """
+    Supplier master table for B2B marketplace integration.
+    
+    Suppliers are external service/product providers that connect to customers
+    via the PHINS marketplace and wallet system (Health Wallet, Investment Wallet, etc.)
+    
+    Examples: Doctors, pharmacies, lawyers, delivery companies, investment firms,
+    medical equipment suppliers, telemedicine providers.
+    """
+    __tablename__ = 'suppliers'
+    
+    id = Column(String(50), primary_key=True)  # SUP-XXXX-XXXX format
+    
+    # Company Information
+    company_name = Column(String(200), nullable=False, index=True)
+    business_registration_number = Column(String(100), nullable=True)
+    tax_id = Column(String(100), nullable=True)
+    supplier_type = Column(String(50), nullable=False, index=True)  # healthcare_provider, pharmacy, legal_service, etc.
+    category = Column(String(100), nullable=False, index=True)  # medical, legal, financial, logistics, tech
+    sub_category = Column(String(100), nullable=True)  # More specific categorization
+    description = Column(Text, nullable=True)
+    
+    # Services and Products offered (JSON arrays)
+    services_offered = Column(Text, nullable=True)  # JSON array of service types
+    products_offered = Column(Text, nullable=True)  # JSON array of product types
+    service_areas = Column(Text, nullable=True)  # JSON array of regions/areas served
+    
+    # Contact Information
+    contact_name = Column(String(200), nullable=False)
+    contact_email = Column(String(254), unique=True, nullable=False, index=True)
+    contact_phone = Column(String(50), nullable=True)
+    website = Column(String(500), nullable=True)
+    address = Column(Text, nullable=True)
+    city = Column(String(100), nullable=True)
+    state = Column(String(100), nullable=True)
+    country = Column(String(100), nullable=True, default='United States')
+    postal_code = Column(String(20), nullable=True)
+    
+    # Authentication (for Supplier Portal access)
+    password_hash = Column(String(255), nullable=True)
+    password_salt = Column(String(255), nullable=True)
+    portal_active = Column(Boolean, default=False)  # Activated after approval
+    last_login = Column(DateTime, nullable=True)
+    
+    # Approval Workflow
+    status = Column(String(50), default='pending', index=True)  # pending, under_review, approved, rejected, suspended, terminated
+    application_date = Column(DateTime, default=datetime.utcnow, nullable=False)
+    review_date = Column(DateTime, nullable=True)
+    approval_date = Column(DateTime, nullable=True)
+    approved_by = Column(String(100), nullable=True)  # Admin username who approved
+    rejection_reason = Column(Text, nullable=True)
+    suspension_reason = Column(Text, nullable=True)
+    
+    # AI Risk Assessment
+    ai_risk_score = Column(Float, nullable=True)  # 0.0 to 1.0 (lower is better)
+    ai_trust_score = Column(Float, nullable=True)  # 0.0 to 1.0 (higher is better)
+    ai_recommendation = Column(String(50), nullable=True)  # approve, review, reject
+    ai_assessment_date = Column(DateTime, nullable=True)
+    ai_assessment_notes = Column(Text, nullable=True)  # JSON with detailed assessment
+    
+    # Document Verification
+    verification_status = Column(String(50), default='pending', index=True)  # pending, verified, failed, expired
+    documents_verified = Column(Boolean, default=False)
+    documents_metadata = Column(Text, nullable=True)  # JSON array of uploaded documents
+    license_number = Column(String(100), nullable=True)
+    license_expiry = Column(DateTime, nullable=True)
+    insurance_certificate = Column(String(255), nullable=True)
+    insurance_expiry = Column(DateTime, nullable=True)
+    
+    # Wallet Configuration
+    wallet_types_supported = Column(Text, nullable=True)  # JSON array: ["health", "investment", "general"]
+    payment_methods = Column(Text, nullable=True)  # JSON array: ["wallet", "bank_transfer", "crypto"]
+    bank_details = Column(Text, nullable=True)  # Encrypted JSON: {bank_name, account_number, routing_number}
+    crypto_wallet = Column(String(200), nullable=True)  # Crypto wallet address if supported
+    commission_rate = Column(Float, default=0.10)  # Platform commission rate (0.0 - 0.30)
+    settlement_frequency = Column(String(50), default='weekly')  # daily, weekly, monthly
+    
+    # Performance Metrics (updated by triggers/jobs)
+    total_orders = Column(Integer, default=0)
+    total_revenue = Column(Float, default=0.0)
+    average_rating = Column(Float, default=0.0)  # 0.0 to 5.0
+    total_reviews = Column(Integer, default=0)
+    dispute_count = Column(Integer, default=0)
+    dispute_resolution_rate = Column(Float, default=1.0)  # 0.0 to 1.0
+    
+    # Timestamps
+    created_date = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_date = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Relationships
+    offers = relationship("SupplierOffer", back_populates="supplier", cascade="all, delete-orphan")
+    orders = relationship("SupplierOrder", back_populates="supplier", cascade="all, delete-orphan")
+    
+    def to_dict(self, include_sensitive: bool = False):
+        """Convert model to dictionary"""
+        import json as _json
+        
+        def safe_json_loads(val):
+            if val is None:
+                return []
+            if isinstance(val, list):
+                return val
+            try:
+                return _json.loads(val)
+            except:
+                return []
+        
+        data = {
+            'id': self.id,
+            'company_name': self.company_name,
+            'business_registration_number': self.business_registration_number,
+            'tax_id': self.tax_id if include_sensitive else ('***' if self.tax_id else None),
+            'supplier_type': self.supplier_type,
+            'category': self.category,
+            'sub_category': self.sub_category,
+            'description': self.description,
+            'services_offered': safe_json_loads(self.services_offered),
+            'products_offered': safe_json_loads(self.products_offered),
+            'service_areas': safe_json_loads(self.service_areas),
+            'contact_name': self.contact_name,
+            'contact_email': self.contact_email,
+            'contact_phone': self.contact_phone,
+            'website': self.website,
+            'address': self.address,
+            'city': self.city,
+            'state': self.state,
+            'country': self.country,
+            'postal_code': self.postal_code,
+            'portal_active': self.portal_active,
+            'last_login': self.last_login.isoformat() if self.last_login else None,
+            'status': self.status,
+            'application_date': self.application_date.isoformat() if self.application_date else None,
+            'review_date': self.review_date.isoformat() if self.review_date else None,
+            'approval_date': self.approval_date.isoformat() if self.approval_date else None,
+            'approved_by': self.approved_by,
+            'rejection_reason': self.rejection_reason,
+            'suspension_reason': self.suspension_reason,
+            'ai_risk_score': self.ai_risk_score,
+            'ai_trust_score': self.ai_trust_score,
+            'ai_recommendation': self.ai_recommendation,
+            'ai_assessment_date': self.ai_assessment_date.isoformat() if self.ai_assessment_date else None,
+            'verification_status': self.verification_status,
+            'documents_verified': self.documents_verified,
+            'license_number': self.license_number,
+            'license_expiry': self.license_expiry.isoformat() if self.license_expiry else None,
+            'wallet_types_supported': safe_json_loads(self.wallet_types_supported),
+            'payment_methods': safe_json_loads(self.payment_methods),
+            'commission_rate': self.commission_rate,
+            'settlement_frequency': self.settlement_frequency,
+            'total_orders': self.total_orders,
+            'total_revenue': self.total_revenue,
+            'average_rating': self.average_rating,
+            'total_reviews': self.total_reviews,
+            'dispute_count': self.dispute_count,
+            'dispute_resolution_rate': self.dispute_resolution_rate,
+            'created_date': self.created_date.isoformat() if self.created_date else None,
+            'updated_date': self.updated_date.isoformat() if self.updated_date else None
+        }
+        
+        # Include sensitive fields only if explicitly requested (for internal use)
+        if include_sensitive:
+            data['bank_details'] = safe_json_loads(self.bank_details) if self.bank_details else None
+            data['crypto_wallet'] = self.crypto_wallet
+            data['documents_metadata'] = safe_json_loads(self.documents_metadata)
+            data['ai_assessment_notes'] = safe_json_loads(self.ai_assessment_notes) if self.ai_assessment_notes else None
+        
+        return data
+    
+    def has_portal_access(self) -> bool:
+        """Check if supplier has active portal access"""
+        return bool(
+            self.password_hash and 
+            self.password_salt and 
+            self.portal_active and 
+            self.status == 'approved'
+        )
+    
+    def is_active(self) -> bool:
+        """Check if supplier is active and approved"""
+        return self.status == 'approved' and self.portal_active
+
+
+class SupplierOffer(Base):
+    """
+    Supplier offers (services and products) available in the marketplace.
+    
+    Offers are linked to specific wallet types (health, investment) and can be
+    purchased by customers using their wallet balance.
+    """
+    __tablename__ = 'supplier_offers'
+    
+    id = Column(String(50), primary_key=True)  # OFF-XXXX-XXXX format
+    supplier_id = Column(String(50), ForeignKey('suppliers.id', ondelete='CASCADE'), nullable=False, index=True)
+    
+    # Offer Details
+    name = Column(String(200), nullable=False, index=True)
+    description = Column(Text, nullable=True)
+    item_type = Column(String(50), nullable=False, index=True)  # service, product
+    category = Column(String(100), nullable=False, index=True)
+    sub_category = Column(String(100), nullable=True)
+    
+    # Pricing
+    price = Column(Float, nullable=False)
+    currency = Column(String(10), default='USD')
+    unit = Column(String(50), default='per_item')  # per_item, per_visit, per_hour, per_day, per_month
+    min_quantity = Column(Integer, default=1)
+    max_quantity = Column(Integer, nullable=True)
+    
+    # Wallet Compatibility
+    wallet_compatible = Column(Text, nullable=True)  # JSON array: ["health", "investment", "general"]
+    
+    # Status and Display
+    active = Column(Boolean, default=True, index=True)
+    featured = Column(Boolean, default=False)
+    image_url = Column(String(500), nullable=True)
+    
+    # Availability
+    availability = Column(Text, nullable=True)  # JSON: {days: [], hours: {start, end}, blackout_dates: []}
+    requires_appointment = Column(Boolean, default=False)
+    lead_time_hours = Column(Integer, default=0)  # Hours notice required
+    
+    # Performance Metrics
+    total_orders = Column(Integer, default=0)
+    total_revenue = Column(Float, default=0.0)
+    average_rating = Column(Float, default=0.0)
+    
+    # Timestamps
+    created_date = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_date = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Relationships
+    supplier = relationship("Supplier", back_populates="offers")
+    
+    def to_dict(self):
+        """Convert model to dictionary"""
+        import json as _json
+        
+        def safe_json_loads(val):
+            if val is None:
+                return []
+            if isinstance(val, list):
+                return val
+            try:
+                return _json.loads(val)
+            except:
+                return []
+        
+        return {
+            'id': self.id,
+            'supplier_id': self.supplier_id,
+            'name': self.name,
+            'description': self.description,
+            'item_type': self.item_type,
+            'category': self.category,
+            'sub_category': self.sub_category,
+            'price': self.price,
+            'currency': self.currency,
+            'unit': self.unit,
+            'min_quantity': self.min_quantity,
+            'max_quantity': self.max_quantity,
+            'wallet_compatible': safe_json_loads(self.wallet_compatible),
+            'active': self.active,
+            'featured': self.featured,
+            'image_url': self.image_url,
+            'availability': safe_json_loads(self.availability) if self.availability else None,
+            'requires_appointment': self.requires_appointment,
+            'lead_time_hours': self.lead_time_hours,
+            'total_orders': self.total_orders,
+            'total_revenue': self.total_revenue,
+            'average_rating': self.average_rating,
+            'created_date': self.created_date.isoformat() if self.created_date else None,
+            'updated_date': self.updated_date.isoformat() if self.updated_date else None
+        }
+
+
+class SupplierOrderStatus(str, enum.Enum):
+    """Order status lifecycle"""
+    PENDING = "pending"  # Order created, awaiting confirmation
+    CONFIRMED = "confirmed"  # Supplier confirmed
+    PROCESSING = "processing"  # Being prepared/processed
+    SHIPPED = "shipped"  # Product shipped (for products)
+    IN_PROGRESS = "in_progress"  # Service in progress
+    DELIVERED = "delivered"  # Product delivered
+    COMPLETED = "completed"  # Service/order completed
+    CANCELLED = "cancelled"  # Cancelled by customer or supplier
+    REFUNDED = "refunded"  # Payment refunded
+    DISPUTED = "disputed"  # Under dispute
+
+
+class SupplierOrder(Base):
+    """
+    Orders placed by customers with suppliers.
+    
+    Connects customers to suppliers through the PHINS marketplace,
+    with payment via Health Wallet, Investment Wallet, or bank transfer.
+    """
+    __tablename__ = 'supplier_orders'
+    
+    id = Column(String(50), primary_key=True)  # ORD-XXXX-XXXX format
+    supplier_id = Column(String(50), ForeignKey('suppliers.id', ondelete='CASCADE'), nullable=False, index=True)
+    customer_id = Column(String(50), nullable=False, index=True)  # References customers table
+    offer_id = Column(String(50), nullable=True, index=True)  # References supplier_offers table
+    
+    # Order Details
+    order_type = Column(String(50), nullable=False)  # service, product
+    item_name = Column(String(200), nullable=False)
+    item_description = Column(Text, nullable=True)
+    quantity = Column(Integer, default=1)
+    unit_price = Column(Float, nullable=False)
+    total_amount = Column(Float, nullable=False)
+    
+    # Platform Fees
+    platform_fee = Column(Float, default=0.0)  # Commission taken by PHINS
+    supplier_payout = Column(Float, nullable=False)  # Amount to pay supplier
+    
+    # Payment Information
+    payment_method = Column(String(50), nullable=False)  # health_wallet, investment_wallet, bank_transfer
+    wallet_transaction_id = Column(String(100), nullable=True)  # Reference to wallet transaction
+    payment_status = Column(String(50), default='pending')  # pending, completed, failed, refunded
+    payment_date = Column(DateTime, nullable=True)
+    
+    # Order Status
+    status = Column(String(50), default='pending', index=True)
+    
+    # Delivery/Service Details
+    delivery_address = Column(Text, nullable=True)
+    delivery_notes = Column(Text, nullable=True)
+    scheduled_date = Column(DateTime, nullable=True)  # For appointments/scheduled services
+    estimated_delivery = Column(DateTime, nullable=True)
+    actual_delivery = Column(DateTime, nullable=True)
+    completed_date = Column(DateTime, nullable=True)
+    
+    # Tracking
+    tracking_number = Column(String(100), nullable=True)
+    tracking_url = Column(String(500), nullable=True)
+    
+    # Review and Rating
+    rating = Column(Float, nullable=True)  # 0.0 to 5.0
+    review = Column(Text, nullable=True)
+    review_date = Column(DateTime, nullable=True)
+    
+    # Dispute Information
+    dispute_reason = Column(Text, nullable=True)
+    dispute_date = Column(DateTime, nullable=True)
+    dispute_resolution = Column(Text, nullable=True)
+    dispute_resolved_date = Column(DateTime, nullable=True)
+    
+    # Cancellation
+    cancelled_by = Column(String(50), nullable=True)  # customer, supplier, admin
+    cancellation_reason = Column(Text, nullable=True)
+    cancelled_date = Column(DateTime, nullable=True)
+    
+    # Timestamps
+    created_date = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_date = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Relationships
+    supplier = relationship("Supplier", back_populates="orders")
+    
+    def to_dict(self):
+        """Convert model to dictionary"""
+        return {
+            'id': self.id,
+            'supplier_id': self.supplier_id,
+            'customer_id': self.customer_id,
+            'offer_id': self.offer_id,
+            'order_type': self.order_type,
+            'item_name': self.item_name,
+            'item_description': self.item_description,
+            'quantity': self.quantity,
+            'unit_price': self.unit_price,
+            'total_amount': self.total_amount,
+            'platform_fee': self.platform_fee,
+            'supplier_payout': self.supplier_payout,
+            'payment_method': self.payment_method,
+            'wallet_transaction_id': self.wallet_transaction_id,
+            'payment_status': self.payment_status,
+            'payment_date': self.payment_date.isoformat() if self.payment_date else None,
+            'status': self.status,
+            'delivery_address': self.delivery_address,
+            'delivery_notes': self.delivery_notes,
+            'scheduled_date': self.scheduled_date.isoformat() if self.scheduled_date else None,
+            'estimated_delivery': self.estimated_delivery.isoformat() if self.estimated_delivery else None,
+            'actual_delivery': self.actual_delivery.isoformat() if self.actual_delivery else None,
+            'completed_date': self.completed_date.isoformat() if self.completed_date else None,
+            'tracking_number': self.tracking_number,
+            'tracking_url': self.tracking_url,
+            'rating': self.rating,
+            'review': self.review,
+            'review_date': self.review_date.isoformat() if self.review_date else None,
+            'dispute_reason': self.dispute_reason,
+            'dispute_date': self.dispute_date.isoformat() if self.dispute_date else None,
+            'dispute_resolution': self.dispute_resolution,
+            'dispute_resolved_date': self.dispute_resolved_date.isoformat() if self.dispute_resolved_date else None,
+            'cancelled_by': self.cancelled_by,
+            'cancellation_reason': self.cancellation_reason,
+            'cancelled_date': self.cancelled_date.isoformat() if self.cancelled_date else None,
+            'created_date': self.created_date.isoformat() if self.created_date else None,
+            'updated_date': self.updated_date.isoformat() if self.updated_date else None
+        }
+
+
+class SupplierDocument(Base):
+    """
+    Documents uploaded by suppliers for verification.
+    
+    Tracks business licenses, certifications, insurance certificates,
+    and other required documents for supplier approval.
+    """
+    __tablename__ = 'supplier_documents'
+    
+    id = Column(String(50), primary_key=True)  # DOC-XXXX-XXXX format
+    supplier_id = Column(String(50), ForeignKey('suppliers.id', ondelete='CASCADE'), nullable=False, index=True)
+    
+    # Document Details
+    document_type = Column(String(100), nullable=False, index=True)  # business_license, certification, insurance, tax_document, etc.
+    document_name = Column(String(255), nullable=False)
+    file_path = Column(String(500), nullable=True)
+    file_hash = Column(String(64), nullable=True)  # SHA-256 hash for integrity
+    file_size_bytes = Column(Integer, nullable=True)
+    mime_type = Column(String(100), nullable=True)
+    
+    # Verification
+    verification_status = Column(String(50), default='pending', index=True)  # pending, verified, rejected, expired
+    verified_by = Column(String(100), nullable=True)
+    verified_date = Column(DateTime, nullable=True)
+    verification_notes = Column(Text, nullable=True)
+    
+    # Expiry Tracking
+    issue_date = Column(DateTime, nullable=True)
+    expiry_date = Column(DateTime, nullable=True, index=True)
+    expiry_reminder_sent = Column(Boolean, default=False)
+    
+    # Timestamps
+    upload_date = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_date = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_date = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    def to_dict(self):
+        """Convert model to dictionary"""
+        return {
+            'id': self.id,
+            'supplier_id': self.supplier_id,
+            'document_type': self.document_type,
+            'document_name': self.document_name,
+            'file_path': self.file_path,
+            'file_size_bytes': self.file_size_bytes,
+            'mime_type': self.mime_type,
+            'verification_status': self.verification_status,
+            'verified_by': self.verified_by,
+            'verified_date': self.verified_date.isoformat() if self.verified_date else None,
+            'verification_notes': self.verification_notes,
+            'issue_date': self.issue_date.isoformat() if self.issue_date else None,
+            'expiry_date': self.expiry_date.isoformat() if self.expiry_date else None,
+            'expiry_reminder_sent': self.expiry_reminder_sent,
+            'upload_date': self.upload_date.isoformat() if self.upload_date else None,
+            'created_date': self.created_date.isoformat() if self.created_date else None,
+            'updated_date': self.updated_date.isoformat() if self.updated_date else None
+        }

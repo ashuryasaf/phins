@@ -1951,6 +1951,28 @@ FEE_SCHEDULES: Dict[str, Dict[str, Any]] = {}  # schedule_id -> schedule metadat
 # Supplier ecosystem (in-memory demo store; DB schema not yet extended)
 SUPPLIER_OFFERS: Dict[str, Dict[str, Any]] = {}  # offer_id -> supplier offer
 
+# ============ SUPPLIER MANAGEMENT ECOSYSTEM ============
+# Full B2B supplier management with registration, approval workflow, and marketplace
+SUPPLIERS: Dict[str, Dict[str, Any]] = {}  # supplier_id -> supplier data
+SUPPLIER_ORDERS: Dict[str, Dict[str, Any]] = {}  # order_id -> order data
+SUPPLIER_DOCUMENTS: Dict[str, Dict[str, Any]] = {}  # doc_id -> document data
+
+# Initialize supplier management service
+supplier_service = None
+try:
+    from services.supplier_management_service import SupplierManagementService
+    supplier_service = SupplierManagementService(
+        suppliers_store=SUPPLIERS,
+        offers_store=SUPPLIER_OFFERS,
+        orders_store=SUPPLIER_ORDERS,
+        documents_store=SUPPLIER_DOCUMENTS
+    )
+    supplier_service_enabled = True
+    print("✓ Supplier Management service enabled (B2B marketplace)")
+except ImportError as e:
+    supplier_service_enabled = False
+    print(f"Warning: Supplier Management service not available: {e}")
+
 # Reinsurance contracts (scaffolding; DB schema not yet extended)
 REINSURANCE_CONTRACTS: Dict[str, Dict[str, Any]] = {}  # contract_id -> contract details
 
@@ -4551,6 +4573,185 @@ For claims or questions, please contact:
                 items.append(t2)
             self._set_json_headers()
             self.wfile.write(json.dumps({'items': items[:limit]}).encode('utf-8'))
+            return
+
+        # ============ ADMIN SUPPLIER MANAGEMENT ENDPOINTS ============
+        
+        # Admin: List all suppliers (with filters)
+        if path == '/api/admin/suppliers':
+            if not require_role(session, ['admin']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Admin access required'}).encode('utf-8'))
+                return
+            
+            if not supplier_service_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Supplier service unavailable'}).encode('utf-8'))
+                return
+            
+            # Get filter parameters
+            type_filter = (qs.get('type', [None])[0] or '').strip() or None
+            status_filter = (qs.get('status', [None])[0] or '').strip() or None
+            search = (qs.get('search', [None])[0] or '').strip().lower() or None
+            
+            with STATE_LOCK:
+                items = list(SUPPLIERS.values())
+            
+            # Apply filters
+            if type_filter:
+                items = [s for s in items if s.get('supplier_type') == type_filter]
+            if status_filter:
+                statuses = [st.strip() for st in status_filter.split(',')]
+                items = [s for s in items if s.get('status') in statuses]
+            if search:
+                items = [s for s in items if search in (s.get('company_name', '') or '').lower()]
+            
+            # Sort by created date
+            items = sorted(items, key=lambda x: x.get('created_date', ''), reverse=True)
+            
+            self._set_json_headers()
+            self.wfile.write(json.dumps({'items': items, 'total': len(items)}).encode('utf-8'))
+            return
+        
+        # Admin: List pending supplier applications
+        if path == '/api/admin/suppliers/pending':
+            if not require_role(session, ['admin']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Admin access required'}).encode('utf-8'))
+                return
+            
+            if not supplier_service_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Supplier service unavailable'}).encode('utf-8'))
+                return
+            
+            type_filter = (qs.get('type', [None])[0] or '').strip() or None
+            ai_filter = (qs.get('ai_recommendation', [None])[0] or '').strip() or None
+            
+            with STATE_LOCK:
+                items = [s for s in SUPPLIERS.values() if s.get('status') in ['pending', 'under_review']]
+            
+            if type_filter:
+                items = [s for s in items if s.get('supplier_type') == type_filter]
+            if ai_filter:
+                items = [s for s in items if s.get('ai_recommendation') == ai_filter]
+            
+            items = sorted(items, key=lambda x: x.get('application_date', ''), reverse=True)
+            
+            self._set_json_headers()
+            self.wfile.write(json.dumps({'items': items, 'total': len(items)}).encode('utf-8'))
+            return
+        
+        # Admin: Get supplier details
+        if path.startswith('/api/admin/suppliers/') and '/approve' not in path and '/reject' not in path and '/suspend' not in path and '/reactivate' not in path and '/analytics' not in path and '/insights' not in path and '/orders' not in path:
+            if not require_role(session, ['admin']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Admin access required'}).encode('utf-8'))
+                return
+            
+            supplier_id = path.split('/')[-1]
+            
+            with STATE_LOCK:
+                supplier = SUPPLIERS.get(supplier_id)
+            
+            if not supplier:
+                self._set_json_headers(404)
+                self.wfile.write(json.dumps({'error': 'Supplier not found'}).encode('utf-8'))
+                return
+            
+            self._set_json_headers()
+            self.wfile.write(json.dumps(supplier).encode('utf-8'))
+            return
+        
+        # Admin: Supplier analytics
+        if path == '/api/admin/suppliers/analytics':
+            if not require_role(session, ['admin']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Admin access required'}).encode('utf-8'))
+                return
+            
+            if not supplier_service_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Supplier service unavailable'}).encode('utf-8'))
+                return
+            
+            try:
+                analytics = supplier_service.get_supplier_analytics()
+                self._set_json_headers()
+                self.wfile.write(json.dumps(analytics).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+        
+        # Admin: AI insights
+        if path == '/api/admin/suppliers/insights':
+            if not require_role(session, ['admin']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Admin access required'}).encode('utf-8'))
+                return
+            
+            if not supplier_service_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Supplier service unavailable'}).encode('utf-8'))
+                return
+            
+            try:
+                insights = supplier_service.get_ai_insights()
+                self._set_json_headers()
+                self.wfile.write(json.dumps(insights).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+        
+        # Admin: List all supplier orders
+        if path == '/api/admin/suppliers/orders':
+            if not require_role(session, ['admin']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Admin access required'}).encode('utf-8'))
+                return
+            
+            if not supplier_service_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Supplier service unavailable'}).encode('utf-8'))
+                return
+            
+            try:
+                result = supplier_service.get_orders()
+                self._set_json_headers()
+                self.wfile.write(json.dumps(result).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+        
+        # Supplier: Get own profile
+        if path == '/api/supplier/profile':
+            if not require_role(session, ['supplier']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Supplier access required'}).encode('utf-8'))
+                return
+            
+            supplier_id = (session or {}).get('supplier_id')
+            if not supplier_id:
+                self._set_json_headers(404)
+                self.wfile.write(json.dumps({'error': 'Supplier profile not found'}).encode('utf-8'))
+                return
+            
+            with STATE_LOCK:
+                supplier = SUPPLIERS.get(supplier_id)
+            
+            if not supplier:
+                self._set_json_headers(404)
+                self.wfile.write(json.dumps({'error': 'Supplier not found'}).encode('utf-8'))
+                return
+            
+            # Remove sensitive fields
+            safe_supplier = {k: v for k, v in supplier.items() if k not in ['password_hash', 'password_salt', 'bank_details']}
+            
+            self._set_json_headers()
+            self.wfile.write(json.dumps(safe_supplier).encode('utf-8'))
             return
 
         # Token registry (enabled-only for customers)
@@ -12675,6 +12876,242 @@ For claims or questions, please contact:
             except Exception as e:
                 self._set_json_headers(500)
                 self.wfile.write(json.dumps({'error': 'Failed to approve fee schedule', 'details': str(e)}).encode('utf-8'))
+            return
+
+        # ============ SUPPLIER MANAGEMENT POST ENDPOINTS ============
+        
+        # Supplier Registration (public endpoint)
+        if path == '/api/supplier/register':
+            if not supplier_service_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Supplier service unavailable'}).encode('utf-8'))
+                return
+            
+            try:
+                payload = json.loads(body or '{}')
+                result = supplier_service.register_supplier(payload)
+                self._set_json_headers()
+                self.wfile.write(json.dumps(result).encode('utf-8'))
+            except ValueError as e:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': 'Registration failed', 'details': str(e)}).encode('utf-8'))
+            return
+        
+        # Supplier Login
+        if path == '/api/supplier/login':
+            if not supplier_service_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Supplier service unavailable'}).encode('utf-8'))
+                return
+            
+            try:
+                payload = json.loads(body or '{}')
+                email = payload.get('email', '').strip()
+                password = payload.get('password', '')
+                
+                if not email or not password:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'Email and password required'}).encode('utf-8'))
+                    return
+                
+                supplier_info = supplier_service.authenticate_supplier(email, password)
+                
+                # Create session token for supplier
+                expires = datetime.now() + timedelta(hours=24)
+                token = _create_signed_token(
+                    username=supplier_info['id'],
+                    role='supplier',
+                    customer_id=None,
+                    expires=expires
+                )
+                
+                # Also store in SESSIONS for compatibility
+                with STATE_LOCK:
+                    SESSIONS[token] = {
+                        'username': supplier_info['id'],
+                        'role': 'supplier',
+                        'supplier_id': supplier_info['id'],
+                        'company_name': supplier_info['company_name'],
+                        'expires': expires.isoformat()
+                    }
+                
+                self._set_json_headers()
+                self.wfile.write(json.dumps({
+                    'success': True,
+                    'token': token,
+                    'supplier_id': supplier_info['id'],
+                    'company_name': supplier_info['company_name'],
+                    'role': 'supplier'
+                }).encode('utf-8'))
+            except ValueError as e:
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': 'Login failed', 'details': str(e)}).encode('utf-8'))
+            return
+        
+        # Admin: Approve supplier
+        if path.startswith('/api/admin/suppliers/') and path.endswith('/approve'):
+            auth_header = self.headers.get('Authorization', '')
+            token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+            session = validate_session(token) if token else None
+            
+            if not require_role(session, ['admin']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Admin access required'}).encode('utf-8'))
+                return
+            
+            if not supplier_service_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Supplier service unavailable'}).encode('utf-8'))
+                return
+            
+            try:
+                supplier_id = path.split('/')[-2]
+                admin_user = (session or {}).get('username', 'admin')
+                payload = json.loads(body or '{}')
+                notes = payload.get('notes')
+                
+                result = supplier_service.approve_supplier(supplier_id, admin_user, notes)
+                
+                # Log audit
+                if audit:
+                    audit.log(admin_user, 'approve', 'supplier', supplier_id, {'notes': notes})
+                
+                self._set_json_headers()
+                self.wfile.write(json.dumps(result).encode('utf-8'))
+            except ValueError as e:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': 'Approval failed', 'details': str(e)}).encode('utf-8'))
+            return
+        
+        # Admin: Reject supplier
+        if path.startswith('/api/admin/suppliers/') and path.endswith('/reject'):
+            auth_header = self.headers.get('Authorization', '')
+            token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+            session = validate_session(token) if token else None
+            
+            if not require_role(session, ['admin']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Admin access required'}).encode('utf-8'))
+                return
+            
+            if not supplier_service_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Supplier service unavailable'}).encode('utf-8'))
+                return
+            
+            try:
+                supplier_id = path.split('/')[-2]
+                admin_user = (session or {}).get('username', 'admin')
+                payload = json.loads(body or '{}')
+                reason = payload.get('reason', '')
+                
+                if not reason:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'Rejection reason required'}).encode('utf-8'))
+                    return
+                
+                result = supplier_service.reject_supplier(supplier_id, admin_user, reason)
+                
+                # Log audit
+                if audit:
+                    audit.log(admin_user, 'reject', 'supplier', supplier_id, {'reason': reason})
+                
+                self._set_json_headers()
+                self.wfile.write(json.dumps(result).encode('utf-8'))
+            except ValueError as e:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': 'Rejection failed', 'details': str(e)}).encode('utf-8'))
+            return
+        
+        # Admin: Suspend supplier
+        if path.startswith('/api/admin/suppliers/') and path.endswith('/suspend'):
+            auth_header = self.headers.get('Authorization', '')
+            token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+            session = validate_session(token) if token else None
+            
+            if not require_role(session, ['admin']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Admin access required'}).encode('utf-8'))
+                return
+            
+            if not supplier_service_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Supplier service unavailable'}).encode('utf-8'))
+                return
+            
+            try:
+                supplier_id = path.split('/')[-2]
+                admin_user = (session or {}).get('username', 'admin')
+                payload = json.loads(body or '{}')
+                reason = payload.get('reason', '')
+                
+                if not reason:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'Suspension reason required'}).encode('utf-8'))
+                    return
+                
+                result = supplier_service.suspend_supplier(supplier_id, admin_user, reason)
+                
+                # Log audit
+                if audit:
+                    audit.log(admin_user, 'suspend', 'supplier', supplier_id, {'reason': reason})
+                
+                self._set_json_headers()
+                self.wfile.write(json.dumps(result).encode('utf-8'))
+            except ValueError as e:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': 'Suspension failed', 'details': str(e)}).encode('utf-8'))
+            return
+        
+        # Admin: Reactivate supplier
+        if path.startswith('/api/admin/suppliers/') and path.endswith('/reactivate'):
+            auth_header = self.headers.get('Authorization', '')
+            token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+            session = validate_session(token) if token else None
+            
+            if not require_role(session, ['admin']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Admin access required'}).encode('utf-8'))
+                return
+            
+            if not supplier_service_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Supplier service unavailable'}).encode('utf-8'))
+                return
+            
+            try:
+                supplier_id = path.split('/')[-2]
+                admin_user = (session or {}).get('username', 'admin')
+                
+                result = supplier_service.reactivate_supplier(supplier_id, admin_user)
+                
+                # Log audit
+                if audit:
+                    audit.log(admin_user, 'reactivate', 'supplier', supplier_id, {})
+                
+                self._set_json_headers()
+                self.wfile.write(json.dumps(result).encode('utf-8'))
+            except ValueError as e:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': 'Reactivation failed', 'details': str(e)}).encode('utf-8'))
             return
 
         # Supplier: create/update offer

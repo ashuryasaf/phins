@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PHINS - Supplier Login</title>
+  <link rel="stylesheet" href="/styles.css">
+  <style>
+    .login-container {
+      max-width: 400px;
+      margin: 60px auto;
+      padding: 24px;
+    }
+    .login-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 32px;
+    }
+    .login-header {
+      text-align: center;
+      margin-bottom: 32px;
+    }
+    .login-header .icon {
+      font-size: 3rem;
+      margin-bottom: 16px;
+    }
+    .login-header h2 {
+      margin: 0 0 8px 0;
+    }
+    .login-header p {
+      color: var(--text-muted);
+      margin: 0;
+    }
+    .form-group {
+      margin-bottom: 20px;
+    }
+    .form-group label {
+      display: block;
+      font-weight: 500;
+      margin-bottom: 8px;
+    }
+    .form-group input {
+      width: 100%;
+      padding: 12px 14px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      font-size: 1rem;
+      background: var(--bg);
+      color: var(--text);
+      box-sizing: border-box;
+    }
+    .form-group input:focus {
+      outline: none;
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px rgba(13, 71, 161, 0.1);
+    }
+    .btn-login {
+      width: 100%;
+      padding: 14px;
+      background: var(--primary);
+      color: white;
+      border: none;
+      border-radius: 6px;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    .btn-login:hover {
+      background: #1565c0;
+    }
+    .btn-login:disabled {
+      background: #ccc;
+      cursor: not-allowed;
+    }
+    .alert {
+      padding: 12px 16px;
+      border-radius: 6px;
+      margin-bottom: 20px;
+      font-size: 0.9rem;
+    }
+    .alert-error {
+      background: #fee2e2;
+      color: #991b1b;
+      border: 1px solid #fecaca;
+    }
+    .alert-success {
+      background: #dcfce7;
+      color: #166534;
+      border: 1px solid #bbf7d0;
+    }
+    .register-link {
+      text-align: center;
+      margin-top: 24px;
+      padding-top: 24px;
+      border-top: 1px solid var(--border);
+    }
+    .register-link a {
+      color: var(--primary);
+      font-weight: 500;
+    }
+    .status-info {
+      margin-top: 24px;
+      padding: 16px;
+      background: var(--bg);
+      border-radius: 8px;
+      font-size: 0.9rem;
+    }
+    .status-info h4 {
+      margin: 0 0 8px 0;
+      font-size: 0.9rem;
+    }
+    .status-info ul {
+      margin: 0;
+      padding-left: 20px;
+      color: var(--text-muted);
+    }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="container">
+      <div>
+        <h1 class="brand">PHINS</h1>
+        <div class="muted-text">Supplier Portal</div>
+      </div>
+      <nav class="nav">
+        <a href="/index.html">Home</a>
+        <a href="/login.html">Staff Login</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="login-container">
+    <div class="login-card">
+      <div class="login-header">
+        <div class="icon">🏢</div>
+        <h2>Supplier Login</h2>
+        <p>Access your supplier dashboard</p>
+      </div>
+
+      <div id="alert-container"></div>
+
+      <form id="login-form" onsubmit="return handleLogin(event)">
+        <div class="form-group">
+          <label for="email">Email Address</label>
+          <input type="email" id="email" name="email" required placeholder="your@company.com" autocomplete="email">
+        </div>
+
+        <div class="form-group">
+          <label for="password">Password</label>
+          <input type="password" id="password" name="password" required placeholder="Enter your password" autocomplete="current-password">
+        </div>
+
+        <button type="submit" class="btn-login" id="login-btn">Sign In</button>
+      </form>
+
+      <div class="register-link">
+        <p>Don't have an account?</p>
+        <a href="/supplier-register.html">Apply as a Supplier</a>
+      </div>
+
+      <div class="status-info">
+        <h4>Application Status</h4>
+        <ul>
+          <li><strong>Pending:</strong> Application under review</li>
+          <li><strong>Approved:</strong> You can log in and access the portal</li>
+          <li><strong>Rejected:</strong> Contact support for details</li>
+        </ul>
+      </div>
+    </div>
+  </main>
+
+  <script>
+    function showAlert(message, type = 'error') {
+      const container = document.getElementById('alert-container');
+      container.innerHTML = `<div class="alert alert-${type}">${message}</div>`;
+    }
+
+    function clearAlert() {
+      document.getElementById('alert-container').innerHTML = '';
+    }
+
+    async function handleLogin(event) {
+      event.preventDefault();
+      clearAlert();
+
+      const email = document.getElementById('email').value.trim();
+      const password = document.getElementById('password').value;
+      const btn = document.getElementById('login-btn');
+
+      if (!email || !password) {
+        showAlert('Please enter both email and password');
+        return false;
+      }
+
+      btn.disabled = true;
+      btn.textContent = 'Signing in...';
+
+      try {
+        const response = await fetch('/api/supplier/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, password })
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(data.error || 'Login failed');
+        }
+
+        // Store token and redirect
+        localStorage.setItem('phins_token', data.token);
+        showAlert('Login successful! Redirecting...', 'success');
+        
+        setTimeout(() => {
+          window.location.href = '/supplier-portal.html';
+        }, 1000);
+
+      } catch (error) {
+        showAlert(error.message);
+        btn.disabled = false;
+        btn.textContent = 'Sign In';
+      }
+
+      return false;
+    }
+
+    // Check if already logged in
+    document.addEventListener('DOMContentLoaded', async () => {
+      const token = localStorage.getItem('phins_token');
+      if (token) {
+        try {
+          const response = await fetch('/api/session/validate', {
+            headers: { 'Authorization': `Bearer ${token}` }
+          });
+          const data = await response.json();
+          if (response.ok && data.role === 'supplier') {
+            window.location.href = '/supplier-portal.html';
+          }
+        } catch (e) {
+          // Token invalid, stay on login page
+        }
+      }
+    });
+  </script>
+</body>
+</html>
