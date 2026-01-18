@@ -3,20 +3,26 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>PHINS Supplier Dashboard</title>
+  <title>PHINS Supplier Dashboard (Legacy)</title>
   <link rel="stylesheet" href="/styles.css">
+  <script>
+    // This is the legacy supplier offers page
+    // For full supplier management, redirect to the new dashboard
+    // Admin users should use: /admin-supplier-dashboard.html
+    // Supplier users should use: /supplier-portal.html
+  </script>
 </head>
 <body>
   <header class="topbar">
     <div class="container">
       <div>
-        <h1 class="brand">PHINS - Supplier</h1>
+        <h1 class="brand">PHINS - Supplier (Legacy)</h1>
         <div class="muted-text" id="whoami">Loading session...</div>
       </div>
       <nav class="nav">
+        <a href="/admin-supplier-dashboard.html" style="background:#10b981;color:white;padding:8px 16px;border-radius:4px;">New Admin Dashboard</a>
+        <a href="/supplier-portal.html">Supplier Portal</a>
         <a href="/admin.html">Admin</a>
-        <a href="/actuary-dashboard.html">Actuary</a>
-        <a href="/dashboard.html">Client</a>
         <a href="/login.html" class="btn-login">Login</a>
       </nav>
     </div>
