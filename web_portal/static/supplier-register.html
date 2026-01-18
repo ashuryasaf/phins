@@ -1,0 +1,757 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PHINS - Supplier Registration</title>
+  <link rel="stylesheet" href="/styles.css">
+  <style>
+    .register-container {
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 24px;
+    }
+    .step-indicator {
+      display: flex;
+      justify-content: center;
+      margin-bottom: 32px;
+    }
+    .step {
+      display: flex;
+      align-items: center;
+      color: var(--text-muted);
+    }
+    .step-number {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      background: var(--bg-card);
+      border: 2px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 600;
+      margin-right: 8px;
+    }
+    .step.active .step-number {
+      background: var(--primary);
+      border-color: var(--primary);
+      color: white;
+    }
+    .step.completed .step-number {
+      background: #28a745;
+      border-color: #28a745;
+      color: white;
+    }
+    .step-line {
+      width: 60px;
+      height: 2px;
+      background: var(--border);
+      margin: 0 16px;
+    }
+    .step-line.completed {
+      background: #28a745;
+    }
+    .form-step {
+      display: none;
+    }
+    .form-step.active {
+      display: block;
+    }
+    .form-section {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 24px;
+      margin-bottom: 24px;
+    }
+    .form-section h3 {
+      margin: 0 0 16px 0;
+      color: var(--primary);
+      font-size: 1.1rem;
+    }
+    .form-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 16px;
+    }
+    .form-grid.three-col {
+      grid-template-columns: repeat(3, 1fr);
+    }
+    .form-group {
+      display: flex;
+      flex-direction: column;
+    }
+    .form-group.full-width {
+      grid-column: 1 / -1;
+    }
+    .form-group label {
+      font-weight: 500;
+      margin-bottom: 6px;
+      color: var(--text);
+    }
+    .form-group label .required {
+      color: #dc3545;
+    }
+    .form-group input,
+    .form-group select,
+    .form-group textarea {
+      padding: 10px 12px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      font-size: 0.95rem;
+      background: var(--bg);
+      color: var(--text);
+    }
+    .form-group input:focus,
+    .form-group select:focus,
+    .form-group textarea:focus {
+      outline: none;
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px rgba(13, 71, 161, 0.1);
+    }
+    .form-group textarea {
+      min-height: 100px;
+      resize: vertical;
+    }
+    .form-group .hint {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      margin-top: 4px;
+    }
+    .checkbox-group {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-top: 8px;
+    }
+    .checkbox-group label {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-weight: normal;
+      cursor: pointer;
+    }
+    .checkbox-group input[type="checkbox"] {
+      width: 18px;
+      height: 18px;
+    }
+    .btn-group {
+      display: flex;
+      justify-content: space-between;
+      margin-top: 24px;
+    }
+    .btn-primary {
+      background: var(--primary);
+      color: white;
+      border: none;
+      padding: 12px 32px;
+      font-size: 1rem;
+      font-weight: 600;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    .btn-primary:hover {
+      background: #1565c0;
+    }
+    .btn-secondary {
+      background: var(--bg-card);
+      color: var(--text);
+      border: 1px solid var(--border);
+      padding: 12px 32px;
+      font-size: 1rem;
+      font-weight: 500;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+    .btn-secondary:hover {
+      background: var(--bg);
+    }
+    .alert {
+      padding: 12px 16px;
+      border-radius: 6px;
+      margin-bottom: 16px;
+    }
+    .alert-error {
+      background: #f8d7da;
+      color: #721c24;
+      border: 1px solid #f5c6cb;
+    }
+    .alert-success {
+      background: #d4edda;
+      color: #155724;
+      border: 1px solid #c3e6cb;
+    }
+    .supplier-types-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+    }
+    .supplier-type-card {
+      border: 2px solid var(--border);
+      border-radius: 8px;
+      padding: 16px;
+      cursor: pointer;
+      transition: all 0.2s;
+      text-align: center;
+    }
+    .supplier-type-card:hover {
+      border-color: var(--primary);
+      background: rgba(13, 71, 161, 0.05);
+    }
+    .supplier-type-card.selected {
+      border-color: var(--primary);
+      background: rgba(13, 71, 161, 0.1);
+    }
+    .supplier-type-card .icon {
+      font-size: 2rem;
+      margin-bottom: 8px;
+    }
+    .supplier-type-card .name {
+      font-weight: 600;
+      margin-bottom: 4px;
+    }
+    .supplier-type-card .desc {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+    }
+    .success-message {
+      text-align: center;
+      padding: 48px;
+    }
+    .success-message .icon {
+      font-size: 4rem;
+      color: #28a745;
+      margin-bottom: 16px;
+    }
+    .success-message h2 {
+      margin-bottom: 16px;
+    }
+    .success-message p {
+      color: var(--text-muted);
+      max-width: 500px;
+      margin: 0 auto 24px;
+    }
+    @media (max-width: 768px) {
+      .form-grid {
+        grid-template-columns: 1fr;
+      }
+      .form-grid.three-col {
+        grid-template-columns: 1fr;
+      }
+      .supplier-types-grid {
+        grid-template-columns: repeat(2, 1fr);
+      }
+      .step-line {
+        width: 30px;
+        margin: 0 8px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="container">
+      <div>
+        <h1 class="brand">PHINS - Supplier Registration</h1>
+        <div class="muted-text">Join our B2B marketplace</div>
+      </div>
+      <nav class="nav">
+        <a href="/index.html">Home</a>
+        <a href="/supplier-login.html" class="btn-login">Supplier Login</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="register-container">
+    <!-- Step Indicator -->
+    <div class="step-indicator">
+      <div class="step active" data-step="1">
+        <div class="step-number">1</div>
+        <span>Business Type</span>
+      </div>
+      <div class="step-line"></div>
+      <div class="step" data-step="2">
+        <div class="step-number">2</div>
+        <span>Company Info</span>
+      </div>
+      <div class="step-line"></div>
+      <div class="step" data-step="3">
+        <div class="step-number">3</div>
+        <span>Services</span>
+      </div>
+      <div class="step-line"></div>
+      <div class="step" data-step="4">
+        <div class="step-number">4</div>
+        <span>Account</span>
+      </div>
+    </div>
+
+    <!-- Alert Messages -->
+    <div id="alert-container"></div>
+
+    <!-- Registration Form -->
+    <form id="registration-form" onsubmit="return false;">
+      <!-- Step 1: Business Type -->
+      <div class="form-step active" data-step="1">
+        <div class="form-section">
+          <h3>Select Your Business Type</h3>
+          <p class="muted-text" style="margin-bottom:16px">Choose the category that best describes your business</p>
+          
+          <div class="supplier-types-grid" id="supplier-types">
+            <div class="supplier-type-card" data-type="healthcare_provider">
+              <div class="icon">🏥</div>
+              <div class="name">Healthcare Provider</div>
+              <div class="desc">Hospitals, clinics, doctors, specialists</div>
+            </div>
+            <div class="supplier-type-card" data-type="pharmacy">
+              <div class="icon">💊</div>
+              <div class="name">Pharmacy</div>
+              <div class="desc">Retail, online, specialty pharmacies</div>
+            </div>
+            <div class="supplier-type-card" data-type="legal_service">
+              <div class="icon">⚖️</div>
+              <div class="name">Legal Service</div>
+              <div class="desc">Law firms, attorneys, legal advisors</div>
+            </div>
+            <div class="supplier-type-card" data-type="delivery">
+              <div class="icon">🚚</div>
+              <div class="name">Delivery Service</div>
+              <div class="desc">Medical transport, courier services</div>
+            </div>
+            <div class="supplier-type-card" data-type="investment_firm">
+              <div class="icon">📈</div>
+              <div class="name">Investment Firm</div>
+              <div class="desc">Asset management, pension funds</div>
+            </div>
+            <div class="supplier-type-card" data-type="equipment_supplier">
+              <div class="icon">🦽</div>
+              <div class="name">Equipment Supplier</div>
+              <div class="desc">Medical equipment, devices</div>
+            </div>
+            <div class="supplier-type-card" data-type="tech_provider">
+              <div class="icon">💻</div>
+              <div class="name">Tech Provider</div>
+              <div class="desc">Telemedicine, health apps, AI</div>
+            </div>
+            <div class="supplier-type-card" data-type="laboratory">
+              <div class="icon">🔬</div>
+              <div class="name">Laboratory</div>
+              <div class="desc">Diagnostic, imaging, testing</div>
+            </div>
+            <div class="supplier-type-card" data-type="wellness">
+              <div class="icon">🧘</div>
+              <div class="name">Wellness</div>
+              <div class="desc">Wellness programs, rehabilitation</div>
+            </div>
+          </div>
+          <input type="hidden" id="supplier_type" name="supplier_type" required>
+        </div>
+
+        <div class="btn-group">
+          <div></div>
+          <button type="button" class="btn-primary" onclick="nextStep()">Continue</button>
+        </div>
+      </div>
+
+      <!-- Step 2: Company Information -->
+      <div class="form-step" data-step="2">
+        <div class="form-section">
+          <h3>Company Information</h3>
+          <div class="form-grid">
+            <div class="form-group full-width">
+              <label>Company Name <span class="required">*</span></label>
+              <input type="text" id="company_name" name="company_name" required placeholder="Your company's legal name">
+            </div>
+            <div class="form-group">
+              <label>Business Registration Number</label>
+              <input type="text" id="business_registration_number" name="business_registration_number" placeholder="e.g., LLC-12345">
+            </div>
+            <div class="form-group">
+              <label>Tax ID / EIN</label>
+              <input type="text" id="tax_id" name="tax_id" placeholder="e.g., 12-3456789">
+            </div>
+            <div class="form-group full-width">
+              <label>Business Description</label>
+              <textarea id="description" name="description" placeholder="Briefly describe your business and services..."></textarea>
+            </div>
+          </div>
+        </div>
+
+        <div class="form-section">
+          <h3>Contact Information</h3>
+          <div class="form-grid">
+            <div class="form-group">
+              <label>Contact Person Name <span class="required">*</span></label>
+              <input type="text" id="contact_name" name="contact_name" required placeholder="Primary contact name">
+            </div>
+            <div class="form-group">
+              <label>Contact Email <span class="required">*</span></label>
+              <input type="email" id="contact_email" name="contact_email" required placeholder="business@example.com">
+            </div>
+            <div class="form-group">
+              <label>Contact Phone</label>
+              <input type="tel" id="contact_phone" name="contact_phone" placeholder="+1 (555) 123-4567">
+            </div>
+            <div class="form-group">
+              <label>Website</label>
+              <input type="url" id="website" name="website" placeholder="https://www.example.com">
+            </div>
+          </div>
+        </div>
+
+        <div class="form-section">
+          <h3>Business Address</h3>
+          <div class="form-grid">
+            <div class="form-group full-width">
+              <label>Street Address</label>
+              <input type="text" id="address" name="address" placeholder="123 Business Street, Suite 100">
+            </div>
+            <div class="form-group">
+              <label>City</label>
+              <input type="text" id="city" name="city" placeholder="City">
+            </div>
+            <div class="form-group">
+              <label>State / Province</label>
+              <input type="text" id="state" name="state" placeholder="State">
+            </div>
+            <div class="form-group">
+              <label>Country</label>
+              <select id="country" name="country">
+                <option value="United States">United States</option>
+                <option value="Canada">Canada</option>
+                <option value="United Kingdom">United Kingdom</option>
+                <option value="Israel">Israel</option>
+                <option value="Germany">Germany</option>
+                <option value="France">France</option>
+                <option value="Other">Other</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Postal Code</label>
+              <input type="text" id="postal_code" name="postal_code" placeholder="12345">
+            </div>
+          </div>
+        </div>
+
+        <div class="btn-group">
+          <button type="button" class="btn-secondary" onclick="prevStep()">Back</button>
+          <button type="button" class="btn-primary" onclick="nextStep()">Continue</button>
+        </div>
+      </div>
+
+      <!-- Step 3: Services & Products -->
+      <div class="form-step" data-step="3">
+        <div class="form-section">
+          <h3>Services Offered</h3>
+          <p class="hint">Select all services your business provides</p>
+          <div class="checkbox-group" id="services-checkboxes">
+            <!-- Populated dynamically based on supplier type -->
+          </div>
+        </div>
+
+        <div class="form-section">
+          <h3>Wallet Integration</h3>
+          <p class="hint">Select wallet types your services are compatible with</p>
+          <div class="checkbox-group">
+            <label><input type="checkbox" name="wallet_health" value="health" checked> Health Wallet</label>
+            <label><input type="checkbox" name="wallet_investment" value="investment"> Investment Wallet</label>
+            <label><input type="checkbox" name="wallet_general" value="general"> General Wallet</label>
+          </div>
+        </div>
+
+        <div class="form-section">
+          <h3>Service Areas</h3>
+          <div class="form-grid">
+            <div class="form-group full-width">
+              <label>Regions / Areas Served</label>
+              <input type="text" id="service_areas" name="service_areas" placeholder="e.g., New York, California, Nationwide">
+              <span class="hint">Separate multiple areas with commas</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="form-section">
+          <h3>Licensing & Certification</h3>
+          <div class="form-grid">
+            <div class="form-group">
+              <label>License Number</label>
+              <input type="text" id="license_number" name="license_number" placeholder="Professional license number">
+            </div>
+            <div class="form-group">
+              <label>License Expiry Date</label>
+              <input type="date" id="license_expiry" name="license_expiry">
+            </div>
+          </div>
+        </div>
+
+        <div class="btn-group">
+          <button type="button" class="btn-secondary" onclick="prevStep()">Back</button>
+          <button type="button" class="btn-primary" onclick="nextStep()">Continue</button>
+        </div>
+      </div>
+
+      <!-- Step 4: Account Setup -->
+      <div class="form-step" data-step="4">
+        <div class="form-section">
+          <h3>Create Your Account</h3>
+          <div class="form-grid">
+            <div class="form-group">
+              <label>Password <span class="required">*</span></label>
+              <input type="password" id="password" name="password" required minlength="8" placeholder="Minimum 8 characters">
+            </div>
+            <div class="form-group">
+              <label>Confirm Password <span class="required">*</span></label>
+              <input type="password" id="confirm_password" name="confirm_password" required placeholder="Re-enter password">
+            </div>
+          </div>
+        </div>
+
+        <div class="form-section">
+          <h3>Payment Settlement</h3>
+          <div class="form-grid">
+            <div class="form-group">
+              <label>Settlement Frequency</label>
+              <select id="settlement_frequency" name="settlement_frequency">
+                <option value="weekly">Weekly</option>
+                <option value="daily">Daily</option>
+                <option value="monthly">Monthly</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Preferred Payment Method</label>
+              <select id="payment_method" name="payment_method">
+                <option value="bank_transfer">Bank Transfer</option>
+                <option value="wallet">Platform Wallet</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <div class="form-section">
+          <h3>Terms & Conditions</h3>
+          <div class="form-group">
+            <label style="display:flex; align-items:flex-start; gap:8px; cursor:pointer">
+              <input type="checkbox" id="accept_terms" name="accept_terms" required style="margin-top:4px">
+              <span>I agree to the PHINS <a href="#" target="_blank">Supplier Terms of Service</a>, 
+              <a href="#" target="_blank">Privacy Policy</a>, and understand the platform commission rates 
+              applicable to my business category.</span>
+            </label>
+          </div>
+        </div>
+
+        <div class="btn-group">
+          <button type="button" class="btn-secondary" onclick="prevStep()">Back</button>
+          <button type="button" class="btn-primary" onclick="submitRegistration()">Submit Application</button>
+        </div>
+      </div>
+
+      <!-- Success Message -->
+      <div class="form-step" data-step="success">
+        <div class="success-message">
+          <div class="icon">✅</div>
+          <h2>Application Submitted Successfully!</h2>
+          <p>Your supplier application has been received and is being reviewed by our team. 
+             You will receive an email notification once your application has been processed.</p>
+          <p><strong>Application ID:</strong> <span id="application-id"></span></p>
+          <div style="margin-top:24px">
+            <a href="/index.html" class="btn-primary" style="text-decoration:none">Return to Home</a>
+          </div>
+        </div>
+      </div>
+    </form>
+  </main>
+
+  <script>
+    let currentStep = 1;
+    const totalSteps = 4;
+    
+    // Service options by supplier type
+    const servicesByType = {
+      healthcare_provider: ['General Consultation', 'Specialist Consultation', 'Surgery', 'Diagnostic Services', 'Emergency Care', 'Home Care', 'Telemedicine', 'Mental Health'],
+      pharmacy: ['Prescription Dispensing', 'OTC Medications', 'Specialty Medications', 'Compounding', 'Medication Delivery', 'Consultation', 'Vaccinations'],
+      legal_service: ['Insurance Claims', 'Personal Injury', 'Medical Malpractice', 'Estate Planning', 'Contract Review', 'Dispute Resolution', 'Compliance Advisory'],
+      delivery: ['Medical Equipment Delivery', 'Prescription Delivery', 'Document Courier', 'Same-Day Delivery', 'Refrigerated Transport', 'Emergency Transport'],
+      investment_firm: ['Asset Management', 'Pension Administration', 'Index Funds', 'Insurance-Linked Securities', 'Wealth Planning', 'Crypto Assets'],
+      equipment_supplier: ['Mobility Aids', 'CPAP/Sleep Devices', 'Home Health Devices', 'Rehabilitation Equipment', 'Diagnostic Equipment', 'Prosthetics'],
+      tech_provider: ['Telemedicine Platform', 'Health Monitoring Apps', 'Insurance Tech Solutions', 'AI/ML Services', 'Data Analytics', 'Patient Portal'],
+      laboratory: ['Blood Tests', 'Diagnostic Imaging', 'Pathology', 'Genetic Testing', 'Drug Testing', 'COVID Testing'],
+      wellness: ['Fitness Programs', 'Nutrition Counseling', 'Mental Wellness', 'Rehabilitation', 'Corporate Wellness', 'Preventive Care']
+    };
+
+    // Initialize supplier type selection
+    document.querySelectorAll('.supplier-type-card').forEach(card => {
+      card.addEventListener('click', () => {
+        document.querySelectorAll('.supplier-type-card').forEach(c => c.classList.remove('selected'));
+        card.classList.add('selected');
+        document.getElementById('supplier_type').value = card.dataset.type;
+        
+        // Update services checkboxes
+        const services = servicesByType[card.dataset.type] || [];
+        const container = document.getElementById('services-checkboxes');
+        container.innerHTML = services.map(service => 
+          `<label><input type="checkbox" name="services" value="${service}"> ${service}</label>`
+        ).join('');
+      });
+    });
+
+    function showAlert(message, type = 'error') {
+      const container = document.getElementById('alert-container');
+      container.innerHTML = `<div class="alert alert-${type}">${message}</div>`;
+      container.scrollIntoView({ behavior: 'smooth' });
+    }
+
+    function clearAlert() {
+      document.getElementById('alert-container').innerHTML = '';
+    }
+
+    function updateStepIndicator() {
+      document.querySelectorAll('.step').forEach((step, index) => {
+        const stepNum = index + 1;
+        step.classList.remove('active', 'completed');
+        if (stepNum < currentStep) {
+          step.classList.add('completed');
+        } else if (stepNum === currentStep) {
+          step.classList.add('active');
+        }
+      });
+      
+      document.querySelectorAll('.step-line').forEach((line, index) => {
+        line.classList.toggle('completed', index < currentStep - 1);
+      });
+    }
+
+    function showStep(step) {
+      document.querySelectorAll('.form-step').forEach(s => s.classList.remove('active'));
+      document.querySelector(`.form-step[data-step="${step}"]`).classList.add('active');
+      currentStep = step;
+      updateStepIndicator();
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    function validateStep(step) {
+      clearAlert();
+      
+      if (step === 1) {
+        const supplierType = document.getElementById('supplier_type').value;
+        if (!supplierType) {
+          showAlert('Please select a business type to continue.');
+          return false;
+        }
+      }
+      
+      if (step === 2) {
+        const companyName = document.getElementById('company_name').value.trim();
+        const contactName = document.getElementById('contact_name').value.trim();
+        const contactEmail = document.getElementById('contact_email').value.trim();
+        
+        if (!companyName) {
+          showAlert('Company name is required.');
+          return false;
+        }
+        if (!contactName) {
+          showAlert('Contact person name is required.');
+          return false;
+        }
+        if (!contactEmail) {
+          showAlert('Contact email is required.');
+          return false;
+        }
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contactEmail)) {
+          showAlert('Please enter a valid email address.');
+          return false;
+        }
+      }
+      
+      if (step === 4) {
+        const password = document.getElementById('password').value;
+        const confirmPassword = document.getElementById('confirm_password').value;
+        const acceptTerms = document.getElementById('accept_terms').checked;
+        
+        if (password.length < 8) {
+          showAlert('Password must be at least 8 characters.');
+          return false;
+        }
+        if (password !== confirmPassword) {
+          showAlert('Passwords do not match.');
+          return false;
+        }
+        if (!acceptTerms) {
+          showAlert('You must accept the terms and conditions to continue.');
+          return false;
+        }
+      }
+      
+      return true;
+    }
+
+    function nextStep() {
+      if (!validateStep(currentStep)) return;
+      if (currentStep < totalSteps) {
+        showStep(currentStep + 1);
+      }
+    }
+
+    function prevStep() {
+      if (currentStep > 1) {
+        showStep(currentStep - 1);
+      }
+    }
+
+    async function submitRegistration() {
+      if (!validateStep(4)) return;
+      
+      // Gather form data
+      const formData = {
+        supplier_type: document.getElementById('supplier_type').value,
+        company_name: document.getElementById('company_name').value.trim(),
+        business_registration_number: document.getElementById('business_registration_number').value.trim(),
+        tax_id: document.getElementById('tax_id').value.trim(),
+        description: document.getElementById('description').value.trim(),
+        contact_name: document.getElementById('contact_name').value.trim(),
+        contact_email: document.getElementById('contact_email').value.trim(),
+        contact_phone: document.getElementById('contact_phone').value.trim(),
+        website: document.getElementById('website').value.trim(),
+        address: document.getElementById('address').value.trim(),
+        city: document.getElementById('city').value.trim(),
+        state: document.getElementById('state').value.trim(),
+        country: document.getElementById('country').value,
+        postal_code: document.getElementById('postal_code').value.trim(),
+        service_areas: document.getElementById('service_areas').value.split(',').map(s => s.trim()).filter(s => s),
+        license_number: document.getElementById('license_number').value.trim(),
+        license_expiry: document.getElementById('license_expiry').value || null,
+        settlement_frequency: document.getElementById('settlement_frequency').value,
+        password: document.getElementById('password').value,
+        
+        // Gather selected services
+        services_offered: Array.from(document.querySelectorAll('input[name="services"]:checked')).map(cb => cb.value),
+        
+        // Gather wallet types
+        wallet_types_supported: Array.from(document.querySelectorAll('input[name^="wallet_"]:checked')).map(cb => cb.value)
+      };
+
+      try {
+        const response = await fetch('/api/supplier/register', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(formData)
+        });
+        
+        const data = await response.json();
+        
+        if (!response.ok) {
+          throw new Error(data.error || 'Registration failed');
+        }
+        
+        // Show success message
+        document.getElementById('application-id').textContent = data.supplier_id;
+        showStep('success');
+        
+      } catch (error) {
+        showAlert(error.message);
+      }
+    }
+  </script>
+</body>
+</html>

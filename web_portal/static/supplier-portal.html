@@ -1,0 +1,983 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PHINS - Supplier Portal</title>
+  <link rel="stylesheet" href="/styles.css">
+  <style>
+    .portal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 24px;
+    }
+    .portal-header h2 {
+      margin: 0;
+    }
+    .dashboard-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+    .stat-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 20px;
+    }
+    .stat-card .label {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      margin-bottom: 8px;
+    }
+    .stat-card .value {
+      font-size: 1.8rem;
+      font-weight: 700;
+      color: var(--primary);
+    }
+    .stat-card .value.success {
+      color: #10b981;
+    }
+    .tabs {
+      display: flex;
+      gap: 4px;
+      border-bottom: 2px solid var(--border);
+      margin-bottom: 24px;
+    }
+    .tab {
+      padding: 12px 24px;
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      margin-bottom: -2px;
+      font-weight: 500;
+      color: var(--text-muted);
+      transition: all 0.2s;
+    }
+    .tab:hover {
+      color: var(--primary);
+    }
+    .tab.active {
+      color: var(--primary);
+      border-bottom-color: var(--primary);
+    }
+    .tab-content {
+      display: none;
+    }
+    .tab-content.active {
+      display: block;
+    }
+    .offer-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 16px;
+    }
+    .offer-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 16px;
+      position: relative;
+    }
+    .offer-card.inactive {
+      opacity: 0.6;
+    }
+    .offer-card .type-badge {
+      position: absolute;
+      top: 12px;
+      right: 12px;
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-transform: uppercase;
+    }
+    .offer-card .type-badge.service {
+      background: #dbeafe;
+      color: #1d4ed8;
+    }
+    .offer-card .type-badge.product {
+      background: #dcfce7;
+      color: #16a34a;
+    }
+    .offer-card h4 {
+      margin: 0 0 8px 0;
+      padding-right: 70px;
+    }
+    .offer-card .category {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      margin-bottom: 12px;
+    }
+    .offer-card .price {
+      font-size: 1.5rem;
+      font-weight: 700;
+      color: var(--primary);
+      margin-bottom: 4px;
+    }
+    .offer-card .unit {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      margin-bottom: 12px;
+    }
+    .offer-card .stats {
+      display: flex;
+      gap: 16px;
+      padding-top: 12px;
+      border-top: 1px solid var(--border);
+      font-size: 0.85rem;
+    }
+    .offer-card .stats span {
+      color: var(--text-muted);
+    }
+    .offer-card .actions {
+      display: flex;
+      gap: 8px;
+      margin-top: 12px;
+    }
+    .btn-sm {
+      padding: 6px 12px;
+      font-size: 0.85rem;
+      border-radius: 4px;
+      cursor: pointer;
+      border: none;
+      transition: all 0.2s;
+    }
+    .btn-edit {
+      background: #3b82f6;
+      color: white;
+    }
+    .btn-edit:hover {
+      background: #2563eb;
+    }
+    .btn-toggle {
+      background: #f59e0b;
+      color: white;
+    }
+    .btn-toggle:hover {
+      background: #d97706;
+    }
+    .btn-delete {
+      background: #ef4444;
+      color: white;
+    }
+    .btn-delete:hover {
+      background: #dc2626;
+    }
+    .add-offer-btn {
+      background: var(--primary);
+      color: white;
+      border: none;
+      padding: 12px 24px;
+      font-size: 1rem;
+      font-weight: 600;
+      border-radius: 6px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .add-offer-btn:hover {
+      background: #1565c0;
+    }
+    .order-status {
+      padding: 4px 10px;
+      border-radius: 4px;
+      font-size: 0.8rem;
+      font-weight: 500;
+    }
+    .order-status.pending {
+      background: #fef3c7;
+      color: #92400e;
+    }
+    .order-status.processing, .order-status.in_progress {
+      background: #dbeafe;
+      color: #1d4ed8;
+    }
+    .order-status.completed, .order-status.delivered {
+      background: #dcfce7;
+      color: #16a34a;
+    }
+    .order-status.cancelled {
+      background: #fee2e2;
+      color: #991b1b;
+    }
+    .modal {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0,0,0,0.5);
+      z-index: 1000;
+      align-items: center;
+      justify-content: center;
+    }
+    .modal.active {
+      display: flex;
+    }
+    .modal-content {
+      background: var(--bg-card);
+      border-radius: 12px;
+      padding: 24px;
+      max-width: 500px;
+      width: 90%;
+      max-height: 80vh;
+      overflow-y: auto;
+    }
+    .modal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 20px;
+    }
+    .modal-header h3 {
+      margin: 0;
+    }
+    .modal-close {
+      background: none;
+      border: none;
+      font-size: 1.5rem;
+      cursor: pointer;
+      color: var(--text-muted);
+    }
+    .form-group {
+      margin-bottom: 16px;
+    }
+    .form-group label {
+      display: block;
+      font-weight: 500;
+      margin-bottom: 6px;
+    }
+    .form-group input,
+    .form-group select,
+    .form-group textarea {
+      width: 100%;
+      padding: 10px 12px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      font-size: 0.95rem;
+      background: var(--bg);
+      color: var(--text);
+      box-sizing: border-box;
+    }
+    .form-group textarea {
+      min-height: 80px;
+      resize: vertical;
+    }
+    .form-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+    .wallet-checks {
+      display: flex;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+    .wallet-checks label {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-weight: normal;
+      cursor: pointer;
+    }
+    .wallet-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-size: 0.75rem;
+      background: #e0e7ff;
+      color: #3730a3;
+    }
+    .profile-section {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 24px;
+      margin-bottom: 24px;
+    }
+    .profile-section h3 {
+      margin: 0 0 16px 0;
+    }
+    .profile-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 16px;
+    }
+    .profile-item {
+      margin-bottom: 8px;
+    }
+    .profile-item .label {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      margin-bottom: 4px;
+    }
+    .profile-item .value {
+      font-weight: 500;
+    }
+    @media (max-width: 1024px) {
+      .dashboard-grid {
+        grid-template-columns: repeat(2, 1fr);
+      }
+    }
+    @media (max-width: 768px) {
+      .dashboard-grid {
+        grid-template-columns: 1fr;
+      }
+      .portal-header {
+        flex-direction: column;
+        gap: 16px;
+        align-items: flex-start;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="container">
+      <div>
+        <h1 class="brand">PHINS - Supplier Portal</h1>
+        <div class="muted-text" id="whoami">Loading session...</div>
+      </div>
+      <nav class="nav">
+        <a href="/index.html">Home</a>
+        <a href="#" onclick="logout()" class="btn-login">Logout</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="container" style="padding-top:24px">
+    <!-- Portal Header -->
+    <div class="portal-header">
+      <div>
+        <h2 id="company-name">Your Company</h2>
+        <div class="muted-text" id="supplier-type">Supplier Type</div>
+      </div>
+      <button class="add-offer-btn" onclick="openOfferModal()">
+        + Add New Offer
+      </button>
+    </div>
+
+    <!-- Dashboard Stats -->
+    <div class="dashboard-grid">
+      <div class="stat-card">
+        <div class="label">Total Orders</div>
+        <div class="value" id="stat-orders">-</div>
+      </div>
+      <div class="stat-card">
+        <div class="label">Active Offers</div>
+        <div class="value" id="stat-offers">-</div>
+      </div>
+      <div class="stat-card">
+        <div class="label">Total Earnings</div>
+        <div class="value success" id="stat-earnings">-</div>
+      </div>
+      <div class="stat-card">
+        <div class="label">Average Rating</div>
+        <div class="value" id="stat-rating">-</div>
+      </div>
+    </div>
+
+    <!-- Tabs -->
+    <div class="tabs">
+      <div class="tab active" data-tab="offers">My Offers</div>
+      <div class="tab" data-tab="orders">Orders</div>
+      <div class="tab" data-tab="profile">Profile</div>
+    </div>
+
+    <!-- Tab: Offers -->
+    <div class="tab-content active" id="tab-offers">
+      <div class="offer-grid" id="offers-grid">
+        <!-- Populated dynamically -->
+      </div>
+    </div>
+
+    <!-- Tab: Orders -->
+    <div class="tab-content" id="tab-orders">
+      <div class="card">
+        <div class="filter-row" style="display:flex; gap:12px; margin-bottom:16px;">
+          <select id="filter-order-status">
+            <option value="">All Status</option>
+            <option value="pending">Pending</option>
+            <option value="confirmed">Confirmed</option>
+            <option value="processing">Processing</option>
+            <option value="completed">Completed</option>
+            <option value="cancelled">Cancelled</option>
+          </select>
+          <button class="btn btn-outline" onclick="refreshOrders()">Refresh</button>
+        </div>
+
+        <div class="table-card">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Order ID</th>
+                <th>Date</th>
+                <th>Customer</th>
+                <th>Item</th>
+                <th>Qty</th>
+                <th>Total</th>
+                <th>Your Payout</th>
+                <th>Status</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="orders-body">
+              <tr><td colspan="9" class="muted-text">Loading...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tab: Profile -->
+    <div class="tab-content" id="tab-profile">
+      <div class="profile-section">
+        <h3>Company Information</h3>
+        <div class="profile-grid" id="profile-company">
+          <!-- Populated dynamically -->
+        </div>
+      </div>
+
+      <div class="profile-section">
+        <h3>Contact Information</h3>
+        <div class="profile-grid" id="profile-contact">
+          <!-- Populated dynamically -->
+        </div>
+      </div>
+
+      <div class="profile-section">
+        <h3>Account Settings</h3>
+        <div class="profile-grid" id="profile-settings">
+          <!-- Populated dynamically -->
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- Offer Modal -->
+  <div class="modal" id="offer-modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3 id="modal-title">Add New Offer</h3>
+        <button class="modal-close" onclick="closeOfferModal()">&times;</button>
+      </div>
+      <form id="offer-form" onsubmit="return false;">
+        <input type="hidden" id="offer-id">
+        
+        <div class="form-group">
+          <label>Offer Name *</label>
+          <input type="text" id="offer-name" required placeholder="e.g., General Consultation">
+        </div>
+        
+        <div class="form-group">
+          <label>Description</label>
+          <textarea id="offer-description" placeholder="Describe your service or product..."></textarea>
+        </div>
+        
+        <div class="form-row">
+          <div class="form-group">
+            <label>Type *</label>
+            <select id="offer-type" required>
+              <option value="service">Service</option>
+              <option value="product">Product</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Category *</label>
+            <input type="text" id="offer-category" required placeholder="e.g., Consultation">
+          </div>
+        </div>
+        
+        <div class="form-row">
+          <div class="form-group">
+            <label>Price *</label>
+            <input type="number" id="offer-price" required min="0" step="0.01" placeholder="0.00">
+          </div>
+          <div class="form-group">
+            <label>Currency</label>
+            <select id="offer-currency">
+              <option value="USD">USD</option>
+              <option value="EUR">EUR</option>
+              <option value="GBP">GBP</option>
+              <option value="ILS">ILS</option>
+            </select>
+          </div>
+        </div>
+        
+        <div class="form-row">
+          <div class="form-group">
+            <label>Unit</label>
+            <select id="offer-unit">
+              <option value="per_item">Per Item</option>
+              <option value="per_visit">Per Visit</option>
+              <option value="per_hour">Per Hour</option>
+              <option value="per_day">Per Day</option>
+              <option value="per_month">Per Month</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Status</label>
+            <select id="offer-active">
+              <option value="true">Active</option>
+              <option value="false">Inactive</option>
+            </select>
+          </div>
+        </div>
+        
+        <div class="form-group">
+          <label>Compatible Wallets</label>
+          <div class="wallet-checks">
+            <label><input type="checkbox" name="wallet" value="health" checked> Health Wallet</label>
+            <label><input type="checkbox" name="wallet" value="investment"> Investment Wallet</label>
+            <label><input type="checkbox" name="wallet" value="general"> General Wallet</label>
+          </div>
+        </div>
+        
+        <div style="display:flex; gap:12px; justify-content:flex-end; margin-top:24px;">
+          <button type="button" class="btn btn-secondary" onclick="closeOfferModal()">Cancel</button>
+          <button type="button" class="btn btn-primary" onclick="saveOffer()">Save Offer</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    let currentSupplier = null;
+
+    // Utility Functions
+    function getToken() {
+      return localStorage.getItem('phins_token');
+    }
+
+    async function apiGet(path) {
+      const token = getToken();
+      const r = await fetch(path, {
+        headers: token ? { 'Authorization': `Bearer ${token}` } : {}
+      });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(data.error || `HTTP ${r.status}`);
+      return data;
+    }
+
+    async function apiPost(path, payload) {
+      const token = getToken();
+      const r = await fetch(path, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+        },
+        body: JSON.stringify(payload || {})
+      });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(data.error || `HTTP ${r.status}`);
+      return data;
+    }
+
+    function esc(x) {
+      return String(x == null ? '' : x)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+    }
+
+    function formatDate(dateStr) {
+      if (!dateStr) return 'N/A';
+      return new Date(dateStr).toLocaleDateString();
+    }
+
+    function formatCurrency(amount, currency = 'USD') {
+      return new Intl.NumberFormat('en-US', { style: 'currency', currency: currency }).format(amount || 0);
+    }
+
+    function formatSupplierType(type) {
+      return (type || '').replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+    }
+
+    // Session Management
+    async function loadSession() {
+      const who = document.getElementById('whoami');
+      const token = getToken();
+      if (!token) {
+        who.textContent = 'Not logged in. Redirecting...';
+        setTimeout(() => window.location.href = '/supplier-login.html', 1500);
+        return null;
+      }
+      try {
+        const s = await apiGet('/api/session/validate');
+        if (s.role !== 'supplier') {
+          who.textContent = `Access denied for role: ${s.role}`;
+          return null;
+        }
+        who.textContent = `Signed in as ${s.company_name || s.username || 'unknown'}`;
+        currentSupplier = s;
+        return s;
+      } catch (e) {
+        who.textContent = 'Session invalid. Redirecting...';
+        setTimeout(() => window.location.href = '/supplier-login.html', 1500);
+        return null;
+      }
+    }
+
+    function logout() {
+      localStorage.removeItem('phins_token');
+      window.location.href = '/supplier-login.html';
+    }
+
+    // Tab Management
+    document.querySelectorAll('.tab').forEach(tab => {
+      tab.addEventListener('click', () => {
+        document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+        document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+        tab.classList.add('active');
+        document.getElementById('tab-' + tab.dataset.tab).classList.add('active');
+      });
+    });
+
+    // Load Supplier Info
+    async function loadSupplierInfo() {
+      try {
+        const data = await apiGet('/api/supplier/profile');
+        currentSupplier = { ...currentSupplier, ...data };
+        
+        document.getElementById('company-name').textContent = data.company_name || 'Your Company';
+        document.getElementById('supplier-type').textContent = formatSupplierType(data.supplier_type);
+        
+        // Stats
+        document.getElementById('stat-orders').textContent = data.total_orders || 0;
+        document.getElementById('stat-earnings').textContent = formatCurrency(data.total_revenue);
+        document.getElementById('stat-rating').textContent = (data.average_rating || 0).toFixed(1) + ' / 5.0';
+        
+        // Profile
+        document.getElementById('profile-company').innerHTML = `
+          <div class="profile-item">
+            <div class="label">Company Name</div>
+            <div class="value">${esc(data.company_name)}</div>
+          </div>
+          <div class="profile-item">
+            <div class="label">Supplier Type</div>
+            <div class="value">${formatSupplierType(data.supplier_type)}</div>
+          </div>
+          <div class="profile-item">
+            <div class="label">Business Registration</div>
+            <div class="value">${esc(data.business_registration_number) || 'N/A'}</div>
+          </div>
+          <div class="profile-item">
+            <div class="label">License Number</div>
+            <div class="value">${esc(data.license_number) || 'N/A'}</div>
+          </div>
+          <div class="profile-item" style="grid-column:1/-1">
+            <div class="label">Description</div>
+            <div class="value">${esc(data.description) || 'No description'}</div>
+          </div>
+        `;
+        
+        document.getElementById('profile-contact').innerHTML = `
+          <div class="profile-item">
+            <div class="label">Contact Name</div>
+            <div class="value">${esc(data.contact_name)}</div>
+          </div>
+          <div class="profile-item">
+            <div class="label">Email</div>
+            <div class="value">${esc(data.contact_email)}</div>
+          </div>
+          <div class="profile-item">
+            <div class="label">Phone</div>
+            <div class="value">${esc(data.contact_phone) || 'N/A'}</div>
+          </div>
+          <div class="profile-item">
+            <div class="label">Website</div>
+            <div class="value">${data.website ? `<a href="${esc(data.website)}" target="_blank">${esc(data.website)}</a>` : 'N/A'}</div>
+          </div>
+          <div class="profile-item" style="grid-column:1/-1">
+            <div class="label">Address</div>
+            <div class="value">${[data.address, data.city, data.state, data.postal_code, data.country].filter(Boolean).join(', ') || 'N/A'}</div>
+          </div>
+        `;
+        
+        document.getElementById('profile-settings').innerHTML = `
+          <div class="profile-item">
+            <div class="label">Commission Rate</div>
+            <div class="value">${((data.commission_rate || 0) * 100).toFixed(0)}%</div>
+          </div>
+          <div class="profile-item">
+            <div class="label">Settlement Frequency</div>
+            <div class="value">${(data.settlement_frequency || 'weekly').charAt(0).toUpperCase() + (data.settlement_frequency || 'weekly').slice(1)}</div>
+          </div>
+          <div class="profile-item">
+            <div class="label">Account Status</div>
+            <div class="value"><span class="badge badge-active">${(data.status || 'unknown').toUpperCase()}</span></div>
+          </div>
+          <div class="profile-item">
+            <div class="label">Member Since</div>
+            <div class="value">${formatDate(data.created_date)}</div>
+          </div>
+        `;
+      } catch (e) {
+        console.error('Failed to load supplier info:', e);
+      }
+    }
+
+    // Load Offers
+    async function loadOffers() {
+      const grid = document.getElementById('offers-grid');
+      grid.innerHTML = '<div class="muted-text">Loading offers...</div>';
+      
+      try {
+        const data = await apiGet('/api/supplier/offers');
+        const items = data.items || [];
+        
+        document.getElementById('stat-offers').textContent = items.filter(o => o.active).length;
+        
+        if (!items.length) {
+          grid.innerHTML = `
+            <div style="grid-column:1/-1; text-align:center; padding:48px;">
+              <div style="font-size:3rem; margin-bottom:16px;">📦</div>
+              <h3>No Offers Yet</h3>
+              <p class="muted-text">Click "Add New Offer" to create your first service or product listing.</p>
+            </div>
+          `;
+          return;
+        }
+        
+        grid.innerHTML = items.map(offer => `
+          <div class="offer-card ${offer.active ? '' : 'inactive'}">
+            <div class="type-badge ${offer.item_type}">${offer.item_type}</div>
+            <h4>${esc(offer.name)}</h4>
+            <div class="category">${esc(offer.category)}</div>
+            <div class="price">${formatCurrency(offer.price, offer.currency)}</div>
+            <div class="unit">${(offer.unit || 'per_item').replace(/_/g, ' ')}</div>
+            ${(offer.wallet_compatible || []).length ? `
+              <div style="margin-bottom:12px">
+                ${(Array.isArray(offer.wallet_compatible) ? offer.wallet_compatible : []).map(w => 
+                  `<span class="wallet-badge">${w}</span>`
+                ).join(' ')}
+              </div>
+            ` : ''}
+            <div class="stats">
+              <span>Orders: ${offer.total_orders || 0}</span>
+              <span>Revenue: ${formatCurrency(offer.total_revenue)}</span>
+            </div>
+            <div class="actions">
+              <button class="btn-sm btn-edit" onclick="editOffer('${esc(offer.id)}')">Edit</button>
+              <button class="btn-sm btn-toggle" onclick="toggleOffer('${esc(offer.id)}', ${!offer.active})">
+                ${offer.active ? 'Deactivate' : 'Activate'}
+              </button>
+            </div>
+          </div>
+        `).join('');
+      } catch (e) {
+        grid.innerHTML = `<div class="text-danger">Failed to load offers: ${esc(e.message)}</div>`;
+      }
+    }
+
+    // Load Orders
+    async function refreshOrders() {
+      const tbody = document.getElementById('orders-body');
+      tbody.innerHTML = '<tr><td colspan="9" class="muted-text">Loading...</td></tr>';
+      
+      try {
+        const statusFilter = document.getElementById('filter-order-status').value;
+        let url = '/api/supplier/orders';
+        if (statusFilter) url += `?status=${statusFilter}`;
+        
+        const data = await apiGet(url);
+        const items = data.items || [];
+        
+        if (!items.length) {
+          tbody.innerHTML = '<tr><td colspan="9" class="muted-text">No orders found</td></tr>';
+          return;
+        }
+        
+        tbody.innerHTML = items.map(order => `
+          <tr>
+            <td>${esc(order.id)}</td>
+            <td>${formatDate(order.created_date)}</td>
+            <td>${esc(order.customer_id)}</td>
+            <td>${esc(order.item_name)}</td>
+            <td>${order.quantity || 1}</td>
+            <td>${formatCurrency(order.total_amount)}</td>
+            <td>${formatCurrency(order.supplier_payout)}</td>
+            <td>
+              <span class="order-status ${order.status}">${(order.status || '').toUpperCase()}</span>
+            </td>
+            <td>
+              ${order.status === 'pending' ? `
+                <button class="btn-sm btn-edit" onclick="updateOrderStatus('${esc(order.id)}', 'confirmed')">Confirm</button>
+              ` : order.status === 'confirmed' ? `
+                <button class="btn-sm btn-edit" onclick="updateOrderStatus('${esc(order.id)}', 'processing')">Start</button>
+              ` : order.status === 'processing' ? `
+                <button class="btn-sm btn-edit" onclick="updateOrderStatus('${esc(order.id)}', 'completed')">Complete</button>
+              ` : ''}
+            </td>
+          </tr>
+        `).join('');
+      } catch (e) {
+        tbody.innerHTML = `<tr><td colspan="9" class="text-danger">Failed: ${esc(e.message)}</td></tr>`;
+      }
+    }
+
+    // Offer Modal Functions
+    function openOfferModal(offerId = null) {
+      document.getElementById('modal-title').textContent = offerId ? 'Edit Offer' : 'Add New Offer';
+      document.getElementById('offer-id').value = offerId || '';
+      
+      if (!offerId) {
+        // Clear form for new offer
+        document.getElementById('offer-name').value = '';
+        document.getElementById('offer-description').value = '';
+        document.getElementById('offer-type').value = 'service';
+        document.getElementById('offer-category').value = '';
+        document.getElementById('offer-price').value = '';
+        document.getElementById('offer-currency').value = 'USD';
+        document.getElementById('offer-unit').value = 'per_item';
+        document.getElementById('offer-active').value = 'true';
+        document.querySelectorAll('input[name="wallet"]').forEach(cb => {
+          cb.checked = cb.value === 'health';
+        });
+      }
+      
+      document.getElementById('offer-modal').classList.add('active');
+    }
+
+    function closeOfferModal() {
+      document.getElementById('offer-modal').classList.remove('active');
+    }
+
+    async function editOffer(offerId) {
+      try {
+        const data = await apiGet('/api/supplier/offers');
+        const offer = (data.items || []).find(o => o.id === offerId);
+        
+        if (!offer) {
+          alert('Offer not found');
+          return;
+        }
+        
+        document.getElementById('offer-id').value = offer.id;
+        document.getElementById('offer-name').value = offer.name || '';
+        document.getElementById('offer-description').value = offer.description || '';
+        document.getElementById('offer-type').value = offer.item_type || 'service';
+        document.getElementById('offer-category').value = offer.category || '';
+        document.getElementById('offer-price').value = offer.price || '';
+        document.getElementById('offer-currency').value = offer.currency || 'USD';
+        document.getElementById('offer-unit').value = offer.unit || 'per_item';
+        document.getElementById('offer-active').value = offer.active ? 'true' : 'false';
+        
+        const wallets = Array.isArray(offer.wallet_compatible) ? offer.wallet_compatible : [];
+        document.querySelectorAll('input[name="wallet"]').forEach(cb => {
+          cb.checked = wallets.includes(cb.value);
+        });
+        
+        openOfferModal(offerId);
+      } catch (e) {
+        alert('Failed to load offer: ' + e.message);
+      }
+    }
+
+    async function saveOffer() {
+      const offerId = document.getElementById('offer-id').value;
+      const name = document.getElementById('offer-name').value.trim();
+      const description = document.getElementById('offer-description').value.trim();
+      const item_type = document.getElementById('offer-type').value;
+      const category = document.getElementById('offer-category').value.trim();
+      const price = parseFloat(document.getElementById('offer-price').value);
+      const currency = document.getElementById('offer-currency').value;
+      const unit = document.getElementById('offer-unit').value;
+      const active = document.getElementById('offer-active').value === 'true';
+      
+      const wallet_compatible = Array.from(document.querySelectorAll('input[name="wallet"]:checked')).map(cb => cb.value);
+      
+      if (!name || !category || isNaN(price)) {
+        alert('Please fill in all required fields');
+        return;
+      }
+      
+      try {
+        const payload = {
+          id: offerId || undefined,
+          name,
+          description,
+          item_type,
+          category,
+          price,
+          currency,
+          unit,
+          active,
+          wallet_compatible
+        };
+        
+        await apiPost('/api/supplier/offers/upsert', payload);
+        closeOfferModal();
+        loadOffers();
+        alert(offerId ? 'Offer updated successfully' : 'Offer created successfully');
+      } catch (e) {
+        alert('Failed to save offer: ' + e.message);
+      }
+    }
+
+    async function toggleOffer(offerId, newActive) {
+      try {
+        const data = await apiGet('/api/supplier/offers');
+        const offer = (data.items || []).find(o => o.id === offerId);
+        
+        if (!offer) {
+          alert('Offer not found');
+          return;
+        }
+        
+        await apiPost('/api/supplier/offers/upsert', {
+          ...offer,
+          active: newActive
+        });
+        
+        loadOffers();
+      } catch (e) {
+        alert('Failed to toggle offer: ' + e.message);
+      }
+    }
+
+    async function updateOrderStatus(orderId, status) {
+      try {
+        await apiPost('/api/supplier/orders/update-status', { 
+          transaction_id: orderId, 
+          status 
+        });
+        refreshOrders();
+      } catch (e) {
+        alert('Failed to update order: ' + e.message);
+      }
+    }
+
+    // Initialize
+    document.addEventListener('DOMContentLoaded', async () => {
+      const session = await loadSession();
+      if (session) {
+        await Promise.all([
+          loadSupplierInfo(),
+          loadOffers(),
+          refreshOrders()
+        ]);
+      }
+    });
+
+    // Close modal on escape key
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') closeOfferModal();
+    });
+
+    // Close modal on outside click
+    document.getElementById('offer-modal').addEventListener('click', (e) => {
+      if (e.target.classList.contains('modal')) closeOfferModal();
+    });
+  </script>
+</body>
+</html>
