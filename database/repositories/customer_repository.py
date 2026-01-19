@@ -2,7 +2,7 @@
 
 from typing import Optional, List
 from sqlalchemy.orm import Session
-from datetime import datetime
+from datetime import datetime, timezone
 from database.models import Customer
 from .base import BaseRepository
 
@@ -40,7 +40,7 @@ class CustomerRepository(BaseRepository[Customer]):
         try:
             customer = self.get_by_id(customer_id)
             if customer:
-                customer.last_login = datetime.utcnow()
+                customer.last_login = datetime.now(timezone.utc)
                 self.session.commit()
                 return True
             return False

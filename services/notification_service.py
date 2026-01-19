@@ -26,7 +26,7 @@ import hashlib
 import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from enum import Enum
 from typing import Any, Dict, List, Optional, Tuple, Union
 from functools import wraps
@@ -312,7 +312,7 @@ class RateLimitResult:
 def generate_id(prefix: str = "") -> str:
     """Generate a unique ID with optional prefix"""
     unique_part = uuid.uuid4().hex[:16]
-    timestamp = datetime.utcnow().strftime('%Y%m%d%H%M%S')
+    timestamp = datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')
     if prefix:
         return f"{prefix}_{timestamp}_{unique_part}"
     return f"{timestamp}_{unique_part}"
@@ -453,7 +453,7 @@ class RateLimiter:
         lock = self._get_lock(key)
         
         with lock:
-            now = datetime.utcnow()
+            now = datetime.now(timezone.utc)
             
             # Check if blocked
             if key in self._blocks:
@@ -520,7 +520,7 @@ class RateLimiter:
         with lock:
             if key not in self._counters:
                 self._counters[key] = []
-            self._counters[key].append(datetime.utcnow())
+            self._counters[key].append(datetime.now(timezone.utc))
     
     def clear_blocks(self, identifier: str, action: Optional[str] = None) -> None:
         """Clear rate limit blocks for an identifier"""
@@ -532,10 +532,22 @@ class RateLimiter:
                 keys_to_remove = [k for k in self._blocks if k.endswith(f":{identifier}")]
                 for key in keys_to_remove:
                     del self._blocks[key]
+    
+    def reset_all(self) -> None:
+        """Reset all rate limiting state (for testing)"""
+        with self._master_lock:
+            self._counters.clear()
+            self._blocks.clear()
+            self._locks.clear()
 
 
 # Global rate limiter instance
 _rate_limiter = RateLimiter()
+
+
+def reset_global_rate_limiter() -> None:
+    """Reset the global rate limiter state (for testing)"""
+    _rate_limiter.reset_all()
 
 
 # ============================================================================
@@ -571,7 +583,7 @@ class NotificationAuditLogger:
         """Log an audit event"""
         event = {
             'id': generate_id('AUDIT'),
-            'timestamp': datetime.utcnow().isoformat(),
+            'timestamp': datetime.now(timezone.utc).isoformat(),
             'action': action,
             'actor_type': actor_type,
             'actor_id': actor_id,
@@ -765,7 +777,7 @@ class MockEmailProvider(EmailProvider):
             'html_body': html_body,
             'from_address': from_address,
             'message_id': message_id,
-            'sent_at': datetime.utcnow().isoformat()
+            'sent_at': datetime.now(timezone.utc).isoformat()
         })
         logger.info(f"Mock email sent to {to}: {subject}")
         return True, message_id, None
@@ -813,7 +825,7 @@ class MockSMSProvider(SMSProvider):
             'message': message,
             'from_number': from_number,
             'message_id': message_id,
-            'sent_at': datetime.utcnow().isoformat()
+            'sent_at': datetime.now(timezone.utc).isoformat()
         })
         logger.info(f"Mock SMS sent to {to}: {message[:50]}...")
         return True, message_id, None
@@ -951,7 +963,7 @@ class OTPService:
         code_hash = hash_otp(otp_code, salt)
         identifier_hash = hash_identifier(request.identifier)
         
-        expires_at = datetime.utcnow() + timedelta(seconds=request.expiry_seconds)
+        expires_at = datetime.now(timezone.utc) + timedelta(seconds=request.expiry_seconds)
         
         otp_record = {
             'id': otp_id,
@@ -966,7 +978,7 @@ class OTPService:
             'channel': request.channel.value,
             'status': OTPStatus.ACTIVE.value,
             'expires_at': expires_at.isoformat(),
-            'created_at': datetime.utcnow().isoformat(),
+            'created_at': datetime.now(timezone.utc).isoformat(),
             'attempt_count': 0,
             'max_attempts': NotificationConfig.OTP_MAX_ATTEMPTS,
             'ip_address': request.ip_address,
@@ -1074,7 +1086,7 @@ class OTPService:
             
             # Check expiry
             expires_at = datetime.fromisoformat(matching_otp['expires_at'])
-            if datetime.utcnow() > expires_at:
+            if datetime.now(timezone.utc) > expires_at:
                 matching_otp['status'] = OTPStatus.EXPIRED.value
                 _audit_logger.log(
                     action="otp_verify_expired",
@@ -1133,7 +1145,7 @@ class OTPService:
             
             # Success - mark as used
             matching_otp['status'] = OTPStatus.USED.value
-            matching_otp['used_at'] = datetime.utcnow().isoformat()
+            matching_otp['used_at'] = datetime.now(timezone.utc).isoformat()
             
             _audit_logger.log(
                 action="otp_verified",
@@ -1247,7 +1259,7 @@ For security reasons, never share this code with anyone.
                 status=NotificationStatus.DELIVERED if success else NotificationStatus.FAILED,
                 provider_message_id=message_id,
                 error_message=error,
-                sent_at=datetime.utcnow() if success else None
+                sent_at=datetime.now(timezone.utc) if success else None
             )
         
         elif request.channel == NotificationChannel.SMS:
@@ -1264,7 +1276,7 @@ For security reasons, never share this code with anyone.
                 status=NotificationStatus.DELIVERED if success else NotificationStatus.FAILED,
                 provider_message_id=message_id,
                 error_message=error,
-                sent_at=datetime.utcnow() if success else None
+                sent_at=datetime.now(timezone.utc) if success else None
             )
         
         return NotificationResult(
@@ -1507,7 +1519,7 @@ class NotificationService:
             'quiet_hours': preferences.get('quiet_hours'),
             'max_daily': preferences.get('max_daily'),
             'categories': preferences.get('categories', {}),
-            'updated_at': datetime.utcnow().isoformat()
+            'updated_at': datetime.now(timezone.utc).isoformat()
         }
         
         _audit_logger.log(
@@ -1649,7 +1661,7 @@ class NotificationService:
                 status=NotificationStatus.DELIVERED if success else NotificationStatus.FAILED,
                 provider_message_id=message_id,
                 error_message=error,
-                sent_at=datetime.utcnow() if success else None
+                sent_at=datetime.now(timezone.utc) if success else None
             )
         
         elif request.channel == NotificationChannel.SMS:
@@ -1664,7 +1676,7 @@ class NotificationService:
                 status=NotificationStatus.DELIVERED if success else NotificationStatus.FAILED,
                 provider_message_id=message_id,
                 error_message=error,
-                sent_at=datetime.utcnow() if success else None
+                sent_at=datetime.now(timezone.utc) if success else None
             )
         
         return NotificationResult(
@@ -1695,7 +1707,7 @@ class NotificationService:
             'error_code': result.error_code,
             'error_message': result.error_message,
             'sent_at': result.sent_at.isoformat() if result.sent_at else None,
-            'created_at': datetime.utcnow().isoformat()
+            'created_at': datetime.now(timezone.utc).isoformat()
         }
         
         with self._history_lock:
@@ -1874,8 +1886,8 @@ class ClientVerificationService:
             'identifier_hash': hash_identifier(identifier),
             'channel': channel.value,
             'status': 'pending',
-            'initiated_at': datetime.utcnow().isoformat(),
-            'expires_at': (datetime.utcnow() + timedelta(hours=24)).isoformat(),
+            'initiated_at': datetime.now(timezone.utc).isoformat(),
+            'expires_at': (datetime.now(timezone.utc) + timedelta(hours=24)).isoformat(),
             'ip_address': ip_address,
             'user_agent': user_agent,
             'device_fingerprint': device_fingerprint,
@@ -1901,7 +1913,7 @@ class ClientVerificationService:
         if otp_result.success:
             with self._lock:
                 self._verifications[verification_id]['otp_codes_sent'] = 1
-                self._verifications[verification_id]['last_otp_at'] = datetime.utcnow().isoformat()
+                self._verifications[verification_id]['last_otp_at'] = datetime.now(timezone.utc).isoformat()
         
         _audit_logger.log(
             action="verification_initiated",
@@ -1951,7 +1963,7 @@ class ClientVerificationService:
                 }
             
             # Check expiry
-            if datetime.utcnow() > datetime.fromisoformat(verification['expires_at']):
+            if datetime.now(timezone.utc) > datetime.fromisoformat(verification['expires_at']):
                 verification['status'] = 'expired'
                 return {
                     'success': False,
@@ -1972,7 +1984,7 @@ class ClientVerificationService:
         with self._lock:
             if otp_result.success:
                 verification['status'] = 'verified'
-                verification['verified_at'] = datetime.utcnow().isoformat()
+                verification['verified_at'] = datetime.now(timezone.utc).isoformat()
             elif otp_result.error_code == 'MAX_ATTEMPTS_EXCEEDED':
                 verification['status'] = 'failed'
         
@@ -2022,8 +2034,8 @@ class ClientVerificationService:
             if 'last_otp_at' in verification:
                 last_sent = datetime.fromisoformat(verification['last_otp_at'])
                 cooldown = timedelta(seconds=NotificationConfig.OTP_RESEND_COOLDOWN_SECONDS)
-                if datetime.utcnow() < last_sent + cooldown:
-                    wait_seconds = int((last_sent + cooldown - datetime.utcnow()).total_seconds())
+                if datetime.now(timezone.utc) < last_sent + cooldown:
+                    wait_seconds = int((last_sent + cooldown - datetime.now(timezone.utc)).total_seconds())
                     return {
                         'success': False,
                         'error_code': 'COOLDOWN',
@@ -2043,7 +2055,7 @@ class ClientVerificationService:
         if otp_result.success:
             with self._lock:
                 verification['otp_codes_sent'] += 1
-                verification['last_otp_at'] = datetime.utcnow().isoformat()
+                verification['last_otp_at'] = datetime.now(timezone.utc).isoformat()
         
         return {
             'success': otp_result.success,
@@ -2165,4 +2177,7 @@ __all__ = [
     'validate_phone',
     'mask_email',
     'mask_phone',
+    
+    # Testing utilities
+    'reset_global_rate_limiter',
 ]

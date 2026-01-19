@@ -468,5 +468,85 @@
     "customer_id": "CUST-39295",
     "email": "duplicate@example.com",
     "registered_at": "2026-01-19T21:06:09.281593"
+  },
+  {
+    "username": "newcustomer@example.com",
+    "password_hash": "75b221e1cec1db0764bbf00c7483391f59820c98d31f1175cecd922fc3f81454",
+    "password_salt": "c96a4fe59e2f5592bccbd4629c66b659",
+    "name": "New Customer",
+    "role": "customer",
+    "customer_id": "CUST-52245",
+    "email": "newcustomer@example.com",
+    "registered_at": "2026-01-19T21:07:48.909598"
+  },
+  {
+    "username": "pipeline_test_210828@example.com",
+    "password_hash": "70672d23aad3d4626139b9eb34f6ad8790bc53fa7b9a00c6b9e1444b089f1155",
+    "password_salt": "b03d7a84df3ffc8fd963f5e67b267db6",
+    "name": "Pipeline Test Customer",
+    "role": "customer",
+    "customer_id": "CUST-25935",
+    "email": "pipeline_test_210828@example.com",
+    "registered_at": "2026-01-19T21:08:28.461789"
+  },
+  {
+    "username": "premium_test_210829@example.com",
+    "password_hash": "b20ee1dbdaf6c80d6601fc93eb199ee7b8bb5cce9de832eff5035c2aa9bed78f",
+    "password_salt": "7f6449105a8fe9286b46b338406d6085",
+    "name": "Premium Test Customer",
+    "role": "customer",
+    "customer_id": "CUST-81228",
+    "email": "premium_test_210829@example.com",
+    "registered_at": "2026-01-19T21:08:29.013046"
+  },
+  {
+    "username": "duplicate@example.com",
+    "password_hash": "0d2726210a2879458584feb1df22deba47a42864470b1e9ea252f02f84f30424",
+    "password_salt": "d1b74dd575b02c23a22e145c6aae837c",
+    "name": "Duplicate Test",
+    "role": "customer",
+    "customer_id": "CUST-66072",
+    "email": "duplicate@example.com",
+    "registered_at": "2026-01-19T21:08:44.543539"
+  },
+  {
+    "username": "newcustomer@example.com",
+    "password_hash": "cd867897682b485511e7ae408d946afbc68769df08173063bbf8ac4b25357f2a",
+    "password_salt": "059fe8c60e31512185b5f98f28d889c3",
+    "name": "New Customer",
+    "role": "customer",
+    "customer_id": "CUST-22648",
+    "email": "newcustomer@example.com",
+    "registered_at": "2026-01-19T21:13:39.443534"
+  },
+  {
+    "username": "pipeline_test_211418@example.com",
+    "password_hash": "08e94639409afe89ad7b3ad73cb7678d3a4e4fc064244d54988377f888986c1b",
+    "password_salt": "7cd63f98821ae6de4b656bbcadf87fed",
+    "name": "Pipeline Test Customer",
+    "role": "customer",
+    "customer_id": "CUST-15788",
+    "email": "pipeline_test_211418@example.com",
+    "registered_at": "2026-01-19T21:14:18.094852"
+  },
+  {
+    "username": "premium_test_211419@example.com",
+    "password_hash": "7dad72f3ef15e76d90d638a676fe46b4520565a9c9a09585cb0a24253fe724ca",
+    "password_salt": "2846646114bd9843a61a683fb1b8c247",
+    "name": "Premium Test Customer",
+    "role": "customer",
+    "customer_id": "CUST-80065",
+    "email": "premium_test_211419@example.com",
+    "registered_at": "2026-01-19T21:14:19.147596"
+  },
+  {
+    "username": "duplicate@example.com",
+    "password_hash": "9dd8f23d071b60d4846ce609059a2380f4dacd25bb62c4c1ab341eb94c5c1823",
+    "password_salt": "faaf3070e9a0c6411ad7e8e1914ba2df",
+    "name": "Duplicate Test",
+    "role": "customer",
+    "customer_id": "CUST-96010",
+    "email": "duplicate@example.com",
+    "registered_at": "2026-01-19T21:14:36.185518"
   }
 ]
