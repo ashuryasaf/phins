@@ -18,7 +18,7 @@ import threading
 import time
 import logging
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from enum import Enum
 from typing import Any, Callable, Dict, List, Optional, Tuple
 from queue import PriorityQueue, Empty
@@ -238,7 +238,7 @@ class NotificationQueueService:
             'success_count': 0,
             'failure_count': 0,
             'processing_times': [],  # Last 1000
-            'start_time': datetime.utcnow()
+            'start_time': datetime.now(timezone.utc)
         }
         self._metrics_lock = threading.Lock()
         
@@ -298,7 +298,7 @@ class NotificationQueueService:
         with self._items_lock:
             self._items[item_id] = item
         
-        if scheduled_at and scheduled_at > datetime.utcnow():
+        if scheduled_at and scheduled_at > datetime.now(timezone.utc):
             # Scheduled for later
             item.status = QueueItemStatus.SCHEDULED
             with self._items_lock:
@@ -379,7 +379,7 @@ class NotificationQueueService:
         
         # Calculate metrics
         with self._metrics_lock:
-            elapsed = (datetime.utcnow() - self._metrics['start_time']).total_seconds() / 60
+            elapsed = (datetime.now(timezone.utc) - self._metrics['start_time']).total_seconds() / 60
             if elapsed > 0:
                 stats.processed_per_minute = self._metrics['processed_count'] / elapsed
             
@@ -402,7 +402,7 @@ class NotificationQueueService:
             pending_items = [i for i in self._items.values() if i.status == QueueItemStatus.PENDING]
             if pending_items:
                 oldest = min(i.created_at for i in pending_items)
-                stats.oldest_pending_item_age_seconds = (datetime.utcnow() - oldest).total_seconds()
+                stats.oldest_pending_item_age_seconds = (datetime.now(timezone.utc) - oldest).total_seconds()
                 
                 if stats.oldest_pending_item_age_seconds > QueueConfig.STALE_MESSAGE_THRESHOLD:
                     stats.health_issues.append(f"Stale messages detected (oldest: {stats.oldest_pending_item_age_seconds:.0f}s)")
@@ -516,13 +516,13 @@ class NotificationQueueService:
                     continue
                 
                 # Check expiry
-                if item.expires_at and datetime.utcnow() > item.expires_at:
+                if item.expires_at and datetime.now(timezone.utc) > item.expires_at:
                     item.status = QueueItemStatus.EXPIRED
                     logger.debug(f"Item {item.id} expired")
                     continue
                 
                 # Check if this is a retry that's not ready yet
-                if item.next_retry_at and datetime.utcnow() < item.next_retry_at:
+                if item.next_retry_at and datetime.now(timezone.utc) < item.next_retry_at:
                     # Put back in queue
                     self._queue.put(item)
                     time.sleep(0.1)  # Small delay to prevent busy loop
@@ -539,7 +539,7 @@ class NotificationQueueService:
     
     def _process_item(self, item: QueueItem, worker_id: int) -> None:
         """Process a single queue item"""
-        start_time = datetime.utcnow()
+        start_time = datetime.now(timezone.utc)
         
         # Update status
         item.status = QueueItemStatus.PROCESSING
@@ -553,7 +553,7 @@ class NotificationQueueService:
             result = self._notification_service.send(item.notification_request)
             
             # Record timing
-            processing_time = (datetime.utcnow() - start_time).total_seconds() * 1000
+            processing_time = (datetime.now(timezone.utc) - start_time).total_seconds() * 1000
             with self._metrics_lock:
                 self._metrics['processing_times'].append(processing_time)
                 if len(self._metrics['processing_times']) > 1000:
@@ -572,7 +572,7 @@ class NotificationQueueService:
     def _handle_success(self, item: QueueItem, result: NotificationResult) -> None:
         """Handle successful delivery"""
         item.status = QueueItemStatus.COMPLETED
-        item.completed_at = datetime.utcnow()
+        item.completed_at = datetime.now(timezone.utc)
         item.last_result = result
         
         with self._metrics_lock:
@@ -599,7 +599,7 @@ class NotificationQueueService:
             'attempt': item.attempt_count,
             'error_code': error_code,
             'error_message': error_message,
-            'timestamp': datetime.utcnow().isoformat()
+            'timestamp': datetime.now(timezone.utc).isoformat()
         })
         
         with self._metrics_lock:
@@ -619,7 +619,7 @@ class NotificationQueueService:
             delay = delay + jitter
             
             item.status = QueueItemStatus.PENDING
-            item.next_retry_at = datetime.utcnow() + timedelta(seconds=delay)
+            item.next_retry_at = datetime.now(timezone.utc) + timedelta(seconds=delay)
             
             # Re-queue
             self._queue.put(item)
@@ -631,7 +631,7 @@ class NotificationQueueService:
         else:
             # Move to dead letter queue
             item.status = QueueItemStatus.DEAD_LETTER
-            item.completed_at = datetime.utcnow()
+            item.completed_at = datetime.now(timezone.utc)
             
             with self._items_lock:
                 self._dead_letter[item.id] = item
@@ -654,7 +654,7 @@ class NotificationQueueService:
         
         while not self._shutdown_event.is_set():
             try:
-                now = datetime.utcnow()
+                now = datetime.now(timezone.utc)
                 
                 # Check scheduled items
                 with self._items_lock:
@@ -728,11 +728,11 @@ class BatchNotificationService:
         batch_id = generate_id('BATCH')
         item_ids = []
         
-        scheduled_at = datetime.utcnow()
+        scheduled_at = datetime.now(timezone.utc)
         
         for i, request in enumerate(requests):
             if stagger_seconds > 0:
-                scheduled_at = datetime.utcnow() + timedelta(seconds=i * stagger_seconds)
+                scheduled_at = datetime.now(timezone.utc) + timedelta(seconds=i * stagger_seconds)
             
             item_id = self._queue_service.enqueue(
                 request=request,

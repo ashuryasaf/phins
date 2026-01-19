@@ -7,7 +7,7 @@ Useful for transitioning existing running servers.
 
 import logging
 from typing import Dict, Any
-from datetime import datetime
+from datetime import datetime, timezone
 
 from database import init_database, get_db_session
 from database.manager import DatabaseManager
@@ -140,7 +140,7 @@ def migrate_claims(claims_dict: Dict[str, Dict[str, Any]], db: DatabaseManager):
                 try:
                     filed_date = datetime.fromisoformat(claim_data['filed_date'])
                 except Exception:
-                    filed_date = datetime.utcnow()
+                    filed_date = datetime.now(timezone.utc)
             
             if 'approval_date' in claim_data and claim_data['approval_date']:
                 try:
@@ -200,7 +200,7 @@ def migrate_underwriting(underwriting_dict: Dict[str, Dict[str, Any]], db: Datab
                 try:
                     submitted_date = datetime.fromisoformat(uw_data['submitted_date'])
                 except Exception:
-                    submitted_date = datetime.utcnow()
+                    submitted_date = datetime.now(timezone.utc)
             
             if 'decision_date' in uw_data and uw_data['decision_date']:
                 try:

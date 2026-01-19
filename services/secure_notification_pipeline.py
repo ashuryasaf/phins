@@ -48,7 +48,7 @@ import logging
 import threading
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from enum import Enum
 from typing import Any, Dict, List, Optional, Tuple, Callable
 from functools import wraps
@@ -429,7 +429,7 @@ class TwilioWhatsAppProvider(WhatsAppProvider):
     
     def _mock_send(self, to: str, message: str) -> Tuple[bool, Optional[str], Optional[str]]:
         """Mock send for development/testing"""
-        message_id = f"MOCK_WA_{datetime.utcnow().strftime('%Y%m%d%H%M%S')}_{secrets.token_hex(4)}"
+        message_id = f"MOCK_WA_{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}_{secrets.token_hex(4)}"
         logger.info(f"Mock WhatsApp to {to}: {message[:50]}...")
         return True, message_id, None
 
@@ -509,7 +509,7 @@ class MetaWhatsAppProvider(WhatsAppProvider):
     
     def _mock_send(self, to: str, message: str) -> Tuple[bool, Optional[str], Optional[str]]:
         """Mock send for development/testing"""
-        message_id = f"MOCK_META_WA_{datetime.utcnow().strftime('%Y%m%d%H%M%S')}_{secrets.token_hex(4)}"
+        message_id = f"MOCK_META_WA_{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}_{secrets.token_hex(4)}"
         logger.info(f"Mock Meta WhatsApp to {to}: {message[:50]}...")
         return True, message_id, None
 
@@ -528,14 +528,14 @@ class MockWhatsAppProvider(WhatsAppProvider):
         template_params: Optional[Dict[str, str]] = None
     ) -> Tuple[bool, Optional[str], Optional[str]]:
         """Store message for testing"""
-        message_id = f"MOCK_WA_{datetime.utcnow().strftime('%Y%m%d%H%M%S')}_{secrets.token_hex(4)}"
+        message_id = f"MOCK_WA_{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}_{secrets.token_hex(4)}"
         self.sent_messages.append({
             'to': to,
             'message': message,
             'template_name': template_name,
             'template_params': template_params,
             'message_id': message_id,
-            'sent_at': datetime.utcnow().isoformat()
+            'sent_at': datetime.now(timezone.utc).isoformat()
         })
         logger.info(f"Mock WhatsApp to {to}: {message[:50]}...")
         return True, message_id, None
@@ -620,7 +620,7 @@ class SecureNotificationPipeline:
         4. Generate and send OTP
         5. Return operation ID for verification
         """
-        operation_id = f"OP_{datetime.utcnow().strftime('%Y%m%d%H%M%S')}_{secrets.token_hex(6)}"
+        operation_id = f"OP_{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}_{secrets.token_hex(6)}"
         
         # Validate request
         validation = self._validate_operation_request(request)
@@ -711,7 +711,7 @@ class SecureNotificationPipeline:
                 'user_agent': request.user_agent,
                 'device_fingerprint': request.device_fingerprint,
                 'checkpoint_id': checkpoint.checkpoint_id,
-                'created_at': datetime.utcnow().isoformat(),
+                'created_at': datetime.now(timezone.utc).isoformat(),
                 'expires_at': otp_result.expires_at.isoformat() if otp_result.expires_at else None,
                 'verified_at': None
             }
@@ -741,7 +741,7 @@ class SecureNotificationPipeline:
             otp_expires_at=otp_result.expires_at,
             verification_channel=channel,
             attempts_remaining=SecureNotificationConfig.SECURE_OTP_MAX_ATTEMPTS,
-            can_resend_at=datetime.utcnow() + timedelta(seconds=60)
+            can_resend_at=datetime.now(timezone.utc) + timedelta(seconds=60)
         )
     
     def verify_operation(
@@ -823,12 +823,12 @@ class SecureNotificationPipeline:
         # Update operation status
         with self._operations_lock:
             operation['status'] = 'verified'
-            operation['verified_at'] = datetime.utcnow().isoformat()
+            operation['verified_at'] = datetime.now(timezone.utc).isoformat()
         
         # Complete integrity checkpoint
         checkpoint = self._checkpoints.get(operation.get('checkpoint_id'))
         if checkpoint:
-            checkpoint.completed_at = datetime.utcnow()
+            checkpoint.completed_at = datetime.now(timezone.utc)
             checkpoint.compute_hash()
         
         # Audit log
@@ -926,7 +926,7 @@ class SecureNotificationPipeline:
             verification_channel=use_channel,
             error_code=otp_result.error_code,
             error_message=otp_result.error_message,
-            can_resend_at=datetime.utcnow() + timedelta(seconds=60)
+            can_resend_at=datetime.now(timezone.utc) + timedelta(seconds=60)
         )
     
     def get_operation_status(self, operation_id: str) -> Optional[Dict[str, Any]]:
@@ -955,7 +955,7 @@ class SecureNotificationPipeline:
         
         Supports: Email, SMS, WhatsApp
         """
-        notification_id = f"PUSH_{datetime.utcnow().strftime('%Y%m%d%H%M%S')}_{secrets.token_hex(6)}"
+        notification_id = f"PUSH_{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}_{secrets.token_hex(6)}"
         
         channel_results = {}
         any_success = False
@@ -1374,14 +1374,14 @@ class SecureNotificationPipeline:
         request: SecureOperationRequest
     ) -> IntegrityCheckpoint:
         """Create an integrity checkpoint before operation"""
-        checkpoint_id = f"CKP_{datetime.utcnow().strftime('%Y%m%d%H%M%S')}_{secrets.token_hex(4)}"
+        checkpoint_id = f"CKP_{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}_{secrets.token_hex(4)}"
         
         # Capture pre-operation state
         pre_state = {
             'customer_id': request.customer_id,
             'operation_type': request.operation_type.value,
             'amount': request.amount,
-            'timestamp': datetime.utcnow().isoformat()
+            'timestamp': datetime.now(timezone.utc).isoformat()
         }
         
         # Get customer's current state from data integrity service
@@ -1515,8 +1515,8 @@ class SecureNotificationPipeline:
             return
         
         entry = {
-            'id': f"AUDIT_{datetime.utcnow().strftime('%Y%m%d%H%M%S')}_{secrets.token_hex(4)}",
-            'timestamp': datetime.utcnow().isoformat(),
+            'id': f"AUDIT_{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}_{secrets.token_hex(4)}",
+            'timestamp': datetime.now(timezone.utc).isoformat(),
             'action': action,
             'operation_id': operation_id,
             'notification_id': notification_id,

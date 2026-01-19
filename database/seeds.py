@@ -20,7 +20,7 @@ import secrets
 import random
 import json
 import os
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import logging
 
 from database import get_db_session, init_database
@@ -273,7 +273,7 @@ def seed_sample_data(session=None):
         underwriting_repo = UnderwritingRepository(session)
         billing_repo = BillingRepository(session)
         
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         
         # =================================================================
         # PRIMARY TEST ACCOUNT: asaf@assurance.co.il
@@ -333,12 +333,12 @@ def seed_sample_data(session=None):
                         'type': 'deposit',
                         'amount': 20000.00,
                         'payment_method': 'bank_transfer',
-                        'timestamp': datetime.utcnow().isoformat(),
+                        'timestamp': datetime.now(timezone.utc).isoformat(),
                         'description': 'Initial deposit via billing',
                         'balance_after': 20000.00
                     }
                 ],
-                'created_at': datetime.utcnow().isoformat()
+                'created_at': datetime.now(timezone.utc).isoformat()
             }
             logger.info(f"Created health wallet with $20,000 balance for CUST-ASAF-001")
             

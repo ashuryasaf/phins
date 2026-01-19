@@ -17,7 +17,7 @@ import json
 import hashlib
 import secrets
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Dict, Any, List, Optional, Tuple
 import random
 
@@ -212,7 +212,7 @@ class SupplierManagementService:
         type_config = self.supplier_types[supplier_type]
         
         # Build supplier record
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         supplier = {
             'id': supplier_id,
             'company_name': data['company_name'].strip(),
@@ -467,7 +467,7 @@ class SupplierManagementService:
         if supplier['status'] not in ['pending', 'under_review']:
             raise ValueError(f"Supplier is already {supplier['status']}")
         
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         supplier['status'] = 'approved'
         supplier['approval_date'] = now.isoformat()
         supplier['approved_by'] = approved_by
@@ -509,7 +509,7 @@ class SupplierManagementService:
         if supplier['status'] not in ['pending', 'under_review']:
             raise ValueError(f"Supplier is already {supplier['status']}")
         
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         supplier['status'] = 'rejected'
         supplier['rejection_reason'] = reason
         supplier['review_date'] = now.isoformat()
@@ -536,7 +536,7 @@ class SupplierManagementService:
         if supplier['status'] != 'approved':
             raise ValueError(f"Can only suspend approved suppliers")
         
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         supplier['status'] = 'suspended'
         supplier['suspension_reason'] = reason
         supplier['portal_active'] = False
@@ -559,7 +559,7 @@ class SupplierManagementService:
         if supplier['status'] != 'suspended':
             raise ValueError(f"Can only reactivate suspended suppliers")
         
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         supplier['status'] = 'approved'
         supplier['suspension_reason'] = None
         supplier['portal_active'] = True
@@ -606,7 +606,7 @@ class SupplierManagementService:
             raise ValueError("Portal access is disabled")
         
         # Update last login
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         supplier['last_login'] = now.isoformat()
         
         return {
@@ -637,7 +637,7 @@ class SupplierManagementService:
             raise ValueError(f"Missing required fields: {', '.join(missing)}")
         
         offer_id = data.get('id') or self.generate_offer_id()
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         
         # Get wallet types from supplier
         wallet_types = json.loads(supplier.get('wallet_types_supported', '["general"]'))
@@ -699,7 +699,7 @@ class SupplierManagementService:
                 else:
                     offer[field] = data[field]
         
-        offer['updated_date'] = datetime.utcnow().isoformat()
+        offer['updated_date'] = datetime.now(timezone.utc).isoformat()
         
         return {
             'success': True,
@@ -718,7 +718,7 @@ class SupplierManagementService:
         
         # Soft delete (deactivate)
         offer['active'] = False
-        offer['updated_date'] = datetime.utcnow().isoformat()
+        offer['updated_date'] = datetime.now(timezone.utc).isoformat()
         
         return {
             'success': True,
@@ -799,7 +799,7 @@ class SupplierManagementService:
         supplier_payout = round(total_amount - platform_fee, 2)
         
         order_id = self.generate_order_id()
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         
         order = {
             'id': order_id,
@@ -864,7 +864,7 @@ class SupplierManagementService:
             raise ValueError(f"Invalid status. Must be one of: {', '.join(valid_statuses)}")
         
         order = self.orders[order_id]
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         
         order['status'] = status
         order['updated_date'] = now.isoformat()
@@ -901,7 +901,7 @@ class SupplierManagementService:
         supplier = self.suppliers[supplier_id]
         supplier['total_orders'] = int(supplier.get('total_orders', 0)) + 1
         supplier['total_revenue'] = float(supplier.get('total_revenue', 0)) + float(order.get('supplier_payout', 0))
-        supplier['updated_date'] = datetime.utcnow().isoformat()
+        supplier['updated_date'] = datetime.now(timezone.utc).isoformat()
     
     def get_orders(self, supplier_id: str = None, customer_id: str = None,
                    status: str = None, page: int = 1, page_size: int = 50) -> Dict[str, Any]:
