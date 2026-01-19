@@ -139,7 +139,8 @@ class TestUtilityFunctions:
     def test_mask_email(self):
         """Test email masking"""
         assert mask_email("test@example.com") == "t**t@example.com"
-        assert mask_email("ab@test.com") == "ab@test.com"
+        # Short local parts are still masked for privacy (2 chars -> first + *)
+        assert mask_email("ab@test.com") == "a*@test.com"
         assert "@" in mask_email("user@domain.com")
     
     def test_mask_phone(self):
