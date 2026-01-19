@@ -188,13 +188,7 @@ jobs:
             
             if [ "$HIGH_ISSUES" -gt 0 ]; then
               echo "⚠️  Found $HIGH_ISSUES high severity security issues:"
-              python3 -c "
-import json
-data = json.load(open('bandit-report.json'))
-for issue in data.get('results', []):
-    if issue.get('issue_severity') == 'HIGH':
-        print(f\"  - {issue['filename']}:{issue['line_number']}: {issue['issue_text']}\")
-"
+              python3 -c "import json; data=json.load(open('bandit-report.json')); [print(f'  - {i[\"filename\"]}:{i[\"line_number\"]}: {i[\"issue_text\"]}') for i in data.get('results', []) if i.get('issue_severity') == 'HIGH']"
             else
               echo "✅ No high severity issues found"
             fi
