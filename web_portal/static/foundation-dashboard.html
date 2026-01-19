@@ -1,0 +1,1750 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>PHINS Community Foundations</title>
+  <link rel="stylesheet" href="/styles.css">
+  <style>
+    /* Foundation-specific styles */
+    .foundation-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+      gap: 20px;
+      margin-bottom: 24px;
+    }
+    
+    .foundation-card {
+      background: white;
+      border-radius: 12px;
+      padding: 20px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+      border: 1px solid #e5e7eb;
+      transition: transform 0.2s, box-shadow 0.2s;
+    }
+    
+    .foundation-card:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(0,0,0,0.12);
+    }
+    
+    .foundation-header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+    
+    .foundation-icon {
+      font-size: 32px;
+      width: 48px;
+      height: 48px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #f3f4f6;
+      border-radius: 12px;
+    }
+    
+    .foundation-info h3 {
+      margin: 0;
+      font-size: 18px;
+      color: #1f2937;
+    }
+    
+    .foundation-type {
+      font-size: 12px;
+      color: #6b7280;
+      text-transform: capitalize;
+    }
+    
+    .foundation-stats {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+    
+    .stat-item {
+      background: #f9fafb;
+      padding: 12px;
+      border-radius: 8px;
+      text-align: center;
+    }
+    
+    .stat-value {
+      font-size: 20px;
+      font-weight: 600;
+      color: #1f2937;
+    }
+    
+    .stat-label {
+      font-size: 11px;
+      color: #6b7280;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    
+    .role-badge {
+      display: inline-block;
+      padding: 4px 10px;
+      border-radius: 20px;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+    }
+    
+    .role-founder { background: #fef3c7; color: #92400e; }
+    .role-admin { background: #dbeafe; color: #1d4ed8; }
+    .role-member { background: #d1fae5; color: #065f46; }
+    .role-observer { background: #e5e7eb; color: #4b5563; }
+    
+    .status-badge {
+      display: inline-block;
+      padding: 4px 10px;
+      border-radius: 20px;
+      font-size: 11px;
+      font-weight: 600;
+    }
+    
+    .status-active { background: #d1fae5; color: #065f46; }
+    .status-draft { background: #fef3c7; color: #92400e; }
+    .status-pending { background: #fef9c3; color: #854d0e; }
+    .status-suspended { background: #fee2e2; color: #991b1b; }
+    
+    .foundation-actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    
+    .foundation-actions .btn {
+      flex: 1;
+      min-width: 100px;
+    }
+    
+    /* Create Foundation Modal */
+    .type-selector {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+      gap: 12px;
+      margin-bottom: 20px;
+    }
+    
+    .type-option {
+      border: 2px solid #e5e7eb;
+      border-radius: 12px;
+      padding: 16px;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    
+    .type-option:hover {
+      border-color: #3b82f6;
+      background: #f0f9ff;
+    }
+    
+    .type-option.selected {
+      border-color: #3b82f6;
+      background: #eff6ff;
+    }
+    
+    .type-option .icon {
+      font-size: 28px;
+      margin-bottom: 8px;
+    }
+    
+    .type-option .name {
+      font-weight: 600;
+      font-size: 13px;
+      color: #1f2937;
+    }
+    
+    /* Invitation Card */
+    .invitation-card {
+      background: linear-gradient(135deg, #eff6ff 0%, #f0fdf4 100%);
+      border: 1px solid #93c5fd;
+      border-radius: 12px;
+      padding: 16px;
+      margin-bottom: 12px;
+    }
+    
+    .invitation-card h4 {
+      margin: 0 0 8px 0;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    
+    .invitation-meta {
+      font-size: 13px;
+      color: #6b7280;
+      margin-bottom: 12px;
+    }
+    
+    /* Vote Card */
+    .vote-card {
+      background: white;
+      border: 1px solid #e5e7eb;
+      border-radius: 12px;
+      padding: 16px;
+      margin-bottom: 12px;
+    }
+    
+    .vote-progress {
+      height: 8px;
+      background: #e5e7eb;
+      border-radius: 4px;
+      overflow: hidden;
+      margin: 12px 0;
+    }
+    
+    .vote-progress-bar {
+      height: 100%;
+      background: linear-gradient(90deg, #10b981 0%, #34d399 100%);
+      transition: width 0.3s;
+    }
+    
+    .vote-stats {
+      display: flex;
+      justify-content: space-between;
+      font-size: 13px;
+      color: #6b7280;
+    }
+    
+    /* Member List */
+    .member-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px;
+      border-bottom: 1px solid #f3f4f6;
+    }
+    
+    .member-item:last-child {
+      border-bottom: none;
+    }
+    
+    .member-info {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    
+    .member-avatar {
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+      color: white;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 600;
+      font-size: 16px;
+    }
+    
+    /* Claim Card */
+    .claim-card {
+      background: white;
+      border: 1px solid #e5e7eb;
+      border-radius: 12px;
+      padding: 16px;
+      margin-bottom: 12px;
+    }
+    
+    .claim-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 8px;
+    }
+    
+    .claim-amount {
+      font-size: 18px;
+      font-weight: 600;
+      color: #1f2937;
+    }
+    
+    /* Modal Enhancements */
+    .modal-large {
+      max-width: 700px;
+    }
+    
+    .step-indicator {
+      display: flex;
+      justify-content: center;
+      gap: 8px;
+      margin-bottom: 24px;
+    }
+    
+    .step {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      background: #e5e7eb;
+      color: #6b7280;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 600;
+      font-size: 14px;
+    }
+    
+    .step.active {
+      background: #3b82f6;
+      color: white;
+    }
+    
+    .step.completed {
+      background: #10b981;
+      color: white;
+    }
+    
+    /* Tab navigation */
+    .tabs {
+      display: flex;
+      gap: 4px;
+      margin-bottom: 20px;
+      border-bottom: 2px solid #e5e7eb;
+    }
+    
+    .tab {
+      padding: 12px 20px;
+      border: none;
+      background: none;
+      cursor: pointer;
+      font-weight: 500;
+      color: #6b7280;
+      border-bottom: 2px solid transparent;
+      margin-bottom: -2px;
+      transition: all 0.2s;
+    }
+    
+    .tab:hover {
+      color: #3b82f6;
+    }
+    
+    .tab.active {
+      color: #3b82f6;
+      border-bottom-color: #3b82f6;
+    }
+    
+    .tab-content {
+      display: none;
+    }
+    
+    .tab-content.active {
+      display: block;
+    }
+    
+    /* Empty state */
+    .empty-state {
+      text-align: center;
+      padding: 48px 24px;
+      color: #6b7280;
+    }
+    
+    .empty-state .icon {
+      font-size: 48px;
+      margin-bottom: 16px;
+      opacity: 0.5;
+    }
+    
+    .empty-state h3 {
+      color: #1f2937;
+      margin-bottom: 8px;
+    }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="container">
+      <div>
+        <h1 class="brand">PHINS - Community Foundations</h1>
+        <div class="muted-text" id="whoami">Loading session...</div>
+      </div>
+      <nav class="nav">
+        <a href="/dashboard.html">My Dashboard</a>
+        <a href="/login.html" class="btn-login" id="login-btn">Login</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="container" style="padding-top:24px">
+    <!-- My Foundations Section -->
+    <div class="section-content">
+      <div class="section-header">
+        <h2>My Foundations</h2>
+        <div style="display:flex; gap:8px">
+          <button class="btn btn-outline" onclick="loadFoundations()">Refresh</button>
+          <button class="btn btn-primary" onclick="showCreateModal()">+ Create Foundation</button>
+          <button class="btn btn-outline" onclick="showJoinModal()">Join via Code</button>
+        </div>
+      </div>
+
+      <div id="foundations-grid" class="foundation-grid">
+        <div class="empty-state">
+          <div class="icon">🏛️</div>
+          <h3>No Foundations Yet</h3>
+          <p>Create a foundation or join one with an invitation code</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Pending Invitations Section -->
+    <div class="section-content" id="invitations-section" style="display:none">
+      <div class="section-header">
+        <h2>Pending Invitations</h2>
+      </div>
+      <div id="invitations-list"></div>
+    </div>
+
+    <!-- Foundation Detail View (hidden by default) -->
+    <div class="section-content" id="foundation-detail" style="display:none">
+      <div class="section-header">
+        <button class="btn btn-outline" onclick="showFoundationsList()">← Back to Foundations</button>
+        <h2 id="detail-foundation-name">Foundation Name</h2>
+        <div id="detail-actions"></div>
+      </div>
+
+      <!-- Tabs -->
+      <div class="tabs">
+        <button class="tab active" data-tab="overview">Overview</button>
+        <button class="tab" data-tab="members">Members</button>
+        <button class="tab" data-tab="funds">Funds</button>
+        <button class="tab" data-tab="claims">Claims</button>
+        <button class="tab" data-tab="votes">Votes</button>
+        <button class="tab" data-tab="activity">Activity</button>
+      </div>
+
+      <!-- Overview Tab -->
+      <div class="tab-content active" id="tab-overview">
+        <div class="foundation-stats" style="grid-template-columns: repeat(4, 1fr);">
+          <div class="stat-item">
+            <div class="stat-value" id="stat-balance">$0</div>
+            <div class="stat-label">Total Balance</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-value" id="stat-members">0</div>
+            <div class="stat-label">Members</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-value" id="stat-contributions">$0</div>
+            <div class="stat-label">Contributions</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-value" id="stat-claims">$0</div>
+            <div class="stat-label">Claims Paid</div>
+          </div>
+        </div>
+        
+        <div class="card">
+          <h3>Foundation Details</h3>
+          <div id="foundation-details"></div>
+        </div>
+      </div>
+
+      <!-- Members Tab -->
+      <div class="tab-content" id="tab-members">
+        <div class="card">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px">
+            <h3 style="margin:0">Members</h3>
+            <button class="btn btn-primary" id="invite-btn" onclick="showInviteModal()">+ Invite Member</button>
+          </div>
+          <div id="members-list"></div>
+        </div>
+      </div>
+
+      <!-- Funds Tab -->
+      <div class="tab-content" id="tab-funds">
+        <div class="card">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px">
+            <h3 style="margin:0">Funds</h3>
+            <button class="btn btn-primary" id="create-fund-btn" onclick="showCreateFundModal()">+ Create Fund</button>
+          </div>
+          <div id="funds-list"></div>
+        </div>
+      </div>
+
+      <!-- Claims Tab -->
+      <div class="tab-content" id="tab-claims">
+        <div class="card">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px">
+            <h3 style="margin:0">Claims</h3>
+            <button class="btn btn-primary" onclick="showClaimModal()">+ Submit Claim</button>
+          </div>
+          <div id="claims-list"></div>
+        </div>
+      </div>
+
+      <!-- Votes Tab -->
+      <div class="tab-content" id="tab-votes">
+        <div class="card">
+          <h3>Active Votes</h3>
+          <div id="votes-list"></div>
+        </div>
+      </div>
+
+      <!-- Activity Tab -->
+      <div class="tab-content" id="tab-activity">
+        <div class="card">
+          <h3>Recent Activity</h3>
+          <div id="activity-list"></div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- Create Foundation Modal -->
+  <div class="modal-backdrop" id="create-modal" style="display:none">
+    <div class="modal modal-large">
+      <div class="modal-header">
+        <h3>Create New Foundation</h3>
+        <button class="modal-close" onclick="closeCreateModal()">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="step-indicator">
+          <div class="step active" id="step-1">1</div>
+          <div class="step" id="step-2">2</div>
+          <div class="step" id="step-3">3</div>
+        </div>
+
+        <!-- Step 1: Choose Type -->
+        <div id="create-step-1">
+          <h4 style="text-align:center; margin-bottom:16px">Choose Foundation Type</h4>
+          <div class="type-selector" id="type-selector"></div>
+        </div>
+
+        <!-- Step 2: Basic Info -->
+        <div id="create-step-2" style="display:none">
+          <div class="form-group">
+            <label>Foundation Name *</label>
+            <input type="text" id="foundation-name" class="form-control" placeholder="e.g., Family Emergency Fund">
+          </div>
+          <div class="form-group">
+            <label>Description</label>
+            <textarea id="foundation-description" class="form-control" rows="3" placeholder="Describe the purpose of this foundation..."></textarea>
+          </div>
+          <div class="form-group">
+            <label>Maximum Members</label>
+            <input type="number" id="foundation-max-members" class="form-control" value="35" min="2">
+            <small class="muted-text">Leave empty or set to -1 for unlimited</small>
+          </div>
+        </div>
+
+        <!-- Step 3: Settings -->
+        <div id="create-step-3" style="display:none">
+          <div class="form-group">
+            <label>Your Display Name *</label>
+            <input type="text" id="founder-name" class="form-control" placeholder="How you'll appear to members">
+          </div>
+          <div class="form-group">
+            <label>Initial Monthly Contribution ($)</label>
+            <input type="number" id="initial-contribution" class="form-control" value="100" min="0" step="25">
+          </div>
+          <div class="form-group">
+            <label><input type="checkbox" id="founder-veto" checked> Enable Founder Veto Power</label>
+            <small class="muted-text">Allows you to override passed votes</small>
+          </div>
+          <div class="form-group">
+            <label><input type="checkbox" id="require-invitation" checked> Require Invitation to Join</label>
+            <small class="muted-text">New members must have an invitation code</small>
+          </div>
+          <div class="form-group">
+            <label><input type="checkbox" id="auto-approve"> Auto-Approve New Members</label>
+            <small class="muted-text">Skip approval step for new members</small>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-outline" id="prev-btn" onclick="prevStep()" style="display:none">Back</button>
+        <button class="btn btn-outline" onclick="closeCreateModal()">Cancel</button>
+        <button class="btn btn-primary" id="next-btn" onclick="nextStep()">Next</button>
+        <button class="btn btn-primary" id="create-btn" onclick="createFoundation()" style="display:none">Create Foundation</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Join Foundation Modal -->
+  <div class="modal-backdrop" id="join-modal" style="display:none">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>Join Foundation</h3>
+        <button class="modal-close" onclick="closeJoinModal()">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label>Invitation Code *</label>
+          <input type="text" id="join-code" class="form-control" placeholder="Paste your invitation code">
+        </div>
+        <div id="join-preview" style="display:none">
+          <div class="invitation-card">
+            <h4 id="join-foundation-name"></h4>
+            <div class="invitation-meta">
+              <span id="join-foundation-type"></span> • 
+              <span id="join-member-count"></span> members
+            </div>
+            <p id="join-foundation-desc"></p>
+          </div>
+          <div class="form-group">
+            <label>Your Display Name *</label>
+            <input type="text" id="join-display-name" class="form-control" placeholder="How you'll appear to members">
+          </div>
+        </div>
+        <div id="join-error" class="error-text" style="display:none"></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-outline" onclick="closeJoinModal()">Cancel</button>
+        <button class="btn btn-outline" id="validate-code-btn" onclick="validateInviteCode()">Validate Code</button>
+        <button class="btn btn-primary" id="join-btn" onclick="joinFoundation()" style="display:none">Join Foundation</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Invite Member Modal -->
+  <div class="modal-backdrop" id="invite-modal" style="display:none">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>Invite Member</h3>
+        <button class="modal-close" onclick="closeInviteModal()">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label>Email (optional)</label>
+          <input type="email" id="invite-email" class="form-control" placeholder="member@example.com">
+        </div>
+        <div class="form-group">
+          <label>Name (optional)</label>
+          <input type="text" id="invite-name" class="form-control" placeholder="Invitee's name">
+        </div>
+        <div class="form-group">
+          <label>Expires in (days)</label>
+          <input type="number" id="invite-expires" class="form-control" value="7" min="1" max="30">
+        </div>
+        <div class="form-group">
+          <label>Notes</label>
+          <textarea id="invite-notes" class="form-control" rows="2" placeholder="Optional message for the invitee"></textarea>
+        </div>
+        <div id="invite-result" style="display:none">
+          <div class="invitation-card">
+            <h4>🎉 Invitation Created!</h4>
+            <p>Share this code with your invitee:</p>
+            <div style="background:#1f2937; color:#fff; padding:12px; border-radius:8px; font-family:monospace; word-break:break-all" id="invite-code-display"></div>
+            <button class="btn btn-outline" style="margin-top:12px" onclick="copyInviteCode()">Copy Code</button>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-outline" onclick="closeInviteModal()">Close</button>
+        <button class="btn btn-primary" id="send-invite-btn" onclick="sendInvitation()">Create Invitation</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Contribute Modal -->
+  <div class="modal-backdrop" id="contribute-modal" style="display:none">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>Make Contribution</h3>
+        <button class="modal-close" onclick="closeContributeModal()">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label>Select Fund *</label>
+          <select id="contribute-fund" class="form-control"></select>
+        </div>
+        <div class="form-group">
+          <label>Amount ($) *</label>
+          <input type="number" id="contribute-amount" class="form-control" value="100" min="1" step="25">
+        </div>
+        <div class="form-group">
+          <label>Contribution Type</label>
+          <select id="contribute-type" class="form-control">
+            <option value="one_time">One-Time</option>
+            <option value="monthly">Monthly (recurring)</option>
+            <option value="quarterly">Quarterly (recurring)</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Notes</label>
+          <textarea id="contribute-notes" class="form-control" rows="2" placeholder="Optional notes"></textarea>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-outline" onclick="closeContributeModal()">Cancel</button>
+        <button class="btn btn-primary" onclick="submitContribution()">Contribute</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Submit Claim Modal -->
+  <div class="modal-backdrop" id="claim-modal" style="display:none">
+    <div class="modal modal-large">
+      <div class="modal-header">
+        <h3>Submit Claim</h3>
+        <button class="modal-close" onclick="closeClaimModal()">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label>Claim Title *</label>
+          <input type="text" id="claim-title" class="form-control" placeholder="Brief description of the claim">
+        </div>
+        <div class="form-group">
+          <label>Claim Type *</label>
+          <select id="claim-type" class="form-control">
+            <option value="medical">Medical Expense</option>
+            <option value="disability">Disability Support</option>
+            <option value="emergency">Emergency</option>
+            <option value="business">Business Interruption</option>
+            <option value="life_event">Life Event</option>
+            <option value="custom">Other</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Select Fund *</label>
+          <select id="claim-fund" class="form-control"></select>
+        </div>
+        <div class="form-group">
+          <label>Amount Requested ($) *</label>
+          <input type="number" id="claim-amount" class="form-control" min="1" step="50" placeholder="Enter amount">
+        </div>
+        <div class="form-group">
+          <label>Description *</label>
+          <textarea id="claim-description" class="form-control" rows="4" placeholder="Provide details about your claim..."></textarea>
+        </div>
+        <div class="muted-text" style="font-size:12px">
+          * Claims under the auto-approval threshold will be processed automatically. 
+          Larger claims require member voting.
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-outline" onclick="closeClaimModal()">Cancel</button>
+        <button class="btn btn-primary" onclick="submitClaim()">Submit Claim</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Vote Modal -->
+  <div class="modal-backdrop" id="vote-modal" style="display:none">
+    <div class="modal">
+      <div class="modal-header">
+        <h3 id="vote-modal-title">Cast Your Vote</h3>
+        <button class="modal-close" onclick="closeVoteModal()">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div id="vote-details"></div>
+        <div class="form-group" style="margin-top:16px">
+          <label>Your Vote *</label>
+          <div style="display:flex; gap:12px; margin-top:8px">
+            <button class="btn" id="vote-for-btn" onclick="selectVote('for')" style="flex:1; background:#d1fae5; color:#065f46">👍 For</button>
+            <button class="btn" id="vote-against-btn" onclick="selectVote('against')" style="flex:1; background:#fee2e2; color:#991b1b">👎 Against</button>
+            <button class="btn" id="vote-abstain-btn" onclick="selectVote('abstain')" style="flex:1; background:#e5e7eb; color:#4b5563">🤐 Abstain</button>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Reason (optional)</label>
+          <textarea id="vote-reason" class="form-control" rows="2" placeholder="Explain your vote..."></textarea>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-outline" onclick="closeVoteModal()">Cancel</button>
+        <button class="btn btn-primary" id="cast-vote-btn" onclick="castVote()" disabled>Cast Vote</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Global state
+    let currentFoundation = null;
+    let currentMembership = null;
+    let foundationTypes = {};
+    let selectedType = null;
+    let createStep = 1;
+    let currentVoteId = null;
+    let selectedVoteChoice = null;
+    
+    // API helper
+    async function api(endpoint, options = {}) {
+      const token = localStorage.getItem('token');
+      const headers = {
+        'Content-Type': 'application/json',
+        ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+        ...options.headers
+      };
+      
+      const res = await fetch(endpoint, { ...options, headers });
+      const data = await res.json();
+      
+      if (!res.ok && data.error) {
+        throw new Error(data.error);
+      }
+      
+      return data;
+    }
+    
+    // Initialize page
+    async function init() {
+      // Check session
+      const token = localStorage.getItem('token');
+      if (!token) {
+        document.getElementById('whoami').textContent = 'Not logged in';
+        return;
+      }
+      
+      try {
+        const session = await api('/api/session');
+        if (session.username || session.customer_id) {
+          document.getElementById('whoami').textContent = `Logged in as ${session.name || session.username || 'User'}`;
+          document.getElementById('login-btn').textContent = 'Logout';
+          document.getElementById('login-btn').onclick = logout;
+          
+          // Load foundation types
+          await loadFoundationTypes();
+          
+          // Load user's foundations
+          await loadFoundations();
+        }
+      } catch (e) {
+        console.error('Session error:', e);
+        document.getElementById('whoami').textContent = 'Session expired';
+      }
+    }
+    
+    function logout() {
+      localStorage.removeItem('token');
+      window.location.href = '/login.html';
+    }
+    
+    // Load foundation types
+    async function loadFoundationTypes() {
+      try {
+        const data = await api('/api/foundation-types');
+        foundationTypes = data.types || {};
+        renderTypeSelector();
+      } catch (e) {
+        console.error('Failed to load foundation types:', e);
+      }
+    }
+    
+    // Render type selector
+    function renderTypeSelector() {
+      const container = document.getElementById('type-selector');
+      container.innerHTML = '';
+      
+      for (const [key, type] of Object.entries(foundationTypes)) {
+        const div = document.createElement('div');
+        div.className = 'type-option';
+        div.dataset.type = key;
+        div.innerHTML = `
+          <div class="icon">${type.icon || '🏛️'}</div>
+          <div class="name">${type.name}</div>
+        `;
+        div.onclick = () => selectType(key);
+        container.appendChild(div);
+      }
+    }
+    
+    function selectType(type) {
+      selectedType = type;
+      document.querySelectorAll('.type-option').forEach(el => {
+        el.classList.toggle('selected', el.dataset.type === type);
+      });
+    }
+    
+    // Load foundations
+    async function loadFoundations() {
+      try {
+        const data = await api('/api/foundations');
+        const foundations = data.foundations || [];
+        
+        const grid = document.getElementById('foundations-grid');
+        
+        if (foundations.length === 0) {
+          grid.innerHTML = `
+            <div class="empty-state" style="grid-column: 1 / -1">
+              <div class="icon">🏛️</div>
+              <h3>No Foundations Yet</h3>
+              <p>Create a foundation or join one with an invitation code</p>
+            </div>
+          `;
+          return;
+        }
+        
+        grid.innerHTML = foundations.map(item => {
+          const f = item.foundation;
+          const m = item.membership;
+          const typeInfo = foundationTypes[f.foundation_type] || {};
+          
+          return `
+            <div class="foundation-card">
+              <div class="foundation-header">
+                <div class="foundation-icon">${typeInfo.icon || '🏛️'}</div>
+                <div class="foundation-info">
+                  <h3>${escapeHtml(f.name)}</h3>
+                  <div class="foundation-type">${f.foundation_type}</div>
+                </div>
+                <span class="status-badge status-${f.status}">${f.status}</span>
+              </div>
+              <div class="foundation-stats">
+                <div class="stat-item">
+                  <div class="stat-value">${f.current_member_count}${f.is_unlimited ? '' : '/' + f.max_members}</div>
+                  <div class="stat-label">Members</div>
+                </div>
+                <div class="stat-item">
+                  <div class="stat-value">$${formatNumber(f.total_fund_balance)}</div>
+                  <div class="stat-label">Balance</div>
+                </div>
+              </div>
+              <div style="margin-bottom:12px">
+                <span class="role-badge role-${m.role}">${m.role}</span>
+              </div>
+              <div class="foundation-actions">
+                <button class="btn btn-outline" onclick="viewFoundation('${f.id}')">View</button>
+                ${m.role === 'founder' || m.role === 'admin' ? 
+                  `<button class="btn btn-primary" onclick="viewFoundation('${f.id}', 'members')">Manage</button>` :
+                  `<button class="btn btn-outline" onclick="leaveFoundation('${f.id}')" style="color:#ef4444">Leave</button>`
+                }
+              </div>
+            </div>
+          `;
+        }).join('');
+      } catch (e) {
+        console.error('Failed to load foundations:', e);
+      }
+    }
+    
+    // View foundation detail
+    async function viewFoundation(foundationId, tab = 'overview') {
+      try {
+        const data = await api(`/api/foundations/${foundationId}`);
+        currentFoundation = data.foundation;
+        
+        // Find current membership
+        const userFoundations = await api('/api/foundations');
+        const match = (userFoundations.foundations || []).find(f => f.foundation.id === foundationId);
+        currentMembership = match ? match.membership : null;
+        
+        // Hide list, show detail
+        document.getElementById('foundations-grid').parentElement.style.display = 'none';
+        document.getElementById('foundation-detail').style.display = 'block';
+        
+        // Update header
+        document.getElementById('detail-foundation-name').textContent = currentFoundation.name;
+        
+        // Update stats
+        document.getElementById('stat-balance').textContent = '$' + formatNumber(currentFoundation.total_fund_balance);
+        document.getElementById('stat-members').textContent = currentFoundation.current_member_count;
+        document.getElementById('stat-contributions').textContent = '$' + formatNumber(currentFoundation.total_contributions);
+        document.getElementById('stat-claims').textContent = '$' + formatNumber(currentFoundation.total_claims_paid);
+        
+        // Load foundation details
+        renderFoundationDetails();
+        
+        // Load all tab data
+        await Promise.all([
+          loadMembers(),
+          loadFunds(),
+          loadClaims(),
+          loadVotes(),
+          loadActivities()
+        ]);
+        
+        // Show correct tab
+        showTab(tab);
+        
+        // Update action buttons based on role
+        updateDetailActions();
+        
+      } catch (e) {
+        console.error('Failed to load foundation:', e);
+        alert('Failed to load foundation: ' + e.message);
+      }
+    }
+    
+    function renderFoundationDetails() {
+      const f = currentFoundation;
+      document.getElementById('foundation-details').innerHTML = `
+        <div style="display:grid; grid-template-columns: repeat(2, 1fr); gap:12px">
+          <div><strong>Type:</strong> ${f.foundation_type}</div>
+          <div><strong>Status:</strong> <span class="status-badge status-${f.status}">${f.status}</span></div>
+          <div><strong>Founder:</strong> ${escapeHtml(f.founder_name || 'Unknown')}</div>
+          <div><strong>Created:</strong> ${formatDate(f.created_at)}</div>
+          <div><strong>Max Members:</strong> ${f.is_unlimited ? 'Unlimited' : f.max_members}</div>
+          <div><strong>Founder Veto:</strong> ${f.founder_veto_enabled ? 'Enabled' : 'Disabled'}</div>
+          <div><strong>Majority Threshold:</strong> ${(f.majority_threshold * 100).toFixed(0)}%</div>
+          <div><strong>Vote Duration:</strong> ${f.vote_duration_days} days</div>
+        </div>
+        ${f.description ? `<div style="margin-top:12px"><strong>Description:</strong><br>${escapeHtml(f.description)}</div>` : ''}
+      `;
+    }
+    
+    function updateDetailActions() {
+      const actions = document.getElementById('detail-actions');
+      const isAdmin = currentMembership && ['founder', 'admin'].includes(currentMembership.role);
+      
+      let html = '';
+      
+      if (currentFoundation.status === 'draft' && currentMembership?.role === 'founder') {
+        html += `<button class="btn btn-primary" onclick="activateFoundation()">Activate Foundation</button>`;
+      }
+      
+      if (currentFoundation.status === 'active') {
+        html += `<button class="btn btn-primary" onclick="showContributeModal()">Contribute</button>`;
+      }
+      
+      actions.innerHTML = html;
+    }
+    
+    // Tab navigation
+    document.querySelectorAll('.tab').forEach(tab => {
+      tab.onclick = () => showTab(tab.dataset.tab);
+    });
+    
+    function showTab(tabName) {
+      document.querySelectorAll('.tab').forEach(t => {
+        t.classList.toggle('active', t.dataset.tab === tabName);
+      });
+      document.querySelectorAll('.tab-content').forEach(c => {
+        c.classList.toggle('active', c.id === `tab-${tabName}`);
+      });
+    }
+    
+    // Load members
+    async function loadMembers() {
+      if (!currentFoundation) return;
+      
+      try {
+        const data = await api(`/api/foundations/${currentFoundation.id}/members?include_inactive=true`);
+        const members = data.members || [];
+        
+        const list = document.getElementById('members-list');
+        
+        if (members.length === 0) {
+          list.innerHTML = '<div class="muted-text">No members yet</div>';
+          return;
+        }
+        
+        list.innerHTML = members.map(m => `
+          <div class="member-item">
+            <div class="member-info">
+              <div class="member-avatar">${(m.display_name || 'M')[0].toUpperCase()}</div>
+              <div>
+                <div style="font-weight:500">${escapeHtml(m.display_name || 'Unknown')}</div>
+                <div class="muted-text" style="font-size:12px">Joined ${formatDate(m.joined_at)}</div>
+              </div>
+            </div>
+            <div style="display:flex; align-items:center; gap:12px">
+              <span class="role-badge role-${m.role}">${m.role}</span>
+              ${m.status !== 'active' ? `<span class="status-badge status-${m.status}">${m.status}</span>` : ''}
+              ${currentMembership?.role === 'founder' && m.status === 'pending' ? 
+                `<button class="btn btn-outline" onclick="approveMember('${m.id}')">Approve</button>` : ''
+              }
+            </div>
+          </div>
+        `).join('');
+        
+        // Show/hide invite button based on role
+        document.getElementById('invite-btn').style.display = 
+          ['founder', 'admin'].includes(currentMembership?.role) ? 'block' : 'none';
+        
+      } catch (e) {
+        console.error('Failed to load members:', e);
+      }
+    }
+    
+    // Load funds
+    async function loadFunds() {
+      if (!currentFoundation) return;
+      
+      try {
+        const data = await api(`/api/foundations/${currentFoundation.id}/funds`);
+        const funds = data.funds || [];
+        
+        const list = document.getElementById('funds-list');
+        
+        if (funds.length === 0) {
+          list.innerHTML = '<div class="muted-text">No funds created yet</div>';
+          return;
+        }
+        
+        list.innerHTML = funds.map(f => `
+          <div class="claim-card">
+            <div class="claim-header">
+              <div>
+                <strong>${escapeHtml(f.name)}</strong>
+                <div class="muted-text" style="font-size:12px">${f.fund_type}</div>
+              </div>
+              <span class="status-badge status-${f.status}">${f.status}</span>
+            </div>
+            <div class="foundation-stats" style="margin-top:12px">
+              <div class="stat-item">
+                <div class="stat-value">$${formatNumber(f.balance)}</div>
+                <div class="stat-label">Balance</div>
+              </div>
+              <div class="stat-item">
+                <div class="stat-value">${(f.min_reserve_percentage * 100).toFixed(0)}%</div>
+                <div class="stat-label">Reserve</div>
+              </div>
+              <div class="stat-item">
+                <div class="stat-value">$${formatNumber(f.auto_approve_threshold)}</div>
+                <div class="stat-label">Auto-Approve</div>
+              </div>
+              <div class="stat-item">
+                <div class="stat-value">${(f.max_claim_percentage * 100).toFixed(0)}%</div>
+                <div class="stat-label">Max Claim</div>
+              </div>
+            </div>
+          </div>
+        `).join('');
+        
+        // Populate fund selectors
+        populateFundSelectors(funds);
+        
+        // Show/hide create fund button based on role
+        document.getElementById('create-fund-btn').style.display = 
+          ['founder', 'admin'].includes(currentMembership?.role) ? 'block' : 'none';
+        
+      } catch (e) {
+        console.error('Failed to load funds:', e);
+      }
+    }
+    
+    function populateFundSelectors(funds) {
+      const selectors = ['contribute-fund', 'claim-fund'];
+      selectors.forEach(id => {
+        const select = document.getElementById(id);
+        if (select) {
+          select.innerHTML = funds.map(f => 
+            `<option value="${f.id}">${escapeHtml(f.name)} ($${formatNumber(f.balance)})</option>`
+          ).join('');
+        }
+      });
+    }
+    
+    // Load claims
+    async function loadClaims() {
+      if (!currentFoundation) return;
+      
+      try {
+        const data = await api(`/api/foundations/${currentFoundation.id}/claims`);
+        const claims = data.claims || [];
+        
+        const list = document.getElementById('claims-list');
+        
+        if (claims.length === 0) {
+          list.innerHTML = '<div class="muted-text">No claims submitted yet</div>';
+          return;
+        }
+        
+        list.innerHTML = claims.map(c => `
+          <div class="claim-card">
+            <div class="claim-header">
+              <div>
+                <strong>${escapeHtml(c.title)}</strong>
+                <div class="muted-text" style="font-size:12px">${c.claim_type} • by ${escapeHtml(c.claimant_display_name || 'Member')}</div>
+              </div>
+              <span class="status-badge status-${c.status}">${c.status}</span>
+            </div>
+            <div style="display:flex; justify-content:space-between; margin-top:12px">
+              <span class="claim-amount">$${formatNumber(c.amount_requested)}</span>
+              <span class="muted-text">${formatDate(c.submitted_at)}</span>
+            </div>
+            ${c.status === 'approved' && ['founder', 'admin'].includes(currentMembership?.role) ?
+              `<button class="btn btn-primary" style="margin-top:12px" onclick="processClaimPayout('${c.id}')">Process Payout</button>` : ''
+            }
+          </div>
+        `).join('');
+        
+      } catch (e) {
+        console.error('Failed to load claims:', e);
+      }
+    }
+    
+    // Load votes
+    async function loadVotes() {
+      if (!currentFoundation) return;
+      
+      try {
+        const data = await api(`/api/foundations/${currentFoundation.id}/votes`);
+        const votes = data.votes || [];
+        
+        const list = document.getElementById('votes-list');
+        
+        if (votes.length === 0) {
+          list.innerHTML = '<div class="muted-text">No active votes</div>';
+          return;
+        }
+        
+        list.innerHTML = votes.map(v => {
+          const total = v.votes_for + v.votes_against;
+          const percentage = total > 0 ? (v.votes_for / total * 100) : 0;
+          
+          return `
+            <div class="vote-card">
+              <div style="display:flex; justify-content:space-between; align-items:flex-start">
+                <div>
+                  <strong>${escapeHtml(v.title)}</strong>
+                  <div class="muted-text" style="font-size:12px">${v.proposal_type} • by ${escapeHtml(v.created_by_name || 'Member')}</div>
+                </div>
+                <span class="status-badge status-${v.status}">${v.status}</span>
+              </div>
+              ${v.description ? `<p style="margin:12px 0; color:#4b5563">${escapeHtml(v.description)}</p>` : ''}
+              <div class="vote-progress">
+                <div class="vote-progress-bar" style="width:${percentage}%"></div>
+              </div>
+              <div class="vote-stats">
+                <span>👍 ${v.votes_for} for</span>
+                <span>👎 ${v.votes_against} against</span>
+                <span>🤐 ${v.votes_abstain} abstain</span>
+              </div>
+              <div style="margin-top:12px; display:flex; gap:8px">
+                <button class="btn btn-primary" onclick="openVoteModal('${v.id}')">Cast Vote</button>
+                ${currentMembership?.role === 'founder' && currentFoundation.founder_veto_enabled && v.status === 'passed' ?
+                  `<button class="btn btn-outline" style="color:#ef4444" onclick="exerciseVeto('${v.id}')">Veto</button>` : ''
+                }
+              </div>
+              <div class="muted-text" style="margin-top:8px; font-size:12px">
+                Closes: ${formatDate(v.closes_at)} • Threshold: ${(v.threshold * 100).toFixed(0)}%
+              </div>
+            </div>
+          `;
+        }).join('');
+        
+      } catch (e) {
+        console.error('Failed to load votes:', e);
+      }
+    }
+    
+    // Load activities
+    async function loadActivities() {
+      if (!currentFoundation) return;
+      
+      try {
+        const data = await api(`/api/foundations/${currentFoundation.id}/activities?limit=50`);
+        const activities = data.activities || [];
+        
+        const list = document.getElementById('activity-list');
+        
+        if (activities.length === 0) {
+          list.innerHTML = '<div class="muted-text">No activity yet</div>';
+          return;
+        }
+        
+        list.innerHTML = activities.map(a => `
+          <div class="member-item">
+            <div>
+              <div>${escapeHtml(a.activity_description)}</div>
+              <div class="muted-text" style="font-size:12px">${formatDate(a.created_at)}</div>
+            </div>
+          </div>
+        `).join('');
+        
+      } catch (e) {
+        console.error('Failed to load activities:', e);
+      }
+    }
+    
+    // Show foundations list
+    function showFoundationsList() {
+      document.getElementById('foundations-grid').parentElement.style.display = 'block';
+      document.getElementById('foundation-detail').style.display = 'none';
+      currentFoundation = null;
+      currentMembership = null;
+    }
+    
+    // Create Foundation Modal
+    function showCreateModal() {
+      createStep = 1;
+      selectedType = null;
+      updateCreateSteps();
+      document.getElementById('create-modal').style.display = 'flex';
+    }
+    
+    function closeCreateModal() {
+      document.getElementById('create-modal').style.display = 'none';
+    }
+    
+    function updateCreateSteps() {
+      document.getElementById('step-1').className = `step ${createStep >= 1 ? 'active' : ''} ${createStep > 1 ? 'completed' : ''}`;
+      document.getElementById('step-2').className = `step ${createStep >= 2 ? 'active' : ''} ${createStep > 2 ? 'completed' : ''}`;
+      document.getElementById('step-3').className = `step ${createStep >= 3 ? 'active' : ''}`;
+      
+      document.getElementById('create-step-1').style.display = createStep === 1 ? 'block' : 'none';
+      document.getElementById('create-step-2').style.display = createStep === 2 ? 'block' : 'none';
+      document.getElementById('create-step-3').style.display = createStep === 3 ? 'block' : 'none';
+      
+      document.getElementById('prev-btn').style.display = createStep > 1 ? 'inline-block' : 'none';
+      document.getElementById('next-btn').style.display = createStep < 3 ? 'inline-block' : 'none';
+      document.getElementById('create-btn').style.display = createStep === 3 ? 'inline-block' : 'none';
+    }
+    
+    function nextStep() {
+      if (createStep === 1 && !selectedType) {
+        alert('Please select a foundation type');
+        return;
+      }
+      if (createStep < 3) {
+        createStep++;
+        updateCreateSteps();
+      }
+    }
+    
+    function prevStep() {
+      if (createStep > 1) {
+        createStep--;
+        updateCreateSteps();
+      }
+    }
+    
+    async function createFoundation() {
+      const name = document.getElementById('foundation-name').value.trim();
+      const description = document.getElementById('foundation-description').value.trim();
+      const maxMembers = parseInt(document.getElementById('foundation-max-members').value) || 35;
+      const founderName = document.getElementById('founder-name').value.trim();
+      const initialContribution = parseFloat(document.getElementById('initial-contribution').value) || 0;
+      const founderVeto = document.getElementById('founder-veto').checked;
+      const requireInvitation = document.getElementById('require-invitation').checked;
+      const autoApprove = document.getElementById('auto-approve').checked;
+      
+      if (!name) {
+        alert('Please enter a foundation name');
+        return;
+      }
+      
+      if (!founderName) {
+        alert('Please enter your display name');
+        return;
+      }
+      
+      try {
+        const result = await api('/api/foundations', {
+          method: 'POST',
+          body: JSON.stringify({
+            name,
+            description,
+            foundation_type: selectedType,
+            max_members: maxMembers,
+            is_unlimited: maxMembers <= 0,
+            founder_name: founderName,
+            founder_veto_enabled: founderVeto,
+            require_invitation: requireInvitation,
+            auto_approve_members: autoApprove,
+            initial_contribution: initialContribution
+          })
+        });
+        
+        if (result.success) {
+          alert('Foundation created successfully!');
+          closeCreateModal();
+          loadFoundations();
+        } else {
+          alert(result.message || 'Failed to create foundation');
+        }
+      } catch (e) {
+        alert('Error: ' + e.message);
+      }
+    }
+    
+    // Join Foundation Modal
+    function showJoinModal() {
+      document.getElementById('join-code').value = '';
+      document.getElementById('join-preview').style.display = 'none';
+      document.getElementById('join-error').style.display = 'none';
+      document.getElementById('validate-code-btn').style.display = 'inline-block';
+      document.getElementById('join-btn').style.display = 'none';
+      document.getElementById('join-modal').style.display = 'flex';
+    }
+    
+    function closeJoinModal() {
+      document.getElementById('join-modal').style.display = 'none';
+    }
+    
+    async function validateInviteCode() {
+      const code = document.getElementById('join-code').value.trim();
+      if (!code) {
+        alert('Please enter an invitation code');
+        return;
+      }
+      
+      try {
+        const result = await api(`/api/foundation-invitations/validate/${code}`);
+        
+        if (result.valid) {
+          document.getElementById('join-foundation-name').textContent = result.data.foundation_name;
+          document.getElementById('join-foundation-type').textContent = result.data.foundation_type;
+          document.getElementById('join-member-count').textContent = result.data.current_members;
+          document.getElementById('join-foundation-desc').textContent = result.data.description || '';
+          document.getElementById('join-preview').style.display = 'block';
+          document.getElementById('join-error').style.display = 'none';
+          document.getElementById('validate-code-btn').style.display = 'none';
+          document.getElementById('join-btn').style.display = 'inline-block';
+        } else {
+          document.getElementById('join-error').textContent = result.message;
+          document.getElementById('join-error').style.display = 'block';
+          document.getElementById('join-preview').style.display = 'none';
+        }
+      } catch (e) {
+        document.getElementById('join-error').textContent = e.message;
+        document.getElementById('join-error').style.display = 'block';
+      }
+    }
+    
+    async function joinFoundation() {
+      const code = document.getElementById('join-code').value.trim();
+      const displayName = document.getElementById('join-display-name').value.trim();
+      
+      if (!displayName) {
+        alert('Please enter your display name');
+        return;
+      }
+      
+      try {
+        const result = await api('/api/foundations/join', {
+          method: 'POST',
+          body: JSON.stringify({
+            code,
+            display_name: displayName
+          })
+        });
+        
+        if (result.success) {
+          alert(result.message || 'Successfully joined the foundation!');
+          closeJoinModal();
+          loadFoundations();
+        } else {
+          alert(result.message || 'Failed to join foundation');
+        }
+      } catch (e) {
+        alert('Error: ' + e.message);
+      }
+    }
+    
+    // Invite Modal
+    function showInviteModal() {
+      document.getElementById('invite-email').value = '';
+      document.getElementById('invite-name').value = '';
+      document.getElementById('invite-expires').value = '7';
+      document.getElementById('invite-notes').value = '';
+      document.getElementById('invite-result').style.display = 'none';
+      document.getElementById('send-invite-btn').style.display = 'inline-block';
+      document.getElementById('invite-modal').style.display = 'flex';
+    }
+    
+    function closeInviteModal() {
+      document.getElementById('invite-modal').style.display = 'none';
+    }
+    
+    async function sendInvitation() {
+      try {
+        const result = await api(`/api/foundations/${currentFoundation.id}/invite`, {
+          method: 'POST',
+          body: JSON.stringify({
+            email: document.getElementById('invite-email').value.trim() || null,
+            name: document.getElementById('invite-name').value.trim() || null,
+            expires_in_days: parseInt(document.getElementById('invite-expires').value) || 7,
+            notes: document.getElementById('invite-notes').value.trim() || null
+          })
+        });
+        
+        if (result.success) {
+          document.getElementById('invite-code-display').textContent = result.data.code;
+          document.getElementById('invite-result').style.display = 'block';
+          document.getElementById('send-invite-btn').style.display = 'none';
+        } else {
+          alert(result.message || 'Failed to create invitation');
+        }
+      } catch (e) {
+        alert('Error: ' + e.message);
+      }
+    }
+    
+    function copyInviteCode() {
+      const code = document.getElementById('invite-code-display').textContent;
+      navigator.clipboard.writeText(code).then(() => {
+        alert('Code copied to clipboard!');
+      });
+    }
+    
+    // Contribute Modal
+    function showContributeModal() {
+      document.getElementById('contribute-amount').value = '100';
+      document.getElementById('contribute-notes').value = '';
+      document.getElementById('contribute-modal').style.display = 'flex';
+    }
+    
+    function closeContributeModal() {
+      document.getElementById('contribute-modal').style.display = 'none';
+    }
+    
+    async function submitContribution() {
+      const fundId = document.getElementById('contribute-fund').value;
+      const amount = parseFloat(document.getElementById('contribute-amount').value);
+      const type = document.getElementById('contribute-type').value;
+      const notes = document.getElementById('contribute-notes').value.trim();
+      
+      if (!fundId || !amount || amount <= 0) {
+        alert('Please select a fund and enter a valid amount');
+        return;
+      }
+      
+      try {
+        const result = await api(`/api/foundations/${currentFoundation.id}/contribute`, {
+          method: 'POST',
+          body: JSON.stringify({
+            fund_id: fundId,
+            amount,
+            contribution_type: type,
+            notes
+          })
+        });
+        
+        if (result.success) {
+          alert('Contribution recorded successfully!');
+          closeContributeModal();
+          viewFoundation(currentFoundation.id, 'funds');
+        } else {
+          alert(result.message || 'Failed to make contribution');
+        }
+      } catch (e) {
+        alert('Error: ' + e.message);
+      }
+    }
+    
+    // Claim Modal
+    function showClaimModal() {
+      document.getElementById('claim-title').value = '';
+      document.getElementById('claim-amount').value = '';
+      document.getElementById('claim-description').value = '';
+      document.getElementById('claim-modal').style.display = 'flex';
+    }
+    
+    function closeClaimModal() {
+      document.getElementById('claim-modal').style.display = 'none';
+    }
+    
+    async function submitClaim() {
+      const title = document.getElementById('claim-title').value.trim();
+      const type = document.getElementById('claim-type').value;
+      const fundId = document.getElementById('claim-fund').value;
+      const amount = parseFloat(document.getElementById('claim-amount').value);
+      const description = document.getElementById('claim-description').value.trim();
+      
+      if (!title || !fundId || !amount || amount <= 0 || !description) {
+        alert('Please fill in all required fields');
+        return;
+      }
+      
+      try {
+        const result = await api('/api/foundation-claims', {
+          method: 'POST',
+          body: JSON.stringify({
+            foundation_id: currentFoundation.id,
+            fund_id: fundId,
+            claim_type: type,
+            title,
+            amount,
+            description
+          })
+        });
+        
+        if (result.success) {
+          alert(result.message || 'Claim submitted successfully!');
+          closeClaimModal();
+          viewFoundation(currentFoundation.id, 'claims');
+        } else {
+          alert(result.message || 'Failed to submit claim');
+        }
+      } catch (e) {
+        alert('Error: ' + e.message);
+      }
+    }
+    
+    async function processClaimPayout(claimId) {
+      if (!confirm('Process payout for this claim?')) return;
+      
+      try {
+        const result = await api(`/api/foundation-claims/${claimId}/payout`, {
+          method: 'POST',
+          body: JSON.stringify({ payout_method: 'wallet' })
+        });
+        
+        if (result.success) {
+          alert('Payout processed successfully!');
+          loadClaims();
+          loadFunds();
+        } else {
+          alert(result.message || 'Failed to process payout');
+        }
+      } catch (e) {
+        alert('Error: ' + e.message);
+      }
+    }
+    
+    // Vote Modal
+    function openVoteModal(voteId) {
+      currentVoteId = voteId;
+      selectedVoteChoice = null;
+      
+      const vote = (document.getElementById('votes-list').innerHTML.includes(voteId));
+      
+      document.getElementById('vote-details').innerHTML = `
+        <p>Select your vote for this proposal. Your vote cannot be changed after submission.</p>
+      `;
+      
+      document.querySelectorAll('[id^="vote-"][id$="-btn"]').forEach(btn => {
+        btn.style.opacity = '1';
+        btn.style.transform = 'scale(1)';
+      });
+      
+      document.getElementById('cast-vote-btn').disabled = true;
+      document.getElementById('vote-reason').value = '';
+      document.getElementById('vote-modal').style.display = 'flex';
+    }
+    
+    function closeVoteModal() {
+      document.getElementById('vote-modal').style.display = 'none';
+      currentVoteId = null;
+      selectedVoteChoice = null;
+    }
+    
+    function selectVote(choice) {
+      selectedVoteChoice = choice;
+      
+      document.querySelectorAll('[id^="vote-"][id$="-btn"]').forEach(btn => {
+        btn.style.opacity = '0.5';
+        btn.style.transform = 'scale(0.95)';
+      });
+      
+      document.getElementById(`vote-${choice}-btn`).style.opacity = '1';
+      document.getElementById(`vote-${choice}-btn`).style.transform = 'scale(1.05)';
+      document.getElementById('cast-vote-btn').disabled = false;
+    }
+    
+    async function castVote() {
+      if (!currentVoteId || !selectedVoteChoice) return;
+      
+      try {
+        const result = await api(`/api/foundations/${currentFoundation.id}/votes/${currentVoteId}/cast`, {
+          method: 'POST',
+          body: JSON.stringify({
+            choice: selectedVoteChoice,
+            reason: document.getElementById('vote-reason').value.trim() || null
+          })
+        });
+        
+        if (result.success) {
+          alert('Vote cast successfully!');
+          closeVoteModal();
+          loadVotes();
+        } else {
+          alert(result.message || 'Failed to cast vote');
+        }
+      } catch (e) {
+        alert('Error: ' + e.message);
+      }
+    }
+    
+    async function exerciseVeto(voteId) {
+      const reason = prompt('Enter reason for veto:');
+      if (!reason) return;
+      
+      try {
+        const result = await api(`/api/foundations/${currentFoundation.id}/votes/${voteId}/veto`, {
+          method: 'POST',
+          body: JSON.stringify({ reason })
+        });
+        
+        if (result.success) {
+          alert('Veto exercised successfully!');
+          loadVotes();
+        } else {
+          alert(result.message || 'Failed to exercise veto');
+        }
+      } catch (e) {
+        alert('Error: ' + e.message);
+      }
+    }
+    
+    // Other actions
+    async function activateFoundation() {
+      if (!currentFoundation) return;
+      
+      try {
+        const result = await api(`/api/foundations/${currentFoundation.id}/activate`, {
+          method: 'POST'
+        });
+        
+        if (result.success) {
+          alert('Foundation activated successfully!');
+          viewFoundation(currentFoundation.id);
+        } else {
+          alert(result.message || 'Failed to activate foundation');
+        }
+      } catch (e) {
+        alert('Error: ' + e.message);
+      }
+    }
+    
+    async function approveMember(memberId) {
+      if (!currentFoundation) return;
+      
+      try {
+        const result = await api(`/api/foundations/${currentFoundation.id}/members/${memberId}/approve`, {
+          method: 'POST'
+        });
+        
+        if (result.success) {
+          alert('Member approved!');
+          loadMembers();
+        } else {
+          alert(result.message || 'Failed to approve member');
+        }
+      } catch (e) {
+        alert('Error: ' + e.message);
+      }
+    }
+    
+    async function leaveFoundation(foundationId) {
+      if (!confirm('Are you sure you want to leave this foundation?')) return;
+      
+      try {
+        const result = await api(`/api/foundations/${foundationId}/leave`, {
+          method: 'POST'
+        });
+        
+        if (result.success) {
+          alert('You have left the foundation');
+          loadFoundations();
+        } else {
+          alert(result.message || 'Failed to leave foundation');
+        }
+      } catch (e) {
+        alert('Error: ' + e.message);
+      }
+    }
+    
+    // Utility functions
+    function escapeHtml(str) {
+      if (!str) return '';
+      return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+    
+    function formatNumber(num) {
+      if (num === null || num === undefined) return '0';
+      return new Intl.NumberFormat('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 }).format(num);
+    }
+    
+    function formatDate(dateStr) {
+      if (!dateStr) return 'N/A';
+      return new Date(dateStr).toLocaleDateString('en-US', { 
+        year: 'numeric', month: 'short', day: 'numeric' 
+      });
+    }
+    
+    // Initialize on load
+    init();
+  </script>
+</body>
+</html>

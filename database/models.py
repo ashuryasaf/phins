@@ -1532,3 +1532,922 @@ class SupplierDocument(Base):
             'created_date': self.created_date.isoformat() if self.created_date else None,
             'updated_date': self.updated_date.isoformat() if self.updated_date else None
         }
+
+
+# ============================================================================
+# COMMUNITY FOUNDATION MODELS (Mutual Aid Groups)
+# ============================================================================
+
+
+class FoundationType(str, enum.Enum):
+    """Types of community foundations"""
+    FAMILY = "family"
+    WORK = "work"
+    NEIGHBORHOOD = "neighborhood"
+    FRIENDS = "friends"
+    ENTREPRENEURS = "entrepreneurs"
+    BUSINESS_VENTURE = "business_venture"
+    PROFESSIONAL = "professional"
+    CUSTOMER_CLUB = "customer_club"
+    CUSTOM = "custom"
+
+
+class FoundationStatus(str, enum.Enum):
+    """Foundation lifecycle status"""
+    DRAFT = "draft"
+    ACTIVE = "active"
+    SUSPENDED = "suspended"
+    INACTIVE = "inactive"
+    DISSOLVED = "dissolved"
+
+
+class MemberRole(str, enum.Enum):
+    """Member roles within a foundation"""
+    FOUNDER = "founder"
+    ADMIN = "admin"
+    MEMBER = "member"
+    OBSERVER = "observer"
+
+
+class MemberStatus(str, enum.Enum):
+    """Member status within a foundation"""
+    INVITED = "invited"
+    PENDING = "pending"
+    ACTIVE = "active"
+    SUSPENDED = "suspended"
+    REMOVED = "removed"
+    DECLINED = "declined"
+
+
+class FundType(str, enum.Enum):
+    """Types of foundation funds"""
+    COLLECTIVE_INSURANCE = "insurance"
+    MUTUAL_SAVINGS = "savings"
+    EMERGENCY = "emergency"
+    CUSTOM = "custom"
+
+
+class FundStatus(str, enum.Enum):
+    """Fund status"""
+    ACTIVE = "active"
+    FROZEN = "frozen"
+    CLOSED = "closed"
+
+
+class FoundationClaimType(str, enum.Enum):
+    """Types of foundation claims"""
+    MEDICAL = "medical"
+    DISABILITY = "disability"
+    EMERGENCY = "emergency"
+    BUSINESS_INTERRUPTION = "business"
+    LIFE_EVENT = "life_event"
+    CUSTOM = "custom"
+
+
+class FoundationClaimStatus(str, enum.Enum):
+    """Foundation claim status"""
+    SUBMITTED = "submitted"
+    REVIEWING = "reviewing"
+    VOTE_OPEN = "vote_open"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+    PAID = "paid"
+    CANCELLED = "cancelled"
+
+
+class VoteStatus(str, enum.Enum):
+    """Vote proposal status"""
+    OPEN = "open"
+    CLOSED = "closed"
+    PASSED = "passed"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+
+
+class VoteChoice(str, enum.Enum):
+    """Individual vote choices"""
+    FOR = "for"
+    AGAINST = "against"
+    ABSTAIN = "abstain"
+
+
+class InvitationStatus(str, enum.Enum):
+    """Foundation invitation status"""
+    PENDING = "pending"
+    ACCEPTED = "accepted"
+    DECLINED = "declined"
+    EXPIRED = "expired"
+    REVOKED = "revoked"
+
+
+class ContributionStatus(str, enum.Enum):
+    """Contribution payment status"""
+    SCHEDULED = "scheduled"
+    PENDING = "pending"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    REFUNDED = "refunded"
+
+
+class RuleType(str, enum.Enum):
+    """Types of foundation rules"""
+    CONTRIBUTION = "contribution"
+    CLAIM_APPROVAL = "claim_approval"
+    MEMBERSHIP = "membership"
+    VOTING = "voting"
+    FUND_LIMITS = "fund_limits"
+    GOVERNANCE = "governance"
+
+
+class Foundation(Base):
+    """
+    Community Foundation - Mutual aid groups for collective insurance and savings.
+    
+    Foundations can be created by customers or suppliers to share risk,
+    pool resources, and provide mutual support within a defined group.
+    
+    Examples: Family emergency funds, entrepreneur risk pools, employee benefit groups.
+    """
+    __tablename__ = 'foundations'
+    
+    id = Column(String(50), primary_key=True)  # FND-XXXX-XXXX format
+    
+    # Basic Information
+    name = Column(String(200), nullable=False, index=True)
+    description = Column(Text, nullable=True)
+    foundation_type = Column(String(50), nullable=False, index=True)  # family, work, friends, etc.
+    custom_type_name = Column(String(100), nullable=True)  # For custom types
+    
+    # Founder Information
+    founder_id = Column(String(50), nullable=False, index=True)  # customer_id or supplier_id
+    founder_type = Column(String(20), nullable=False)  # 'customer' or 'supplier'
+    founder_name = Column(String(200), nullable=True)  # Display name
+    
+    # Status and Lifecycle
+    status = Column(String(50), default='draft', index=True)
+    activated_at = Column(DateTime, nullable=True)
+    suspended_at = Column(DateTime, nullable=True)
+    dissolved_at = Column(DateTime, nullable=True)
+    suspension_reason = Column(Text, nullable=True)
+    dissolution_reason = Column(Text, nullable=True)
+    
+    # Membership Configuration
+    max_members = Column(Integer, default=35)
+    is_unlimited = Column(Boolean, default=False)
+    current_member_count = Column(Integer, default=1)  # Founder counts as 1
+    min_members_to_operate = Column(Integer, default=2)
+    
+    # Governance Settings
+    founder_veto_enabled = Column(Boolean, default=True)
+    auto_approve_members = Column(Boolean, default=False)
+    require_invitation = Column(Boolean, default=True)
+    new_member_vote_required = Column(Boolean, default=False)
+    
+    # Voting Thresholds
+    majority_threshold = Column(Float, default=0.50)  # 50% for standard decisions
+    supermajority_threshold = Column(Float, default=0.66)  # 66% for rule changes
+    dissolution_threshold = Column(Float, default=0.75)  # 75% to dissolve
+    quorum_percentage = Column(Float, default=0.50)  # 50% must participate
+    vote_duration_days = Column(Integer, default=7)
+    
+    # Financial Summary (denormalized for quick access)
+    total_fund_balance = Column(Float, default=0.0)
+    total_contributions = Column(Float, default=0.0)
+    total_claims_paid = Column(Float, default=0.0)
+    currency = Column(String(10), default='USD')
+    
+    # Settings (JSON for flexible configuration)
+    settings = Column(Text, nullable=True)  # JSON: additional settings
+    
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Relationships
+    members = relationship("FoundationMember", back_populates="foundation", cascade="all, delete-orphan")
+    funds = relationship("FoundationFund", back_populates="foundation", cascade="all, delete-orphan")
+    rules = relationship("FoundationRule", back_populates="foundation", cascade="all, delete-orphan")
+    invitations = relationship("FoundationInvitation", back_populates="foundation", cascade="all, delete-orphan")
+    votes = relationship("FoundationVote", back_populates="foundation", cascade="all, delete-orphan")
+    claims = relationship("FoundationClaim", back_populates="foundation", cascade="all, delete-orphan")
+    activities = relationship("FoundationActivity", back_populates="foundation", cascade="all, delete-orphan")
+    
+    def to_dict(self, include_settings: bool = False):
+        """Convert model to dictionary"""
+        import json as _json
+        
+        data = {
+            'id': self.id,
+            'name': self.name,
+            'description': self.description,
+            'foundation_type': self.foundation_type,
+            'custom_type_name': self.custom_type_name,
+            'founder_id': self.founder_id,
+            'founder_type': self.founder_type,
+            'founder_name': self.founder_name,
+            'status': self.status,
+            'activated_at': self.activated_at.isoformat() if self.activated_at else None,
+            'suspended_at': self.suspended_at.isoformat() if self.suspended_at else None,
+            'dissolved_at': self.dissolved_at.isoformat() if self.dissolved_at else None,
+            'max_members': self.max_members,
+            'is_unlimited': self.is_unlimited,
+            'current_member_count': self.current_member_count,
+            'min_members_to_operate': self.min_members_to_operate,
+            'founder_veto_enabled': self.founder_veto_enabled,
+            'auto_approve_members': self.auto_approve_members,
+            'require_invitation': self.require_invitation,
+            'majority_threshold': self.majority_threshold,
+            'supermajority_threshold': self.supermajority_threshold,
+            'dissolution_threshold': self.dissolution_threshold,
+            'quorum_percentage': self.quorum_percentage,
+            'vote_duration_days': self.vote_duration_days,
+            'total_fund_balance': self.total_fund_balance,
+            'total_contributions': self.total_contributions,
+            'total_claims_paid': self.total_claims_paid,
+            'currency': self.currency,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None
+        }
+        
+        if include_settings and self.settings:
+            try:
+                data['settings'] = _json.loads(self.settings)
+            except:
+                data['settings'] = {}
+        
+        return data
+    
+    def is_active(self) -> bool:
+        """Check if foundation is active"""
+        return self.status == 'active'
+    
+    def can_accept_members(self) -> bool:
+        """Check if foundation can accept new members"""
+        if not self.is_active():
+            return False
+        if self.is_unlimited:
+            return True
+        return self.current_member_count < self.max_members
+
+
+class FoundationMember(Base):
+    """
+    Foundation membership records.
+    
+    Tracks who belongs to which foundation, their role, contributions,
+    and membership status.
+    """
+    __tablename__ = 'foundation_members'
+    
+    id = Column(String(50), primary_key=True)  # MBR-XXXX-XXXX format
+    foundation_id = Column(String(50), ForeignKey('foundations.id', ondelete='CASCADE'), nullable=False, index=True)
+    
+    # Member Identity
+    member_id = Column(String(50), nullable=False, index=True)  # customer_id or supplier_id
+    member_type = Column(String(20), nullable=False)  # 'customer' or 'supplier'
+    display_name = Column(String(100), nullable=True)  # Public display name
+    
+    # Role and Status
+    role = Column(String(20), nullable=False, default='member', index=True)  # founder, admin, member, observer
+    status = Column(String(20), nullable=False, default='pending', index=True)
+    
+    # Contribution Tracking
+    contribution_amount = Column(Float, default=0.0)  # Monthly/periodic amount
+    total_contributed = Column(Float, default=0.0)  # Lifetime total
+    last_contribution_date = Column(DateTime, nullable=True)
+    next_contribution_due = Column(DateTime, nullable=True)
+    contributions_missed = Column(Integer, default=0)
+    
+    # Voting Weight (can be proportional to contribution or equal)
+    voting_weight = Column(Float, default=1.0)
+    
+    # Visibility Settings
+    is_visible = Column(Boolean, default=True)  # Show in member list
+    share_contribution_amount = Column(Boolean, default=False)  # Show individual contribution
+    
+    # Timestamps
+    joined_at = Column(DateTime, nullable=True)
+    invited_at = Column(DateTime, nullable=True)
+    approved_at = Column(DateTime, nullable=True)
+    removed_at = Column(DateTime, nullable=True)
+    removal_reason = Column(Text, nullable=True)
+    
+    # Audit
+    invited_by = Column(String(50), nullable=True)
+    approved_by = Column(String(50), nullable=True)
+    removed_by = Column(String(50), nullable=True)
+    
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Relationships
+    foundation = relationship("Foundation", back_populates="members")
+    contributions = relationship("FoundationContribution", back_populates="member", cascade="all, delete-orphan")
+    
+    def to_dict(self, include_sensitive: bool = False):
+        """Convert model to dictionary"""
+        data = {
+            'id': self.id,
+            'foundation_id': self.foundation_id,
+            'member_type': self.member_type,
+            'display_name': self.display_name,
+            'role': self.role,
+            'status': self.status,
+            'total_contributed': self.total_contributed,
+            'voting_weight': self.voting_weight,
+            'is_visible': self.is_visible,
+            'joined_at': self.joined_at.isoformat() if self.joined_at else None,
+            'created_at': self.created_at.isoformat() if self.created_at else None
+        }
+        
+        # Only include sensitive info for authorized views
+        if include_sensitive:
+            data['member_id'] = self.member_id
+            data['contribution_amount'] = self.contribution_amount
+            data['last_contribution_date'] = self.last_contribution_date.isoformat() if self.last_contribution_date else None
+            data['next_contribution_due'] = self.next_contribution_due.isoformat() if self.next_contribution_due else None
+            data['contributions_missed'] = self.contributions_missed
+        
+        return data
+    
+    def is_active(self) -> bool:
+        """Check if member is active"""
+        return self.status == 'active'
+    
+    def can_vote(self) -> bool:
+        """Check if member can vote"""
+        return self.is_active() and self.role in ('founder', 'admin', 'member')
+
+
+class FoundationFund(Base):
+    """
+    Foundation fund accounts - pools for insurance, savings, or emergencies.
+    
+    Each foundation can have multiple funds for different purposes.
+    """
+    __tablename__ = 'foundation_funds'
+    
+    id = Column(String(50), primary_key=True)  # FUND-XXXX-XXXX format
+    foundation_id = Column(String(50), ForeignKey('foundations.id', ondelete='CASCADE'), nullable=False, index=True)
+    
+    # Fund Information
+    name = Column(String(200), nullable=False)
+    description = Column(Text, nullable=True)
+    fund_type = Column(String(50), nullable=False, index=True)  # insurance, savings, emergency, custom
+    
+    # Financial Status
+    balance = Column(Float, default=0.0)
+    currency = Column(String(10), default='USD')
+    total_deposits = Column(Float, default=0.0)
+    total_withdrawals = Column(Float, default=0.0)
+    total_claims_paid = Column(Float, default=0.0)
+    
+    # Fund Rules
+    min_reserve_percentage = Column(Float, default=0.20)  # 20% minimum reserve
+    max_claim_percentage = Column(Float, default=0.25)  # Max 25% per claim
+    auto_approve_threshold = Column(Float, default=500.0)  # Auto-approve claims under this
+    claim_waiting_period_days = Column(Integer, default=30)  # Wait before claiming
+    
+    # Status
+    status = Column(String(20), default='active', index=True)  # active, frozen, closed
+    frozen_at = Column(DateTime, nullable=True)
+    frozen_reason = Column(Text, nullable=True)
+    
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    last_activity_at = Column(DateTime, nullable=True)
+    
+    # Relationships
+    foundation = relationship("Foundation", back_populates="funds")
+    contributions = relationship("FoundationContribution", back_populates="fund", cascade="all, delete-orphan")
+    claims = relationship("FoundationClaim", back_populates="fund", cascade="all, delete-orphan")
+    
+    def to_dict(self):
+        """Convert model to dictionary"""
+        return {
+            'id': self.id,
+            'foundation_id': self.foundation_id,
+            'name': self.name,
+            'description': self.description,
+            'fund_type': self.fund_type,
+            'balance': self.balance,
+            'currency': self.currency,
+            'total_deposits': self.total_deposits,
+            'total_withdrawals': self.total_withdrawals,
+            'total_claims_paid': self.total_claims_paid,
+            'min_reserve_percentage': self.min_reserve_percentage,
+            'max_claim_percentage': self.max_claim_percentage,
+            'auto_approve_threshold': self.auto_approve_threshold,
+            'claim_waiting_period_days': self.claim_waiting_period_days,
+            'status': self.status,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None,
+            'last_activity_at': self.last_activity_at.isoformat() if self.last_activity_at else None
+        }
+    
+    def available_balance(self) -> float:
+        """Calculate available balance (total minus reserve)"""
+        reserve = self.balance * self.min_reserve_percentage
+        return max(0, self.balance - reserve)
+    
+    def max_single_claim(self) -> float:
+        """Calculate maximum single claim amount"""
+        return self.balance * self.max_claim_percentage
+
+
+class FoundationContribution(Base):
+    """
+    Individual contributions to foundation funds.
+    
+    Tracks all deposits made by members to the shared funds.
+    """
+    __tablename__ = 'foundation_contributions'
+    
+    id = Column(String(50), primary_key=True)  # CTB-XXXX-XXXX format
+    fund_id = Column(String(50), ForeignKey('foundation_funds.id', ondelete='CASCADE'), nullable=False, index=True)
+    member_id = Column(String(50), ForeignKey('foundation_members.id', ondelete='CASCADE'), nullable=False, index=True)
+    
+    # Contribution Details
+    amount = Column(Float, nullable=False)
+    currency = Column(String(10), default='USD')
+    contribution_type = Column(String(20), nullable=False)  # monthly, quarterly, annual, one_time
+    
+    # Status
+    status = Column(String(20), default='pending', index=True)  # scheduled, pending, completed, failed, refunded
+    
+    # Payment Information
+    due_date = Column(DateTime, nullable=True)
+    paid_date = Column(DateTime, nullable=True)
+    payment_method = Column(String(50), nullable=True)  # wallet, bank_transfer, card
+    transaction_ref = Column(String(100), nullable=True)
+    
+    # Notes
+    notes = Column(Text, nullable=True)
+    failure_reason = Column(Text, nullable=True)
+    
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Relationships
+    fund = relationship("FoundationFund", back_populates="contributions")
+    member = relationship("FoundationMember", back_populates="contributions")
+    
+    def to_dict(self):
+        """Convert model to dictionary"""
+        return {
+            'id': self.id,
+            'fund_id': self.fund_id,
+            'member_id': self.member_id,
+            'amount': self.amount,
+            'currency': self.currency,
+            'contribution_type': self.contribution_type,
+            'status': self.status,
+            'due_date': self.due_date.isoformat() if self.due_date else None,
+            'paid_date': self.paid_date.isoformat() if self.paid_date else None,
+            'payment_method': self.payment_method,
+            'transaction_ref': self.transaction_ref,
+            'notes': self.notes,
+            'created_at': self.created_at.isoformat() if self.created_at else None
+        }
+
+
+class FoundationRule(Base):
+    """
+    Foundation rules - configurable governance and operational rules.
+    
+    Rules can be base (immutable) or adjustable (changeable by vote).
+    """
+    __tablename__ = 'foundation_rules'
+    
+    id = Column(String(50), primary_key=True)  # RULE-XXXX-XXXX format
+    foundation_id = Column(String(50), ForeignKey('foundations.id', ondelete='CASCADE'), nullable=False, index=True)
+    
+    # Rule Definition
+    rule_type = Column(String(50), nullable=False, index=True)  # contribution, claim_approval, membership, voting, etc.
+    rule_key = Column(String(100), nullable=False)  # Specific rule identifier
+    rule_value = Column(Text, nullable=False)  # JSON value
+    rule_description = Column(Text, nullable=True)
+    
+    # Rule Properties
+    is_base_rule = Column(Boolean, default=False)  # Base rules cannot be changed
+    requires_vote = Column(Boolean, default=True)  # Requires vote to change
+    vote_threshold = Column(Float, default=0.66)  # Threshold to pass change
+    
+    # Version Control
+    version = Column(Integer, default=1)
+    previous_value = Column(Text, nullable=True)  # Previous JSON value
+    
+    # Audit
+    created_by = Column(String(50), nullable=True)
+    modified_by = Column(String(50), nullable=True)
+    
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Relationships
+    foundation = relationship("Foundation", back_populates="rules")
+    
+    def to_dict(self):
+        """Convert model to dictionary"""
+        import json as _json
+        
+        def safe_json_loads(val):
+            if val is None:
+                return None
+            try:
+                return _json.loads(val)
+            except:
+                return val
+        
+        return {
+            'id': self.id,
+            'foundation_id': self.foundation_id,
+            'rule_type': self.rule_type,
+            'rule_key': self.rule_key,
+            'rule_value': safe_json_loads(self.rule_value),
+            'rule_description': self.rule_description,
+            'is_base_rule': self.is_base_rule,
+            'requires_vote': self.requires_vote,
+            'vote_threshold': self.vote_threshold,
+            'version': self.version,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None
+        }
+
+
+class FoundationInvitation(Base):
+    """
+    Foundation invitations - private codes for joining foundations.
+    
+    Invitations can be single-use or multi-use with expiration dates.
+    """
+    __tablename__ = 'foundation_invitations'
+    
+    id = Column(String(50), primary_key=True)  # INV-XXXX-XXXX format
+    foundation_id = Column(String(50), ForeignKey('foundations.id', ondelete='CASCADE'), nullable=False, index=True)
+    
+    # Invitation Code
+    code = Column(String(50), unique=True, nullable=False, index=True)  # Unique invite code
+    
+    # Target (optional - for specific person invites)
+    invited_email = Column(String(254), nullable=True, index=True)
+    invited_name = Column(String(200), nullable=True)
+    
+    # Invitation Limits
+    max_uses = Column(Integer, default=1)  # -1 for unlimited
+    used_count = Column(Integer, default=0)
+    
+    # Status
+    status = Column(String(20), default='pending', index=True)  # pending, accepted, declined, expired, revoked
+    
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    expires_at = Column(DateTime, nullable=True)
+    used_at = Column(DateTime, nullable=True)  # First use timestamp
+    revoked_at = Column(DateTime, nullable=True)
+    
+    # Audit
+    invited_by = Column(String(50), nullable=False)  # member_id who created invite
+    invited_by_name = Column(String(200), nullable=True)
+    revoked_by = Column(String(50), nullable=True)
+    
+    # Notes
+    notes = Column(Text, nullable=True)
+    
+    # Relationships
+    foundation = relationship("Foundation", back_populates="invitations")
+    
+    def to_dict(self, include_code: bool = False):
+        """Convert model to dictionary"""
+        data = {
+            'id': self.id,
+            'foundation_id': self.foundation_id,
+            'invited_email': self.invited_email,
+            'invited_name': self.invited_name,
+            'max_uses': self.max_uses,
+            'used_count': self.used_count,
+            'status': self.status,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'expires_at': self.expires_at.isoformat() if self.expires_at else None,
+            'invited_by_name': self.invited_by_name,
+            'notes': self.notes
+        }
+        
+        if include_code:
+            data['code'] = self.code
+        
+        return data
+    
+    def is_valid(self) -> bool:
+        """Check if invitation is still valid"""
+        if self.status != 'pending':
+            return False
+        if self.expires_at and datetime.utcnow() > self.expires_at:
+            return False
+        if self.max_uses > 0 and self.used_count >= self.max_uses:
+            return False
+        return True
+
+
+class FoundationVote(Base):
+    """
+    Foundation vote proposals - for democratic decision making.
+    
+    Used for claims approval, rule changes, membership decisions, etc.
+    """
+    __tablename__ = 'foundation_votes'
+    
+    id = Column(String(50), primary_key=True)  # VOTE-XXXX-XXXX format
+    foundation_id = Column(String(50), ForeignKey('foundations.id', ondelete='CASCADE'), nullable=False, index=True)
+    
+    # Proposal Details
+    proposal_type = Column(String(50), nullable=False, index=True)  # rule_change, claim, membership, withdrawal, dissolution
+    title = Column(String(300), nullable=False)
+    description = Column(Text, nullable=True)
+    
+    # Related Entity (if applicable)
+    related_entity_type = Column(String(50), nullable=True)  # claim, rule, member
+    related_entity_id = Column(String(50), nullable=True)
+    
+    # Voting Configuration
+    threshold = Column(Float, nullable=False)  # Percentage needed to pass
+    quorum = Column(Float, default=0.50)  # Minimum participation
+    
+    # Vote Counts
+    votes_for = Column(Integer, default=0)
+    votes_against = Column(Integer, default=0)
+    votes_abstain = Column(Integer, default=0)
+    total_eligible = Column(Integer, default=0)
+    
+    # Status
+    status = Column(String(20), default='open', index=True)  # open, closed, passed, failed, cancelled
+    result = Column(String(50), nullable=True)  # Final result description
+    
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    closes_at = Column(DateTime, nullable=False)
+    closed_at = Column(DateTime, nullable=True)
+    
+    # Audit
+    created_by = Column(String(50), nullable=False)  # member_id
+    created_by_name = Column(String(200), nullable=True)
+    
+    # Founder Veto (if applicable)
+    vetoed = Column(Boolean, default=False)
+    vetoed_by = Column(String(50), nullable=True)
+    vetoed_at = Column(DateTime, nullable=True)
+    veto_reason = Column(Text, nullable=True)
+    
+    # Relationships
+    foundation = relationship("Foundation", back_populates="votes")
+    vote_casts = relationship("FoundationVoteCast", back_populates="vote", cascade="all, delete-orphan")
+    
+    def to_dict(self):
+        """Convert model to dictionary"""
+        return {
+            'id': self.id,
+            'foundation_id': self.foundation_id,
+            'proposal_type': self.proposal_type,
+            'title': self.title,
+            'description': self.description,
+            'related_entity_type': self.related_entity_type,
+            'related_entity_id': self.related_entity_id,
+            'threshold': self.threshold,
+            'quorum': self.quorum,
+            'votes_for': self.votes_for,
+            'votes_against': self.votes_against,
+            'votes_abstain': self.votes_abstain,
+            'total_eligible': self.total_eligible,
+            'status': self.status,
+            'result': self.result,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'closes_at': self.closes_at.isoformat() if self.closes_at else None,
+            'closed_at': self.closed_at.isoformat() if self.closed_at else None,
+            'created_by_name': self.created_by_name,
+            'vetoed': self.vetoed,
+            'veto_reason': self.veto_reason
+        }
+    
+    def participation_rate(self) -> float:
+        """Calculate current participation rate"""
+        if self.total_eligible == 0:
+            return 0.0
+        total_votes = self.votes_for + self.votes_against + self.votes_abstain
+        return total_votes / self.total_eligible
+    
+    def current_approval_rate(self) -> float:
+        """Calculate current approval rate (for/against only)"""
+        voted = self.votes_for + self.votes_against
+        if voted == 0:
+            return 0.0
+        return self.votes_for / voted
+
+
+class FoundationVoteCast(Base):
+    """
+    Individual vote records - tracks how each member voted.
+    """
+    __tablename__ = 'foundation_vote_casts'
+    
+    id = Column(String(50), primary_key=True)  # VC-XXXX-XXXX format
+    vote_id = Column(String(50), ForeignKey('foundation_votes.id', ondelete='CASCADE'), nullable=False, index=True)
+    member_id = Column(String(50), nullable=False, index=True)  # foundation_member id
+    
+    # Vote Details
+    choice = Column(String(20), nullable=False)  # for, against, abstain
+    weight = Column(Float, default=1.0)  # Voting weight at time of vote
+    
+    # Optional Explanation
+    reason = Column(Text, nullable=True)
+    
+    # Timestamp
+    cast_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    
+    # Relationships
+    vote = relationship("FoundationVote", back_populates="vote_casts")
+    
+    def to_dict(self):
+        """Convert model to dictionary"""
+        return {
+            'id': self.id,
+            'vote_id': self.vote_id,
+            'member_id': self.member_id,
+            'choice': self.choice,
+            'weight': self.weight,
+            'reason': self.reason,
+            'cast_at': self.cast_at.isoformat() if self.cast_at else None
+        }
+
+
+class FoundationClaim(Base):
+    """
+    Foundation claims - requests for payouts from shared funds.
+    
+    Claims can be auto-approved (small amounts) or require voting.
+    """
+    __tablename__ = 'foundation_claims'
+    
+    id = Column(String(50), primary_key=True)  # FCLM-XXXX-XXXX format
+    foundation_id = Column(String(50), ForeignKey('foundations.id', ondelete='CASCADE'), nullable=False, index=True)
+    fund_id = Column(String(50), ForeignKey('foundation_funds.id', ondelete='CASCADE'), nullable=False, index=True)
+    claimant_id = Column(String(50), nullable=False, index=True)  # foundation_member id
+    
+    # Claim Details
+    claim_type = Column(String(50), nullable=False, index=True)  # medical, disability, emergency, business, life_event, custom
+    title = Column(String(300), nullable=False)
+    description = Column(Text, nullable=True)
+    
+    # Financial
+    amount_requested = Column(Float, nullable=False)
+    amount_approved = Column(Float, nullable=True)
+    amount_paid = Column(Float, nullable=True)
+    currency = Column(String(10), default='USD')
+    
+    # Status
+    status = Column(String(20), default='submitted', index=True)  # submitted, reviewing, vote_open, approved, rejected, paid, cancelled
+    
+    # Supporting Documents (JSON array of document references)
+    supporting_docs = Column(Text, nullable=True)  # JSON: [{id, name, type, url}]
+    
+    # Voting (if required)
+    vote_id = Column(String(50), nullable=True, index=True)  # Reference to FoundationVote
+    auto_approved = Column(Boolean, default=False)
+    
+    # Review/Approval
+    reviewed_by = Column(String(50), nullable=True)
+    reviewed_by_name = Column(String(200), nullable=True)
+    review_notes = Column(Text, nullable=True)
+    rejection_reason = Column(Text, nullable=True)
+    
+    # Payment
+    payout_date = Column(DateTime, nullable=True)
+    payout_method = Column(String(50), nullable=True)  # wallet, bank_transfer
+    payout_reference = Column(String(100), nullable=True)
+    
+    # Timestamps
+    submitted_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    reviewed_at = Column(DateTime, nullable=True)
+    approved_at = Column(DateTime, nullable=True)
+    paid_at = Column(DateTime, nullable=True)
+    cancelled_at = Column(DateTime, nullable=True)
+    
+    # Claimant Display Name (for privacy)
+    claimant_display_name = Column(String(100), nullable=True)
+    
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Relationships
+    foundation = relationship("Foundation", back_populates="claims")
+    fund = relationship("FoundationFund", back_populates="claims")
+    
+    def to_dict(self, include_sensitive: bool = False):
+        """Convert model to dictionary"""
+        import json as _json
+        
+        def safe_json_loads(val):
+            if val is None:
+                return []
+            try:
+                return _json.loads(val)
+            except:
+                return []
+        
+        data = {
+            'id': self.id,
+            'foundation_id': self.foundation_id,
+            'fund_id': self.fund_id,
+            'claim_type': self.claim_type,
+            'title': self.title,
+            'amount_requested': self.amount_requested,
+            'amount_approved': self.amount_approved,
+            'amount_paid': self.amount_paid,
+            'currency': self.currency,
+            'status': self.status,
+            'auto_approved': self.auto_approved,
+            'vote_id': self.vote_id,
+            'claimant_display_name': self.claimant_display_name,
+            'submitted_at': self.submitted_at.isoformat() if self.submitted_at else None,
+            'reviewed_at': self.reviewed_at.isoformat() if self.reviewed_at else None,
+            'approved_at': self.approved_at.isoformat() if self.approved_at else None,
+            'paid_at': self.paid_at.isoformat() if self.paid_at else None,
+            'created_at': self.created_at.isoformat() if self.created_at else None
+        }
+        
+        if include_sensitive:
+            data['claimant_id'] = self.claimant_id
+            data['description'] = self.description
+            data['supporting_docs'] = safe_json_loads(self.supporting_docs)
+            data['review_notes'] = self.review_notes
+            data['rejection_reason'] = self.rejection_reason
+            data['payout_method'] = self.payout_method
+            data['payout_reference'] = self.payout_reference
+        
+        return data
+
+
+class FoundationActivity(Base):
+    """
+    Foundation activity log - audit trail of all foundation actions.
+    
+    Tracks membership changes, contributions, claims, votes, and rule changes.
+    """
+    __tablename__ = 'foundation_activities'
+    
+    id = Column(String(50), primary_key=True)  # ACT-XXXX-XXXX format
+    foundation_id = Column(String(50), ForeignKey('foundations.id', ondelete='CASCADE'), nullable=False, index=True)
+    
+    # Activity Details
+    activity_type = Column(String(50), nullable=False, index=True)  # member_joined, contribution, claim_submitted, vote_cast, rule_changed, etc.
+    activity_description = Column(String(500), nullable=False)
+    
+    # Actor
+    actor_id = Column(String(50), nullable=True)  # member_id or system
+    actor_name = Column(String(200), nullable=True)
+    actor_type = Column(String(20), nullable=True)  # member, admin, founder, system
+    
+    # Related Entity
+    entity_type = Column(String(50), nullable=True)  # member, fund, claim, vote, rule
+    entity_id = Column(String(50), nullable=True)
+    
+    # Additional Details (JSON)
+    details = Column(Text, nullable=True)  # JSON with additional context
+    
+    # Metadata
+    ip_address = Column(String(45), nullable=True)
+    
+    # Timestamp
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    
+    # Relationships
+    foundation = relationship("Foundation", back_populates="activities")
+    
+    def to_dict(self):
+        """Convert model to dictionary"""
+        import json as _json
+        
+        def safe_json_loads(val):
+            if val is None:
+                return {}
+            try:
+                return _json.loads(val)
+            except:
+                return {}
+        
+        return {
+            'id': self.id,
+            'foundation_id': self.foundation_id,
+            'activity_type': self.activity_type,
+            'activity_description': self.activity_description,
+            'actor_name': self.actor_name,
+            'actor_type': self.actor_type,
+            'entity_type': self.entity_type,
+            'entity_id': self.entity_id,
+            'details': safe_json_loads(self.details),
+            'created_at': self.created_at.isoformat() if self.created_at else None
+        }

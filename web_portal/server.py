@@ -1976,6 +1976,41 @@ except ImportError as e:
 # Reinsurance contracts (scaffolding; DB schema not yet extended)
 REINSURANCE_CONTRACTS: Dict[str, Dict[str, Any]] = {}  # contract_id -> contract details
 
+# ============ COMMUNITY FOUNDATION ECOSYSTEM ============
+# Mutual aid groups for collective insurance, savings, and shared risk management
+FOUNDATIONS: Dict[str, Dict[str, Any]] = {}  # foundation_id -> foundation data
+FOUNDATION_MEMBERS: Dict[str, Dict[str, Any]] = {}  # member_id -> membership data
+FOUNDATION_FUNDS: Dict[str, Dict[str, Any]] = {}  # fund_id -> fund data
+FOUNDATION_CONTRIBUTIONS: Dict[str, Dict[str, Any]] = {}  # contribution_id -> contribution data
+FOUNDATION_INVITATIONS: Dict[str, Dict[str, Any]] = {}  # invitation_id -> invitation data
+FOUNDATION_CLAIMS: Dict[str, Dict[str, Any]] = {}  # claim_id -> claim data
+FOUNDATION_VOTES: Dict[str, Dict[str, Any]] = {}  # vote_id -> vote proposal data
+FOUNDATION_VOTE_CASTS: Dict[str, Dict[str, Any]] = {}  # vote_cast_id -> individual vote
+FOUNDATION_RULES: Dict[str, Dict[str, Any]] = {}  # rule_id -> rule data
+FOUNDATION_ACTIVITIES: Dict[str, Dict[str, Any]] = {}  # activity_id -> activity log
+
+# Initialize foundation service
+foundation_service = None
+try:
+    from services.foundation_service import FoundationService
+    foundation_service = FoundationService(
+        foundations_store=FOUNDATIONS,
+        members_store=FOUNDATION_MEMBERS,
+        funds_store=FOUNDATION_FUNDS,
+        contributions_store=FOUNDATION_CONTRIBUTIONS,
+        invitations_store=FOUNDATION_INVITATIONS,
+        claims_store=FOUNDATION_CLAIMS,
+        votes_store=FOUNDATION_VOTES,
+        vote_casts_store=FOUNDATION_VOTE_CASTS,
+        rules_store=FOUNDATION_RULES,
+        activities_store=FOUNDATION_ACTIVITIES
+    )
+    foundation_service_enabled = True
+    print("✓ Community Foundation service enabled (mutual aid groups)")
+except ImportError as e:
+    foundation_service_enabled = False
+    print(f"Warning: Community Foundation service not available: {e}")
+
 # Hash passwords for security (in production, use proper password hashing)
 def hash_password(password: str) -> dict[str, str]:
     salt = secrets.token_hex(16)
@@ -4753,6 +4788,228 @@ For claims or questions, please contact:
             self._set_json_headers()
             self.wfile.write(json.dumps(safe_supplier).encode('utf-8'))
             return
+
+        # ============ COMMUNITY FOUNDATION GET ENDPOINTS ============
+        
+        # Get foundation types (public info)
+        if path == '/api/foundation-types':
+            if foundation_service_enabled:
+                types = foundation_service.get_foundation_types()
+                self._set_json_headers()
+                self.wfile.write(json.dumps({'types': types}).encode('utf-8'))
+            else:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Foundation service unavailable'}).encode('utf-8'))
+            return
+        
+        # Validate invitation code (semi-public - returns foundation info)
+        if path.startswith('/api/foundation-invitations/validate/'):
+            code = path.split('/')[-1]
+            if foundation_service_enabled:
+                valid, message, info = foundation_service.validate_invitation(code)
+                self._set_json_headers(200 if valid else 400)
+                self.wfile.write(json.dumps({
+                    'valid': valid,
+                    'message': message,
+                    'data': info
+                }).encode('utf-8'))
+            else:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Foundation service unavailable'}).encode('utf-8'))
+            return
+        
+        # List user's foundations
+        if path == '/api/foundations':
+            if not session:
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Authentication required'}).encode('utf-8'))
+                return
+            
+            if foundation_service_enabled:
+                user_id = session.get('customer_id') or session.get('supplier_id') or session.get('username')
+                user_type = 'supplier' if session.get('supplier_id') else 'customer'
+                
+                foundations = foundation_service.get_foundations_for_user(user_id, user_type)
+                
+                self._set_json_headers()
+                self.wfile.write(json.dumps({'foundations': foundations}).encode('utf-8'))
+            else:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Foundation service unavailable'}).encode('utf-8'))
+            return
+        
+        # Get single foundation details
+        if path.startswith('/api/foundations/') and path.count('/') == 3:
+            foundation_id = path.split('/')[3]
+            
+            if not session:
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Authentication required'}).encode('utf-8'))
+                return
+            
+            if foundation_service_enabled:
+                foundation = foundation_service.get_foundation(foundation_id)
+                if foundation:
+                    # Get additional data
+                    stats = foundation_service.get_foundation_stats(foundation_id)
+                    
+                    self._set_json_headers()
+                    self.wfile.write(json.dumps({
+                        'foundation': foundation,
+                        'stats': stats
+                    }).encode('utf-8'))
+                else:
+                    self._set_json_headers(404)
+                    self.wfile.write(json.dumps({'error': 'Foundation not found'}).encode('utf-8'))
+            else:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Foundation service unavailable'}).encode('utf-8'))
+            return
+        
+        # Get foundation members
+        if path.startswith('/api/foundations/') and path.endswith('/members'):
+            foundation_id = path.split('/')[3]
+            
+            if not session:
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Authentication required'}).encode('utf-8'))
+                return
+            
+            if foundation_service_enabled:
+                include_inactive = qs.get('include_inactive', ['false'])[0].lower() == 'true'
+                members = foundation_service.get_members(foundation_id, include_inactive=include_inactive)
+                
+                self._set_json_headers()
+                self.wfile.write(json.dumps({'members': members}).encode('utf-8'))
+            else:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Foundation service unavailable'}).encode('utf-8'))
+            return
+        
+        # Get foundation funds
+        if path.startswith('/api/foundations/') and path.endswith('/funds'):
+            foundation_id = path.split('/')[3]
+            
+            if not session:
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Authentication required'}).encode('utf-8'))
+                return
+            
+            if foundation_service_enabled:
+                funds = foundation_service.get_funds(foundation_id)
+                
+                self._set_json_headers()
+                self.wfile.write(json.dumps({'funds': funds}).encode('utf-8'))
+            else:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Foundation service unavailable'}).encode('utf-8'))
+            return
+        
+        # Get foundation contributions
+        if path.startswith('/api/foundations/') and path.endswith('/contributions'):
+            foundation_id = path.split('/')[3]
+            
+            if not session:
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Authentication required'}).encode('utf-8'))
+                return
+            
+            if foundation_service_enabled:
+                fund_id = qs.get('fund_id', [None])[0]
+                member_id = qs.get('member_id', [None])[0]
+                
+                contributions = foundation_service.get_contributions(
+                    foundation_id, fund_id=fund_id, member_id=member_id
+                )
+                
+                self._set_json_headers()
+                self.wfile.write(json.dumps({'contributions': contributions}).encode('utf-8'))
+            else:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Foundation service unavailable'}).encode('utf-8'))
+            return
+        
+        # Get foundation claims
+        if path.startswith('/api/foundations/') and path.endswith('/claims'):
+            foundation_id = path.split('/')[3]
+            
+            if not session:
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Authentication required'}).encode('utf-8'))
+                return
+            
+            if foundation_service_enabled:
+                status = qs.get('status', [None])[0]
+                claims = foundation_service.get_claims(foundation_id, status=status)
+                
+                self._set_json_headers()
+                self.wfile.write(json.dumps({'claims': claims}).encode('utf-8'))
+            else:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Foundation service unavailable'}).encode('utf-8'))
+            return
+        
+        # Get active votes
+        if path.startswith('/api/foundations/') and path.endswith('/votes'):
+            foundation_id = path.split('/')[3]
+            
+            if not session:
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Authentication required'}).encode('utf-8'))
+                return
+            
+            if foundation_service_enabled:
+                votes = foundation_service.get_active_votes(foundation_id)
+                
+                self._set_json_headers()
+                self.wfile.write(json.dumps({'votes': votes}).encode('utf-8'))
+            else:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Foundation service unavailable'}).encode('utf-8'))
+            return
+        
+        # Get foundation activities
+        if path.startswith('/api/foundations/') and path.endswith('/activities'):
+            foundation_id = path.split('/')[3]
+            
+            if not session:
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Authentication required'}).encode('utf-8'))
+                return
+            
+            if foundation_service_enabled:
+                limit = int(qs.get('limit', ['50'])[0])
+                activities = foundation_service.get_activities(foundation_id, limit=limit)
+                
+                self._set_json_headers()
+                self.wfile.write(json.dumps({'activities': activities}).encode('utf-8'))
+            else:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Foundation service unavailable'}).encode('utf-8'))
+            return
+        
+        # Get foundation invitations (for admins/founders)
+        if path.startswith('/api/foundations/') and path.endswith('/invitations'):
+            foundation_id = path.split('/')[3]
+            
+            if not session:
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Authentication required'}).encode('utf-8'))
+                return
+            
+            if foundation_service_enabled:
+                invitations = [inv for inv in FOUNDATION_INVITATIONS.values() 
+                              if inv['foundation_id'] == foundation_id]
+                invitations.sort(key=lambda x: x.get('created_at', ''), reverse=True)
+                
+                self._set_json_headers()
+                self.wfile.write(json.dumps({'invitations': invitations}).encode('utf-8'))
+            else:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Foundation service unavailable'}).encode('utf-8'))
+            return
+        
+        # ============ END COMMUNITY FOUNDATION GET ENDPOINTS ============
 
         # Token registry (enabled-only for customers)
         if path == '/api/token-registry':
@@ -19056,6 +19313,503 @@ For claims or questions, please contact:
                 return
         
         # ========== END MARKETPLACE API ==========
+        
+        # ========== COMMUNITY FOUNDATION API ==========
+        # Mutual aid groups for collective insurance and savings
+        
+        if foundation_service_enabled and path.startswith('/api/foundation'):
+            
+            # Create a new foundation
+            if path == '/api/foundations':
+                try:
+                    auth_header = self.headers.get('Authorization', '')
+                    token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+                    session = validate_session(token) if token else None
+                    
+                    if not session:
+                        self._set_json_headers(401)
+                        self.wfile.write(json.dumps({'error': 'Authentication required'}).encode('utf-8'))
+                        return
+                    
+                    data = json.loads(body)
+                    
+                    # Determine founder info from session
+                    founder_id = session.get('customer_id') or session.get('supplier_id') or session.get('username')
+                    founder_type = 'supplier' if session.get('supplier_id') else 'customer'
+                    founder_name = data.get('founder_name') or session.get('name') or session.get('username', 'Unknown')
+                    
+                    success, message, result = foundation_service.create_foundation(
+                        founder_id=founder_id,
+                        founder_type=founder_type,
+                        founder_name=founder_name,
+                        name=data.get('name'),
+                        foundation_type=data.get('foundation_type', 'custom'),
+                        description=data.get('description'),
+                        custom_type_name=data.get('custom_type_name'),
+                        max_members=data.get('max_members'),
+                        is_unlimited=data.get('is_unlimited', False),
+                        founder_veto_enabled=data.get('founder_veto_enabled', True),
+                        auto_approve_members=data.get('auto_approve_members', False),
+                        require_invitation=data.get('require_invitation', True),
+                        initial_contribution=data.get('initial_contribution'),
+                        ip_address=self.client_address[0]
+                    )
+                    
+                    self._set_json_headers(201 if success else 400)
+                    self.wfile.write(json.dumps({
+                        'success': success,
+                        'message': message,
+                        'data': result
+                    }).encode('utf-8'))
+                except Exception as e:
+                    self._set_json_headers(500)
+                    self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+                return
+            
+            # Activate a draft foundation
+            if path.startswith('/api/foundations/') and path.endswith('/activate'):
+                try:
+                    foundation_id = path.split('/')[3]
+                    
+                    auth_header = self.headers.get('Authorization', '')
+                    token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+                    session = validate_session(token) if token else None
+                    
+                    if not session:
+                        self._set_json_headers(401)
+                        self.wfile.write(json.dumps({'error': 'Authentication required'}).encode('utf-8'))
+                        return
+                    
+                    actor_id = session.get('customer_id') or session.get('supplier_id') or session.get('username')
+                    
+                    success, message = foundation_service.activate_foundation(
+                        foundation_id=foundation_id,
+                        actor_id=actor_id,
+                        ip_address=self.client_address[0]
+                    )
+                    
+                    self._set_json_headers(200 if success else 400)
+                    self.wfile.write(json.dumps({
+                        'success': success,
+                        'message': message
+                    }).encode('utf-8'))
+                except Exception as e:
+                    self._set_json_headers(500)
+                    self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+                return
+            
+            # Create invitation
+            if path.startswith('/api/foundations/') and path.endswith('/invite'):
+                try:
+                    foundation_id = path.split('/')[3]
+                    
+                    auth_header = self.headers.get('Authorization', '')
+                    token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+                    session = validate_session(token) if token else None
+                    
+                    if not session:
+                        self._set_json_headers(401)
+                        self.wfile.write(json.dumps({'error': 'Authentication required'}).encode('utf-8'))
+                        return
+                    
+                    data = json.loads(body)
+                    inviter_id = session.get('customer_id') or session.get('supplier_id') or session.get('username')
+                    
+                    success, message, result = foundation_service.create_invitation(
+                        foundation_id=foundation_id,
+                        invited_by_id=inviter_id,
+                        invited_email=data.get('email'),
+                        invited_name=data.get('name'),
+                        max_uses=data.get('max_uses', 1),
+                        expires_in_days=data.get('expires_in_days', 7),
+                        notes=data.get('notes'),
+                        ip_address=self.client_address[0]
+                    )
+                    
+                    self._set_json_headers(201 if success else 400)
+                    self.wfile.write(json.dumps({
+                        'success': success,
+                        'message': message,
+                        'data': result
+                    }).encode('utf-8'))
+                except Exception as e:
+                    self._set_json_headers(500)
+                    self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+                return
+            
+            # Join foundation via invitation code
+            if path == '/api/foundations/join':
+                try:
+                    auth_header = self.headers.get('Authorization', '')
+                    token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+                    session = validate_session(token) if token else None
+                    
+                    if not session:
+                        self._set_json_headers(401)
+                        self.wfile.write(json.dumps({'error': 'Authentication required'}).encode('utf-8'))
+                        return
+                    
+                    data = json.loads(body)
+                    code = data.get('code')
+                    
+                    if not code:
+                        self._set_json_headers(400)
+                        self.wfile.write(json.dumps({'error': 'Invitation code required'}).encode('utf-8'))
+                        return
+                    
+                    user_id = session.get('customer_id') or session.get('supplier_id') or session.get('username')
+                    user_type = 'supplier' if session.get('supplier_id') else 'customer'
+                    display_name = data.get('display_name') or session.get('name') or session.get('username', 'Member')
+                    
+                    success, message, result = foundation_service.join_foundation(
+                        code=code,
+                        user_id=user_id,
+                        user_type=user_type,
+                        display_name=display_name,
+                        contribution_amount=data.get('contribution_amount'),
+                        ip_address=self.client_address[0]
+                    )
+                    
+                    self._set_json_headers(200 if success else 400)
+                    self.wfile.write(json.dumps({
+                        'success': success,
+                        'message': message,
+                        'data': result
+                    }).encode('utf-8'))
+                except Exception as e:
+                    self._set_json_headers(500)
+                    self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+                return
+            
+            # Approve pending member
+            if path.startswith('/api/foundations/') and '/members/' in path and path.endswith('/approve'):
+                try:
+                    parts = path.split('/')
+                    foundation_id = parts[3]
+                    member_id = parts[5]
+                    
+                    auth_header = self.headers.get('Authorization', '')
+                    token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+                    session = validate_session(token) if token else None
+                    
+                    if not session:
+                        self._set_json_headers(401)
+                        self.wfile.write(json.dumps({'error': 'Authentication required'}).encode('utf-8'))
+                        return
+                    
+                    approver_id = session.get('customer_id') or session.get('supplier_id') or session.get('username')
+                    
+                    success, message = foundation_service.approve_member(
+                        foundation_id=foundation_id,
+                        member_id=member_id,
+                        approver_id=approver_id,
+                        ip_address=self.client_address[0]
+                    )
+                    
+                    self._set_json_headers(200 if success else 400)
+                    self.wfile.write(json.dumps({
+                        'success': success,
+                        'message': message
+                    }).encode('utf-8'))
+                except Exception as e:
+                    self._set_json_headers(500)
+                    self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+                return
+            
+            # Remove member
+            if path.startswith('/api/foundations/') and '/members/' in path and path.endswith('/remove'):
+                try:
+                    parts = path.split('/')
+                    foundation_id = parts[3]
+                    member_id = parts[5]
+                    
+                    auth_header = self.headers.get('Authorization', '')
+                    token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+                    session = validate_session(token) if token else None
+                    
+                    if not session:
+                        self._set_json_headers(401)
+                        self.wfile.write(json.dumps({'error': 'Authentication required'}).encode('utf-8'))
+                        return
+                    
+                    data = json.loads(body) if body else {}
+                    remover_id = session.get('customer_id') or session.get('supplier_id') or session.get('username')
+                    
+                    success, message = foundation_service.remove_member(
+                        foundation_id=foundation_id,
+                        member_id=member_id,
+                        remover_id=remover_id,
+                        reason=data.get('reason'),
+                        ip_address=self.client_address[0]
+                    )
+                    
+                    self._set_json_headers(200 if success else 400)
+                    self.wfile.write(json.dumps({
+                        'success': success,
+                        'message': message
+                    }).encode('utf-8'))
+                except Exception as e:
+                    self._set_json_headers(500)
+                    self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+                return
+            
+            # Leave foundation
+            if path.startswith('/api/foundations/') and path.endswith('/leave'):
+                try:
+                    foundation_id = path.split('/')[3]
+                    
+                    auth_header = self.headers.get('Authorization', '')
+                    token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+                    session = validate_session(token) if token else None
+                    
+                    if not session:
+                        self._set_json_headers(401)
+                        self.wfile.write(json.dumps({'error': 'Authentication required'}).encode('utf-8'))
+                        return
+                    
+                    user_id = session.get('customer_id') or session.get('supplier_id') or session.get('username')
+                    
+                    success, message = foundation_service.leave_foundation(
+                        foundation_id=foundation_id,
+                        user_id=user_id,
+                        ip_address=self.client_address[0]
+                    )
+                    
+                    self._set_json_headers(200 if success else 400)
+                    self.wfile.write(json.dumps({
+                        'success': success,
+                        'message': message
+                    }).encode('utf-8'))
+                except Exception as e:
+                    self._set_json_headers(500)
+                    self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+                return
+            
+            # Make contribution
+            if path.startswith('/api/foundations/') and path.endswith('/contribute'):
+                try:
+                    foundation_id = path.split('/')[3]
+                    
+                    auth_header = self.headers.get('Authorization', '')
+                    token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+                    session = validate_session(token) if token else None
+                    
+                    if not session:
+                        self._set_json_headers(401)
+                        self.wfile.write(json.dumps({'error': 'Authentication required'}).encode('utf-8'))
+                        return
+                    
+                    data = json.loads(body)
+                    user_id = session.get('customer_id') or session.get('supplier_id') or session.get('username')
+                    
+                    success, message, result = foundation_service.make_contribution(
+                        foundation_id=foundation_id,
+                        fund_id=data.get('fund_id'),
+                        user_id=user_id,
+                        amount=float(data.get('amount', 0)),
+                        contribution_type=data.get('contribution_type', 'one_time'),
+                        payment_method=data.get('payment_method', 'wallet'),
+                        notes=data.get('notes'),
+                        ip_address=self.client_address[0]
+                    )
+                    
+                    self._set_json_headers(200 if success else 400)
+                    self.wfile.write(json.dumps({
+                        'success': success,
+                        'message': message,
+                        'data': result
+                    }).encode('utf-8'))
+                except Exception as e:
+                    self._set_json_headers(500)
+                    self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+                return
+            
+            # Submit claim
+            if path == '/api/foundation-claims':
+                try:
+                    auth_header = self.headers.get('Authorization', '')
+                    token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+                    session = validate_session(token) if token else None
+                    
+                    if not session:
+                        self._set_json_headers(401)
+                        self.wfile.write(json.dumps({'error': 'Authentication required'}).encode('utf-8'))
+                        return
+                    
+                    data = json.loads(body)
+                    user_id = session.get('customer_id') or session.get('supplier_id') or session.get('username')
+                    
+                    success, message, result = foundation_service.submit_claim(
+                        foundation_id=data.get('foundation_id'),
+                        fund_id=data.get('fund_id'),
+                        user_id=user_id,
+                        claim_type=data.get('claim_type', 'custom'),
+                        title=data.get('title'),
+                        amount=float(data.get('amount', 0)),
+                        description=data.get('description'),
+                        supporting_docs=data.get('supporting_docs'),
+                        ip_address=self.client_address[0]
+                    )
+                    
+                    self._set_json_headers(201 if success else 400)
+                    self.wfile.write(json.dumps({
+                        'success': success,
+                        'message': message,
+                        'data': result
+                    }).encode('utf-8'))
+                except Exception as e:
+                    self._set_json_headers(500)
+                    self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+                return
+            
+            # Process claim payout
+            if path.startswith('/api/foundation-claims/') and path.endswith('/payout'):
+                try:
+                    claim_id = path.split('/')[3]
+                    
+                    auth_header = self.headers.get('Authorization', '')
+                    token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+                    session = validate_session(token) if token else None
+                    
+                    if not session:
+                        self._set_json_headers(401)
+                        self.wfile.write(json.dumps({'error': 'Authentication required'}).encode('utf-8'))
+                        return
+                    
+                    data = json.loads(body) if body else {}
+                    processor_id = session.get('customer_id') or session.get('supplier_id') or session.get('username')
+                    
+                    success, message = foundation_service.process_claim_payout(
+                        claim_id=claim_id,
+                        processor_id=processor_id,
+                        payout_method=data.get('payout_method', 'wallet'),
+                        ip_address=self.client_address[0]
+                    )
+                    
+                    self._set_json_headers(200 if success else 400)
+                    self.wfile.write(json.dumps({
+                        'success': success,
+                        'message': message
+                    }).encode('utf-8'))
+                except Exception as e:
+                    self._set_json_headers(500)
+                    self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+                return
+            
+            # Cast vote
+            if path.startswith('/api/foundations/') and '/votes/' in path and path.endswith('/cast'):
+                try:
+                    parts = path.split('/')
+                    foundation_id = parts[3]
+                    vote_id = parts[5]
+                    
+                    auth_header = self.headers.get('Authorization', '')
+                    token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+                    session = validate_session(token) if token else None
+                    
+                    if not session:
+                        self._set_json_headers(401)
+                        self.wfile.write(json.dumps({'error': 'Authentication required'}).encode('utf-8'))
+                        return
+                    
+                    data = json.loads(body)
+                    user_id = session.get('customer_id') or session.get('supplier_id') or session.get('username')
+                    
+                    success, message = foundation_service.cast_vote(
+                        vote_id=vote_id,
+                        user_id=user_id,
+                        choice=data.get('choice'),
+                        reason=data.get('reason'),
+                        ip_address=self.client_address[0]
+                    )
+                    
+                    self._set_json_headers(200 if success else 400)
+                    self.wfile.write(json.dumps({
+                        'success': success,
+                        'message': message
+                    }).encode('utf-8'))
+                except Exception as e:
+                    self._set_json_headers(500)
+                    self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+                return
+            
+            # Founder veto
+            if path.startswith('/api/foundations/') and '/votes/' in path and path.endswith('/veto'):
+                try:
+                    parts = path.split('/')
+                    foundation_id = parts[3]
+                    vote_id = parts[5]
+                    
+                    auth_header = self.headers.get('Authorization', '')
+                    token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+                    session = validate_session(token) if token else None
+                    
+                    if not session:
+                        self._set_json_headers(401)
+                        self.wfile.write(json.dumps({'error': 'Authentication required'}).encode('utf-8'))
+                        return
+                    
+                    data = json.loads(body)
+                    founder_id = session.get('customer_id') or session.get('supplier_id') or session.get('username')
+                    
+                    success, message = foundation_service.founder_veto(
+                        vote_id=vote_id,
+                        founder_id=founder_id,
+                        reason=data.get('reason', 'No reason provided'),
+                        ip_address=self.client_address[0]
+                    )
+                    
+                    self._set_json_headers(200 if success else 400)
+                    self.wfile.write(json.dumps({
+                        'success': success,
+                        'message': message
+                    }).encode('utf-8'))
+                except Exception as e:
+                    self._set_json_headers(500)
+                    self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+                return
+            
+            # Create fund
+            if path.startswith('/api/foundations/') and path.endswith('/funds'):
+                try:
+                    foundation_id = path.split('/')[3]
+                    
+                    auth_header = self.headers.get('Authorization', '')
+                    token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+                    session = validate_session(token) if token else None
+                    
+                    if not session:
+                        self._set_json_headers(401)
+                        self.wfile.write(json.dumps({'error': 'Authentication required'}).encode('utf-8'))
+                        return
+                    
+                    data = json.loads(body)
+                    creator_id = session.get('customer_id') or session.get('supplier_id') or session.get('username')
+                    
+                    success, message, result = foundation_service.create_fund(
+                        foundation_id=foundation_id,
+                        creator_id=creator_id,
+                        name=data.get('name'),
+                        fund_type=data.get('fund_type', 'custom'),
+                        description=data.get('description'),
+                        min_reserve_percentage=float(data.get('min_reserve_percentage', 0.20)),
+                        max_claim_percentage=float(data.get('max_claim_percentage', 0.25)),
+                        auto_approve_threshold=float(data.get('auto_approve_threshold', 500.0)),
+                        ip_address=self.client_address[0]
+                    )
+                    
+                    self._set_json_headers(201 if success else 400)
+                    self.wfile.write(json.dumps({
+                        'success': success,
+                        'message': message,
+                        'data': result
+                    }).encode('utf-8'))
+                except Exception as e:
+                    self._set_json_headers(500)
+                    self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+                return
+        
+        # ========== END COMMUNITY FOUNDATION API ==========
         
         # ========== SAVINGS & INVESTMENT PORTFOLIO POST API ==========
         
