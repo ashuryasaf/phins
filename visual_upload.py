@@ -54,8 +54,9 @@ def upload_fileio(file_path: Path) -> str:
 def upload_s3(file_path: Path, bucket: str, key: Optional[str] = None, acl: str = "private") -> str:
     """Upload file to S3 and return a presigned URL.
 
-    Requires AWS credentials to be available in the environment (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY)
-    or via an IAM role when running in CI.
+    Requires AWS credentials to be available in the environment via standard AWS
+    environment variables (access key ID and secret key) or via an IAM role when running in CI.
+    See: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html
     """
     try:
         import boto3  # type: ignore

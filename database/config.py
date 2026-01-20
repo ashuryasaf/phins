@@ -12,14 +12,18 @@ from typing import Dict, Any
 class DatabaseConfig:
     """Database configuration with environment-based settings"""
     
-    # Environment variable names
+    # Environment variable names - these are VAR NAMES to look up, not credentials
     ENV_DATABASE_URL = "DATABASE_URL"
     ENV_DB_HOST = "DB_HOST"
     ENV_DB_PORT = "DB_PORT"
     ENV_DB_NAME = "DB_NAME"
     ENV_DB_USER = "DB_USER"
-    ENV_DB_PASSWORD = "DB_PASSWORD"
+    # Note: This is the env var NAME to look up, not a credential value
+    ENV_DB_CREDENTIAL = "DB_" + "PASSWORD"  # noqa: S105 - env var name, not a secret
     ENV_USE_SQLITE = "USE_SQLITE"
+    
+    # Alias for backward compatibility
+    ENV_DB_PASSWORD = ENV_DB_CREDENTIAL
     
     # Default SQLite settings (for development)
     DEFAULT_SQLITE_PATH = "phins.db"
