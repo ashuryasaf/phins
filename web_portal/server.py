@@ -59,6 +59,22 @@ except ImportError:
     billing_enabled = False
     print("Warning: Billing engine not available. Payment features disabled.")
 
+# Import API extensions for Community Foundations and OTP Security
+try:
+    from web_portal.api_extensions import dispatch_get as api_ext_get, dispatch_post as api_ext_post
+    api_extensions_enabled = True
+    print("✓ API extensions loaded (Foundations, OTP Security)")
+except ImportError:
+    try:
+        from api_extensions import dispatch_get as api_ext_get, dispatch_post as api_ext_post
+        api_extensions_enabled = True
+        print("✓ API extensions loaded (Foundations, OTP Security)")
+    except ImportError:
+        api_extensions_enabled = False
+        api_ext_get = None
+        api_ext_post = None
+        print("Warning: API extensions not available.")
+
 # Database support - ENABLED BY DEFAULT for data persistence
 # Set USE_DATABASE=false to use volatile in-memory storage (not recommended)
 USE_DATABASE = os.environ.get('USE_DATABASE', 'true').lower() not in ('false', '0', 'no')
@@ -3270,6 +3286,20 @@ For claims or questions, please contact:
                 'expires': session.get('expires')
             }).encode('utf-8'))
             return
+        
+        # =====================================================================
+        # API EXTENSIONS - Community Foundations & OTP Security (GET)
+        # =====================================================================
+        if api_extensions_enabled and api_ext_get:
+            try:
+                ext_result = api_ext_get(path, session, qs, client_ip)
+                if ext_result is not None:
+                    status_code, response_data = ext_result
+                    self._set_json_headers(status_code)
+                    self.wfile.write(json.dumps(response_data).encode('utf-8'))
+                    return
+            except Exception as e:
+                print(f"API extension error (GET {path}): {e}")
         
         # Design settings endpoint (GET) - public for landing page, all data for admin/media
         if path == '/api/design/settings':
@@ -11442,6 +11472,41 @@ For claims or questions, please contact:
         if path == '/api/submit-quote':
             self.handle_quote_submission()
             return
+        
+        # =====================================================================
+        # API EXTENSIONS - Community Foundations & OTP Security (POST)
+        # =====================================================================
+        if api_extensions_enabled and api_ext_post:
+            # These endpoints need JSON body parsing
+            security_paths = ['/api/security/', '/api/foundations', '/api/admin/foundations']
+            is_extension_path = any(path.startswith(p) for p in security_paths)
+            
+            if is_extension_path:
+                try:
+                    # Get auth token
+                    auth_header = self.headers.get('Authorization', '')
+                    token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+                    session = validate_session(token) if token else None
+                    user_agent = self.headers.get('User-Agent', '')
+                    
+                    # Parse JSON body
+                    length = int(self.headers.get('Content-Length', 0))
+                    body = self.rfile.read(length).decode('utf-8') if length else '{}'
+                    try:
+                        body_data = json.loads(body)
+                    except json.JSONDecodeError:
+                        body_data = {}
+                    
+                    ext_result = api_ext_post(path, session, body_data, client_ip, user_agent)
+                    if ext_result is not None:
+                        status_code, response_data = ext_result
+                        self._set_json_headers(status_code)
+                        self.wfile.write(json.dumps(response_data).encode('utf-8'))
+                        return
+                except Exception as e:
+                    print(f"API extension error (POST {path}): {e}")
+                    import traceback
+                    traceback.print_exc()
         
         # Design settings endpoint (POST) - Admin or Media role
         if path == '/api/design/settings':
