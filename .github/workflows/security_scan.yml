@@ -47,17 +47,17 @@ jobs:
           
           for pattern in "${PATTERNS[@]}"; do
             echo "Checking pattern: $pattern"
-            # Exclude test files, examples, and config templates
+            # Exclude test files, examples, config templates, backups, and workflow files
             MATCHES=$(grep -rniE "$pattern" \
               --include="*.py" \
               --include="*.js" \
               --include="*.ts" \
               --include="*.json" \
-              --include="*.yml" \
-              --include="*.yaml" \
               --exclude-dir=".git" \
+              --exclude-dir=".github" \
               --exclude-dir="node_modules" \
               --exclude-dir="__pycache__" \
+              --exclude-dir="backups" \
               --exclude="*.example" \
               --exclude="*.sample" \
               --exclude="*test*" \

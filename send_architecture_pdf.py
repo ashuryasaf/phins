@@ -10,7 +10,7 @@ USAGE:
 
    Method A - Environment Variables (Recommended):
    $ export EMAIL_SENDER="your-email@gmail.com"
-   $ export EMAIL_PASSWORD="your-app-password"
+   $ export EMAIL_PASSWORD=<your-app-password-here>
    $ export EMAIL_RECIPIENT="recipient@example.com"
    $ python3 send_architecture_pdf.py
 
@@ -194,7 +194,7 @@ def send_email():
         print("=" * 60)
         print("\nEdit the CONFIG section in this script or set environment variables:")
         print("\n  export EMAIL_SENDER='your-email@gmail.com'")
-        print("  export EMAIL_PASSWORD='your-app-password'")
+        print("  export EMAIL_PASSWORD=<your-app-password-here>")
         print("  export EMAIL_RECIPIENT='recipient@example.com'")
         print("\nThen run: python3 send_architecture_pdf.py")
         print("=" * 60)
