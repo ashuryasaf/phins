@@ -103,7 +103,7 @@
       transition: all 0.3s;
       box-shadow: 0 4px 15px rgba(21, 101, 192, 0.3);
     }
-    .btn-submit:hover {
+    .btn-submit:hover:not(:disabled) {
       background: linear-gradient(135deg, #0d47a1 0%, #1565c0 100%);
       transform: translateY(-2px);
       box-shadow: 0 6px 20px rgba(21, 101, 192, 0.4);
@@ -154,6 +154,171 @@
     .requirement.met {
       color: #28a745;
     }
+    
+    /* CAPTCHA Styles */
+    .captcha-box {
+      background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%);
+      border: 2px solid #90caf9;
+      border-radius: 12px;
+      padding: 16px;
+      margin-bottom: 20px;
+    }
+    .captcha-box label {
+      color: #1565c0;
+      font-size: 0.9rem;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .captcha-box label::before {
+      content: '🤖';
+      font-size: 1.2rem;
+    }
+    .captcha-question {
+      font-size: 1rem;
+      font-weight: 600;
+      color: #0d47a1;
+      background: #fff;
+      padding: 12px;
+      border-radius: 8px;
+      margin: 10px 0;
+      text-align: center;
+    }
+    .captcha-input {
+      width: 100%;
+      padding: 12px;
+      border: 2px solid #e3f2fd;
+      border-radius: 8px;
+      font-size: 1rem;
+      text-align: center;
+      letter-spacing: 2px;
+      font-weight: 600;
+    }
+    .captcha-input:focus {
+      border-color: #1565c0;
+      outline: none;
+    }
+    
+    /* OTP Verification Styles */
+    .otp-box {
+      background: linear-gradient(135deg, #e8f5e9 0%, #c8e6c9 100%);
+      border: 2px solid #81c784;
+      border-radius: 12px;
+      padding: 20px;
+      margin-bottom: 20px;
+      display: none;
+    }
+    .otp-box.active {
+      display: block;
+    }
+    .otp-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 15px;
+    }
+    .otp-header span {
+      font-size: 1.5rem;
+    }
+    .otp-header h3 {
+      margin: 0;
+      color: #2e7d32;
+      font-size: 1.1rem;
+    }
+    .otp-info {
+      font-size: 0.9rem;
+      color: #1b5e20;
+      margin-bottom: 15px;
+    }
+    .otp-input-group {
+      display: flex;
+      gap: 8px;
+      justify-content: center;
+      margin: 15px 0;
+    }
+    .otp-digit {
+      width: 45px;
+      height: 55px;
+      border: 2px solid #81c784;
+      border-radius: 8px;
+      font-size: 1.5rem;
+      font-weight: 700;
+      text-align: center;
+      background: #fff;
+    }
+    .otp-digit:focus {
+      border-color: #2e7d32;
+      outline: none;
+      box-shadow: 0 0 0 3px rgba(46, 125, 50, 0.2);
+    }
+    .otp-actions {
+      display: flex;
+      justify-content: center;
+      margin-top: 15px;
+    }
+    .otp-resend {
+      color: #2e7d32;
+      text-decoration: none;
+      font-size: 0.9rem;
+      cursor: pointer;
+    }
+    .otp-resend:disabled, .otp-resend.disabled {
+      color: #999;
+      cursor: not-allowed;
+    }
+    
+    /* Step Progress */
+    .step-progress {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 24px;
+    }
+    .step-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .step-number {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      background: #e0e0e0;
+      color: #666;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.85rem;
+      font-weight: 600;
+    }
+    .step-item.active .step-number {
+      background: #1565c0;
+      color: #fff;
+    }
+    .step-item.complete .step-number {
+      background: #4caf50;
+      color: #fff;
+    }
+    .step-item.complete .step-number::after {
+      content: '✓';
+    }
+    .step-label {
+      font-size: 0.8rem;
+      color: #666;
+    }
+    .step-item.active .step-label {
+      color: #1565c0;
+      font-weight: 600;
+    }
+    .step-connector {
+      width: 30px;
+      height: 2px;
+      background: #e0e0e0;
+    }
+    .step-connector.complete {
+      background: #4caf50;
+    }
   </style>
 </head>
 <body>
@@ -165,60 +330,112 @@
         <p class="register-subtitle">By Invitation Only</p>
       </div>
       
+      <!-- Step Progress -->
+      <div class="step-progress" id="step-progress">
+        <div class="step-item active" id="step-1-item">
+          <span class="step-number">1</span>
+          <span class="step-label">Details</span>
+        </div>
+        <div class="step-connector" id="connector-1"></div>
+        <div class="step-item" id="step-2-item">
+          <span class="step-number">2</span>
+          <span class="step-label">Verify Email</span>
+        </div>
+        <div class="step-connector" id="connector-2"></div>
+        <div class="step-item" id="step-3-item">
+          <span class="step-number">3</span>
+          <span class="step-label">Complete</span>
+        </div>
+      </div>
+      
       <form id="register-form">
-        <!-- Invitation Code (Required) -->
-        <div class="form-group" style="background: linear-gradient(135deg, #fff3cd 0%, #ffeeba 100%); padding: 16px; border-radius: 12px; margin-bottom: 24px; border: 2px solid #ffc107;">
-          <label for="invitation-code" style="color: #856404; display: flex; align-items: center; gap: 8px;">
-            <span style="font-size: 1.3rem;">🎟️</span> Invitation Code *
-          </label>
-          <input type="text" id="invitation-code" name="invitation_code" required 
-                 placeholder="Enter your invitation code (e.g., PHINS-2026-XXXX)"
-                 style="text-transform: uppercase; font-family: monospace; font-size: 1.1rem; letter-spacing: 1px;" />
-          <small style="color: #856404;">Registration is by invitation only. Please enter the code you received.</small>
-          <div id="code-validation" style="margin-top: 8px; font-weight: 600;"></div>
-        </div>
-
-        <div class="form-group">
-          <label for="full-name">Full Name *</label>
-          <input type="text" id="full-name" name="full_name" required placeholder="Enter your full name" />
-        </div>
-
-        <div class="form-group">
-          <label for="email">Email Address *</label>
-          <input type="email" id="email" name="email" required placeholder="Enter your email" />
-          <small>This will be your username</small>
-        </div>
-
-        <div class="form-group">
-          <label for="phone">Phone Number</label>
-          <input type="tel" id="phone" name="phone" placeholder="Enter your phone number" />
-        </div>
-
-        <div class="form-group">
-          <label for="dob">Date of Birth</label>
-          <input type="date" id="dob" name="dob" />
-        </div>
-
-        <div class="form-group">
-          <label for="password">Password *</label>
-          <input type="password" id="password" name="password" required placeholder="Create a strong password" />
-          <div class="password-strength">
-            <div class="password-strength-bar" id="strength-bar"></div>
+        <!-- Step 1: Registration Details -->
+        <div id="details-section">
+          <!-- Invitation Code (Required) -->
+          <div class="form-group" style="background: linear-gradient(135deg, #fff3cd 0%, #ffeeba 100%); padding: 16px; border-radius: 12px; margin-bottom: 24px; border: 2px solid #ffc107;">
+            <label for="invitation-code" style="color: #856404; display: flex; align-items: center; gap: 8px;">
+              <span style="font-size: 1.3rem;">🎟️</span> Invitation Code *
+            </label>
+            <input type="text" id="invitation-code" name="invitation_code" required 
+                   placeholder="Enter your invitation code (e.g., PHINS-2026-XXXX)"
+                   style="text-transform: uppercase; font-family: monospace; font-size: 1.1rem; letter-spacing: 1px;" />
+            <small style="color: #856404;">Registration is by invitation only. Please enter the code you received.</small>
+            <div id="code-validation" style="margin-top: 8px; font-weight: 600;"></div>
           </div>
-          <div class="password-requirements">
-            <div class="requirement" id="req-length">✗ At least 8 characters</div>
-            <div class="requirement" id="req-uppercase">✗ One uppercase letter</div>
-            <div class="requirement" id="req-lowercase">✗ One lowercase letter</div>
-            <div class="requirement" id="req-number">✗ One number</div>
+
+          <div class="form-group">
+            <label for="full-name">Full Name *</label>
+            <input type="text" id="full-name" name="full_name" required placeholder="Enter your full name" />
+          </div>
+
+          <div class="form-group">
+            <label for="email">Email Address *</label>
+            <input type="email" id="email" name="email" required placeholder="Enter your email" />
+            <small>This will be your username. A verification code will be sent to this email.</small>
+          </div>
+
+          <div class="form-group">
+            <label for="phone">Phone Number</label>
+            <input type="tel" id="phone" name="phone" placeholder="Enter your phone number" />
+          </div>
+
+          <div class="form-group">
+            <label for="dob">Date of Birth</label>
+            <input type="date" id="dob" name="dob" />
+          </div>
+
+          <div class="form-group">
+            <label for="password">Password *</label>
+            <input type="password" id="password" name="password" required placeholder="Create a strong password" />
+            <div class="password-strength">
+              <div class="password-strength-bar" id="strength-bar"></div>
+            </div>
+            <div class="password-requirements">
+              <div class="requirement" id="req-length">✗ At least 8 characters</div>
+              <div class="requirement" id="req-uppercase">✗ One uppercase letter</div>
+              <div class="requirement" id="req-lowercase">✗ One lowercase letter</div>
+              <div class="requirement" id="req-number">✗ One number</div>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label for="confirm-password">Confirm Password *</label>
+            <input type="password" id="confirm-password" name="confirm_password" required placeholder="Re-enter your password" />
+          </div>
+          
+          <!-- CAPTCHA Section -->
+          <div class="captcha-box" id="captcha-section">
+            <label>Human Verification</label>
+            <div class="captcha-question" id="captcha-question">Loading...</div>
+            <input type="text" class="captcha-input" id="captcha-answer" placeholder="Your answer" autocomplete="off" />
+            <input type="hidden" id="captcha-id" />
+          </div>
+        </div>
+        
+        <!-- Step 2: Email OTP Verification (hidden by default) -->
+        <div class="otp-box" id="otp-section">
+          <div class="otp-header">
+            <span>📧</span>
+            <h3>Verify Your Email</h3>
+          </div>
+          <p class="otp-info">
+            We've sent a 6-digit verification code to <strong id="otp-email"></strong>
+          </p>
+          <div class="otp-input-group">
+            <input type="text" class="otp-digit" maxlength="1" data-index="0" inputmode="numeric" />
+            <input type="text" class="otp-digit" maxlength="1" data-index="1" inputmode="numeric" />
+            <input type="text" class="otp-digit" maxlength="1" data-index="2" inputmode="numeric" />
+            <input type="text" class="otp-digit" maxlength="1" data-index="3" inputmode="numeric" />
+            <input type="text" class="otp-digit" maxlength="1" data-index="4" inputmode="numeric" />
+            <input type="text" class="otp-digit" maxlength="1" data-index="5" inputmode="numeric" />
+          </div>
+          <input type="hidden" id="verification-id" />
+          <div class="otp-actions">
+            <a class="otp-resend disabled" id="resend-otp">Resend code in <span id="resend-timer">60</span>s</a>
           </div>
         </div>
 
-        <div class="form-group">
-          <label for="confirm-password">Confirm Password *</label>
-          <input type="password" id="confirm-password" name="confirm_password" required placeholder="Re-enter your password" />
-        </div>
-
-        <button type="submit" class="btn-submit" id="submit-btn">Create Account</button>
+        <button type="submit" class="btn-submit" id="submit-btn">Continue</button>
       </form>
       
       <div id="register-msg"></div>
