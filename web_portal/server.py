@@ -61,18 +61,19 @@ except ImportError:
 
 # Import API extensions for Community Foundations and OTP Security
 try:
-    from web_portal.api_extensions import dispatch_get as api_ext_get, dispatch_post as api_ext_post
+    from web_portal.api_extensions import dispatch_get as api_ext_get, dispatch_post as api_ext_post, dispatch_put as api_ext_put
     api_extensions_enabled = True
     print("✓ API extensions loaded (Foundations, OTP Security)")
 except ImportError:
     try:
-        from api_extensions import dispatch_get as api_ext_get, dispatch_post as api_ext_post
+        from api_extensions import dispatch_get as api_ext_get, dispatch_post as api_ext_post, dispatch_put as api_ext_put
         api_extensions_enabled = True
         print("✓ API extensions loaded (Foundations, OTP Security)")
     except ImportError:
         api_extensions_enabled = False
         api_ext_get = None
         api_ext_post = None
+        api_ext_put = None
         print("Warning: API extensions not available.")
 
 # Database support - ENABLED BY DEFAULT for data persistence
@@ -22891,6 +22892,52 @@ For claims or questions, please contact:
             'annual': base_premium,
             'currency': 'USD'
         }
+
+    def do_PUT(self):
+        """Handle PUT requests for updates"""
+        parsed = urlparse(self.path)
+        path = parsed.path
+        
+        # Get client IP
+        client_ip = self.client_address[0]
+        
+        # Get auth token
+        auth_header = self.headers.get('Authorization', '')
+        token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+        session = validate_session(token) if token else None
+        user_agent = self.headers.get('User-Agent', '')
+        
+        # =====================================================================
+        # API EXTENSIONS - Community Foundations (PUT)
+        # =====================================================================
+        if api_extensions_enabled and api_ext_put:
+            extension_paths = ['/api/admin/foundations']
+            is_extension_path = any(path.startswith(p) for p in extension_paths)
+            
+            if is_extension_path:
+                try:
+                    # Parse JSON body
+                    length = int(self.headers.get('Content-Length', 0))
+                    body = self.rfile.read(length).decode('utf-8') if length else '{}'
+                    try:
+                        body_data = json.loads(body)
+                    except json.JSONDecodeError:
+                        body_data = {}
+                    
+                    ext_result = api_ext_put(path, session, body_data, client_ip, user_agent)
+                    if ext_result is not None:
+                        status_code, response_data = ext_result
+                        self._set_json_headers(status_code)
+                        self.wfile.write(json.dumps(response_data).encode('utf-8'))
+                        return
+                except Exception as e:
+                    print(f"API extension error (PUT {path}): {e}")
+                    import traceback
+                    traceback.print_exc()
+        
+        # Default: Method not allowed for unhandled PUT requests
+        self._set_json_headers(405)
+        self.wfile.write(json.dumps({'error': 'Method not allowed'}).encode('utf-8'))
 
     def do_DELETE(self):
         """Handle DELETE requests"""
