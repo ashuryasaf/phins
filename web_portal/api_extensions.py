@@ -388,12 +388,50 @@ def handle_foundation_invitations_list(session: Dict) -> Tuple[int, Dict]:
 
 
 def handle_invitation_validate(code: str) -> Tuple[int, Dict]:
-    """GET /api/foundation-invitations/validate?code=XXX - Validate invitation code"""
+    """
+    GET /api/foundation-invitations/validate?code=XXX - Validate invitation code
+    GET /api/foundation-invitations/validate/{code} - Validate invitation code (path param)
+    
+    Returns foundation details if code is valid, for the frontend to display preview.
+    """
     if not FOUNDATION_SERVICE_AVAILABLE:
         return 200, {"valid": True, "message": "Service unavailable, accepting code"}
     
+    if not code or len(code) < 4:
+        return 200, {"valid": False, "error": "Invalid invitation code format"}
+    
     service = get_foundation_service()
     result = service.validate_invitation(code)
+    
+    # If valid, enhance the response with full foundation details for frontend preview
+    if result.get("valid") and result.get("foundation_id"):
+        foundation = service.get_foundation(result["foundation_id"])
+        if foundation:
+            # Get foundation settings/rules for display
+            settings = foundation.get('settings', {})
+            rules = {
+                "contribution_frequency": settings.get('contribution_rules', {}).get('frequency', 'monthly'),
+                "min_contribution": settings.get('contribution_rules', {}).get('min_amount', 50),
+                "vote_threshold": int(settings.get('voting_rules', {}).get('majority_threshold', 0.5) * 100),
+                "waiting_period": settings.get('claim_rules', {}).get('waiting_period_days', 30),
+                "auto_approve_threshold": settings.get('claim_rules', {}).get('auto_approve_threshold', 500)
+            }
+            
+            result["foundation"] = {
+                "id": foundation.get("id"),
+                "name": foundation.get("name"),
+                "foundation_type": foundation.get("foundation_type"),
+                "description": foundation.get("description", ""),
+                "status": foundation.get("status"),
+                "current_members": foundation.get("current_members", 0),
+                "max_members": foundation.get("max_members", 0),
+                "is_unlimited": foundation.get("is_unlimited", False),
+                "total_fund_balance": foundation.get("total_fund_balance", 0),
+                "rules": rules,
+                "created_at": foundation.get("created_at")
+            }
+            # Add invited role from invitation if available
+            result["invited_role"] = "member"  # Default role for invitees
     
     return 200, result
 
@@ -713,8 +751,14 @@ def dispatch_get(path: str, session: Dict, query_params: Dict, client_ip: str) -
     Returns (status_code, response_dict) or None if path not handled.
     """
     # Foundation invitations validation (public)
+    # Support both query param (?code=XXX) and path param (/validate/XXX) formats
     if path == '/api/invitations/validate' or path == '/api/foundation-invitations/validate':
         code = query_params.get('code', [''])[0]
+        return handle_invitation_validate(code)
+    
+    # Handle path parameter format: /api/foundation-invitations/validate/{code}
+    if path.startswith('/api/foundation-invitations/validate/'):
+        code = path.split('/')[-1]
         return handle_invitation_validate(code)
     
     # Foundation list
