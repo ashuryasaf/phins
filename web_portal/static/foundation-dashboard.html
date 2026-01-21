@@ -723,11 +723,12 @@
       padding: 16px;
       border: 2px solid #e0e0e0;
       border-radius: 12px;
-      font-size: 1.2rem;
+      font-size: 1.1rem;
       text-align: center;
-      letter-spacing: 4px;
+      letter-spacing: 2px;
       font-weight: 600;
       text-transform: uppercase;
+      min-width: 220px;
     }
     
     .join-code-input input:focus {
@@ -920,15 +921,16 @@
     
     .generated-code {
       font-family: monospace;
-      font-size: 2rem;
+      font-size: 1.6rem;
       font-weight: 700;
-      letter-spacing: 6px;
+      letter-spacing: 3px;
       color: var(--foundation-dark);
       padding: 20px;
       background: white;
       border-radius: 8px;
       margin: 16px 0;
       user-select: all;
+      word-break: break-all;
     }
     
     .invite-link {
@@ -1276,7 +1278,7 @@
           <p style="color: #666; margin-bottom: 20px;">Enter the invitation code you received to join a community foundation.</p>
           
           <div class="join-code-input">
-            <input type="text" id="join-code" placeholder="Enter code" maxlength="12" autocomplete="off" />
+            <input type="text" id="join-code" placeholder="FND-XXXXXXXXXXXX" maxlength="20" autocomplete="off" />
             <button onclick="validateInviteCode()">Validate</button>
           </div>
           
@@ -1365,7 +1367,7 @@
             <h4 style="margin: 0 0 8px;">🎉 Invitation Created!</h4>
             <p style="font-size: 0.85rem; color: #666; margin: 0 0 12px;">Share this code with the person you want to invite.</p>
             
-            <div class="generated-code" id="generated-code">XXXX-XXXX</div>
+            <div class="generated-code" id="generated-code">FND-XXXXXXXXXXXX</div>
             
             <div class="invite-link" id="invite-link">
               Loading link...
