@@ -733,38 +733,70 @@ class FoundationService:
     
     def validate_invitation(self, code: str) -> Dict[str, Any]:
         """Validate an invitation code"""
+        if not code:
+            return {"valid": False, "error": "No invitation code provided"}
+        
+        # Clean up the code (trim whitespace, convert to uppercase)
+        code = code.strip().upper()
+        
         invitation = None
         for inv in self._invitations.values():
-            if inv['code'] == code:
+            if inv['code'].upper() == code:
                 invitation = inv
                 break
         
         if not invitation:
-            return {"valid": False, "error": "Invalid invitation code"}
+            return {
+                "valid": False, 
+                "error": "Invalid invitation code. The code may have expired, been revoked, or never existed."
+            }
         
         # Check status
         if invitation['status'] != 'pending':
-            return {"valid": False, "error": f"Invitation is {invitation['status']}"}
+            status_messages = {
+                'accepted': "This invitation has already been used",
+                'expired': "This invitation has expired",
+                'revoked': "This invitation has been revoked",
+                'cancelled': "This invitation has been cancelled"
+            }
+            error_msg = status_messages.get(invitation['status'], f"Invitation status: {invitation['status']}")
+            return {"valid": False, "error": error_msg}
         
         # Check expiry
-        expires_at = datetime.fromisoformat(invitation['expires_at'].replace('Z', '+00:00'))
-        if datetime.now(timezone.utc) > expires_at:
-            invitation['status'] = 'expired'
-            return {"valid": False, "error": "Invitation has expired"}
+        try:
+            expires_at = datetime.fromisoformat(invitation['expires_at'].replace('Z', '+00:00'))
+            if datetime.now(timezone.utc) > expires_at:
+                invitation['status'] = 'expired'
+                return {"valid": False, "error": "This invitation has expired. Please request a new one."}
+        except (ValueError, KeyError) as e:
+            logger.warning(f"Error parsing invitation expiry: {e}")
         
         # Check usage limit
         if invitation['used_count'] >= invitation['max_uses']:
-            return {"valid": False, "error": "Invitation has reached maximum uses"}
+            return {"valid": False, "error": "This invitation has reached its maximum number of uses."}
         
         # Get foundation info
         foundation = self._foundations.get(invitation['foundation_id'])
+        
+        if not foundation:
+            return {"valid": False, "error": "The associated foundation no longer exists."}
+        
+        # Check foundation is active
+        if foundation.get('status') not in ['active', 'draft']:
+            return {"valid": False, "error": f"The foundation is currently {foundation.get('status', 'unavailable')} and not accepting new members."}
+        
+        # Check member limit
+        if not foundation.get('is_unlimited', False):
+            if foundation.get('current_members', 0) >= foundation.get('max_members', 999999):
+                return {"valid": False, "error": "The foundation has reached its maximum member capacity."}
         
         return {
             "valid": True,
             "invitation_id": invitation['id'],
             "foundation_id": invitation['foundation_id'],
-            "foundation_name": foundation['name'] if foundation else None,
-            "foundation_type": foundation['foundation_type'] if foundation else None
+            "foundation_name": foundation['name'],
+            "foundation_type": foundation['foundation_type'],
+            "invited_role": invitation.get('role', 'member')
         }
     
     def join_foundation(

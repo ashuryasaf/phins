@@ -1883,10 +1883,35 @@
       
       try {
         const token = localStorage.getItem('phins_token');
-        const response = await fetch(`/api/foundation-invitations/validate/${code}`, {
+        
+        // Try path-based URL first, fallback to query-based
+        let response = await fetch(`/api/foundation-invitations/validate/${encodeURIComponent(code)}`, {
           headers: { 'Authorization': `Bearer ${token}` }
         });
-        const data = await response.json();
+        
+        // Check if response is ok and handle errors
+        if (!response.ok) {
+          // If path-based fails with 404, try query-based
+          if (response.status === 404) {
+            response = await fetch(`/api/foundation-invitations/validate?code=${encodeURIComponent(code)}`, {
+              headers: { 'Authorization': `Bearer ${token}` }
+            });
+          }
+        }
+        
+        let data;
+        try {
+          data = await response.json();
+        } catch (parseError) {
+          console.error('Error parsing response:', parseError);
+          messageContainer.innerHTML = `
+            <div class="validation-message error">
+              ❌ Server returned an invalid response. Please try again later.
+            </div>
+          `;
+          previewContainer.classList.remove('visible');
+          return;
+        }
         
         if (data.valid && data.foundation) {
           validatedFoundation = data.foundation;
@@ -1897,6 +1922,10 @@
               ✅ Valid invitation code! Review the foundation details below.
             </div>
           `;
+          
+          const maxMembersDisplay = data.foundation.is_unlimited || data.foundation.max_members >= 999999 
+            ? 'Unlimited' 
+            : data.foundation.max_members;
           
           document.getElementById('preview-details').innerHTML = `
             <div class="preview-detail">
@@ -1909,7 +1938,7 @@
             </div>
             <div class="preview-detail">
               <div class="preview-detail-label">Members</div>
-              <div class="preview-detail-value">${data.foundation.current_members}${data.foundation.max_members > 0 ? '/' + data.foundation.max_members : ''}</div>
+              <div class="preview-detail-value">${data.foundation.current_members}${maxMembersDisplay !== 'Unlimited' ? '/' + maxMembersDisplay : ''}</div>
             </div>
             <div class="preview-detail">
               <div class="preview-detail-label">Your Role</div>
@@ -1918,30 +1947,39 @@
           `;
           
           // Show rules
+          const rules = data.foundation.rules || {};
           document.getElementById('rules-list').innerHTML = `
             <div class="rule-item">
               <span class="rule-label">Contribution Frequency</span>
-              <span class="rule-value">${data.foundation.rules?.contribution_frequency || 'Monthly'}</span>
+              <span class="rule-value">${rules.contribution_frequency || 'Monthly'}</span>
             </div>
             <div class="rule-item">
               <span class="rule-label">Minimum Contribution</span>
-              <span class="rule-value">$${data.foundation.rules?.min_contribution || '50'}</span>
+              <span class="rule-value">$${rules.min_contribution || '50'}</span>
             </div>
             <div class="rule-item">
               <span class="rule-label">Vote Threshold</span>
-              <span class="rule-value">${data.foundation.rules?.vote_threshold || '50'}% majority</span>
+              <span class="rule-value">${rules.vote_threshold || '50'}% majority</span>
             </div>
             <div class="rule-item">
               <span class="rule-label">Waiting Period for Claims</span>
-              <span class="rule-value">${data.foundation.rules?.waiting_period || '30'} days</span>
+              <span class="rule-value">${rules.waiting_period || '30'} days</span>
             </div>
           `;
           
           previewContainer.classList.add('visible');
         } else {
+          // Show specific error message from the API
+          let errorMessage = data.error || 'Invalid or expired invitation code.';
+          
+          // Provide more helpful hints based on the error
+          if (errorMessage.includes('Invalid invitation code') || errorMessage.includes('not found')) {
+            errorMessage += ' The invitation may have expired or been revoked. Please request a new invitation from the foundation administrator.';
+          }
+          
           messageContainer.innerHTML = `
             <div class="validation-message error">
-              ❌ ${data.error || 'Invalid or expired invitation code. Please check and try again.'}
+              ❌ ${errorMessage}
             </div>
           `;
           previewContainer.classList.remove('visible');
@@ -1951,7 +1989,7 @@
         console.error('Error validating code:', e);
         messageContainer.innerHTML = `
           <div class="validation-message error">
-            ⚠️ Error validating code. Please try again.
+            ⚠️ Network error while validating code. Please check your connection and try again.
           </div>
         `;
         previewContainer.classList.remove('visible');

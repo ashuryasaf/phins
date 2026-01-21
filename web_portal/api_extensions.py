@@ -388,12 +388,43 @@ def handle_foundation_invitations_list(session: Dict) -> Tuple[int, Dict]:
 
 
 def handle_invitation_validate(code: str) -> Tuple[int, Dict]:
-    """GET /api/foundation-invitations/validate?code=XXX - Validate invitation code"""
+    """GET /api/foundation-invitations/validate?code=XXX or /validate/{code} - Validate invitation code"""
     if not FOUNDATION_SERVICE_AVAILABLE:
-        return 200, {"valid": True, "message": "Service unavailable, accepting code"}
+        return 200, {"valid": False, "error": "Foundation service not available"}
+    
+    if not code or len(code) < 4:
+        return 200, {"valid": False, "error": "Invalid invitation code format"}
     
     service = get_foundation_service()
     result = service.validate_invitation(code)
+    
+    # If valid, include full foundation details for the frontend
+    if result.get('valid') and result.get('foundation_id'):
+        foundation = service.get_foundation(result['foundation_id'])
+        if foundation:
+            # Get foundation settings for rules display
+            settings = foundation.get('settings', {})
+            contribution_rules = settings.get('contribution_rules', {})
+            claim_rules = settings.get('claim_rules', {})
+            
+            result['foundation'] = {
+                'id': foundation['id'],
+                'name': foundation['name'],
+                'foundation_type': foundation['foundation_type'],
+                'description': foundation.get('description', ''),
+                'status': foundation['status'],
+                'current_members': foundation['current_members'],
+                'max_members': foundation['max_members'],
+                'is_unlimited': foundation.get('is_unlimited', False),
+                'total_fund_balance': foundation.get('total_fund_balance', 0),
+                'rules': {
+                    'contribution_frequency': contribution_rules.get('frequency', 'monthly'),
+                    'min_contribution': contribution_rules.get('min_amount', 50),
+                    'vote_threshold': int(settings.get('voting_rules', {}).get('majority_threshold', 0.5) * 100),
+                    'waiting_period': claim_rules.get('waiting_period_days', 30),
+                    'auto_approve_threshold': claim_rules.get('auto_approve_threshold', 500)
+                }
+            }
     
     return 200, result
 
@@ -712,9 +743,16 @@ def dispatch_get(path: str, session: Dict, query_params: Dict, client_ip: str) -
     Dispatch GET requests to appropriate handlers.
     Returns (status_code, response_dict) or None if path not handled.
     """
-    # Foundation invitations validation (public)
+    # Foundation invitations validation (public) - supports both query and path params
+    # Query format: /api/foundation-invitations/validate?code=XXX
+    # Path format: /api/foundation-invitations/validate/XXX
     if path == '/api/invitations/validate' or path == '/api/foundation-invitations/validate':
         code = query_params.get('code', [''])[0]
+        return handle_invitation_validate(code)
+    
+    # Path-based validation: /api/foundation-invitations/validate/{code}
+    if path.startswith('/api/foundation-invitations/validate/') or path.startswith('/api/invitations/validate/'):
+        code = path.split('/')[-1]
         return handle_invitation_validate(code)
     
     # Foundation list
