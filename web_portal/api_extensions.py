@@ -492,11 +492,215 @@ def handle_admin_foundation_suspend(session: Dict, foundation_id: str) -> Tuple[
     if not foundation:
         return 404, {"error": "Foundation not found"}
     
-    # Update status
-    foundation['status'] = 'suspended'
-    foundation['updated_at'] = datetime.now(timezone.utc).isoformat()
+    # Use pipeline processing for suspend
+    admin_id = session.get('username', 'admin')
+    result = service.process_pipeline(foundation_id, admin_id, 'suspended', 'Suspended by admin')
     
-    return 200, {"success": True, "message": "Foundation suspended"}
+    if result.success:
+        return 200, {"success": True, "message": "Foundation suspended", "data": result.data}
+    else:
+        return 400, {"success": False, "error": result.error_message}
+
+
+def handle_admin_foundation_reject(session: Dict, foundation_id: str, body_data: Dict) -> Tuple[int, Dict]:
+    """POST /api/admin/foundations/{id}/reject - Reject foundation (admin only)"""
+    if not FOUNDATION_SERVICE_AVAILABLE:
+        return 503, {"error": "Foundation service not available"}
+    
+    if not session or session.get('role') != 'admin':
+        return 403, {"error": "Admin access required"}
+    
+    service = get_foundation_service()
+    admin_id = session.get('username', 'admin')
+    reason = body_data.get('reason', '')
+    
+    result = service.reject_foundation(foundation_id, admin_id, reason)
+    
+    if result.success:
+        return 200, {"success": True, "message": "Foundation rejected", "data": result.data}
+    else:
+        return 400, {"success": False, "error": result.error_message}
+
+
+def handle_admin_foundation_activate(session: Dict, foundation_id: str) -> Tuple[int, Dict]:
+    """POST /api/admin/foundations/{id}/activate - Activate foundation (admin only)"""
+    if not FOUNDATION_SERVICE_AVAILABLE:
+        return 503, {"error": "Foundation service not available"}
+    
+    if not session or session.get('role') != 'admin':
+        return 403, {"error": "Admin access required"}
+    
+    service = get_foundation_service()
+    admin_id = session.get('username', 'admin')
+    
+    result = service.activate_foundation(foundation_id, admin_id, is_admin=True)
+    
+    if result.success:
+        return 200, {"success": True, "message": "Foundation activated", "data": result.data}
+    else:
+        return 400, {"success": False, "error": result.error_message}
+
+
+def handle_admin_foundation_process_pipeline(session: Dict, foundation_id: str, body_data: Dict) -> Tuple[int, Dict]:
+    """POST /api/admin/foundations/{id}/process-pipeline - Process foundation through pipeline (admin only)"""
+    if not FOUNDATION_SERVICE_AVAILABLE:
+        return 503, {"error": "Foundation service not available"}
+    
+    if not session or session.get('role') != 'admin':
+        return 403, {"error": "Admin access required"}
+    
+    service = get_foundation_service()
+    admin_id = session.get('username', 'admin')
+    target_stage = body_data.get('target_stage', '')
+    notes = body_data.get('notes', '')
+    
+    if not target_stage:
+        return 400, {"error": "target_stage is required"}
+    
+    result = service.process_pipeline(foundation_id, admin_id, target_stage, notes)
+    
+    if result.success:
+        return 200, {"success": True, "message": f"Foundation processed to {target_stage}", "data": result.data}
+    else:
+        return 400, {"success": False, "error": result.error_message}
+
+
+def handle_admin_foundation_members(session: Dict, foundation_id: str) -> Tuple[int, Dict]:
+    """GET /api/admin/foundations/{id}/members - Get foundation members (admin only)"""
+    if not FOUNDATION_SERVICE_AVAILABLE:
+        return 503, {"error": "Foundation service not available"}
+    
+    if not session or session.get('role') != 'admin':
+        return 403, {"error": "Admin access required"}
+    
+    service = get_foundation_service()
+    foundation = service.get_foundation(foundation_id)
+    
+    if not foundation:
+        return 404, {"error": "Foundation not found"}
+    
+    members = service.get_foundation_members(foundation_id, include_pending=True)
+    
+    return 200, {
+        "items": members,
+        "total": len(members),
+        "foundation_id": foundation_id,
+        "foundation_name": foundation.get('name')
+    }
+
+
+def handle_admin_foundation_member_update(session: Dict, foundation_id: str, member_id: str, body_data: Dict) -> Tuple[int, Dict]:
+    """PUT /api/admin/foundations/{foundation_id}/members/{member_id} - Update member details (admin only)"""
+    if not FOUNDATION_SERVICE_AVAILABLE:
+        return 503, {"error": "Foundation service not available"}
+    
+    if not session or session.get('role') != 'admin':
+        return 403, {"error": "Admin access required"}
+    
+    service = get_foundation_service()
+    admin_id = session.get('username', 'admin')
+    
+    result = service.update_member_details(
+        foundation_id=foundation_id,
+        member_record_id=member_id,
+        actor_id=admin_id,
+        display_name=body_data.get('display_name'),
+        email=body_data.get('email'),
+        phone=body_data.get('phone'),
+        photo_url=body_data.get('photo_url')
+    )
+    
+    if result.success:
+        return 200, {"success": True, "message": "Member updated", "data": result.data}
+    else:
+        return 400, {"success": False, "error": result.error_message}
+
+
+def handle_admin_foundation_member_photo(session: Dict, foundation_id: str, member_id: str, body_data: Dict) -> Tuple[int, Dict]:
+    """POST /api/admin/foundations/{foundation_id}/members/{member_id}/photo - Update member photo (admin only)"""
+    if not FOUNDATION_SERVICE_AVAILABLE:
+        return 503, {"error": "Foundation service not available"}
+    
+    if not session or session.get('role') != 'admin':
+        return 403, {"error": "Admin access required"}
+    
+    service = get_foundation_service()
+    admin_id = session.get('username', 'admin')
+    photo_url = body_data.get('photo_url', '')
+    
+    if not photo_url:
+        return 400, {"error": "photo_url is required"}
+    
+    result = service.update_member_photo(
+        foundation_id=foundation_id,
+        member_record_id=member_id,
+        photo_url=photo_url,
+        actor_id=admin_id
+    )
+    
+    if result.success:
+        return 200, {"success": True, "message": "Member photo updated", "data": result.data}
+    else:
+        return 400, {"success": False, "error": result.error_message}
+
+
+def handle_admin_foundation_activities(session: Dict, foundation_id: str) -> Tuple[int, Dict]:
+    """GET /api/admin/foundations/{id}/activities - Get foundation activities (admin only)"""
+    if not FOUNDATION_SERVICE_AVAILABLE:
+        return 503, {"error": "Foundation service not available"}
+    
+    if not session or session.get('role') != 'admin':
+        return 403, {"error": "Admin access required"}
+    
+    service = get_foundation_service()
+    foundation = service.get_foundation(foundation_id)
+    
+    if not foundation:
+        return 404, {"error": "Foundation not found"}
+    
+    activities = service.get_foundation_activities(foundation_id, limit=100)
+    
+    # Add foundation name to each activity
+    for activity in activities:
+        activity['foundation_name'] = foundation.get('name')
+    
+    return 200, {
+        "items": activities,
+        "total": len(activities),
+        "foundation_id": foundation_id,
+        "foundation_name": foundation.get('name')
+    }
+
+
+def handle_admin_all_activities(session: Dict, query_params: Dict) -> Tuple[int, Dict]:
+    """GET /api/admin/foundations/all-activities - Get all recent activities (admin only)"""
+    if not FOUNDATION_SERVICE_AVAILABLE:
+        return 200, {"items": [], "total": 0}
+    
+    if not session or session.get('role') != 'admin':
+        return 403, {"error": "Admin access required"}
+    
+    service = get_foundation_service()
+    foundations = service.list_foundations(limit=1000)
+    
+    all_activities = []
+    for foundation in foundations:
+        activities = service.get_foundation_activities(foundation['id'], limit=20)
+        for activity in activities:
+            activity['foundation_name'] = foundation.get('name')
+        all_activities.extend(activities)
+    
+    # Sort by timestamp, most recent first
+    all_activities.sort(key=lambda x: x.get('timestamp', ''), reverse=True)
+    
+    # Limit to 50 most recent
+    limit = int(query_params.get('limit', ['50'])[0])
+    all_activities = all_activities[:limit]
+    
+    return 200, {
+        "items": all_activities,
+        "total": len(all_activities)
+    }
 
 
 # ============================================================================
@@ -530,13 +734,33 @@ def dispatch_get(path: str, session: Dict, query_params: Dict, client_ip: str) -
     if path == '/api/admin/foundations/stats':
         return handle_admin_foundations_stats(session)
     
-    # Admin: Foundation activity
+    # Admin: Foundation activity (legacy endpoint)
     if path == '/api/admin/foundations/activity':
-        return handle_admin_foundation_activity(session)
+        return handle_admin_all_activities(session, query_params)
+    
+    # Admin: All activities
+    if path == '/api/admin/foundations/all-activities':
+        return handle_admin_all_activities(session, query_params)
     
     # Admin: Foundation list
     if path == '/api/admin/foundations':
         return handle_admin_foundations_list(session, query_params)
+    
+    # Admin: Foundation specific activities
+    if '/activities' in path and path.startswith('/api/admin/foundations/'):
+        parts = path.split('/')
+        # /api/admin/foundations/{id}/activities
+        if len(parts) == 6 and parts[5] == 'activities':
+            foundation_id = parts[4]
+            return handle_admin_foundation_activities(session, foundation_id)
+    
+    # Admin: Foundation members
+    if '/members' in path and path.startswith('/api/admin/foundations/'):
+        parts = path.split('/')
+        # /api/admin/foundations/{id}/members
+        if len(parts) == 6 and parts[5] == 'members':
+            foundation_id = parts[4]
+            return handle_admin_foundation_members(session, foundation_id)
     
     # Admin: Foundation details
     if path.startswith('/api/admin/foundations/') and path.count('/') == 4:
@@ -600,10 +824,45 @@ def dispatch_post(path: str, session: Dict, body_data: Dict, client_ip: str, use
         foundation_id = path.split('/')[-2]
         return handle_admin_foundation_suspend(session, foundation_id)
     
+    # Admin: Reject foundation
+    if path.endswith('/reject') and path.startswith('/api/admin/foundations/'):
+        foundation_id = path.split('/')[-2]
+        return handle_admin_foundation_reject(session, foundation_id, body_data)
+    
     # Admin: Activate foundation
     if path.endswith('/activate') and path.startswith('/api/admin/foundations/'):
         foundation_id = path.split('/')[-2]
-        # Re-use same logic as user activate
-        return handle_foundation_activate(session, foundation_id)
+        return handle_admin_foundation_activate(session, foundation_id)
+    
+    # Admin: Process pipeline
+    if path.endswith('/process-pipeline') and path.startswith('/api/admin/foundations/'):
+        foundation_id = path.split('/')[-2]
+        return handle_admin_foundation_process_pipeline(session, foundation_id, body_data)
+    
+    # Admin: Update member photo
+    if '/members/' in path and path.endswith('/photo') and path.startswith('/api/admin/foundations/'):
+        parts = path.split('/')
+        # /api/admin/foundations/{fid}/members/{mid}/photo
+        if len(parts) == 8 and parts[5] == 'members' and parts[7] == 'photo':
+            foundation_id = parts[4]
+            member_id = parts[6]
+            return handle_admin_foundation_member_photo(session, foundation_id, member_id, body_data)
+    
+    return None
+
+
+def dispatch_put(path: str, session: Dict, body_data: Dict, client_ip: str, user_agent: str = "") -> Optional[Tuple[int, Dict]]:
+    """
+    Dispatch PUT requests to appropriate handlers.
+    Returns (status_code, response_dict) or None if path not handled.
+    """
+    # Admin: Update member details
+    if '/members/' in path and path.startswith('/api/admin/foundations/'):
+        parts = path.split('/')
+        # /api/admin/foundations/{fid}/members/{mid}
+        if len(parts) == 7 and parts[5] == 'members':
+            foundation_id = parts[4]
+            member_id = parts[6]
+            return handle_admin_foundation_member_update(session, foundation_id, member_id, body_data)
     
     return None

@@ -43,6 +43,26 @@ class FoundationType(str, Enum):
     CUSTOM = "custom"
 
 
+class FoundationStatus(str, Enum):
+    DRAFT = "draft"
+    PENDING_REVIEW = "pending_review"
+    ACTIVE = "active"
+    SUSPENDED = "suspended"
+    REJECTED = "rejected"
+    DISSOLVED = "dissolved"
+
+
+class PipelineStage(str, Enum):
+    CREATED = "created"
+    PENDING_ACTIVATION = "pending_activation"
+    IN_REVIEW = "in_review"
+    APPROVED = "approved"
+    ACTIVE = "active"
+    REJECTED = "rejected"
+    SUSPENDED = "suspended"
+    DISSOLVED = "dissolved"
+
+
 # Default rules for each foundation type
 DEFAULT_RULES = {
     "family": {
@@ -318,6 +338,13 @@ class FoundationService:
             'founder_id': request.founder_id,
             'founder_type': request.founder_type,
             'status': 'draft',
+            'pipeline_stage': 'created',
+            'pipeline_history': [{
+                'stage': 'created',
+                'timestamp': datetime.now(timezone.utc).isoformat(),
+                'actor': request.founder_id,
+                'notes': 'Foundation created'
+            }],
             'max_members': max_members if not is_unlimited else 999999,
             'is_unlimited': is_unlimited,
             'current_members': 1,  # Founder counts
@@ -327,6 +354,8 @@ class FoundationService:
             'settings': settings,
             'created_at': datetime.now(timezone.utc).isoformat(),
             'activated_at': None,
+            'rejected_at': None,
+            'rejection_reason': None,
             'dissolved_at': None,
             'updated_at': datetime.now(timezone.utc).isoformat()
         }
@@ -347,6 +376,9 @@ class FoundationService:
             'last_contribution': None,
             'voting_weight': 1.0,
             'display_name': 'Founder',
+            'photo_url': None,
+            'email': None,
+            'phone': None,
             'is_visible': True,
             'joined_at': datetime.now(timezone.utc).isoformat(),
             'invited_at': None,
@@ -407,8 +439,8 @@ class FoundationService:
         # Paginate
         return foundations[offset:offset + limit]
     
-    def activate_foundation(self, foundation_id: str, actor_id: str) -> FoundationResult:
-        """Activate a draft foundation"""
+    def activate_foundation(self, foundation_id: str, actor_id: str, is_admin: bool = False) -> FoundationResult:
+        """Activate a draft or suspended foundation"""
         foundation = self._foundations.get(foundation_id)
         
         if not foundation:
@@ -418,29 +450,175 @@ class FoundationService:
                 error_message="Foundation not found"
             )
         
-        if foundation['status'] != 'draft':
+        # Allow admin to activate any foundation with draft, suspended, or pending_review status
+        allowed_statuses = ['draft', 'suspended', 'pending_review']
+        if foundation['status'] not in allowed_statuses:
             return FoundationResult(
                 success=False,
                 error_code="INVALID_STATUS",
                 error_message=f"Cannot activate foundation with status: {foundation['status']}"
             )
         
-        # Check if actor is founder
-        if foundation['founder_id'] != actor_id:
+        # Check if actor is founder or admin
+        if not is_admin and foundation['founder_id'] != actor_id:
             return FoundationResult(
                 success=False,
                 error_code="UNAUTHORIZED",
-                error_message="Only founder can activate the foundation"
+                error_message="Only founder or admin can activate the foundation"
             )
         
+        now = datetime.now(timezone.utc).isoformat()
         foundation['status'] = 'active'
-        foundation['activated_at'] = datetime.now(timezone.utc).isoformat()
-        foundation['updated_at'] = datetime.now(timezone.utc).isoformat()
+        foundation['pipeline_stage'] = 'active'
+        foundation['activated_at'] = now
+        foundation['updated_at'] = now
+        
+        # Add to pipeline history
+        if 'pipeline_history' not in foundation:
+            foundation['pipeline_history'] = []
+        foundation['pipeline_history'].append({
+            'stage': 'active',
+            'timestamp': now,
+            'actor': actor_id,
+            'notes': 'Foundation activated' + (' by admin' if is_admin else '')
+        })
         
         self._log_activity(
             foundation_id=foundation_id,
             activity_type="foundation_activated",
-            actor_id=actor_id
+            actor_id=actor_id,
+            details={"activated_by_admin": is_admin}
+        )
+        
+        return FoundationResult(
+            success=True,
+            foundation_id=foundation_id,
+            data=foundation
+        )
+    
+    def reject_foundation(self, foundation_id: str, actor_id: str, reason: str = "") -> FoundationResult:
+        """Reject a foundation (admin only)"""
+        foundation = self._foundations.get(foundation_id)
+        
+        if not foundation:
+            return FoundationResult(
+                success=False,
+                error_code="NOT_FOUND",
+                error_message="Foundation not found"
+            )
+        
+        # Can reject draft or pending_review foundations
+        if foundation['status'] not in ['draft', 'pending_review']:
+            return FoundationResult(
+                success=False,
+                error_code="INVALID_STATUS",
+                error_message=f"Cannot reject foundation with status: {foundation['status']}"
+            )
+        
+        now = datetime.now(timezone.utc).isoformat()
+        foundation['status'] = 'rejected'
+        foundation['pipeline_stage'] = 'rejected'
+        foundation['rejected_at'] = now
+        foundation['rejection_reason'] = reason
+        foundation['updated_at'] = now
+        
+        # Add to pipeline history
+        if 'pipeline_history' not in foundation:
+            foundation['pipeline_history'] = []
+        foundation['pipeline_history'].append({
+            'stage': 'rejected',
+            'timestamp': now,
+            'actor': actor_id,
+            'notes': f'Foundation rejected: {reason}' if reason else 'Foundation rejected'
+        })
+        
+        self._log_activity(
+            foundation_id=foundation_id,
+            activity_type="foundation_rejected",
+            actor_id=actor_id,
+            details={"reason": reason}
+        )
+        
+        return FoundationResult(
+            success=True,
+            foundation_id=foundation_id,
+            data=foundation
+        )
+    
+    def process_pipeline(self, foundation_id: str, actor_id: str, target_stage: str, notes: str = "") -> FoundationResult:
+        """Process a foundation through the pipeline workflow"""
+        foundation = self._foundations.get(foundation_id)
+        
+        if not foundation:
+            return FoundationResult(
+                success=False,
+                error_code="NOT_FOUND",
+                error_message="Foundation not found"
+            )
+        
+        valid_transitions = {
+            'created': ['pending_activation', 'in_review', 'active', 'rejected'],
+            'pending_activation': ['in_review', 'active', 'rejected'],
+            'in_review': ['approved', 'active', 'rejected'],
+            'approved': ['active'],
+            'active': ['suspended', 'dissolved'],
+            'suspended': ['active', 'dissolved'],
+            'rejected': ['in_review', 'pending_activation'],  # Allow reconsideration
+            'dissolved': []  # Terminal state
+        }
+        
+        current_stage = foundation.get('pipeline_stage', 'created')
+        if target_stage not in valid_transitions.get(current_stage, []):
+            return FoundationResult(
+                success=False,
+                error_code="INVALID_TRANSITION",
+                error_message=f"Cannot transition from {current_stage} to {target_stage}"
+            )
+        
+        now = datetime.now(timezone.utc).isoformat()
+        
+        # Update status based on pipeline stage
+        status_mapping = {
+            'pending_activation': 'pending_review',
+            'in_review': 'pending_review',
+            'approved': 'active',
+            'active': 'active',
+            'suspended': 'suspended',
+            'rejected': 'rejected',
+            'dissolved': 'dissolved'
+        }
+        
+        foundation['pipeline_stage'] = target_stage
+        foundation['status'] = status_mapping.get(target_stage, foundation['status'])
+        foundation['updated_at'] = now
+        
+        # Update specific timestamps based on transition
+        if target_stage == 'active' and not foundation.get('activated_at'):
+            foundation['activated_at'] = now
+        elif target_stage == 'rejected':
+            foundation['rejected_at'] = now
+        elif target_stage == 'dissolved':
+            foundation['dissolved_at'] = now
+        
+        # Add to pipeline history
+        if 'pipeline_history' not in foundation:
+            foundation['pipeline_history'] = []
+        foundation['pipeline_history'].append({
+            'stage': target_stage,
+            'timestamp': now,
+            'actor': actor_id,
+            'notes': notes or f'Transitioned to {target_stage}'
+        })
+        
+        self._log_activity(
+            foundation_id=foundation_id,
+            activity_type="pipeline_processed",
+            actor_id=actor_id,
+            details={
+                "from_stage": current_stage,
+                "to_stage": target_stage,
+                "notes": notes
+            }
         )
         
         return FoundationResult(
@@ -644,6 +822,9 @@ class FoundationService:
             'last_contribution': None,
             'voting_weight': 1.0,
             'display_name': display_name or f"Member {foundation['current_members'] + 1}",
+            'photo_url': None,
+            'email': None,
+            'phone': None,
             'is_visible': True,
             'joined_at': datetime.now(timezone.utc).isoformat(),
             'invited_at': invitation['created_at'],
@@ -798,6 +979,103 @@ class FoundationService:
             success=True,
             member_id=member['id'],
             data={"message": "You have left the foundation"}
+        )
+    
+    def update_member_photo(
+        self,
+        foundation_id: str,
+        member_record_id: str,
+        photo_url: str,
+        actor_id: str
+    ) -> MembershipResult:
+        """Update member photo"""
+        member = self._members.get(member_record_id)
+        
+        if not member or member['foundation_id'] != foundation_id:
+            return MembershipResult(
+                success=False,
+                error_code="NOT_FOUND",
+                error_message="Member not found"
+            )
+        
+        # Check if actor is the member or an admin
+        if member['member_id'] != actor_id:
+            actor_member = self._get_member_by_user(foundation_id, actor_id)
+            if not actor_member or actor_member['role'] not in ['founder', 'admin']:
+                return MembershipResult(
+                    success=False,
+                    error_code="UNAUTHORIZED",
+                    error_message="You can only update your own photo"
+                )
+        
+        member['photo_url'] = photo_url
+        member['updated_at'] = datetime.now(timezone.utc).isoformat()
+        
+        self._log_activity(
+            foundation_id=foundation_id,
+            activity_type="member_photo_updated",
+            actor_id=actor_id,
+            details={"member_id": member['member_id']}
+        )
+        
+        return MembershipResult(
+            success=True,
+            member_id=member_record_id,
+            data={"photo_url": photo_url}
+        )
+    
+    def update_member_details(
+        self,
+        foundation_id: str,
+        member_record_id: str,
+        actor_id: str,
+        display_name: Optional[str] = None,
+        email: Optional[str] = None,
+        phone: Optional[str] = None,
+        photo_url: Optional[str] = None
+    ) -> MembershipResult:
+        """Update member details"""
+        member = self._members.get(member_record_id)
+        
+        if not member or member['foundation_id'] != foundation_id:
+            return MembershipResult(
+                success=False,
+                error_code="NOT_FOUND",
+                error_message="Member not found"
+            )
+        
+        # Check if actor is the member or an admin
+        if member['member_id'] != actor_id:
+            actor_member = self._get_member_by_user(foundation_id, actor_id)
+            if not actor_member or actor_member['role'] not in ['founder', 'admin']:
+                return MembershipResult(
+                    success=False,
+                    error_code="UNAUTHORIZED",
+                    error_message="You can only update your own details"
+                )
+        
+        if display_name is not None:
+            member['display_name'] = display_name
+        if email is not None:
+            member['email'] = email
+        if phone is not None:
+            member['phone'] = phone
+        if photo_url is not None:
+            member['photo_url'] = photo_url
+        
+        member['updated_at'] = datetime.now(timezone.utc).isoformat()
+        
+        self._log_activity(
+            foundation_id=foundation_id,
+            activity_type="member_details_updated",
+            actor_id=actor_id,
+            details={"member_id": member['member_id']}
+        )
+        
+        return MembershipResult(
+            success=True,
+            member_id=member_record_id,
+            data=member
         )
     
     # ========== FUNDS ==========
@@ -1373,6 +1651,8 @@ def reset_foundation_service() -> None:
 
 __all__ = [
     'FoundationType',
+    'FoundationStatus',
+    'PipelineStage',
     'DEFAULT_RULES',
     'FoundationCreateRequest',
     'FoundationResult',
