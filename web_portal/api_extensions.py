@@ -395,10 +395,10 @@ def handle_invitation_validate(code: str) -> Tuple[int, Dict]:
     Returns foundation details if code is valid, for the frontend to display preview.
     """
     if not FOUNDATION_SERVICE_AVAILABLE:
-        return 200, {"valid": True, "message": "Service unavailable, accepting code"}
+        return 200, {"valid": False, "error": "Foundation service is temporarily unavailable. Please try again later."}
     
     if not code or len(code) < 4:
-        return 200, {"valid": False, "error": "Invalid invitation code format"}
+        return 200, {"valid": False, "error": "Invalid invitation code format. Please enter a valid code."}
     
     service = get_foundation_service()
     result = service.validate_invitation(code)
@@ -432,6 +432,12 @@ def handle_invitation_validate(code: str) -> Tuple[int, Dict]:
             }
             # Add invited role from invitation if available
             result["invited_role"] = "member"  # Default role for invitees
+        else:
+            # Foundation exists in invitation but not in storage (e.g., server restarted)
+            return 200, {
+                "valid": False,
+                "error": "The foundation associated with this invitation no longer exists. Please request a new invitation."
+            }
     
     return 200, result
 

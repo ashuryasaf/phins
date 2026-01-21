@@ -684,8 +684,11 @@ class FoundationService:
         if not foundation:
             return {"success": False, "error": "Foundation not found"}
         
-        if foundation['status'] != 'active':
-            return {"success": False, "error": "Foundation is not active"}
+        # Allow invitations for draft, pending_review, and active foundations
+        # This enables founders to invite members while setting up the community
+        allowed_statuses = ['draft', 'pending_review', 'active']
+        if foundation['status'] not in allowed_statuses:
+            return {"success": False, "error": f"Cannot create invitations for {foundation['status']} foundations"}
         
         # Check if inviter is member with invite rights
         inviter_member = self._get_member_by_user(foundation_id, invited_by)
@@ -790,8 +793,31 @@ class FoundationService:
                 invitation = inv
                 break
         
+        if not invitation:
+            return MembershipResult(
+                success=False,
+                error_code="INVALID_CODE",
+                error_message="Invitation not found"
+            )
+        
         foundation_id = invitation['foundation_id']
         foundation = self._foundations.get(foundation_id)
+        
+        if not foundation:
+            return MembershipResult(
+                success=False,
+                error_code="NOT_FOUND",
+                error_message="Foundation not found"
+            )
+        
+        # Check foundation status - allow joining draft, pending_review, and active foundations
+        allowed_statuses = ['draft', 'pending_review', 'active']
+        if foundation['status'] not in allowed_statuses:
+            return MembershipResult(
+                success=False,
+                error_code="INVALID_STATUS",
+                error_message=f"Cannot join a {foundation['status']} foundation"
+            )
         
         # Check if already a member
         existing = self._get_member_by_user(foundation_id, member_id)

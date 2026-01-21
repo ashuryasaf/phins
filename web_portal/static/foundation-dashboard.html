@@ -1868,7 +1868,7 @@
       if (!code || code.length < 4) {
         messageContainer.innerHTML = `
           <div class="validation-message error">
-            ⚠️ Please enter a valid invitation code.
+            ⚠️ Please enter a valid invitation code (at least 4 characters).
           </div>
         `;
         previewContainer.classList.remove('visible');
@@ -1883,14 +1883,26 @@
       
       try {
         const token = localStorage.getItem('phins_token');
-        const response = await fetch(`/api/foundation-invitations/validate/${code}`, {
+        const response = await fetch(`/api/foundation-invitations/validate/${encodeURIComponent(code)}`, {
           headers: { 'Authorization': `Bearer ${token}` }
         });
+        
+        if (!response.ok) {
+          console.error('Validation response not OK:', response.status, response.statusText);
+        }
+        
         const data = await response.json();
+        console.log('Validation response:', data);
         
         if (data.valid && data.foundation) {
           validatedFoundation = data.foundation;
           validatedFoundation.inviteCode = code;
+          
+          // Determine status display
+          let statusNote = '';
+          if (data.foundation.status === 'draft') {
+            statusNote = '<div style="background: #fff3e0; color: #e65100; padding: 8px; border-radius: 6px; font-size: 0.85rem; margin-top: 12px;">📋 This foundation is still being set up. You can join and will be a founding member!</div>';
+          }
           
           messageContainer.innerHTML = `
             <div class="validation-message success">
@@ -1935,13 +1947,16 @@
               <span class="rule-label">Waiting Period for Claims</span>
               <span class="rule-value">${data.foundation.rules?.waiting_period || '30'} days</span>
             </div>
+            ${statusNote}
           `;
           
           previewContainer.classList.add('visible');
         } else {
+          // Show specific error message from server or generic one
+          const errorMsg = data.error || 'Invalid or expired invitation code. Please check the code and try again.';
           messageContainer.innerHTML = `
             <div class="validation-message error">
-              ❌ ${data.error || 'Invalid or expired invitation code. Please check and try again.'}
+              ❌ ${escapeHtml(errorMsg)}
             </div>
           `;
           previewContainer.classList.remove('visible');
@@ -1951,10 +1966,11 @@
         console.error('Error validating code:', e);
         messageContainer.innerHTML = `
           <div class="validation-message error">
-            ⚠️ Error validating code. Please try again.
+            ⚠️ Network error while validating code. Please check your connection and try again.
           </div>
         `;
         previewContainer.classList.remove('visible');
+        validatedFoundation = null;
       }
     }
     
@@ -1963,6 +1979,12 @@
         alert('Please validate an invitation code first.');
         return;
       }
+      
+      // Disable button while processing
+      const joinBtn = document.querySelector('#join-tab .btn-action.primary');
+      const originalBtnText = joinBtn.innerHTML;
+      joinBtn.disabled = true;
+      joinBtn.innerHTML = '🔄 Joining...';
       
       try {
         const token = localStorage.getItem('phins_token');
@@ -1976,19 +1998,36 @@
         });
         
         const data = await response.json();
+        console.log('Join response:', data);
         
         if (data.success) {
-          alert(`🎉 Successfully joined ${validatedFoundation.name}!\n\nYour membership has been recorded on the NFT ledger.`);
+          // Check if membership is pending or active
+          const statusMsg = data.data?.status === 'pending' 
+            ? 'Your membership is pending approval by the foundation admin.'
+            : 'Your membership has been recorded on the NFT ledger.';
+          
+          alert(`🎉 Successfully joined ${validatedFoundation.name}!\n\n${statusMsg}`);
           closeJoinInviteModal();
           await loadFoundations();
           await loadLedgerEntries();
           updateDashboardStats();
         } else {
-          alert('Error: ' + (data.error_message || data.error || 'Failed to join foundation'));
+          // Show more descriptive error messages
+          let errorMsg = data.error_message || data.error || 'Failed to join foundation';
+          if (errorMsg.includes('already a member')) {
+            errorMsg = 'You are already a member of this foundation.';
+          } else if (errorMsg.includes('Invalid') || errorMsg.includes('expired')) {
+            errorMsg = 'This invitation code is invalid or has expired. Please request a new invitation.';
+          }
+          alert('Error: ' + errorMsg);
         }
       } catch (e) {
         console.error('Error joining foundation:', e);
-        alert('Error joining foundation. Please try again.');
+        alert('Network error while joining foundation. Please check your connection and try again.');
+      } finally {
+        // Re-enable button
+        joinBtn.disabled = false;
+        joinBtn.innerHTML = originalBtnText;
       }
     }
     
@@ -2012,6 +2051,12 @@
         return;
       }
       
+      // Disable button while generating
+      const generateBtn = document.querySelector('#invite-options button');
+      const originalBtnText = generateBtn.innerHTML;
+      generateBtn.disabled = true;
+      generateBtn.innerHTML = '🔄 Generating...';
+      
       const inviteData = {
         foundation_id: foundationId,
         email: document.getElementById('invite-email').value || null,
@@ -2033,6 +2078,7 @@
         });
         
         const data = await response.json();
+        console.log('Invitation response:', data);
         
         if (data.code || data.invitation_code) {
           const code = data.code || data.invitation_code;
@@ -2045,11 +2091,22 @@
           await loadLedgerEntries();
           updateDashboardStats();
         } else {
-          alert('Error: ' + (data.error || 'Failed to generate invitation'));
+          // Show more helpful error messages
+          let errorMsg = data.error || 'Failed to generate invitation';
+          if (errorMsg.includes('permission')) {
+            errorMsg = 'You do not have permission to invite members. Only founders and admins can create invitations.';
+          } else if (errorMsg.includes('not active') || errorMsg.includes('draft')) {
+            errorMsg = 'Invitation created! Note: Your foundation is still in setup mode. Members can join once you activate it.';
+          }
+          alert(errorMsg);
         }
       } catch (e) {
         console.error('Error generating invitation:', e);
-        alert('Error generating invitation. Please try again.');
+        alert('Network error while generating invitation. Please check your connection and try again.');
+      } finally {
+        // Re-enable button
+        generateBtn.disabled = false;
+        generateBtn.innerHTML = originalBtnText;
       }
     }
     
