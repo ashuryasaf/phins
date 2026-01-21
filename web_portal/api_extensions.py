@@ -748,6 +748,273 @@ def handle_admin_all_activities(session: Dict, query_params: Dict) -> Tuple[int,
 
 
 # ============================================================================
+# ADVANCED DASHBOARD ENDPOINTS
+# ============================================================================
+
+# Import ledger service
+try:
+    from services.foundation_ledger_service import (
+        get_foundation_ledger_service,
+    )
+    LEDGER_SERVICE_AVAILABLE = True
+except ImportError:
+    LEDGER_SERVICE_AVAILABLE = False
+    print("Warning: Foundation ledger service not available")
+
+
+def handle_admin_foundation_dashboard(session: Dict, foundation_id: str) -> Tuple[int, Dict]:
+    """GET /api/admin/foundations/{id}/dashboard - Get comprehensive dashboard data"""
+    if not session or session.get('role') != 'admin':
+        return 403, {"error": "Admin access required"}
+    
+    if not LEDGER_SERVICE_AVAILABLE:
+        return 503, {"error": "Ledger service not available"}
+    
+    ledger_service = get_foundation_ledger_service()
+    dashboard_data = ledger_service.get_admin_dashboard_data(foundation_id)
+    
+    return 200, dashboard_data
+
+
+def handle_admin_foundation_wallets(session: Dict, foundation_id: str) -> Tuple[int, Dict]:
+    """GET /api/admin/foundations/{id}/wallets - Get foundation wallets"""
+    if not session or session.get('role') != 'admin':
+        return 403, {"error": "Admin access required"}
+    
+    if not LEDGER_SERVICE_AVAILABLE:
+        return 200, {"wallets": []}
+    
+    ledger_service = get_foundation_ledger_service()
+    wallets = ledger_service.get_foundation_wallets(foundation_id)
+    
+    return 200, {"wallets": wallets}
+
+
+def handle_admin_foundation_members_detailed(session: Dict, foundation_id: str) -> Tuple[int, Dict]:
+    """GET /api/admin/foundations/{id}/members/detailed - Get detailed member profiles"""
+    if not session or session.get('role') != 'admin':
+        return 403, {"error": "Admin access required"}
+    
+    if not LEDGER_SERVICE_AVAILABLE:
+        return 200, {"members": []}
+    
+    ledger_service = get_foundation_ledger_service()
+    members = ledger_service.get_all_member_profiles(foundation_id, include_sensitive=True)
+    
+    return 200, {"members": members}
+
+
+def handle_admin_foundation_investments_get(session: Dict, foundation_id: str) -> Tuple[int, Dict]:
+    """GET /api/admin/foundations/{id}/investments - Get investments"""
+    if not session or session.get('role') != 'admin':
+        return 403, {"error": "Admin access required"}
+    
+    if not LEDGER_SERVICE_AVAILABLE:
+        return 200, {"investments": [], "summary": {}}
+    
+    ledger_service = get_foundation_ledger_service()
+    investments = ledger_service.get_foundation_investments(foundation_id)
+    summary = ledger_service.calculate_investment_returns(foundation_id)
+    
+    return 200, {"investments": investments, "summary": summary}
+
+
+def handle_admin_foundation_investments_create(session: Dict, foundation_id: str, body_data: Dict) -> Tuple[int, Dict]:
+    """POST /api/admin/foundations/{id}/investments - Create investment"""
+    if not session or session.get('role') != 'admin':
+        return 403, {"error": "Admin access required"}
+    
+    if not LEDGER_SERVICE_AVAILABLE:
+        return 503, {"error": "Ledger service not available"}
+    
+    ledger_service = get_foundation_ledger_service()
+    admin_id = session.get('username', 'admin')
+    
+    result = ledger_service.create_investment(
+        foundation_id=foundation_id,
+        investment_type=body_data.get('investment_type', 'fixed_deposit'),
+        name=body_data.get('name', ''),
+        principal=float(body_data.get('principal', 0)),
+        interest_rate=float(body_data.get('interest_rate', 0)),
+        maturity_days=body_data.get('maturity_days'),
+        description=body_data.get('description', ''),
+        actor_id=admin_id
+    )
+    
+    return 200 if result.get('success') else 400, result
+
+
+def handle_admin_foundation_billing(session: Dict, foundation_id: str) -> Tuple[int, Dict]:
+    """GET /api/admin/foundations/{id}/billing - Get billing data"""
+    if not session or session.get('role') != 'admin':
+        return 403, {"error": "Admin access required"}
+    
+    if not LEDGER_SERVICE_AVAILABLE:
+        return 200, {"summary": {}, "bills": []}
+    
+    ledger_service = get_foundation_ledger_service()
+    summary = ledger_service.get_foundation_billing_summary(foundation_id)
+    
+    return 200, {"summary": summary}
+
+
+def handle_admin_foundation_billing_generate(session: Dict, foundation_id: str, body_data: Dict) -> Tuple[int, Dict]:
+    """POST /api/admin/foundations/{id}/billing/generate - Generate monthly bills"""
+    if not session or session.get('role') != 'admin':
+        return 403, {"error": "Admin access required"}
+    
+    if not LEDGER_SERVICE_AVAILABLE:
+        return 503, {"error": "Ledger service not available"}
+    
+    ledger_service = get_foundation_ledger_service()
+    admin_id = session.get('username', 'admin')
+    
+    from datetime import datetime, timezone
+    now = datetime.now(timezone.utc)
+    period_start = now.replace(day=1).isoformat()
+    period_end = (now.replace(day=28) if now.month == 2 else now.replace(day=30)).isoformat()
+    
+    result = ledger_service.generate_member_bills(
+        foundation_id=foundation_id,
+        period_start=period_start,
+        period_end=period_end,
+        contribution_amount=float(body_data.get('contribution_amount', 50)),
+        actor_id=admin_id
+    )
+    
+    return 200 if result.get('success') else 400, result
+
+
+def handle_admin_foundation_ledger(session: Dict, foundation_id: str, query_params: Dict) -> Tuple[int, Dict]:
+    """GET /api/admin/foundations/{id}/ledger - Get ledger entries"""
+    if not session or session.get('role') != 'admin':
+        return 403, {"error": "Admin access required"}
+    
+    if not LEDGER_SERVICE_AVAILABLE:
+        return 200, {"entries": []}
+    
+    ledger_service = get_foundation_ledger_service()
+    
+    entry_type = query_params.get('entry_type', [None])[0]
+    limit = int(query_params.get('limit', ['100'])[0])
+    
+    entries = ledger_service.get_ledger_entries(
+        foundation_id=foundation_id,
+        entry_type=entry_type,
+        include_sensitive=True,
+        limit=limit
+    )
+    
+    return 200, {"entries": entries}
+
+
+def handle_admin_foundation_ledger_verify(session: Dict, foundation_id: str) -> Tuple[int, Dict]:
+    """GET /api/admin/foundations/{id}/ledger/verify - Verify ledger integrity"""
+    if not session or session.get('role') != 'admin':
+        return 403, {"error": "Admin access required"}
+    
+    if not LEDGER_SERVICE_AVAILABLE:
+        return 200, {"valid": True, "message": "Ledger service not available"}
+    
+    ledger_service = get_foundation_ledger_service()
+    result = ledger_service.verify_ledger_integrity(foundation_id)
+    
+    return 200, result
+
+
+def handle_admin_foundation_nfts(session: Dict, foundation_id: str) -> Tuple[int, Dict]:
+    """GET /api/admin/foundations/{id}/nfts - Get NFT records"""
+    if not session or session.get('role') != 'admin':
+        return 403, {"error": "Admin access required"}
+    
+    if not LEDGER_SERVICE_AVAILABLE:
+        return 200, {"nfts": []}
+    
+    ledger_service = get_foundation_ledger_service()
+    nfts = ledger_service.get_foundation_nfts(foundation_id)
+    
+    return 200, {"nfts": nfts}
+
+
+def handle_admin_foundation_risk(session: Dict, foundation_id: str) -> Tuple[int, Dict]:
+    """GET /api/admin/foundations/{id}/risk - Get risk assessment"""
+    if not session or session.get('role') != 'admin':
+        return 403, {"error": "Admin access required"}
+    
+    if not LEDGER_SERVICE_AVAILABLE:
+        return 200, {"assessment": None}
+    
+    ledger_service = get_foundation_ledger_service()
+    assessment = ledger_service.get_latest_risk_assessment(foundation_id)
+    
+    return 200, {"assessment": assessment}
+
+
+def handle_admin_foundation_risk_assess(session: Dict, foundation_id: str) -> Tuple[int, Dict]:
+    """POST /api/admin/foundations/{id}/risk/assess - Run risk assessment"""
+    if not session or session.get('role') != 'admin':
+        return 403, {"error": "Admin access required"}
+    
+    if not LEDGER_SERVICE_AVAILABLE:
+        return 503, {"error": "Ledger service not available"}
+    
+    ledger_service = get_foundation_ledger_service()
+    assessment = ledger_service.create_risk_assessment(foundation_id, 'manual')
+    
+    return 200, {"success": True, "assessment": assessment.to_dict()}
+
+
+def handle_admin_foundation_bi(session: Dict, foundation_id: str) -> Tuple[int, Dict]:
+    """GET /api/admin/foundations/{id}/bi - Get BI reports"""
+    if not session or session.get('role') != 'admin':
+        return 403, {"error": "Admin access required"}
+    
+    if not LEDGER_SERVICE_AVAILABLE:
+        return 200, {"reports": []}
+    
+    ledger_service = get_foundation_ledger_service()
+    reports = ledger_service.get_bi_reports(foundation_id, limit=10)
+    
+    return 200, {"reports": reports}
+
+
+def handle_admin_foundation_bi_generate(session: Dict, foundation_id: str, body_data: Dict) -> Tuple[int, Dict]:
+    """POST /api/admin/foundations/{id}/bi/generate - Generate BI report"""
+    if not session or session.get('role') != 'admin':
+        return 403, {"error": "Admin access required"}
+    
+    if not LEDGER_SERVICE_AVAILABLE:
+        return 503, {"error": "Ledger service not available"}
+    
+    ledger_service = get_foundation_ledger_service()
+    
+    from datetime import datetime, timezone, timedelta
+    now = datetime.now(timezone.utc)
+    report_type = body_data.get('report_type', 'monthly')
+    
+    # Set period based on report type
+    if report_type == 'daily':
+        period_start = (now - timedelta(days=1)).isoformat()
+    elif report_type == 'weekly':
+        period_start = (now - timedelta(days=7)).isoformat()
+    elif report_type == 'quarterly':
+        period_start = (now - timedelta(days=90)).isoformat()
+    else:  # monthly
+        period_start = (now - timedelta(days=30)).isoformat()
+    
+    period_end = now.isoformat()
+    
+    report = ledger_service.generate_bi_report(
+        foundation_id=foundation_id,
+        report_type=report_type,
+        period_start=period_start,
+        period_end=period_end
+    )
+    
+    return 200, {"success": True, "report": report.to_dict()}
+
+
+# ============================================================================
 # ROUTE DISPATCHER
 # ============================================================================
 
@@ -816,6 +1083,67 @@ def dispatch_get(path: str, session: Dict, query_params: Dict, client_ip: str) -
     if path.startswith('/api/admin/foundations/') and path.count('/') == 4:
         foundation_id = path.split('/')[-1]
         return handle_admin_foundation_get(session, foundation_id)
+    
+    # Advanced Dashboard Endpoints
+    # Admin: Dashboard data
+    if '/dashboard' in path and path.startswith('/api/admin/foundations/'):
+        parts = path.split('/')
+        if len(parts) == 6 and parts[5] == 'dashboard':
+            return handle_admin_foundation_dashboard(session, parts[4])
+    
+    # Admin: Wallets
+    if '/wallets' in path and path.startswith('/api/admin/foundations/'):
+        parts = path.split('/')
+        if len(parts) == 6 and parts[5] == 'wallets':
+            return handle_admin_foundation_wallets(session, parts[4])
+    
+    # Admin: Detailed members
+    if path.endswith('/members/detailed') and path.startswith('/api/admin/foundations/'):
+        parts = path.split('/')
+        if len(parts) == 7 and parts[5] == 'members' and parts[6] == 'detailed':
+            return handle_admin_foundation_members_detailed(session, parts[4])
+    
+    # Admin: Investments
+    if '/investments' in path and path.startswith('/api/admin/foundations/'):
+        parts = path.split('/')
+        if len(parts) == 6 and parts[5] == 'investments':
+            return handle_admin_foundation_investments_get(session, parts[4])
+    
+    # Admin: Billing
+    if '/billing' in path and path.startswith('/api/admin/foundations/') and not path.endswith('/generate'):
+        parts = path.split('/')
+        if len(parts) == 6 and parts[5] == 'billing':
+            return handle_admin_foundation_billing(session, parts[4])
+    
+    # Admin: Ledger
+    if '/ledger' in path and path.startswith('/api/admin/foundations/') and not path.endswith('/verify'):
+        parts = path.split('/')
+        if len(parts) == 6 and parts[5] == 'ledger':
+            return handle_admin_foundation_ledger(session, parts[4], query_params)
+    
+    # Admin: Ledger verify
+    if path.endswith('/ledger/verify') and path.startswith('/api/admin/foundations/'):
+        parts = path.split('/')
+        if len(parts) == 7 and parts[5] == 'ledger' and parts[6] == 'verify':
+            return handle_admin_foundation_ledger_verify(session, parts[4])
+    
+    # Admin: NFTs
+    if '/nfts' in path and path.startswith('/api/admin/foundations/'):
+        parts = path.split('/')
+        if len(parts) == 6 and parts[5] == 'nfts':
+            return handle_admin_foundation_nfts(session, parts[4])
+    
+    # Admin: Risk
+    if '/risk' in path and path.startswith('/api/admin/foundations/') and not path.endswith('/assess'):
+        parts = path.split('/')
+        if len(parts) == 6 and parts[5] == 'risk':
+            return handle_admin_foundation_risk(session, parts[4])
+    
+    # Admin: BI
+    if '/bi' in path and path.startswith('/api/admin/foundations/') and not path.endswith('/generate'):
+        parts = path.split('/')
+        if len(parts) == 6 and parts[5] == 'bi':
+            return handle_admin_foundation_bi(session, parts[4])
     
     return None
 
@@ -897,6 +1225,31 @@ def dispatch_post(path: str, session: Dict, body_data: Dict, client_ip: str, use
             foundation_id = parts[4]
             member_id = parts[6]
             return handle_admin_foundation_member_photo(session, foundation_id, member_id, body_data)
+    
+    # Advanced Dashboard POST Endpoints
+    # Admin: Create investment
+    if '/investments' in path and path.startswith('/api/admin/foundations/'):
+        parts = path.split('/')
+        if len(parts) == 6 and parts[5] == 'investments':
+            return handle_admin_foundation_investments_create(session, parts[4], body_data)
+    
+    # Admin: Generate billing
+    if path.endswith('/billing/generate') and path.startswith('/api/admin/foundations/'):
+        parts = path.split('/')
+        if len(parts) == 7 and parts[5] == 'billing' and parts[6] == 'generate':
+            return handle_admin_foundation_billing_generate(session, parts[4], body_data)
+    
+    # Admin: Run risk assessment
+    if path.endswith('/risk/assess') and path.startswith('/api/admin/foundations/'):
+        parts = path.split('/')
+        if len(parts) == 7 and parts[5] == 'risk' and parts[6] == 'assess':
+            return handle_admin_foundation_risk_assess(session, parts[4])
+    
+    # Admin: Generate BI report
+    if path.endswith('/bi/generate') and path.startswith('/api/admin/foundations/'):
+        parts = path.split('/')
+        if len(parts) == 7 and parts[5] == 'bi' and parts[6] == 'generate':
+            return handle_admin_foundation_bi_generate(session, parts[4], body_data)
     
     return None
 

@@ -926,6 +926,198 @@
       </div>
     </div>
   </div>
+
+  <!-- Advanced Dashboard Modal -->
+  <div class="modal-overlay" id="dashboard-modal">
+    <div class="modal" style="max-width: 1200px;">
+      <div class="modal-header">
+        <h2>📊 <span id="dashboard-modal-title">Advanced Dashboard</span></h2>
+        <button class="modal-close" onclick="closeDashboardModal()">&times;</button>
+      </div>
+      <div class="modal-body" id="dashboard-modal-body">
+        <input type="hidden" id="dashboard-foundation-id" />
+        
+        <!-- Dashboard Tabs -->
+        <div style="display: flex; gap: 8px; margin-bottom: 24px; flex-wrap: wrap;">
+          <button class="action-btn primary dashboard-tab active" data-tab="overview" onclick="switchDashboardTab('overview')">📈 Overview</button>
+          <button class="action-btn dashboard-tab" data-tab="wallets" onclick="switchDashboardTab('wallets')">💰 Wallets</button>
+          <button class="action-btn dashboard-tab" data-tab="members" onclick="switchDashboardTab('members')">👥 Members</button>
+          <button class="action-btn dashboard-tab" data-tab="investments" onclick="switchDashboardTab('investments')">📊 Investments</button>
+          <button class="action-btn dashboard-tab" data-tab="billing" onclick="switchDashboardTab('billing')">💳 Billing</button>
+          <button class="action-btn dashboard-tab" data-tab="ledger" onclick="switchDashboardTab('ledger')">📜 Ledger</button>
+          <button class="action-btn dashboard-tab" data-tab="nfts" onclick="switchDashboardTab('nfts')">🎨 NFTs</button>
+          <button class="action-btn dashboard-tab" data-tab="risk" onclick="switchDashboardTab('risk')">⚠️ Risk</button>
+          <button class="action-btn dashboard-tab" data-tab="bi" onclick="switchDashboardTab('bi')">🧠 BI Analytics</button>
+        </div>
+        
+        <!-- Overview Tab -->
+        <div class="dashboard-tab-content active" id="tab-overview">
+          <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 24px;">
+            <div class="stat-card">
+              <div class="stat-card-icon purple">👥</div>
+              <div class="stat-card-value" id="dash-members">0</div>
+              <div class="stat-card-label">Total Members</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-card-icon green">💰</div>
+              <div class="stat-card-value" id="dash-balance">$0</div>
+              <div class="stat-card-label">Total Balance</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-card-icon blue">📈</div>
+              <div class="stat-card-value" id="dash-investments">$0</div>
+              <div class="stat-card-label">Investments</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-card-icon orange">⚠️</div>
+              <div class="stat-card-value" id="dash-risk">-</div>
+              <div class="stat-card-label">Risk Level</div>
+            </div>
+          </div>
+          <div id="overview-content">
+            <p style="text-align: center; padding: 40px; color: #666;">Loading overview...</p>
+          </div>
+        </div>
+        
+        <!-- Wallets Tab -->
+        <div class="dashboard-tab-content" id="tab-wallets" style="display: none;">
+          <h4 style="margin-bottom: 16px;">💰 Foundation Wallets</h4>
+          <div id="wallets-content" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px;">
+            <p style="text-align: center; padding: 40px; color: #666;">Loading wallets...</p>
+          </div>
+        </div>
+        
+        <!-- Members Tab -->
+        <div class="dashboard-tab-content" id="tab-members" style="display: none;">
+          <h4 style="margin-bottom: 16px;">👥 Member Profiles (Detailed)</h4>
+          <div id="members-detailed-content">
+            <p style="text-align: center; padding: 40px; color: #666;">Loading members...</p>
+          </div>
+        </div>
+        
+        <!-- Investments Tab -->
+        <div class="dashboard-tab-content" id="tab-investments" style="display: none;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+            <h4>📊 Investment Portfolio</h4>
+            <button class="action-btn success" onclick="openCreateInvestmentModal()">+ New Investment</button>
+          </div>
+          <div id="investment-summary" style="margin-bottom: 24px;"></div>
+          <div id="investments-content">
+            <p style="text-align: center; padding: 40px; color: #666;">Loading investments...</p>
+          </div>
+        </div>
+        
+        <!-- Billing Tab -->
+        <div class="dashboard-tab-content" id="tab-billing" style="display: none;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+            <h4>💳 Billing Management</h4>
+            <button class="action-btn primary" onclick="generateMonthlyBills()">Generate Monthly Bills</button>
+          </div>
+          <div id="billing-summary" style="margin-bottom: 24px;"></div>
+          <div id="billing-content">
+            <p style="text-align: center; padding: 40px; color: #666;">Loading billing data...</p>
+          </div>
+        </div>
+        
+        <!-- Ledger Tab -->
+        <div class="dashboard-tab-content" id="tab-ledger" style="display: none;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+            <h4>📜 Immutable Ledger</h4>
+            <button class="action-btn info" onclick="verifyLedgerIntegrity()">🔒 Verify Integrity</button>
+          </div>
+          <div id="ledger-integrity-status" style="margin-bottom: 16px;"></div>
+          <div id="ledger-content">
+            <p style="text-align: center; padding: 40px; color: #666;">Loading ledger entries...</p>
+          </div>
+        </div>
+        
+        <!-- NFTs Tab -->
+        <div class="dashboard-tab-content" id="tab-nfts" style="display: none;">
+          <h4 style="margin-bottom: 16px;">🎨 NFT Records (Action Documentation)</h4>
+          <div id="nft-summary" style="margin-bottom: 24px;"></div>
+          <div id="nfts-content">
+            <p style="text-align: center; padding: 40px; color: #666;">Loading NFT records...</p>
+          </div>
+        </div>
+        
+        <!-- Risk Tab -->
+        <div class="dashboard-tab-content" id="tab-risk" style="display: none;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+            <h4>⚠️ Risk Assessment</h4>
+            <button class="action-btn warning" onclick="runRiskAssessment()">🔄 Run New Assessment</button>
+          </div>
+          <div id="risk-content">
+            <p style="text-align: center; padding: 40px; color: #666;">Loading risk assessment...</p>
+          </div>
+        </div>
+        
+        <!-- BI Analytics Tab -->
+        <div class="dashboard-tab-content" id="tab-bi" style="display: none;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+            <h4>🧠 Business Intelligence & AI Analytics</h4>
+            <button class="action-btn primary" onclick="generateBIReport()">📊 Generate Report</button>
+          </div>
+          <div id="bi-content">
+            <p style="text-align: center; padding: 40px; color: #666;">Loading BI analytics...</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Create Investment Modal -->
+  <div class="modal-overlay" id="investment-modal">
+    <div class="modal" style="max-width: 500px;">
+      <div class="modal-header">
+        <h2>📊 Create Investment</h2>
+        <button class="modal-close" onclick="closeInvestmentModal()">&times;</button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="investment-foundation-id" />
+        
+        <div style="margin-bottom: 16px;">
+          <label style="display: block; margin-bottom: 8px; font-weight: 500;">Investment Type</label>
+          <select id="investment-type" class="filter-select" style="width: 100%;">
+            <option value="fixed_deposit">Fixed Deposit</option>
+            <option value="mutual_fund">Mutual Fund</option>
+            <option value="bonds">Bonds</option>
+            <option value="money_market">Money Market</option>
+            <option value="custom">Custom</option>
+          </select>
+        </div>
+        
+        <div style="margin-bottom: 16px;">
+          <label style="display: block; margin-bottom: 8px; font-weight: 500;">Name</label>
+          <input type="text" id="investment-name" class="filter-input" style="width: 100%;" placeholder="e.g., 12-Month Fixed Deposit" />
+        </div>
+        
+        <div style="margin-bottom: 16px;">
+          <label style="display: block; margin-bottom: 8px; font-weight: 500;">Principal Amount ($)</label>
+          <input type="number" id="investment-principal" class="filter-input" style="width: 100%;" placeholder="10000" />
+        </div>
+        
+        <div style="margin-bottom: 16px;">
+          <label style="display: block; margin-bottom: 8px; font-weight: 500;">Interest Rate (%)</label>
+          <input type="number" id="investment-rate" class="filter-input" style="width: 100%;" placeholder="5.5" step="0.1" />
+        </div>
+        
+        <div style="margin-bottom: 16px;">
+          <label style="display: block; margin-bottom: 8px; font-weight: 500;">Maturity (Days)</label>
+          <input type="number" id="investment-maturity" class="filter-input" style="width: 100%;" placeholder="365" />
+        </div>
+        
+        <div style="margin-bottom: 16px;">
+          <label style="display: block; margin-bottom: 8px; font-weight: 500;">Description</label>
+          <textarea id="investment-description" class="filter-input" style="width: 100%; height: 60px;" placeholder="Investment description..."></textarea>
+        </div>
+        
+        <div style="display: flex; gap: 12px; justify-content: flex-end;">
+          <button class="action-btn" style="background: #e0e0e0; color: #333;" onclick="closeInvestmentModal()">Cancel</button>
+          <button class="action-btn success" onclick="createInvestment()">💰 Create Investment</button>
+        </div>
+      </div>
+    </div>
+  </div>
   
   <script>
     // State
@@ -1823,6 +2015,974 @@
       const div = document.createElement('div');
       div.textContent = text;
       return div.innerHTML;
+    }
+    
+    // ========== Advanced Dashboard Modal ==========
+    let currentDashboardFoundation = null;
+    let dashboardData = null;
+    
+    async function openAdvancedDashboard(id) {
+      document.getElementById('dashboard-foundation-id').value = id;
+      document.getElementById('dashboard-modal').classList.add('active');
+      currentDashboardFoundation = id;
+      
+      // Reset tabs
+      document.querySelectorAll('.dashboard-tab').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.dashboard-tab-content').forEach(c => c.style.display = 'none');
+      document.querySelector('.dashboard-tab[data-tab="overview"]').classList.add('active');
+      document.getElementById('tab-overview').style.display = 'block';
+      
+      await loadDashboardData(id);
+    }
+    
+    function closeDashboardModal() {
+      document.getElementById('dashboard-modal').classList.remove('active');
+      currentDashboardFoundation = null;
+      dashboardData = null;
+    }
+    
+    function switchDashboardTab(tabName) {
+      document.querySelectorAll('.dashboard-tab').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.dashboard-tab-content').forEach(c => c.style.display = 'none');
+      
+      document.querySelector(`.dashboard-tab[data-tab="${tabName}"]`).classList.add('active');
+      document.getElementById(`tab-${tabName}`).style.display = 'block';
+      
+      // Load tab-specific data
+      const id = document.getElementById('dashboard-foundation-id').value;
+      switch(tabName) {
+        case 'wallets': loadWalletsData(id); break;
+        case 'members': loadMembersDetailedData(id); break;
+        case 'investments': loadInvestmentsData(id); break;
+        case 'billing': loadBillingData(id); break;
+        case 'ledger': loadLedgerData(id); break;
+        case 'nfts': loadNFTsData(id); break;
+        case 'risk': loadRiskData(id); break;
+        case 'bi': loadBIData(id); break;
+      }
+    }
+    
+    async function loadDashboardData(id) {
+      try {
+        const token = localStorage.getItem('phins_token');
+        const response = await fetch(`/api/admin/foundations/${id}/dashboard`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        dashboardData = await response.json();
+        
+        // Update title
+        const foundationName = filteredFoundations.find(f => f.id === id)?.name || 'Foundation';
+        document.getElementById('dashboard-modal-title').textContent = `Advanced Dashboard: ${foundationName}`;
+        
+        // Update overview stats
+        document.getElementById('dash-members').textContent = dashboardData.summary?.total_members || 0;
+        document.getElementById('dash-balance').textContent = '$' + formatNumber(dashboardData.summary?.total_balance || 0);
+        document.getElementById('dash-investments').textContent = '$' + formatNumber(dashboardData.summary?.total_investments || 0);
+        document.getElementById('dash-risk').textContent = (dashboardData.summary?.risk_level || 'N/A').toUpperCase();
+        
+        // Render overview content
+        renderOverviewContent(dashboardData);
+        
+      } catch (e) {
+        console.error('Error loading dashboard data:', e);
+        showNotification('Error loading dashboard', 'error');
+      }
+    }
+    
+    function renderOverviewContent(data) {
+      const summary = data.summary || {};
+      const overview = document.getElementById('overview-content');
+      
+      overview.innerHTML = `
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+          <div class="detail-section">
+            <h4>📊 Financial Summary</h4>
+            <div class="detail-row">
+              <span class="detail-label">Total Balance</span>
+              <span class="detail-value">$${formatNumber(summary.total_balance || 0)}</span>
+            </div>
+            <div class="detail-row">
+              <span class="detail-label">Total Contributions</span>
+              <span class="detail-value">$${formatNumber(summary.total_contributions || 0)}</span>
+            </div>
+            <div class="detail-row">
+              <span class="detail-label">Investment Value</span>
+              <span class="detail-value">$${formatNumber(summary.total_investments || 0)}</span>
+            </div>
+            <div class="detail-row">
+              <span class="detail-label">Investment Returns</span>
+              <span class="detail-value" style="color: ${(summary.investment_returns || 0) >= 0 ? '#4caf50' : '#f44336'};">
+                $${formatNumber(summary.investment_returns || 0)}
+              </span>
+            </div>
+            <div class="detail-row">
+              <span class="detail-label">Collection Rate</span>
+              <span class="detail-value">${(summary.collection_rate || 0).toFixed(1)}%</span>
+            </div>
+          </div>
+          
+          <div class="detail-section">
+            <h4>👥 Membership</h4>
+            <div class="detail-row">
+              <span class="detail-label">Total Members</span>
+              <span class="detail-value">${summary.total_members || 0}</span>
+            </div>
+            <div class="detail-row">
+              <span class="detail-label">Active Members</span>
+              <span class="detail-value">${summary.active_members || 0}</span>
+            </div>
+          </div>
+          
+          <div class="detail-section">
+            <h4>⚠️ Risk Profile</h4>
+            <div class="detail-row">
+              <span class="detail-label">Risk Level</span>
+              <span class="detail-value">
+                <span class="badge ${getRiskBadgeClass(summary.risk_level)}">${(summary.risk_level || 'N/A').toUpperCase()}</span>
+              </span>
+            </div>
+          </div>
+          
+          <div class="detail-section">
+            <h4>🎨 NFT Records</h4>
+            <div class="detail-row">
+              <span class="detail-label">Total NFTs</span>
+              <span class="detail-value">${data.nfts?.total || 0}</span>
+            </div>
+            <div class="detail-row">
+              <span class="detail-label">Membership NFTs</span>
+              <span class="detail-value">${data.nfts?.by_type?.membership || 0}</span>
+            </div>
+            <div class="detail-row">
+              <span class="detail-label">Contribution NFTs</span>
+              <span class="detail-value">${data.nfts?.by_type?.contribution || 0}</span>
+            </div>
+          </div>
+        </div>
+        
+        <div class="detail-section" style="margin-top: 20px;">
+          <h4>📈 Recent Activity</h4>
+          <div style="max-height: 200px; overflow-y: auto;">
+            ${(data.recent_activity || []).slice(0, 10).map(a => `
+              <div class="activity-item">
+                <div class="activity-icon">${getLedgerIcon(a.entry_type)}</div>
+                <div class="activity-content">
+                  <div class="activity-text">${formatLedgerType(a.entry_type)}</div>
+                  <div class="activity-time">${formatDateTime(a.timestamp)}</div>
+                </div>
+              </div>
+            `).join('') || '<p style="text-align: center; color: #666;">No recent activity</p>'}
+          </div>
+        </div>
+      `;
+    }
+    
+    function getRiskBadgeClass(level) {
+      const classes = {
+        'very_low': 'active',
+        'low': 'active',
+        'moderate': 'draft',
+        'high': 'suspended',
+        'very_high': 'rejected'
+      };
+      return classes[level] || 'draft';
+    }
+    
+    function getLedgerIcon(type) {
+      const icons = {
+        'foundation_created': '🏛️',
+        'foundation_activated': '✅',
+        'member_joined': '👤',
+        'member_approved': '✓',
+        'contribution_received': '💰',
+        'investment_created': '📈',
+        'bill_generated': '📄',
+        'bill_paid': '✓',
+        'nft_minted': '🎨',
+        'risk_assessment': '⚠️',
+        'bi_report_generated': '📊'
+      };
+      return icons[type] || '📝';
+    }
+    
+    function formatLedgerType(type) {
+      return type.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+    }
+    
+    // ========== Wallets Tab ==========
+    async function loadWalletsData(id) {
+      try {
+        const token = localStorage.getItem('phins_token');
+        const response = await fetch(`/api/admin/foundations/${id}/wallets`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const data = await response.json();
+        
+        const container = document.getElementById('wallets-content');
+        const wallets = data.wallets || [];
+        
+        if (wallets.length === 0) {
+          container.innerHTML = '<p style="text-align: center; padding: 40px; color: #666;">No wallets found</p>';
+          return;
+        }
+        
+        container.innerHTML = wallets.map(w => `
+          <div class="stat-card" style="background: linear-gradient(135deg, ${getWalletColor(w.wallet_type)} 0%, ${getWalletColor(w.wallet_type)}dd 100%);">
+            <div style="margin-bottom: 12px;">
+              <span style="font-size: 2rem;">${getWalletIcon(w.wallet_type)}</span>
+            </div>
+            <div class="stat-card-value" style="color: white;">$${formatNumber(w.balance)}</div>
+            <div class="stat-card-label" style="color: rgba(255,255,255,0.8);">${w.name}</div>
+            <div style="margin-top: 8px; font-size: 0.75rem; color: rgba(255,255,255,0.7);">
+              Type: ${w.wallet_type}<br>
+              Min Balance: $${formatNumber(w.min_balance || 0)}
+            </div>
+          </div>
+        `).join('');
+        
+      } catch (e) {
+        console.error('Error loading wallets:', e);
+        document.getElementById('wallets-content').innerHTML = '<p style="color: red;">Error loading wallets</p>';
+      }
+    }
+    
+    function getWalletIcon(type) {
+      const icons = { operating: '💵', reserve: '🏦', investment: '📈', claims: '🩹', billing: '📋' };
+      return icons[type] || '💰';
+    }
+    
+    function getWalletColor(type) {
+      const colors = { operating: '#4caf50', reserve: '#2196f3', investment: '#9c27b0', claims: '#ff9800', billing: '#607d8b' };
+      return colors[type] || '#5e35b1';
+    }
+    
+    // ========== Members Detailed Tab ==========
+    async function loadMembersDetailedData(id) {
+      try {
+        const token = localStorage.getItem('phins_token');
+        const response = await fetch(`/api/admin/foundations/${id}/members/detailed`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const data = await response.json();
+        
+        const container = document.getElementById('members-detailed-content');
+        const members = data.members || [];
+        
+        if (members.length === 0) {
+          container.innerHTML = '<p style="text-align: center; padding: 40px; color: #666;">No members found</p>';
+          return;
+        }
+        
+        container.innerHTML = `
+          <div style="overflow-x: auto;">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Member</th>
+                  <th>Role</th>
+                  <th>Status</th>
+                  <th>Age</th>
+                  <th>KYC</th>
+                  <th>Total Contributed</th>
+                  <th>Contribution Count</th>
+                  <th>Risk Score</th>
+                  <th>Joined</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${members.map(m => `
+                  <tr>
+                    <td>
+                      <strong>${escapeHtml(m.display_name)}</strong><br>
+                      <small style="color: #666;">${m.email || 'No email'}</small>
+                    </td>
+                    <td><span class="badge ${m.role === 'founder' ? 'active' : m.role === 'admin' ? 'entrepreneurs' : 'friends'}">${m.role}</span></td>
+                    <td><span class="badge ${m.status}">${m.status}</span></td>
+                    <td>${m.age || '-'}</td>
+                    <td><span class="badge ${m.kyc_status === 'verified' ? 'active' : 'draft'}">${m.kyc_status}</span></td>
+                    <td>$${formatNumber(m.total_contributed || 0)}</td>
+                    <td>${m.contribution_count || 0}</td>
+                    <td>${(m.risk_score || 0).toFixed(1)}</td>
+                    <td>${formatDate(m.joined_at)}</td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          </div>
+        `;
+        
+      } catch (e) {
+        console.error('Error loading members:', e);
+        document.getElementById('members-detailed-content').innerHTML = '<p style="color: red;">Error loading members</p>';
+      }
+    }
+    
+    // ========== Investments Tab ==========
+    async function loadInvestmentsData(id) {
+      try {
+        const token = localStorage.getItem('phins_token');
+        const response = await fetch(`/api/admin/foundations/${id}/investments`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const data = await response.json();
+        
+        // Render summary
+        const summary = data.summary || {};
+        document.getElementById('investment-summary').innerHTML = `
+          <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px;">
+            <div class="stat-card">
+              <div class="stat-card-value">$${formatNumber(summary.total_principal || 0)}</div>
+              <div class="stat-card-label">Total Principal</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-card-value">$${formatNumber(summary.total_current_value || 0)}</div>
+              <div class="stat-card-label">Current Value</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-card-value" style="color: ${(summary.total_returns || 0) >= 0 ? '#4caf50' : '#f44336'};">
+                $${formatNumber(summary.total_returns || 0)}
+              </div>
+              <div class="stat-card-label">Total Returns</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-card-value">${(summary.return_percentage || 0).toFixed(2)}%</div>
+              <div class="stat-card-label">ROI</div>
+            </div>
+          </div>
+        `;
+        
+        // Render investments list
+        const investments = data.investments || [];
+        const container = document.getElementById('investments-content');
+        
+        if (investments.length === 0) {
+          container.innerHTML = '<p style="text-align: center; padding: 40px; color: #666;">No investments yet. Create your first investment!</p>';
+          return;
+        }
+        
+        container.innerHTML = `
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Investment</th>
+                <th>Type</th>
+                <th>Principal</th>
+                <th>Current Value</th>
+                <th>Interest Rate</th>
+                <th>Maturity</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${investments.map(inv => `
+                <tr>
+                  <td>
+                    <strong>${escapeHtml(inv.name)}</strong><br>
+                    <small style="color: #666;">${inv.description || ''}</small>
+                  </td>
+                  <td><span class="badge entrepreneurs">${inv.investment_type}</span></td>
+                  <td>$${formatNumber(inv.principal)}</td>
+                  <td>$${formatNumber(inv.current_value)}</td>
+                  <td>${inv.interest_rate}%</td>
+                  <td>${inv.maturity_date ? formatDate(inv.maturity_date) : 'Open-ended'}</td>
+                  <td><span class="badge ${inv.status === 'active' ? 'active' : 'draft'}">${inv.status}</span></td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        `;
+        
+      } catch (e) {
+        console.error('Error loading investments:', e);
+        document.getElementById('investments-content').innerHTML = '<p style="color: red;">Error loading investments</p>';
+      }
+    }
+    
+    function openCreateInvestmentModal() {
+      document.getElementById('investment-foundation-id').value = currentDashboardFoundation;
+      document.getElementById('investment-modal').classList.add('active');
+    }
+    
+    function closeInvestmentModal() {
+      document.getElementById('investment-modal').classList.remove('active');
+    }
+    
+    async function createInvestment() {
+      const foundationId = document.getElementById('investment-foundation-id').value;
+      const investmentType = document.getElementById('investment-type').value;
+      const name = document.getElementById('investment-name').value;
+      const principal = parseFloat(document.getElementById('investment-principal').value);
+      const rate = parseFloat(document.getElementById('investment-rate').value);
+      const maturity = parseInt(document.getElementById('investment-maturity').value) || null;
+      const description = document.getElementById('investment-description').value;
+      
+      if (!name || !principal || !rate) {
+        showNotification('Please fill in all required fields', 'error');
+        return;
+      }
+      
+      try {
+        const token = localStorage.getItem('phins_token');
+        const response = await fetch(`/api/admin/foundations/${foundationId}/investments`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            investment_type: investmentType,
+            name: name,
+            principal: principal,
+            interest_rate: rate,
+            maturity_days: maturity,
+            description: description
+          })
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+          closeInvestmentModal();
+          loadInvestmentsData(foundationId);
+          showNotification('Investment created successfully', 'success');
+        } else {
+          showNotification(result.error || 'Error creating investment', 'error');
+        }
+      } catch (e) {
+        console.error('Error creating investment:', e);
+        showNotification('Error creating investment', 'error');
+      }
+    }
+    
+    // ========== Billing Tab ==========
+    async function loadBillingData(id) {
+      try {
+        const token = localStorage.getItem('phins_token');
+        const response = await fetch(`/api/admin/foundations/${id}/billing`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const data = await response.json();
+        
+        // Render summary
+        const summary = data.summary || {};
+        document.getElementById('billing-summary').innerHTML = `
+          <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px;">
+            <div class="stat-card">
+              <div class="stat-card-value">$${formatNumber(summary.total_billed || 0)}</div>
+              <div class="stat-card-label">Total Billed</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-card-value" style="color: #4caf50;">$${formatNumber(summary.total_collected || 0)}</div>
+              <div class="stat-card-label">Collected</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-card-value" style="color: #ff9800;">$${formatNumber(summary.outstanding || 0)}</div>
+              <div class="stat-card-label">Outstanding</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-card-value">${(summary.collection_rate || 0).toFixed(1)}%</div>
+              <div class="stat-card-label">Collection Rate</div>
+            </div>
+          </div>
+        `;
+        
+        document.getElementById('billing-content').innerHTML = '<p style="text-align: center; padding: 40px; color: #666;">Use "Generate Monthly Bills" to create billing records for members.</p>';
+        
+      } catch (e) {
+        console.error('Error loading billing:', e);
+        document.getElementById('billing-content').innerHTML = '<p style="color: red;">Error loading billing data</p>';
+      }
+    }
+    
+    async function generateMonthlyBills() {
+      const id = currentDashboardFoundation;
+      if (!id) return;
+      
+      const amount = prompt('Enter monthly contribution amount ($):', '50');
+      if (!amount) return;
+      
+      try {
+        const token = localStorage.getItem('phins_token');
+        const response = await fetch(`/api/admin/foundations/${id}/billing/generate`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ contribution_amount: parseFloat(amount) })
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+          loadBillingData(id);
+          showNotification(`Generated ${result.bills_created} bills`, 'success');
+        } else {
+          showNotification(result.error || 'Error generating bills', 'error');
+        }
+      } catch (e) {
+        console.error('Error generating bills:', e);
+        showNotification('Error generating bills', 'error');
+      }
+    }
+    
+    // ========== Ledger Tab ==========
+    async function loadLedgerData(id) {
+      try {
+        const token = localStorage.getItem('phins_token');
+        const response = await fetch(`/api/admin/foundations/${id}/ledger`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const data = await response.json();
+        
+        const entries = data.entries || [];
+        const container = document.getElementById('ledger-content');
+        
+        if (entries.length === 0) {
+          container.innerHTML = '<p style="text-align: center; padding: 40px; color: #666;">No ledger entries found</p>';
+          return;
+        }
+        
+        container.innerHTML = `
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Entry ID</th>
+                <th>Type</th>
+                <th>Actor</th>
+                <th>Timestamp</th>
+                <th>Hash</th>
+                <th>Verified</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${entries.map(e => `
+                <tr>
+                  <td><small>${e.id}</small></td>
+                  <td><span class="badge entrepreneurs">${formatLedgerType(e.entry_type)}</span></td>
+                  <td>${e.actor_id} (${e.actor_type})</td>
+                  <td>${formatDateTime(e.timestamp)}</td>
+                  <td><small title="${e.entry_hash}">${(e.entry_hash || '').substring(0, 16)}...</small></td>
+                  <td>${e.verified ? '✅' : '⏳'}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        `;
+        
+      } catch (e) {
+        console.error('Error loading ledger:', e);
+        document.getElementById('ledger-content').innerHTML = '<p style="color: red;">Error loading ledger</p>';
+      }
+    }
+    
+    async function verifyLedgerIntegrity() {
+      const id = currentDashboardFoundation;
+      if (!id) return;
+      
+      try {
+        const token = localStorage.getItem('phins_token');
+        const response = await fetch(`/api/admin/foundations/${id}/ledger/verify`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const result = await response.json();
+        
+        const statusDiv = document.getElementById('ledger-integrity-status');
+        
+        if (result.valid) {
+          statusDiv.innerHTML = `
+            <div style="background: #e8f5e9; border: 1px solid #4caf50; border-radius: 8px; padding: 16px;">
+              ✅ <strong>Ledger Integrity Verified</strong><br>
+              <small>All ${result.entries_checked} entries are valid. Chain is intact.</small>
+            </div>
+          `;
+          showNotification('Ledger integrity verified', 'success');
+        } else {
+          statusDiv.innerHTML = `
+            <div style="background: #ffebee; border: 1px solid #f44336; border-radius: 8px; padding: 16px;">
+              ❌ <strong>Integrity Issues Detected</strong><br>
+              <small>Broken links: ${result.broken_links?.length || 0}, Hash mismatches: ${result.hash_mismatches?.length || 0}</small>
+            </div>
+          `;
+          showNotification('Ledger integrity issues detected', 'error');
+        }
+        
+      } catch (e) {
+        console.error('Error verifying ledger:', e);
+        showNotification('Error verifying ledger', 'error');
+      }
+    }
+    
+    // ========== NFTs Tab ==========
+    async function loadNFTsData(id) {
+      try {
+        const token = localStorage.getItem('phins_token');
+        const response = await fetch(`/api/admin/foundations/${id}/nfts`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const data = await response.json();
+        
+        const nfts = data.nfts || [];
+        
+        // Render summary
+        const byType = {};
+        nfts.forEach(n => { byType[n.token_type] = (byType[n.token_type] || 0) + 1; });
+        
+        document.getElementById('nft-summary').innerHTML = `
+          <div style="display: flex; gap: 16px; flex-wrap: wrap;">
+            ${Object.entries(byType).map(([type, count]) => `
+              <div class="stat-card" style="min-width: 150px;">
+                <div style="font-size: 2rem; margin-bottom: 8px;">${getNFTIcon(type)}</div>
+                <div class="stat-card-value">${count}</div>
+                <div class="stat-card-label">${type.charAt(0).toUpperCase() + type.slice(1)}</div>
+              </div>
+            `).join('')}
+          </div>
+        `;
+        
+        const container = document.getElementById('nfts-content');
+        
+        if (nfts.length === 0) {
+          container.innerHTML = '<p style="text-align: center; padding: 40px; color: #666;">No NFT records yet</p>';
+          return;
+        }
+        
+        container.innerHTML = `
+          <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px;">
+            ${nfts.map(n => `
+              <div style="background: white; border-radius: 12px; padding: 16px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+                <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 12px;">
+                  <span style="font-size: 2rem;">${getNFTIcon(n.token_type)}</span>
+                  <div>
+                    <strong>${escapeHtml(n.title)}</strong><br>
+                    <small style="color: #666;">${n.token_type}</small>
+                  </div>
+                </div>
+                <p style="font-size: 0.85rem; color: #666; margin-bottom: 12px;">${escapeHtml(n.description || 'No description')}</p>
+                <div style="font-size: 0.75rem; color: #999;">
+                  Owner: ${n.owner_id}<br>
+                  Minted: ${formatDate(n.minted_at)}<br>
+                  <span title="${n.minting_hash}">Hash: ${(n.minting_hash || '').substring(0, 20)}...</span>
+                </div>
+              </div>
+            `).join('')}
+          </div>
+        `;
+        
+      } catch (e) {
+        console.error('Error loading NFTs:', e);
+        document.getElementById('nfts-content').innerHTML = '<p style="color: red;">Error loading NFTs</p>';
+      }
+    }
+    
+    function getNFTIcon(type) {
+      const icons = { membership: '🎫', contribution: '💎', achievement: '🏆', milestone: '🎯' };
+      return icons[type] || '🎨';
+    }
+    
+    // ========== Risk Tab ==========
+    async function loadRiskData(id) {
+      try {
+        const token = localStorage.getItem('phins_token');
+        const response = await fetch(`/api/admin/foundations/${id}/risk`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const data = await response.json();
+        
+        const container = document.getElementById('risk-content');
+        const assessment = data.assessment;
+        
+        if (!assessment) {
+          container.innerHTML = '<p style="text-align: center; padding: 40px; color: #666;">No risk assessment available. Run an assessment to get started.</p>';
+          return;
+        }
+        
+        container.innerHTML = `
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+            <div class="detail-section">
+              <h4>📊 Risk Scores</h4>
+              ${renderRiskBar('Financial Risk', assessment.financial_risk)}
+              ${renderRiskBar('Operational Risk', assessment.operational_risk)}
+              ${renderRiskBar('Member Risk', assessment.member_risk)}
+              ${renderRiskBar('Compliance Risk', assessment.compliance_risk)}
+              <hr style="margin: 16px 0; border: none; border-top: 2px solid #e0e0e0;">
+              ${renderRiskBar('Overall Risk', assessment.overall_risk)}
+              <div style="text-align: center; margin-top: 16px;">
+                <span class="badge ${getRiskBadgeClass(assessment.risk_level)}" style="font-size: 1.2rem; padding: 8px 16px;">
+                  ${(assessment.risk_level || '').toUpperCase()}
+                </span>
+              </div>
+            </div>
+            
+            <div>
+              <div class="detail-section" style="margin-bottom: 16px;">
+                <h4>✅ Positive Factors</h4>
+                <ul style="margin: 0; padding-left: 20px;">
+                  ${(assessment.positive_factors || []).map(f => `<li style="color: #4caf50; margin-bottom: 4px;">${escapeHtml(f)}</li>`).join('') || '<li style="color: #666;">None identified</li>'}
+                </ul>
+              </div>
+              
+              <div class="detail-section" style="margin-bottom: 16px;">
+                <h4>⚠️ Risk Factors</h4>
+                <ul style="margin: 0; padding-left: 20px;">
+                  ${(assessment.negative_factors || []).map(f => `<li style="color: #f44336; margin-bottom: 4px;">${escapeHtml(f)}</li>`).join('') || '<li style="color: #666;">None identified</li>'}
+                </ul>
+              </div>
+              
+              <div class="detail-section">
+                <h4>💡 Recommendations</h4>
+                <ul style="margin: 0; padding-left: 20px;">
+                  ${(assessment.recommendations || []).map(r => `<li style="color: #2196f3; margin-bottom: 4px;">${escapeHtml(r)}</li>`).join('') || '<li style="color: #666;">No recommendations</li>'}
+                </ul>
+              </div>
+            </div>
+          </div>
+          
+          <div class="detail-section" style="margin-top: 20px;">
+            <h4>🧠 AI Insights</h4>
+            <p style="margin-bottom: 12px;">${escapeHtml(assessment.ai_insights?.summary || 'No AI insights available')}</p>
+            
+            ${(assessment.ai_insights?.predictions || []).length > 0 ? `
+              <h5>Predictions</h5>
+              ${assessment.ai_insights.predictions.map(p => `
+                <div style="background: #f5f5f5; padding: 12px; border-radius: 8px; margin-bottom: 8px;">
+                  <strong>${p.metric}</strong>: ${p.prediction}<br>
+                  <small style="color: #666;">Confidence: ${(p.confidence * 100).toFixed(0)}%</small>
+                </div>
+              `).join('')}
+            ` : ''}
+            
+            ${(assessment.ai_insights?.opportunities || []).length > 0 ? `
+              <h5>Opportunities</h5>
+              <ul style="margin: 0; padding-left: 20px;">
+                ${assessment.ai_insights.opportunities.map(o => `<li style="color: #9c27b0;">${escapeHtml(o)}</li>`).join('')}
+              </ul>
+            ` : ''}
+          </div>
+          
+          <div style="margin-top: 16px; font-size: 0.8rem; color: #666;">
+            Assessment ID: ${assessment.id}<br>
+            Generated: ${formatDateTime(assessment.created_at)}<br>
+            Valid Until: ${formatDateTime(assessment.valid_until)}
+          </div>
+        `;
+        
+      } catch (e) {
+        console.error('Error loading risk data:', e);
+        document.getElementById('risk-content').innerHTML = '<p style="color: red;">Error loading risk assessment</p>';
+      }
+    }
+    
+    function renderRiskBar(label, score) {
+      const color = score < 40 ? '#4caf50' : score < 60 ? '#ff9800' : '#f44336';
+      return `
+        <div style="margin-bottom: 12px;">
+          <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+            <span>${label}</span>
+            <span style="font-weight: 600;">${score.toFixed(1)}</span>
+          </div>
+          <div style="background: #e0e0e0; border-radius: 4px; height: 8px;">
+            <div style="background: ${color}; width: ${score}%; height: 100%; border-radius: 4px;"></div>
+          </div>
+        </div>
+      `;
+    }
+    
+    async function runRiskAssessment() {
+      const id = currentDashboardFoundation;
+      if (!id) return;
+      
+      try {
+        const token = localStorage.getItem('phins_token');
+        const response = await fetch(`/api/admin/foundations/${id}/risk/assess`, {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const result = await response.json();
+        
+        if (result.success) {
+          loadRiskData(id);
+          showNotification('Risk assessment completed', 'success');
+        } else {
+          showNotification(result.error || 'Error running assessment', 'error');
+        }
+      } catch (e) {
+        console.error('Error running assessment:', e);
+        showNotification('Error running risk assessment', 'error');
+      }
+    }
+    
+    // ========== BI Analytics Tab ==========
+    async function loadBIData(id) {
+      try {
+        const token = localStorage.getItem('phins_token');
+        const response = await fetch(`/api/admin/foundations/${id}/bi`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const data = await response.json();
+        
+        const container = document.getElementById('bi-content');
+        const reports = data.reports || [];
+        
+        if (reports.length === 0) {
+          container.innerHTML = '<p style="text-align: center; padding: 40px; color: #666;">No BI reports available. Generate a report to get started.</p>';
+          return;
+        }
+        
+        const latestReport = reports[0];
+        const metrics = latestReport.metrics || {};
+        
+        container.innerHTML = `
+          <div class="detail-section" style="margin-bottom: 20px;">
+            <h4>📊 Latest Report: ${latestReport.report_type.toUpperCase()}</h4>
+            <small style="color: #666;">Period: ${formatDate(latestReport.period_start)} - ${formatDate(latestReport.period_end)}</small>
+          </div>
+          
+          <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; margin-bottom: 20px;">
+            <div class="detail-section">
+              <h5>👥 Members</h5>
+              <div class="detail-row">
+                <span>Total</span>
+                <span class="detail-value">${metrics.members?.total || 0}</span>
+              </div>
+              <div class="detail-row">
+                <span>Active</span>
+                <span class="detail-value">${metrics.members?.active || 0}</span>
+              </div>
+              <div class="detail-row">
+                <span>New This Period</span>
+                <span class="detail-value">${metrics.members?.new_this_period || 0}</span>
+              </div>
+            </div>
+            
+            <div class="detail-section">
+              <h5>💰 Financial</h5>
+              <div class="detail-row">
+                <span>Total Balance</span>
+                <span class="detail-value">$${formatNumber(metrics.financial?.total_balance || 0)}</span>
+              </div>
+              <div class="detail-row">
+                <span>Operating</span>
+                <span class="detail-value">$${formatNumber(metrics.financial?.operating_balance || 0)}</span>
+              </div>
+              <div class="detail-row">
+                <span>Reserves</span>
+                <span class="detail-value">$${formatNumber(metrics.financial?.reserve_balance || 0)}</span>
+              </div>
+            </div>
+            
+            <div class="detail-section">
+              <h5>📈 Contributions</h5>
+              <div class="detail-row">
+                <span>This Period</span>
+                <span class="detail-value">$${formatNumber(metrics.contributions?.total_this_period || 0)}</span>
+              </div>
+              <div class="detail-row">
+                <span>Count</span>
+                <span class="detail-value">${metrics.contributions?.contribution_count || 0}</span>
+              </div>
+            </div>
+          </div>
+          
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+            <div class="detail-section">
+              <h5>💡 Insights</h5>
+              <ul style="margin: 0; padding-left: 20px;">
+                ${(latestReport.insights || []).map(i => `<li style="color: #2196f3; margin-bottom: 8px;">${escapeHtml(i)}</li>`).join('') || '<li style="color: #666;">No insights</li>'}
+              </ul>
+            </div>
+            
+            <div class="detail-section">
+              <h5>🚨 Alerts</h5>
+              <ul style="margin: 0; padding-left: 20px;">
+                ${(latestReport.alerts || []).map(a => `<li style="color: #f44336; margin-bottom: 8px;">${escapeHtml(a)}</li>`).join('') || '<li style="color: #666;">No alerts</li>'}
+              </ul>
+            </div>
+          </div>
+          
+          <div style="margin-top: 16px; font-size: 0.8rem; color: #666;">
+            Report ID: ${latestReport.id}<br>
+            Generated: ${formatDateTime(latestReport.generated_at)}
+          </div>
+        `;
+        
+      } catch (e) {
+        console.error('Error loading BI data:', e);
+        document.getElementById('bi-content').innerHTML = '<p style="color: red;">Error loading BI analytics</p>';
+      }
+    }
+    
+    async function generateBIReport() {
+      const id = currentDashboardFoundation;
+      if (!id) return;
+      
+      try {
+        const token = localStorage.getItem('phins_token');
+        const response = await fetch(`/api/admin/foundations/${id}/bi/generate`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ report_type: 'monthly' })
+        });
+        const result = await response.json();
+        
+        if (result.success) {
+          loadBIData(id);
+          showNotification('BI report generated', 'success');
+        } else {
+          showNotification(result.error || 'Error generating report', 'error');
+        }
+      } catch (e) {
+        console.error('Error generating BI report:', e);
+        showNotification('Error generating BI report', 'error');
+      }
+    }
+    
+    // Add Advanced Dashboard button to table actions
+    function renderFoundationsTable() {
+      const tbody = document.getElementById('foundations-table-body');
+      
+      if (filteredFoundations.length === 0) {
+        tbody.innerHTML = `
+          <tr><td colspan="8" style="text-align: center; padding: 40px; color: #666;">
+            No foundations found
+          </td></tr>
+        `;
+        return;
+      }
+      
+      tbody.innerHTML = filteredFoundations.map(f => `
+        <tr>
+          <td>
+            <strong>${escapeHtml(f.name)}</strong><br>
+            <small style="color: #666;">ID: ${f.id}</small>
+          </td>
+          <td>
+            <span class="badge ${f.foundation_type}">${getTypeIcon(f.foundation_type)} ${f.foundation_type}</span>
+          </td>
+          <td>
+            <span class="badge ${f.status}">${f.status}</span>
+          </td>
+          <td>
+            <span class="badge stage-${f.pipeline_stage || 'created'}">${getPipelineIcon(f.pipeline_stage)} ${f.pipeline_stage || 'created'}</span>
+          </td>
+          <td>${f.current_members}${f.max_members > 0 && f.max_members < 999999 ? '/' + f.max_members : ''}</td>
+          <td>$${formatNumber(f.total_fund_balance || 0)}</td>
+          <td>${formatDate(f.created_at)}</td>
+          <td style="white-space: nowrap;">
+            <button class="actions-btn" onclick="viewFoundation('${f.id}')" title="View Details">👁️</button>
+            <button class="actions-btn" onclick="openAdvancedDashboard('${f.id}')" title="Advanced Dashboard" style="color: #9c27b0;">📊</button>
+            <button class="actions-btn" onclick="viewMembers('${f.id}')" title="View Members">👥</button>
+            <button class="actions-btn" onclick="viewActivity('${f.id}')" title="View Activity">📈</button>
+            <button class="actions-btn" onclick="openPipelineModal('${f.id}')" title="Process Pipeline">🔄</button>
+            ${f.status !== 'active' && f.status !== 'dissolved' ? `<button class="actions-btn" style="color: #4caf50;" onclick="activateFoundation('${f.id}')" title="Activate">✅</button>` : ''}
+            ${f.status === 'draft' || f.status === 'pending_review' ? `<button class="actions-btn" style="color: #f44336;" onclick="openRejectModal('${f.id}')" title="Reject">❌</button>` : ''}
+            ${f.status === 'active' ? `<button class="actions-btn" style="color: #ff9800;" onclick="suspendFoundation('${f.id}')" title="Suspend">⏸️</button>` : ''}
+          </td>
+        </tr>
+      `).join('');
     }
   </script>
 </body>
