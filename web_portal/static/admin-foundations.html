@@ -213,6 +213,18 @@
     .badge.neighborhood { background: #fff3e0; color: #e65100; }
     .badge.entrepreneurs { background: #ede7f6; color: #5e35b1; }
     .badge.professional { background: #e0f2f1; color: #00695c; }
+    .badge.rejected { background: #ffebee; color: #c62828; }
+    .badge.pending_review { background: #fff8e1; color: #f57f17; }
+    
+    /* Pipeline Stage Badges */
+    .badge.stage-created { background: #e3f2fd; color: #1565c0; }
+    .badge.stage-pending_activation { background: #fff8e1; color: #f57f17; }
+    .badge.stage-in_review { background: #fff3e0; color: #e65100; }
+    .badge.stage-approved { background: #e8f5e9; color: #2e7d32; }
+    .badge.stage-active { background: #e8f5e9; color: #2e7d32; }
+    .badge.stage-rejected { background: #ffebee; color: #c62828; }
+    .badge.stage-suspended { background: #fce4ec; color: #c2185b; }
+    .badge.stage-dissolved { background: #efebe9; color: #5d4037; }
     
     /* Actions */
     .actions-btn {
@@ -228,6 +240,259 @@
     .actions-btn:hover {
       background: #f5f5f5;
       color: #333;
+    }
+    
+    .action-btn {
+      padding: 8px 14px;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 0.85rem;
+      font-weight: 500;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.2s;
+    }
+    
+    .action-btn.primary { background: #1a237e; color: white; }
+    .action-btn.primary:hover { background: #0d1642; }
+    .action-btn.success { background: #4caf50; color: white; }
+    .action-btn.success:hover { background: #388e3c; }
+    .action-btn.danger { background: #f44336; color: white; }
+    .action-btn.danger:hover { background: #d32f2f; }
+    .action-btn.warning { background: #ff9800; color: white; }
+    .action-btn.warning:hover { background: #f57c00; }
+    .action-btn.info { background: #2196f3; color: white; }
+    .action-btn.info:hover { background: #1976d2; }
+    .action-btn.purple { background: #9c27b0; color: white; }
+    .action-btn.purple:hover { background: #7b1fa2; }
+    
+    /* Member Card */
+    .member-card {
+      background: #f8f9fa;
+      border-radius: 12px;
+      padding: 16px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      margin-bottom: 12px;
+      transition: all 0.2s;
+    }
+    
+    .member-card:hover {
+      background: #f0f0f0;
+    }
+    
+    .member-photo {
+      width: 64px;
+      height: 64px;
+      border-radius: 50%;
+      background: #e0e0e0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.5rem;
+      overflow: hidden;
+      position: relative;
+    }
+    
+    .member-photo img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+    
+    .member-photo-overlay {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      background: rgba(0,0,0,0.6);
+      color: white;
+      font-size: 0.65rem;
+      text-align: center;
+      padding: 2px;
+      cursor: pointer;
+      opacity: 0;
+      transition: opacity 0.2s;
+    }
+    
+    .member-photo:hover .member-photo-overlay {
+      opacity: 1;
+    }
+    
+    .member-info {
+      flex: 1;
+    }
+    
+    .member-name {
+      font-weight: 600;
+      color: #333;
+      font-size: 1rem;
+    }
+    
+    .member-role {
+      font-size: 0.8rem;
+      color: #666;
+      text-transform: capitalize;
+    }
+    
+    .member-stats {
+      text-align: right;
+    }
+    
+    .member-contribution {
+      font-weight: 600;
+      color: #2e7d32;
+    }
+    
+    .member-joined {
+      font-size: 0.8rem;
+      color: #666;
+    }
+    
+    /* Activity Log */
+    .activity-item {
+      padding: 12px 16px;
+      border-bottom: 1px solid #eee;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    
+    .activity-item:last-child {
+      border-bottom: none;
+    }
+    
+    .activity-icon {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      background: #e3f2fd;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1rem;
+    }
+    
+    .activity-content {
+      flex: 1;
+    }
+    
+    .activity-text {
+      color: #333;
+      font-size: 0.9rem;
+    }
+    
+    .activity-time {
+      font-size: 0.8rem;
+      color: #666;
+    }
+    
+    /* Pipeline Workflow */
+    .pipeline-stages {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 20px 0;
+      position: relative;
+    }
+    
+    .pipeline-stages::before {
+      content: '';
+      position: absolute;
+      top: 50%;
+      left: 0;
+      right: 0;
+      height: 3px;
+      background: #e0e0e0;
+      z-index: 0;
+    }
+    
+    .pipeline-stage-item {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      z-index: 1;
+      background: white;
+      padding: 0 8px;
+    }
+    
+    .pipeline-stage-dot {
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      background: #e0e0e0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.7rem;
+      color: white;
+      margin-bottom: 4px;
+    }
+    
+    .pipeline-stage-dot.completed {
+      background: #4caf50;
+    }
+    
+    .pipeline-stage-dot.current {
+      background: #2196f3;
+      animation: pulse 1.5s infinite;
+    }
+    
+    .pipeline-stage-dot.rejected {
+      background: #f44336;
+    }
+    
+    @keyframes pulse {
+      0%, 100% { transform: scale(1); }
+      50% { transform: scale(1.1); }
+    }
+    
+    .pipeline-stage-label {
+      font-size: 0.7rem;
+      color: #666;
+      text-align: center;
+    }
+    
+    /* Photo Upload Modal */
+    .photo-upload-area {
+      border: 2px dashed #ddd;
+      border-radius: 12px;
+      padding: 30px;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    
+    .photo-upload-area:hover {
+      border-color: #1a237e;
+      background: #f8f9ff;
+    }
+    
+    .photo-upload-area.dragging {
+      border-color: #4caf50;
+      background: #e8f5e9;
+    }
+    
+    .photo-preview {
+      width: 120px;
+      height: 120px;
+      border-radius: 50%;
+      margin: 0 auto 16px;
+      background: #e0e0e0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 3rem;
+      overflow: hidden;
+    }
+    
+    .photo-preview img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
     }
     
     /* Filter Bar */
@@ -456,7 +721,9 @@
               <option value="">All Status</option>
               <option value="active">Active</option>
               <option value="draft">Draft</option>
+              <option value="pending_review">Pending Review</option>
               <option value="suspended">Suspended</option>
+              <option value="rejected">Rejected</option>
               <option value="dissolved">Dissolved</option>
             </select>
             <select class="filter-select" id="type-filter" onchange="filterFoundations()">
@@ -477,6 +744,7 @@
                 <th>Foundation</th>
                 <th>Type</th>
                 <th>Status</th>
+                <th>Pipeline</th>
                 <th>Members</th>
                 <th>Balance</th>
                 <th>Created</th>
@@ -485,7 +753,7 @@
             </thead>
             <tbody id="foundations-table-body">
               <tr>
-                <td colspan="7" style="text-align: center; padding: 40px;">Loading...</td>
+                <td colspan="8" style="text-align: center; padding: 40px;">Loading...</td>
               </tr>
             </tbody>
           </table>
@@ -527,6 +795,134 @@
       </div>
       <div class="modal-body" id="modal-body">
         <!-- Details loaded dynamically -->
+      </div>
+    </div>
+  </div>
+  
+  <!-- Members Modal -->
+  <div class="modal-overlay" id="members-modal">
+    <div class="modal" style="max-width: 900px;">
+      <div class="modal-header">
+        <h2>👥 <span id="members-modal-title">Foundation Members</span></h2>
+        <button class="modal-close" onclick="closeMembersModal()">&times;</button>
+      </div>
+      <div class="modal-body" id="members-modal-body">
+        <div id="members-list">
+          <p style="text-align: center; padding: 40px; color: #666;">Loading members...</p>
+        </div>
+      </div>
+    </div>
+  </div>
+  
+  <!-- Activity Modal -->
+  <div class="modal-overlay" id="activity-modal">
+    <div class="modal" style="max-width: 800px;">
+      <div class="modal-header">
+        <h2>📊 <span id="activity-modal-title">Foundation Activity</span></h2>
+        <button class="modal-close" onclick="closeActivityModal()">&times;</button>
+      </div>
+      <div class="modal-body" id="activity-modal-body">
+        <div id="activity-list">
+          <p style="text-align: center; padding: 40px; color: #666;">Loading activity...</p>
+        </div>
+      </div>
+    </div>
+  </div>
+  
+  <!-- Photo Upload Modal -->
+  <div class="modal-overlay" id="photo-modal">
+    <div class="modal" style="max-width: 500px;">
+      <div class="modal-header">
+        <h2>📷 Update Member Photo</h2>
+        <button class="modal-close" onclick="closePhotoModal()">&times;</button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="photo-member-id" />
+        <input type="hidden" id="photo-foundation-id" />
+        
+        <div class="photo-preview" id="photo-preview">
+          👤
+        </div>
+        
+        <div class="photo-upload-area" id="photo-upload-area" onclick="document.getElementById('photo-file-input').click()">
+          <p style="margin: 0; color: #666;">📁 Click to select photo or drag & drop</p>
+          <p style="margin: 8px 0 0; font-size: 0.8rem; color: #999;">Supported: JPG, PNG, GIF (Max 2MB)</p>
+        </div>
+        <input type="file" id="photo-file-input" accept="image/*" style="display: none;" onchange="handlePhotoSelect(event)" />
+        
+        <div style="margin-top: 16px;">
+          <label style="display: block; margin-bottom: 8px; font-weight: 500;">Or enter image URL:</label>
+          <input type="text" id="photo-url-input" class="filter-input" style="width: 100%;" placeholder="https://example.com/photo.jpg" />
+        </div>
+        
+        <div style="display: flex; gap: 12px; margin-top: 20px; justify-content: flex-end;">
+          <button class="action-btn" style="background: #e0e0e0; color: #333;" onclick="closePhotoModal()">Cancel</button>
+          <button class="action-btn success" onclick="savePhotoUrl()">💾 Save Photo</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  
+  <!-- Reject Modal -->
+  <div class="modal-overlay" id="reject-modal">
+    <div class="modal" style="max-width: 500px;">
+      <div class="modal-header">
+        <h2>❌ Reject Foundation</h2>
+        <button class="modal-close" onclick="closeRejectModal()">&times;</button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="reject-foundation-id" />
+        <p style="color: #666; margin-bottom: 16px;">Please provide a reason for rejecting this community foundation:</p>
+        <textarea id="reject-reason" class="filter-input" style="width: 100%; height: 100px; resize: vertical;" placeholder="Enter rejection reason..."></textarea>
+        <div style="display: flex; gap: 12px; margin-top: 20px; justify-content: flex-end;">
+          <button class="action-btn" style="background: #e0e0e0; color: #333;" onclick="closeRejectModal()">Cancel</button>
+          <button class="action-btn danger" onclick="confirmReject()">❌ Reject Foundation</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  
+  <!-- Pipeline Modal -->
+  <div class="modal-overlay" id="pipeline-modal">
+    <div class="modal" style="max-width: 700px;">
+      <div class="modal-header">
+        <h2>🔄 <span id="pipeline-modal-title">Process Pipeline</span></h2>
+        <button class="modal-close" onclick="closePipelineModal()">&times;</button>
+      </div>
+      <div class="modal-body" id="pipeline-modal-body">
+        <input type="hidden" id="pipeline-foundation-id" />
+        
+        <!-- Pipeline Visualization -->
+        <div id="pipeline-visualization" style="margin-bottom: 24px;">
+          <!-- Will be populated dynamically -->
+        </div>
+        
+        <!-- Pipeline Actions -->
+        <div class="detail-section">
+          <h4>Transition to Stage</h4>
+          <div style="display: flex; gap: 12px; flex-wrap: wrap; margin-top: 12px;">
+            <button class="action-btn info" onclick="transitionPipeline('pending_activation')">📋 Pending Activation</button>
+            <button class="action-btn warning" onclick="transitionPipeline('in_review')">🔍 In Review</button>
+            <button class="action-btn success" onclick="transitionPipeline('approved')">✅ Approved</button>
+            <button class="action-btn success" onclick="transitionPipeline('active')">🚀 Active</button>
+            <button class="action-btn danger" onclick="transitionPipeline('suspended')">⏸️ Suspended</button>
+            <button class="action-btn danger" onclick="transitionPipeline('rejected')">❌ Rejected</button>
+          </div>
+        </div>
+        
+        <!-- Pipeline History -->
+        <div class="detail-section" style="margin-top: 20px;">
+          <h4>Pipeline History</h4>
+          <div id="pipeline-history" style="max-height: 200px; overflow-y: auto;">
+            <!-- Will be populated dynamically -->
+          </div>
+        </div>
+        
+        <!-- Notes for transition -->
+        <div style="margin-top: 20px;">
+          <label style="display: block; margin-bottom: 8px; font-weight: 500;">Notes (optional):</label>
+          <textarea id="pipeline-notes" class="filter-input" style="width: 100%; height: 80px; resize: vertical;" placeholder="Add notes for this transition..."></textarea>
+        </div>
       </div>
     </div>
   </div>
@@ -585,7 +981,7 @@
       } catch (e) {
         console.error('Error loading foundations:', e);
         document.getElementById('foundations-table-body').innerHTML = `
-          <tr><td colspan="7" style="text-align: center; padding: 40px; color: #f44336;">
+          <tr><td colspan="8" style="text-align: center; padding: 40px; color: #f44336;">
             Error loading foundations
           </td></tr>
         `;
@@ -598,7 +994,7 @@
       
       if (filteredFoundations.length === 0) {
         tbody.innerHTML = `
-          <tr><td colspan="7" style="text-align: center; padding: 40px; color: #666;">
+          <tr><td colspan="8" style="text-align: center; padding: 40px; color: #666;">
             No foundations found
           </td></tr>
         `;
@@ -617,15 +1013,37 @@
           <td>
             <span class="badge ${f.status}">${f.status}</span>
           </td>
-          <td>${f.current_members}${f.max_members > 0 ? '/' + f.max_members : ''}</td>
+          <td>
+            <span class="badge stage-${f.pipeline_stage || 'created'}">${getPipelineIcon(f.pipeline_stage)} ${f.pipeline_stage || 'created'}</span>
+          </td>
+          <td>${f.current_members}${f.max_members > 0 && f.max_members < 999999 ? '/' + f.max_members : ''}</td>
           <td>$${formatNumber(f.total_fund_balance || 0)}</td>
           <td>${formatDate(f.created_at)}</td>
-          <td>
+          <td style="white-space: nowrap;">
             <button class="actions-btn" onclick="viewFoundation('${f.id}')" title="View Details">👁️</button>
-            <button class="actions-btn" onclick="suspendFoundation('${f.id}')" title="Suspend">⏸️</button>
+            <button class="actions-btn" onclick="viewMembers('${f.id}')" title="View Members">👥</button>
+            <button class="actions-btn" onclick="viewActivity('${f.id}')" title="View Activity">📊</button>
+            <button class="actions-btn" onclick="openPipelineModal('${f.id}')" title="Process Pipeline">🔄</button>
+            ${f.status !== 'active' && f.status !== 'dissolved' ? `<button class="actions-btn" style="color: #4caf50;" onclick="activateFoundation('${f.id}')" title="Activate">✅</button>` : ''}
+            ${f.status === 'draft' || f.status === 'pending_review' ? `<button class="actions-btn" style="color: #f44336;" onclick="openRejectModal('${f.id}')" title="Reject">❌</button>` : ''}
+            ${f.status === 'active' ? `<button class="actions-btn" style="color: #ff9800;" onclick="suspendFoundation('${f.id}')" title="Suspend">⏸️</button>` : ''}
           </td>
         </tr>
       `).join('');
+    }
+    
+    function getPipelineIcon(stage) {
+      const icons = {
+        created: '📝',
+        pending_activation: '⏳',
+        in_review: '🔍',
+        approved: '✅',
+        active: '🟢',
+        suspended: '⏸️',
+        rejected: '❌',
+        dissolved: '💀'
+      };
+      return icons[stage] || '📝';
     }
     
     // Filter foundations
@@ -709,6 +1127,10 @@
                   <span class="detail-value"><span class="badge ${data.status}">${data.status}</span></span>
                 </div>
                 <div class="detail-row">
+                  <span class="detail-label">Pipeline Stage</span>
+                  <span class="detail-value"><span class="badge stage-${data.pipeline_stage || 'created'}">${getPipelineIcon(data.pipeline_stage)} ${data.pipeline_stage || 'created'}</span></span>
+                </div>
+                <div class="detail-row">
                   <span class="detail-label">Created</span>
                   <span class="detail-value">${formatDateTime(data.created_at)}</span>
                 </div>
@@ -720,6 +1142,22 @@
                   <span class="detail-label">Founder ID</span>
                   <span class="detail-value">${data.founder_id}</span>
                 </div>
+                ${data.activated_at ? `
+                <div class="detail-row">
+                  <span class="detail-label">Activated</span>
+                  <span class="detail-value">${formatDateTime(data.activated_at)}</span>
+                </div>
+                ` : ''}
+                ${data.rejected_at ? `
+                <div class="detail-row">
+                  <span class="detail-label">Rejected</span>
+                  <span class="detail-value">${formatDateTime(data.rejected_at)}</span>
+                </div>
+                <div class="detail-row">
+                  <span class="detail-label">Rejection Reason</span>
+                  <span class="detail-value" style="color: #c62828;">${escapeHtml(data.rejection_reason || 'Not specified')}</span>
+                </div>
+                ` : ''}
               </div>
               
               <div class="detail-section">
@@ -730,7 +1168,7 @@
                 </div>
                 <div class="detail-row">
                   <span class="detail-label">Max Members</span>
-                  <span class="detail-value">${data.is_unlimited ? 'Unlimited' : data.max_members}</span>
+                  <span class="detail-value">${data.is_unlimited || data.max_members >= 999999 ? 'Unlimited' : data.max_members}</span>
                 </div>
               </div>
               
@@ -753,12 +1191,18 @@
               <div class="detail-section">
                 <h4>Admin Actions</h4>
                 <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px;">
-                  ${data.status === 'active' ? 
-                    `<button onclick="suspendFoundation('${data.id}')" style="padding: 8px 16px; background: #ff9800; color: white; border: none; border-radius: 6px; cursor: pointer;">Suspend</button>` :
-                    `<button onclick="activateFoundation('${data.id}')" style="padding: 8px 16px; background: #4caf50; color: white; border: none; border-radius: 6px; cursor: pointer;">Activate</button>`
+                  ${data.status !== 'active' && data.status !== 'dissolved' ? 
+                    `<button class="action-btn success" onclick="activateFoundation('${data.id}'); closeDetailModal();">✅ Activate</button>` : ''
                   }
-                  <button onclick="viewMembers('${data.id}')" style="padding: 8px 16px; background: #2196f3; color: white; border: none; border-radius: 6px; cursor: pointer;">View Members</button>
-                  <button onclick="viewActivity('${data.id}')" style="padding: 8px 16px; background: #9c27b0; color: white; border: none; border-radius: 6px; cursor: pointer;">View Activity</button>
+                  ${data.status === 'active' ? 
+                    `<button class="action-btn warning" onclick="suspendFoundation('${data.id}'); closeDetailModal();">⏸️ Suspend</button>` : ''
+                  }
+                  ${data.status === 'draft' || data.status === 'pending_review' ? 
+                    `<button class="action-btn danger" onclick="openRejectModal('${data.id}'); closeDetailModal();">❌ Reject</button>` : ''
+                  }
+                  <button class="action-btn info" onclick="viewMembers('${data.id}'); closeDetailModal();">👥 View Members</button>
+                  <button class="action-btn purple" onclick="viewActivity('${data.id}'); closeDetailModal();">📊 View Activity</button>
+                  <button class="action-btn primary" onclick="openPipelineModal('${data.id}'); closeDetailModal();">🔄 Process Pipeline</button>
                 </div>
               </div>
             </div>
@@ -789,44 +1233,507 @@
       
       try {
         const token = localStorage.getItem('phins_token');
-        await fetch(`/api/admin/foundations/${id}/suspend`, {
+        const response = await fetch(`/api/admin/foundations/${id}/suspend`, {
           method: 'POST',
-          headers: { 'Authorization': `Bearer ${token}` }
+          headers: { 
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          }
         });
+        const result = await response.json();
         
-        await loadFoundations();
-        closeDetailModal();
-        alert('Foundation suspended');
+        if (result.success) {
+          await loadFoundations();
+          await loadStats();
+          closeDetailModal();
+          showNotification('Foundation suspended successfully', 'warning');
+        } else {
+          showNotification(result.error || 'Error suspending foundation', 'error');
+        }
       } catch (e) {
         console.error('Error suspending foundation:', e);
-        alert('Error suspending foundation');
+        showNotification('Error suspending foundation', 'error');
       }
     }
     
     async function activateFoundation(id) {
+      if (!confirm('Are you sure you want to activate this foundation? This will add it to the active pipeline.')) return;
+      
       try {
         const token = localStorage.getItem('phins_token');
-        await fetch(`/api/admin/foundations/${id}/activate`, {
+        const response = await fetch(`/api/admin/foundations/${id}/activate`, {
           method: 'POST',
-          headers: { 'Authorization': `Bearer ${token}` }
+          headers: { 
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          }
         });
+        const result = await response.json();
         
-        await loadFoundations();
-        closeDetailModal();
-        alert('Foundation activated');
+        if (result.success) {
+          await loadFoundations();
+          await loadStats();
+          closeDetailModal();
+          showNotification('Foundation activated and added to pipeline', 'success');
+        } else {
+          showNotification(result.error || 'Error activating foundation', 'error');
+        }
       } catch (e) {
         console.error('Error activating foundation:', e);
-        alert('Error activating foundation');
+        showNotification('Error activating foundation', 'error');
       }
     }
     
-    function viewMembers(id) {
-      alert('Members view: Coming soon');
+    // ========== Members Modal ==========
+    let currentMembersFoundationId = null;
+    
+    async function viewMembers(id) {
+      currentMembersFoundationId = id;
+      document.getElementById('members-modal').classList.add('active');
+      
+      try {
+        const token = localStorage.getItem('phins_token');
+        const response = await fetch(`/api/admin/foundations/${id}/members`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const data = await response.json();
+        
+        document.getElementById('members-modal-title').textContent = `${data.foundation_name || 'Foundation'} Members`;
+        
+        if (!data.items || data.items.length === 0) {
+          document.getElementById('members-list').innerHTML = `
+            <p style="text-align: center; padding: 40px; color: #666;">No members found</p>
+          `;
+          return;
+        }
+        
+        document.getElementById('members-list').innerHTML = data.items.map(member => `
+          <div class="member-card">
+            <div class="member-photo" onclick="openPhotoModal('${id}', '${member.id}', '${escapeHtml(member.photo_url || '')}')">
+              ${member.photo_url ? 
+                `<img src="${escapeHtml(member.photo_url)}" alt="${escapeHtml(member.display_name)}" onerror="this.parentElement.innerHTML='👤'"/>` : 
+                '👤'
+              }
+              <div class="member-photo-overlay">📷 Add Photo</div>
+            </div>
+            <div class="member-info">
+              <div class="member-name">${escapeHtml(member.display_name || 'Unknown')}</div>
+              <div class="member-role">
+                <span class="badge ${member.role === 'founder' ? 'active' : member.role === 'admin' ? 'entrepreneurs' : 'friends'}">${member.role}</span>
+                <span class="badge ${member.status}">${member.status}</span>
+              </div>
+              ${member.email ? `<div style="font-size: 0.8rem; color: #666; margin-top: 4px;">📧 ${escapeHtml(member.email)}</div>` : ''}
+              ${member.phone ? `<div style="font-size: 0.8rem; color: #666;">📞 ${escapeHtml(member.phone)}</div>` : ''}
+            </div>
+            <div class="member-stats">
+              <div class="member-contribution">$${formatNumber(member.total_contributed || 0)}</div>
+              <div class="member-joined">Joined ${formatDate(member.joined_at)}</div>
+            </div>
+          </div>
+        `).join('');
+        
+      } catch (e) {
+        console.error('Error loading members:', e);
+        document.getElementById('members-list').innerHTML = `
+          <p style="text-align: center; padding: 40px; color: #f44336;">Error loading members</p>
+        `;
+      }
     }
     
-    function viewActivity(id) {
-      alert('Activity view: Coming soon');
+    function closeMembersModal() {
+      document.getElementById('members-modal').classList.remove('active');
+      currentMembersFoundationId = null;
     }
+    
+    // ========== Activity Modal ==========
+    async function viewActivity(id) {
+      document.getElementById('activity-modal').classList.add('active');
+      
+      try {
+        const token = localStorage.getItem('phins_token');
+        const response = await fetch(`/api/admin/foundations/${id}/activities`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const data = await response.json();
+        
+        document.getElementById('activity-modal-title').textContent = `${data.foundation_name || 'Foundation'} Activity`;
+        
+        if (!data.items || data.items.length === 0) {
+          document.getElementById('activity-list').innerHTML = `
+            <p style="text-align: center; padding: 40px; color: #666;">No activity found</p>
+          `;
+          return;
+        }
+        
+        document.getElementById('activity-list').innerHTML = data.items.map(activity => `
+          <div class="activity-item">
+            <div class="activity-icon">${getActivityIcon(activity.activity_type)}</div>
+            <div class="activity-content">
+              <div class="activity-text">${getActivityLabel(activity.activity_type)}</div>
+              <div class="activity-time">
+                ${formatDateTime(activity.timestamp)} • Actor: ${activity.actor_id}
+                ${activity.details && Object.keys(activity.details).length > 0 ? 
+                  `<br><small style="color: #999;">${JSON.stringify(activity.details)}</small>` : ''
+                }
+              </div>
+            </div>
+          </div>
+        `).join('');
+        
+      } catch (e) {
+        console.error('Error loading activity:', e);
+        document.getElementById('activity-list').innerHTML = `
+          <p style="text-align: center; padding: 40px; color: #f44336;">Error loading activity</p>
+        `;
+      }
+    }
+    
+    function closeActivityModal() {
+      document.getElementById('activity-modal').classList.remove('active');
+    }
+    
+    function getActivityIcon(type) {
+      const icons = {
+        foundation_created: '🏛️',
+        foundation_activated: '✅',
+        foundation_rejected: '❌',
+        foundation_dissolved: '⛔',
+        pipeline_processed: '🔄',
+        member_joined: '👤',
+        member_left: '👋',
+        member_approved: '✅',
+        member_photo_updated: '📷',
+        member_details_updated: '✏️',
+        contribution_made: '💰',
+        claim_submitted: '📝',
+        claim_approved: '✅',
+        vote_created: '🗳️',
+        vote_cast: '✔️',
+        invitation_created: '📨'
+      };
+      return icons[type] || '📝';
+    }
+    
+    // ========== Photo Modal ==========
+    function openPhotoModal(foundationId, memberId, currentPhotoUrl) {
+      document.getElementById('photo-foundation-id').value = foundationId;
+      document.getElementById('photo-member-id').value = memberId;
+      document.getElementById('photo-url-input').value = currentPhotoUrl || '';
+      
+      if (currentPhotoUrl) {
+        document.getElementById('photo-preview').innerHTML = `<img src="${escapeHtml(currentPhotoUrl)}" alt="Current Photo" onerror="this.parentElement.innerHTML='👤'"/>`;
+      } else {
+        document.getElementById('photo-preview').innerHTML = '👤';
+      }
+      
+      document.getElementById('photo-modal').classList.add('active');
+    }
+    
+    function closePhotoModal() {
+      document.getElementById('photo-modal').classList.remove('active');
+    }
+    
+    function handlePhotoSelect(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+      
+      if (file.size > 2 * 1024 * 1024) {
+        showNotification('File size must be less than 2MB', 'error');
+        return;
+      }
+      
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        const dataUrl = e.target.result;
+        document.getElementById('photo-preview').innerHTML = `<img src="${dataUrl}" alt="Preview"/>`;
+        document.getElementById('photo-url-input').value = dataUrl;
+      };
+      reader.readAsDataURL(file);
+    }
+    
+    // Setup drag and drop
+    document.addEventListener('DOMContentLoaded', function() {
+      const uploadArea = document.getElementById('photo-upload-area');
+      if (uploadArea) {
+        uploadArea.addEventListener('dragover', function(e) {
+          e.preventDefault();
+          this.classList.add('dragging');
+        });
+        
+        uploadArea.addEventListener('dragleave', function(e) {
+          e.preventDefault();
+          this.classList.remove('dragging');
+        });
+        
+        uploadArea.addEventListener('drop', function(e) {
+          e.preventDefault();
+          this.classList.remove('dragging');
+          
+          const file = e.dataTransfer.files[0];
+          if (file && file.type.startsWith('image/')) {
+            const input = document.getElementById('photo-file-input');
+            const dataTransfer = new DataTransfer();
+            dataTransfer.items.add(file);
+            input.files = dataTransfer.files;
+            handlePhotoSelect({ target: input });
+          }
+        });
+      }
+    });
+    
+    async function savePhotoUrl() {
+      const foundationId = document.getElementById('photo-foundation-id').value;
+      const memberId = document.getElementById('photo-member-id').value;
+      const photoUrl = document.getElementById('photo-url-input').value.trim();
+      
+      if (!photoUrl) {
+        showNotification('Please select a photo or enter a URL', 'error');
+        return;
+      }
+      
+      try {
+        const token = localStorage.getItem('phins_token');
+        const response = await fetch(`/api/admin/foundations/${foundationId}/members/${memberId}/photo`, {
+          method: 'POST',
+          headers: { 
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ photo_url: photoUrl })
+        });
+        const result = await response.json();
+        
+        if (result.success) {
+          closePhotoModal();
+          showNotification('Photo updated successfully', 'success');
+          // Refresh members list if modal is open
+          if (currentMembersFoundationId) {
+            await viewMembers(currentMembersFoundationId);
+          }
+        } else {
+          showNotification(result.error || 'Error updating photo', 'error');
+        }
+      } catch (e) {
+        console.error('Error saving photo:', e);
+        showNotification('Error saving photo', 'error');
+      }
+    }
+    
+    // ========== Reject Modal ==========
+    function openRejectModal(id) {
+      document.getElementById('reject-foundation-id').value = id;
+      document.getElementById('reject-reason').value = '';
+      document.getElementById('reject-modal').classList.add('active');
+    }
+    
+    function closeRejectModal() {
+      document.getElementById('reject-modal').classList.remove('active');
+    }
+    
+    async function confirmReject() {
+      const id = document.getElementById('reject-foundation-id').value;
+      const reason = document.getElementById('reject-reason').value.trim();
+      
+      if (!reason) {
+        showNotification('Please provide a rejection reason', 'error');
+        return;
+      }
+      
+      try {
+        const token = localStorage.getItem('phins_token');
+        const response = await fetch(`/api/admin/foundations/${id}/reject`, {
+          method: 'POST',
+          headers: { 
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ reason })
+        });
+        const result = await response.json();
+        
+        if (result.success) {
+          closeRejectModal();
+          await loadFoundations();
+          await loadStats();
+          showNotification('Foundation rejected', 'warning');
+        } else {
+          showNotification(result.error || 'Error rejecting foundation', 'error');
+        }
+      } catch (e) {
+        console.error('Error rejecting foundation:', e);
+        showNotification('Error rejecting foundation', 'error');
+      }
+    }
+    
+    // ========== Pipeline Modal ==========
+    let currentPipelineFoundation = null;
+    
+    async function openPipelineModal(id) {
+      document.getElementById('pipeline-foundation-id').value = id;
+      document.getElementById('pipeline-notes').value = '';
+      document.getElementById('pipeline-modal').classList.add('active');
+      
+      try {
+        const token = localStorage.getItem('phins_token');
+        const response = await fetch(`/api/admin/foundations/${id}`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const data = await response.json();
+        currentPipelineFoundation = data;
+        
+        document.getElementById('pipeline-modal-title').textContent = `Process Pipeline: ${data.name}`;
+        
+        // Render pipeline visualization
+        const stages = ['created', 'pending_activation', 'in_review', 'approved', 'active'];
+        const currentStage = data.pipeline_stage || 'created';
+        const currentIndex = stages.indexOf(currentStage);
+        
+        document.getElementById('pipeline-visualization').innerHTML = `
+          <div class="pipeline-stages">
+            ${stages.map((stage, index) => {
+              let stateClass = '';
+              if (currentStage === 'rejected') {
+                stateClass = index === 0 ? 'completed' : '';
+              } else if (currentStage === 'suspended') {
+                stateClass = index <= stages.indexOf('active') ? 'completed' : '';
+              } else if (index < currentIndex) {
+                stateClass = 'completed';
+              } else if (index === currentIndex) {
+                stateClass = 'current';
+              }
+              
+              return `
+                <div class="pipeline-stage-item">
+                  <div class="pipeline-stage-dot ${stateClass}">${index < currentIndex ? '✓' : index + 1}</div>
+                  <div class="pipeline-stage-label">${stage.replace('_', ' ')}</div>
+                </div>
+              `;
+            }).join('')}
+          </div>
+          <p style="text-align: center; margin-top: 8px;">
+            Current: <span class="badge stage-${currentStage}">${getPipelineIcon(currentStage)} ${currentStage}</span>
+            ${currentStage === 'rejected' ? `<br><small style="color: #c62828;">Reason: ${escapeHtml(data.rejection_reason || 'Not specified')}</small>` : ''}
+          </p>
+        `;
+        
+        // Render pipeline history
+        const history = data.pipeline_history || [];
+        if (history.length === 0) {
+          document.getElementById('pipeline-history').innerHTML = `
+            <p style="color: #666; text-align: center; padding: 20px;">No pipeline history</p>
+          `;
+        } else {
+          document.getElementById('pipeline-history').innerHTML = history
+            .slice()
+            .reverse()
+            .map(h => `
+              <div class="activity-item">
+                <div class="activity-icon">${getPipelineIcon(h.stage)}</div>
+                <div class="activity-content">
+                  <div class="activity-text">Moved to <strong>${h.stage}</strong></div>
+                  <div class="activity-time">
+                    ${formatDateTime(h.timestamp)} • By: ${h.actor}
+                    ${h.notes ? `<br><small style="color: #999;">${escapeHtml(h.notes)}</small>` : ''}
+                  </div>
+                </div>
+              </div>
+            `).join('');
+        }
+        
+      } catch (e) {
+        console.error('Error loading foundation for pipeline:', e);
+        showNotification('Error loading foundation', 'error');
+      }
+    }
+    
+    function closePipelineModal() {
+      document.getElementById('pipeline-modal').classList.remove('active');
+      currentPipelineFoundation = null;
+    }
+    
+    async function transitionPipeline(targetStage) {
+      const id = document.getElementById('pipeline-foundation-id').value;
+      const notes = document.getElementById('pipeline-notes').value.trim();
+      
+      if (!confirm(`Are you sure you want to transition this foundation to "${targetStage}"?`)) return;
+      
+      try {
+        const token = localStorage.getItem('phins_token');
+        const response = await fetch(`/api/admin/foundations/${id}/process-pipeline`, {
+          method: 'POST',
+          headers: { 
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ target_stage: targetStage, notes })
+        });
+        const result = await response.json();
+        
+        if (result.success) {
+          showNotification(`Foundation transitioned to ${targetStage}`, 'success');
+          await loadFoundations();
+          await loadStats();
+          // Refresh the pipeline modal
+          await openPipelineModal(id);
+        } else {
+          showNotification(result.error || 'Error processing pipeline', 'error');
+        }
+      } catch (e) {
+        console.error('Error processing pipeline:', e);
+        showNotification('Error processing pipeline', 'error');
+      }
+    }
+    
+    // ========== Notification System ==========
+    function showNotification(message, type = 'info') {
+      // Remove existing notifications
+      const existing = document.querySelector('.notification-toast');
+      if (existing) existing.remove();
+      
+      const colors = {
+        success: '#4caf50',
+        error: '#f44336',
+        warning: '#ff9800',
+        info: '#2196f3'
+      };
+      
+      const notification = document.createElement('div');
+      notification.className = 'notification-toast';
+      notification.style.cssText = `
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        background: ${colors[type] || colors.info};
+        color: white;
+        padding: 16px 24px;
+        border-radius: 8px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+        z-index: 10000;
+        animation: slideIn 0.3s ease;
+      `;
+      notification.textContent = message;
+      
+      document.body.appendChild(notification);
+      
+      setTimeout(() => {
+        notification.style.animation = 'slideOut 0.3s ease';
+        setTimeout(() => notification.remove(), 300);
+      }, 3000);
+    }
+    
+    // Add animation styles
+    const style = document.createElement('style');
+    style.textContent = `
+      @keyframes slideIn {
+        from { transform: translateX(100%); opacity: 0; }
+        to { transform: translateX(0); opacity: 1; }
+      }
+      @keyframes slideOut {
+        from { transform: translateX(0); opacity: 1; }
+        to { transform: translateX(100%); opacity: 0; }
+      }
+    `;
+    document.head.appendChild(style);
     
     function exportData() {
       const csv = [
@@ -869,12 +1776,16 @@
     function getActivityLabel(type) {
       const labels = {
         foundation_created: '🏛️ Foundation Created',
-        foundation_activated: '✅ Activated',
-        foundation_dissolved: '⛔ Dissolved',
+        foundation_activated: '✅ Foundation Activated',
+        foundation_rejected: '❌ Foundation Rejected',
+        foundation_dissolved: '⛔ Foundation Dissolved',
+        pipeline_processed: '🔄 Pipeline Updated',
         member_joined: '👤 Member Joined',
         member_left: '👋 Member Left',
         member_approved: '✅ Member Approved',
-        contribution_made: '💰 Contribution',
+        member_photo_updated: '📷 Photo Updated',
+        member_details_updated: '✏️ Details Updated',
+        contribution_made: '💰 Contribution Made',
         claim_submitted: '📝 Claim Submitted',
         claim_approved: '✅ Claim Approved',
         vote_created: '🗳️ Vote Created',
