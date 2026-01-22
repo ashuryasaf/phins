@@ -1221,36 +1221,91 @@ class FoundationService:
         title: str,
         description: str = "",
         threshold: float = 0.50,
-        duration_days: int = 7
+        duration_days: int = 7,
+        subject: str = "",
+        summary: str = "",
+        outlines: Optional[List[str]] = None,
+        voting_mechanism: str = "simple_majority",
+        options: Optional[List[str]] = None
     ) -> Dict[str, Any]:
-        """Create a new vote/proposal"""
-        foundation = self._foundations.get(foundation_id)
-        if not foundation or foundation['status'] != 'active':
-            return {"success": False, "error": "Foundation not found or not active"}
+        """
+        Create a new vote/proposal with comprehensive decision-making features.
         
-        # Check creator rights
+        Args:
+            foundation_id: Foundation ID
+            created_by: User ID creating the vote
+            proposal_type: Type of proposal (general, claim, membership, policy, budget, election)
+            title: Short title for the vote
+            description: Detailed description
+            threshold: Vote threshold for passing (default 0.50 = 50%)
+            duration_days: How long voting is open
+            subject: Main subject/category of the decision
+            summary: Executive summary of the proposal
+            outlines: List of key points/outlines
+            voting_mechanism: Type of voting (simple_majority, supermajority, unanimous, ranked_choice)
+            options: Custom voting options (default: for/against/abstain)
+        """
+        foundation = self._foundations.get(foundation_id)
+        if not foundation:
+            return {"success": False, "error": "Foundation not found"}
+        
+        # Allow voting in active or draft foundations (for setup decisions)
+        if foundation['status'] not in ['active', 'draft', 'pending_review']:
+            return {"success": False, "error": f"Cannot create votes in {foundation['status']} foundation"}
+        
+        # Check creator rights - members can propose, but admin creates official votes
         creator_member = self._get_member_by_user(foundation_id, created_by)
-        if not creator_member or creator_member['role'] not in ['founder', 'admin']:
-            return {"success": False, "error": "Only founder/admin can create votes"}
+        if not creator_member or creator_member['status'] != 'active':
+            return {"success": False, "error": "You must be an active member to create votes"}
+        
+        # Determine if vote requires admin approval based on type
+        requires_admin = creator_member['role'] not in ['founder', 'admin']
+        
+        # Set threshold based on voting mechanism
+        mechanism_thresholds = {
+            'simple_majority': 0.50,
+            'supermajority': 0.66,
+            'unanimous': 1.0,
+            'ranked_choice': 0.50  # Winner takes all in ranked choice
+        }
+        actual_threshold = mechanism_thresholds.get(voting_mechanism, threshold)
+        
+        # Default options
+        if options is None:
+            if voting_mechanism == 'ranked_choice':
+                options = ['Option A', 'Option B', 'Option C']  # Can be customized
+            else:
+                options = ['for', 'against', 'abstain']
         
         vote_id = generate_id("VOTE")
         vote = {
             'id': vote_id,
             'foundation_id': foundation_id,
             'proposal_type': proposal_type,
+            'subject': subject or title,
             'title': title,
+            'summary': summary or description[:200] if description else '',
             'description': description,
-            'status': 'open',
-            'threshold': threshold,
+            'outlines': json.dumps(outlines or []),
+            'voting_mechanism': voting_mechanism,
+            'options': json.dumps(options),
+            'status': 'pending_approval' if requires_admin else 'open',
+            'threshold': actual_threshold,
             'quorum': 0.50,
             'votes_for': 0,
             'votes_against': 0,
             'votes_abstain': 0,
+            'option_votes': json.dumps({opt: 0 for opt in options}),
             'result': None,
+            'decision_record': None,
             'created_by': created_by,
+            'created_by_name': creator_member['display_name'],
+            'approved_by': created_by if not requires_admin else None,
             'created_at': datetime.now(timezone.utc).isoformat(),
+            'opens_at': datetime.now(timezone.utc).isoformat() if not requires_admin else None,
             'closes_at': (datetime.now(timezone.utc) + timedelta(days=duration_days)).isoformat(),
-            'closed_at': None
+            'closed_at': None,
+            'updated_at': datetime.now(timezone.utc).isoformat()
         }
         self._votes[vote_id] = vote
         
@@ -1258,22 +1313,101 @@ class FoundationService:
             foundation_id=foundation_id,
             activity_type="vote_created",
             actor_id=created_by,
-            details={"vote_id": vote_id, "title": title}
+            details={
+                "vote_id": vote_id,
+                "title": title,
+                "subject": subject,
+                "mechanism": voting_mechanism,
+                "requires_approval": requires_admin
+            }
         )
         
         return {
             "success": True,
             "vote_id": vote_id,
             "title": title,
-            "closes_at": vote['closes_at']
+            "status": vote['status'],
+            "closes_at": vote['closes_at'],
+            "requires_approval": requires_admin
         }
+    
+    def approve_vote(
+        self,
+        vote_id: str,
+        approver_id: str
+    ) -> Dict[str, Any]:
+        """Approve a pending vote (admin only)"""
+        vote = self._votes.get(vote_id)
+        if not vote:
+            return {"success": False, "error": "Vote not found"}
+        
+        if vote['status'] != 'pending_approval':
+            return {"success": False, "error": f"Vote is {vote['status']}, not pending approval"}
+        
+        foundation_id = vote['foundation_id']
+        approver = self._get_member_by_user(foundation_id, approver_id)
+        if not approver or approver['role'] not in ['founder', 'admin']:
+            return {"success": False, "error": "Only founder/admin can approve votes"}
+        
+        vote['status'] = 'open'
+        vote['approved_by'] = approver_id
+        vote['opens_at'] = datetime.now(timezone.utc).isoformat()
+        vote['updated_at'] = datetime.now(timezone.utc).isoformat()
+        
+        self._log_activity(
+            foundation_id=foundation_id,
+            activity_type="vote_approved",
+            actor_id=approver_id,
+            details={"vote_id": vote_id, "title": vote['title']}
+        )
+        
+        return {"success": True, "vote_id": vote_id, "status": "open"}
+    
+    def reject_vote_proposal(
+        self,
+        vote_id: str,
+        rejector_id: str,
+        reason: str = ""
+    ) -> Dict[str, Any]:
+        """Reject a pending vote proposal (admin only)"""
+        vote = self._votes.get(vote_id)
+        if not vote:
+            return {"success": False, "error": "Vote not found"}
+        
+        if vote['status'] != 'pending_approval':
+            return {"success": False, "error": f"Vote is {vote['status']}, not pending approval"}
+        
+        foundation_id = vote['foundation_id']
+        rejector = self._get_member_by_user(foundation_id, rejector_id)
+        if not rejector or rejector['role'] not in ['founder', 'admin']:
+            return {"success": False, "error": "Only founder/admin can reject vote proposals"}
+        
+        vote['status'] = 'rejected'
+        vote['closed_at'] = datetime.now(timezone.utc).isoformat()
+        vote['decision_record'] = json.dumps({
+            'outcome': 'rejected_by_admin',
+            'rejected_by': rejector_id,
+            'reason': reason,
+            'timestamp': datetime.now(timezone.utc).isoformat()
+        })
+        vote['updated_at'] = datetime.now(timezone.utc).isoformat()
+        
+        self._log_activity(
+            foundation_id=foundation_id,
+            activity_type="vote_rejected",
+            actor_id=rejector_id,
+            details={"vote_id": vote_id, "reason": reason}
+        )
+        
+        return {"success": True, "vote_id": vote_id, "status": "rejected"}
     
     def cast_vote(
         self,
         vote_id: str,
         member_id: str,
-        choice: str,  # for, against, abstain
-        reason: str = ""
+        choice: str,  # for, against, abstain, or custom option
+        reason: str = "",
+        ranked_choices: Optional[List[str]] = None
     ) -> Dict[str, Any]:
         """Cast a vote on a proposal"""
         vote = self._votes.get(vote_id)
@@ -1286,7 +1420,6 @@ class FoundationService:
         # Check expiry
         closes_at = datetime.fromisoformat(vote['closes_at'].replace('Z', '+00:00'))
         if datetime.now(timezone.utc) > closes_at:
-            vote['status'] = 'closed'
             self._tally_vote(vote_id)
             return {"success": False, "error": "Voting period has ended"}
         
@@ -1300,9 +1433,14 @@ class FoundationService:
             if vc['vote_id'] == vote_id and vc['member_id'] == member['id']:
                 return {"success": False, "error": "You have already voted"}
         
-        # Valid choices
-        if choice not in ['for', 'against', 'abstain']:
-            return {"success": False, "error": "Invalid vote choice"}
+        # Validate choice against available options
+        try:
+            available_options = json.loads(vote.get('options', '["for", "against", "abstain"]'))
+        except:
+            available_options = ['for', 'against', 'abstain']
+        
+        if choice not in available_options:
+            return {"success": False, "error": f"Invalid vote choice. Valid options: {', '.join(available_options)}"}
         
         # Cast vote
         cast_id = generate_id("CAST")
@@ -1310,7 +1448,10 @@ class FoundationService:
             'id': cast_id,
             'vote_id': vote_id,
             'member_id': member['id'],
+            'member_user_id': member_id,
+            'member_name': member['display_name'],
             'vote_choice': choice,
+            'ranked_choices': json.dumps(ranked_choices) if ranked_choices else None,
             'weight': member['voting_weight'],
             'reason': reason,
             'cast_at': datetime.now(timezone.utc).isoformat()
@@ -1322,14 +1463,24 @@ class FoundationService:
             vote['votes_for'] += 1
         elif choice == 'against':
             vote['votes_against'] += 1
-        else:
+        elif choice == 'abstain':
             vote['votes_abstain'] += 1
+        
+        # Update option votes
+        try:
+            option_votes = json.loads(vote.get('option_votes', '{}'))
+            option_votes[choice] = option_votes.get(choice, 0) + 1
+            vote['option_votes'] = json.dumps(option_votes)
+        except:
+            pass
+        
+        vote['updated_at'] = datetime.now(timezone.utc).isoformat()
         
         self._log_activity(
             foundation_id=vote['foundation_id'],
             activity_type="vote_cast",
             actor_id=member_id,
-            details={"vote_id": vote_id, "choice": choice}
+            details={"vote_id": vote_id, "choice": choice, "has_reason": bool(reason)}
         )
         
         return {
@@ -1343,31 +1494,214 @@ class FoundationService:
             }
         }
     
+    def get_vote(self, vote_id: str) -> Optional[Dict[str, Any]]:
+        """Get a specific vote with parsed JSON fields"""
+        vote = self._votes.get(vote_id)
+        if not vote:
+            return None
+        
+        vote_copy = vote.copy()
+        # Parse JSON fields
+        for field in ['outlines', 'options', 'option_votes', 'decision_record']:
+            if vote_copy.get(field) and isinstance(vote_copy[field], str):
+                try:
+                    vote_copy[field] = json.loads(vote_copy[field])
+                except:
+                    pass
+        return vote_copy
+    
+    def get_vote_casts(self, vote_id: str) -> List[Dict[str, Any]]:
+        """Get all casts for a vote"""
+        casts = []
+        for cast in self._vote_casts.values():
+            if cast['vote_id'] == vote_id:
+                cast_copy = cast.copy()
+                if cast_copy.get('ranked_choices') and isinstance(cast_copy['ranked_choices'], str):
+                    try:
+                        cast_copy['ranked_choices'] = json.loads(cast_copy['ranked_choices'])
+                    except:
+                        pass
+                casts.append(cast_copy)
+        casts.sort(key=lambda x: x['cast_at'])
+        return casts
+    
     def get_active_votes(self, foundation_id: str) -> List[Dict[str, Any]]:
-        """Get all active votes for a foundation"""
+        """Get all active votes for a foundation with parsed fields"""
         votes = []
         for vote in self._votes.values():
-            if vote['foundation_id'] == foundation_id and vote['status'] == 'open':
-                votes.append(vote)
+            if vote['foundation_id'] == foundation_id and vote['status'] in ['open', 'pending_approval']:
+                vote_copy = vote.copy()
+                # Parse JSON fields
+                for field in ['outlines', 'options', 'option_votes']:
+                    if vote_copy.get(field) and isinstance(vote_copy[field], str):
+                        try:
+                            vote_copy[field] = json.loads(vote_copy[field])
+                        except:
+                            pass
+                votes.append(vote_copy)
+        # Sort by closes_at
+        votes.sort(key=lambda x: x.get('closes_at', ''))
         return votes
     
+    def get_all_votes(
+        self, 
+        foundation_id: str, 
+        status: Optional[str] = None,
+        limit: int = 50
+    ) -> List[Dict[str, Any]]:
+        """Get all votes for a foundation with optional status filter"""
+        votes = []
+        for vote in self._votes.values():
+            if vote['foundation_id'] == foundation_id:
+                if status is None or vote['status'] == status:
+                    vote_copy = vote.copy()
+                    # Parse JSON fields
+                    for field in ['outlines', 'options', 'option_votes', 'decision_record']:
+                        if vote_copy.get(field) and isinstance(vote_copy[field], str):
+                            try:
+                                vote_copy[field] = json.loads(vote_copy[field])
+                            except:
+                                pass
+                    votes.append(vote_copy)
+        # Sort by created_at descending
+        votes.sort(key=lambda x: x.get('created_at', ''), reverse=True)
+        return votes[:limit]
+    
+    def get_member_vote_status(self, vote_id: str, member_id: str) -> Optional[Dict[str, Any]]:
+        """Check if a member has already voted and get their vote"""
+        vote = self._votes.get(vote_id)
+        if not vote:
+            return None
+        
+        member = self._get_member_by_user(vote['foundation_id'], member_id)
+        if not member:
+            return None
+        
+        for cast in self._vote_casts.values():
+            if cast['vote_id'] == vote_id and cast['member_id'] == member['id']:
+                return {
+                    "has_voted": True,
+                    "choice": cast['vote_choice'],
+                    "reason": cast.get('reason', ''),
+                    "cast_at": cast['cast_at']
+                }
+        
+        return {"has_voted": False}
+    
+    def close_vote(self, vote_id: str, closer_id: str = None) -> Dict[str, Any]:
+        """Manually close a vote and tally results"""
+        vote = self._votes.get(vote_id)
+        if not vote:
+            return {"success": False, "error": "Vote not found"}
+        
+        if vote['status'] != 'open':
+            return {"success": False, "error": f"Vote is {vote['status']}, cannot close"}
+        
+        # If closer specified, check permissions
+        if closer_id:
+            member = self._get_member_by_user(vote['foundation_id'], closer_id)
+            if not member or member['role'] not in ['founder', 'admin']:
+                return {"success": False, "error": "Only founder/admin can close votes early"}
+        
+        self._tally_vote(vote_id)
+        
+        return {
+            "success": True,
+            "vote_id": vote_id,
+            "result": vote['result'],
+            "status": vote['status']
+        }
+    
     def _tally_vote(self, vote_id: str) -> None:
-        """Tally votes and determine result"""
+        """Tally votes 
+and determine result with comprehensive decision record"""
         vote = self._votes.get(vote_id)
         if not vote:
             return
         
         total_votes = vote['votes_for'] + vote['votes_against'] + vote['votes_abstain']
+        foundation = self._foundations.get(vote['foundation_id'])
+        total_members = foundation['current_members'] if foundation else 1
+        
+        # Check quorum
+        participation_rate = total_votes / max(total_members, 1)
+        quorum_met = participation_rate >= vote.get('quorum', 0.50)
+        
+        # Determine result
         if total_votes == 0:
             vote['result'] = 'no_votes'
-        elif vote['votes_for'] / max(vote['votes_for'] + vote['votes_against'], 1) >= vote['threshold']:
-            vote['result'] = 'passed'
-            vote['status'] = 'passed'
-        else:
-            vote['result'] = 'failed'
             vote['status'] = 'failed'
+        elif not quorum_met:
+            vote['result'] = 'no_quorum'
+            vote['status'] = 'failed'
+        else:
+            # Calculate based on voting mechanism
+            mechanism = vote.get('voting_mechanism', 'simple_majority')
+            
+            if mechanism == 'ranked_choice':
+                # For ranked choice, use option_votes
+                try:
+                    option_votes = json.loads(vote.get('option_votes', '{}'))
+                    if option_votes:
+                        winner = max(option_votes, key=option_votes.get)
+                        vote['result'] = f'winner:{winner}'
+                        vote['status'] = 'passed'
+                    else:
+                        vote['result'] = 'no_votes'
+                        vote['status'] = 'failed'
+                except:
+                    vote['result'] = 'error'
+                    vote['status'] = 'failed'
+            else:
+                # Standard for/against voting
+                votes_counted = vote['votes_for'] + vote['votes_against']
+                if votes_counted == 0:
+                    vote['result'] = 'all_abstain'
+                    vote['status'] = 'failed'
+                elif vote['votes_for'] / votes_counted >= vote['threshold']:
+                    vote['result'] = 'passed'
+                    vote['status'] = 'passed'
+                else:
+                    vote['result'] = 'failed'
+                    vote['status'] = 'failed'
         
         vote['closed_at'] = datetime.now(timezone.utc).isoformat()
+        vote['updated_at'] = datetime.now(timezone.utc).isoformat()
+        
+        # Create comprehensive decision record
+        decision_record = {
+            'outcome': vote['result'],
+            'status': vote['status'],
+            'voting_mechanism': vote.get('voting_mechanism', 'simple_majority'),
+            'threshold_required': vote['threshold'],
+            'quorum_required': vote.get('quorum', 0.50),
+            'total_members': total_members,
+            'total_votes': total_votes,
+            'participation_rate': round(participation_rate * 100, 1),
+            'quorum_met': quorum_met,
+            'votes_for': vote['votes_for'],
+            'votes_against': vote['votes_against'],
+            'votes_abstain': vote['votes_abstain'],
+            'approval_rate': round((vote['votes_for'] / max(vote['votes_for'] + vote['votes_against'], 1)) * 100, 1),
+            'closed_at': vote['closed_at'],
+            'created_at': vote['created_at'],
+            'duration_hours': round((datetime.fromisoformat(vote['closed_at'].replace('Z', '+00:00')) - 
+                                     datetime.fromisoformat(vote['created_at'].replace('Z', '+00:00'))).total_seconds() / 3600, 1)
+        }
+        vote['decision_record'] = json.dumps(decision_record)
+        
+        self._log_activity(
+            foundation_id=vote['foundation_id'],
+            activity_type="vote_closed",
+            actor_id="system",
+            details={
+                "vote_id": vote_id,
+                "result": vote['result'],
+                "votes_for": vote['votes_for'],
+                "votes_against": vote['votes_against'],
+                "participation_rate": decision_record['participation_rate']
+            }
+        )
     
     # ========== CLAIMS ==========
     
@@ -1602,6 +1936,369 @@ class FoundationService:
         activities.sort(key=lambda x: x['timestamp'], reverse=True)
         return activities[:limit]
     
+    # ========== MEMBER MANAGEMENT ==========
+    
+    def reject_member(
+        self,
+        foundation_id: str,
+        member_record_id: str,
+        rejector_id: str,
+        reason: str = ""
+    ) -> MembershipResult:
+        """Reject a pending member application"""
+        member = self._members.get(member_record_id)
+        
+        if not member or member['foundation_id'] != foundation_id:
+            return MembershipResult(
+                success=False,
+                error_code="NOT_FOUND",
+                error_message="Member not found"
+            )
+        
+        if member['status'] != 'pending':
+            return MembershipResult(
+                success=False,
+                error_code="INVALID_STATUS",
+                error_message=f"Member status is {member['status']}, not pending"
+            )
+        
+        # Check rejector rights
+        rejector = self._get_member_by_user(foundation_id, rejector_id)
+        if not rejector or rejector['role'] not in ['founder', 'admin']:
+            return MembershipResult(
+                success=False,
+                error_code="UNAUTHORIZED",
+                error_message="Only founder/admin can reject members"
+            )
+        
+        member['status'] = 'rejected'
+        member['removed_at'] = datetime.now(timezone.utc).isoformat()
+        member['updated_at'] = datetime.now(timezone.utc).isoformat()
+        
+        self._log_activity(
+            foundation_id=foundation_id,
+            activity_type="member_rejected",
+            actor_id=rejector_id,
+            details={"member_id": member['member_id'], "reason": reason}
+        )
+        
+        return MembershipResult(
+            success=True,
+            member_id=member_record_id,
+            data={"message": "Member rejected", "reason": reason}
+        )
+    
+    def remove_member(
+        self,
+        foundation_id: str,
+        member_record_id: str,
+        remover_id: str,
+        reason: str = ""
+    ) -> MembershipResult:
+        """Remove an active member from the foundation"""
+        member = self._members.get(member_record_id)
+        
+        if not member or member['foundation_id'] != foundation_id:
+            return MembershipResult(
+                success=False,
+                error_code="NOT_FOUND",
+                error_message="Member not found"
+            )
+        
+        if member['status'] != 'active':
+            return MembershipResult(
+                success=False,
+                error_code="INVALID_STATUS",
+                error_message=f"Member status is {member['status']}, not active"
+            )
+        
+        if member['role'] == 'founder':
+            return MembershipResult(
+                success=False,
+                error_code="CANNOT_REMOVE_FOUNDER",
+                error_message="Cannot remove the founder"
+            )
+        
+        # Check remover rights
+        remover = self._get_member_by_user(foundation_id, remover_id)
+        if not remover or remover['role'] not in ['founder', 'admin']:
+            return MembershipResult(
+                success=False,
+                error_code="UNAUTHORIZED",
+                error_message="Only founder/admin can remove members"
+            )
+        
+        member['status'] = 'removed'
+        member['removed_at'] = datetime.now(timezone.utc).isoformat()
+        member['updated_at'] = datetime.now(timezone.utc).isoformat()
+        
+        # Update foundation member count
+        foundation = self._foundations.get(foundation_id)
+        if foundation:
+            foundation['current_members'] = max(0, foundation['current_members'] - 1)
+            foundation['updated_at'] = datetime.now(timezone.utc).isoformat()
+        
+        self._log_activity(
+            foundation_id=foundation_id,
+            activity_type="member_removed",
+            actor_id=remover_id,
+            details={"member_id": member['member_id'], "reason": reason}
+        )
+        
+        return MembershipResult(
+            success=True,
+            member_id=member_record_id,
+            data={"message": "Member removed", "reason": reason}
+        )
+    
+    def update_member_role(
+        self,
+        foundation_id: str,
+        member_record_id: str,
+        new_role: str,
+        actor_id: str
+    ) -> MembershipResult:
+        """Update a member's role"""
+        member = self._members.get(member_record_id)
+        
+        if not member or member['foundation_id'] != foundation_id:
+            return MembershipResult(
+                success=False,
+                error_code="NOT_FOUND",
+                error_message="Member not found"
+            )
+        
+        if new_role not in ['admin', 'member', 'observer']:
+            return MembershipResult(
+                success=False,
+                error_code="INVALID_ROLE",
+                error_message="Invalid role. Valid roles: admin, member, observer"
+            )
+        
+        if member['role'] == 'founder':
+            return MembershipResult(
+                success=False,
+                error_code="CANNOT_CHANGE_FOUNDER",
+                error_message="Cannot change founder's role"
+            )
+        
+        # Check actor rights - only founder can change roles
+        actor = self._get_member_by_user(foundation_id, actor_id)
+        if not actor or actor['role'] != 'founder':
+            return MembershipResult(
+                success=False,
+                error_code="UNAUTHORIZED",
+                error_message="Only founder can change member roles"
+            )
+        
+        old_role = member['role']
+        member['role'] = new_role
+        member['updated_at'] = datetime.now(timezone.utc).isoformat()
+        
+        self._log_activity(
+            foundation_id=foundation_id,
+            activity_type="member_role_changed",
+            actor_id=actor_id,
+            details={
+                "member_id": member['member_id'],
+                "old_role": old_role,
+                "new_role": new_role
+            }
+        )
+        
+        return MembershipResult(
+            success=True,
+            member_id=member_record_id,
+            data={"role": new_role, "message": f"Role updated to {new_role}"}
+        )
+    
+    # ========== BILLING & REPORTS ==========
+    
+    def get_foundation_billing_summary(self, foundation_id: str) -> Dict[str, Any]:
+        """Get billing summary for a foundation"""
+        foundation = self._foundations.get(foundation_id)
+        if not foundation:
+            return {"error": "Foundation not found"}
+        
+        # Get all contributions
+        contributions = []
+        for contrib in self._contributions.values():
+            fund = self._funds.get(contrib['fund_id'])
+            if fund and fund['foundation_id'] == foundation_id:
+                contributions.append(contrib)
+        
+        # Get all members
+        members = self.get_foundation_members(foundation_id, include_pending=False)
+        
+        # Calculate stats
+        total_contributions = sum(c['amount'] for c in contributions)
+        total_claims_paid = sum(
+            c.get('amount_approved', 0) 
+            for c in self._claims.values() 
+            if c['foundation_id'] == foundation_id and c['status'] == 'approved'
+        )
+        
+        # Get contribution breakdown by member
+        member_contributions = {}
+        for contrib in contributions:
+            member_id = contrib['member_id']
+            if member_id not in member_contributions:
+                member_contributions[member_id] = 0
+            member_contributions[member_id] += contrib['amount']
+        
+        # Get monthly breakdown
+        monthly_breakdown = {}
+        for contrib in contributions:
+            month = contrib['paid_date'][:7] if contrib.get('paid_date') else 'Unknown'
+            if month not in monthly_breakdown:
+                monthly_breakdown[month] = {'contributions': 0, 'count': 0}
+            monthly_breakdown[month]['contributions'] += contrib['amount']
+            monthly_breakdown[month]['count'] += 1
+        
+        return {
+            "foundation_id": foundation_id,
+            "foundation_name": foundation['name'],
+            "currency": foundation.get('currency', 'USD'),
+            "summary": {
+                "total_balance": foundation['total_fund_balance'],
+                "total_contributions": total_contributions,
+                "total_claims_paid": total_claims_paid,
+                "net_balance": total_contributions - total_claims_paid,
+                "reserve_percentage": foundation.get('reserve_percentage', 20),
+                "reserve_amount": foundation['total_fund_balance'] * (foundation.get('reserve_percentage', 20) / 100),
+                "available_for_claims": foundation['total_fund_balance'] * (1 - foundation.get('reserve_percentage', 20) / 100)
+            },
+            "members": {
+                "total": len(members),
+                "active_contributors": len([m for m in members if m['total_contributed'] > 0]),
+                "average_contribution": total_contributions / max(len(members), 1)
+            },
+            "monthly_breakdown": [
+                {"month": k, **v} 
+                for k, v in sorted(monthly_breakdown.items(), reverse=True)[:12]
+            ],
+            "generated_at": datetime.now(timezone.utc).isoformat()
+        }
+    
+    def get_member_billing_history(
+        self, 
+        foundation_id: str, 
+        member_user_id: str
+    ) -> Dict[str, Any]:
+        """Get billing history for a specific member"""
+        member = self._get_member_by_user(foundation_id, member_user_id)
+        if not member:
+            return {"error": "Member not found"}
+        
+        foundation = self._foundations.get(foundation_id)
+        
+        # Get member's contributions
+        contributions = []
+        for contrib in self._contributions.values():
+            if contrib['member_id'] == member['id']:
+                fund = self._funds.get(contrib['fund_id'])
+                contrib_copy = contrib.copy()
+                contrib_copy['fund_name'] = fund['name'] if fund else 'Unknown'
+                contributions.append(contrib_copy)
+        
+        # Get member's claims
+        claims = []
+        for claim in self._claims.values():
+            if claim['claimant_id'] == member['id']:
+                claims.append(claim)
+        
+        contributions.sort(key=lambda x: x.get('paid_date', ''), reverse=True)
+        claims.sort(key=lambda x: x.get('submitted_at', ''), reverse=True)
+        
+        return {
+            "member_id": member['id'],
+            "member_user_id": member_user_id,
+            "display_name": member['display_name'],
+            "foundation_name": foundation['name'] if foundation else None,
+            "summary": {
+                "total_contributed": member['total_contributed'],
+                "contribution_count": len(contributions),
+                "last_contribution": member['last_contribution'],
+                "claims_submitted": len(claims),
+                "claims_approved": len([c for c in claims if c['status'] == 'approved']),
+                "total_claimed": sum(c.get('amount_approved', 0) for c in claims if c['status'] == 'approved')
+            },
+            "contributions": contributions[:20],
+            "claims": claims[:10],
+            "generated_at": datetime.now(timezone.utc).isoformat()
+        }
+    
+    def get_foundation_report(
+        self,
+        foundation_id: str,
+        report_type: str = "summary"
+    ) -> Dict[str, Any]:
+        """Generate a comprehensive foundation report"""
+        foundation = self._foundations.get(foundation_id)
+        if not foundation:
+            return {"error": "Foundation not found"}
+        
+        members = self.get_foundation_members(foundation_id, include_pending=True)
+        funds = self.get_foundation_funds(foundation_id)
+        votes = self.get_all_votes(foundation_id, limit=100)
+        claims = self.get_foundation_claims(foundation_id)
+        activities = self.get_foundation_activities(foundation_id, limit=50)
+        billing = self.get_foundation_billing_summary(foundation_id)
+        
+        report = {
+            "report_type": report_type,
+            "foundation": {
+                "id": foundation['id'],
+                "name": foundation['name'],
+                "type": foundation['foundation_type'],
+                "status": foundation['status'],
+                "created_at": foundation['created_at'],
+                "activated_at": foundation.get('activated_at')
+            },
+            "membership": {
+                "total": len(members),
+                "active": len([m for m in members if m['status'] == 'active']),
+                "pending": len([m for m in members if m['status'] == 'pending']),
+                "by_role": {
+                    "founder": len([m for m in members if m['role'] == 'founder']),
+                    "admin": len([m for m in members if m['role'] == 'admin']),
+                    "member": len([m for m in members if m['role'] == 'member']),
+                    "observer": len([m for m in members if m['role'] == 'observer'])
+                }
+            },
+            "financial": billing.get('summary', {}),
+            "funds": [
+                {
+                    "id": f['id'],
+                    "name": f['name'],
+                    "type": f['fund_type'],
+                    "balance": f['balance']
+                }
+                for f in funds
+            ],
+            "governance": {
+                "total_votes": len(votes),
+                "votes_passed": len([v for v in votes if v['status'] == 'passed']),
+                "votes_failed": len([v for v in votes if v['status'] == 'failed']),
+                "votes_open": len([v for v in votes if v['status'] == 'open']),
+                "average_participation": sum(
+                    v.get('votes_for', 0) + v.get('votes_against', 0) + v.get('votes_abstain', 0)
+                    for v in votes if v['status'] in ['passed', 'failed']
+                ) / max(len([v for v in votes if v['status'] in ['passed', 'failed']]), 1)
+            },
+            "claims": {
+                "total": len(claims),
+                "pending": len([c for c in claims if c['status'] in ['reviewing', 'vote_open']]),
+                "approved": len([c for c in claims if c['status'] == 'approved']),
+                "rejected": len([c for c in claims if c['status'] == 'rejected']),
+                "total_approved_amount": sum(c.get('amount_approved', 0) for c in claims if c['status'] == 'approved')
+            },
+            "recent_activities": activities[:10],
+            "generated_at": datetime.now(timezone.utc).isoformat()
+        }
+        
+        return report
+    
     # ========== HELPERS ==========
     
     def _get_member_by_user(
@@ -1622,11 +2319,14 @@ class FoundationService:
             if member['member_id'] == user_id and member['status'] in ['active', 'pending']:
                 foundation = self._foundations.get(member['foundation_id'])
                 if foundation:
+                    # Get active votes count
+                    active_votes = len(self.get_active_votes(foundation['id']))
                     result.append({
                         **foundation,
                         'user_role': member['role'],
                         'user_status': member['status'],
-                        'user_member_id': member['id']
+                        'user_member_id': member['id'],
+                        'active_votes': active_votes
                     })
         return result
     

@@ -335,6 +335,518 @@ def handle_foundation_invite(session: Dict, foundation_id: str, body_data: Dict)
     return 200 if result.get('success') else 400, result
 
 
+# ============================================================================
+# FOUNDATION MEMBER ENDPOINTS
+# ============================================================================
+
+def handle_foundation_members_list(session: Dict, foundation_id: str, query_params: Dict) -> Tuple[int, Dict]:
+    """GET /api/foundations/{id}/members - List foundation members"""
+    if not FOUNDATION_SERVICE_AVAILABLE:
+        return 503, {"error": "Foundation service not available"}
+    
+    if not session:
+        return 401, {"error": "Authentication required"}
+    
+    service = get_foundation_service()
+    customer_id = session.get('customer_id')
+    user_id = customer_id or session.get('username')
+    
+    # Check if user is member of this foundation
+    member = service._get_member_by_user(foundation_id, user_id)
+    if not member:
+        return 403, {"error": "You are not a member of this foundation"}
+    
+    include_pending = query_params.get('include_pending', ['false'])[0].lower() == 'true'
+    
+    # Only founders/admins can see pending members
+    if include_pending and member['role'] not in ['founder', 'admin']:
+        include_pending = False
+    
+    members = service.get_foundation_members(foundation_id, include_pending=include_pending)
+    
+    return 200, {
+        "items": members,
+        "total": len(members),
+        "foundation_id": foundation_id,
+        "user_role": member['role']
+    }
+
+
+def handle_foundation_member_approve(session: Dict, foundation_id: str, member_id: str) -> Tuple[int, Dict]:
+    """POST /api/foundations/{id}/members/{member_id}/approve - Approve pending member"""
+    if not FOUNDATION_SERVICE_AVAILABLE:
+        return 503, {"error": "Foundation service not available"}
+    
+    if not session:
+        return 401, {"error": "Authentication required"}
+    
+    service = get_foundation_service()
+    customer_id = session.get('customer_id')
+    user_id = customer_id or session.get('username')
+    
+    result = service.approve_member(foundation_id, member_id, user_id)
+    
+    if result.success:
+        return 200, {"success": True, "message": "Member approved", "data": result.data}
+    else:
+        return 400, {"success": False, "error": result.error_message}
+
+
+def handle_foundation_member_reject(session: Dict, foundation_id: str, member_id: str, body_data: Dict) -> Tuple[int, Dict]:
+    """POST /api/foundations/{id}/members/{member_id}/reject - Reject pending member"""
+    if not FOUNDATION_SERVICE_AVAILABLE:
+        return 503, {"error": "Foundation service not available"}
+    
+    if not session:
+        return 401, {"error": "Authentication required"}
+    
+    service = get_foundation_service()
+    customer_id = session.get('customer_id')
+    user_id = customer_id or session.get('username')
+    
+    reason = body_data.get('reason', '')
+    result = service.reject_member(foundation_id, member_id, user_id, reason)
+    
+    if result.success:
+        return 200, {"success": True, "message": "Member rejected", "data": result.data}
+    else:
+        return 400, {"success": False, "error": result.error_message}
+
+
+def handle_foundation_member_remove(session: Dict, foundation_id: str, member_id: str, body_data: Dict) -> Tuple[int, Dict]:
+    """POST /api/foundations/{id}/members/{member_id}/remove - Remove active member"""
+    if not FOUNDATION_SERVICE_AVAILABLE:
+        return 503, {"error": "Foundation service not available"}
+    
+    if not session:
+        return 401, {"error": "Authentication required"}
+    
+    service = get_foundation_service()
+    customer_id = session.get('customer_id')
+    user_id = customer_id or session.get('username')
+    
+    reason = body_data.get('reason', '')
+    result = service.remove_member(foundation_id, member_id, user_id, reason)
+    
+    if result.success:
+        return 200, {"success": True, "message": "Member removed", "data": result.data}
+    else:
+        return 400, {"success": False, "error": result.error_message}
+
+
+def handle_foundation_member_role(session: Dict, foundation_id: str, member_id: str, body_data: Dict) -> Tuple[int, Dict]:
+    """POST /api/foundations/{id}/members/{member_id}/role - Update member role"""
+    if not FOUNDATION_SERVICE_AVAILABLE:
+        return 503, {"error": "Foundation service not available"}
+    
+    if not session:
+        return 401, {"error": "Authentication required"}
+    
+    service = get_foundation_service()
+    customer_id = session.get('customer_id')
+    user_id = customer_id or session.get('username')
+    
+    new_role = body_data.get('role', '')
+    result = service.update_member_role(foundation_id, member_id, new_role, user_id)
+    
+    if result.success:
+        return 200, {"success": True, "message": f"Role updated to {new_role}", "data": result.data}
+    else:
+        return 400, {"success": False, "error": result.error_message}
+
+
+# ============================================================================
+# FOUNDATION VOTING ENDPOINTS
+# ============================================================================
+
+def handle_foundation_votes_list(session: Dict, foundation_id: str, query_params: Dict) -> Tuple[int, Dict]:
+    """GET /api/foundations/{id}/votes - List foundation votes"""
+    if not FOUNDATION_SERVICE_AVAILABLE:
+        return 503, {"error": "Foundation service not available"}
+    
+    if not session:
+        return 401, {"error": "Authentication required"}
+    
+    service = get_foundation_service()
+    customer_id = session.get('customer_id')
+    user_id = customer_id or session.get('username')
+    
+    # Check if user is member of this foundation
+    member = service._get_member_by_user(foundation_id, user_id)
+    if not member:
+        return 403, {"error": "You are not a member of this foundation"}
+    
+    status = query_params.get('status', [None])[0]
+    limit = int(query_params.get('limit', ['50'])[0])
+    
+    if status == 'active':
+        votes = service.get_active_votes(foundation_id)
+    else:
+        votes = service.get_all_votes(foundation_id, status=status, limit=limit)
+    
+    # Add user's vote status to each vote
+    for vote in votes:
+        vote_status = service.get_member_vote_status(vote['id'], user_id)
+        vote['user_vote'] = vote_status
+    
+    return 200, {
+        "items": votes,
+        "total": len(votes),
+        "foundation_id": foundation_id
+    }
+
+
+def handle_foundation_vote_get(session: Dict, foundation_id: str, vote_id: str) -> Tuple[int, Dict]:
+    """GET /api/foundations/{id}/votes/{vote_id} - Get vote details"""
+    if not FOUNDATION_SERVICE_AVAILABLE:
+        return 503, {"error": "Foundation service not available"}
+    
+    if not session:
+        return 401, {"error": "Authentication required"}
+    
+    service = get_foundation_service()
+    customer_id = session.get('customer_id')
+    user_id = customer_id or session.get('username')
+    
+    # Check if user is member of this foundation
+    member = service._get_member_by_user(foundation_id, user_id)
+    if not member:
+        return 403, {"error": "You are not a member of this foundation"}
+    
+    vote = service.get_vote(vote_id)
+    if not vote or vote['foundation_id'] != foundation_id:
+        return 404, {"error": "Vote not found"}
+    
+    # Add user's vote status
+    vote['user_vote'] = service.get_member_vote_status(vote_id, user_id)
+    
+    # Get vote casts if admin or founder
+    if member['role'] in ['founder', 'admin']:
+        vote['casts'] = service.get_vote_casts(vote_id)
+    
+    return 200, vote
+
+
+def handle_foundation_vote_create(session: Dict, foundation_id: str, body_data: Dict) -> Tuple[int, Dict]:
+    """POST /api/foundations/{id}/votes - Create a new vote"""
+    if not FOUNDATION_SERVICE_AVAILABLE:
+        return 503, {"error": "Foundation service not available"}
+    
+    if not session:
+        return 401, {"error": "Authentication required"}
+    
+    service = get_foundation_service()
+    customer_id = session.get('customer_id')
+    user_id = customer_id or session.get('username')
+    
+    result = service.create_vote(
+        foundation_id=foundation_id,
+        created_by=user_id,
+        proposal_type=body_data.get('proposal_type', 'general'),
+        title=body_data.get('title', ''),
+        description=body_data.get('description', ''),
+        threshold=float(body_data.get('threshold', 0.50)),
+        duration_days=int(body_data.get('duration_days', 7)),
+        subject=body_data.get('subject', ''),
+        summary=body_data.get('summary', ''),
+        outlines=body_data.get('outlines'),
+        voting_mechanism=body_data.get('voting_mechanism', 'simple_majority'),
+        options=body_data.get('options')
+    )
+    
+    return 201 if result.get('success') else 400, result
+
+
+def handle_foundation_vote_cast(session: Dict, foundation_id: str, vote_id: str, body_data: Dict) -> Tuple[int, Dict]:
+    """POST /api/foundations/{id}/votes/{vote_id}/cast - Cast a vote"""
+    if not FOUNDATION_SERVICE_AVAILABLE:
+        return 503, {"error": "Foundation service not available"}
+    
+    if not session:
+        return 401, {"error": "Authentication required"}
+    
+    service = get_foundation_service()
+    customer_id = session.get('customer_id')
+    user_id = customer_id or session.get('username')
+    
+    result = service.cast_vote(
+        vote_id=vote_id,
+        member_id=user_id,
+        choice=body_data.get('choice', ''),
+        reason=body_data.get('reason', ''),
+        ranked_choices=body_data.get('ranked_choices')
+    )
+    
+    return 200 if result.get('success') else 400, result
+
+
+def handle_foundation_vote_close(session: Dict, foundation_id: str, vote_id: str) -> Tuple[int, Dict]:
+    """POST /api/foundations/{id}/votes/{vote_id}/close - Close a vote early"""
+    if not FOUNDATION_SERVICE_AVAILABLE:
+        return 503, {"error": "Foundation service not available"}
+    
+    if not session:
+        return 401, {"error": "Authentication required"}
+    
+    service = get_foundation_service()
+    customer_id = session.get('customer_id')
+    user_id = customer_id or session.get('username')
+    
+    result = service.close_vote(vote_id, user_id)
+    
+    return 200 if result.get('success') else 400, result
+
+
+def handle_foundation_vote_approve(session: Dict, foundation_id: str, vote_id: str) -> Tuple[int, Dict]:
+    """POST /api/foundations/{id}/votes/{vote_id}/approve - Approve a pending vote proposal"""
+    if not FOUNDATION_SERVICE_AVAILABLE:
+        return 503, {"error": "Foundation service not available"}
+    
+    if not session:
+        return 401, {"error": "Authentication required"}
+    
+    service = get_foundation_service()
+    customer_id = session.get('customer_id')
+    user_id = customer_id or session.get('username')
+    
+    result = service.approve_vote(vote_id, user_id)
+    
+    return 200 if result.get('success') else 400, result
+
+
+# ============================================================================
+# FOUNDATION CLAIMS ENDPOINTS
+# ============================================================================
+
+def handle_foundation_claims_list(session: Dict, foundation_id: str, query_params: Dict) -> Tuple[int, Dict]:
+    """GET /api/foundations/{id}/claims - List foundation claims"""
+    if not FOUNDATION_SERVICE_AVAILABLE:
+        return 503, {"error": "Foundation service not available"}
+    
+    if not session:
+        return 401, {"error": "Authentication required"}
+    
+    service = get_foundation_service()
+    customer_id = session.get('customer_id')
+    user_id = customer_id or session.get('username')
+    
+    # Check if user is member of this foundation
+    member = service._get_member_by_user(foundation_id, user_id)
+    if not member:
+        return 403, {"error": "You are not a member of this foundation"}
+    
+    status = query_params.get('status', [None])[0]
+    claims = service.get_foundation_claims(foundation_id, status=status)
+    
+    return 200, {
+        "items": claims,
+        "total": len(claims),
+        "foundation_id": foundation_id
+    }
+
+
+def handle_foundation_claim_submit(session: Dict, foundation_id: str, body_data: Dict) -> Tuple[int, Dict]:
+    """POST /api/foundations/{id}/claims - Submit a claim"""
+    if not FOUNDATION_SERVICE_AVAILABLE:
+        return 503, {"error": "Foundation service not available"}
+    
+    if not session:
+        return 401, {"error": "Authentication required"}
+    
+    service = get_foundation_service()
+    customer_id = session.get('customer_id')
+    user_id = customer_id or session.get('username')
+    
+    result = service.submit_claim(
+        foundation_id=foundation_id,
+        fund_id=body_data.get('fund_id', ''),
+        claimant_id=user_id,
+        claim_type=body_data.get('claim_type', 'general'),
+        amount=float(body_data.get('amount', 0)),
+        description=body_data.get('description', ''),
+        supporting_docs=body_data.get('supporting_docs')
+    )
+    
+    return 201 if result.get('success') else 400, result
+
+
+def handle_foundation_claim_approve(session: Dict, foundation_id: str, claim_id: str, body_data: Dict) -> Tuple[int, Dict]:
+    """POST /api/foundations/{id}/claims/{claim_id}/approve - Approve a claim"""
+    if not FOUNDATION_SERVICE_AVAILABLE:
+        return 503, {"error": "Foundation service not available"}
+    
+    if not session:
+        return 401, {"error": "Authentication required"}
+    
+    service = get_foundation_service()
+    customer_id = session.get('customer_id')
+    user_id = customer_id or session.get('username')
+    
+    approved_amount = body_data.get('approved_amount')
+    if approved_amount:
+        approved_amount = float(approved_amount)
+    
+    result = service.approve_claim(
+        claim_id=claim_id,
+        approver_id=user_id,
+        approved_amount=approved_amount,
+        notes=body_data.get('notes', '')
+    )
+    
+    return 200 if result.get('success') else 400, result
+
+
+# ============================================================================
+# FOUNDATION BILLING & REPORTS ENDPOINTS
+# ============================================================================
+
+def handle_foundation_billing(session: Dict, foundation_id: str) -> Tuple[int, Dict]:
+    """GET /api/foundations/{id}/billing - Get billing summary"""
+    if not FOUNDATION_SERVICE_AVAILABLE:
+        return 503, {"error": "Foundation service not available"}
+    
+    if not session:
+        return 401, {"error": "Authentication required"}
+    
+    service = get_foundation_service()
+    customer_id = session.get('customer_id')
+    user_id = customer_id or session.get('username')
+    
+    # Check if user is member of this foundation
+    member = service._get_member_by_user(foundation_id, user_id)
+    if not member:
+        return 403, {"error": "You are not a member of this foundation"}
+    
+    billing = service.get_foundation_billing_summary(foundation_id)
+    
+    if 'error' in billing:
+        return 404, billing
+    
+    return 200, billing
+
+
+def handle_foundation_member_billing(session: Dict, foundation_id: str, member_user_id: str) -> Tuple[int, Dict]:
+    """GET /api/foundations/{id}/members/{member_id}/billing - Get member billing history"""
+    if not FOUNDATION_SERVICE_AVAILABLE:
+        return 503, {"error": "Foundation service not available"}
+    
+    if not session:
+        return 401, {"error": "Authentication required"}
+    
+    service = get_foundation_service()
+    customer_id = session.get('customer_id')
+    user_id = customer_id or session.get('username')
+    
+    # Check if user is member of this foundation and has rights to view
+    member = service._get_member_by_user(foundation_id, user_id)
+    if not member:
+        return 403, {"error": "You are not a member of this foundation"}
+    
+    # Can only view own billing unless admin/founder
+    if member_user_id != user_id and member['role'] not in ['founder', 'admin']:
+        return 403, {"error": "You can only view your own billing history"}
+    
+    billing = service.get_member_billing_history(foundation_id, member_user_id)
+    
+    if 'error' in billing:
+        return 404, billing
+    
+    return 200, billing
+
+
+def handle_foundation_report(session: Dict, foundation_id: str, query_params: Dict) -> Tuple[int, Dict]:
+    """GET /api/foundations/{id}/report - Get foundation report"""
+    if not FOUNDATION_SERVICE_AVAILABLE:
+        return 503, {"error": "Foundation service not available"}
+    
+    if not session:
+        return 401, {"error": "Authentication required"}
+    
+    service = get_foundation_service()
+    customer_id = session.get('customer_id')
+    user_id = customer_id or session.get('username')
+    
+    # Check if user is member of this foundation
+    member = service._get_member_by_user(foundation_id, user_id)
+    if not member:
+        return 403, {"error": "You are not a member of this foundation"}
+    
+    report_type = query_params.get('type', ['summary'])[0]
+    report = service.get_foundation_report(foundation_id, report_type)
+    
+    if 'error' in report:
+        return 404, report
+    
+    return 200, report
+
+
+def handle_foundation_activities(session: Dict, foundation_id: str, query_params: Dict) -> Tuple[int, Dict]:
+    """GET /api/foundations/{id}/activities - Get foundation activities"""
+    if not FOUNDATION_SERVICE_AVAILABLE:
+        return 503, {"error": "Foundation service not available"}
+    
+    if not session:
+        return 401, {"error": "Authentication required"}
+    
+    service = get_foundation_service()
+    customer_id = session.get('customer_id')
+    user_id = customer_id or session.get('username')
+    
+    # Check if user is member of this foundation
+    member = service._get_member_by_user(foundation_id, user_id)
+    if not member:
+        return 403, {"error": "You are not a member of this foundation"}
+    
+    limit = int(query_params.get('limit', ['50'])[0])
+    activities = service.get_foundation_activities(foundation_id, limit=limit)
+    
+    return 200, {
+        "items": activities,
+        "total": len(activities),
+        "foundation_id": foundation_id
+    }
+
+
+def handle_foundation_ledger(session: Dict, query_params: Dict) -> Tuple[int, Dict]:
+    """GET /api/foundation-ledger - Get user's foundation ledger entries (activities)"""
+    if not FOUNDATION_SERVICE_AVAILABLE:
+        return 200, {"items": [], "total": 0}
+    
+    if not session:
+        return 401, {"error": "Authentication required"}
+    
+    service = get_foundation_service()
+    customer_id = session.get('customer_id')
+    user_id = customer_id or session.get('username')
+    
+    # Get all foundations user is a member of
+    foundations = service.get_user_foundations(user_id)
+    
+    all_activities = []
+    for foundation in foundations:
+        activities = service.get_foundation_activities(foundation['id'], limit=20)
+        for activity in activities:
+            activity['foundation_name'] = foundation['name']
+        all_activities.extend(activities)
+    
+    # Sort by timestamp, most recent first
+    all_activities.sort(key=lambda x: x.get('timestamp', ''), reverse=True)
+    
+    # Limit to 50 most recent
+    limit = int(query_params.get('limit', ['50'])[0])
+    all_activities = all_activities[:limit]
+    
+    return 200, {
+        "items": all_activities,
+        "total": len(all_activities)
+    }
+
+
+def handle_foundation_activity_log(session: Dict, query_params: Dict) -> Tuple[int, Dict]:
+    """GET /api/foundation-activity - Get user's foundation activity log"""
+    return handle_foundation_ledger(session, query_params)
+
+
 def handle_foundation_join(session: Dict, body_data: Dict) -> Tuple[int, Dict]:
     """POST /api/foundations/join - Join foundation via invitation code"""
     if not FOUNDATION_SERVICE_AVAILABLE:
@@ -771,14 +1283,56 @@ def dispatch_get(path: str, session: Dict, query_params: Dict, client_ip: str) -
     if path == '/api/foundations':
         return handle_foundations_list(session, query_params)
     
-    # Foundation details
-    if path.startswith('/api/foundations/') and path.count('/') == 3:
-        foundation_id = path.split('/')[-1]
-        return handle_foundation_get(session, foundation_id)
-    
     # Foundation invitations for user
     if path == '/api/foundation-invitations':
         return handle_foundation_invitations_list(session)
+    
+    # Foundation ledger (NFT ledger for user)
+    if path == '/api/foundation-ledger':
+        return handle_foundation_ledger(session, query_params)
+    
+    # Foundation activity log
+    if path == '/api/foundation-activity':
+        return handle_foundation_activity_log(session, query_params)
+    
+    # Foundation-specific endpoints
+    if path.startswith('/api/foundations/') and not path.startswith('/api/foundations/join'):
+        parts = path.split('/')
+        
+        # /api/foundations/{id}
+        if len(parts) == 4:
+            foundation_id = parts[3]
+            return handle_foundation_get(session, foundation_id)
+        
+        # /api/foundations/{id}/{resource}
+        if len(parts) == 5:
+            foundation_id = parts[3]
+            resource = parts[4]
+            
+            if resource == 'members':
+                return handle_foundation_members_list(session, foundation_id, query_params)
+            elif resource == 'votes':
+                return handle_foundation_votes_list(session, foundation_id, query_params)
+            elif resource == 'claims':
+                return handle_foundation_claims_list(session, foundation_id, query_params)
+            elif resource == 'billing':
+                return handle_foundation_billing(session, foundation_id)
+            elif resource == 'report':
+                return handle_foundation_report(session, foundation_id, query_params)
+            elif resource == 'activities':
+                return handle_foundation_activities(session, foundation_id, query_params)
+        
+        # /api/foundations/{id}/votes/{vote_id}
+        if len(parts) == 6 and parts[4] == 'votes':
+            foundation_id = parts[3]
+            vote_id = parts[5]
+            return handle_foundation_vote_get(session, foundation_id, vote_id)
+        
+        # /api/foundations/{id}/members/{member_id}/billing
+        if len(parts) == 7 and parts[4] == 'members' and parts[6] == 'billing':
+            foundation_id = parts[3]
+            member_user_id = parts[5]
+            return handle_foundation_member_billing(session, foundation_id, member_user_id)
     
     # Admin: Foundation stats
     if path == '/api/admin/foundations/stats':
@@ -854,20 +1408,62 @@ def dispatch_post(path: str, session: Dict, body_data: Dict, client_ip: str, use
     if path == '/api/foundations/join':
         return handle_foundation_join(session, body_data)
     
-    # Foundation: Activate
-    if path.endswith('/activate') and path.startswith('/api/foundations/'):
-        foundation_id = path.split('/')[-2]
-        return handle_foundation_activate(session, foundation_id)
-    
-    # Foundation: Contribute
-    if path.endswith('/contribute') and path.startswith('/api/foundations/'):
-        foundation_id = path.split('/')[-2]
-        return handle_foundation_contribute(session, foundation_id, body_data)
-    
-    # Foundation: Invite
-    if path.endswith('/invite') and path.startswith('/api/foundations/'):
-        foundation_id = path.split('/')[-2]
-        return handle_foundation_invite(session, foundation_id, body_data)
+    # Foundation-specific POST endpoints
+    if path.startswith('/api/foundations/') and not path.startswith('/api/admin/'):
+        parts = path.split('/')
+        
+        # /api/foundations/{id}/{action}
+        if len(parts) == 5:
+            foundation_id = parts[3]
+            action = parts[4]
+            
+            if action == 'activate':
+                return handle_foundation_activate(session, foundation_id)
+            elif action == 'contribute':
+                return handle_foundation_contribute(session, foundation_id, body_data)
+            elif action == 'invite':
+                return handle_foundation_invite(session, foundation_id, body_data)
+            elif action == 'votes':
+                return handle_foundation_vote_create(session, foundation_id, body_data)
+            elif action == 'claims':
+                return handle_foundation_claim_submit(session, foundation_id, body_data)
+        
+        # /api/foundations/{id}/members/{member_id}/{action}
+        if len(parts) == 7 and parts[4] == 'members':
+            foundation_id = parts[3]
+            member_id = parts[5]
+            action = parts[6]
+            
+            if action == 'approve':
+                return handle_foundation_member_approve(session, foundation_id, member_id)
+            elif action == 'reject':
+                return handle_foundation_member_reject(session, foundation_id, member_id, body_data)
+            elif action == 'remove':
+                return handle_foundation_member_remove(session, foundation_id, member_id, body_data)
+            elif action == 'role':
+                return handle_foundation_member_role(session, foundation_id, member_id, body_data)
+        
+        # /api/foundations/{id}/votes/{vote_id}/{action}
+        if len(parts) == 7 and parts[4] == 'votes':
+            foundation_id = parts[3]
+            vote_id = parts[5]
+            action = parts[6]
+            
+            if action == 'cast':
+                return handle_foundation_vote_cast(session, foundation_id, vote_id, body_data)
+            elif action == 'close':
+                return handle_foundation_vote_close(session, foundation_id, vote_id)
+            elif action == 'approve':
+                return handle_foundation_vote_approve(session, foundation_id, vote_id)
+        
+        # /api/foundations/{id}/claims/{claim_id}/{action}
+        if len(parts) == 7 and parts[4] == 'claims':
+            foundation_id = parts[3]
+            claim_id = parts[5]
+            action = parts[6]
+            
+            if action == 'approve':
+                return handle_foundation_claim_approve(session, foundation_id, claim_id, body_data)
     
     # Admin: Suspend foundation
     if path.endswith('/suspend') and path.startswith('/api/admin/foundations/'):
