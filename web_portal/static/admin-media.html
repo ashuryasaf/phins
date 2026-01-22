@@ -3,22 +3,23 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>PHINS Admin - Media Management</title>
+    <title>PHINS Admin - Media & Design Settings</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/styles.css">
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
             font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-            background: linear-gradient(135deg, #1a1f36 0%, #2d3561 100%);
+            background: linear-gradient(135deg, #0d47a1 0%, #1565c0 50%, #1976d2 100%);
             min-height: 100vh;
             color: white;
         }
         
-        /* Header */
+        /* Compact Header */
         .admin-header {
-            background: rgba(0,0,0,0.3);
-            padding: 16px 24px;
+            background: rgba(0,0,0,0.25);
+            padding: 10px 20px;
             display: flex;
             justify-content: space-between;
             align-items: center;
@@ -27,45 +28,45 @@
         .header-left {
             display: flex;
             align-items: center;
-            gap: 16px;
+            gap: 12px;
         }
         .logo {
             display: flex;
             align-items: center;
-            gap: 10px;
+            gap: 8px;
             text-decoration: none;
             color: white;
         }
         .logo-icon {
-            width: 40px;
-            height: 40px;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            border-radius: 10px;
+            width: 36px;
+            height: 36px;
+            background: linear-gradient(135deg, #42a5f5 0%, #64b5f6 100%);
+            border-radius: 8px;
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 1.3rem;
-        }
-        .logo-text { font-size: 1.3rem; font-weight: 700; }
-        .page-title {
             font-size: 1.1rem;
+        }
+        .logo-text { font-size: 1.2rem; font-weight: 700; }
+        .page-title {
+            font-size: 0.9rem;
             color: rgba(255,255,255,0.7);
-            padding-left: 16px;
+            padding-left: 12px;
             border-left: 1px solid rgba(255,255,255,0.2);
         }
         .header-right {
             display: flex;
             align-items: center;
-            gap: 12px;
+            gap: 8px;
         }
         .btn {
-            padding: 10px 18px;
-            border-radius: 8px;
+            padding: 8px 14px;
+            border-radius: 6px;
             font-weight: 600;
             cursor: pointer;
             transition: all 0.2s;
             text-decoration: none;
-            font-size: 0.9rem;
+            font-size: 0.8rem;
             border: none;
         }
         .btn-secondary {
@@ -75,10 +76,10 @@
         }
         .btn-secondary:hover { background: rgba(255,255,255,0.2); }
         .btn-primary {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: linear-gradient(135deg, #42a5f5 0%, #1976d2 100%);
             color: white;
         }
-        .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 4px 15px rgba(102,126,234,0.4); }
+        .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 4px 15px rgba(66, 165, 245, 0.4); }
         .btn-danger {
             background: linear-gradient(135deg, #ef5350 0%, #e53935 100%);
             color: white;
@@ -88,29 +89,59 @@
         .main-container {
             max-width: 1400px;
             margin: 0 auto;
-            padding: 24px;
+            padding: 16px;
         }
         
-        /* Stats Bar */
+        /* Main Tabs Navigation */
+        .main-tabs {
+            display: flex;
+            gap: 4px;
+            margin-bottom: 16px;
+            padding: 4px;
+            background: rgba(0,0,0,0.2);
+            border-radius: 10px;
+            width: fit-content;
+        }
+        .main-tab {
+            padding: 8px 16px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            border-radius: 6px;
+            border: none;
+            background: transparent;
+            color: rgba(255,255,255,0.7);
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        .main-tab:hover {
+            background: rgba(255,255,255,0.1);
+            color: white;
+        }
+        .main-tab.active {
+            background: rgba(255,255,255,0.2);
+            color: white;
+        }
+        
+        /* Stats Bar - Compact */
         .stats-bar {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 16px;
-            margin-bottom: 24px;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 10px;
+            margin-bottom: 16px;
         }
         .stat-card {
             background: rgba(255,255,255,0.08);
-            border-radius: 12px;
-            padding: 20px;
+            border-radius: 10px;
+            padding: 14px;
             border: 1px solid rgba(255,255,255,0.1);
         }
         .stat-value {
-            font-size: 1.8rem;
+            font-size: 1.5rem;
             font-weight: 700;
-            margin-bottom: 4px;
+            margin-bottom: 2px;
         }
         .stat-label {
-            font-size: 0.85rem;
+            font-size: 0.75rem;
             color: rgba(255,255,255,0.6);
         }
         .stat-card.videos .stat-value { color: #ff6b6b; }
@@ -120,48 +151,49 @@
         
         /* Upload Section */
         .upload-section {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            border-radius: 16px;
-            padding: 24px;
-            margin-bottom: 24px;
+            background: linear-gradient(135deg, #1565c0 0%, #0d47a1 100%);
+            border-radius: 12px;
+            padding: 16px;
+            margin-bottom: 16px;
         }
         .upload-header {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            margin-bottom: 20px;
+            margin-bottom: 12px;
         }
         .upload-header h2 {
             display: flex;
             align-items: center;
-            gap: 10px;
-            font-size: 1.3rem;
+            gap: 8px;
+            font-size: 1rem;
         }
         .upload-tabs {
             display: flex;
-            gap: 8px;
+            gap: 4px;
         }
         .upload-tab {
-            padding: 8px 16px;
-            border-radius: 8px;
+            padding: 6px 12px;
+            border-radius: 6px;
             cursor: pointer;
-            background: rgba(255,255,255,0.15);
-            border: 1px solid rgba(255,255,255,0.2);
+            background: rgba(255,255,255,0.1);
+            border: 1px solid rgba(255,255,255,0.15);
             color: white;
             font-weight: 500;
+            font-size: 0.8rem;
             transition: all 0.2s;
         }
         .upload-tab.active {
-            background: rgba(255,255,255,0.3);
-            border-color: rgba(255,255,255,0.4);
+            background: rgba(255,255,255,0.25);
+            border-color: rgba(255,255,255,0.3);
         }
-        .upload-tab:hover { background: rgba(255,255,255,0.25); }
+        .upload-tab:hover { background: rgba(255,255,255,0.2); }
         
-        /* Drop Zone */
+        /* Drop Zone - Compact */
         .drop-zone {
-            border: 3px dashed rgba(255,255,255,0.4);
-            border-radius: 16px;
-            padding: 50px 30px;
+            border: 2px dashed rgba(255,255,255,0.4);
+            border-radius: 12px;
+            padding: 30px 20px;
             text-align: center;
             cursor: pointer;
             transition: all 0.3s;
@@ -172,20 +204,20 @@
             background: rgba(255,255,255,0.1);
         }
         .drop-zone-icon {
-            font-size: 4rem;
-            margin-bottom: 16px;
+            font-size: 2.5rem;
+            margin-bottom: 10px;
         }
         .drop-zone-text {
-            font-size: 1.2rem;
-            margin-bottom: 8px;
+            font-size: 1rem;
+            margin-bottom: 6px;
         }
         .drop-zone-hint {
-            font-size: 0.9rem;
+            font-size: 0.8rem;
             color: rgba(255,255,255,0.7);
         }
         .drop-zone-formats {
-            margin-top: 16px;
-            font-size: 0.8rem;
+            margin-top: 10px;
+            font-size: 0.7rem;
             color: rgba(255,255,255,0.5);
         }
         
@@ -250,67 +282,67 @@
             color: rgba(255,255,255,0.8);
         }
         
-        /* Media Library */
+        /* Media Library - Compact */
         .library-section {
             background: rgba(255,255,255,0.05);
-            border-radius: 16px;
-            padding: 24px;
+            border-radius: 12px;
+            padding: 16px;
             border: 1px solid rgba(255,255,255,0.1);
-            margin-bottom: 24px;
+            margin-bottom: 16px;
         }
         .library-header {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            margin-bottom: 20px;
+            margin-bottom: 14px;
             flex-wrap: wrap;
-            gap: 12px;
+            gap: 10px;
         }
         .library-header h2 {
             display: flex;
             align-items: center;
-            gap: 10px;
-            font-size: 1.3rem;
+            gap: 8px;
+            font-size: 1rem;
         }
         .library-filters {
             display: flex;
-            gap: 8px;
+            gap: 4px;
             flex-wrap: wrap;
         }
         .filter-btn {
-            padding: 8px 16px;
-            border-radius: 20px;
+            padding: 5px 12px;
+            border-radius: 14px;
             cursor: pointer;
             background: rgba(255,255,255,0.1);
-            border: 1px solid rgba(255,255,255,0.2);
+            border: 1px solid rgba(255,255,255,0.15);
             color: white;
-            font-size: 0.85rem;
+            font-size: 0.75rem;
             transition: all 0.2s;
         }
         .filter-btn.active {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: linear-gradient(135deg, #42a5f5 0%, #1976d2 100%);
             border-color: transparent;
         }
         .filter-btn:hover { background: rgba(255,255,255,0.2); }
         
-        /* Media Grid */
+        /* Media Grid - Compact */
         .media-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-            gap: 20px;
+            grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+            gap: 12px;
         }
         .media-card {
             background: rgba(255,255,255,0.08);
-            border-radius: 12px;
+            border-radius: 10px;
             overflow: hidden;
             border: 1px solid rgba(255,255,255,0.1);
-            transition: all 0.3s;
+            transition: all 0.2s;
             position: relative;
         }
         .media-card:hover {
-            transform: translateY(-4px);
+            transform: translateY(-2px);
             border-color: rgba(255,255,255,0.3);
-            box-shadow: 0 8px 30px rgba(0,0,0,0.3);
+            box-shadow: 0 6px 20px rgba(0,0,0,0.3);
         }
         .media-card.selected {
             border-color: #4facfe;
@@ -332,16 +364,16 @@
             object-fit: cover;
         }
         .media-thumbnail-icon {
-            font-size: 3rem;
+            font-size: 2rem;
             opacity: 0.7;
         }
         .media-type-badge {
             position: absolute;
-            top: 8px;
-            left: 8px;
-            padding: 4px 10px;
-            border-radius: 6px;
-            font-size: 0.75rem;
+            top: 6px;
+            left: 6px;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 0.65rem;
             font-weight: 600;
             text-transform: uppercase;
         }
@@ -350,46 +382,47 @@
         .media-type-badge.document { background: #2ed573; }
         .media-duration {
             position: absolute;
-            bottom: 8px;
-            right: 8px;
+            bottom: 6px;
+            right: 6px;
             background: rgba(0,0,0,0.7);
-            padding: 2px 8px;
-            border-radius: 4px;
-            font-size: 0.75rem;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-size: 0.65rem;
         }
         .media-info {
-            padding: 14px;
+            padding: 10px;
         }
         .media-name {
             font-weight: 600;
-            margin-bottom: 6px;
+            margin-bottom: 4px;
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
+            font-size: 0.85rem;
         }
         .media-meta {
             display: flex;
             justify-content: space-between;
-            font-size: 0.8rem;
+            font-size: 0.7rem;
             color: rgba(255,255,255,0.5);
         }
         .media-actions {
             display: flex;
-            gap: 6px;
-            padding: 0 14px 14px;
+            gap: 4px;
+            padding: 0 10px 10px;
         }
         .media-action-btn {
             flex: 1;
-            padding: 8px;
-            border-radius: 6px;
+            padding: 5px;
+            border-radius: 4px;
             border: none;
             cursor: pointer;
-            font-size: 0.8rem;
+            font-size: 0.7rem;
             font-weight: 500;
             transition: all 0.2s;
         }
         .media-action-btn.use {
-            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+            background: linear-gradient(135deg, #42a5f5 0%, #1976d2 100%);
             color: white;
         }
         .media-action-btn.preview {
@@ -402,56 +435,218 @@
         }
         .media-action-btn:hover { transform: scale(1.02); }
         
-        /* Landing Page Assignments */
+        /* Landing Page Assignments - Compact */
         .assignments-section {
-            background: linear-gradient(135deg, #2ed573 0%, #1dd1a1 100%);
-            border-radius: 16px;
-            padding: 24px;
-            margin-bottom: 24px;
-        }
-        .assignments-section h2 {
-            margin-bottom: 20px;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-        .assignment-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-            gap: 16px;
-        }
-        .assignment-card {
-            background: rgba(255,255,255,0.15);
+            background: linear-gradient(135deg, #2e7d32 0%, #4caf50 100%);
             border-radius: 12px;
             padding: 16px;
+            margin-bottom: 16px;
         }
-        .assignment-label {
-            font-weight: 600;
-            margin-bottom: 10px;
+        .assignments-section h2 {
+            margin-bottom: 14px;
             display: flex;
             align-items: center;
             gap: 8px;
+            font-size: 1rem;
+        }
+        .assignment-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 10px;
+        }
+        .assignment-card {
+            background: rgba(255,255,255,0.15);
+            border-radius: 10px;
+            padding: 12px;
+        }
+        .assignment-label {
+            font-weight: 600;
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 0.85rem;
         }
         .assignment-select {
             width: 100%;
-            padding: 12px;
-            border-radius: 8px;
+            padding: 8px 10px;
+            border-radius: 6px;
             border: 1px solid rgba(255,255,255,0.3);
             background: rgba(255,255,255,0.1);
             color: white;
-            font-size: 0.95rem;
+            font-size: 0.85rem;
             cursor: pointer;
         }
-        .assignment-select option { background: #2d3561; color: white; }
+        .assignment-select option { background: #1565c0; color: white; }
         .assignment-status {
-            margin-top: 8px;
-            font-size: 0.85rem;
+            margin-top: 6px;
+            font-size: 0.75rem;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+        .assignment-status.active { color: #fff; }
+        .assignment-status.inactive { color: rgba(255,255,255,0.6); }
+        
+        /* ========== DESIGN SETTINGS PANEL ========== */
+        .design-section {
+            background: linear-gradient(135deg, #5c6bc0 0%, #3949ab 100%);
+            border-radius: 12px;
+            padding: 16px;
+            margin-bottom: 16px;
+        }
+        .design-section h2 {
+            margin-bottom: 14px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 1rem;
+        }
+        .design-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 12px;
+        }
+        .design-card {
+            background: rgba(255,255,255,0.1);
+            border-radius: 10px;
+            padding: 14px;
+        }
+        .design-card h4 {
+            font-size: 0.9rem;
+            margin-bottom: 12px;
             display: flex;
             align-items: center;
             gap: 6px;
         }
-        .assignment-status.active { color: #fff; }
-        .assignment-status.inactive { color: rgba(255,255,255,0.6); }
+        .design-option {
+            margin-bottom: 12px;
+        }
+        .design-option:last-child {
+            margin-bottom: 0;
+        }
+        .design-option label {
+            display: block;
+            font-size: 0.75rem;
+            color: rgba(255,255,255,0.8);
+            margin-bottom: 6px;
+        }
+        .design-option input[type="text"],
+        .design-option input[type="number"],
+        .design-option select {
+            width: 100%;
+            padding: 8px 10px;
+            border-radius: 6px;
+            border: 1px solid rgba(255,255,255,0.2);
+            background: rgba(255,255,255,0.1);
+            color: white;
+            font-size: 0.85rem;
+        }
+        .design-option input:focus,
+        .design-option select:focus {
+            outline: none;
+            border-color: rgba(255,255,255,0.4);
+        }
+        .design-option select option {
+            background: #3949ab;
+            color: white;
+        }
+        .color-swatches {
+            display: flex;
+            gap: 6px;
+            flex-wrap: wrap;
+        }
+        .color-swatch {
+            width: 28px;
+            height: 28px;
+            border-radius: 6px;
+            cursor: pointer;
+            border: 2px solid transparent;
+            transition: all 0.2s;
+        }
+        .color-swatch:hover {
+            transform: scale(1.1);
+        }
+        .color-swatch.selected {
+            border-color: white;
+            box-shadow: 0 0 0 2px rgba(255,255,255,0.3);
+        }
+        .toggle-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 0;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+        }
+        .toggle-row:last-child {
+            border-bottom: none;
+        }
+        .toggle-label {
+            font-size: 0.8rem;
+        }
+        .toggle-switch {
+            position: relative;
+            width: 40px;
+            height: 22px;
+        }
+        .toggle-switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+        .toggle-slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(255,255,255,0.2);
+            border-radius: 22px;
+            transition: 0.3s;
+        }
+        .toggle-slider:before {
+            position: absolute;
+            content: "";
+            height: 16px;
+            width: 16px;
+            left: 3px;
+            bottom: 3px;
+            background: white;
+            border-radius: 50%;
+            transition: 0.3s;
+        }
+        .toggle-switch input:checked + .toggle-slider {
+            background: linear-gradient(135deg, #4caf50 0%, #2e7d32 100%);
+        }
+        .toggle-switch input:checked + .toggle-slider:before {
+            transform: translateX(18px);
+        }
+        .range-control {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .range-control input[type="range"] {
+            flex: 1;
+            height: 4px;
+            border-radius: 2px;
+            background: rgba(255,255,255,0.2);
+            -webkit-appearance: none;
+        }
+        .range-control input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            background: #42a5f5;
+            cursor: pointer;
+        }
+        .range-value {
+            font-size: 0.8rem;
+            min-width: 40px;
+            text-align: right;
+        }
         
         /* Empty State */
         .empty-state {
@@ -576,42 +771,52 @@
     </style>
 </head>
 <body>
-    <!-- Header -->
+    <!-- Compact Header -->
     <header class="admin-header">
         <div class="header-left">
             <a href="/admin.html" class="logo">
                 <div class="logo-icon">🛡️</div>
                 <span class="logo-text">PHINS</span>
             </a>
-            <span class="page-title">📁 Media Management Dashboard</span>
+            <span class="page-title">Media & Design</span>
         </div>
         <div class="header-right">
-            <a href="/admin.html" class="btn btn-secondary">← Back to Admin</a>
-            <button onclick="saveAllAssignments()" class="btn btn-primary">💾 Save Changes</button>
+            <a href="/admin.html" class="btn btn-secondary">← Admin</a>
+            <button onclick="saveAllSettings()" class="btn btn-primary">💾 Save All</button>
         </div>
     </header>
     
     <!-- Main Container -->
     <div class="main-container">
-        <!-- Stats Bar -->
-        <div class="stats-bar">
-            <div class="stat-card videos">
-                <div class="stat-value" id="stat-videos">0</div>
-                <div class="stat-label">🎬 Videos</div>
-            </div>
-            <div class="stat-card images">
-                <div class="stat-value" id="stat-images">0</div>
-                <div class="stat-label">🖼️ Images</div>
-            </div>
-            <div class="stat-card documents">
-                <div class="stat-value" id="stat-documents">0</div>
-                <div class="stat-label">📄 Documents</div>
-            </div>
-            <div class="stat-card storage">
-                <div class="stat-value" id="stat-storage">0 MB</div>
-                <div class="stat-label">💾 Total Storage Used</div>
-            </div>
+        <!-- Main Navigation Tabs -->
+        <div class="main-tabs">
+            <button class="main-tab active" onclick="switchMainTab('media')">📁 Media</button>
+            <button class="main-tab" onclick="switchMainTab('design')">🎨 Design</button>
+            <button class="main-tab" onclick="switchMainTab('layout')">📐 Layout</button>
+            <button class="main-tab" onclick="switchMainTab('branding')">✨ Branding</button>
         </div>
+        
+        <!-- Media Tab Content -->
+        <div id="tab-media" class="tab-content">
+            <!-- Compact Stats Bar -->
+            <div class="stats-bar">
+                <div class="stat-card videos">
+                    <div class="stat-value" id="stat-videos">0</div>
+                    <div class="stat-label">🎬 Videos</div>
+                </div>
+                <div class="stat-card images">
+                    <div class="stat-value" id="stat-images">0</div>
+                    <div class="stat-label">🖼️ Images</div>
+                </div>
+                <div class="stat-card documents">
+                    <div class="stat-value" id="stat-documents">0</div>
+                    <div class="stat-label">📄 Documents</div>
+                </div>
+                <div class="stat-card storage">
+                    <div class="stat-value" id="stat-storage">0 MB</div>
+                    <div class="stat-label">💾 Storage</div>
+                </div>
+            </div>
         
         <!-- Upload Section -->
         <section class="upload-section">
@@ -683,9 +888,9 @@
             </div>
         </section>
         
-        <!-- Landing Page Assignments -->
+        <!-- Landing Page Assignments - Compact -->
         <section class="assignments-section">
-            <h2>🎯 Landing Page Assignments</h2>
+            <h2>🎯 Media Assignments</h2>
             <div class="assignment-grid">
                 <div class="assignment-card">
                     <div class="assignment-label">🎬 Hero Video</div>
@@ -693,42 +898,320 @@
                         <option value="">-- No Video --</option>
                     </select>
                     <div class="assignment-status" id="status-hero-video">
-                        <span>⚪</span> Not configured
+                        <span>⚪</span> Not set
                     </div>
                 </div>
                 <div class="assignment-card">
-                    <div class="assignment-label">🖼️ Hero Background</div>
+                    <div class="assignment-label">🖼️ Background</div>
                     <select id="assign-hero-background" class="assignment-select" onchange="updateAssignment('hero_background')">
-                        <option value="">-- No Image --</option>
+                        <option value="">-- None --</option>
                     </select>
                     <div class="assignment-status" id="status-hero-background">
-                        <span>⚪</span> Not configured
+                        <span>⚪</span> Not set
                     </div>
                 </div>
                 <div class="assignment-card">
-                    <div class="assignment-label">📸 Video Thumbnail</div>
+                    <div class="assignment-label">📸 Thumbnail</div>
                     <select id="assign-video-poster" class="assignment-select" onchange="updateAssignment('video_poster')">
-                        <option value="">-- Auto Generate --</option>
+                        <option value="">-- Auto --</option>
                     </select>
                     <div class="assignment-status" id="status-video-poster">
-                        <span>⚪</span> Not configured
+                        <span>⚪</span> Not set
                     </div>
                 </div>
                 <div class="assignment-card">
-                    <div class="assignment-label">🏷️ Promo Banner</div>
+                    <div class="assignment-label">🏷️ Banner</div>
                     <select id="assign-promo-banner" class="assignment-select" onchange="updateAssignment('promo_banner')">
-                        <option value="">-- No Banner --</option>
+                        <option value="">-- None --</option>
                     </select>
                     <div class="assignment-status" id="status-promo-banner">
-                        <span>⚪</span> Not configured
+                        <span>⚪</span> Not set
                     </div>
                 </div>
             </div>
-            <div style="margin-top: 20px; display: flex; gap: 12px; flex-wrap: wrap;">
-                <button onclick="saveAllAssignments()" class="btn btn-primary">💾 Save Assignments</button>
-                <a href="/" target="_blank" class="btn btn-secondary">👁️ Preview Landing Page</a>
+            <div style="margin-top: 12px; display: flex; gap: 8px; flex-wrap: wrap;">
+                <a href="/" target="_blank" class="btn btn-secondary">👁️ Preview</a>
             </div>
         </section>
+        </div><!-- End Media Tab -->
+        
+        <!-- Design Tab Content -->
+        <div id="tab-design" class="tab-content" style="display: none;">
+            <section class="design-section">
+                <h2>🎨 Appearance Settings</h2>
+                <div class="design-grid">
+                    <!-- Theme Colors -->
+                    <div class="design-card">
+                        <h4>🌈 Theme Colors</h4>
+                        <div class="design-option">
+                            <label>Primary Color</label>
+                            <div class="color-swatches">
+                                <div class="color-swatch selected" style="background: #1565c0;" onclick="selectColor('primary', '#1565c0', this)"></div>
+                                <div class="color-swatch" style="background: #7c3aed;" onclick="selectColor('primary', '#7c3aed', this)"></div>
+                                <div class="color-swatch" style="background: #059669;" onclick="selectColor('primary', '#059669', this)"></div>
+                                <div class="color-swatch" style="background: #dc2626;" onclick="selectColor('primary', '#dc2626', this)"></div>
+                                <div class="color-swatch" style="background: #d97706;" onclick="selectColor('primary', '#d97706', this)"></div>
+                                <div class="color-swatch" style="background: #0891b2;" onclick="selectColor('primary', '#0891b2', this)"></div>
+                                <div class="color-swatch" style="background: #be185d;" onclick="selectColor('primary', '#be185d', this)"></div>
+                                <div class="color-swatch" style="background: #374151;" onclick="selectColor('primary', '#374151', this)"></div>
+                            </div>
+                        </div>
+                        <div class="design-option">
+                            <label>Accent Color</label>
+                            <div class="color-swatches">
+                                <div class="color-swatch selected" style="background: #42a5f5;" onclick="selectColor('accent', '#42a5f5', this)"></div>
+                                <div class="color-swatch" style="background: #a78bfa;" onclick="selectColor('accent', '#a78bfa', this)"></div>
+                                <div class="color-swatch" style="background: #34d399;" onclick="selectColor('accent', '#34d399', this)"></div>
+                                <div class="color-swatch" style="background: #fbbf24;" onclick="selectColor('accent', '#fbbf24', this)"></div>
+                                <div class="color-swatch" style="background: #f472b6;" onclick="selectColor('accent', '#f472b6', this)"></div>
+                                <div class="color-swatch" style="background: #60a5fa;" onclick="selectColor('accent', '#60a5fa', this)"></div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Display Options -->
+                    <div class="design-card">
+                        <h4>📺 Display Options</h4>
+                        <div class="toggle-row">
+                            <span class="toggle-label">Dark Mode</span>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="opt-dark-mode" onchange="updateDesignOption('darkMode', this.checked)">
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                        <div class="toggle-row">
+                            <span class="toggle-label">Animations</span>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="opt-animations" checked onchange="updateDesignOption('animations', this.checked)">
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                        <div class="toggle-row">
+                            <span class="toggle-label">Compact Mode</span>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="opt-compact" onchange="updateDesignOption('compactMode', this.checked)">
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                        <div class="toggle-row">
+                            <span class="toggle-label">Show Icons</span>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="opt-icons" checked onchange="updateDesignOption('showIcons', this.checked)">
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                    </div>
+                    
+                    <!-- Typography -->
+                    <div class="design-card">
+                        <h4>🔤 Typography</h4>
+                        <div class="design-option">
+                            <label>Font Family</label>
+                            <select id="opt-font" onchange="updateDesignOption('fontFamily', this.value)">
+                                <option value="Inter">Inter (Default)</option>
+                                <option value="Roboto">Roboto</option>
+                                <option value="Open Sans">Open Sans</option>
+                                <option value="Poppins">Poppins</option>
+                                <option value="Montserrat">Montserrat</option>
+                                <option value="system-ui">System Default</option>
+                            </select>
+                        </div>
+                        <div class="design-option">
+                            <label>Font Size</label>
+                            <div class="range-control">
+                                <input type="range" min="12" max="18" value="14" id="opt-font-size" onchange="updateDesignOption('fontSize', this.value)">
+                                <span class="range-value" id="font-size-value">14px</span>
+                            </div>
+                        </div>
+                        <div class="design-option">
+                            <label>Line Height</label>
+                            <div class="range-control">
+                                <input type="range" min="1.2" max="2" step="0.1" value="1.5" id="opt-line-height" onchange="updateDesignOption('lineHeight', this.value)">
+                                <span class="range-value" id="line-height-value">1.5</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </div><!-- End Design Tab -->
+        
+        <!-- Layout Tab Content -->
+        <div id="tab-layout" class="tab-content" style="display: none;">
+            <section class="design-section">
+                <h2>📐 Layout Settings</h2>
+                <div class="design-grid">
+                    <!-- Navigation Layout -->
+                    <div class="design-card">
+                        <h4>🧭 Navigation</h4>
+                        <div class="design-option">
+                            <label>Nav Position</label>
+                            <select id="opt-nav-position" onchange="updateLayoutOption('navPosition', this.value)">
+                                <option value="top">Top (Default)</option>
+                                <option value="side">Side Bar</option>
+                                <option value="bottom">Bottom (Mobile)</option>
+                            </select>
+                        </div>
+                        <div class="design-option">
+                            <label>Nav Style</label>
+                            <select id="opt-nav-style" onchange="updateLayoutOption('navStyle', this.value)">
+                                <option value="full">Full Width</option>
+                                <option value="contained">Contained</option>
+                                <option value="floating">Floating</option>
+                            </select>
+                        </div>
+                        <div class="toggle-row">
+                            <span class="toggle-label">Sticky Header</span>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="opt-sticky-header" checked onchange="updateLayoutOption('stickyHeader', this.checked)">
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                    </div>
+                    
+                    <!-- Tab Display -->
+                    <div class="design-card">
+                        <h4>📑 Tab Display</h4>
+                        <div class="design-option">
+                            <label>Tab Style</label>
+                            <select id="opt-tab-style" onchange="updateLayoutOption('tabStyle', this.value)">
+                                <option value="compact">Compact (Default)</option>
+                                <option value="pills">Pills</option>
+                                <option value="underline">Underline</option>
+                                <option value="buttons">Buttons</option>
+                            </select>
+                        </div>
+                        <div class="design-option">
+                            <label>Tab Size</label>
+                            <select id="opt-tab-size" onchange="updateLayoutOption('tabSize', this.value)">
+                                <option value="small">Small</option>
+                                <option value="medium" selected>Medium</option>
+                                <option value="large">Large</option>
+                            </select>
+                        </div>
+                        <div class="toggle-row">
+                            <span class="toggle-label">Show Tab Icons</span>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="opt-tab-icons" checked onchange="updateLayoutOption('tabIcons', this.checked)">
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                    </div>
+                    
+                    <!-- Content Layout -->
+                    <div class="design-card">
+                        <h4>📄 Content</h4>
+                        <div class="design-option">
+                            <label>Max Width</label>
+                            <select id="opt-content-width" onchange="updateLayoutOption('contentWidth', this.value)">
+                                <option value="1200">1200px</option>
+                                <option value="1400" selected>1400px</option>
+                                <option value="1600">1600px</option>
+                                <option value="100%">Full Width</option>
+                            </select>
+                        </div>
+                        <div class="design-option">
+                            <label>Card Spacing</label>
+                            <div class="range-control">
+                                <input type="range" min="8" max="24" value="16" id="opt-spacing" onchange="updateLayoutOption('spacing', this.value)">
+                                <span class="range-value" id="spacing-value">16px</span>
+                            </div>
+                        </div>
+                        <div class="design-option">
+                            <label>Border Radius</label>
+                            <div class="range-control">
+                                <input type="range" min="0" max="20" value="12" id="opt-radius" onchange="updateLayoutOption('borderRadius', this.value)">
+                                <span class="range-value" id="radius-value">12px</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </div><!-- End Layout Tab -->
+        
+        <!-- Branding Tab Content -->
+        <div id="tab-branding" class="tab-content" style="display: none;">
+            <section class="design-section">
+                <h2>✨ Brand Settings</h2>
+                <div class="design-grid">
+                    <!-- Logo Settings -->
+                    <div class="design-card">
+                        <h4>🎨 Logo & Identity</h4>
+                        <div class="design-option">
+                            <label>Company Name</label>
+                            <input type="text" id="opt-company-name" value="PHINS" placeholder="Company Name" onchange="updateBrandOption('companyName', this.value)">
+                        </div>
+                        <div class="design-option">
+                            <label>Tagline</label>
+                            <input type="text" id="opt-tagline" value="Safe Assurance" placeholder="Tagline" onchange="updateBrandOption('tagline', this.value)">
+                        </div>
+                        <div class="design-option">
+                            <label>Logo Icon</label>
+                            <select id="opt-logo-icon" onchange="updateBrandOption('logoIcon', this.value)">
+                                <option value="🛡️" selected>🛡️ Shield</option>
+                                <option value="🏦">🏦 Bank</option>
+                                <option value="💼">💼 Briefcase</option>
+                                <option value="🌟">🌟 Star</option>
+                                <option value="🔒">🔒 Lock</option>
+                                <option value="❤️">❤️ Heart</option>
+                                <option value="🏥">🏥 Hospital</option>
+                                <option value="⭐">⭐ Premium</option>
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <!-- Footer Settings -->
+                    <div class="design-card">
+                        <h4>📋 Footer Content</h4>
+                        <div class="design-option">
+                            <label>Copyright Text</label>
+                            <input type="text" id="opt-copyright" value="© 2026 PHINS Insurance" placeholder="Copyright" onchange="updateBrandOption('copyright', this.value)">
+                        </div>
+                        <div class="toggle-row">
+                            <span class="toggle-label">Show Social Links</span>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="opt-social" checked onchange="updateBrandOption('showSocial', this.checked)">
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                        <div class="toggle-row">
+                            <span class="toggle-label">Show Contact Info</span>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="opt-contact" checked onchange="updateBrandOption('showContact', this.checked)">
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                    </div>
+                    
+                    <!-- Welcome Message -->
+                    <div class="design-card">
+                        <h4>👋 Welcome Settings</h4>
+                        <div class="design-option">
+                            <label>Dashboard Greeting</label>
+                            <select id="opt-greeting" onchange="updateBrandOption('greeting', this.value)">
+                                <option value="welcome">Welcome back</option>
+                                <option value="hello">Hello</option>
+                                <option value="hi">Hi</option>
+                                <option value="good">Good [time of day]</option>
+                            </select>
+                        </div>
+                        <div class="toggle-row">
+                            <span class="toggle-label">Show User Name</span>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="opt-show-name" checked onchange="updateBrandOption('showUserName', this.checked)">
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                        <div class="toggle-row">
+                            <span class="toggle-label">Show Last Login</span>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="opt-last-login" onchange="updateBrandOption('showLastLogin', this.checked)">
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </div><!-- End Branding Tab -->
     </div>
     
     <!-- Preview Modal -->
@@ -756,26 +1239,73 @@
         // ==================== STATE ====================
         let mediaAssets = [];
         let currentFilter = 'all';
+        let currentMainTab = 'media';
         let assignments = {
             hero_video: '',
             hero_background: '',
             video_poster: '',
             promo_banner: ''
         };
+        let designSettings = {
+            primaryColor: '#1565c0',
+            accentColor: '#42a5f5',
+            darkMode: false,
+            animations: true,
+            compactMode: false,
+            showIcons: true,
+            fontFamily: 'Inter',
+            fontSize: 14,
+            lineHeight: 1.5
+        };
+        let layoutSettings = {
+            navPosition: 'top',
+            navStyle: 'full',
+            stickyHeader: true,
+            tabStyle: 'compact',
+            tabSize: 'medium',
+            tabIcons: true,
+            contentWidth: '1400',
+            spacing: 16,
+            borderRadius: 12
+        };
+        let brandSettings = {
+            companyName: 'PHINS',
+            tagline: 'Safe Assurance',
+            logoIcon: '🛡️',
+            copyright: '© 2026 PHINS Insurance',
+            showSocial: true,
+            showContact: true,
+            greeting: 'welcome',
+            showUserName: true,
+            showLastLogin: false
+        };
         
         // Token must be retrieved inside functions, not at script load time
-        // Note: login.js stores token as 'phins_token'
         function getToken() {
             return localStorage.getItem('phins_token');
         }
         
+        // ==================== MAIN TAB SWITCHING ====================
+        function switchMainTab(tabName) {
+            currentMainTab = tabName;
+            // Update tab buttons
+            document.querySelectorAll('.main-tab').forEach(tab => {
+                tab.classList.remove('active');
+                if (tab.textContent.toLowerCase().includes(tabName)) {
+                    tab.classList.add('active');
+                }
+            });
+            // Update tab content
+            document.querySelectorAll('.tab-content').forEach(content => {
+                content.style.display = 'none';
+            });
+            document.getElementById(`tab-${tabName}`).style.display = 'block';
+        }
+        
         // ==================== INITIALIZATION ====================
         document.addEventListener('DOMContentLoaded', async () => {
-            // Get token after DOM is ready
             const token = getToken();
-            console.log('Media Dashboard: Initializing...');
-            console.log('Token exists:', !!token);
-            console.log('Token value:', token ? token.substring(0, 20) + '...' : 'null');
+            console.log('Media & Design Dashboard: Initializing...');
             
             if (!token) {
                 console.log('No token found, redirecting to login');
@@ -783,11 +1313,42 @@
                 return;
             }
             
-            // Try to load media directly - the API will return 403 if not authorized
+            // Load all data
             loadMediaAssets();
             loadAssignments();
+            loadDesignSettings();
             setupDragAndDrop();
+            setupRangeListeners();
         });
+        
+        // Setup range input listeners
+        function setupRangeListeners() {
+            const fontSizeRange = document.getElementById('opt-font-size');
+            const lineHeightRange = document.getElementById('opt-line-height');
+            const spacingRange = document.getElementById('opt-spacing');
+            const radiusRange = document.getElementById('opt-radius');
+            
+            if (fontSizeRange) {
+                fontSizeRange.addEventListener('input', function() {
+                    document.getElementById('font-size-value').textContent = this.value + 'px';
+                });
+            }
+            if (lineHeightRange) {
+                lineHeightRange.addEventListener('input', function() {
+                    document.getElementById('line-height-value').textContent = this.value;
+                });
+            }
+            if (spacingRange) {
+                spacingRange.addEventListener('input', function() {
+                    document.getElementById('spacing-value').textContent = this.value + 'px';
+                });
+            }
+            if (radiusRange) {
+                radiusRange.addEventListener('input', function() {
+                    document.getElementById('radius-value').textContent = this.value + 'px';
+                });
+            }
+        }
         
         // ==================== API FUNCTIONS ====================
         async function loadMediaAssets() {
@@ -851,17 +1412,140 @@
                         hero_background_id: assignments.hero_background,
                         video_poster_id: assignments.video_poster,
                         promo_banner_id: assignments.promo_banner,
-                        // Also save the URLs for backward compatibility
                         video_url: getMediaUrl(assignments.hero_video),
                         video_poster: getMediaUrl(assignments.video_poster)
                     })
                 });
                 
                 if (response.ok) {
-                    showToast('✅ Assignments saved successfully!', 'success');
+                    showToast('✅ Assignments saved!', 'success');
                     updateAssignmentUI();
                 } else {
                     showToast('Failed to save assignments', 'error');
+                }
+            } catch (e) {
+                showToast('Error: ' + e.message, 'error');
+            }
+        }
+        
+        // ==================== DESIGN SETTINGS ====================
+        function selectColor(type, color, element) {
+            // Update UI
+            const parent = element.parentElement;
+            parent.querySelectorAll('.color-swatch').forEach(s => s.classList.remove('selected'));
+            element.classList.add('selected');
+            
+            // Update state
+            if (type === 'primary') {
+                designSettings.primaryColor = color;
+            } else if (type === 'accent') {
+                designSettings.accentColor = color;
+            }
+        }
+        
+        function updateDesignOption(key, value) {
+            designSettings[key] = value;
+            console.log('Design option updated:', key, value);
+        }
+        
+        function updateLayoutOption(key, value) {
+            layoutSettings[key] = value;
+            console.log('Layout option updated:', key, value);
+        }
+        
+        function updateBrandOption(key, value) {
+            brandSettings[key] = value;
+            console.log('Brand option updated:', key, value);
+        }
+        
+        async function loadDesignSettings() {
+            const token = getToken();
+            try {
+                const response = await fetch('/api/design/settings', {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                if (response.ok) {
+                    const settings = await response.json();
+                    // Apply loaded settings to form
+                    if (settings.designSettings) {
+                        designSettings = { ...designSettings, ...settings.designSettings };
+                    }
+                    if (settings.layoutSettings) {
+                        layoutSettings = { ...layoutSettings, ...settings.layoutSettings };
+                    }
+                    if (settings.brandSettings) {
+                        brandSettings = { ...brandSettings, ...settings.brandSettings };
+                    }
+                    applySettingsToForm();
+                }
+            } catch (e) {
+                console.warn('Could not load design settings:', e);
+            }
+        }
+        
+        function applySettingsToForm() {
+            // Apply design settings
+            const darkMode = document.getElementById('opt-dark-mode');
+            const animations = document.getElementById('opt-animations');
+            const compact = document.getElementById('opt-compact');
+            const icons = document.getElementById('opt-icons');
+            
+            if (darkMode) darkMode.checked = designSettings.darkMode;
+            if (animations) animations.checked = designSettings.animations;
+            if (compact) compact.checked = designSettings.compactMode;
+            if (icons) icons.checked = designSettings.showIcons;
+            
+            // Apply layout settings
+            const navPos = document.getElementById('opt-nav-position');
+            const navStyle = document.getElementById('opt-nav-style');
+            const tabStyle = document.getElementById('opt-tab-style');
+            const tabSize = document.getElementById('opt-tab-size');
+            
+            if (navPos) navPos.value = layoutSettings.navPosition;
+            if (navStyle) navStyle.value = layoutSettings.navStyle;
+            if (tabStyle) tabStyle.value = layoutSettings.tabStyle;
+            if (tabSize) tabSize.value = layoutSettings.tabSize;
+            
+            // Apply brand settings
+            const companyName = document.getElementById('opt-company-name');
+            const tagline = document.getElementById('opt-tagline');
+            const logoIcon = document.getElementById('opt-logo-icon');
+            
+            if (companyName) companyName.value = brandSettings.companyName;
+            if (tagline) tagline.value = brandSettings.tagline;
+            if (logoIcon) logoIcon.value = brandSettings.logoIcon;
+        }
+        
+        async function saveAllSettings() {
+            const token = getToken();
+            try {
+                // Save all settings
+                const response = await fetch('/api/design/settings', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        // Media assignments
+                        hero_video_id: assignments.hero_video,
+                        hero_background_id: assignments.hero_background,
+                        video_poster_id: assignments.video_poster,
+                        promo_banner_id: assignments.promo_banner,
+                        video_url: getMediaUrl(assignments.hero_video),
+                        video_poster: getMediaUrl(assignments.video_poster),
+                        // Design settings
+                        designSettings: designSettings,
+                        layoutSettings: layoutSettings,
+                        brandSettings: brandSettings
+                    })
+                });
+                
+                if (response.ok) {
+                    showToast('✅ All settings saved!', 'success');
+                    updateAssignmentUI();
+                } else {
+                    showToast('Failed to save settings', 'error');
                 }
             } catch (e) {
                 showToast('Error: ' + e.message, 'error');

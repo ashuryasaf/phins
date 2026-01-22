@@ -1060,3 +1060,327 @@ body{
     grid-template-columns:1fr;
   }
 }
+
+/* ========== COMPACT TABS SYSTEM ========== */
+.compact-tabs {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  padding: 4px;
+  background: rgba(0,0,0,0.05);
+  border-radius: 10px;
+}
+.compact-tab {
+  padding: 6px 12px;
+  font-size: 0.8rem;
+  font-weight: 500;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  color: #666;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+.compact-tab:hover {
+  background: rgba(0,0,0,0.08);
+  color: #333;
+}
+.compact-tab.active {
+  background: linear-gradient(135deg, #1565c0 0%, #1976d2 100%);
+  color: white;
+  box-shadow: 0 2px 8px rgba(21, 101, 192, 0.3);
+}
+.compact-tab-dark {
+  color: rgba(255,255,255,0.7);
+}
+.compact-tab-dark:hover {
+  background: rgba(255,255,255,0.15);
+  color: white;
+}
+.compact-tab-dark.active {
+  background: rgba(255,255,255,0.25);
+  color: white;
+}
+
+/* Mini Tabs (even smaller) */
+.mini-tabs {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  background: rgba(0,0,0,0.03);
+  border-radius: 6px;
+}
+.mini-tab {
+  padding: 4px 8px;
+  font-size: 0.7rem;
+  font-weight: 500;
+  border-radius: 4px;
+  border: none;
+  background: transparent;
+  color: #888;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.mini-tab:hover {
+  background: rgba(0,0,0,0.06);
+  color: #555;
+}
+.mini-tab.active {
+  background: #1565c0;
+  color: white;
+}
+
+/* Pill Tabs */
+.pill-tabs {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.pill-tab {
+  padding: 5px 12px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  border-radius: 16px;
+  border: 1px solid #ddd;
+  background: white;
+  color: #666;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.pill-tab:hover {
+  border-color: #1565c0;
+  color: #1565c0;
+}
+.pill-tab.active {
+  background: linear-gradient(135deg, #1565c0 0%, #42a5f5 100%);
+  color: white;
+  border-color: transparent;
+}
+
+/* Icon Tabs (compact with icons) */
+.icon-tabs {
+  display: flex;
+  gap: 4px;
+}
+.icon-tab {
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  border: none;
+  background: rgba(0,0,0,0.05);
+  color: #666;
+  cursor: pointer;
+  font-size: 1rem;
+  transition: all 0.2s ease;
+}
+.icon-tab:hover {
+  background: rgba(0,0,0,0.1);
+  color: #333;
+  transform: scale(1.05);
+}
+.icon-tab.active {
+  background: linear-gradient(135deg, #1565c0 0%, #1976d2 100%);
+  color: white;
+  box-shadow: 0 2px 8px rgba(21, 101, 192, 0.3);
+}
+
+/* Compact Navigation */
+.compact-nav {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.compact-nav a {
+  padding: 5px 10px;
+  font-size: 0.75rem;
+  font-weight: 500;
+  border-radius: 6px;
+  text-decoration: none;
+  color: rgba(255,255,255,0.8);
+  transition: all 0.2s ease;
+}
+.compact-nav a:hover {
+  background: rgba(255,255,255,0.12);
+  color: white;
+}
+.compact-nav a.active {
+  background: rgba(255,255,255,0.2);
+  color: white;
+}
+
+/* Settings Panel Styles */
+.settings-panel {
+  background: rgba(255,255,255,0.08);
+  border-radius: 12px;
+  padding: 20px;
+  margin-bottom: 20px;
+  border: 1px solid rgba(255,255,255,0.1);
+}
+.settings-group {
+  margin-bottom: 16px;
+}
+.settings-group:last-child {
+  margin-bottom: 0;
+}
+.settings-label {
+  display: block;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: rgba(255,255,255,0.9);
+  margin-bottom: 8px;
+}
+.settings-input {
+  width: 100%;
+  padding: 10px 14px;
+  border-radius: 8px;
+  border: 1px solid rgba(255,255,255,0.2);
+  background: rgba(255,255,255,0.1);
+  color: white;
+  font-size: 0.9rem;
+  transition: all 0.2s;
+}
+.settings-input:focus {
+  outline: none;
+  border-color: rgba(255,255,255,0.4);
+  background: rgba(255,255,255,0.15);
+}
+.settings-input::placeholder {
+  color: rgba(255,255,255,0.5);
+}
+.settings-select {
+  width: 100%;
+  padding: 10px 14px;
+  border-radius: 8px;
+  border: 1px solid rgba(255,255,255,0.2);
+  background: rgba(255,255,255,0.1);
+  color: white;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+.settings-select option {
+  background: #2d3561;
+  color: white;
+}
+
+/* Toggle Switch */
+.toggle-switch {
+  position: relative;
+  width: 48px;
+  height: 26px;
+  display: inline-block;
+}
+.toggle-switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+.toggle-slider {
+  position: absolute;
+  cursor: pointer;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(255,255,255,0.2);
+  border-radius: 26px;
+  transition: 0.3s;
+}
+.toggle-slider:before {
+  position: absolute;
+  content: "";
+  height: 20px;
+  width: 20px;
+  left: 3px;
+  bottom: 3px;
+  background: white;
+  border-radius: 50%;
+  transition: 0.3s;
+}
+.toggle-switch input:checked + .toggle-slider {
+  background: linear-gradient(135deg, #4caf50 0%, #2e7d32 100%);
+}
+.toggle-switch input:checked + .toggle-slider:before {
+  transform: translateX(22px);
+}
+
+/* Color Picker */
+.color-picker-group {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.color-swatch {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  border: 2px solid transparent;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.color-swatch:hover {
+  transform: scale(1.1);
+}
+.color-swatch.selected {
+  border-color: white;
+  box-shadow: 0 0 0 2px rgba(255,255,255,0.5);
+}
+
+/* Range Slider */
+.range-slider {
+  width: 100%;
+  height: 6px;
+  border-radius: 3px;
+  background: rgba(255,255,255,0.2);
+  outline: none;
+  -webkit-appearance: none;
+}
+.range-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #42a5f5 0%, #1976d2 100%);
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+}
+.range-slider::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #42a5f5 0%, #1976d2 100%);
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+  border: none;
+}
+
+/* Responsive Compact Tabs */
+@media (max-width: 768px) {
+  .compact-tabs {
+    gap: 2px;
+    padding: 3px;
+  }
+  .compact-tab {
+    padding: 5px 10px;
+    font-size: 0.75rem;
+  }
+  .pill-tabs {
+    gap: 4px;
+  }
+  .pill-tab {
+    padding: 4px 10px;
+    font-size: 0.7rem;
+  }
+  .icon-tab {
+    width: 32px;
+    height: 32px;
+    font-size: 0.9rem;
+  }
+  .settings-panel {
+    padding: 14px;
+  }
+}
