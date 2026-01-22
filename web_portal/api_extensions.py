@@ -5,9 +5,15 @@ This module provides API handlers for:
 - Community Foundation management
 - OTP Security (CAPTCHA, login verification)
 - Device trust management
+- Foundation billing integration for customer dashboard
 
 Integration with server.py:
   Import and call these handlers from do_GET/do_POST based on path matching.
+
+Data Persistence:
+  Foundation data is automatically persisted to disk and survives server restarts.
+  Backups are created before critical operations.
+  Foundation deposits are integrated with customer billing for dashboard visibility.
 """
 
 import json
@@ -18,12 +24,44 @@ from typing import Dict, Any, Optional, Tuple
 try:
     from services.foundation_service import (
         get_foundation_service,
+        init_foundation_service,
         FoundationCreateRequest,
     )
     FOUNDATION_SERVICE_AVAILABLE = True
 except ImportError:
     FOUNDATION_SERVICE_AVAILABLE = False
     print("Warning: Foundation service not available")
+
+# Import billing integration
+try:
+    from services.foundation_billing_integration import (
+        get_billing_integration,
+        FoundationBillingIntegration
+    )
+    BILLING_INTEGRATION_AVAILABLE = True
+except ImportError:
+    BILLING_INTEGRATION_AVAILABLE = False
+    print("Warning: Foundation billing integration not available")
+
+# Import persistence service
+try:
+    from services.foundation_persistence_service import (
+        get_persistence_service
+    )
+    PERSISTENCE_AVAILABLE = True
+except ImportError:
+    PERSISTENCE_AVAILABLE = False
+    print("Warning: Foundation persistence not available")
+
+# Import backup service
+try:
+    from services.ledger_backup_service import (
+        get_backup_service
+    )
+    BACKUP_AVAILABLE = True
+except ImportError:
+    BACKUP_AVAILABLE = False
+    print("Warning: Ledger backup service not available")
 
 try:
     from services.otp_security_service import (
@@ -842,6 +880,89 @@ def handle_foundation_ledger(session: Dict, query_params: Dict) -> Tuple[int, Di
     }
 
 
+def handle_foundation_billing_dashboard(session: Dict, query_params: Dict) -> Tuple[int, Dict]:
+    """
+    GET /api/foundation-billing-dashboard - Get foundation billing data for customer dashboard
+    
+    This endpoint returns billing data that should appear on the customer's main dashboard,
+    showing their foundation deposits, contributions, and payouts.
+    """
+    if not FOUNDATION_SERVICE_AVAILABLE:
+        return 200, {
+            "customer_id": "",
+            "foundation_billing": {
+                "summary": {
+                    "total_contributed": 0,
+                    "total_received": 0,
+                    "net_position": 0,
+                    "active_foundations": 0
+                },
+                "recent_transactions": [],
+                "transaction_count": 0
+            }
+        }
+    
+    if not session:
+        return 401, {"error": "Authentication required"}
+    
+    service = get_foundation_service()
+    customer_id = session.get('customer_id')
+    user_id = customer_id or session.get('username')
+    
+    # Get billing dashboard data
+    dashboard_data = service.get_billing_dashboard_data(user_id)
+    
+    return 200, dashboard_data
+
+
+def handle_foundation_create_backup(session: Dict) -> Tuple[int, Dict]:
+    """POST /api/foundations/backup - Create a manual backup of foundation data (admin only)"""
+    if not FOUNDATION_SERVICE_AVAILABLE:
+        return 503, {"error": "Foundation service not available"}
+    
+    if not session or session.get('role') != 'admin':
+        return 403, {"error": "Admin access required"}
+    
+    service = get_foundation_service()
+    backup_id = service.create_backup(label="manual_backup")
+    
+    if backup_id:
+        return 200, {"success": True, "backup_id": backup_id, "message": "Backup created successfully"}
+    else:
+        return 500, {"success": False, "error": "Backup creation failed"}
+
+
+def handle_foundation_persistence_status(session: Dict) -> Tuple[int, Dict]:
+    """GET /api/foundations/persistence-status - Get persistence service status (admin only)"""
+    if not FOUNDATION_SERVICE_AVAILABLE:
+        return 503, {"error": "Foundation service not available"}
+    
+    if not session or session.get('role') != 'admin':
+        return 403, {"error": "Admin access required"}
+    
+    service = get_foundation_service()
+    
+    status = {
+        "persistence_enabled": service._persistence_enabled,
+        "backup_enabled": service._backup_enabled,
+        "billing_integration_enabled": service._billing_enabled,
+        "foundations_count": len(service._foundations),
+        "members_count": len(service._members),
+        "contributions_count": len(service._contributions),
+        "timestamp": datetime.now(timezone.utc).isoformat()
+    }
+    
+    # Add backup list if available
+    if BACKUP_AVAILABLE:
+        try:
+            backup_service = get_backup_service()
+            status["recent_backups"] = backup_service.list_backups(backup_type="foundation", limit=5)
+        except Exception as e:
+            status["backup_list_error"] = str(e)
+    
+    return 200, status
+
+
 def handle_foundation_activity_log(session: Dict, query_params: Dict) -> Tuple[int, Dict]:
     """GET /api/foundation-activity - Get user's foundation activity log"""
     return handle_foundation_ledger(session, query_params)
@@ -1295,6 +1416,14 @@ def dispatch_get(path: str, session: Dict, query_params: Dict, client_ip: str) -
     if path == '/api/foundation-activity':
         return handle_foundation_activity_log(session, query_params)
     
+    # Foundation billing dashboard - for customer dashboard integration
+    if path == '/api/foundation-billing-dashboard':
+        return handle_foundation_billing_dashboard(session, query_params)
+    
+    # Foundation persistence status (admin only)
+    if path == '/api/foundations/persistence-status':
+        return handle_foundation_persistence_status(session)
+    
     # Foundation-specific endpoints
     if path.startswith('/api/foundations/') and not path.startswith('/api/foundations/join'):
         parts = path.split('/')
@@ -1407,6 +1536,10 @@ def dispatch_post(path: str, session: Dict, body_data: Dict, client_ip: str, use
     # Foundation: Join
     if path == '/api/foundations/join':
         return handle_foundation_join(session, body_data)
+    
+    # Foundation: Create backup (admin only)
+    if path == '/api/foundations/backup':
+        return handle_foundation_create_backup(session)
     
     # Foundation-specific POST endpoints
     if path.startswith('/api/foundations/') and not path.startswith('/api/admin/'):
