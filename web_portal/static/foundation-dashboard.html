@@ -1109,6 +1109,344 @@
     ::-webkit-scrollbar-thumb:hover {
       background: rgba(0,0,0,0.3);
     }
+    
+    /* Members Grid */
+    .members-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+      gap: 16px;
+    }
+    
+    .member-card {
+      background: white;
+      border: 1px solid #e0e0e0;
+      border-radius: 12px;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      transition: all 0.2s;
+    }
+    
+    .member-card:hover {
+      box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    }
+    
+    .member-card.pending {
+      background: #fff8e1;
+      border-color: #ffb74d;
+    }
+    
+    .member-avatar {
+      width: 50px;
+      height: 50px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 600;
+      font-size: 1.2rem;
+      color: white;
+      flex-shrink: 0;
+    }
+    
+    .member-avatar img {
+      width: 100%;
+      height: 100%;
+      border-radius: 50%;
+      object-fit: cover;
+    }
+    
+    .member-info {
+      flex: 1;
+    }
+    
+    .member-name {
+      font-weight: 600;
+      font-size: 1rem;
+      color: #333;
+    }
+    
+    .member-role {
+      font-size: 0.85rem;
+      font-weight: 500;
+    }
+    
+    .member-stats {
+      display: flex;
+      gap: 12px;
+      font-size: 0.8rem;
+      color: #666;
+      margin-top: 6px;
+    }
+    
+    .member-actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-top: 8px;
+    }
+    
+    .member-actions button, .member-actions select {
+      padding: 6px 12px;
+      border-radius: 6px;
+      font-size: 0.85rem;
+      cursor: pointer;
+      border: none;
+    }
+    
+    .btn-approve {
+      background: #4caf50;
+      color: white;
+    }
+    
+    .btn-reject {
+      background: #f5f5f5;
+      color: #666;
+      border: 1px solid #ddd !important;
+    }
+    
+    .btn-remove {
+      background: #ffebee;
+      color: #c62828;
+      border: 1px solid #ef9a9a !important;
+    }
+    
+    .role-select {
+      background: white;
+      border: 1px solid #ddd !important;
+      color: #333;
+    }
+    
+    /* Votes Grid */
+    .votes-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+      gap: 20px;
+    }
+    
+    .vote-card {
+      background: white;
+      border: 1px solid #e0e0e0;
+      border-radius: 12px;
+      overflow: hidden;
+      transition: all 0.2s;
+    }
+    
+    .vote-card:hover {
+      box-shadow: 0 4px 16px rgba(0,0,0,0.1);
+    }
+    
+    .vote-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 12px 16px;
+      background: #f5f5f5;
+      border-bottom: 1px solid #e0e0e0;
+    }
+    
+    .vote-status {
+      padding: 4px 10px;
+      border-radius: 20px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      color: white;
+    }
+    
+    .vote-time {
+      font-size: 0.8rem;
+      color: #666;
+    }
+    
+    .vote-body {
+      padding: 16px;
+    }
+    
+    .vote-title {
+      margin: 0 0 8px;
+      font-size: 1.1rem;
+      color: #333;
+    }
+    
+    .vote-subject {
+      font-size: 0.85rem;
+      color: var(--foundation-primary);
+      margin-bottom: 8px;
+    }
+    
+    .vote-summary {
+      font-size: 0.9rem;
+      color: #555;
+      margin: 0 0 8px;
+    }
+    
+    .vote-description {
+      font-size: 0.85rem;
+      color: #666;
+      margin: 0 0 12px;
+    }
+    
+    .vote-results {
+      margin-top: 16px;
+    }
+    
+    .vote-bar {
+      height: 8px;
+      background: #e0e0e0;
+      border-radius: 4px;
+      overflow: hidden;
+      display: flex;
+    }
+    
+    .vote-bar-for {
+      background: #4caf50;
+      transition: width 0.3s;
+    }
+    
+    .vote-bar-against {
+      background: #f44336;
+      transition: width 0.3s;
+    }
+    
+    .vote-counts {
+      display: flex;
+      justify-content: space-between;
+      margin-top: 8px;
+      font-size: 0.8rem;
+    }
+    
+    .vote-for { color: #4caf50; }
+    .vote-against { color: #f44336; }
+    .vote-abstain { color: #9e9e9e; }
+    
+    .vote-approval {
+      text-align: center;
+      font-size: 0.8rem;
+      color: #666;
+      margin-top: 8px;
+    }
+    
+    .vote-footer {
+      padding: 12px 16px;
+      background: #fafafa;
+      border-top: 1px solid #eee;
+    }
+    
+    .vote-actions {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 12px;
+      flex-wrap: wrap;
+    }
+    
+    .vote-actions button {
+      flex: 1;
+      min-width: 80px;
+      padding: 8px 12px;
+      border: none;
+      border-radius: 6px;
+      font-weight: 600;
+      font-size: 0.85rem;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    
+    .btn-vote-for {
+      background: #e8f5e9;
+      color: #2e7d32;
+    }
+    
+    .btn-vote-for:hover {
+      background: #4caf50;
+      color: white;
+    }
+    
+    .btn-vote-against {
+      background: #ffebee;
+      color: #c62828;
+    }
+    
+    .btn-vote-against:hover {
+      background: #f44336;
+      color: white;
+    }
+    
+    .btn-vote-abstain {
+      background: #f5f5f5;
+      color: #666;
+    }
+    
+    .btn-vote-abstain:hover {
+      background: #9e9e9e;
+      color: white;
+    }
+    
+    .btn-approve-vote {
+      background: #4caf50;
+      color: white;
+    }
+    
+    .btn-reject-vote {
+      background: #f44336;
+      color: white;
+    }
+    
+    .vote-meta {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.75rem;
+      color: #999;
+    }
+    
+    .user-voted {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    
+    @media (max-width: 768px) {
+      .members-grid, .votes-grid {
+        grid-template-columns: 1fr;
+      }
+      
+      .member-card {
+        flex-direction: column;
+        align-items: flex-start;
+      }
+      
+      .vote-actions {
+        flex-direction: column;
+      }
+      
+      .vote-actions button {
+        width: 100%;
+      }
+    }
+    
+    /* Billing Cards */
+    .billing-card {
+      padding: 20px;
+      border-radius: 12px;
+      text-align: center;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    }
+    
+    .billing-card-icon {
+      font-size: 2rem;
+      margin-bottom: 8px;
+    }
+    
+    .billing-card-value {
+      font-size: 1.6rem;
+      font-weight: 700;
+    }
+    
+    .billing-card-label {
+      font-size: 0.85rem;
+      opacity: 0.9;
+      margin-top: 4px;
+    }
   </style>
 </head>
 <body>
@@ -1486,6 +1824,136 @@
       </div>
       <div class="modal-body" id="view-modal-body">
         <!-- Foundation details will be loaded here -->
+      </div>
+    </div>
+  </div>
+  
+  <!-- Members Modal -->
+  <div class="modal-overlay" id="members-modal">
+    <div class="modal large">
+      <div class="modal-header">
+        <h2 id="members-modal-title">👥 Foundation Members</h2>
+        <button class="modal-close" onclick="closeMembersModal()">&times;</button>
+      </div>
+      <div class="modal-body" id="members-list" style="max-height: 70vh; overflow-y: auto;">
+        <!-- Members will be loaded here -->
+      </div>
+    </div>
+  </div>
+  
+  <!-- Votes Modal -->
+  <div class="modal-overlay" id="votes-modal">
+    <div class="modal large">
+      <div class="modal-header">
+        <h2 id="votes-modal-title">🗳️ Foundation Votes</h2>
+        <div style="display: flex; gap: 12px; align-items: center;">
+          <button id="create-vote-btn" class="btn-create" onclick="openCreateVoteModal()" style="display: none;">
+            <span>+</span> New Vote
+          </button>
+          <button class="modal-close" onclick="closeVotesModal()">&times;</button>
+        </div>
+      </div>
+      <div class="modal-body" id="votes-list" style="max-height: 70vh; overflow-y: auto;">
+        <!-- Votes will be loaded here -->
+      </div>
+    </div>
+  </div>
+  
+  <!-- Create Vote Modal -->
+  <div class="modal-overlay" id="create-vote-modal">
+    <div class="modal">
+      <div class="modal-header">
+        <h2>🗳️ Create New Vote</h2>
+        <button class="modal-close" onclick="closeCreateVoteModal()">&times;</button>
+      </div>
+      <div class="modal-body">
+        <form id="create-vote-form" onsubmit="event.preventDefault(); submitCreateVote();">
+          <div class="form-group">
+            <label for="vote-title">Vote Title *</label>
+            <input type="text" id="vote-title" required placeholder="e.g., Approve new member fund allocation" />
+          </div>
+          
+          <div class="form-group">
+            <label for="vote-subject">Subject/Category</label>
+            <input type="text" id="vote-subject" placeholder="e.g., Budget, Policy, Membership" />
+          </div>
+          
+          <div class="form-group">
+            <label for="vote-type">Proposal Type</label>
+            <select id="vote-type">
+              <option value="general">General Decision</option>
+              <option value="policy">Policy Change</option>
+              <option value="budget">Budget/Financial</option>
+              <option value="membership">Membership Related</option>
+              <option value="claim">Claim Approval</option>
+              <option value="election">Election</option>
+            </select>
+          </div>
+          
+          <div class="form-group">
+            <label for="vote-summary">Summary</label>
+            <input type="text" id="vote-summary" placeholder="Brief summary of the proposal" />
+          </div>
+          
+          <div class="form-group">
+            <label for="vote-description">Full Description</label>
+            <textarea id="vote-description" rows="3" placeholder="Detailed description of what this vote is about..."></textarea>
+          </div>
+          
+          <div class="form-group">
+            <label for="vote-outlines">Key Points (one per line)</label>
+            <textarea id="vote-outlines" rows="3" placeholder="Point 1&#10;Point 2&#10;Point 3"></textarea>
+          </div>
+          
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+            <div class="form-group">
+              <label for="vote-mechanism">Voting Mechanism</label>
+              <select id="vote-mechanism">
+                <option value="simple_majority">Simple Majority (50%+)</option>
+                <option value="supermajority">Supermajority (66%+)</option>
+                <option value="unanimous">Unanimous (100%)</option>
+              </select>
+            </div>
+            
+            <div class="form-group">
+              <label for="vote-duration">Duration (days)</label>
+              <select id="vote-duration">
+                <option value="3">3 days</option>
+                <option value="5">5 days</option>
+                <option value="7" selected>7 days</option>
+                <option value="14">14 days</option>
+                <option value="30">30 days</option>
+              </select>
+            </div>
+          </div>
+          
+          <div class="form-group">
+            <label for="vote-threshold">Pass Threshold</label>
+            <select id="vote-threshold">
+              <option value="0.50">50% (Simple Majority)</option>
+              <option value="0.60">60%</option>
+              <option value="0.66">66% (Two-thirds)</option>
+              <option value="0.75">75% (Three-quarters)</option>
+            </select>
+          </div>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button class="btn-action secondary" onclick="closeCreateVoteModal()">Cancel</button>
+        <button class="btn-action primary" onclick="submitCreateVote()">Create Vote</button>
+      </div>
+    </div>
+  </div>
+  
+  <!-- Billing & Reports Modal -->
+  <div class="modal-overlay" id="billing-modal">
+    <div class="modal large">
+      <div class="modal-header">
+        <h2 id="billing-modal-title">📊 Billing & Reports</h2>
+        <button class="modal-close" onclick="closeBillingModal()">&times;</button>
+      </div>
+      <div class="modal-body" id="billing-content" style="max-height: 70vh; overflow-y: auto;">
+        <!-- Billing content will be loaded here -->
       </div>
     </div>
   </div>
@@ -2302,6 +2770,7 @@
               <button class="btn-action primary" onclick="contributeToFoundation('${data.id}')">💰 Make Contribution</button>
               <button class="btn-action secondary" onclick="viewMembers('${data.id}')">👥 View Members</button>
               <button class="btn-action secondary" onclick="viewVotes('${data.id}')">🗳️ Active Votes</button>
+              <button class="btn-action secondary" onclick="viewBilling('${data.id}')">📊 Billing & Reports</button>
               ${isAdmin ? `<button class="btn-action invite" onclick="quickInvite('${data.id}'); closeViewModal();">📨 Invite Members</button>` : ''}
             </div>
           `;
@@ -2348,12 +2817,749 @@
       }
     }
     
-    function viewMembers(id) {
-      alert('Members view - Feature coming soon!\n\nThis will show all foundation members with their contribution history and voting records.');
+    // ========== VIEW MEMBERS MODAL ==========
+    let currentMembersFoundationId = null;
+    let foundationMembers = [];
+    
+    async function viewMembers(id) {
+      currentMembersFoundationId = id;
+      const foundation = foundations.find(f => f.id === id);
+      
+      document.getElementById('members-modal-title').textContent = `👥 ${foundation?.name || 'Foundation'} - Members`;
+      document.getElementById('members-modal').classList.add('active');
+      document.getElementById('members-list').innerHTML = '<div style="text-align: center; padding: 40px;">Loading members...</div>';
+      
+      await loadFoundationMembers(id);
     }
     
-    function viewVotes(id) {
-      alert('Active votes view - Feature coming soon!\n\nThis will show all active proposals and allow you to cast your vote.');
+    function closeMembersModal() {
+      document.getElementById('members-modal').classList.remove('active');
+      currentMembersFoundationId = null;
+      foundationMembers = [];
+    }
+    
+    async function loadFoundationMembers(foundationId) {
+      try {
+        const token = localStorage.getItem('phins_token');
+        const response = await fetch(`/api/foundations/${foundationId}/members?include_pending=true`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const data = await response.json();
+        
+        foundationMembers = data.items || [];
+        const userRole = data.user_role || 'member';
+        renderMembersList(userRole);
+      } catch (e) {
+        console.error('Error loading members:', e);
+        document.getElementById('members-list').innerHTML = '<div style="text-align: center; padding: 40px; color: #f44336;">Error loading members. Please try again.</div>';
+      }
+    }
+    
+    function renderMembersList(userRole) {
+      const container = document.getElementById('members-list');
+      const isAdmin = userRole === 'founder' || userRole === 'admin';
+      
+      if (foundationMembers.length === 0) {
+        container.innerHTML = '<div style="text-align: center; padding: 40px; color: #666;">No members found</div>';
+        return;
+      }
+      
+      // Separate pending and active members
+      const pendingMembers = foundationMembers.filter(m => m.status === 'pending');
+      const activeMembers = foundationMembers.filter(m => m.status === 'active');
+      
+      let html = '';
+      
+      // Pending members section
+      if (pendingMembers.length > 0 && isAdmin) {
+        html += `
+          <div style="margin-bottom: 24px;">
+            <h4 style="color: #ff9800; margin: 0 0 16px; display: flex; align-items: center; gap: 8px;">
+              ⏳ Pending Approval (${pendingMembers.length})
+            </h4>
+            <div class="members-grid">
+              ${pendingMembers.map(m => renderMemberCard(m, isAdmin, true)).join('')}
+            </div>
+          </div>
+        `;
+      }
+      
+      // Active members section
+      html += `
+        <div>
+          <h4 style="color: var(--foundation-dark); margin: 0 0 16px; display: flex; align-items: center; gap: 8px;">
+            ✅ Active Members (${activeMembers.length})
+          </h4>
+          <div class="members-grid">
+            ${activeMembers.map(m => renderMemberCard(m, isAdmin, false)).join('')}
+          </div>
+        </div>
+      `;
+      
+      container.innerHTML = html;
+    }
+    
+    function renderMemberCard(member, isAdmin, isPending) {
+      const roleColors = {
+        founder: '#ff9800',
+        admin: '#2196f3',
+        member: '#4caf50',
+        observer: '#9e9e9e'
+      };
+      
+      const initials = (member.display_name || 'M').split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
+      
+      return `
+        <div class="member-card ${isPending ? 'pending' : ''}">
+          <div class="member-avatar" style="background: ${roleColors[member.role] || '#5e35b1'}">
+            ${member.photo_url ? `<img src="${member.photo_url}" alt="${escapeHtml(member.display_name)}" />` : initials}
+          </div>
+          <div class="member-info">
+            <div class="member-name">${escapeHtml(member.display_name || 'Member')}</div>
+            <div class="member-role" style="color: ${roleColors[member.role] || '#666'}">${getRoleLabel(member.role)}</div>
+            <div class="member-stats">
+              <span>💰 $${formatNumber(member.total_contributed || 0)}</span>
+              <span>📅 ${member.last_contribution ? formatDate(member.last_contribution) : 'No contributions'}</span>
+            </div>
+          </div>
+          ${isPending && isAdmin ? `
+            <div class="member-actions">
+              <button class="btn-approve" onclick="approveMember('${member.id}')">✅ Approve</button>
+              <button class="btn-reject" onclick="rejectMember('${member.id}')">❌ Reject</button>
+            </div>
+          ` : ''}
+          ${!isPending && isAdmin && member.role !== 'founder' ? `
+            <div class="member-actions">
+              <select onchange="changeMemberRole('${member.id}', this.value)" class="role-select">
+                <option value="">Change Role</option>
+                <option value="admin" ${member.role === 'admin' ? 'disabled' : ''}>Make Admin</option>
+                <option value="member" ${member.role === 'member' ? 'disabled' : ''}>Make Member</option>
+                <option value="observer" ${member.role === 'observer' ? 'disabled' : ''}>Make Observer</option>
+              </select>
+              <button class="btn-remove" onclick="removeMember('${member.id}', '${escapeHtml(member.display_name)}')">Remove</button>
+            </div>
+          ` : ''}
+        </div>
+      `;
+    }
+    
+    async function approveMember(memberId) {
+      if (!confirm('Approve this member to join the foundation?')) return;
+      
+      try {
+        const token = localStorage.getItem('phins_token');
+        const response = await fetch(`/api/foundations/${currentMembersFoundationId}/members/${memberId}/approve`, {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        
+        const data = await response.json();
+        if (data.success) {
+          alert('✅ Member approved successfully!');
+          await loadFoundationMembers(currentMembersFoundationId);
+          await loadFoundations();
+          updateDashboardStats();
+        } else {
+          alert('Error: ' + (data.error || 'Failed to approve member'));
+        }
+      } catch (e) {
+        console.error('Error approving member:', e);
+        alert('Network error. Please try again.');
+      }
+    }
+    
+    async function rejectMember(memberId) {
+      const reason = prompt('Reason for rejection (optional):');
+      if (reason === null) return;
+      
+      try {
+        const token = localStorage.getItem('phins_token');
+        const response = await fetch(`/api/foundations/${currentMembersFoundationId}/members/${memberId}/reject`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify({ reason })
+        });
+        
+        const data = await response.json();
+        if (data.success) {
+          alert('Member rejected');
+          await loadFoundationMembers(currentMembersFoundationId);
+        } else {
+          alert('Error: ' + (data.error || 'Failed to reject member'));
+        }
+      } catch (e) {
+        console.error('Error rejecting member:', e);
+        alert('Network error. Please try again.');
+      }
+    }
+    
+    async function removeMember(memberId, memberName) {
+      if (!confirm(`Are you sure you want to remove ${memberName} from the foundation?`)) return;
+      
+      const reason = prompt('Reason for removal (optional):');
+      if (reason === null) return;
+      
+      try {
+        const token = localStorage.getItem('phins_token');
+        const response = await fetch(`/api/foundations/${currentMembersFoundationId}/members/${memberId}/remove`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify({ reason })
+        });
+        
+        const data = await response.json();
+        if (data.success) {
+          alert('Member removed');
+          await loadFoundationMembers(currentMembersFoundationId);
+          await loadFoundations();
+          updateDashboardStats();
+        } else {
+          alert('Error: ' + (data.error || 'Failed to remove member'));
+        }
+      } catch (e) {
+        console.error('Error removing member:', e);
+        alert('Network error. Please try again.');
+      }
+    }
+    
+    async function changeMemberRole(memberId, newRole) {
+      if (!newRole) return;
+      
+      if (!confirm(`Change this member's role to ${newRole}?`)) {
+        event.target.value = '';
+        return;
+      }
+      
+      try {
+        const token = localStorage.getItem('phins_token');
+        const response = await fetch(`/api/foundations/${currentMembersFoundationId}/members/${memberId}/role`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify({ role: newRole })
+        });
+        
+        const data = await response.json();
+        if (data.success) {
+          alert(`✅ Role updated to ${newRole}`);
+          await loadFoundationMembers(currentMembersFoundationId);
+        } else {
+          alert('Error: ' + (data.error || 'Failed to change role'));
+        }
+      } catch (e) {
+        console.error('Error changing role:', e);
+        alert('Network error. Please try again.');
+      }
+      
+      event.target.value = '';
+    }
+    
+    // ========== VIEW VOTES MODAL ==========
+    let currentVotesFoundationId = null;
+    let foundationVotes = [];
+    let currentUserRole = 'member';
+    
+    async function viewVotes(id) {
+      currentVotesFoundationId = id;
+      const foundation = foundations.find(f => f.id === id);
+      currentUserRole = foundation?.user_role || 'member';
+      
+      document.getElementById('votes-modal-title').textContent = `🗳️ ${foundation?.name || 'Foundation'} - Votes & Decisions`;
+      document.getElementById('votes-modal').classList.add('active');
+      document.getElementById('votes-list').innerHTML = '<div style="text-align: center; padding: 40px;">Loading votes...</div>';
+      
+      // Show create vote button for admins
+      const createVoteBtn = document.getElementById('create-vote-btn');
+      if (currentUserRole === 'founder' || currentUserRole === 'admin') {
+        createVoteBtn.style.display = 'flex';
+      } else {
+        createVoteBtn.style.display = 'none';
+      }
+      
+      await loadFoundationVotes(id);
+    }
+    
+    function closeVotesModal() {
+      document.getElementById('votes-modal').classList.remove('active');
+      currentVotesFoundationId = null;
+      foundationVotes = [];
+    }
+    
+    async function loadFoundationVotes(foundationId) {
+      try {
+        const token = localStorage.getItem('phins_token');
+        const response = await fetch(`/api/foundations/${foundationId}/votes`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const data = await response.json();
+        
+        foundationVotes = data.items || [];
+        renderVotesList();
+      } catch (e) {
+        console.error('Error loading votes:', e);
+        document.getElementById('votes-list').innerHTML = '<div style="text-align: center; padding: 40px; color: #f44336;">Error loading votes. Please try again.</div>';
+      }
+    }
+    
+    function renderVotesList() {
+      const container = document.getElementById('votes-list');
+      
+      if (foundationVotes.length === 0) {
+        container.innerHTML = `
+          <div style="text-align: center; padding: 60px 20px;">
+            <div style="font-size: 3rem; margin-bottom: 16px;">🗳️</div>
+            <h3 style="color: #333; margin: 0 0 8px;">No Votes Yet</h3>
+            <p style="color: #666; margin: 0;">Create a vote to start making decisions together.</p>
+          </div>
+        `;
+        return;
+      }
+      
+      // Separate active and completed votes
+      const activeVotes = foundationVotes.filter(v => v.status === 'open' || v.status === 'pending_approval');
+      const completedVotes = foundationVotes.filter(v => v.status !== 'open' && v.status !== 'pending_approval');
+      
+      let html = '';
+      
+      // Active votes section
+      if (activeVotes.length > 0) {
+        html += `
+          <div style="margin-bottom: 24px;">
+            <h4 style="color: var(--foundation-dark); margin: 0 0 16px;">🔴 Active Votes (${activeVotes.length})</h4>
+            <div class="votes-grid">
+              ${activeVotes.map(v => renderVoteCard(v)).join('')}
+            </div>
+          </div>
+        `;
+      }
+      
+      // Completed votes section
+      if (completedVotes.length > 0) {
+        html += `
+          <div>
+            <h4 style="color: #666; margin: 0 0 16px;">📋 Decision History (${completedVotes.length})</h4>
+            <div class="votes-grid">
+              ${completedVotes.map(v => renderVoteCard(v)).join('')}
+            </div>
+          </div>
+        `;
+      }
+      
+      container.innerHTML = html;
+    }
+    
+    function renderVoteCard(vote) {
+      const statusColors = {
+        'open': '#4caf50',
+        'pending_approval': '#ff9800',
+        'passed': '#2196f3',
+        'failed': '#f44336',
+        'rejected': '#9e9e9e'
+      };
+      
+      const statusLabels = {
+        'open': '🔴 Open',
+        'pending_approval': '⏳ Pending Approval',
+        'passed': '✅ Passed',
+        'failed': '❌ Failed',
+        'rejected': '🚫 Rejected'
+      };
+      
+      const totalVotes = vote.votes_for + vote.votes_against + vote.votes_abstain;
+      const approvalRate = totalVotes > 0 ? Math.round((vote.votes_for / (vote.votes_for + vote.votes_against || 1)) * 100) : 0;
+      
+      const hasVoted = vote.user_vote?.has_voted;
+      const userChoice = vote.user_vote?.choice;
+      
+      const isOpen = vote.status === 'open';
+      const canVote = isOpen && !hasVoted;
+      const canApprove = vote.status === 'pending_approval' && (currentUserRole === 'founder' || currentUserRole === 'admin');
+      
+      // Time remaining for open votes
+      let timeRemaining = '';
+      if (isOpen && vote.closes_at) {
+        const closesAt = new Date(vote.closes_at);
+        const now = new Date();
+        const diffMs = closesAt - now;
+        if (diffMs > 0) {
+          const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+          const diffDays = Math.floor(diffHours / 24);
+          if (diffDays > 0) {
+            timeRemaining = `${diffDays}d ${diffHours % 24}h remaining`;
+          } else {
+            timeRemaining = `${diffHours}h remaining`;
+          }
+        } else {
+          timeRemaining = 'Voting ended';
+        }
+      }
+      
+      return `
+        <div class="vote-card">
+          <div class="vote-header">
+            <span class="vote-status" style="background: ${statusColors[vote.status] || '#666'}">${statusLabels[vote.status] || vote.status}</span>
+            ${timeRemaining ? `<span class="vote-time">⏱️ ${timeRemaining}</span>` : ''}
+          </div>
+          <div class="vote-body">
+            <h4 class="vote-title">${escapeHtml(vote.title)}</h4>
+            ${vote.subject ? `<div class="vote-subject">📌 ${escapeHtml(vote.subject)}</div>` : ''}
+            ${vote.summary ? `<p class="vote-summary">${escapeHtml(vote.summary)}</p>` : ''}
+            ${vote.description && vote.description !== vote.summary ? `<p class="vote-description">${escapeHtml(vote.description.slice(0, 150))}${vote.description.length > 150 ? '...' : ''}</p>` : ''}
+            
+            <div class="vote-results">
+              <div class="vote-bar">
+                <div class="vote-bar-for" style="width: ${totalVotes > 0 ? (vote.votes_for / totalVotes * 100) : 0}%"></div>
+                <div class="vote-bar-against" style="width: ${totalVotes > 0 ? (vote.votes_against / totalVotes * 100) : 0}%"></div>
+              </div>
+              <div class="vote-counts">
+                <span class="vote-for">👍 ${vote.votes_for} For</span>
+                <span class="vote-against">👎 ${vote.votes_against} Against</span>
+                <span class="vote-abstain">🤷 ${vote.votes_abstain} Abstain</span>
+              </div>
+              <div class="vote-approval">Approval: ${approvalRate}% (Threshold: ${Math.round(vote.threshold * 100)}%)</div>
+            </div>
+            
+            ${hasVoted ? `
+              <div class="user-voted" style="background: #e3f2fd; padding: 8px 12px; border-radius: 6px; margin-top: 12px; font-size: 0.85rem;">
+                ✅ You voted: <strong>${userChoice}</strong>
+                ${vote.user_vote.reason ? ` - "${escapeHtml(vote.user_vote.reason)}"` : ''}
+              </div>
+            ` : ''}
+          </div>
+          <div class="vote-footer">
+            ${canVote ? `
+              <div class="vote-actions">
+                <button class="btn-vote-for" onclick="castVote('${vote.id}', 'for')">👍 Vote For</button>
+                <button class="btn-vote-against" onclick="castVote('${vote.id}', 'against')">👎 Against</button>
+                <button class="btn-vote-abstain" onclick="castVote('${vote.id}', 'abstain')">🤷 Abstain</button>
+              </div>
+            ` : ''}
+            ${canApprove ? `
+              <div class="vote-actions">
+                <button class="btn-approve-vote" onclick="approveVoteProposal('${vote.id}')">✅ Approve Vote</button>
+                <button class="btn-reject-vote" onclick="rejectVoteProposal('${vote.id}')">❌ Reject</button>
+              </div>
+            ` : ''}
+            <div class="vote-meta">
+              <span>Created by ${escapeHtml(vote.created_by_name || 'Member')}</span>
+              <span>${formatDate(vote.created_at)}</span>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+    
+    async function castVote(voteId, choice) {
+      const reason = prompt('Add a reason for your vote (optional):');
+      if (reason === null) return;
+      
+      try {
+        const token = localStorage.getItem('phins_token');
+        const response = await fetch(`/api/foundations/${currentVotesFoundationId}/votes/${voteId}/cast`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify({ choice, reason })
+        });
+        
+        const data = await response.json();
+        if (data.success) {
+          alert(`✅ Vote cast: ${choice}`);
+          await loadFoundationVotes(currentVotesFoundationId);
+          await loadLedgerEntries();
+        } else {
+          alert('Error: ' + (data.error || 'Failed to cast vote'));
+        }
+      } catch (e) {
+        console.error('Error casting vote:', e);
+        alert('Network error. Please try again.');
+      }
+    }
+    
+    async function approveVoteProposal(voteId) {
+      if (!confirm('Approve this vote proposal? It will open for voting.')) return;
+      
+      try {
+        const token = localStorage.getItem('phins_token');
+        const response = await fetch(`/api/foundations/${currentVotesFoundationId}/votes/${voteId}/approve`, {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        
+        const data = await response.json();
+        if (data.success) {
+          alert('✅ Vote approved and open for voting');
+          await loadFoundationVotes(currentVotesFoundationId);
+        } else {
+          alert('Error: ' + (data.error || 'Failed to approve vote'));
+        }
+      } catch (e) {
+        console.error('Error approving vote:', e);
+        alert('Network error. Please try again.');
+      }
+    }
+    
+    async function rejectVoteProposal(voteId) {
+      const reason = prompt('Reason for rejecting this vote proposal:');
+      if (reason === null) return;
+      
+      alert('Vote rejection feature coming soon!');
+    }
+    
+    // Create Vote Modal
+    function openCreateVoteModal() {
+      document.getElementById('create-vote-modal').classList.add('active');
+    }
+    
+    function closeCreateVoteModal() {
+      document.getElementById('create-vote-modal').classList.remove('active');
+      document.getElementById('create-vote-form').reset();
+    }
+    
+    async function submitCreateVote() {
+      const title = document.getElementById('vote-title').value.trim();
+      if (!title) {
+        alert('Please enter a vote title');
+        return;
+      }
+      
+      const voteData = {
+        title: title,
+        subject: document.getElementById('vote-subject').value.trim(),
+        summary: document.getElementById('vote-summary').value.trim(),
+        description: document.getElementById('vote-description').value.trim(),
+        proposal_type: document.getElementById('vote-type').value,
+        voting_mechanism: document.getElementById('vote-mechanism').value,
+        duration_days: parseInt(document.getElementById('vote-duration').value),
+        threshold: parseFloat(document.getElementById('vote-threshold').value)
+      };
+      
+      // Parse outlines
+      const outlines = document.getElementById('vote-outlines').value.trim();
+      if (outlines) {
+        voteData.outlines = outlines.split('\n').filter(o => o.trim());
+      }
+      
+      try {
+        const token = localStorage.getItem('phins_token');
+        const response = await fetch(`/api/foundations/${currentVotesFoundationId}/votes`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify(voteData)
+        });
+        
+        const data = await response.json();
+        if (data.success) {
+          alert(`✅ Vote created! ${data.requires_approval ? 'It will open for voting once approved.' : 'It is now open for voting.'}`);
+          closeCreateVoteModal();
+          await loadFoundationVotes(currentVotesFoundationId);
+          await loadFoundations();
+          await loadLedgerEntries();
+          updateDashboardStats();
+        } else {
+          alert('Error: ' + (data.error || 'Failed to create vote'));
+        }
+      } catch (e) {
+        console.error('Error creating vote:', e);
+        alert('Network error. Please try again.');
+      }
+    }
+    
+    // ========== BILLING & REPORTS MODAL ==========
+    let currentBillingFoundationId = null;
+    
+    async function viewBilling(id) {
+      currentBillingFoundationId = id;
+      const foundation = foundations.find(f => f.id === id);
+      
+      document.getElementById('billing-modal-title').textContent = `📊 ${foundation?.name || 'Foundation'} - Billing & Reports`;
+      document.getElementById('billing-modal').classList.add('active');
+      document.getElementById('billing-content').innerHTML = '<div style="text-align: center; padding: 40px;">Loading billing data...</div>';
+      
+      await loadBillingData(id);
+    }
+    
+    function closeBillingModal() {
+      document.getElementById('billing-modal').classList.remove('active');
+      currentBillingFoundationId = null;
+    }
+    
+    async function loadBillingData(foundationId) {
+      try {
+        const token = localStorage.getItem('phins_token');
+        const [billingResponse, reportResponse] = await Promise.all([
+          fetch(`/api/foundations/${foundationId}/billing`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+          }),
+          fetch(`/api/foundations/${foundationId}/report`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+          })
+        ]);
+        
+        const billing = await billingResponse.json();
+        const report = await reportResponse.json();
+        
+        renderBillingContent(billing, report);
+      } catch (e) {
+        console.error('Error loading billing data:', e);
+        document.getElementById('billing-content').innerHTML = '<div style="text-align: center; padding: 40px; color: #f44336;">Error loading billing data. Please try again.</div>';
+      }
+    }
+    
+    function renderBillingContent(billing, report) {
+      const container = document.getElementById('billing-content');
+      const summary = billing.summary || {};
+      
+      container.innerHTML = `
+        <!-- Financial Summary Cards -->
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 24px;">
+          <div class="billing-card" style="background: linear-gradient(135deg, #4caf50 0%, #45a049 100%); color: white;">
+            <div class="billing-card-icon">💰</div>
+            <div class="billing-card-value">$${formatNumber(summary.total_balance || 0)}</div>
+            <div class="billing-card-label">Total Balance</div>
+          </div>
+          <div class="billing-card" style="background: linear-gradient(135deg, #2196f3 0%, #1976d2 100%); color: white;">
+            <div class="billing-card-icon">📈</div>
+            <div class="billing-card-value">$${formatNumber(summary.total_contributions || 0)}</div>
+            <div class="billing-card-label">Total Contributions</div>
+          </div>
+          <div class="billing-card" style="background: linear-gradient(135deg, #ff9800 0%, #f57c00 100%); color: white;">
+            <div class="billing-card-icon">📋</div>
+            <div class="billing-card-value">$${formatNumber(summary.total_claims_paid || 0)}</div>
+            <div class="billing-card-label">Claims Paid</div>
+          </div>
+          <div class="billing-card" style="background: linear-gradient(135deg, #9c27b0 0%, #7b1fa2 100%); color: white;">
+            <div class="billing-card-icon">🔒</div>
+            <div class="billing-card-value">$${formatNumber(summary.reserve_amount || 0)}</div>
+            <div class="billing-card-label">Reserve (${summary.reserve_percentage || 20}%)</div>
+          </div>
+        </div>
+        
+        <!-- Fund Details -->
+        <div style="margin-bottom: 24px;">
+          <h4 style="color: var(--foundation-dark); margin: 0 0 16px;">💼 Fund Details</h4>
+          <div style="display: grid; gap: 12px;">
+            ${(report.funds || []).map(fund => `
+              <div style="background: #f5f5f5; padding: 16px; border-radius: 8px; display: flex; justify-content: space-between; align-items: center;">
+                <div>
+                  <div style="font-weight: 600;">${escapeHtml(fund.name)}</div>
+                  <div style="font-size: 0.85rem; color: #666;">${escapeHtml(fund.type)}</div>
+                </div>
+                <div style="font-size: 1.3rem; font-weight: 700; color: #4caf50;">$${formatNumber(fund.balance || 0)}</div>
+              </div>
+            `).join('') || '<div style="padding: 20px; text-align: center; color: #666;">No funds available</div>'}
+          </div>
+        </div>
+        
+        <!-- Monthly Breakdown -->
+        <div style="margin-bottom: 24px;">
+          <h4 style="color: var(--foundation-dark); margin: 0 0 16px;">📊 Monthly Contributions</h4>
+          ${billing.monthly_breakdown && billing.monthly_breakdown.length > 0 ? `
+            <div style="background: white; border: 1px solid #e0e0e0; border-radius: 8px; overflow: hidden;">
+              <table style="width: 100%; border-collapse: collapse;">
+                <thead>
+                  <tr style="background: #f5f5f5;">
+                    <th style="padding: 12px; text-align: left; border-bottom: 1px solid #e0e0e0;">Month</th>
+                    <th style="padding: 12px; text-align: right; border-bottom: 1px solid #e0e0e0;">Contributions</th>
+                    <th style="padding: 12px; text-align: right; border-bottom: 1px solid #e0e0e0;"># Transactions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${billing.monthly_breakdown.map(m => `
+                    <tr>
+                      <td style="padding: 12px; border-bottom: 1px solid #eee;">${m.month}</td>
+                      <td style="padding: 12px; text-align: right; border-bottom: 1px solid #eee; font-weight: 600; color: #4caf50;">$${formatNumber(m.contributions || 0)}</td>
+                      <td style="padding: 12px; text-align: right; border-bottom: 1px solid #eee;">${m.count || 0}</td>
+                    </tr>
+                  `).join('')}
+                </tbody>
+              </table>
+            </div>
+          ` : '<div style="padding: 20px; text-align: center; color: #666; background: #f5f5f5; border-radius: 8px;">No contribution history yet</div>'}
+        </div>
+        
+        <!-- Governance Summary -->
+        <div style="margin-bottom: 24px;">
+          <h4 style="color: var(--foundation-dark); margin: 0 0 16px;">🗳️ Governance Summary</h4>
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px;">
+            <div style="background: #e3f2fd; padding: 16px; border-radius: 8px; text-align: center;">
+              <div style="font-size: 1.5rem; font-weight: 700; color: #1565c0;">${report.governance?.total_votes || 0}</div>
+              <div style="font-size: 0.85rem; color: #666;">Total Votes</div>
+            </div>
+            <div style="background: #e8f5e9; padding: 16px; border-radius: 8px; text-align: center;">
+              <div style="font-size: 1.5rem; font-weight: 700; color: #2e7d32;">${report.governance?.votes_passed || 0}</div>
+              <div style="font-size: 0.85rem; color: #666;">Passed</div>
+            </div>
+            <div style="background: #ffebee; padding: 16px; border-radius: 8px; text-align: center;">
+              <div style="font-size: 1.5rem; font-weight: 700; color: #c62828;">${report.governance?.votes_failed || 0}</div>
+              <div style="font-size: 0.85rem; color: #666;">Failed</div>
+            </div>
+            <div style="background: #fff3e0; padding: 16px; border-radius: 8px; text-align: center;">
+              <div style="font-size: 1.5rem; font-weight: 700; color: #e65100;">${report.governance?.votes_open || 0}</div>
+              <div style="font-size: 0.85rem; color: #666;">Active</div>
+            </div>
+          </div>
+        </div>
+        
+        <!-- Claims Summary -->
+        <div style="margin-bottom: 24px;">
+          <h4 style="color: var(--foundation-dark); margin: 0 0 16px;">📋 Claims Summary</h4>
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px;">
+            <div style="background: #f5f5f5; padding: 16px; border-radius: 8px; text-align: center;">
+              <div style="font-size: 1.5rem; font-weight: 700; color: #333;">${report.claims?.total || 0}</div>
+              <div style="font-size: 0.85rem; color: #666;">Total Claims</div>
+            </div>
+            <div style="background: #fff3e0; padding: 16px; border-radius: 8px; text-align: center;">
+              <div style="font-size: 1.5rem; font-weight: 700; color: #e65100;">${report.claims?.pending || 0}</div>
+              <div style="font-size: 0.85rem; color: #666;">Pending</div>
+            </div>
+            <div style="background: #e8f5e9; padding: 16px; border-radius: 8px; text-align: center;">
+              <div style="font-size: 1.5rem; font-weight: 700; color: #2e7d32;">${report.claims?.approved || 0}</div>
+              <div style="font-size: 0.85rem; color: #666;">Approved</div>
+            </div>
+            <div style="background: #e3f2fd; padding: 16px; border-radius: 8px; text-align: center;">
+              <div style="font-size: 1.5rem; font-weight: 700; color: #1565c0;">$${formatNumber(report.claims?.total_approved_amount || 0)}</div>
+              <div style="font-size: 0.85rem; color: #666;">Amount Paid</div>
+            </div>
+          </div>
+        </div>
+        
+        <!-- Member Statistics -->
+        <div>
+          <h4 style="color: var(--foundation-dark); margin: 0 0 16px;">👥 Member Statistics</h4>
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px;">
+            <div style="background: var(--foundation-light); padding: 16px; border-radius: 8px; text-align: center;">
+              <div style="font-size: 1.5rem; font-weight: 700; color: var(--foundation-primary);">${billing.members?.total || 0}</div>
+              <div style="font-size: 0.85rem; color: #666;">Total Members</div>
+            </div>
+            <div style="background: #e8f5e9; padding: 16px; border-radius: 8px; text-align: center;">
+              <div style="font-size: 1.5rem; font-weight: 700; color: #2e7d32;">${billing.members?.active_contributors || 0}</div>
+              <div style="font-size: 0.85rem; color: #666;">Active Contributors</div>
+            </div>
+            <div style="background: #e3f2fd; padding: 16px; border-radius: 8px; text-align: center;">
+              <div style="font-size: 1.5rem; font-weight: 700; color: #1565c0;">$${formatNumber(billing.members?.average_contribution || 0)}</div>
+              <div style="font-size: 0.85rem; color: #666;">Avg. Contribution</div>
+            </div>
+          </div>
+        </div>
+        
+        <div style="text-align: center; margin-top: 24px; padding-top: 16px; border-top: 1px solid #eee; font-size: 0.8rem; color: #999;">
+          Report generated: ${formatDate(billing.generated_at || new Date().toISOString())}
+        </div>
+      `;
     }
     
     // Invitation actions
