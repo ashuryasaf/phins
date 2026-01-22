@@ -10,6 +10,9 @@ Features:
 - Voting system
 - Claim processing
 - Activity logging
+- Data persistence (survives restarts)
+- Billing integration (deposits appear on dashboard)
+- Automatic backups
 """
 
 from __future__ import annotations
@@ -18,13 +21,46 @@ import json
 import secrets
 import hashlib
 import logging
+import os
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Callable
 from dataclasses import dataclass, field
 from enum import Enum
 import uuid
 
 logger = logging.getLogger('phins.foundation')
+
+# Import persistence and billing integration services
+try:
+    from services.foundation_persistence_service import (
+        get_persistence_service,
+        FoundationPersistenceService
+    )
+    PERSISTENCE_AVAILABLE = True
+except ImportError:
+    PERSISTENCE_AVAILABLE = False
+    logger.warning("Foundation persistence service not available")
+
+try:
+    from services.ledger_backup_service import (
+        get_backup_service,
+        LedgerBackupService
+    )
+    BACKUP_AVAILABLE = True
+except ImportError:
+    BACKUP_AVAILABLE = False
+    logger.warning("Ledger backup service not available")
+
+try:
+    from services.foundation_billing_integration import (
+        get_billing_integration,
+        init_billing_integration,
+        FoundationBillingIntegration
+    )
+    BILLING_INTEGRATION_AVAILABLE = True
+except ImportError:
+    BILLING_INTEGRATION_AVAILABLE = False
+    logger.warning("Foundation billing integration not available")
 
 
 # ============================================================================
@@ -234,10 +270,36 @@ class FoundationService:
     
     Manages foundation lifecycle, membership, funds, contributions,
     voting, and claims.
+    
+    Enhanced features:
+    - Data persistence (survives server restarts)
+    - Automatic backups before mutations
+    - Billing integration for dashboard visibility
     """
     
-    def __init__(self):
-        # In-memory storage (replace with database in production)
+    def __init__(
+        self,
+        enable_persistence: bool = True,
+        enable_backup: bool = True,
+        enable_billing_integration: bool = True,
+        data_dir: str = None,
+        billing_records: Dict = None,
+        transaction_ledger: Dict = None,
+        bills: Dict = None
+    ):
+        """
+        Initialize the foundation service.
+        
+        Args:
+            enable_persistence: Enable data persistence to disk
+            enable_backup: Enable automatic backups
+            enable_billing_integration: Enable billing integration for dashboard
+            data_dir: Directory for data storage
+            billing_records: Optional billing records dict (for billing integration)
+            transaction_ledger: Optional transaction ledger dict
+            bills: Optional bills dict (for BillingService compatibility)
+        """
+        # In-memory storage
         self._foundations: Dict[str, Dict[str, Any]] = {}
         self._members: Dict[str, Dict[str, Any]] = {}
         self._funds: Dict[str, Dict[str, Any]] = {}
@@ -247,6 +309,170 @@ class FoundationService:
         self._vote_casts: Dict[str, Dict[str, Any]] = {}
         self._claims: Dict[str, Dict[str, Any]] = {}
         self._activities: Dict[str, Dict[str, Any]] = {}
+        # Use 'is None' check to preserve reference to caller's dict (even if empty)
+        self._billing_integration_records: Dict[str, Dict[str, Any]] = billing_records if billing_records is not None else {}
+        
+        # Service references
+        self._persistence_service: Optional[FoundationPersistenceService] = None
+        self._backup_service: Optional[LedgerBackupService] = None
+        self._billing_integration: Optional[FoundationBillingIntegration] = None
+        
+        # Configuration
+        self._persistence_enabled = enable_persistence and PERSISTENCE_AVAILABLE
+        self._backup_enabled = enable_backup and BACKUP_AVAILABLE
+        self._billing_enabled = enable_billing_integration and BILLING_INTEGRATION_AVAILABLE
+        
+        # Initialize services
+        if self._persistence_enabled:
+            try:
+                self._persistence_service = get_persistence_service(data_dir)
+                # Load existing data from disk
+                self._load_from_persistence()
+                logger.info("Foundation persistence enabled - data loaded from disk")
+            except Exception as e:
+                logger.error(f"Error initializing persistence: {e}")
+                self._persistence_enabled = False
+        
+        if self._backup_enabled:
+            try:
+                self._backup_service = get_backup_service()
+                logger.info("Foundation backup enabled")
+            except Exception as e:
+                logger.error(f"Error initializing backup service: {e}")
+                self._backup_enabled = False
+        
+        if self._billing_enabled:
+            try:
+                # Use init_billing_integration to ensure we get a fresh instance
+                # with the specified dictionaries for proper data sharing
+                # Use 'is not None' check to preserve references to caller's dicts
+                self._billing_integration = init_billing_integration(
+                    billing_records=self._billing_integration_records,
+                    transaction_ledger=transaction_ledger if transaction_ledger is not None else {},
+                    bills=bills if bills is not None else {}
+                )
+                logger.info("Foundation billing integration enabled")
+            except Exception as e:
+                logger.error(f"Error initializing billing integration: {e}")
+                self._billing_enabled = False
+    
+    def _load_from_persistence(self) -> None:
+        """Load all data from persistence storage."""
+        if not self._persistence_service:
+            return
+        
+        try:
+            data = self._persistence_service.load_all()
+            
+            self._foundations = data.get('foundations', {})
+            self._members = data.get('members', {})
+            self._funds = data.get('funds', {})
+            self._contributions = data.get('contributions', {})
+            self._invitations = data.get('invitations', {})
+            self._votes = data.get('votes', {})
+            self._vote_casts = data.get('vote_casts', {})
+            self._claims = data.get('claims', {})
+            self._activities = data.get('activities', {})
+            self._billing_integration_records = data.get('billing_integration', {})
+            
+            logger.info(f"Loaded {len(self._foundations)} foundations from persistence")
+            
+        except Exception as e:
+            logger.error(f"Error loading from persistence: {e}")
+    
+    def _persist(self, create_backup: bool = False, backup_label: str = None) -> None:
+        """
+        Persist all data to disk.
+        
+        Args:
+            create_backup: Create a backup before persisting
+            backup_label: Label for the backup
+        """
+        if not self._persistence_enabled or not self._persistence_service:
+            return
+        
+        try:
+            data = {
+                'foundations': self._foundations,
+                'members': self._members,
+                'funds': self._funds,
+                'contributions': self._contributions,
+                'invitations': self._invitations,
+                'votes': self._votes,
+                'vote_casts': self._vote_casts,
+                'claims': self._claims,
+                'activities': self._activities,
+                'billing_integration': self._billing_integration_records
+            }
+            
+            # Create backup if requested
+            if create_backup and self._backup_enabled and self._backup_service:
+                self._backup_service.backup_foundation_ledger(data, backup_label)
+            
+            # Persist to disk
+            self._persistence_service.save_all(data)
+            
+        except Exception as e:
+            logger.error(f"Error persisting data: {e}")
+    
+    def create_backup(self, label: str = None) -> Optional[str]:
+        """
+        Create a manual backup of all foundation data.
+        
+        Args:
+            label: Optional label for the backup
+            
+        Returns:
+            Backup ID if successful, None otherwise
+        """
+        if not self._backup_enabled or not self._backup_service:
+            return None
+        
+        try:
+            data = {
+                'foundations': self._foundations,
+                'members': self._members,
+                'funds': self._funds,
+                'contributions': self._contributions,
+                'invitations': self._invitations,
+                'votes': self._votes,
+                'vote_casts': self._vote_casts,
+                'claims': self._claims,
+                'activities': self._activities
+            }
+            
+            return self._backup_service.backup_foundation_ledger(data, label)
+            
+        except Exception as e:
+            logger.error(f"Error creating backup: {e}")
+            return None
+    
+    def get_billing_dashboard_data(self, customer_id: str) -> Dict[str, Any]:
+        """
+        Get foundation billing data for customer dashboard.
+        
+        Args:
+            customer_id: Customer ID
+            
+        Returns:
+            Dashboard billing data
+        """
+        if self._billing_enabled and self._billing_integration:
+            return self._billing_integration.get_dashboard_billing_data(customer_id)
+        
+        return {
+            'customer_id': customer_id,
+            'foundation_billing': {
+                'summary': {
+                    'total_contributed': 0,
+                    'total_received': 0,
+                    'net_position': 0,
+                    'active_foundations': 0
+                },
+                'recent_transactions': [],
+                'transaction_count': 0
+            }
+        }
     
     # ========== FOUNDATION CRUD ==========
     
@@ -400,6 +626,9 @@ class FoundationService:
         )
         
         logger.info(f"Foundation created: {foundation_id} by {request.founder_id}")
+        
+        # Persist data to disk
+        self._persist(create_backup=True, backup_label=f"foundation_created_{foundation_id[:12]}")
         
         return FoundationResult(
             success=True,
@@ -1149,7 +1378,16 @@ class FoundationService:
         contribution_type: str = "one_time",
         notes: str = ""
     ) -> Dict[str, Any]:
-        """Make a contribution to a fund"""
+        """
+        Make a contribution to a fund.
+        
+        This method:
+        1. Records the contribution
+        2. Updates fund and member balances
+        3. Creates a billing record for dashboard visibility
+        4. Persists data to disk
+        5. Creates a backup before the operation
+        """
         # Validate member
         member = self._get_member_by_user(foundation_id, member_id)
         if not member or member['status'] != 'active':
@@ -1163,12 +1401,21 @@ class FoundationService:
         if amount <= 0:
             return {"success": False, "error": "Contribution amount must be positive"}
         
+        # Get foundation for billing integration
+        foundation = self._foundations.get(foundation_id)
+        foundation_name = foundation.get('name', 'Unknown Foundation') if foundation else 'Unknown Foundation'
+        
+        # Create backup before mutation
+        self._persist(create_backup=True, backup_label=f"pre_contribution_{member_id[:8]}")
+        
         # Create contribution record
         contribution_id = generate_id("CONTRIB")
         contribution = {
             'id': contribution_id,
             'fund_id': fund_id,
+            'foundation_id': foundation_id,  # Add foundation reference
             'member_id': member['id'],  # Foundation member record ID
+            'member_user_id': member_id,  # User ID for billing lookup
             'amount': amount,
             'contribution_type': contribution_type,
             'status': 'completed',
@@ -1192,11 +1439,11 @@ class FoundationService:
         member['updated_at'] = datetime.now(timezone.utc).isoformat()
         
         # Update foundation total
-        foundation = self._foundations.get(foundation_id)
         if foundation:
             foundation['total_fund_balance'] += amount
             foundation['updated_at'] = datetime.now(timezone.utc).isoformat()
         
+        # Log activity
         self._log_activity(
             foundation_id=foundation_id,
             activity_type="contribution_made",
@@ -1204,12 +1451,41 @@ class FoundationService:
             details={"amount": amount, "fund_id": fund_id, "fund_name": fund['name']}
         )
         
-        return {
+        # === BILLING INTEGRATION ===
+        # Record the deposit in the billing system so it appears on customer dashboard
+        billing_record = None
+        if self._billing_enabled and self._billing_integration:
+            try:
+                billing_record = self._billing_integration.record_foundation_deposit(
+                    customer_id=member_id,  # Use the user ID for customer billing
+                    foundation_id=foundation_id,
+                    foundation_name=foundation_name,
+                    amount=amount,
+                    contribution_id=contribution_id,
+                    fund_name=fund.get('name', ''),
+                    notes=notes
+                )
+                logger.info(f"Billing record created for contribution {contribution_id}: {billing_record.id if billing_record else 'None'}")
+            except Exception as e:
+                logger.error(f"Error creating billing record: {e}")
+        
+        # Persist all data to disk
+        self._persist()
+        
+        result = {
             "success": True,
             "contribution_id": contribution_id,
             "amount": amount,
-            "new_balance": fund['balance']
+            "new_balance": fund['balance'],
+            "transaction_ref": contribution['transaction_ref']
         }
+        
+        # Include billing record ID if created
+        if billing_record:
+            result["billing_record_id"] = billing_record.id
+            result["billing_reference"] = billing_record.billing_reference
+        
+        return result
     
     # ========== VOTING ==========
     
@@ -2357,18 +2633,99 @@ and determine result with comprehensive decision record"""
 _foundation_service: Optional[FoundationService] = None
 
 
-def get_foundation_service() -> FoundationService:
-    """Get or create the foundation service singleton"""
+def get_foundation_service(
+    enable_persistence: bool = True,
+    enable_backup: bool = True,
+    enable_billing_integration: bool = True,
+    data_dir: str = None,
+    billing_records: Dict = None,
+    transaction_ledger: Dict = None,
+    bills: Dict = None
+) -> FoundationService:
+    """
+    Get or create the foundation service singleton.
+    
+    On first call, creates the service with specified options.
+    Subsequent calls return the existing instance.
+    
+    Args:
+        enable_persistence: Enable data persistence to disk
+        enable_backup: Enable automatic backups
+        enable_billing_integration: Enable billing integration for dashboard
+        data_dir: Directory for data storage
+        billing_records: Optional billing records dict (for billing integration)
+        transaction_ledger: Optional transaction ledger dict
+        bills: Optional bills dict (for BillingService compatibility)
+        
+    Returns:
+        FoundationService singleton instance
+    """
     global _foundation_service
     if _foundation_service is None:
-        _foundation_service = FoundationService()
+        _foundation_service = FoundationService(
+            enable_persistence=enable_persistence,
+            enable_backup=enable_backup,
+            enable_billing_integration=enable_billing_integration,
+            data_dir=data_dir,
+            billing_records=billing_records,
+            transaction_ledger=transaction_ledger,
+            bills=bills
+        )
     return _foundation_service
 
 
 def reset_foundation_service() -> None:
     """Reset the foundation service (for testing)"""
     global _foundation_service
+    if _foundation_service:
+        # Create final backup before reset
+        _foundation_service.create_backup(label="pre_reset")
     _foundation_service = None
+
+
+def init_foundation_service(
+    billing_records: Dict = None,
+    transaction_ledger: Dict = None,
+    bills: Dict = None,
+    enable_persistence: bool = True,
+    enable_backup: bool = True,
+    enable_billing_integration: bool = True,
+    data_dir: str = None
+) -> FoundationService:
+    """
+    Initialize or re-initialize the foundation service.
+    
+    Use this to set up the service with specific data stores from the main server.
+    
+    Args:
+        billing_records: Billing records dictionary
+        transaction_ledger: Transaction ledger dictionary
+        bills: Bills dictionary (for BillingService)
+        enable_persistence: Enable persistence
+        enable_backup: Enable backups
+        enable_billing_integration: Enable billing integration
+        data_dir: Data directory path
+        
+    Returns:
+        FoundationService instance
+    """
+    global _foundation_service
+    
+    # Reset and recreate with new parameters
+    if _foundation_service:
+        _foundation_service.create_backup(label="pre_reinit")
+    
+    _foundation_service = FoundationService(
+        enable_persistence=enable_persistence,
+        enable_backup=enable_backup,
+        enable_billing_integration=enable_billing_integration,
+        data_dir=data_dir,
+        billing_records=billing_records,
+        transaction_ledger=transaction_ledger,
+        bills=bills
+    )
+    
+    return _foundation_service
 
 
 # ============================================================================
