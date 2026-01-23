@@ -619,5 +619,116 @@ class TestServiceIntegration:
         assert len(transaction.get("documents", [])) == 1
 
 
+class TestWalletDeposit:
+    """Test wallet deposit functionality in foundation service"""
+    
+    def test_wallet_deposit_success(self):
+        """Test successful wallet deposit"""
+        import sys
+        sys.path.insert(0, '/workspace')
+        from services.foundation_service import FoundationService
+        
+        service = FoundationService(
+            enable_persistence=False,
+            enable_backup=False,
+            enable_billing_integration=False
+        )
+        
+        result = service.deposit_to_wallet(
+            customer_id="CUST001",
+            amount=100.00,
+            payment_method="credit_card",
+            card_last4="1234",
+            card_brand="visa"
+        )
+        
+        assert result["success"] is True
+        assert result["amount"] == 100.00
+        assert result["new_balance"] == 100.00
+        assert "deposit_id" in result
+        assert "ledger_hash" in result
+        assert result["nft_verified"] is True
+    
+    def test_wallet_deposit_minimum(self):
+        """Test wallet deposit minimum amount"""
+        import sys
+        sys.path.insert(0, '/workspace')
+        from services.foundation_service import FoundationService
+        
+        service = FoundationService(
+            enable_persistence=False,
+            enable_backup=False,
+            enable_billing_integration=False
+        )
+        
+        result = service.deposit_to_wallet(
+            customer_id="CUST001",
+            amount=5.00,  # Below minimum
+            payment_method="credit_card"
+        )
+        
+        assert result["success"] is False
+        assert "Minimum" in result.get("error", "")
+    
+    def test_wallet_deposit_balance_accumulation(self):
+        """Test that multiple deposits accumulate correctly"""
+        import sys
+        sys.path.insert(0, '/workspace')
+        from services.foundation_service import FoundationService
+        
+        service = FoundationService(
+            enable_persistence=False,
+            enable_backup=False,
+            enable_billing_integration=False
+        )
+        
+        # First deposit
+        result1 = service.deposit_to_wallet(
+            customer_id="CUST002",
+            amount=50.00,
+            payment_method="credit_card"
+        )
+        assert result1["success"] is True
+        assert result1["new_balance"] == 50.00
+        
+        # Second deposit
+        result2 = service.deposit_to_wallet(
+            customer_id="CUST002",
+            amount=75.00,
+            payment_method="credit_card"
+        )
+        assert result2["success"] is True
+        assert result2["new_balance"] == 125.00  # 50 + 75
+    
+    def test_wallet_transactions_history(self):
+        """Test wallet transaction history"""
+        import sys
+        sys.path.insert(0, '/workspace')
+        from services.foundation_service import FoundationService
+        
+        service = FoundationService(
+            enable_persistence=False,
+            enable_backup=False,
+            enable_billing_integration=False
+        )
+        
+        # Make a few deposits
+        for i in range(3):
+            service.deposit_to_wallet(
+                customer_id="CUST003",
+                amount=50.00 + i * 10,
+                payment_method="credit_card"
+            )
+        
+        # Get transaction history
+        transactions = service.get_wallet_transactions("CUST003")
+        
+        assert len(transactions) == 3
+        # Most recent should be first (sorted descending)
+        assert transactions[0]["amount"] == 70.00
+        assert transactions[1]["amount"] == 60.00
+        assert transactions[2]["amount"] == 50.00
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

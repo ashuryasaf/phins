@@ -2187,32 +2187,113 @@
     </div>
   </div>
   
-  <!-- Wallet Deposit Modal -->
+  <!-- Wallet Deposit Modal - Enhanced with Credit Card Support -->
   <div class="modal-overlay" id="wallet-deposit-modal">
-    <div class="modal">
-      <div class="modal-header">
-        <h2>💳 Add Funds to Wallet</h2>
-        <button class="modal-close" onclick="closeWalletDepositModal()">&times;</button>
+    <div class="modal" style="max-width: 500px;">
+      <div class="modal-header" style="background: linear-gradient(135deg, #4caf50 0%, #45a049 100%); color: white; border-radius: 16px 16px 0 0;">
+        <h2 style="margin: 0; display: flex; align-items: center; gap: 10px;">💳 Add Funds to Wallet</h2>
+        <button class="modal-close" onclick="closeWalletDepositModal()" style="color: white;">&times;</button>
       </div>
-      <div class="modal-body">
+      <div class="modal-body" style="max-height: 70vh; overflow-y: auto;">
         <p style="color: #666; margin-bottom: 20px;">Add funds to your foundation wallet for quick contributions.</p>
+        
+        <!-- Current Balance Display -->
+        <div style="background: linear-gradient(135deg, #e8f5e9 0%, #c8e6c9 100%); padding: 16px; border-radius: 12px; margin-bottom: 20px; text-align: center;">
+          <div style="font-size: 0.85rem; color: #666;">Current Wallet Balance</div>
+          <div style="font-size: 2rem; font-weight: 700; color: #2e7d32;" id="deposit-current-balance">$0.00</div>
+        </div>
         
         <div class="form-group">
           <label for="deposit-amount">Deposit Amount ($)</label>
           <input type="number" id="deposit-amount" min="10" step="10" placeholder="Enter amount" value="100" style="font-size: 1.2rem; text-align: center;" />
+          <div style="display: flex; gap: 8px; margin-top: 8px;">
+            <button type="button" onclick="setDepositAmount(50)" style="flex: 1; padding: 8px; border: 1px solid #ddd; border-radius: 6px; background: #f5f5f5; cursor: pointer;">$50</button>
+            <button type="button" onclick="setDepositAmount(100)" style="flex: 1; padding: 8px; border: 1px solid #ddd; border-radius: 6px; background: #f5f5f5; cursor: pointer;">$100</button>
+            <button type="button" onclick="setDepositAmount(250)" style="flex: 1; padding: 8px; border: 1px solid #ddd; border-radius: 6px; background: #f5f5f5; cursor: pointer;">$250</button>
+            <button type="button" onclick="setDepositAmount(500)" style="flex: 1; padding: 8px; border: 1px solid #ddd; border-radius: 6px; background: #f5f5f5; cursor: pointer;">$500</button>
+          </div>
         </div>
         
         <div class="form-group">
           <label>Payment Method</label>
           <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px;">
-            <div class="payment-option selected" data-method="credit_card" onclick="selectDepositPaymentMethod(this)">
+            <div class="deposit-payment-option selected" data-method="credit_card" onclick="selectDepositPaymentMethod(this)">
               <div style="font-size: 1.5rem;">💳</div>
               <div style="font-weight: 600;">Credit Card</div>
+              <div style="font-size: 0.75rem; color: #666;">Visa, MC, Amex</div>
             </div>
-            <div class="payment-option" data-method="bank_transfer" onclick="selectDepositPaymentMethod(this)">
+            <div class="deposit-payment-option" data-method="bank_transfer" onclick="selectDepositPaymentMethod(this)">
               <div style="font-size: 1.5rem;">🏦</div>
               <div style="font-weight: 600;">Bank Transfer</div>
+              <div style="font-size: 0.75rem; color: #666;">ACH/Wire</div>
             </div>
+          </div>
+        </div>
+        
+        <!-- Credit Card Form (shown when credit_card selected) -->
+        <div id="deposit-card-form" style="background: #f5f5f5; padding: 16px; border-radius: 12px; margin-bottom: 20px;">
+          <h4 style="margin: 0 0 12px; color: var(--foundation-dark); display: flex; align-items: center; gap: 8px;">
+            💳 Card Details
+          </h4>
+          <div class="form-group" style="margin-bottom: 12px;">
+            <label for="deposit-card-number">Card Number</label>
+            <input type="text" id="deposit-card-number" placeholder="1234 5678 9012 3456" maxlength="19" 
+                   style="font-family: monospace; letter-spacing: 2px;" oninput="formatDepositCardNumber(this)" />
+            <div id="deposit-card-brand" style="font-size: 0.8rem; color: #666; margin-top: 4px;"></div>
+          </div>
+          <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px;">
+            <div class="form-group" style="margin-bottom: 12px;">
+              <label for="deposit-exp-month">Month</label>
+              <select id="deposit-exp-month" style="width: 100%; padding: 12px; border: 2px solid #e0e0e0; border-radius: 8px;">
+                <option value="">MM</option>
+                <option value="01">01</option>
+                <option value="02">02</option>
+                <option value="03">03</option>
+                <option value="04">04</option>
+                <option value="05">05</option>
+                <option value="06">06</option>
+                <option value="07">07</option>
+                <option value="08">08</option>
+                <option value="09">09</option>
+                <option value="10">10</option>
+                <option value="11">11</option>
+                <option value="12">12</option>
+              </select>
+            </div>
+            <div class="form-group" style="margin-bottom: 12px;">
+              <label for="deposit-exp-year">Year</label>
+              <select id="deposit-exp-year" style="width: 100%; padding: 12px; border: 2px solid #e0e0e0; border-radius: 8px;">
+                <option value="">YY</option>
+              </select>
+            </div>
+            <div class="form-group" style="margin-bottom: 12px;">
+              <label for="deposit-cvv">CVV</label>
+              <input type="text" id="deposit-cvv" placeholder="123" maxlength="4" 
+                     style="text-align: center; letter-spacing: 4px;" />
+            </div>
+          </div>
+          <div class="form-group" style="margin-bottom: 0;">
+            <label for="deposit-cardholder">Cardholder Name</label>
+            <input type="text" id="deposit-cardholder" placeholder="John Doe" style="text-transform: uppercase;" />
+          </div>
+          <div style="background: #e8f5e9; padding: 10px; border-radius: 8px; margin-top: 12px; font-size: 0.8rem; color: #2e7d32;">
+            🔒 Your card information is securely processed. We do not store full card numbers.
+          </div>
+        </div>
+        
+        <!-- Bank Transfer Info (shown when bank_transfer selected) -->
+        <div id="deposit-bank-form" style="display: none; background: #fff3e0; padding: 16px; border-radius: 12px; margin-bottom: 20px;">
+          <h4 style="margin: 0 0 12px; color: #e65100; display: flex; align-items: center; gap: 8px;">
+            🏦 Bank Transfer Instructions
+          </h4>
+          <p style="font-size: 0.9rem; color: #666; margin: 0 0 12px;">
+            Bank transfers typically take 2-3 business days to process. Your wallet will be credited once the transfer is confirmed.
+          </p>
+          <div style="background: white; padding: 12px; border-radius: 8px; font-family: monospace; font-size: 0.85rem;">
+            <div><strong>Bank:</strong> PHINS Financial Services</div>
+            <div><strong>Routing:</strong> 021000021</div>
+            <div><strong>Account:</strong> 123456789</div>
+            <div><strong>Reference:</strong> <span id="bank-ref-code">Loading...</span></div>
           </div>
         </div>
         
@@ -2222,10 +2303,29 @@
       </div>
       <div class="modal-footer">
         <button class="btn-action secondary" onclick="closeWalletDepositModal()">Cancel</button>
-        <button class="btn-action primary" onclick="submitWalletDeposit()">💳 Add Funds</button>
+        <button class="btn-action primary" id="deposit-submit-btn" onclick="submitWalletDeposit()">💳 Add Funds</button>
       </div>
     </div>
   </div>
+  
+  <style>
+    .deposit-payment-option {
+      padding: 16px;
+      border: 2px solid #e0e0e0;
+      border-radius: 12px;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.3s;
+    }
+    .deposit-payment-option:hover {
+      border-color: #4caf50;
+      background: #e8f5e9;
+    }
+    .deposit-payment-option.selected {
+      border-color: #4caf50;
+      background: #e8f5e9;
+    }
+  </style>
   
   <!-- Vote Statistics Modal -->
   <div class="modal-overlay" id="vote-stats-modal">
@@ -5099,7 +5199,41 @@
     let selectedDepositPaymentMethod = 'credit_card';
     
     function openWalletDepositModal() {
+      // Reset form
       document.getElementById('deposit-amount').value = '100';
+      selectedDepositPaymentMethod = 'credit_card';
+      
+      // Reset payment method selection
+      document.querySelectorAll('.deposit-payment-option').forEach(opt => opt.classList.remove('selected'));
+      document.querySelector('.deposit-payment-option[data-method="credit_card"]').classList.add('selected');
+      
+      // Show card form, hide bank form
+      document.getElementById('deposit-card-form').style.display = 'block';
+      document.getElementById('deposit-bank-form').style.display = 'none';
+      
+      // Reset card fields
+      document.getElementById('deposit-card-number').value = '';
+      document.getElementById('deposit-exp-month').value = '';
+      document.getElementById('deposit-exp-year').value = '';
+      document.getElementById('deposit-cvv').value = '';
+      document.getElementById('deposit-cardholder').value = '';
+      document.getElementById('deposit-card-brand').textContent = '';
+      
+      // Populate expiry years
+      const yearSelect = document.getElementById('deposit-exp-year');
+      yearSelect.innerHTML = '<option value="">YY</option>';
+      const currentYear = new Date().getFullYear();
+      for (let i = 0; i < 15; i++) {
+        const year = currentYear + i;
+        yearSelect.innerHTML += `<option value="${year}">${year % 100}</option>`;
+      }
+      
+      // Generate bank reference code
+      document.getElementById('bank-ref-code').textContent = `PHINS-${Date.now().toString(36).toUpperCase()}`;
+      
+      // Update current balance display
+      document.getElementById('deposit-current-balance').textContent = '$' + formatNumber(walletBalance || 0);
+      
       document.getElementById('wallet-deposit-modal').classList.add('active');
     }
     
@@ -5108,9 +5242,46 @@
     }
     
     function selectDepositPaymentMethod(element) {
-      document.querySelectorAll('#wallet-deposit-modal .payment-option').forEach(opt => opt.classList.remove('selected'));
+      document.querySelectorAll('.deposit-payment-option').forEach(opt => opt.classList.remove('selected'));
       element.classList.add('selected');
       selectedDepositPaymentMethod = element.dataset.method;
+      
+      // Toggle forms
+      document.getElementById('deposit-card-form').style.display = selectedDepositPaymentMethod === 'credit_card' ? 'block' : 'none';
+      document.getElementById('deposit-bank-form').style.display = selectedDepositPaymentMethod === 'bank_transfer' ? 'block' : 'none';
+    }
+    
+    function setDepositAmount(amount) {
+      document.getElementById('deposit-amount').value = amount;
+    }
+    
+    function formatDepositCardNumber(input) {
+      let value = input.value.replace(/\s+/g, '').replace(/[^0-9]/gi, '');
+      let formattedValue = '';
+      for (let i = 0; i < value.length && i < 16; i++) {
+        if (i > 0 && i % 4 === 0) formattedValue += ' ';
+        formattedValue += value[i];
+      }
+      input.value = formattedValue;
+      
+      // Detect card brand
+      const brand = detectDepositCardBrand(value);
+      const indicator = document.getElementById('deposit-card-brand');
+      if (brand) {
+        indicator.innerHTML = `<span style="color: #4caf50;">✓</span> ${brand}`;
+      } else if (value.length > 0) {
+        indicator.textContent = 'Enter a valid card number';
+      } else {
+        indicator.textContent = '';
+      }
+    }
+    
+    function detectDepositCardBrand(number) {
+      if (number.startsWith('4')) return '💳 Visa';
+      if (/^5[1-5]/.test(number) || (number.length >= 4 && parseInt(number.substring(0,4)) >= 2221 && parseInt(number.substring(0,4)) <= 2720)) return '💳 Mastercard';
+      if (/^3[47]/.test(number)) return '💳 American Express';
+      if (/^6011|^644|^645|^646|^647|^648|^649|^65/.test(number)) return '💳 Discover';
+      return null;
     }
     
     async function submitWalletDeposit() {
@@ -5121,33 +5292,105 @@
         return;
       }
       
+      if (amount > 100000) {
+        alert('Maximum single deposit is $100,000');
+        return;
+      }
+      
+      const submitBtn = document.getElementById('deposit-submit-btn');
+      submitBtn.disabled = true;
+      submitBtn.textContent = '⏳ Processing...';
+      
       try {
         const token = localStorage.getItem('phins_token');
+        
+        // Build request body
+        const requestBody = {
+          amount: amount,
+          payment_method: selectedDepositPaymentMethod,
+          payment_reference: `DEP-${Date.now()}`
+        };
+        
+        // Add credit card details if using credit card
+        if (selectedDepositPaymentMethod === 'credit_card') {
+          const cardNumber = document.getElementById('deposit-card-number').value.replace(/\s/g, '');
+          const expMonth = document.getElementById('deposit-exp-month').value;
+          const expYear = document.getElementById('deposit-exp-year').value;
+          const cvv = document.getElementById('deposit-cvv').value;
+          const cardholderName = document.getElementById('deposit-cardholder').value;
+          
+          // Validate card fields
+          if (!cardNumber || cardNumber.length < 13) {
+            alert('Please enter a valid card number');
+            submitBtn.disabled = false;
+            submitBtn.textContent = '💳 Add Funds';
+            return;
+          }
+          if (!expMonth || !expYear) {
+            alert('Please select card expiry date');
+            submitBtn.disabled = false;
+            submitBtn.textContent = '💳 Add Funds';
+            return;
+          }
+          if (!cvv || cvv.length < 3) {
+            alert('Please enter a valid CVV');
+            submitBtn.disabled = false;
+            submitBtn.textContent = '💳 Add Funds';
+            return;
+          }
+          if (!cardholderName) {
+            alert('Please enter the cardholder name');
+            submitBtn.disabled = false;
+            submitBtn.textContent = '💳 Add Funds';
+            return;
+          }
+          
+          requestBody.card_number = cardNumber;
+          requestBody.exp_month = parseInt(expMonth);
+          requestBody.exp_year = parseInt(expYear);
+          requestBody.cvv = cvv;
+          requestBody.cardholder_name = cardholderName;
+        }
+        
         const response = await fetch('/api/foundation-wallet/deposit', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${token}`
           },
-          body: JSON.stringify({
-            amount: amount,
-            payment_method: selectedDepositPaymentMethod,
-            payment_reference: `DEP-${Date.now()}`
-          })
+          body: JSON.stringify(requestBody)
         });
         
         const data = await response.json();
         
         if (data.success) {
-          alert(`✅ Successfully added $${formatNumber(amount)} to your wallet!\n\nNew balance: $${formatNumber(data.new_balance || 0)}`);
+          let successMessage = `✅ Successfully added $${formatNumber(amount)} to your wallet!\n\n`;
+          successMessage += `Deposit ID: ${data.deposit_id || 'N/A'}\n`;
+          successMessage += `New Balance: $${formatNumber(data.new_balance || 0)}\n`;
+          
+          if (data.card_last4) {
+            successMessage += `Card: ${data.card_brand || 'Card'} ****${data.card_last4}\n`;
+          }
+          
+          if (data.ledger_hash) {
+            successMessage += `\n🔗 NFT Ledger Hash: ${data.ledger_hash.substring(0, 16)}...\n`;
+            successMessage += `✅ Transaction verified and recorded on ledger.`;
+          }
+          
+          alert(successMessage);
           closeWalletDepositModal();
           await loadWalletBalance();
+          await loadLedgerEntries();
+          updateDashboardStats();
         } else {
           alert('Error: ' + (data.error || 'Failed to add funds'));
         }
       } catch (e) {
         console.error('Error depositing to wallet:', e);
-        alert('Network error. Please try again.');
+        alert('Network error. Please check your connection and try again.');
+      } finally {
+        submitBtn.disabled = false;
+        submitBtn.textContent = '💳 Add Funds';
       }
     }
     

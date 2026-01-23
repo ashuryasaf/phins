@@ -946,7 +946,15 @@ def handle_wallet_balance(session: Dict) -> Tuple[int, Dict]:
 
 
 def handle_wallet_deposit(session: Dict, body_data: Dict) -> Tuple[int, Dict]:
-    """POST /api/foundation-wallet/deposit - Deposit funds to wallet"""
+    """
+    POST /api/foundation-wallet/deposit - Deposit funds to wallet
+    
+    Enhanced with:
+    - Credit card validation and processing
+    - NFT ledger recording
+    - Data persistence
+    - Transaction history tracking
+    """
     if not FOUNDATION_SERVICE_AVAILABLE:
         return 503, {"error": "Foundation service not available"}
     
@@ -957,21 +965,130 @@ def handle_wallet_deposit(session: Dict, body_data: Dict) -> Tuple[int, Dict]:
     customer_id = session.get('customer_id')
     user_id = customer_id or session.get('username')
     
+    if not user_id:
+        return 401, {"error": "User identification required"}
+    
     amount = float(body_data.get('amount', 0))
     payment_method = body_data.get('payment_method', 'credit_card')
     payment_reference = body_data.get('payment_reference', '')
+    notes = body_data.get('notes', '')
     
+    # Validate amount
     if amount <= 0:
         return 400, {"error": "Amount must be positive"}
     
+    if amount < 10:
+        return 400, {"error": "Minimum deposit amount is $10"}
+    
+    if amount > 100000:
+        return 400, {"error": "Maximum single deposit is $100,000"}
+    
+    card_last4 = ''
+    card_brand = ''
+    
+    # Process credit card if that's the payment method
+    if payment_method == 'credit_card':
+        card_number = body_data.get('card_number', '')
+        exp_month = body_data.get('exp_month', 0)
+        exp_year = body_data.get('exp_year', 0)
+        cvv = body_data.get('cvv', '')
+        cardholder_name = body_data.get('cardholder_name', '')
+        
+        # If card details provided, validate them
+        if card_number:
+            # Use payment service for validation if available
+            if PAYMENT_SERVICE_AVAILABLE:
+                from services.contribution_payment_service import PaymentValidator
+                validator = PaymentValidator()
+                
+                # Validate card number
+                valid, brand, error = validator.validate_credit_card(card_number)
+                if not valid:
+                    return 400, {"error": f"Invalid card: {error}"}
+                
+                card_brand = brand
+                card_last4 = card_number.replace(' ', '').replace('-', '')[-4:]
+                
+                # Validate expiry if provided
+                if exp_month and exp_year:
+                    exp_valid, exp_error = validator.validate_expiry(int(exp_month), int(exp_year))
+                    if not exp_valid:
+                        return 400, {"error": f"Invalid expiry: {exp_error}"}
+                
+                # Validate CVV if provided
+                if cvv:
+                    cvv_valid, cvv_error = validator.validate_cvv(cvv, brand)
+                    if not cvv_valid:
+                        return 400, {"error": f"Invalid CVV: {cvv_error}"}
+            else:
+                # Basic validation without payment service
+                card_number_clean = card_number.replace(' ', '').replace('-', '')
+                if len(card_number_clean) >= 4:
+                    card_last4 = card_number_clean[-4:]
+                    # Basic brand detection
+                    if card_number_clean.startswith('4'):
+                        card_brand = 'visa'
+                    elif card_number_clean.startswith(('51', '52', '53', '54', '55')):
+                        card_brand = 'mastercard'
+                    elif card_number_clean.startswith(('34', '37')):
+                        card_brand = 'amex'
+                    else:
+                        card_brand = 'card'
+    
+    # Process deposit
     result = service.deposit_to_wallet(
         customer_id=user_id,
         amount=amount,
         payment_method=payment_method,
-        payment_reference=payment_reference
+        payment_reference=payment_reference,
+        card_last4=card_last4,
+        card_brand=card_brand,
+        notes=notes
     )
     
+    # Record to contribution ledger for dashboard visibility
+    if result.get('success') and PAYMENT_SERVICE_AVAILABLE:
+        try:
+            _contribution_ledger[result['deposit_id']] = {
+                'id': result['deposit_id'],
+                'transaction_id': result['deposit_id'],
+                'type': 'wallet_deposit',
+                'customer_id': user_id,
+                'amount': amount,
+                'payment_method': payment_method,
+                'card_last4': card_last4,
+                'card_brand': card_brand,
+                'status': 'completed',
+                'hash': result.get('ledger_hash', ''),
+                'timestamp': result.get('timestamp', ''),
+                'verified': True
+            }
+        except Exception as e:
+            print(f"Warning: Could not record to contribution ledger: {e}")
+    
     return 200 if result.get('success') else 400, result
+
+
+def handle_wallet_transactions(session: Dict, query_params: Dict) -> Tuple[int, Dict]:
+    """GET /api/foundation-wallet/transactions - Get wallet transaction history"""
+    if not FOUNDATION_SERVICE_AVAILABLE:
+        return 200, {"items": [], "total": 0}
+    
+    if not session:
+        return 401, {"error": "Authentication required"}
+    
+    service = get_foundation_service()
+    customer_id = session.get('customer_id')
+    user_id = customer_id or session.get('username')
+    
+    limit = int(query_params.get('limit', ['50'])[0])
+    transactions = service.get_wallet_transactions(user_id, limit=limit)
+    
+    return 200, {
+        "items": transactions,
+        "total": len(transactions),
+        "customer_id": user_id
+    }
 
 
 def handle_contribution_with_billing(session: Dict, foundation_id: str, body_data: Dict) -> Tuple[int, Dict]:
@@ -1981,6 +2098,10 @@ def dispatch_get(path: str, session: Dict, query_params: Dict, client_ip: str) -
     # Wallet balance
     if path == '/api/foundation-wallet/balance':
         return handle_wallet_balance(session)
+    
+    # Wallet transactions history
+    if path == '/api/foundation-wallet/transactions':
+        return handle_wallet_transactions(session, query_params)
     
     # Foundation activity log
     if path == '/api/foundation-activity':

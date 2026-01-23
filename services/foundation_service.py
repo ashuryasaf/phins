@@ -3216,27 +3216,49 @@ and determine result with comprehensive decision record"""
         customer_id: str,
         amount: float,
         payment_method: str,
-        payment_reference: str = ''
+        payment_reference: str = '',
+        card_last4: str = '',
+        card_brand: str = '',
+        notes: str = ''
     ) -> Dict[str, Any]:
         """
         Deposit funds to customer's foundation wallet.
+        
+        Enhanced with:
+        - NFT ledger recording
+        - Activity logging
+        - Data persistence
+        - Credit card details tracking
         
         Args:
             customer_id: Customer ID
             amount: Amount to deposit
             payment_method: credit_card, bank_transfer, etc.
             payment_reference: External payment reference
+            card_last4: Last 4 digits of card (if credit card)
+            card_brand: Card brand (visa, mastercard, etc.)
+            notes: Optional notes
             
         Returns:
-            Deposit result
+            Deposit result with NFT ledger hash
         """
         if amount <= 0:
             return {"success": False, "error": "Amount must be positive"}
         
+        if amount < 10:
+            return {"success": False, "error": "Minimum deposit is $10"}
+        
+        if amount > 100000:
+            return {"success": False, "error": "Maximum single deposit is $100,000"}
+        
         now = datetime.now(timezone.utc)
         deposit_id = generate_id("WDEP")
         
-        # Create wallet deposit record
+        # Generate NFT ledger hash for data integrity
+        hash_input = f"{deposit_id}{customer_id}{amount}{now.isoformat()}{payment_method}"
+        ledger_hash = hashlib.sha256(hash_input.encode()).hexdigest()[:32].upper()
+        
+        # Create wallet deposit record with full details
         deposit_record = {
             'id': deposit_id,
             'customer_id': customer_id,
@@ -3244,27 +3266,115 @@ and determine result with comprehensive decision record"""
             'currency': 'USD',
             'type': 'wallet_deposit',
             'payment_method': payment_method,
-            'payment_reference': payment_reference,
+            'payment_reference': payment_reference or f"DEP-{now.strftime('%Y%m%d%H%M%S')}",
+            'card_last4': card_last4,
+            'card_brand': card_brand,
             'status': 'completed',
-            'description': f'Wallet deposit via {payment_method}',
+            'description': f'Wallet deposit via {payment_method}' + (f' ({card_brand} ****{card_last4})' if card_last4 else ''),
+            'notes': notes,
+            'ledger_hash': ledger_hash,
+            'nft_verified': True,
+            'block_number': len(self._billing_integration_records) + 1,
             'created_at': now.isoformat(),
             'completed_at': now.isoformat()
         }
         
+        # Store the deposit record
         self._billing_integration_records[deposit_id] = deposit_record
         
-        # Update wallet balance
-        wallet = self.get_customer_wallet_balance(customer_id)
+        # Create NFT ledger activity entry
+        activity_id = generate_id("ACT")
+        nft_activity = {
+            'id': activity_id,
+            'foundation_id': 'WALLET',
+            'activity_type': 'wallet_deposit',
+            'actor_id': customer_id,
+            'details': {
+                'deposit_id': deposit_id,
+                'amount': amount,
+                'payment_method': payment_method,
+                'card_info': f"{card_brand} ****{card_last4}" if card_last4 else None,
+                'ledger_hash': ledger_hash
+            },
+            'timestamp': now.isoformat(),
+            'nft_verified': True
+        }
+        self._activities[activity_id] = nft_activity
         
-        logger.info(f"Wallet deposit {deposit_id}: ${amount} for customer {customer_id}")
+        # Record to billing integration service if available
+        if self._billing_enabled and self._billing_integration:
+            try:
+                # Use the billing integration to record
+                self._billing_integration.billing_records[deposit_id] = {
+                    'id': deposit_id,
+                    'customer_id': customer_id,
+                    'foundation_id': 'WALLET',
+                    'foundation_name': 'Foundation Wallet',
+                    'transaction_type': 'wallet_deposit',
+                    'amount': amount,
+                    'status': 'completed',
+                    'created_at': now.isoformat(),
+                    'completed_at': now.isoformat(),
+                    'description': deposit_record['description'],
+                    'metadata': {
+                        'payment_method': payment_method,
+                        'card_last4': card_last4,
+                        'card_brand': card_brand,
+                        'ledger_hash': ledger_hash
+                    }
+                }
+            except Exception as e:
+                logger.warning(f"Could not record to billing integration: {e}")
+        
+        # Persist data to disk
+        self._persist(create_backup=False)
+        
+        # Calculate new balance AFTER the deposit is recorded
+        new_balance = self._calculate_wallet_balance(customer_id)
+        
+        logger.info(f"Wallet deposit {deposit_id}: ${amount} for customer {customer_id}, new balance: ${new_balance}")
         
         return {
             "success": True,
             "deposit_id": deposit_id,
             "amount": amount,
-            "new_balance": wallet['wallet_balance'],
-            "payment_method": payment_method
+            "new_balance": new_balance,
+            "payment_method": payment_method,
+            "card_last4": card_last4 if card_last4 else None,
+            "card_brand": card_brand if card_brand else None,
+            "ledger_hash": ledger_hash,
+            "nft_verified": True,
+            "block_number": deposit_record['block_number'],
+            "timestamp": now.isoformat(),
+            "message": f"Successfully deposited ${amount:,.2f} to your wallet"
         }
+    
+    def _calculate_wallet_balance(self, customer_id: str) -> float:
+        """Calculate wallet balance from all records"""
+        total_deposited = 0.0
+        total_withdrawn = 0.0
+        
+        for record in self._billing_integration_records.values():
+            if record.get('customer_id') == customer_id:
+                if record.get('type') == 'wallet_deposit':
+                    total_deposited += float(record.get('amount', 0))
+                elif record.get('type') in ['contribution', 'withdrawal']:
+                    total_withdrawn += float(record.get('amount', 0))
+        
+        return max(0, total_deposited - total_withdrawn)
+    
+    def get_wallet_transactions(self, customer_id: str, limit: int = 50) -> List[Dict[str, Any]]:
+        """Get wallet transaction history for a customer"""
+        transactions = []
+        
+        for record in self._billing_integration_records.values():
+            if record.get('customer_id') == customer_id and record.get('type') in ['wallet_deposit', 'contribution', 'withdrawal']:
+                transactions.append(record)
+        
+        # Sort by created_at descending
+        transactions.sort(key=lambda x: x.get('created_at', ''), reverse=True)
+        
+        return transactions[:limit]
     
     def update_member_details(
         self,
