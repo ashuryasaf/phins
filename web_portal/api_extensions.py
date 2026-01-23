@@ -73,6 +73,27 @@ except ImportError:
     OTP_SERVICE_AVAILABLE = False
     print("Warning: OTP security service not available")
 
+# Import contribution payment service for enhanced payment processing
+try:
+    from services.contribution_payment_service import (
+        get_payment_service,
+        init_payment_service,
+        ContributionPaymentService,
+        PaymentMethod,
+        PaymentStatus,
+        MAX_UPLOAD_SIZE,
+        SUPPORTED_DOCUMENT_TYPES
+    )
+    PAYMENT_SERVICE_AVAILABLE = True
+except ImportError:
+    PAYMENT_SERVICE_AVAILABLE = False
+    print("Warning: Contribution payment service not available")
+
+# Shared data stores for cross-dashboard integration
+_contribution_ledger: Dict = {}
+_admin_dashboard_data: Dict = {}
+_accounting_dashboard_data: Dict = {}
+
 
 # ============================================================================
 # CAPTCHA & OTP SECURITY ENDPOINTS
@@ -954,7 +975,18 @@ def handle_wallet_deposit(session: Dict, body_data: Dict) -> Tuple[int, Dict]:
 
 
 def handle_contribution_with_billing(session: Dict, foundation_id: str, body_data: Dict) -> Tuple[int, Dict]:
-    """POST /api/foundations/{id}/contribute-billing - Make contribution with full billing integration"""
+    """
+    POST /api/foundations/{id}/contribute-billing - Make contribution with full billing integration
+    
+    Enhanced version with:
+    - Credit card payment processing with validation
+    - Bank transfer support
+    - Wallet payment support
+    - Document upload support (up to 500MB)
+    - AI assessment and recommendations
+    - Ledger recording
+    - Dashboard integration (admin, accounting)
+    """
     if not FOUNDATION_SERVICE_AVAILABLE:
         return 503, {"error": "Foundation service not available"}
     
@@ -965,20 +997,145 @@ def handle_contribution_with_billing(session: Dict, foundation_id: str, body_dat
     customer_id = session.get('customer_id')
     user_id = customer_id or session.get('username')
     
+    # Get foundation info
+    foundation = service.get_foundation(foundation_id)
+    if not foundation:
+        return 404, {"error": "Foundation not found"}
+    
     # Get fund_id
     funds = service.get_foundation_funds(foundation_id)
     if not funds:
         return 400, {"error": "No funds available for contribution"}
     
     fund_id = body_data.get('fund_id') or funds[0]['id']
+    fund = next((f for f in funds if f['id'] == fund_id), funds[0])
+    
     amount = float(body_data.get('amount', 0))
     payment_method = body_data.get('payment_method', 'wallet')
-    payment_reference = body_data.get('payment_reference', '')
-    wallet_id = body_data.get('wallet_id', '')
     notes = body_data.get('notes', '')
+    documents = body_data.get('documents', [])  # List of document uploads
     
     if amount <= 0:
         return 400, {"error": "Amount must be positive"}
+    
+    # Use enhanced payment service if available
+    if PAYMENT_SERVICE_AVAILABLE:
+        payment_service = get_payment_service(
+            ledger=_contribution_ledger,
+            admin_dashboard=_admin_dashboard_data,
+            accounting_dashboard=_accounting_dashboard_data
+        )
+        
+        # Process based on payment method
+        if payment_method == 'credit_card':
+            # Credit card payment with validation
+            card_number = body_data.get('card_number', '')
+            exp_month = int(body_data.get('exp_month', 0))
+            exp_year = int(body_data.get('exp_year', 0))
+            cvv = body_data.get('cvv', '')
+            cardholder_name = body_data.get('cardholder_name', '')
+            billing_zip = body_data.get('billing_zip', '')
+            
+            if not all([card_number, exp_month, exp_year, cvv, cardholder_name]):
+                return 400, {"error": "Missing credit card information. Required: card_number, exp_month, exp_year, cvv, cardholder_name"}
+            
+            result = payment_service.process_credit_card_payment(
+                customer_id=user_id,
+                foundation_id=foundation_id,
+                foundation_name=foundation['name'],
+                fund_id=fund_id,
+                fund_name=fund['name'],
+                amount=amount,
+                card_number=card_number,
+                exp_month=exp_month,
+                exp_year=exp_year,
+                cvv=cvv,
+                cardholder_name=cardholder_name,
+                billing_zip=billing_zip,
+                notes=notes,
+                documents=documents
+            )
+            
+            if result.get('success'):
+                # Also record to foundation service for fund balance update
+                service.make_contribution_with_billing(
+                    foundation_id=foundation_id,
+                    fund_id=fund_id,
+                    member_id=user_id,
+                    amount=amount,
+                    payment_method=payment_method,
+                    payment_reference=result.get('transaction_id', ''),
+                    notes=notes
+                )
+            
+            return 200 if result.get('success') else 400, result
+        
+        elif payment_method == 'bank_transfer':
+            # Bank transfer
+            bank_name = body_data.get('bank_name', '')
+            account_last4 = body_data.get('account_last4', '')
+            routing_number = body_data.get('routing_number', '')
+            
+            result = payment_service.process_bank_transfer(
+                customer_id=user_id,
+                foundation_id=foundation_id,
+                foundation_name=foundation['name'],
+                fund_id=fund_id,
+                fund_name=fund['name'],
+                amount=amount,
+                bank_name=bank_name,
+                account_last4=account_last4,
+                routing_number=routing_number,
+                notes=notes,
+                documents=documents
+            )
+            
+            if result.get('success'):
+                service.make_contribution_with_billing(
+                    foundation_id=foundation_id,
+                    fund_id=fund_id,
+                    member_id=user_id,
+                    amount=amount,
+                    payment_method=payment_method,
+                    payment_reference=result.get('transaction_id', ''),
+                    notes=notes
+                )
+            
+            return 200 if result.get('success') else 400, result
+        
+        elif payment_method == 'wallet':
+            # Wallet payment
+            wallet = service.get_customer_wallet_balance(user_id)
+            wallet_balance = wallet.get('wallet_balance', 0)
+            
+            result = payment_service.process_wallet_payment(
+                customer_id=user_id,
+                foundation_id=foundation_id,
+                foundation_name=foundation['name'],
+                fund_id=fund_id,
+                fund_name=fund['name'],
+                amount=amount,
+                wallet_balance=wallet_balance,
+                notes=notes,
+                documents=documents
+            )
+            
+            if result.get('success'):
+                service.make_contribution_with_billing(
+                    foundation_id=foundation_id,
+                    fund_id=fund_id,
+                    member_id=user_id,
+                    amount=amount,
+                    payment_method=payment_method,
+                    payment_reference=result.get('transaction_id', ''),
+                    notes=notes
+                )
+            
+            return 200 if result.get('success') else 400, result
+    
+    # Fallback to original implementation if payment service not available
+    payment_reference = body_data.get('payment_reference', '')
+    wallet_id = body_data.get('wallet_id', '')
     
     # If using wallet, verify sufficient balance
     if payment_method == 'wallet':
@@ -1002,6 +1159,221 @@ def handle_contribution_with_billing(session: Dict, foundation_id: str, body_dat
     )
     
     return 200 if result.get('success') else 400, result
+
+
+def handle_contribution_document_upload(session: Dict, body_data: Dict) -> Tuple[int, Dict]:
+    """
+    POST /api/contribution-documents/upload - Upload document for a contribution
+    
+    Supports large file uploads up to 500MB including videos, PDFs, images, etc.
+    """
+    if not PAYMENT_SERVICE_AVAILABLE:
+        return 503, {"error": "Document upload service not available"}
+    
+    if not session:
+        return 401, {"error": "Authentication required"}
+    
+    customer_id = session.get('customer_id')
+    user_id = customer_id or session.get('username')
+    
+    transaction_id = body_data.get('transaction_id', '')
+    file_name = body_data.get('file_name', '')
+    file_data = body_data.get('file_data', '')  # Base64 encoded
+    file_type = body_data.get('file_type', '')
+    description = body_data.get('description', '')
+    
+    if not all([transaction_id, file_name, file_data, file_type]):
+        return 400, {"error": "Missing required fields: transaction_id, file_name, file_data, file_type"}
+    
+    # Validate file type
+    if file_type not in SUPPORTED_DOCUMENT_TYPES:
+        return 400, {
+            "error": f"Unsupported file type: {file_type}",
+            "supported_types": SUPPORTED_DOCUMENT_TYPES
+        }
+    
+    # Validate file size (base64 is ~33% larger than binary)
+    estimated_size = len(file_data) * 3 // 4
+    if estimated_size > MAX_UPLOAD_SIZE:
+        return 400, {
+            "error": f"File too large. Maximum size is {MAX_UPLOAD_SIZE / (1024*1024):.0f}MB",
+            "estimated_size_mb": estimated_size / (1024*1024)
+        }
+    
+    payment_service = get_payment_service(
+        ledger=_contribution_ledger,
+        admin_dashboard=_admin_dashboard_data,
+        accounting_dashboard=_accounting_dashboard_data
+    )
+    
+    result = payment_service.upload_document_for_contribution(
+        transaction_id=transaction_id,
+        file_name=file_name,
+        file_data_base64=file_data,
+        file_type=file_type,
+        uploaded_by=user_id,
+        description=description
+    )
+    
+    return 200 if result.get('success') else 400, result
+
+
+def handle_contribution_ai_assessment(session: Dict, query_params: Dict) -> Tuple[int, Dict]:
+    """
+    GET /api/contribution-assessment - Get AI assessment for contributions
+    
+    Returns AI-powered insights, recommendations, and summaries for the user's contributions.
+    """
+    if not PAYMENT_SERVICE_AVAILABLE:
+        return 200, {
+            "available": False,
+            "message": "AI assessment service not available"
+        }
+    
+    if not session:
+        return 401, {"error": "Authentication required"}
+    
+    customer_id = session.get('customer_id')
+    user_id = customer_id or session.get('username')
+    
+    payment_service = get_payment_service(
+        ledger=_contribution_ledger,
+        admin_dashboard=_admin_dashboard_data,
+        accounting_dashboard=_accounting_dashboard_data
+    )
+    
+    # Get user's recent transactions
+    transactions = payment_service.get_customer_transactions(user_id, limit=20)
+    
+    if not transactions:
+        return 200, {
+            "available": True,
+            "customer_id": user_id,
+            "message": "No contribution history found",
+            "recommendations": [
+                {
+                    "type": "getting_started",
+                    "title": "Welcome to Foundation Contributions",
+                    "content": "Make your first contribution to join the community safety net. Start small and build up over time."
+                }
+            ]
+        }
+    
+    # Aggregate assessment data
+    total_contributed = sum(tx.get('amount', 0) for tx in transactions)
+    avg_contribution = total_contributed / len(transactions)
+    
+    # Get the most recent AI assessment
+    latest_assessment = None
+    for tx in transactions:
+        if tx.get('ai_assessment'):
+            latest_assessment = tx['ai_assessment']
+            break
+    
+    return 200, {
+        "available": True,
+        "customer_id": user_id,
+        "summary": {
+            "total_contributions": len(transactions),
+            "total_amount": total_contributed,
+            "average_amount": round(avg_contribution, 2),
+            "last_contribution": transactions[0].get('created_at') if transactions else None
+        },
+        "latest_assessment": latest_assessment,
+        "recommendations": latest_assessment.get('recommendations', []) if latest_assessment else [],
+        "advice": latest_assessment.get('advice', []) if latest_assessment else []
+    }
+
+
+def handle_admin_contribution_dashboard(session: Dict) -> Tuple[int, Dict]:
+    """
+    GET /api/admin/contribution-dashboard - Get admin contribution dashboard data
+    
+    Returns aggregated contribution data for admin monitoring.
+    """
+    if not session or session.get('role') != 'admin':
+        return 403, {"error": "Admin access required"}
+    
+    dashboard_data = {
+        "contributions": _admin_dashboard_data.get('contributions', {
+            'total_amount': 0,
+            'total_count': 0,
+            'by_method': {},
+            'recent': []
+        }),
+        "ledger_stats": {
+            "total_entries": len(_contribution_ledger),
+            "verified_entries": sum(1 for e in _contribution_ledger.values() if e.get('verified'))
+        },
+        "last_updated": _admin_dashboard_data.get('last_updated', datetime.now(timezone.utc).isoformat())
+    }
+    
+    return 200, dashboard_data
+
+
+def handle_accounting_contribution_dashboard(session: Dict) -> Tuple[int, Dict]:
+    """
+    GET /api/accounting/contribution-dashboard - Get accounting contribution dashboard data
+    
+    Returns financial data for accounting/reporting purposes.
+    """
+    if not session:
+        return 401, {"error": "Authentication required"}
+    
+    role = session.get('role', '')
+    if role not in ['admin', 'accountant', 'actuary']:
+        return 403, {"error": "Access denied. Required role: admin, accountant, or actuary"}
+    
+    accounting_data = {
+        "transactions": _accounting_dashboard_data.get('transactions', {
+            'total_revenue': 0,
+            'total_fees': 0,
+            'net_revenue': 0,
+            'by_foundation': {},
+            'recent': []
+        }),
+        "summary": {
+            "total_processed": _accounting_dashboard_data.get('transactions', {}).get('total_revenue', 0),
+            "total_fees_collected": _accounting_dashboard_data.get('transactions', {}).get('total_fees', 0),
+            "net_to_foundations": _accounting_dashboard_data.get('transactions', {}).get('net_revenue', 0)
+        },
+        "last_updated": _accounting_dashboard_data.get('last_updated', datetime.now(timezone.utc).isoformat())
+    }
+    
+    return 200, accounting_data
+
+
+def handle_contribution_ledger(session: Dict, query_params: Dict) -> Tuple[int, Dict]:
+    """
+    GET /api/contribution-ledger - Get contribution ledger entries
+    
+    Returns verified ledger entries for contributions with cryptographic hashes.
+    """
+    if not session:
+        return 401, {"error": "Authentication required"}
+    
+    customer_id = session.get('customer_id')
+    user_id = customer_id or session.get('username')
+    is_admin = session.get('role') == 'admin'
+    
+    # Filter by customer if not admin
+    if is_admin:
+        entries = list(_contribution_ledger.values())
+    else:
+        entries = [e for e in _contribution_ledger.values() if e.get('customer_id') == user_id]
+    
+    # Sort by timestamp
+    entries.sort(key=lambda x: x.get('timestamp', ''), reverse=True)
+    
+    # Apply limit
+    limit = int(query_params.get('limit', ['50'])[0])
+    entries = entries[:limit]
+    
+    return 200, {
+        "items": entries,
+        "total": len(entries),
+        "verified_count": sum(1 for e in entries if e.get('verified'))
+    }
 
 
 def handle_foundation_activities(session: Dict, foundation_id: str, query_params: Dict) -> Tuple[int, Dict]:
@@ -1622,6 +1994,22 @@ def dispatch_get(path: str, session: Dict, query_params: Dict, client_ip: str) -
     if path == '/api/foundations/persistence-status':
         return handle_foundation_persistence_status(session)
     
+    # Contribution AI assessment
+    if path == '/api/contribution-assessment':
+        return handle_contribution_ai_assessment(session, query_params)
+    
+    # Contribution ledger (payment transactions)
+    if path == '/api/contribution-ledger':
+        return handle_contribution_ledger(session, query_params)
+    
+    # Admin: Contribution dashboard
+    if path == '/api/admin/contribution-dashboard':
+        return handle_admin_contribution_dashboard(session)
+    
+    # Accounting: Contribution dashboard
+    if path == '/api/accounting/contribution-dashboard':
+        return handle_accounting_contribution_dashboard(session)
+    
     # Foundation-specific endpoints
     if path.startswith('/api/foundations/') and not path.startswith('/api/foundations/join'):
         parts = path.split('/')
@@ -1750,6 +2138,10 @@ def dispatch_post(path: str, session: Dict, body_data: Dict, client_ip: str, use
     # Wallet: Deposit
     if path == '/api/foundation-wallet/deposit':
         return handle_wallet_deposit(session, body_data)
+    
+    # Contribution document upload (supports up to 500MB)
+    if path == '/api/contribution-documents/upload':
+        return handle_contribution_document_upload(session, body_data)
     
     # Foundation-specific POST endpoints
     if path.startswith('/api/foundations/') and not path.startswith('/api/admin/'):
