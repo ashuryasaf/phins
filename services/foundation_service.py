@@ -2624,6 +2624,713 @@ and determine result with comprehensive decision record"""
                     })
         
         return invitations
+    
+    # ========== COMPREHENSIVE NFT LEDGER ==========
+    
+    def get_comprehensive_ledger(
+        self,
+        user_id: str = None,
+        foundation_id: str = None,
+        limit: int = 100,
+        include_all_types: bool = True
+    ) -> Dict[str, Any]:
+        """
+        Get comprehensive NFT ledger with all transaction types.
+        
+        Returns a complete audit trail of all foundation activities including:
+        - Foundation creations
+        - New member joins
+        - Contributions/Deposits
+        - Vote creations and results
+        - Claims submissions and approvals
+        - Invitations
+        - Role changes
+        - Pipeline transitions
+        
+        Args:
+            user_id: Filter by user (show only foundations user belongs to)
+            foundation_id: Filter by specific foundation
+            limit: Maximum entries to return
+            include_all_types: Include all transaction types
+            
+        Returns:
+            Comprehensive ledger data with transactions and statistics
+        """
+        transactions = []
+        
+        # Determine which foundations to include
+        if foundation_id:
+            foundation_ids = [foundation_id]
+        elif user_id:
+            user_foundations = self.get_user_foundations(user_id)
+            foundation_ids = [f['id'] for f in user_foundations]
+        else:
+            foundation_ids = list(self._foundations.keys())
+        
+        # Collect all activities from relevant foundations
+        for fnd_id in foundation_ids:
+            foundation = self._foundations.get(fnd_id)
+            if not foundation:
+                continue
+            
+            foundation_name = foundation['name']
+            
+            # Add activities
+            for activity in self._activities.values():
+                if activity['foundation_id'] == fnd_id:
+                    try:
+                        details = json.loads(activity['details']) if isinstance(activity['details'], str) else activity['details']
+                    except:
+                        details = {}
+                    
+                    tx_type = activity['activity_type']
+                    
+                    # Map activity types to ledger categories
+                    category_map = {
+                        'foundation_created': ('creation', '🏛️', 'Foundation Created'),
+                        'foundation_activated': ('activation', '✅', 'Foundation Activated'),
+                        'foundation_rejected': ('rejection', '❌', 'Foundation Rejected'),
+                        'foundation_dissolved': ('dissolution', '🔚', 'Foundation Dissolved'),
+                        'pipeline_processed': ('pipeline', '📋', 'Pipeline Updated'),
+                        'member_joined': ('membership', '👤', 'New Member Joined'),
+                        'member_approved': ('membership', '✅', 'Member Approved'),
+                        'member_rejected': ('membership', '❌', 'Member Rejected'),
+                        'member_removed': ('membership', '🚫', 'Member Removed'),
+                        'member_role_changed': ('membership', '🔄', 'Role Changed'),
+                        'invitation_created': ('invitation', '📨', 'Invitation Created'),
+                        'contribution_made': ('contribution', '💰', 'Contribution Made'),
+                        'vote_created': ('vote', '🗳️', 'Vote Created'),
+                        'vote_cast': ('vote', '✋', 'Vote Cast'),
+                        'vote_closed': ('vote', '📊', 'Vote Closed'),
+                        'vote_approved': ('vote', '✅', 'Vote Approved'),
+                        'claim_submitted': ('claim', '📝', 'Claim Submitted'),
+                        'claim_approved': ('claim', '✅', 'Claim Approved'),
+                        'claim_rejected': ('claim', '❌', 'Claim Rejected'),
+                        'fund_created': ('fund', '📁', 'Fund Created'),
+                    }
+                    
+                    category, icon, action = category_map.get(tx_type, ('other', '📋', tx_type.replace('_', ' ').title()))
+                    
+                    # Generate a transaction hash for NFT verification
+                    tx_hash = hashlib.sha256(
+                        f"{activity['id']}{activity['timestamp']}{fnd_id}{tx_type}".encode()
+                    ).hexdigest()[:16].upper()
+                    
+                    # Build description based on activity type
+                    description = action
+                    amount = None
+                    
+                    if 'amount' in details:
+                        amount = details['amount']
+                        description = f"{action}: ${amount:.2f}"
+                    if 'name' in details:
+                        description = f"{action}: {details['name']}"
+                    if 'result' in details:
+                        description = f"{action} - Result: {details['result']}"
+                    if 'old_role' in details and 'new_role' in details:
+                        description = f"Role changed: {details['old_role']} → {details['new_role']}"
+                    
+                    transactions.append({
+                        'id': activity['id'],
+                        'transaction_hash': tx_hash,
+                        'foundation_id': fnd_id,
+                        'foundation_name': foundation_name,
+                        'category': category,
+                        'type': tx_type,
+                        'icon': icon,
+                        'action': action,
+                        'description': description,
+                        'actor_id': activity['actor_id'],
+                        'amount': amount,
+                        'details': details,
+                        'timestamp': activity['timestamp'],
+                        'verified': True,
+                        'block_number': abs(hash(activity['id'])) % 1000000  # Simulated block number
+                    })
+        
+        # Sort by timestamp (newest first)
+        transactions.sort(key=lambda x: x['timestamp'], reverse=True)
+        
+        # Calculate statistics
+        stats = {
+            'total_transactions': len(transactions),
+            'by_category': {},
+            'by_foundation': {},
+            'total_contributions': 0,
+            'total_claims_paid': 0,
+            'total_votes': 0,
+            'total_members_joined': 0
+        }
+        
+        for tx in transactions:
+            cat = tx['category']
+            stats['by_category'][cat] = stats['by_category'].get(cat, 0) + 1
+            
+            fnd_name = tx['foundation_name']
+            stats['by_foundation'][fnd_name] = stats['by_foundation'].get(fnd_name, 0) + 1
+            
+            if tx['type'] == 'contribution_made' and tx['amount']:
+                stats['total_contributions'] += tx['amount']
+            elif tx['type'] == 'claim_approved' and tx['amount']:
+                stats['total_claims_paid'] += tx['amount']
+            elif tx['type'] == 'vote_created':
+                stats['total_votes'] += 1
+            elif tx['type'] == 'member_joined':
+                stats['total_members_joined'] += 1
+        
+        return {
+            'transactions': transactions[:limit],
+            'statistics': stats,
+            'total_count': len(transactions),
+            'returned_count': min(len(transactions), limit),
+            'generated_at': datetime.now(timezone.utc).isoformat()
+        }
+    
+    def get_vote_statistics(
+        self,
+        foundation_id: str = None,
+        user_id: str = None
+    ) -> Dict[str, Any]:
+        """
+        Get comprehensive voting statistics.
+        
+        Args:
+            foundation_id: Filter by foundation
+            user_id: Filter by user's foundations
+            
+        Returns:
+            Detailed voting statistics and analytics
+        """
+        if foundation_id:
+            foundation_ids = [foundation_id]
+        elif user_id:
+            user_foundations = self.get_user_foundations(user_id)
+            foundation_ids = [f['id'] for f in user_foundations]
+        else:
+            foundation_ids = list(self._foundations.keys())
+        
+        all_votes = []
+        for fnd_id in foundation_ids:
+            votes = self.get_all_votes(fnd_id, limit=1000)
+            for vote in votes:
+                vote['foundation_name'] = self._foundations.get(fnd_id, {}).get('name', 'Unknown')
+            all_votes.extend(votes)
+        
+        # Calculate statistics
+        total_votes = len(all_votes)
+        passed_votes = [v for v in all_votes if v['status'] == 'passed']
+        failed_votes = [v for v in all_votes if v['status'] == 'failed']
+        open_votes = [v for v in all_votes if v['status'] == 'open']
+        pending_votes = [v for v in all_votes if v['status'] == 'pending_approval']
+        
+        # Participation statistics
+        completed_votes = [v for v in all_votes if v['status'] in ['passed', 'failed']]
+        total_participants = sum(
+            v.get('votes_for', 0) + v.get('votes_against', 0) + v.get('votes_abstain', 0)
+            for v in completed_votes
+        )
+        
+        avg_participation = total_participants / max(len(completed_votes), 1)
+        
+        # Vote type breakdown
+        type_breakdown = {}
+        for vote in all_votes:
+            vtype = vote.get('proposal_type', 'general')
+            if vtype not in type_breakdown:
+                type_breakdown[vtype] = {'total': 0, 'passed': 0, 'failed': 0}
+            type_breakdown[vtype]['total'] += 1
+            if vote['status'] == 'passed':
+                type_breakdown[vtype]['passed'] += 1
+            elif vote['status'] == 'failed':
+                type_breakdown[vtype]['failed'] += 1
+        
+        # Recent votes with decision records
+        recent_votes = []
+        for vote in sorted(all_votes, key=lambda x: x.get('created_at', ''), reverse=True)[:10]:
+            decision_record = vote.get('decision_record')
+            if isinstance(decision_record, str):
+                try:
+                    decision_record = json.loads(decision_record)
+                except:
+                    decision_record = {}
+            
+            recent_votes.append({
+                'id': vote['id'],
+                'title': vote['title'],
+                'foundation_name': vote.get('foundation_name'),
+                'proposal_type': vote.get('proposal_type'),
+                'status': vote['status'],
+                'result': vote.get('result'),
+                'votes_for': vote.get('votes_for', 0),
+                'votes_against': vote.get('votes_against', 0),
+                'votes_abstain': vote.get('votes_abstain', 0),
+                'threshold': vote.get('threshold', 0.5),
+                'participation_rate': decision_record.get('participation_rate') if decision_record else None,
+                'approval_rate': decision_record.get('approval_rate') if decision_record else None,
+                'created_at': vote.get('created_at'),
+                'closed_at': vote.get('closed_at')
+            })
+        
+        return {
+            'summary': {
+                'total_votes': total_votes,
+                'passed': len(passed_votes),
+                'failed': len(failed_votes),
+                'open': len(open_votes),
+                'pending_approval': len(pending_votes),
+                'pass_rate': len(passed_votes) / max(len(completed_votes), 1) * 100,
+                'average_participation': round(avg_participation, 1)
+            },
+            'type_breakdown': type_breakdown,
+            'recent_votes': recent_votes,
+            'by_foundation': {
+                fnd_id: {
+                    'name': self._foundations.get(fnd_id, {}).get('name'),
+                    'total': len([v for v in all_votes if v.get('foundation_id') == fnd_id]),
+                    'passed': len([v for v in passed_votes if v.get('foundation_id') == fnd_id]),
+                    'open': len([v for v in open_votes if v.get('foundation_id') == fnd_id])
+                }
+                for fnd_id in foundation_ids
+            },
+            'generated_at': datetime.now(timezone.utc).isoformat()
+        }
+    
+    def make_contribution_with_billing(
+        self,
+        foundation_id: str,
+        fund_id: str,
+        member_id: str,
+        amount: float,
+        payment_method: str = 'wallet',
+        payment_reference: str = '',
+        wallet_id: str = '',
+        notes: str = ''
+    ) -> Dict[str, Any]:
+        """
+        Make a contribution with full billing pipeline integration.
+        
+        This method:
+        1. Validates the contribution
+        2. Creates the contribution record
+        3. Records to billing integration for dashboard
+        4. Creates accounting records
+        5. Updates the transaction ledger
+        6. Persists all data
+        
+        Args:
+            foundation_id: Foundation ID
+            fund_id: Fund to contribute to
+            member_id: User making contribution
+            amount: Amount to contribute
+            payment_method: wallet, credit_card, bank_transfer
+            payment_reference: External payment reference (card transaction ID, etc.)
+            wallet_id: Customer wallet ID if using wallet
+            notes: Additional notes
+            
+        Returns:
+            Contribution result with billing details
+        """
+        # Validate
+        foundation = self._foundations.get(foundation_id)
+        if not foundation:
+            return {"success": False, "error": "Foundation not found"}
+        
+        # Check foundation status - allow contributions to draft, pending_review, and active foundations
+        allowed_statuses = ['draft', 'pending_review', 'active']
+        if foundation['status'] not in allowed_statuses:
+            return {"success": False, "error": f"Cannot contribute to {foundation['status']} foundation"}
+        
+        fund = self._funds.get(fund_id)
+        if not fund or fund['foundation_id'] != foundation_id:
+            return {"success": False, "error": "Fund not found"}
+        
+        member = self._get_member_by_user(foundation_id, member_id)
+        if not member or member['status'] != 'active':
+            return {"success": False, "error": "You must be an active member to contribute"}
+        
+        # Validate minimum contribution
+        settings = foundation.get('settings', {})
+        min_contribution = settings.get('contribution_rules', {}).get('min_amount', 1.0)
+        if amount < min_contribution:
+            return {"success": False, "error": f"Minimum contribution is ${min_contribution}"}
+        
+        now = datetime.now(timezone.utc)
+        
+        # Generate IDs
+        contribution_id = generate_id("CONTRIB")
+        billing_record_id = generate_id("BILL")
+        transaction_id = generate_id("TX")
+        
+        # Create contribution record
+        contribution = {
+            'id': contribution_id,
+            'fund_id': fund_id,
+            'member_id': member['id'],
+            'member_user_id': member_id,
+            'amount': amount,
+            'currency': foundation.get('currency', 'USD'),
+            'status': 'completed',
+            'payment_method': payment_method,
+            'payment_reference': payment_reference,
+            'wallet_id': wallet_id,
+            'notes': notes,
+            'paid_date': now.isoformat(),
+            'created_at': now.isoformat(),
+            'updated_at': now.isoformat()
+        }
+        
+        self._contributions[contribution_id] = contribution
+        
+        # Update fund balance
+        fund['balance'] += amount
+        fund['last_activity'] = now.isoformat()
+        fund['updated_at'] = now.isoformat()
+        
+        # Update foundation total
+        foundation['total_fund_balance'] += amount
+        foundation['updated_at'] = now.isoformat()
+        
+        # Update member stats
+        member['total_contributed'] += amount
+        member['last_contribution'] = now.isoformat()
+        member['updated_at'] = now.isoformat()
+        
+        # Create billing integration record
+        billing_record = {
+            'id': billing_record_id,
+            'customer_id': member_id,
+            'foundation_id': foundation_id,
+            'foundation_name': foundation['name'],
+            'contribution_id': contribution_id,
+            'fund_id': fund_id,
+            'fund_name': fund['name'],
+            'amount': amount,
+            'currency': foundation.get('currency', 'USD'),
+            'payment_method': payment_method,
+            'payment_reference': payment_reference,
+            'wallet_id': wallet_id,
+            'status': 'completed',
+            'type': 'contribution',
+            'description': f"Contribution to {foundation['name']} - {fund['name']}",
+            'created_at': now.isoformat(),
+            'completed_at': now.isoformat()
+        }
+        
+        self._billing_integration_records[billing_record_id] = billing_record
+        
+        # Record to billing integration service if available
+        if self._billing_enabled and self._billing_integration:
+            self._billing_integration.record_foundation_deposit(
+                customer_id=member_id,
+                foundation_id=foundation_id,
+                foundation_name=foundation['name'],
+                amount=amount,
+                contribution_id=contribution_id,
+                fund_name=fund['name'],
+                notes=notes
+            )
+        
+        # Log activity
+        self._log_activity(
+            foundation_id=foundation_id,
+            activity_type="contribution_made",
+            actor_id=member_id,
+            details={
+                "contribution_id": contribution_id,
+                "amount": amount,
+                "fund_id": fund_id,
+                "fund_name": fund['name'],
+                "payment_method": payment_method,
+                "billing_record_id": billing_record_id
+            }
+        )
+        
+        # Persist data
+        self._persist(create_backup=False)
+        
+        logger.info(f"Contribution {contribution_id}: ${amount} to {foundation['name']} by {member_id}")
+        
+        return {
+            "success": True,
+            "contribution_id": contribution_id,
+            "billing_record_id": billing_record_id,
+            "transaction_id": transaction_id,
+            "amount": amount,
+            "new_fund_balance": fund['balance'],
+            "new_foundation_balance": foundation['total_fund_balance'],
+            "payment_method": payment_method,
+            "status": "completed",
+            "recorded_to_ledger": True,
+            "recorded_to_billing": self._billing_enabled
+        }
+    
+    def generate_csv_report(
+        self,
+        foundation_id: str,
+        report_type: str = 'transactions'
+    ) -> str:
+        """
+        Generate CSV report data for a foundation.
+        
+        Args:
+            foundation_id: Foundation ID
+            report_type: Type of report (transactions, members, contributions, votes)
+            
+        Returns:
+            CSV string content
+        """
+        foundation = self._foundations.get(foundation_id)
+        if not foundation:
+            return ""
+        
+        import csv
+        from io import StringIO
+        
+        output = StringIO()
+        
+        if report_type == 'transactions':
+            # All activities as transactions
+            activities = self.get_foundation_activities(foundation_id, limit=1000)
+            
+            writer = csv.writer(output)
+            writer.writerow(['Date', 'Type', 'Description', 'Actor', 'Details', 'Transaction Hash'])
+            
+            for activity in activities:
+                details = activity.get('details', {})
+                tx_hash = hashlib.sha256(f"{activity['id']}{activity['timestamp']}".encode()).hexdigest()[:16].upper()
+                
+                writer.writerow([
+                    activity['timestamp'],
+                    activity['activity_type'],
+                    activity['activity_type'].replace('_', ' ').title(),
+                    activity.get('actor_id', ''),
+                    json.dumps(details) if details else '',
+                    tx_hash
+                ])
+        
+        elif report_type == 'members':
+            members = self.get_foundation_members(foundation_id, include_pending=True)
+            
+            writer = csv.writer(output)
+            writer.writerow(['Member ID', 'Display Name', 'Role', 'Status', 'Total Contributed', 'Last Contribution', 'Joined Date'])
+            
+            for member in members:
+                writer.writerow([
+                    member['member_id'],
+                    member.get('display_name', ''),
+                    member['role'],
+                    member['status'],
+                    member.get('total_contributed', 0),
+                    member.get('last_contribution', ''),
+                    member.get('joined_at', '')
+                ])
+        
+        elif report_type == 'contributions':
+            contributions = []
+            for contrib in self._contributions.values():
+                fund = self._funds.get(contrib['fund_id'])
+                if fund and fund['foundation_id'] == foundation_id:
+                    contributions.append(contrib)
+            
+            writer = csv.writer(output)
+            writer.writerow(['Date', 'Member ID', 'Amount', 'Fund', 'Payment Method', 'Status', 'Reference'])
+            
+            for contrib in sorted(contributions, key=lambda x: x.get('paid_date', ''), reverse=True):
+                fund = self._funds.get(contrib['fund_id'], {})
+                writer.writerow([
+                    contrib.get('paid_date', ''),
+                    contrib.get('member_user_id', contrib.get('member_id', '')),
+                    contrib['amount'],
+                    fund.get('name', ''),
+                    contrib.get('payment_method', 'unknown'),
+                    contrib.get('status', ''),
+                    contrib.get('payment_reference', '')
+                ])
+        
+        elif report_type == 'votes':
+            votes = self.get_all_votes(foundation_id, limit=1000)
+            
+            writer = csv.writer(output)
+            writer.writerow(['Date', 'Title', 'Type', 'Status', 'Result', 'For', 'Against', 'Abstain', 'Threshold', 'Participation'])
+            
+            for vote in votes:
+                decision_record = vote.get('decision_record', {})
+                if isinstance(decision_record, str):
+                    try:
+                        decision_record = json.loads(decision_record)
+                    except:
+                        decision_record = {}
+                
+                writer.writerow([
+                    vote.get('created_at', ''),
+                    vote['title'],
+                    vote.get('proposal_type', ''),
+                    vote['status'],
+                    vote.get('result', ''),
+                    vote.get('votes_for', 0),
+                    vote.get('votes_against', 0),
+                    vote.get('votes_abstain', 0),
+                    f"{vote.get('threshold', 0.5) * 100}%",
+                    f"{decision_record.get('participation_rate', 0)}%" if decision_record else ''
+                ])
+        
+        return output.getvalue()
+    
+    def get_customer_wallet_balance(self, customer_id: str) -> Dict[str, Any]:
+        """
+        Get customer wallet balance for foundation contributions.
+        
+        This integrates with the billing system to check available funds.
+        """
+        # Calculate from billing records
+        total_deposited = 0
+        total_withdrawn = 0
+        
+        for record in self._billing_integration_records.values():
+            if record.get('customer_id') == customer_id:
+                if record.get('type') == 'wallet_deposit':
+                    total_deposited += record.get('amount', 0)
+                elif record.get('type') in ['contribution', 'withdrawal']:
+                    total_withdrawn += record.get('amount', 0)
+        
+        # Check if billing integration has wallet data
+        if self._billing_enabled and self._billing_integration:
+            billing_data = self._billing_integration.get_customer_foundation_billing(customer_id)
+            # Sum up any wallet-related records
+            for record in billing_data:
+                if record.get('transaction_type') == 'wallet_deposit':
+                    total_deposited += record.get('amount', 0)
+        
+        available_balance = total_deposited - total_withdrawn
+        
+        return {
+            'customer_id': customer_id,
+            'wallet_balance': max(0, available_balance),
+            'total_deposited': total_deposited,
+            'total_contributions': total_withdrawn,
+            'currency': 'USD'
+        }
+    
+    def deposit_to_wallet(
+        self,
+        customer_id: str,
+        amount: float,
+        payment_method: str,
+        payment_reference: str = ''
+    ) -> Dict[str, Any]:
+        """
+        Deposit funds to customer's foundation wallet.
+        
+        Args:
+            customer_id: Customer ID
+            amount: Amount to deposit
+            payment_method: credit_card, bank_transfer, etc.
+            payment_reference: External payment reference
+            
+        Returns:
+            Deposit result
+        """
+        if amount <= 0:
+            return {"success": False, "error": "Amount must be positive"}
+        
+        now = datetime.now(timezone.utc)
+        deposit_id = generate_id("WDEP")
+        
+        # Create wallet deposit record
+        deposit_record = {
+            'id': deposit_id,
+            'customer_id': customer_id,
+            'amount': amount,
+            'currency': 'USD',
+            'type': 'wallet_deposit',
+            'payment_method': payment_method,
+            'payment_reference': payment_reference,
+            'status': 'completed',
+            'description': f'Wallet deposit via {payment_method}',
+            'created_at': now.isoformat(),
+            'completed_at': now.isoformat()
+        }
+        
+        self._billing_integration_records[deposit_id] = deposit_record
+        
+        # Update wallet balance
+        wallet = self.get_customer_wallet_balance(customer_id)
+        
+        logger.info(f"Wallet deposit {deposit_id}: ${amount} for customer {customer_id}")
+        
+        return {
+            "success": True,
+            "deposit_id": deposit_id,
+            "amount": amount,
+            "new_balance": wallet['wallet_balance'],
+            "payment_method": payment_method
+        }
+    
+    def update_member_details(
+        self,
+        foundation_id: str,
+        member_record_id: str,
+        actor_id: str,
+        display_name: str = None,
+        email: str = None,
+        phone: str = None,
+        photo_url: str = None
+    ) -> MembershipResult:
+        """Update member contact details"""
+        member = self._members.get(member_record_id)
+        
+        if not member or member['foundation_id'] != foundation_id:
+            return MembershipResult(
+                success=False,
+                error_code="NOT_FOUND",
+                error_message="Member not found"
+            )
+        
+        # Check actor rights
+        actor = self._get_member_by_user(foundation_id, actor_id)
+        if not actor:
+            return MembershipResult(
+                success=False,
+                error_code="UNAUTHORIZED",
+                error_message="You are not a member of this foundation"
+            )
+        
+        # Can only update own details unless admin/founder
+        if member['member_id'] != actor_id and actor['role'] not in ['founder', 'admin']:
+            return MembershipResult(
+                success=False,
+                error_code="UNAUTHORIZED",
+                error_message="You can only update your own details"
+            )
+        
+        updated_fields = []
+        if display_name is not None:
+            member['display_name'] = display_name
+            updated_fields.append('display_name')
+        if email is not None:
+            member['email'] = email
+            updated_fields.append('email')
+        if phone is not None:
+            member['phone'] = phone
+            updated_fields.append('phone')
+        if photo_url is not None:
+            member['photo_url'] = photo_url
+            updated_fields.append('photo_url')
+        
+        member['updated_at'] = datetime.now(timezone.utc).isoformat()
+        
+        self._log_activity(
+            foundation_id=foundation_id,
+            activity_type="member_details_updated",
+            actor_id=actor_id,
+            details={"member_id": member['member_id'], "updated_fields": updated_fields}
+        )
+        
+        return MembershipResult(
+            success=True,
+            member_id=member_record_id,
+            data={"message": "Member details updated", "updated_fields": updated_fields}
+        )
 
 
 # ============================================================================
