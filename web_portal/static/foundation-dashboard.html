@@ -2018,7 +2018,7 @@
         <h2>💰 Make Contribution</h2>
         <button class="modal-close" onclick="closeContributionModal()">&times;</button>
       </div>
-      <div class="modal-body">
+      <div class="modal-body" style="max-height: 70vh; overflow-y: auto;">
         <div id="contribution-foundation-info" style="background: var(--foundation-light); padding: 16px; border-radius: 12px; margin-bottom: 20px;">
           <div style="font-weight: 600; color: var(--foundation-dark);" id="contribution-foundation-name">Foundation Name</div>
           <div style="font-size: 0.85rem; color: #666;" id="contribution-foundation-balance">Balance: $0</div>
@@ -2063,18 +2063,123 @@
           </div>
         </div>
         
+        <!-- Credit Card Form (shown when credit_card selected) -->
+        <div id="credit-card-form" style="display: none; background: #f5f5f5; padding: 16px; border-radius: 12px; margin-bottom: 20px;">
+          <h4 style="margin: 0 0 12px; color: var(--foundation-dark); display: flex; align-items: center; gap: 8px;">
+            💳 Credit Card Details
+          </h4>
+          <div class="form-group" style="margin-bottom: 12px;">
+            <label for="card-number">Card Number</label>
+            <input type="text" id="card-number" placeholder="1234 5678 9012 3456" maxlength="19" 
+                   style="font-family: monospace; letter-spacing: 2px;" oninput="formatCardNumber(this)" />
+            <div id="card-brand-indicator" style="font-size: 0.8rem; color: #666; margin-top: 4px;"></div>
+          </div>
+          <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px;">
+            <div class="form-group" style="margin-bottom: 12px;">
+              <label for="card-exp-month">Month</label>
+              <select id="card-exp-month">
+                <option value="">MM</option>
+                <option value="01">01</option>
+                <option value="02">02</option>
+                <option value="03">03</option>
+                <option value="04">04</option>
+                <option value="05">05</option>
+                <option value="06">06</option>
+                <option value="07">07</option>
+                <option value="08">08</option>
+                <option value="09">09</option>
+                <option value="10">10</option>
+                <option value="11">11</option>
+                <option value="12">12</option>
+              </select>
+            </div>
+            <div class="form-group" style="margin-bottom: 12px;">
+              <label for="card-exp-year">Year</label>
+              <select id="card-exp-year">
+                <option value="">YY</option>
+              </select>
+            </div>
+            <div class="form-group" style="margin-bottom: 12px;">
+              <label for="card-cvv">CVV</label>
+              <input type="text" id="card-cvv" placeholder="123" maxlength="4" 
+                     style="text-align: center; letter-spacing: 4px;" />
+            </div>
+          </div>
+          <div class="form-group" style="margin-bottom: 12px;">
+            <label for="cardholder-name">Cardholder Name</label>
+            <input type="text" id="cardholder-name" placeholder="John Doe" style="text-transform: uppercase;" />
+          </div>
+          <div class="form-group" style="margin-bottom: 0;">
+            <label for="billing-zip">Billing ZIP Code</label>
+            <input type="text" id="billing-zip" placeholder="12345" maxlength="10" />
+          </div>
+          <div style="background: #e8f5e9; padding: 10px; border-radius: 8px; margin-top: 12px; font-size: 0.8rem; color: #2e7d32;">
+            🔒 Your card information is securely processed and never stored on our servers.
+          </div>
+        </div>
+        
+        <!-- Bank Transfer Form (shown when bank_transfer selected) -->
+        <div id="bank-transfer-form" style="display: none; background: #f5f5f5; padding: 16px; border-radius: 12px; margin-bottom: 20px;">
+          <h4 style="margin: 0 0 12px; color: var(--foundation-dark); display: flex; align-items: center; gap: 8px;">
+            🏦 Bank Transfer Details
+          </h4>
+          <div class="form-group" style="margin-bottom: 12px;">
+            <label for="bank-name">Bank Name</label>
+            <input type="text" id="bank-name" placeholder="Your Bank" />
+          </div>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+            <div class="form-group" style="margin-bottom: 0;">
+              <label for="routing-number">Routing Number</label>
+              <input type="text" id="routing-number" placeholder="123456789" maxlength="9" />
+            </div>
+            <div class="form-group" style="margin-bottom: 0;">
+              <label for="account-last4">Account (last 4)</label>
+              <input type="text" id="account-last4" placeholder="1234" maxlength="4" />
+            </div>
+          </div>
+          <div style="background: #fff3e0; padding: 10px; border-radius: 8px; margin-top: 12px; font-size: 0.8rem; color: #e65100;">
+            ⏱️ Bank transfers typically take 2-3 business days to process.
+          </div>
+        </div>
+        
+        <!-- Document Upload Section -->
+        <div class="form-group">
+          <label style="display: flex; align-items: center; gap: 8px;">
+            📎 Attach Documents <span style="font-size: 0.75rem; color: #666; font-weight: normal;">(optional, up to 500MB total)</span>
+          </label>
+          <div id="document-upload-area" style="border: 2px dashed #ccc; border-radius: 12px; padding: 20px; text-align: center; cursor: pointer; transition: all 0.3s;"
+               onclick="document.getElementById('document-input').click()"
+               ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)" ondrop="handleDrop(event)">
+            <div style="font-size: 2rem; margin-bottom: 8px;">📂</div>
+            <div style="font-weight: 600; color: #666;">Drop files here or click to browse</div>
+            <div style="font-size: 0.8rem; color: #999; margin-top: 4px;">Supports PDF, images, videos (up to 500MB each)</div>
+          </div>
+          <input type="file" id="document-input" style="display: none;" multiple 
+                 accept=".pdf,.jpg,.jpeg,.png,.gif,.mp4,.mov,.webm,.doc,.docx,.xls,.xlsx,.txt,.mp3,.wav"
+                 onchange="handleFileSelect(event)" />
+          <div id="selected-files" style="margin-top: 12px;"></div>
+        </div>
+        
         <div class="form-group">
           <label for="contribution-notes">Notes (optional)</label>
           <textarea id="contribution-notes" placeholder="Add a note to your contribution..." rows="2"></textarea>
         </div>
         
+        <!-- AI Assessment Preview -->
+        <div id="ai-assessment-preview" style="display: none; background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%); padding: 16px; border-radius: 12px; margin-bottom: 20px;">
+          <h4 style="margin: 0 0 12px; color: #1565c0; display: flex; align-items: center; gap: 8px;">
+            🤖 AI Assessment Preview
+          </h4>
+          <div id="ai-assessment-content"></div>
+        </div>
+        
         <div style="background: #fff3e0; padding: 12px; border-radius: 8px; margin-bottom: 20px; font-size: 0.85rem; color: #e65100;">
-          📜 <strong>Transparency Notice:</strong> This contribution will be recorded on the NFT ledger and visible to all foundation members.
+          📜 <strong>Transparency Notice:</strong> This contribution will be recorded on the NFT ledger, visible to all foundation members, and analyzed by our AI for personalized recommendations.
         </div>
       </div>
       <div class="modal-footer">
         <button class="btn-action secondary" onclick="closeContributionModal()">Cancel</button>
-        <button class="btn-action primary" onclick="submitContribution()">💰 Contribute</button>
+        <button class="btn-action primary" id="contribution-submit-btn" onclick="submitContribution()">💰 Contribute</button>
       </div>
     </div>
   </div>
@@ -4045,6 +4150,7 @@
     let currentContributionFoundationId = null;
     let selectedPaymentMethod = 'wallet';
     let walletBalance = 0;
+    let selectedDocuments = [];
     
     async function openContributionModal(foundationId) {
       currentContributionFoundationId = foundationId;
@@ -4060,6 +4166,39 @@
       document.getElementById('contribution-amount').value = '';
       document.getElementById('contribution-notes').value = '';
       
+      // Reset payment forms
+      document.getElementById('credit-card-form').style.display = 'none';
+      document.getElementById('bank-transfer-form').style.display = 'none';
+      selectedPaymentMethod = 'wallet';
+      document.querySelectorAll('#contribution-modal .payment-option').forEach(opt => opt.classList.remove('selected'));
+      document.querySelector('#contribution-modal .payment-option[data-method="wallet"]').classList.add('selected');
+      
+      // Reset credit card fields
+      document.getElementById('card-number').value = '';
+      document.getElementById('card-exp-month').value = '';
+      document.getElementById('card-exp-year').value = '';
+      document.getElementById('card-cvv').value = '';
+      document.getElementById('cardholder-name').value = '';
+      document.getElementById('billing-zip').value = '';
+      document.getElementById('card-brand-indicator').textContent = '';
+      
+      // Reset document uploads
+      selectedDocuments = [];
+      document.getElementById('selected-files').innerHTML = '';
+      document.getElementById('document-input').value = '';
+      
+      // Populate expiry years
+      const yearSelect = document.getElementById('card-exp-year');
+      yearSelect.innerHTML = '<option value="">YY</option>';
+      const currentYear = new Date().getFullYear();
+      for (let i = 0; i < 15; i++) {
+        const year = currentYear + i;
+        yearSelect.innerHTML += `<option value="${year}">${year % 100}</option>`;
+      }
+      
+      // Reset AI assessment
+      document.getElementById('ai-assessment-preview').style.display = 'none';
+      
       // Load wallet balance
       await loadWalletBalance();
       
@@ -4069,6 +4208,7 @@
     function closeContributionModal() {
       document.getElementById('contribution-modal').classList.remove('active');
       currentContributionFoundationId = null;
+      selectedDocuments = [];
     }
     
     async function loadWalletBalance() {
@@ -4091,6 +4231,116 @@
       document.querySelectorAll('#contribution-modal .payment-option').forEach(opt => opt.classList.remove('selected'));
       element.classList.add('selected');
       selectedPaymentMethod = element.dataset.method;
+      
+      // Show/hide payment forms
+      document.getElementById('credit-card-form').style.display = selectedPaymentMethod === 'credit_card' ? 'block' : 'none';
+      document.getElementById('bank-transfer-form').style.display = selectedPaymentMethod === 'bank_transfer' ? 'block' : 'none';
+    }
+    
+    // Credit card number formatting
+    function formatCardNumber(input) {
+      let value = input.value.replace(/\s+/g, '').replace(/[^0-9]/gi, '');
+      let formattedValue = '';
+      for (let i = 0; i < value.length && i < 16; i++) {
+        if (i > 0 && i % 4 === 0) formattedValue += ' ';
+        formattedValue += value[i];
+      }
+      input.value = formattedValue;
+      
+      // Detect card brand
+      const brand = detectCardBrand(value);
+      const indicator = document.getElementById('card-brand-indicator');
+      if (brand) {
+        indicator.innerHTML = `<span style="color: #4caf50;">✓</span> ${brand}`;
+      } else if (value.length > 0) {
+        indicator.textContent = 'Enter a valid card number';
+      } else {
+        indicator.textContent = '';
+      }
+    }
+    
+    function detectCardBrand(number) {
+      if (number.startsWith('4')) return '💳 Visa';
+      if (/^5[1-5]/.test(number) || (number.length >= 4 && parseInt(number.substring(0,4)) >= 2221 && parseInt(number.substring(0,4)) <= 2720)) return '💳 Mastercard';
+      if (/^3[47]/.test(number)) return '💳 American Express';
+      if (/^6011|^644|^645|^646|^647|^648|^649|^65/.test(number)) return '💳 Discover';
+      return null;
+    }
+    
+    // Document upload handling
+    function handleDragOver(event) {
+      event.preventDefault();
+      event.currentTarget.style.borderColor = 'var(--foundation-primary)';
+      event.currentTarget.style.background = 'var(--foundation-light)';
+    }
+    
+    function handleDragLeave(event) {
+      event.currentTarget.style.borderColor = '#ccc';
+      event.currentTarget.style.background = 'transparent';
+    }
+    
+    function handleDrop(event) {
+      event.preventDefault();
+      event.currentTarget.style.borderColor = '#ccc';
+      event.currentTarget.style.background = 'transparent';
+      
+      const files = event.dataTransfer.files;
+      processSelectedFiles(files);
+    }
+    
+    function handleFileSelect(event) {
+      const files = event.target.files;
+      processSelectedFiles(files);
+    }
+    
+    function processSelectedFiles(files) {
+      const maxSize = 500 * 1024 * 1024; // 500MB
+      const container = document.getElementById('selected-files');
+      
+      for (const file of files) {
+        if (file.size > maxSize) {
+          alert(`File "${file.name}" exceeds 500MB limit`);
+          continue;
+        }
+        
+        // Read file as base64
+        const reader = new FileReader();
+        reader.onload = function(e) {
+          const base64Data = e.target.result.split(',')[1]; // Remove data URL prefix
+          selectedDocuments.push({
+            file_name: file.name,
+            file_type: file.type || 'application/octet-stream',
+            data: base64Data,
+            description: ''
+          });
+          
+          // Display file in UI
+          const fileDiv = document.createElement('div');
+          fileDiv.style.cssText = 'display: flex; align-items: center; gap: 8px; padding: 8px; background: #f5f5f5; border-radius: 6px; margin-bottom: 6px;';
+          
+          const icon = file.type.startsWith('image') ? '🖼️' : 
+                       file.type.startsWith('video') ? '🎬' : 
+                       file.type.includes('pdf') ? '📄' : '📎';
+          
+          const sizeStr = file.size > 1024 * 1024 ? 
+            `${(file.size / (1024 * 1024)).toFixed(1)}MB` : 
+            `${(file.size / 1024).toFixed(1)}KB`;
+          
+          fileDiv.innerHTML = `
+            <span style="font-size: 1.2rem;">${icon}</span>
+            <span style="flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${escapeHtml(file.name)}</span>
+            <span style="font-size: 0.8rem; color: #666;">${sizeStr}</span>
+            <button onclick="removeDocument(${selectedDocuments.length - 1}, this)" style="background: #ffebee; color: #c62828; border: none; padding: 4px 8px; border-radius: 4px; cursor: pointer;">✕</button>
+          `;
+          container.appendChild(fileDiv);
+        };
+        reader.readAsDataURL(file);
+      }
+    }
+    
+    function removeDocument(index, btn) {
+      selectedDocuments.splice(index, 1);
+      btn.parentElement.remove();
     }
     
     async function submitContribution() {
@@ -4103,16 +4353,77 @@
       
       // Validate wallet balance if using wallet
       if (selectedPaymentMethod === 'wallet' && amount > walletBalance) {
-        if (confirm(`Insufficient wallet balance ($${formatNumber(walletBalance)}). Would you like to add funds?`)) {
+        if (confirm(`Insufficient wallet balance ($${formatNumber(walletBalance)}). Would you like to add funds or switch to credit card?`)) {
           openWalletDepositModal();
         }
         return;
       }
       
       const notes = document.getElementById('contribution-notes').value;
+      const submitBtn = document.getElementById('contribution-submit-btn');
+      submitBtn.disabled = true;
+      submitBtn.textContent = '⏳ Processing...';
       
       try {
         const token = localStorage.getItem('phins_token');
+        
+        // Build request body based on payment method
+        const requestBody = {
+          amount: amount,
+          payment_method: selectedPaymentMethod,
+          notes: notes,
+          documents: selectedDocuments
+        };
+        
+        // Add credit card details if applicable
+        if (selectedPaymentMethod === 'credit_card') {
+          const cardNumber = document.getElementById('card-number').value.replace(/\s/g, '');
+          const expMonth = document.getElementById('card-exp-month').value;
+          const expYear = document.getElementById('card-exp-year').value;
+          const cvv = document.getElementById('card-cvv').value;
+          const cardholderName = document.getElementById('cardholder-name').value;
+          const billingZip = document.getElementById('billing-zip').value;
+          
+          // Validate credit card fields
+          if (!cardNumber || cardNumber.length < 13) {
+            alert('Please enter a valid card number');
+            submitBtn.disabled = false;
+            submitBtn.textContent = '💰 Contribute';
+            return;
+          }
+          if (!expMonth || !expYear) {
+            alert('Please select card expiry date');
+            submitBtn.disabled = false;
+            submitBtn.textContent = '💰 Contribute';
+            return;
+          }
+          if (!cvv || cvv.length < 3) {
+            alert('Please enter a valid CVV');
+            submitBtn.disabled = false;
+            submitBtn.textContent = '💰 Contribute';
+            return;
+          }
+          if (!cardholderName) {
+            alert('Please enter the cardholder name');
+            submitBtn.disabled = false;
+            submitBtn.textContent = '💰 Contribute';
+            return;
+          }
+          
+          requestBody.card_number = cardNumber;
+          requestBody.exp_month = parseInt(expMonth);
+          requestBody.exp_year = parseInt(expYear);
+          requestBody.cvv = cvv;
+          requestBody.cardholder_name = cardholderName;
+          requestBody.billing_zip = billingZip;
+        }
+        
+        // Add bank transfer details if applicable
+        if (selectedPaymentMethod === 'bank_transfer') {
+          requestBody.bank_name = document.getElementById('bank-name').value;
+          requestBody.account_last4 = document.getElementById('account-last4').value;
+          requestBody.routing_number = document.getElementById('routing-number').value;
+        }
         
         // Use the billing-integrated contribution endpoint
         const response = await fetch(`/api/foundations/${currentContributionFoundationId}/contribute-billing`, {
@@ -4121,18 +4432,39 @@
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${token}`
           },
-          body: JSON.stringify({
-            amount: amount,
-            payment_method: selectedPaymentMethod,
-            notes: notes
-          })
+          body: JSON.stringify(requestBody)
         });
         
         const data = await response.json();
         
         if (data.success) {
-          const methodLabel = selectedPaymentMethod === 'wallet' ? 'wallet' : selectedPaymentMethod === 'credit_card' ? 'credit card' : 'bank transfer';
-          alert(`✅ Contribution of $${formatNumber(amount)} successful!\n\nPayment method: ${methodLabel}\nTransaction recorded on NFT ledger.`);
+          const methodLabel = selectedPaymentMethod === 'wallet' ? 'wallet' : 
+                              selectedPaymentMethod === 'credit_card' ? `credit card (${data.card_brand || 'card'} ****${data.card_last4 || ''})` : 
+                              'bank transfer';
+          
+          let successMessage = `✅ Contribution of $${formatNumber(amount)} successful!\n\n`;
+          successMessage += `Payment method: ${methodLabel}\n`;
+          successMessage += `Transaction ID: ${data.transaction_id || 'N/A'}\n`;
+          successMessage += `Status: ${data.status || 'completed'}\n`;
+          
+          if (data.ledger_hash) {
+            successMessage += `Ledger Hash: ${data.ledger_hash.substring(0, 16)}...\n`;
+          }
+          
+          if (data.documents_uploaded > 0) {
+            successMessage += `Documents attached: ${data.documents_uploaded}\n`;
+          }
+          
+          if (data.ai_assessment) {
+            successMessage += `\n🤖 AI Assessment: ${data.ai_assessment.risk_assessment?.level || 'Low'} risk\n`;
+            if (data.ai_assessment.recommendations?.length > 0) {
+              successMessage += `💡 Tip: ${data.ai_assessment.recommendations[0]}\n`;
+            }
+          }
+          
+          successMessage += `\n📜 Transaction recorded on NFT ledger.`;
+          
+          alert(successMessage);
           closeContributionModal();
           closeViewModal();
           await loadFoundations();
@@ -4145,6 +4477,9 @@
       } catch (e) {
         console.error('Error making contribution:', e);
         alert('Network error. Please try again.');
+      } finally {
+        submitBtn.disabled = false;
+        submitBtn.textContent = '💰 Contribute';
       }
     }
     
