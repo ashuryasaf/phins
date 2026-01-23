@@ -818,6 +818,192 @@ def handle_foundation_report(session: Dict, foundation_id: str, query_params: Di
     return 200, report
 
 
+# ============================================================================
+# COMPREHENSIVE NFT LEDGER ENDPOINTS
+# ============================================================================
+
+def handle_comprehensive_ledger(session: Dict, query_params: Dict) -> Tuple[int, Dict]:
+    """GET /api/foundation-ledger/comprehensive - Get comprehensive NFT ledger with all transactions"""
+    if not FOUNDATION_SERVICE_AVAILABLE:
+        return 200, {"transactions": [], "statistics": {}, "total_count": 0}
+    
+    if not session:
+        return 401, {"error": "Authentication required"}
+    
+    service = get_foundation_service()
+    customer_id = session.get('customer_id')
+    user_id = customer_id or session.get('username')
+    
+    foundation_id = query_params.get('foundation_id', [None])[0]
+    limit = int(query_params.get('limit', ['100'])[0])
+    
+    ledger = service.get_comprehensive_ledger(
+        user_id=user_id,
+        foundation_id=foundation_id,
+        limit=limit
+    )
+    
+    return 200, ledger
+
+
+def handle_vote_statistics(session: Dict, query_params: Dict) -> Tuple[int, Dict]:
+    """GET /api/foundation-votes/statistics - Get comprehensive voting statistics"""
+    if not FOUNDATION_SERVICE_AVAILABLE:
+        return 200, {"summary": {}, "type_breakdown": {}, "recent_votes": []}
+    
+    if not session:
+        return 401, {"error": "Authentication required"}
+    
+    service = get_foundation_service()
+    customer_id = session.get('customer_id')
+    user_id = customer_id or session.get('username')
+    
+    foundation_id = query_params.get('foundation_id', [None])[0]
+    
+    stats = service.get_vote_statistics(
+        foundation_id=foundation_id,
+        user_id=user_id if not foundation_id else None
+    )
+    
+    return 200, stats
+
+
+def handle_foundation_csv_report(session: Dict, foundation_id: str, query_params: Dict) -> Tuple[int, Dict]:
+    """GET /api/foundations/{id}/export/csv - Export foundation data as CSV"""
+    if not FOUNDATION_SERVICE_AVAILABLE:
+        return 503, {"error": "Foundation service not available"}
+    
+    if not session:
+        return 401, {"error": "Authentication required"}
+    
+    service = get_foundation_service()
+    customer_id = session.get('customer_id')
+    user_id = customer_id or session.get('username')
+    
+    # Check if user is member of this foundation
+    member = service._get_member_by_user(foundation_id, user_id)
+    if not member:
+        return 403, {"error": "You are not a member of this foundation"}
+    
+    # Only founders and admins can export data
+    if member['role'] not in ['founder', 'admin']:
+        return 403, {"error": "Only founders and admins can export data"}
+    
+    report_type = query_params.get('type', ['transactions'])[0]
+    
+    csv_data = service.generate_csv_report(foundation_id, report_type)
+    
+    foundation = service.get_foundation(foundation_id)
+    filename = f"{foundation['name'].replace(' ', '_')}_{report_type}_{datetime.now(timezone.utc).strftime('%Y%m%d')}.csv"
+    
+    return 200, {
+        "success": True,
+        "data": csv_data,
+        "filename": filename,
+        "content_type": "text/csv"
+    }
+
+
+# ============================================================================
+# WALLET & PAYMENT ENDPOINTS
+# ============================================================================
+
+def handle_wallet_balance(session: Dict) -> Tuple[int, Dict]:
+    """GET /api/foundation-wallet/balance - Get customer wallet balance"""
+    if not FOUNDATION_SERVICE_AVAILABLE:
+        return 200, {"wallet_balance": 0, "currency": "USD"}
+    
+    if not session:
+        return 401, {"error": "Authentication required"}
+    
+    service = get_foundation_service()
+    customer_id = session.get('customer_id')
+    user_id = customer_id or session.get('username')
+    
+    wallet = service.get_customer_wallet_balance(user_id)
+    return 200, wallet
+
+
+def handle_wallet_deposit(session: Dict, body_data: Dict) -> Tuple[int, Dict]:
+    """POST /api/foundation-wallet/deposit - Deposit funds to wallet"""
+    if not FOUNDATION_SERVICE_AVAILABLE:
+        return 503, {"error": "Foundation service not available"}
+    
+    if not session:
+        return 401, {"error": "Authentication required"}
+    
+    service = get_foundation_service()
+    customer_id = session.get('customer_id')
+    user_id = customer_id or session.get('username')
+    
+    amount = float(body_data.get('amount', 0))
+    payment_method = body_data.get('payment_method', 'credit_card')
+    payment_reference = body_data.get('payment_reference', '')
+    
+    if amount <= 0:
+        return 400, {"error": "Amount must be positive"}
+    
+    result = service.deposit_to_wallet(
+        customer_id=user_id,
+        amount=amount,
+        payment_method=payment_method,
+        payment_reference=payment_reference
+    )
+    
+    return 200 if result.get('success') else 400, result
+
+
+def handle_contribution_with_billing(session: Dict, foundation_id: str, body_data: Dict) -> Tuple[int, Dict]:
+    """POST /api/foundations/{id}/contribute-billing - Make contribution with full billing integration"""
+    if not FOUNDATION_SERVICE_AVAILABLE:
+        return 503, {"error": "Foundation service not available"}
+    
+    if not session:
+        return 401, {"error": "Authentication required"}
+    
+    service = get_foundation_service()
+    customer_id = session.get('customer_id')
+    user_id = customer_id or session.get('username')
+    
+    # Get fund_id
+    funds = service.get_foundation_funds(foundation_id)
+    if not funds:
+        return 400, {"error": "No funds available for contribution"}
+    
+    fund_id = body_data.get('fund_id') or funds[0]['id']
+    amount = float(body_data.get('amount', 0))
+    payment_method = body_data.get('payment_method', 'wallet')
+    payment_reference = body_data.get('payment_reference', '')
+    wallet_id = body_data.get('wallet_id', '')
+    notes = body_data.get('notes', '')
+    
+    if amount <= 0:
+        return 400, {"error": "Amount must be positive"}
+    
+    # If using wallet, verify sufficient balance
+    if payment_method == 'wallet':
+        wallet = service.get_customer_wallet_balance(user_id)
+        if wallet['wallet_balance'] < amount:
+            return 400, {
+                "error": "Insufficient wallet balance",
+                "wallet_balance": wallet['wallet_balance'],
+                "required_amount": amount
+            }
+    
+    result = service.make_contribution_with_billing(
+        foundation_id=foundation_id,
+        fund_id=fund_id,
+        member_id=user_id,
+        amount=amount,
+        payment_method=payment_method,
+        payment_reference=payment_reference,
+        wallet_id=wallet_id,
+        notes=notes
+    )
+    
+    return 200 if result.get('success') else 400, result
+
+
 def handle_foundation_activities(session: Dict, foundation_id: str, query_params: Dict) -> Tuple[int, Dict]:
     """GET /api/foundations/{id}/activities - Get foundation activities"""
     if not FOUNDATION_SERVICE_AVAILABLE:
@@ -1412,6 +1598,18 @@ def dispatch_get(path: str, session: Dict, query_params: Dict, client_ip: str) -
     if path == '/api/foundation-ledger':
         return handle_foundation_ledger(session, query_params)
     
+    # Comprehensive NFT ledger with all transaction types
+    if path == '/api/foundation-ledger/comprehensive':
+        return handle_comprehensive_ledger(session, query_params)
+    
+    # Vote statistics
+    if path == '/api/foundation-votes/statistics':
+        return handle_vote_statistics(session, query_params)
+    
+    # Wallet balance
+    if path == '/api/foundation-wallet/balance':
+        return handle_wallet_balance(session)
+    
     # Foundation activity log
     if path == '/api/foundation-activity':
         return handle_foundation_activity_log(session, query_params)
@@ -1450,6 +1648,14 @@ def dispatch_get(path: str, session: Dict, query_params: Dict, client_ip: str) -
                 return handle_foundation_report(session, foundation_id, query_params)
             elif resource == 'activities':
                 return handle_foundation_activities(session, foundation_id, query_params)
+        
+        # /api/foundations/{id}/export/{format}
+        if len(parts) == 6 and parts[4] == 'export':
+            foundation_id = parts[3]
+            export_format = parts[5]
+            
+            if export_format == 'csv':
+                return handle_foundation_csv_report(session, foundation_id, query_params)
         
         # /api/foundations/{id}/votes/{vote_id}
         if len(parts) == 6 and parts[4] == 'votes':
@@ -1541,6 +1747,10 @@ def dispatch_post(path: str, session: Dict, body_data: Dict, client_ip: str, use
     if path == '/api/foundations/backup':
         return handle_foundation_create_backup(session)
     
+    # Wallet: Deposit
+    if path == '/api/foundation-wallet/deposit':
+        return handle_wallet_deposit(session, body_data)
+    
     # Foundation-specific POST endpoints
     if path.startswith('/api/foundations/') and not path.startswith('/api/admin/'):
         parts = path.split('/')
@@ -1554,6 +1764,8 @@ def dispatch_post(path: str, session: Dict, body_data: Dict, client_ip: str, use
                 return handle_foundation_activate(session, foundation_id)
             elif action == 'contribute':
                 return handle_foundation_contribute(session, foundation_id, body_data)
+            elif action == 'contribute-billing':
+                return handle_contribution_with_billing(session, foundation_id, body_data)
             elif action == 'invite':
                 return handle_foundation_invite(session, foundation_id, body_data)
             elif action == 'votes':

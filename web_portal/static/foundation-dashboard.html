@@ -1496,14 +1496,14 @@
           <div class="quick-stat-label">Total Balance</div>
         </div>
       </div>
-      <div class="quick-stat-card">
+      <div class="quick-stat-card" style="cursor: pointer;" onclick="openFullLedgerModal()">
         <div class="quick-stat-icon gold">📜</div>
         <div>
           <div class="quick-stat-value" id="ledger-entries">0</div>
           <div class="quick-stat-label">NFT Ledger Entries</div>
         </div>
       </div>
-      <div class="quick-stat-card">
+      <div class="quick-stat-card" style="cursor: pointer;" onclick="openVoteStatsModal()">
         <div class="quick-stat-icon blue">🗳️</div>
         <div>
           <div class="quick-stat-value" id="active-votes">0</div>
@@ -1950,13 +1950,208 @@
     <div class="modal large">
       <div class="modal-header">
         <h2 id="billing-modal-title">📊 Billing & Reports</h2>
-        <button class="modal-close" onclick="closeBillingModal()">&times;</button>
+        <div style="display: flex; gap: 8px; align-items: center;">
+          <button class="btn-create" onclick="downloadCSVReport('transactions')" style="background: #4caf50; font-size: 0.8rem; padding: 6px 12px;">
+            📥 CSV
+          </button>
+          <button class="modal-close" onclick="closeBillingModal()">&times;</button>
+        </div>
       </div>
       <div class="modal-body" id="billing-content" style="max-height: 70vh; overflow-y: auto;">
         <!-- Billing content will be loaded here -->
       </div>
     </div>
   </div>
+  
+  <!-- Full NFT Ledger Modal -->
+  <div class="modal-overlay" id="full-ledger-modal">
+    <div class="modal large">
+      <div class="modal-header">
+        <h2>📜 Complete NFT Ledger</h2>
+        <div style="display: flex; gap: 8px; align-items: center;">
+          <select id="ledger-filter" onchange="filterLedgerEntries()" style="padding: 6px 12px; border-radius: 6px; border: 1px solid #ddd;">
+            <option value="all">All Transactions</option>
+            <option value="membership">👤 Membership</option>
+            <option value="contribution">💰 Contributions</option>
+            <option value="vote">🗳️ Votes</option>
+            <option value="claim">📝 Claims</option>
+            <option value="creation">🏛️ Foundation Events</option>
+          </select>
+          <button class="modal-close" onclick="closeFullLedgerModal()">&times;</button>
+        </div>
+      </div>
+      <div class="modal-body" style="max-height: 70vh; overflow-y: auto; background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%); color: white; border-radius: 0 0 16px 16px;">
+        <div style="padding: 16px 0;">
+          <!-- Ledger Statistics -->
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 12px; margin-bottom: 20px;">
+            <div style="background: rgba(255,255,255,0.1); padding: 12px; border-radius: 8px; text-align: center;">
+              <div style="font-size: 1.3rem; font-weight: 700; color: #ffd700;" id="full-ledger-total">0</div>
+              <div style="font-size: 0.75rem; opacity: 0.8;">Total Transactions</div>
+            </div>
+            <div style="background: rgba(255,255,255,0.1); padding: 12px; border-radius: 8px; text-align: center;">
+              <div style="font-size: 1.3rem; font-weight: 700; color: #4caf50;" id="full-ledger-contributions">$0</div>
+              <div style="font-size: 0.75rem; opacity: 0.8;">Contributions</div>
+            </div>
+            <div style="background: rgba(255,255,255,0.1); padding: 12px; border-radius: 8px; text-align: center;">
+              <div style="font-size: 1.3rem; font-weight: 700; color: #2196f3;" id="full-ledger-votes">0</div>
+              <div style="font-size: 0.75rem; opacity: 0.8;">Votes</div>
+            </div>
+            <div style="background: rgba(255,255,255,0.1); padding: 12px; border-radius: 8px; text-align: center;">
+              <div style="font-size: 1.3rem; font-weight: 700; color: #9c27b0;" id="full-ledger-members">0</div>
+              <div style="font-size: 0.75rem; opacity: 0.8;">Members Joined</div>
+            </div>
+          </div>
+          
+          <!-- Ledger Entries -->
+          <div id="full-ledger-entries" style="max-height: 400px; overflow-y: auto;">
+            <!-- Entries will be loaded here -->
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  
+  <!-- Contribution Modal with Payment Methods -->
+  <div class="modal-overlay" id="contribution-modal">
+    <div class="modal">
+      <div class="modal-header">
+        <h2>💰 Make Contribution</h2>
+        <button class="modal-close" onclick="closeContributionModal()">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div id="contribution-foundation-info" style="background: var(--foundation-light); padding: 16px; border-radius: 12px; margin-bottom: 20px;">
+          <div style="font-weight: 600; color: var(--foundation-dark);" id="contribution-foundation-name">Foundation Name</div>
+          <div style="font-size: 0.85rem; color: #666;" id="contribution-foundation-balance">Balance: $0</div>
+        </div>
+        
+        <!-- Wallet Balance -->
+        <div id="wallet-section" style="background: linear-gradient(135deg, #e8f5e9 0%, #c8e6c9 100%); padding: 16px; border-radius: 12px; margin-bottom: 20px;">
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <div>
+              <div style="font-size: 0.85rem; color: #666;">Your Wallet Balance</div>
+              <div style="font-size: 1.5rem; font-weight: 700; color: #2e7d32;" id="wallet-balance">$0.00</div>
+            </div>
+            <button onclick="openWalletDepositModal()" style="background: #4caf50; color: white; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-weight: 600;">
+              + Add Funds
+            </button>
+          </div>
+        </div>
+        
+        <div class="form-group">
+          <label for="contribution-amount">Contribution Amount ($)</label>
+          <input type="number" id="contribution-amount" min="1" step="0.01" placeholder="Enter amount" style="font-size: 1.2rem; text-align: center;" />
+        </div>
+        
+        <div class="form-group">
+          <label>Payment Method</label>
+          <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px;">
+            <div class="payment-option selected" data-method="wallet" onclick="selectPaymentMethod(this)">
+              <div style="font-size: 1.5rem;">💳</div>
+              <div style="font-weight: 600;">Wallet</div>
+              <div style="font-size: 0.75rem; color: #666;">Use balance</div>
+            </div>
+            <div class="payment-option" data-method="credit_card" onclick="selectPaymentMethod(this)">
+              <div style="font-size: 1.5rem;">💳</div>
+              <div style="font-weight: 600;">Credit Card</div>
+              <div style="font-size: 0.75rem; color: #666;">Visa, MC, Amex</div>
+            </div>
+            <div class="payment-option" data-method="bank_transfer" onclick="selectPaymentMethod(this)">
+              <div style="font-size: 1.5rem;">🏦</div>
+              <div style="font-weight: 600;">Bank</div>
+              <div style="font-size: 0.75rem; color: #666;">ACH Transfer</div>
+            </div>
+          </div>
+        </div>
+        
+        <div class="form-group">
+          <label for="contribution-notes">Notes (optional)</label>
+          <textarea id="contribution-notes" placeholder="Add a note to your contribution..." rows="2"></textarea>
+        </div>
+        
+        <div style="background: #fff3e0; padding: 12px; border-radius: 8px; margin-bottom: 20px; font-size: 0.85rem; color: #e65100;">
+          📜 <strong>Transparency Notice:</strong> This contribution will be recorded on the NFT ledger and visible to all foundation members.
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn-action secondary" onclick="closeContributionModal()">Cancel</button>
+        <button class="btn-action primary" onclick="submitContribution()">💰 Contribute</button>
+      </div>
+    </div>
+  </div>
+  
+  <!-- Wallet Deposit Modal -->
+  <div class="modal-overlay" id="wallet-deposit-modal">
+    <div class="modal">
+      <div class="modal-header">
+        <h2>💳 Add Funds to Wallet</h2>
+        <button class="modal-close" onclick="closeWalletDepositModal()">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p style="color: #666; margin-bottom: 20px;">Add funds to your foundation wallet for quick contributions.</p>
+        
+        <div class="form-group">
+          <label for="deposit-amount">Deposit Amount ($)</label>
+          <input type="number" id="deposit-amount" min="10" step="10" placeholder="Enter amount" value="100" style="font-size: 1.2rem; text-align: center;" />
+        </div>
+        
+        <div class="form-group">
+          <label>Payment Method</label>
+          <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px;">
+            <div class="payment-option selected" data-method="credit_card" onclick="selectDepositPaymentMethod(this)">
+              <div style="font-size: 1.5rem;">💳</div>
+              <div style="font-weight: 600;">Credit Card</div>
+            </div>
+            <div class="payment-option" data-method="bank_transfer" onclick="selectDepositPaymentMethod(this)">
+              <div style="font-size: 1.5rem;">🏦</div>
+              <div style="font-weight: 600;">Bank Transfer</div>
+            </div>
+          </div>
+        </div>
+        
+        <div style="background: #e3f2fd; padding: 12px; border-radius: 8px; font-size: 0.85rem; color: #1565c0;">
+          💡 Wallet funds can be used for instant contributions to any foundation you're a member of.
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn-action secondary" onclick="closeWalletDepositModal()">Cancel</button>
+        <button class="btn-action primary" onclick="submitWalletDeposit()">💳 Add Funds</button>
+      </div>
+    </div>
+  </div>
+  
+  <!-- Vote Statistics Modal -->
+  <div class="modal-overlay" id="vote-stats-modal">
+    <div class="modal large">
+      <div class="modal-header">
+        <h2>📊 Voting Statistics & Analytics</h2>
+        <button class="modal-close" onclick="closeVoteStatsModal()">&times;</button>
+      </div>
+      <div class="modal-body" id="vote-stats-content" style="max-height: 70vh; overflow-y: auto;">
+        <!-- Vote statistics will be loaded here -->
+      </div>
+    </div>
+  </div>
+  
+  <style>
+    .payment-option {
+      padding: 16px;
+      border: 2px solid #e0e0e0;
+      border-radius: 12px;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.3s;
+    }
+    
+    .payment-option:hover {
+      border-color: var(--foundation-secondary);
+      background: var(--foundation-light);
+    }
+    
+    .payment-option.selected {
+      border-color: var(--foundation-primary);
+      background: var(--foundation-light);
+    }
+  </style>
   
   <script>
     // State
@@ -2044,16 +2239,24 @@
       }
     }
     
-    // Load NFT Ledger entries
+    // Load NFT Ledger entries (comprehensive)
+    let ledgerStatistics = {};
+    
     async function loadLedgerEntries() {
       try {
         const token = localStorage.getItem('phins_token');
-        const response = await fetch('/api/foundation-ledger', {
+        // Use comprehensive ledger endpoint for full transaction data
+        const response = await fetch('/api/foundation-ledger/comprehensive?limit=100', {
           headers: { 'Authorization': `Bearer ${token}` }
         });
         const data = await response.json();
         
-        if (data.items) {
+        if (data.transactions) {
+          ledgerEntries = data.transactions;
+          ledgerStatistics = data.statistics || {};
+          renderLedgerEntries();
+        } else if (data.items) {
+          // Fallback to basic ledger
           ledgerEntries = data.items;
           renderLedgerEntries();
         }
@@ -2223,7 +2426,7 @@
       `).join('');
     }
     
-    // Render NFT Ledger entries
+    // Render NFT Ledger entries (comprehensive with all transaction types)
     function renderLedgerEntries() {
       const container = document.getElementById('ledger-entries-list');
       
@@ -2232,29 +2435,94 @@
         return;
       }
       
-      container.innerHTML = ledgerEntries.slice(0, 10).map(entry => {
-        const iconClass = entry.type.includes('join') || entry.type.includes('member') ? 'join' : 
-                         entry.type.includes('contribution') ? 'contribution' :
-                         entry.type.includes('vote') ? 'vote' :
-                         entry.type.includes('claim') ? 'claim' : 'decision';
-        const icon = iconClass === 'join' ? '👤' : 
-                    iconClass === 'contribution' ? '💰' :
-                    iconClass === 'vote' ? '🗳️' :
-                    iconClass === 'claim' ? '📝' : '⚖️';
+      // Update statistics display
+      const statsContainer = document.getElementById('ledger-total-transactions');
+      if (statsContainer) {
+        statsContainer.textContent = ledgerStatistics.total_transactions || ledgerEntries.length;
+      }
+      
+      container.innerHTML = ledgerEntries.slice(0, 15).map(entry => {
+        // Use comprehensive ledger data with icon and category
+        const icon = entry.icon || getCategoryIcon(entry.type || entry.activity_type);
+        const category = entry.category || getCategoryFromType(entry.type || entry.activity_type);
+        const description = entry.description || entry.action || (entry.type || entry.activity_type || '').replace(/_/g, ' ');
+        const hash = entry.transaction_hash || generateHash(entry);
+        const foundationName = entry.foundation_name || entry.foundation || 'Foundation';
+        const timestamp = entry.timestamp || entry.created_at;
         
-        const hash = generateHash(entry);
+        // Determine icon class for styling
+        const iconClass = category === 'membership' ? 'join' :
+                         category === 'contribution' ? 'contribution' :
+                         category === 'vote' ? 'vote' :
+                         category === 'claim' ? 'claim' :
+                         category === 'creation' ? 'decision' :
+                         category === 'invitation' ? 'join' : 'decision';
+        
+        // Format amount if present
+        const amountDisplay = entry.amount ? ` • $${formatNumber(entry.amount)}` : '';
         
         return `
-          <div class="ledger-entry">
+          <div class="ledger-entry" title="Block #${entry.block_number || 'N/A'} - Verified: ${entry.verified !== false ? 'Yes' : 'Pending'}">
             <div class="ledger-entry-icon ${iconClass}">${icon}</div>
             <div class="ledger-entry-details">
-              <div>${entry.action || entry.type.replace(/_/g, ' ')}</div>
-              <div style="font-size: 0.75rem; opacity: 0.7;">${entry.foundation || 'Foundation'} • ${formatTimeAgo(entry.timestamp)}</div>
-              <div class="ledger-entry-hash">#${hash}</div>
+              <div style="font-weight: 500;">${escapeHtml(description)}${amountDisplay}</div>
+              <div style="font-size: 0.75rem; opacity: 0.7;">${escapeHtml(foundationName)} • ${formatTimeAgo(timestamp)}</div>
+              <div class="ledger-entry-hash" style="display: flex; align-items: center; gap: 4px;">
+                <span style="color: #ffd700;">🔗</span> ${hash}
+                ${entry.verified !== false ? '<span style="color: #4caf50; font-size: 0.6rem;">✓ VERIFIED</span>' : ''}
+              </div>
             </div>
           </div>
         `;
       }).join('');
+      
+      // Add "View All" button if there are more entries
+      if (ledgerEntries.length > 15) {
+        container.innerHTML += `
+          <div style="text-align: center; padding: 12px;">
+            <button onclick="openFullLedgerModal()" style="background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.3); color: white; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-size: 0.85rem;">
+              📜 View All ${ledgerEntries.length} Transactions
+            </button>
+          </div>
+        `;
+      }
+    }
+    
+    // Helper functions for ledger categories
+    function getCategoryIcon(type) {
+      const iconMap = {
+        'foundation_created': '🏛️',
+        'foundation_activated': '✅',
+        'foundation_rejected': '❌',
+        'foundation_dissolved': '🔚',
+        'pipeline_processed': '📋',
+        'member_joined': '👤',
+        'member_approved': '✅',
+        'member_rejected': '❌',
+        'member_removed': '🚫',
+        'member_role_changed': '🔄',
+        'invitation_created': '📨',
+        'contribution_made': '💰',
+        'vote_created': '🗳️',
+        'vote_cast': '✋',
+        'vote_closed': '📊',
+        'vote_approved': '✅',
+        'claim_submitted': '📝',
+        'claim_approved': '✅',
+        'claim_rejected': '❌',
+        'fund_created': '📁'
+      };
+      return iconMap[type] || '📋';
+    }
+    
+    function getCategoryFromType(type) {
+      if (type.includes('foundation')) return 'creation';
+      if (type.includes('member') || type.includes('join')) return 'membership';
+      if (type.includes('contribution')) return 'contribution';
+      if (type.includes('vote')) return 'vote';
+      if (type.includes('claim')) return 'claim';
+      if (type.includes('invitation')) return 'invitation';
+      return 'other';
     }
     
     // Render activity timeline
@@ -3699,6 +3967,393 @@
         }, 500);
       }
     })();
+    
+    // ========== FULL LEDGER MODAL ==========
+    let currentLedgerFilter = 'all';
+    
+    function openFullLedgerModal() {
+      document.getElementById('full-ledger-modal').classList.add('active');
+      renderFullLedger();
+    }
+    
+    function closeFullLedgerModal() {
+      document.getElementById('full-ledger-modal').classList.remove('active');
+    }
+    
+    function filterLedgerEntries() {
+      currentLedgerFilter = document.getElementById('ledger-filter').value;
+      renderFullLedger();
+    }
+    
+    function renderFullLedger() {
+      // Update statistics
+      document.getElementById('full-ledger-total').textContent = ledgerStatistics.total_transactions || ledgerEntries.length;
+      document.getElementById('full-ledger-contributions').textContent = '$' + formatNumber(ledgerStatistics.total_contributions || 0);
+      document.getElementById('full-ledger-votes').textContent = ledgerStatistics.total_votes || 0;
+      document.getElementById('full-ledger-members').textContent = ledgerStatistics.total_members_joined || 0;
+      
+      // Filter entries
+      let filteredEntries = ledgerEntries;
+      if (currentLedgerFilter !== 'all') {
+        filteredEntries = ledgerEntries.filter(e => {
+          const category = e.category || getCategoryFromType(e.type || e.activity_type);
+          return category === currentLedgerFilter;
+        });
+      }
+      
+      const container = document.getElementById('full-ledger-entries');
+      
+      if (filteredEntries.length === 0) {
+        container.innerHTML = '<div style="text-align: center; padding: 40px; opacity: 0.7;">No transactions found</div>';
+        return;
+      }
+      
+      container.innerHTML = filteredEntries.map(entry => {
+        const icon = entry.icon || getCategoryIcon(entry.type || entry.activity_type);
+        const category = entry.category || getCategoryFromType(entry.type || entry.activity_type);
+        const description = entry.description || entry.action || (entry.type || '').replace(/_/g, ' ');
+        const hash = entry.transaction_hash || generateHash(entry);
+        const foundationName = entry.foundation_name || entry.foundation || 'Foundation';
+        const timestamp = entry.timestamp || entry.created_at;
+        
+        const iconClass = category === 'membership' ? 'join' :
+                         category === 'contribution' ? 'contribution' :
+                         category === 'vote' ? 'vote' :
+                         category === 'claim' ? 'claim' : 'decision';
+        
+        const amountDisplay = entry.amount ? ` • $${formatNumber(entry.amount)}` : '';
+        
+        return `
+          <div class="ledger-entry" style="background: rgba(255,255,255,0.05); margin-bottom: 8px; border-radius: 8px; padding: 12px;">
+            <div class="ledger-entry-icon ${iconClass}" style="width: 36px; height: 36px; font-size: 1rem;">${icon}</div>
+            <div class="ledger-entry-details" style="flex: 1;">
+              <div style="font-weight: 600;">${escapeHtml(description)}${amountDisplay}</div>
+              <div style="font-size: 0.8rem; opacity: 0.7; margin-top: 4px;">${escapeHtml(foundationName)} • ${formatTimeAgo(timestamp)}</div>
+              <div class="ledger-entry-hash" style="margin-top: 4px; display: flex; align-items: center; gap: 6px;">
+                <span style="color: #ffd700;">🔗</span> 
+                <span style="font-family: monospace; font-size: 0.7rem;">${hash}</span>
+                ${entry.verified !== false ? '<span style="background: #4caf50; color: white; padding: 2px 6px; border-radius: 4px; font-size: 0.6rem;">VERIFIED</span>' : ''}
+                <span style="opacity: 0.5; font-size: 0.65rem;">Block #${entry.block_number || 'N/A'}</span>
+              </div>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+    
+    // ========== CONTRIBUTION MODAL ==========
+    let currentContributionFoundationId = null;
+    let selectedPaymentMethod = 'wallet';
+    let walletBalance = 0;
+    
+    async function openContributionModal(foundationId) {
+      currentContributionFoundationId = foundationId;
+      const foundation = foundations.find(f => f.id === foundationId);
+      
+      if (!foundation) {
+        alert('Foundation not found');
+        return;
+      }
+      
+      document.getElementById('contribution-foundation-name').textContent = foundation.name;
+      document.getElementById('contribution-foundation-balance').textContent = `Balance: $${formatNumber(foundation.total_fund_balance || 0)}`;
+      document.getElementById('contribution-amount').value = '';
+      document.getElementById('contribution-notes').value = '';
+      
+      // Load wallet balance
+      await loadWalletBalance();
+      
+      document.getElementById('contribution-modal').classList.add('active');
+    }
+    
+    function closeContributionModal() {
+      document.getElementById('contribution-modal').classList.remove('active');
+      currentContributionFoundationId = null;
+    }
+    
+    async function loadWalletBalance() {
+      try {
+        const token = localStorage.getItem('phins_token');
+        const response = await fetch('/api/foundation-wallet/balance', {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const data = await response.json();
+        walletBalance = data.wallet_balance || 0;
+        document.getElementById('wallet-balance').textContent = '$' + formatNumber(walletBalance);
+      } catch (e) {
+        console.error('Error loading wallet balance:', e);
+        walletBalance = 0;
+        document.getElementById('wallet-balance').textContent = '$0.00';
+      }
+    }
+    
+    function selectPaymentMethod(element) {
+      document.querySelectorAll('#contribution-modal .payment-option').forEach(opt => opt.classList.remove('selected'));
+      element.classList.add('selected');
+      selectedPaymentMethod = element.dataset.method;
+    }
+    
+    async function submitContribution() {
+      const amount = parseFloat(document.getElementById('contribution-amount').value);
+      
+      if (!amount || amount <= 0) {
+        alert('Please enter a valid amount');
+        return;
+      }
+      
+      // Validate wallet balance if using wallet
+      if (selectedPaymentMethod === 'wallet' && amount > walletBalance) {
+        if (confirm(`Insufficient wallet balance ($${formatNumber(walletBalance)}). Would you like to add funds?`)) {
+          openWalletDepositModal();
+        }
+        return;
+      }
+      
+      const notes = document.getElementById('contribution-notes').value;
+      
+      try {
+        const token = localStorage.getItem('phins_token');
+        
+        // Use the billing-integrated contribution endpoint
+        const response = await fetch(`/api/foundations/${currentContributionFoundationId}/contribute-billing`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify({
+            amount: amount,
+            payment_method: selectedPaymentMethod,
+            notes: notes
+          })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+          const methodLabel = selectedPaymentMethod === 'wallet' ? 'wallet' : selectedPaymentMethod === 'credit_card' ? 'credit card' : 'bank transfer';
+          alert(`✅ Contribution of $${formatNumber(amount)} successful!\n\nPayment method: ${methodLabel}\nTransaction recorded on NFT ledger.`);
+          closeContributionModal();
+          closeViewModal();
+          await loadFoundations();
+          await loadLedgerEntries();
+          await loadWalletBalance();
+          updateDashboardStats();
+        } else {
+          alert('Error: ' + (data.error || 'Failed to make contribution'));
+        }
+      } catch (e) {
+        console.error('Error making contribution:', e);
+        alert('Network error. Please try again.');
+      }
+    }
+    
+    // Update contributeToFoundation to use new modal
+    function contributeToFoundation(id) {
+      openContributionModal(id);
+    }
+    
+    // ========== WALLET DEPOSIT MODAL ==========
+    let selectedDepositPaymentMethod = 'credit_card';
+    
+    function openWalletDepositModal() {
+      document.getElementById('deposit-amount').value = '100';
+      document.getElementById('wallet-deposit-modal').classList.add('active');
+    }
+    
+    function closeWalletDepositModal() {
+      document.getElementById('wallet-deposit-modal').classList.remove('active');
+    }
+    
+    function selectDepositPaymentMethod(element) {
+      document.querySelectorAll('#wallet-deposit-modal .payment-option').forEach(opt => opt.classList.remove('selected'));
+      element.classList.add('selected');
+      selectedDepositPaymentMethod = element.dataset.method;
+    }
+    
+    async function submitWalletDeposit() {
+      const amount = parseFloat(document.getElementById('deposit-amount').value);
+      
+      if (!amount || amount < 10) {
+        alert('Minimum deposit amount is $10');
+        return;
+      }
+      
+      try {
+        const token = localStorage.getItem('phins_token');
+        const response = await fetch('/api/foundation-wallet/deposit', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify({
+            amount: amount,
+            payment_method: selectedDepositPaymentMethod,
+            payment_reference: `DEP-${Date.now()}`
+          })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+          alert(`✅ Successfully added $${formatNumber(amount)} to your wallet!\n\nNew balance: $${formatNumber(data.new_balance || 0)}`);
+          closeWalletDepositModal();
+          await loadWalletBalance();
+        } else {
+          alert('Error: ' + (data.error || 'Failed to add funds'));
+        }
+      } catch (e) {
+        console.error('Error depositing to wallet:', e);
+        alert('Network error. Please try again.');
+      }
+    }
+    
+    // ========== CSV EXPORT ==========
+    async function downloadCSVReport(reportType) {
+      if (!currentBillingFoundationId) {
+        alert('Please open a foundation billing view first');
+        return;
+      }
+      
+      try {
+        const token = localStorage.getItem('phins_token');
+        const response = await fetch(`/api/foundations/${currentBillingFoundationId}/export/csv?type=${reportType}`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        
+        const data = await response.json();
+        
+        if (data.success && data.data) {
+          // Create and download CSV file
+          const blob = new Blob([data.data], { type: 'text/csv' });
+          const url = window.URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = data.filename || 'foundation_report.csv';
+          document.body.appendChild(a);
+          a.click();
+          window.URL.revokeObjectURL(url);
+          document.body.removeChild(a);
+          
+          alert('✅ CSV report downloaded successfully!');
+        } else {
+          alert('Error: ' + (data.error || 'Failed to generate CSV report'));
+        }
+      } catch (e) {
+        console.error('Error downloading CSV:', e);
+        alert('Network error. Please try again.');
+      }
+    }
+    
+    // ========== VOTE STATISTICS MODAL ==========
+    async function openVoteStatsModal() {
+      document.getElementById('vote-stats-modal').classList.add('active');
+      document.getElementById('vote-stats-content').innerHTML = '<div style="text-align: center; padding: 40px;">Loading voting statistics...</div>';
+      
+      try {
+        const token = localStorage.getItem('phins_token');
+        const response = await fetch('/api/foundation-votes/statistics', {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const stats = await response.json();
+        
+        renderVoteStats(stats);
+      } catch (e) {
+        console.error('Error loading vote statistics:', e);
+        document.getElementById('vote-stats-content').innerHTML = '<div style="text-align: center; padding: 40px; color: #f44336;">Error loading statistics</div>';
+      }
+    }
+    
+    function closeVoteStatsModal() {
+      document.getElementById('vote-stats-modal').classList.remove('active');
+    }
+    
+    function renderVoteStats(stats) {
+      const container = document.getElementById('vote-stats-content');
+      const summary = stats.summary || {};
+      const typeBreakdown = stats.type_breakdown || {};
+      const recentVotes = stats.recent_votes || [];
+      
+      container.innerHTML = `
+        <!-- Summary Cards -->
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 16px; margin-bottom: 24px;">
+          <div style="background: var(--foundation-light); padding: 16px; border-radius: 12px; text-align: center;">
+            <div style="font-size: 2rem; font-weight: 700; color: var(--foundation-primary);">${summary.total_votes || 0}</div>
+            <div style="font-size: 0.85rem; color: #666;">Total Votes</div>
+          </div>
+          <div style="background: #e8f5e9; padding: 16px; border-radius: 12px; text-align: center;">
+            <div style="font-size: 2rem; font-weight: 700; color: #2e7d32;">${summary.passed || 0}</div>
+            <div style="font-size: 0.85rem; color: #666;">Passed</div>
+          </div>
+          <div style="background: #ffebee; padding: 16px; border-radius: 12px; text-align: center;">
+            <div style="font-size: 2rem; font-weight: 700; color: #c62828;">${summary.failed || 0}</div>
+            <div style="font-size: 0.85rem; color: #666;">Failed</div>
+          </div>
+          <div style="background: #fff3e0; padding: 16px; border-radius: 12px; text-align: center;">
+            <div style="font-size: 2rem; font-weight: 700; color: #e65100;">${summary.open || 0}</div>
+            <div style="font-size: 0.85rem; color: #666;">Open</div>
+          </div>
+        </div>
+        
+        <!-- Pass Rate -->
+        <div style="background: linear-gradient(135deg, #2196f3 0%, #1976d2 100%); color: white; padding: 20px; border-radius: 12px; margin-bottom: 24px;">
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <div>
+              <div style="font-size: 0.9rem; opacity: 0.9;">Overall Pass Rate</div>
+              <div style="font-size: 2.5rem; font-weight: 700;">${(summary.pass_rate || 0).toFixed(1)}%</div>
+            </div>
+            <div>
+              <div style="font-size: 0.9rem; opacity: 0.9;">Avg. Participation</div>
+              <div style="font-size: 2.5rem; font-weight: 700;">${summary.average_participation || 0}</div>
+            </div>
+          </div>
+        </div>
+        
+        <!-- Vote Type Breakdown -->
+        <div style="margin-bottom: 24px;">
+          <h4 style="color: var(--foundation-dark); margin: 0 0 16px;">📊 Vote Type Breakdown</h4>
+          <div style="display: grid; gap: 8px;">
+            ${Object.entries(typeBreakdown).map(([type, data]) => `
+              <div style="background: #f5f5f5; padding: 12px 16px; border-radius: 8px; display: flex; justify-content: space-between; align-items: center;">
+                <span style="font-weight: 600; text-transform: capitalize;">${type.replace(/_/g, ' ')}</span>
+                <div style="display: flex; gap: 12px;">
+                  <span style="color: #333;">${data.total} total</span>
+                  <span style="color: #4caf50;">${data.passed} passed</span>
+                  <span style="color: #f44336;">${data.failed} failed</span>
+                </div>
+              </div>
+            `).join('') || '<div style="padding: 20px; text-align: center; color: #666;">No vote data available</div>'}
+          </div>
+        </div>
+        
+        <!-- Recent Votes -->
+        <div>
+          <h4 style="color: var(--foundation-dark); margin: 0 0 16px;">🕐 Recent Votes</h4>
+          <div style="display: grid; gap: 12px;">
+            ${recentVotes.slice(0, 5).map(vote => `
+              <div style="background: white; border: 1px solid #e0e0e0; padding: 16px; border-radius: 8px;">
+                <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px;">
+                  <div style="font-weight: 600;">${escapeHtml(vote.title)}</div>
+                  <span style="padding: 4px 8px; border-radius: 4px; font-size: 0.75rem; font-weight: 600; background: ${vote.status === 'passed' ? '#e8f5e9' : vote.status === 'failed' ? '#ffebee' : '#fff3e0'}; color: ${vote.status === 'passed' ? '#2e7d32' : vote.status === 'failed' ? '#c62828' : '#e65100'};">
+                    ${vote.status.toUpperCase()}
+                  </span>
+                </div>
+                <div style="display: flex; gap: 16px; font-size: 0.85rem; color: #666;">
+                  <span>👍 ${vote.votes_for}</span>
+                  <span>👎 ${vote.votes_against}</span>
+                  <span>🤷 ${vote.votes_abstain}</span>
+                  ${vote.participation_rate ? `<span>📊 ${vote.participation_rate}% participation</span>` : ''}
+                </div>
+                <div style="font-size: 0.8rem; color: #999; margin-top: 8px;">
+                  ${escapeHtml(vote.foundation_name || '')} • ${formatDate(vote.created_at)}
+                </div>
+              </div>
+            `).join('') || '<div style="padding: 20px; text-align: center; color: #666;">No recent votes</div>'}
+          </div>
+        </div>
+      `;
+    }
   </script>
 </body>
 </html>
