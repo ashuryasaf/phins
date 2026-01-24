@@ -1842,6 +1842,29 @@ def _init_customer_access_service():
 
 _init_customer_access_service()
 
+# Initialize Monthly Billing Projection Service
+billing_projection_service = None
+billing_projection_enabled = False
+
+def _init_billing_projection_service():
+    global billing_projection_service, billing_projection_enabled
+    try:
+        from services.monthly_billing_projection_service import init_billing_projection_service
+        billing_projection_service = init_billing_projection_service(
+            customers=CUSTOMERS,
+            policies=POLICIES,
+            billing=BILLING,
+            claims=CLAIMS,
+            health_wallets=HEALTH_WALLETS,
+            investment_accounts=INVESTMENT_ACCOUNTS
+        )
+        billing_projection_enabled = True
+        print("✓ Monthly Billing Projection service enabled (customer ledger & projections)")
+    except ImportError as e:
+        print(f"Warning: Monthly Billing Projection service not available: {e}")
+
+_init_billing_projection_service()
+
 # Sync any loaded algo trading data to the newly initialized services
 try:
     sync_loaded_algo_data()
@@ -6773,6 +6796,176 @@ For claims or questions, please contact:
             next_bill = sorted(bills, key=_due_ts)[0] if bills else None
             self._set_json_headers()
             self.wfile.write(json.dumps({'next_due': next_bill}).encode('utf-8'))
+            return
+        
+        # ========== CUSTOMER BILLING PROJECTIONS API (GET) ==========
+        # Monthly billing projections with ledger, future payments, and risk/savings allocation
+        
+        if path == '/api/billing/projections':
+            """
+            Get customer billing projections with full ledger and future payment schedule.
+            
+            Query params:
+            - customer_id: Customer ID (optional if customer_email provided)
+            - customer_email: Customer email for lookup
+            - policy_id: Specific policy (optional, defaults to all policies)
+            - months: Projection months (default 12)
+            """
+            if not billing_projection_enabled or not billing_projection_service:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({
+                    'error': 'Billing projection service not available',
+                    'fallback': True
+                }).encode('utf-8'))
+                return
+            
+            requested_customer_id = qs.get('customer_id', [None])[0]
+            customer_email = qs.get('customer_email', [None])[0]
+            policy_id = qs.get('policy_id', [None])[0]
+            projection_months = int(qs.get('months', [12])[0])
+            
+            # SECURITY: Enforce customer data isolation
+            user = get_session_user(session) or {}
+            role = (user.get('role') or session.get('role', '') if session else '').lower()
+            session_customer_id = user.get('customer_id') or (session.get('customer_id') if session else None)
+            
+            # For customer role, force their own customer_id
+            if role == 'customer':
+                if session_customer_id:
+                    requested_customer_id = session_customer_id
+                    # Also get email for lookup
+                    cust = CUSTOMERS.get(session_customer_id, {})
+                    if not customer_email:
+                        customer_email = cust.get('email')
+                else:
+                    self._set_json_headers(403)
+                    self.wfile.write(json.dumps({'error': 'Customer ID not found in session'}).encode('utf-8'))
+                    return
+            
+            # Require customer_id or email
+            if not requested_customer_id and not customer_email:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'customer_id or customer_email required'}).encode('utf-8'))
+                return
+            
+            try:
+                projections = billing_projection_service.get_customer_billing_projection(
+                    customer_id=requested_customer_id,
+                    customer_email=customer_email,
+                    policy_id=policy_id,
+                    projection_months=projection_months
+                )
+                
+                if not projections:
+                    self._set_json_headers(404)
+                    self.wfile.write(json.dumps({
+                        'error': 'No projections found for customer',
+                        'customer_id': requested_customer_id,
+                        'customer_email': customer_email
+                    }).encode('utf-8'))
+                    return
+                
+                # Convert to dict for JSON response
+                projections_data = [p.to_dict() for p in projections]
+                
+                self._set_json_headers()
+                self.wfile.write(json.dumps({
+                    'success': True,
+                    'projections': projections_data,
+                    'total_policies': len(projections_data),
+                    'projection_months': projection_months,
+                    'generated_at': datetime.now().isoformat()
+                }, default=str).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+        
+        if path == '/api/billing/projections/summary':
+            """
+            Get billing summary for customer (simpler than full projections).
+            """
+            if not billing_projection_enabled or not billing_projection_service:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Billing projection service not available'}).encode('utf-8'))
+                return
+            
+            requested_customer_id = qs.get('customer_id', [None])[0]
+            customer_email = qs.get('customer_email', [None])[0]
+            
+            # SECURITY: Enforce customer data isolation
+            user = get_session_user(session) or {}
+            role = (user.get('role') or session.get('role', '') if session else '').lower()
+            session_customer_id = user.get('customer_id') or (session.get('customer_id') if session else None)
+            
+            if role == 'customer':
+                if session_customer_id:
+                    requested_customer_id = session_customer_id
+                    cust = CUSTOMERS.get(session_customer_id, {})
+                    if not customer_email:
+                        customer_email = cust.get('email')
+                else:
+                    self._set_json_headers(403)
+                    self.wfile.write(json.dumps({'error': 'Customer ID not found in session'}).encode('utf-8'))
+                    return
+            
+            if not requested_customer_id and not customer_email:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'customer_id or customer_email required'}).encode('utf-8'))
+                return
+            
+            try:
+                summary = billing_projection_service.get_customer_billing_summary(
+                    customer_id=requested_customer_id,
+                    customer_email=customer_email
+                )
+                
+                self._set_json_headers()
+                self.wfile.write(json.dumps(summary, default=str).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+        
+        if path == '/api/billing/projections/integrity':
+            """
+            Validate billing data integrity for a customer or all customers.
+            Admin/accountant role required for system-wide validation.
+            """
+            if not billing_projection_enabled or not billing_projection_service:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Billing projection service not available'}).encode('utf-8'))
+                return
+            
+            requested_customer_id = qs.get('customer_id', [None])[0]
+            
+            # SECURITY: Enforce role requirements
+            user = get_session_user(session) or {}
+            role = (user.get('role') or session.get('role', '') if session else '').lower()
+            session_customer_id = user.get('customer_id') or (session.get('customer_id') if session else None)
+            
+            # For customer role, force their own customer_id
+            if role == 'customer':
+                requested_customer_id = session_customer_id
+            
+            # For system-wide validation, require admin/accountant role
+            if not requested_customer_id and role not in ['admin', 'accountant']:
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({
+                    'error': 'Admin or accountant role required for system-wide integrity check'
+                }).encode('utf-8'))
+                return
+            
+            try:
+                result = billing_projection_service.validate_billing_integrity(
+                    customer_id=requested_customer_id
+                )
+                
+                self._set_json_headers()
+                self.wfile.write(json.dumps(result, default=str).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
             return
         
         if path.startswith('/api/statement'):
@@ -22094,6 +22287,193 @@ For claims or questions, please contact:
                 self._set_json_headers(400)
                 self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
             return
+        
+        # ========== CUSTOMER BILLING PROJECTIONS API (POST) ==========
+        
+        if path == '/api/billing/projections':
+            """
+            Generate billing projections for a customer (POST version).
+            
+            Body params:
+            - customer_id: Customer ID (optional if customer_email provided)
+            - customer_email: Customer email for lookup
+            - policy_id: Specific policy (optional)
+            - months: Projection months (default 12)
+            - include_all_policies: Include all customer policies (default true)
+            """
+            if not billing_projection_enabled or not billing_projection_service:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({
+                    'error': 'Billing projection service not available'
+                }).encode('utf-8'))
+                return
+            
+            try:
+                data = json.loads(body) if body else {}
+            except:
+                data = {}
+            
+            requested_customer_id = data.get('customer_id')
+            customer_email = data.get('customer_email')
+            policy_id = data.get('policy_id')
+            projection_months = int(data.get('months', 12))
+            include_all_policies = data.get('include_all_policies', True)
+            
+            # SECURITY: Enforce customer data isolation
+            user = get_session_user(session) or {}
+            role = (user.get('role') or session.get('role', '') if session else '').lower()
+            session_customer_id = user.get('customer_id') or (session.get('customer_id') if session else None)
+            
+            if role == 'customer':
+                if session_customer_id:
+                    requested_customer_id = session_customer_id
+                    cust = CUSTOMERS.get(session_customer_id, {})
+                    if not customer_email:
+                        customer_email = cust.get('email')
+                else:
+                    self._set_json_headers(403)
+                    self.wfile.write(json.dumps({'error': 'Customer ID not found in session'}).encode('utf-8'))
+                    return
+            
+            if not requested_customer_id and not customer_email:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'customer_id or customer_email required'}).encode('utf-8'))
+                return
+            
+            try:
+                projections = billing_projection_service.get_customer_billing_projection(
+                    customer_id=requested_customer_id,
+                    customer_email=customer_email,
+                    policy_id=policy_id,
+                    projection_months=projection_months,
+                    include_all_policies=include_all_policies
+                )
+                
+                if not projections:
+                    self._set_json_headers(404)
+                    self.wfile.write(json.dumps({
+                        'error': 'No projections found for customer',
+                        'customer_id': requested_customer_id,
+                        'customer_email': customer_email
+                    }).encode('utf-8'))
+                    return
+                
+                projections_data = [p.to_dict() for p in projections]
+                
+                self._set_json_headers()
+                self.wfile.write(json.dumps({
+                    'success': True,
+                    'projections': projections_data,
+                    'total_policies': len(projections_data),
+                    'projection_months': projection_months,
+                    'generated_at': datetime.now().isoformat()
+                }, default=str).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+        
+        if path == '/api/billing/projections/prepaid-discount':
+            """
+            Calculate prepaid premium discount.
+            
+            Body params:
+            - customer_id: Customer ID
+            - policy_id: Policy ID
+            - prepaid_months: Number of months to prepay (3, 6, or 12)
+            """
+            if not billing_projection_enabled or not billing_projection_service:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Billing projection service not available'}).encode('utf-8'))
+                return
+            
+            try:
+                data = json.loads(body) if body else {}
+            except:
+                data = {}
+            
+            customer_id = data.get('customer_id')
+            policy_id = data.get('policy_id')
+            prepaid_months = int(data.get('prepaid_months', 0))
+            
+            if not customer_id or not policy_id:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'customer_id and policy_id required'}).encode('utf-8'))
+                return
+            
+            if prepaid_months < 1:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'prepaid_months must be at least 1'}).encode('utf-8'))
+                return
+            
+            # SECURITY: Verify customer owns this policy
+            policy = POLICIES.get(policy_id, {})
+            if policy.get('customer_id') != customer_id:
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Policy does not belong to customer'}).encode('utf-8'))
+                return
+            
+            try:
+                result = billing_projection_service.apply_prepaid_discount(
+                    customer_id=customer_id,
+                    policy_id=policy_id,
+                    prepaid_months=prepaid_months
+                )
+                
+                self._set_json_headers()
+                self.wfile.write(json.dumps(result, default=str).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+        
+        if path == '/api/billing/projections/integrity':
+            """
+            Validate billing data integrity (POST version).
+            
+            Body params:
+            - customer_id: Optional customer ID for specific validation
+            """
+            if not billing_projection_enabled or not billing_projection_service:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Billing projection service not available'}).encode('utf-8'))
+                return
+            
+            try:
+                data = json.loads(body) if body else {}
+            except:
+                data = {}
+            
+            requested_customer_id = data.get('customer_id')
+            
+            # SECURITY: Enforce role requirements
+            user = get_session_user(session) or {}
+            role = (user.get('role') or session.get('role', '') if session else '').lower()
+            session_customer_id = user.get('customer_id') or (session.get('customer_id') if session else None)
+            
+            if role == 'customer':
+                requested_customer_id = session_customer_id
+            
+            if not requested_customer_id and role not in ['admin', 'accountant']:
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({
+                    'error': 'Admin or accountant role required for system-wide integrity check'
+                }).encode('utf-8'))
+                return
+            
+            try:
+                result = billing_projection_service.validate_billing_integrity(
+                    customer_id=requested_customer_id
+                )
+                
+                self._set_json_headers()
+                self.wfile.write(json.dumps(result, default=str).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+        
+        # ========== END BILLING PROJECTIONS API ==========
         
         # Customer premium payment with NFT recording and CUSTOM investment allocation
         if path == '/api/customer/payment':
