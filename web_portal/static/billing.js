@@ -3091,3 +3091,481 @@ notificationStyles.textContent = `
   }
 `;
 document.head.appendChild(notificationStyles);
+
+// ============================================================================
+// BILLING CREDITS MANAGEMENT
+// ============================================================================
+
+let currentCreditCustomerId = null;
+let currentCreditsData = null;
+
+// Initialize credit lookup form handler
+document.addEventListener('DOMContentLoaded', () => {
+  const creditLookupForm = document.getElementById('credit-lookup-form');
+  if (creditLookupForm) {
+    creditLookupForm.addEventListener('submit', handleCreditLookup);
+  }
+});
+
+// Handle credit lookup form submission
+async function handleCreditLookup(event) {
+  event.preventDefault();
+  const customerId = document.getElementById('credit-customer-id').value.trim();
+  if (!customerId) {
+    showNotification('Please enter a Customer ID', 'warning');
+    return;
+  }
+  await loadCreditsForCustomer(customerId);
+}
+
+// Refresh credits for current customer
+async function refreshCredits() {
+  if (currentCreditCustomerId) {
+    await loadCreditsForCustomer(currentCreditCustomerId);
+  } else {
+    showNotification('Please enter a Customer ID first', 'info');
+  }
+}
+
+// Load credits for a specific customer
+async function loadCreditsForCustomer(customerId) {
+  const creditsList = document.getElementById('credits-list');
+  const creditSummary = document.getElementById('credit-balance-summary');
+  const creditActions = document.getElementById('credit-actions');
+  const creditStatus = document.getElementById('credit-status');
+  
+  creditsList.innerHTML = '<p class="muted">Loading credits...</p>';
+  
+  try {
+    const response = await fetch('/api/billing/credits', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${localStorage.getItem('phins_token')}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ customer_id: customerId })
+    });
+    
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || 'Failed to load credits');
+    }
+    
+    const data = await response.json();
+    currentCreditCustomerId = customerId;
+    currentCreditsData = data;
+    
+    // Update summary
+    const totalCredit = data.total_with_interest || 0;
+    const interest = data.total_interest_accrued || 0;
+    const creditCount = data.active_credits_count || 0;
+    
+    document.getElementById('credit-total').textContent = `$${totalCredit.toLocaleString('en-US', {minimumFractionDigits: 2})}`;
+    document.getElementById('credit-interest').textContent = `$${interest.toLocaleString('en-US', {minimumFractionDigits: 2})}`;
+    document.getElementById('credit-count').textContent = creditCount;
+    creditStatus.textContent = `$${totalCredit.toFixed(2)}`;
+    
+    // Show/hide sections based on credit balance
+    if (totalCredit > 0) {
+      creditSummary.style.display = 'block';
+      creditActions.style.display = 'block';
+      creditStatus.style.background = '#d1fae5';
+      creditStatus.style.color = '#065f46';
+    } else {
+      creditSummary.style.display = 'none';
+      creditActions.style.display = 'none';
+      creditStatus.style.background = '#e2e8f0';
+      creditStatus.style.color = '#64748b';
+    }
+    
+    // Display credit details
+    const credits = data.credits || [];
+    if (credits.length === 0) {
+      creditsList.innerHTML = `
+        <div style="text-align: center; padding: 20px; color: #666;">
+          <p>No active credits for this customer.</p>
+          <p style="font-size: 0.85rem;">Credits are created automatically when overpayments or billing errors are detected.</p>
+        </div>
+      `;
+    } else {
+      creditsList.innerHTML = `
+        <table style="width: 100%; border-collapse: collapse; font-size: 0.85rem;">
+          <thead style="background: #f5f5f5;">
+            <tr>
+              <th style="padding: 8px; text-align: left;">Credit ID</th>
+              <th style="padding: 8px; text-align: left;">Type</th>
+              <th style="padding: 8px; text-align: right;">Amount</th>
+              <th style="padding: 8px; text-align: right;">Remaining</th>
+              <th style="padding: 8px; text-align: left;">Reason</th>
+              <th style="padding: 8px; text-align: left;">Created</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${credits.map(c => `
+              <tr style="border-bottom: 1px solid #eee;">
+                <td style="padding: 8px; font-family: monospace; font-size: 0.75rem;">${c.credit_id || '-'}</td>
+                <td style="padding: 8px;">
+                  <span style="padding: 2px 6px; background: ${getCreditTypeBadgeColor(c.credit_type)}; border-radius: 4px; font-size: 0.75rem;">
+                    ${formatCreditType(c.credit_type)}
+                  </span>
+                </td>
+                <td style="padding: 8px; text-align: right; font-weight: bold;">$${(c.amount || 0).toFixed(2)}</td>
+                <td style="padding: 8px; text-align: right; color: #2e7d32; font-weight: bold;">$${(c.remaining_amount || 0).toFixed(2)}</td>
+                <td style="padding: 8px; font-size: 0.8rem; color: #666;">${c.reason || '-'}</td>
+                <td style="padding: 8px; font-size: 0.8rem;">${formatDate(c.created_at)}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      `;
+    }
+    
+    showNotification(`Credits loaded for ${customerId}`, 'success');
+    
+  } catch (err) {
+    console.error('Error loading credits:', err);
+    creditsList.innerHTML = `<p style="color: #dc3545;">Error: ${err.message}</p>`;
+    showNotification(`Failed to load credits: ${err.message}`, 'error');
+  }
+}
+
+// Helper functions for credit display
+function getCreditTypeBadgeColor(type) {
+  const colors = {
+    overpayment: '#c8e6c9',
+    billing_error: '#ffcdd2',
+    refund: '#bbdefb',
+    promotional: '#e1bee7',
+    loyalty: '#fff9c4',
+    interest: '#b2dfdb'
+  };
+  return colors[type] || '#e0e0e0';
+}
+
+function formatCreditType(type) {
+  const labels = {
+    overpayment: 'Overpayment',
+    billing_error: 'Billing Error',
+    refund: 'Refund',
+    promotional: 'Promo',
+    loyalty: 'Loyalty',
+    interest: 'Interest'
+  };
+  return labels[type] || type;
+}
+
+function formatDate(dateStr) {
+  if (!dateStr) return '-';
+  const date = new Date(dateStr);
+  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+// Withdraw credit to bank
+async function showCreditWithdrawModal() {
+  if (!currentCreditsData || currentCreditsData.total_with_interest <= 0) {
+    showNotification('No credit balance available to withdraw', 'warning');
+    return;
+  }
+  
+  const amount = prompt(
+    `Enter amount to withdraw (Available: $${currentCreditsData.total_with_interest.toFixed(2)})`,
+    currentCreditsData.total_with_interest.toFixed(2)
+  );
+  
+  if (!amount || isNaN(parseFloat(amount))) return;
+  
+  const withdrawAmount = parseFloat(amount);
+  if (withdrawAmount <= 0 || withdrawAmount > currentCreditsData.total_with_interest) {
+    showNotification('Invalid withdrawal amount', 'error');
+    return;
+  }
+  
+  try {
+    const response = await fetch('/api/billing/credits/withdraw', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${localStorage.getItem('phins_token')}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        customer_id: currentCreditCustomerId,
+        amount: withdrawAmount,
+        method: 'bank_transfer'
+      })
+    });
+    
+    const result = await response.json();
+    
+    if (result.success) {
+      showNotification(`Withdrawal of $${withdrawAmount.toFixed(2)} initiated! ${result.message || ''}`, 'success');
+      await loadCreditsForCustomer(currentCreditCustomerId);
+    } else {
+      showNotification(`Withdrawal failed: ${result.error}`, 'error');
+    }
+  } catch (err) {
+    console.error('Withdrawal error:', err);
+    showNotification(`Error: ${err.message}`, 'error');
+  }
+}
+
+// Transfer credit to wallet
+async function showCreditTransferModal() {
+  if (!currentCreditsData || currentCreditsData.total_with_interest <= 0) {
+    showNotification('No credit balance available to transfer', 'warning');
+    return;
+  }
+  
+  const amount = prompt(
+    `Enter amount to transfer to Health Wallet (Available: $${currentCreditsData.total_with_interest.toFixed(2)})`,
+    currentCreditsData.total_with_interest.toFixed(2)
+  );
+  
+  if (!amount || isNaN(parseFloat(amount))) return;
+  
+  const transferAmount = parseFloat(amount);
+  if (transferAmount <= 0 || transferAmount > currentCreditsData.total_with_interest) {
+    showNotification('Invalid transfer amount', 'error');
+    return;
+  }
+  
+  try {
+    const response = await fetch('/api/billing/credits/transfer-to-wallet', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${localStorage.getItem('phins_token')}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        customer_id: currentCreditCustomerId,
+        amount: transferAmount,
+        wallet_type: 'health_wallet'
+      })
+    });
+    
+    const result = await response.json();
+    
+    if (result.success) {
+      showNotification(`$${transferAmount.toFixed(2)} transferred to Health Wallet! New balance: $${result.new_wallet_balance?.toFixed(2) || '0.00'}`, 'success');
+      await loadCreditsForCustomer(currentCreditCustomerId);
+    } else {
+      showNotification(`Transfer failed: ${result.error}`, 'error');
+    }
+  } catch (err) {
+    console.error('Transfer error:', err);
+    showNotification(`Error: ${err.message}`, 'error');
+  }
+}
+
+// Apply credit to outstanding bill
+async function showApplyToBillModal() {
+  if (!currentCreditsData || currentCreditsData.total_with_interest <= 0) {
+    showNotification('No credit balance available to apply', 'warning');
+    return;
+  }
+  
+  const billId = prompt('Enter Bill ID to apply credit to:');
+  if (!billId || !billId.trim()) return;
+  
+  const amount = prompt(
+    `Enter amount to apply (Available: $${currentCreditsData.total_with_interest.toFixed(2)}, or leave blank for full bill amount)`,
+    ''
+  );
+  
+  try {
+    const body = {
+      customer_id: currentCreditCustomerId,
+      bill_id: billId.trim()
+    };
+    
+    if (amount && !isNaN(parseFloat(amount))) {
+      body.amount = parseFloat(amount);
+    }
+    
+    const response = await fetch('/api/billing/credits/apply-to-bill', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${localStorage.getItem('phins_token')}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(body)
+    });
+    
+    const result = await response.json();
+    
+    if (result.success) {
+      showNotification(`$${result.amount_applied?.toFixed(2) || '0.00'} applied to bill ${billId}! Bill status: ${result.bill_status}`, 'success');
+      await loadCreditsForCustomer(currentCreditCustomerId);
+    } else {
+      showNotification(`Apply failed: ${result.error}`, 'error');
+    }
+  } catch (err) {
+    console.error('Apply credit error:', err);
+    showNotification(`Error: ${err.message}`, 'error');
+  }
+}
+
+// Validate billing and detect credits
+async function validateMyBilling() {
+  const customerId = document.getElementById('credit-customer-id').value.trim() || currentCreditCustomerId;
+  
+  if (!customerId) {
+    showNotification('Please enter a Customer ID first', 'warning');
+    return;
+  }
+  
+  try {
+    const response = await fetch('/api/billing/validate', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${localStorage.getItem('phins_token')}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        customer_id: customerId,
+        auto_create_credits: true
+      })
+    });
+    
+    const result = await response.json();
+    
+    if (result.is_valid) {
+      showNotification('Billing validation passed! No errors detected.', 'success');
+    } else {
+      const errors = result.errors || [];
+      const credits = result.credits_detected || [];
+      
+      let message = `Found ${errors.length} billing issue(s)`;
+      if (credits.length > 0) {
+        const totalCredit = credits.reduce((sum, c) => sum + (c.amount || 0), 0);
+        message += `. $${totalCredit.toFixed(2)} in credits created.`;
+      }
+      showNotification(message, 'warning');
+      
+      // Refresh credits to show new ones
+      await loadCreditsForCustomer(customerId);
+    }
+    
+    // Show detailed validation results
+    const creditsList = document.getElementById('credits-list');
+    if (result.errors?.length > 0 || result.warnings?.length > 0) {
+      let detailsHtml = '<div style="margin-top: 16px; padding: 12px; background: #fff3e0; border-radius: 8px;">';
+      detailsHtml += '<h4 style="margin: 0 0 8px 0;">⚠️ Validation Results</h4>';
+      
+      if (result.errors?.length > 0) {
+        detailsHtml += '<div style="color: #c62828; margin-bottom: 8px;"><strong>Errors:</strong><ul style="margin: 4px 0;">';
+        result.errors.forEach(e => detailsHtml += `<li>${e}</li>`);
+        detailsHtml += '</ul></div>';
+      }
+      
+      if (result.warnings?.length > 0) {
+        detailsHtml += '<div style="color: #f57c00;"><strong>Warnings:</strong><ul style="margin: 4px 0;">';
+        result.warnings.forEach(w => detailsHtml += `<li>${w}</li>`);
+        detailsHtml += '</ul></div>';
+      }
+      
+      detailsHtml += '</div>';
+      creditsList.innerHTML += detailsHtml;
+    }
+    
+  } catch (err) {
+    console.error('Validation error:', err);
+    showNotification(`Validation failed: ${err.message}`, 'error');
+  }
+}
+
+// ============================================================================
+// BILLING NOTIFICATIONS
+// ============================================================================
+
+// Send billing reminder for current customer
+async function sendBillingReminder() {
+  const customerId = document.getElementById('credit-customer-id').value.trim() || currentCreditCustomerId;
+  
+  if (!customerId) {
+    showNotification('Please enter a Customer ID first', 'warning');
+    return;
+  }
+  
+  const notificationResults = document.getElementById('notification-results');
+  notificationResults.innerHTML = '<p class="muted">Sending notifications...</p>';
+  
+  try {
+    const response = await fetch('/api/billing/notify-outstanding', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${localStorage.getItem('phins_token')}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ customer_id: customerId })
+    });
+    
+    const result = await response.json();
+    
+    if (result.success) {
+      if (result.notifications_sent > 0) {
+        showNotification(`${result.notifications_sent} notification(s) sent!`, 'success');
+        notificationResults.innerHTML = `
+          <div style="padding: 12px; background: #d4edda; border-radius: 8px;">
+            <strong>✅ Notifications Sent</strong>
+            <p style="margin: 4px 0 0 0;">${result.notifications_sent} notification(s) sent for outstanding bills.</p>
+          </div>
+        `;
+      } else {
+        showNotification('No outstanding bills found to notify about', 'info');
+        notificationResults.innerHTML = `
+          <div style="padding: 12px; background: #d1ecf1; border-radius: 8px;">
+            <strong>ℹ️ No Outstanding Bills</strong>
+            <p style="margin: 4px 0 0 0;">No outstanding or overdue bills found for this customer.</p>
+          </div>
+        `;
+      }
+    } else {
+      showNotification(`Failed: ${result.error}`, 'error');
+      notificationResults.innerHTML = `<p style="color: #dc3545;">Error: ${result.error}</p>`;
+    }
+  } catch (err) {
+    console.error('Notification error:', err);
+    showNotification(`Error: ${err.message}`, 'error');
+    notificationResults.innerHTML = `<p style="color: #dc3545;">Error: ${err.message}</p>`;
+  }
+}
+
+// Send billing reminders to all customers (admin only)
+async function sendAllBillingReminders() {
+  if (!confirm('This will send notifications to ALL customers with outstanding bills. Continue?')) {
+    return;
+  }
+  
+  const notificationResults = document.getElementById('notification-results');
+  notificationResults.innerHTML = '<p class="muted">Sending notifications to all customers...</p>';
+  
+  try {
+    const response = await fetch('/api/billing/notify-outstanding', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${localStorage.getItem('phins_token')}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({})  // No customer_id = all customers
+    });
+    
+    const result = await response.json();
+    
+    if (result.success) {
+      showNotification(`${result.notifications_sent} notification(s) sent to customers!`, 'success');
+      notificationResults.innerHTML = `
+        <div style="padding: 12px; background: #d4edda; border-radius: 8px;">
+          <strong>✅ Bulk Notifications Sent</strong>
+          <p style="margin: 4px 0 0 0;">${result.notifications_sent} notification(s) sent to customers with outstanding bills.</p>
+        </div>
+      `;
+    } else {
+      showNotification(`Failed: ${result.error}`, 'error');
+      notificationResults.innerHTML = `<p style="color: #dc3545;">Error: ${result.error}</p>`;
+    }
+  } catch (err) {
+    console.error('Bulk notification error:', err);
+    showNotification(`Error: ${err.message}`, 'error');
+    notificationResults.innerHTML = `<p style="color: #dc3545;">Error: ${err.message}</p>`;
+  }
+}

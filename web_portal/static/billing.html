@@ -781,7 +781,98 @@
       </div>
     </section>
 
-    <!-- ==================== SECTION 8: CUSTOMER LOOKUP ==================== -->
+    <!-- ==================== SECTION 8: BILLING CREDITS & NOTIFICATIONS ==================== -->
+    <section class="card" style="padding: 16px;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+        <div>
+          <h2 style="margin: 0; font-size: 1.1rem;">💰 Billing Credits</h2>
+          <p style="color: #666; margin: 4px 0 0 0; font-size: 0.8rem;">Manage your billing credits from overpayments or refunds</p>
+        </div>
+        <div style="display: flex; gap: 6px; align-items: center;">
+          <span id="credit-status" style="font-size: 0.75rem; padding: 4px 8px; background: #d1fae5; color: #065f46; border-radius: 12px;">$0.00</span>
+          <button class="btn btn-small" onclick="refreshCredits()" title="Refresh Credits">🔄</button>
+        </div>
+      </div>
+      
+      <!-- Credit Balance Summary -->
+      <div id="credit-balance-summary" style="display: none; background: linear-gradient(135deg, #e8f5e9 0%, #c8e6c9 100%); border-radius: 8px; padding: 16px; margin-bottom: 16px;">
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px;">
+          <div style="text-align: center;">
+            <div style="font-size: 1.5rem; font-weight: bold; color: #2e7d32;" id="credit-total">$0.00</div>
+            <div style="font-size: 0.8rem; color: #558b2f;">Total Credit Balance</div>
+          </div>
+          <div style="text-align: center;">
+            <div style="font-size: 1.2rem; font-weight: bold; color: #1565c0;" id="credit-interest">$0.00</div>
+            <div style="font-size: 0.8rem; color: #1976d2;">Interest Accrued</div>
+          </div>
+          <div style="text-align: center;">
+            <div style="font-size: 1.2rem; font-weight: bold; color: #7b1fa2;" id="credit-count">0</div>
+            <div style="font-size: 0.8rem; color: #9c27b0;">Active Credits</div>
+          </div>
+        </div>
+      </div>
+      
+      <!-- Credit Actions -->
+      <div id="credit-actions" style="display: none; margin-bottom: 16px;">
+        <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+          <button class="btn" onclick="showCreditWithdrawModal()" style="background: linear-gradient(135deg, #43a047 0%, #2e7d32 100%); color: white; padding: 8px 16px;">
+            🏦 Withdraw to Bank
+          </button>
+          <button class="btn" onclick="showCreditTransferModal()" style="background: linear-gradient(135deg, #1976d2 0%, #1565c0 100%); color: white; padding: 8px 16px;">
+            👛 Transfer to Wallet
+          </button>
+          <button class="btn" onclick="showApplyToBillModal()" style="background: linear-gradient(135deg, #7b1fa2 0%, #6a1b9a 100%); color: white; padding: 8px 16px;">
+            📄 Apply to Bill
+          </button>
+        </div>
+        <p style="font-size: 0.8rem; color: #666; margin-top: 8px;">
+          💡 Credits earn 2% annual interest. You can withdraw, transfer to your Health Wallet, or apply to outstanding bills.
+        </p>
+      </div>
+      
+      <!-- Credit Details Table -->
+      <div id="credits-list" style="max-height: 200px; overflow-y: auto;">
+        <p class="muted">Enter your Customer ID to view credits...</p>
+      </div>
+      
+      <!-- Credit Lookup Form -->
+      <form id="credit-lookup-form" style="margin-top: 12px; display: flex; gap: 8px; flex-wrap: wrap;">
+        <input type="text" id="credit-customer-id" placeholder="Customer ID (e.g., CUST-12345)" style="flex: 1; min-width: 200px; padding: 8px;">
+        <button type="submit" class="btn" style="padding: 8px 16px;">🔍 Check Credits</button>
+        <button type="button" class="btn" onclick="validateMyBilling()" style="padding: 8px 16px; background: #ff9800; color: white;">⚠️ Validate Billing</button>
+      </form>
+    </section>
+    
+    <!-- ==================== SECTION 9: OUTSTANDING BILL NOTIFICATIONS ==================== -->
+    <section class="card" style="padding: 16px;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+        <div>
+          <h2 style="margin: 0; font-size: 1.1rem;">📧 Billing Notifications</h2>
+          <p style="color: #666; margin: 4px 0 0 0; font-size: 0.8rem;">Send reminders for outstanding bills</p>
+        </div>
+        <span id="notification-status" style="font-size: 0.75rem; padding: 4px 8px; background: #e3f2fd; color: #1565c0; border-radius: 12px;">Ready</span>
+      </div>
+      
+      <div style="background: #fff8e1; border-left: 4px solid #ff9800; padding: 12px; margin-bottom: 12px; border-radius: 4px;">
+        <strong>📬 Outstanding Bill Notifications</strong>
+        <p style="margin: 4px 0 0 0; font-size: 0.85rem;">
+          Customers with outstanding or overdue bills will receive email and SMS notifications with a direct link to pay.
+        </p>
+      </div>
+      
+      <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+        <button class="btn" onclick="sendBillingReminder()" style="background: linear-gradient(135deg, #2196f3 0%, #1976d2 100%); color: white; padding: 10px 20px;">
+          📧 Send My Reminder
+        </button>
+        <button class="btn" onclick="sendAllBillingReminders()" style="background: linear-gradient(135deg, #ff5722 0%, #e64a19 100%); color: white; padding: 10px 20px;" title="Admin only - send to all customers">
+          📨 Send All Reminders (Admin)
+        </button>
+      </div>
+      
+      <div id="notification-results" style="margin-top: 12px;"></div>
+    </section>
+
+    <!-- ==================== SECTION 10: CUSTOMER LOOKUP ==================== -->
     <section class="card" style="padding: 16px;">
       <h2 style="margin: 0 0 12px 0; font-size: 1.1rem;">🔍 Customer Billing Lookup</h2>
       <form id="lookup-form" style="display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap;">

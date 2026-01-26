@@ -1865,6 +1865,35 @@ def _init_billing_projection_service():
 
 _init_billing_projection_service()
 
+# Initialize Billing Credit Service for credit tracking, withdrawal, and notifications
+billing_credit_service = None
+billing_credit_enabled = False
+
+def _init_billing_credit_service():
+    global billing_credit_service, billing_credit_enabled
+    try:
+        from services.billing_credit_service import init_billing_credit_service
+        notification_svc = None
+        try:
+            from services.notification_service import create_notification_service
+            notification_svc = create_notification_service(use_mock=True)
+        except ImportError:
+            pass
+        
+        billing_credit_service = init_billing_credit_service(
+            billing_data=BILLING,
+            policies_data=POLICIES,
+            customers_data=CUSTOMERS,
+            health_wallets=HEALTH_WALLETS,
+            notification_service=notification_svc
+        )
+        billing_credit_enabled = True
+        print("✓ Billing Credit service enabled (credits, withdrawals, notifications)")
+    except ImportError as e:
+        print(f"Warning: Billing Credit service not available: {e}")
+
+_init_billing_credit_service()
+
 # Sync any loaded algo trading data to the newly initialized services
 try:
     sync_loaded_algo_data()
@@ -22474,6 +22503,314 @@ For claims or questions, please contact:
             return
         
         # ========== END BILLING PROJECTIONS API ==========
+        
+        # ========== BILLING CREDIT MANAGEMENT API ==========
+        
+        # GET Customer Credit Balance
+        if path == '/api/billing/credits':
+            try:
+                data = json.loads(body) if body else {}
+            except:
+                data = {}
+            
+            customer_id = data.get('customer_id')
+            
+            # Get customer_id from session if not provided
+            if not customer_id and session:
+                customer_id = session.get('customer_id')
+            
+            if not customer_id:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'customer_id is required'}).encode('utf-8'))
+                return
+            
+            if not billing_credit_enabled or not billing_credit_service:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Billing credit service not available'}).encode('utf-8'))
+                return
+            
+            try:
+                balance = billing_credit_service.get_customer_credit_balance(customer_id)
+                self._set_json_headers(200)
+                self.wfile.write(json.dumps(balance, default=str).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+        
+        # Withdraw Credit to Bank Account
+        if path == '/api/billing/credits/withdraw':
+            try:
+                data = json.loads(body)
+            except:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'Invalid JSON body'}).encode('utf-8'))
+                return
+            
+            customer_id = data.get('customer_id')
+            amount = data.get('amount')
+            withdrawal_method = data.get('method', 'bank_transfer')
+            bank_details = data.get('bank_details')
+            
+            if not customer_id and session:
+                customer_id = session.get('customer_id')
+            
+            if not customer_id or not amount:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'customer_id and amount are required'}).encode('utf-8'))
+                return
+            
+            if not billing_credit_enabled or not billing_credit_service:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Billing credit service not available'}).encode('utf-8'))
+                return
+            
+            try:
+                result = billing_credit_service.withdraw_credit(
+                    customer_id=customer_id,
+                    amount=float(amount),
+                    withdrawal_method=withdrawal_method,
+                    bank_details=bank_details
+                )
+                
+                # Record on ledger
+                if result.get('success'):
+                    record_transaction(
+                        customer_id=customer_id,
+                        tx_type='credit_withdrawal',
+                        amount=float(amount),
+                        description=f"Credit withdrawal via {withdrawal_method}",
+                        metadata={'withdrawal_id': result.get('withdrawal_id')}
+                    )
+                
+                self._set_json_headers(200 if result.get('success') else 400)
+                self.wfile.write(json.dumps(result, default=str).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+        
+        # Transfer Credit to Health Wallet
+        if path == '/api/billing/credits/transfer-to-wallet':
+            try:
+                data = json.loads(body)
+            except:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'Invalid JSON body'}).encode('utf-8'))
+                return
+            
+            customer_id = data.get('customer_id')
+            amount = data.get('amount')
+            wallet_type = data.get('wallet_type', 'health_wallet')
+            
+            if not customer_id and session:
+                customer_id = session.get('customer_id')
+            
+            if not customer_id or not amount:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'customer_id and amount are required'}).encode('utf-8'))
+                return
+            
+            if not billing_credit_enabled or not billing_credit_service:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Billing credit service not available'}).encode('utf-8'))
+                return
+            
+            try:
+                result = billing_credit_service.transfer_to_wallet(
+                    customer_id=customer_id,
+                    amount=float(amount),
+                    wallet_type=wallet_type
+                )
+                
+                # Record on ledger
+                if result.get('success'):
+                    record_transaction(
+                        customer_id=customer_id,
+                        tx_type='credit_transfer',
+                        amount=float(amount),
+                        description=f"Credit transferred to {wallet_type}",
+                        metadata={'transfer_id': result.get('transfer_id'), 'wallet_type': wallet_type}
+                    )
+                
+                self._set_json_headers(200 if result.get('success') else 400)
+                self.wfile.write(json.dumps(result, default=str).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+        
+        # Apply Credit to Bill
+        if path == '/api/billing/credits/apply-to-bill':
+            try:
+                data = json.loads(body)
+            except:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'Invalid JSON body'}).encode('utf-8'))
+                return
+            
+            customer_id = data.get('customer_id')
+            bill_id = data.get('bill_id')
+            amount = data.get('amount')  # Optional - defaults to bill amount or available credit
+            
+            if not customer_id and session:
+                customer_id = session.get('customer_id')
+            
+            if not customer_id or not bill_id:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'customer_id and bill_id are required'}).encode('utf-8'))
+                return
+            
+            if not billing_credit_enabled or not billing_credit_service:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Billing credit service not available'}).encode('utf-8'))
+                return
+            
+            try:
+                result = billing_credit_service.apply_to_bill(
+                    customer_id=customer_id,
+                    bill_id=bill_id,
+                    amount=float(amount) if amount else None
+                )
+                
+                # Record on ledger
+                if result.get('success'):
+                    record_transaction(
+                        customer_id=customer_id,
+                        tx_type='credit_applied',
+                        amount=result.get('amount_applied', 0),
+                        description=f"Credit applied to bill {bill_id}",
+                        metadata={'bill_id': bill_id, 'apply_id': result.get('apply_id')}
+                    )
+                
+                self._set_json_headers(200 if result.get('success') else 400)
+                self.wfile.write(json.dumps(result, default=str).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+        
+        # Validate Customer Billing and Create Credits for Errors
+        if path == '/api/billing/validate':
+            try:
+                data = json.loads(body) if body else {}
+            except:
+                data = {}
+            
+            customer_id = data.get('customer_id')
+            auto_create_credits = data.get('auto_create_credits', True)
+            
+            if not customer_id and session:
+                customer_id = session.get('customer_id')
+            
+            if not customer_id:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'customer_id is required'}).encode('utf-8'))
+                return
+            
+            if not billing_credit_enabled or not billing_credit_service:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Billing credit service not available'}).encode('utf-8'))
+                return
+            
+            try:
+                result = billing_credit_service.validate_customer_billing(
+                    customer_id=customer_id,
+                    auto_create_credits=auto_create_credits
+                )
+                self._set_json_headers(200)
+                self.wfile.write(json.dumps(result.to_dict(), default=str).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+        
+        # Notify Outstanding Bills
+        if path == '/api/billing/notify-outstanding':
+            try:
+                data = json.loads(body) if body else {}
+            except:
+                data = {}
+            
+            customer_id = data.get('customer_id')  # Optional - None means all customers
+            
+            # Require admin/accountant role for system-wide notifications
+            if not customer_id:
+                user = get_session_user(session) or {} if session else {}
+                role = (user.get('role') or session.get('role', '') if session else '').lower()
+                if role not in ['admin', 'accountant']:
+                    self._set_json_headers(403)
+                    self.wfile.write(json.dumps({
+                        'error': 'Admin or accountant role required for system-wide notifications'
+                    }).encode('utf-8'))
+                    return
+            
+            if not billing_credit_enabled or not billing_credit_service:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Billing credit service not available'}).encode('utf-8'))
+                return
+            
+            try:
+                results = billing_credit_service.check_and_notify_outstanding_bills(
+                    customer_id=customer_id
+                )
+                self._set_json_headers(200)
+                self.wfile.write(json.dumps({
+                    'success': True,
+                    'notifications_sent': len(results),
+                    'results': [r.to_dict() for r in results]
+                }, default=str).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+        
+        # Get Billing Ledger Report with Data Refresh
+        if path == '/api/billing/ledger-report':
+            try:
+                data = json.loads(body) if body else {}
+            except:
+                data = {}
+            
+            customer_id = data.get('customer_id')
+            include_credits = data.get('include_credits', True)
+            include_transactions = data.get('include_transactions', True)
+            refresh = data.get('refresh', True)
+            
+            if not customer_id and session:
+                customer_id = session.get('customer_id')
+            
+            # Admin/accountant can get reports for any customer or all
+            if not customer_id:
+                user = get_session_user(session) or {} if session else {}
+                role = (user.get('role') or session.get('role', '') if session else '').lower()
+                if role not in ['admin', 'accountant']:
+                    self._set_json_headers(403)
+                    self.wfile.write(json.dumps({
+                        'error': 'Admin or accountant role required for full ledger report'
+                    }).encode('utf-8'))
+                    return
+            
+            if not billing_credit_enabled or not billing_credit_service:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Billing credit service not available'}).encode('utf-8'))
+                return
+            
+            try:
+                report = billing_credit_service.get_billing_ledger_report(
+                    customer_id=customer_id,
+                    include_credits=include_credits,
+                    include_transactions=include_transactions,
+                    refresh=refresh
+                )
+                self._set_json_headers(200)
+                self.wfile.write(json.dumps(report, default=str).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+        
+        # ========== END BILLING CREDIT MANAGEMENT API ==========
         
         # Customer premium payment with NFT recording and CUSTOM investment allocation
         if path == '/api/customer/payment':
