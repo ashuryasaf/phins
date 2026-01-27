@@ -12312,7 +12312,10 @@ For claims or questions, please contact:
                 
                 # Generate unique referral code
                 # Format: REF-{CUSTOMER_SHORT_ID}-{RANDOM}
-                customer_short = customer_id[-4:] if len(customer_id) >= 4 else customer_id
+                # Extract only alphanumeric characters from customer_id for cleaner code
+                import re
+                customer_nums = re.sub(r'[^0-9]', '', customer_id)  # Get only numbers
+                customer_short = customer_nums[-4:] if len(customer_nums) >= 4 else customer_nums or 'CUST'
                 code = f"REF-{customer_short}-{secrets.token_hex(3).upper()}"
                 
                 # Ensure unique
