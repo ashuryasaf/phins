@@ -12228,8 +12228,23 @@ For claims or questions, please contact:
             try:
                 data = json.loads(body)
                 
-                # Generate unique code (secrets is imported at module level)
-                code = f"PHINS-2026-{secrets.token_hex(4).upper()}"
+                # Support custom code for restoration, otherwise generate new
+                custom_code = data.get('code', '').strip().upper()
+                if custom_code and custom_code.startswith('PHINS-'):
+                    # Admin is restoring a specific code
+                    code = custom_code
+                    if code in INVITATION_CODES:
+                        # Code already exists, just return it
+                        self._set_json_headers(200)
+                        self.wfile.write(json.dumps({
+                            'success': True,
+                            'message': 'Invitation code already exists',
+                            'invitation': INVITATION_CODES[code]
+                        }).encode('utf-8'))
+                        return
+                else:
+                    # Generate unique code (secrets is imported at module level)
+                    code = f"PHINS-2026-{secrets.token_hex(4).upper()}"
                 
                 # Calculate expiration (default 30 days)
                 expires_days = int(data.get('expires_days', 30))
