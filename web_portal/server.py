@@ -658,6 +658,74 @@ def append_customer_to_seeds(email: str, password: str, name: str, customer_id: 
     except Exception as e:
         print(f"[SEEDS] Error appending customer to seeds: {e}")
 
+# ========== PERSISTENT INVITATION CODES STORAGE ==========
+# Store invitation codes in a git-tracked JSON file so they persist across Railway deployments
+INVITATION_CODES_FILE = os.path.join(os.path.dirname(__file__), '..', 'database', 'invitation_codes.json')
+
+def save_invitation_codes_to_file():
+    """
+    Save all invitation codes (admin + customer) to persistent JSON file.
+    This file is git-tracked and persists across Railway deployments.
+    """
+    global INVITATION_CODES, CUSTOMER_INVITATIONS, CUSTOMER_REFERRAL_STATS
+    
+    try:
+        data = {
+            'version': '1.0',
+            'saved_at': datetime.now().isoformat(),
+            'admin_codes': dict(INVITATION_CODES),
+            'customer_codes': dict(CUSTOMER_INVITATIONS),
+            'referral_stats': dict(CUSTOMER_REFERRAL_STATS)
+        }
+        
+        with open(INVITATION_CODES_FILE, 'w') as f:
+            json.dump(data, f, indent=2, default=str)
+        
+        print(f"[INVITATIONS] Saved {len(INVITATION_CODES)} admin codes, {len(CUSTOMER_INVITATIONS)} customer codes to persistent file")
+    except Exception as e:
+        print(f"[INVITATIONS] Error saving invitation codes: {e}")
+
+def load_invitation_codes_from_file():
+    """
+    Load invitation codes from persistent JSON file on startup.
+    """
+    global INVITATION_CODES, CUSTOMER_INVITATIONS, CUSTOMER_REFERRAL_STATS
+    
+    try:
+        if not os.path.exists(INVITATION_CODES_FILE):
+            print("[INVITATIONS] No invitation codes file found, starting fresh")
+            return 0
+        
+        with open(INVITATION_CODES_FILE, 'r') as f:
+            data = json.load(f)
+        
+        # Load admin codes
+        admin_codes = data.get('admin_codes', {})
+        if admin_codes:
+            INVITATION_CODES.update(admin_codes)
+            print(f"[INVITATIONS] Loaded {len(admin_codes)} admin invitation codes")
+        
+        # Load customer codes
+        customer_codes = data.get('customer_codes', {})
+        if customer_codes:
+            CUSTOMER_INVITATIONS.update(customer_codes)
+            print(f"[INVITATIONS] Loaded {len(customer_codes)} customer referral codes")
+        
+        # Load referral stats
+        referral_stats = data.get('referral_stats', {})
+        if referral_stats:
+            CUSTOMER_REFERRAL_STATS.update(referral_stats)
+            print(f"[INVITATIONS] Loaded referral stats for {len(referral_stats)} customers")
+        
+        return len(admin_codes) + len(customer_codes)
+        
+    except json.JSONDecodeError as e:
+        print(f"[INVITATIONS] Error parsing invitation codes file: {e}")
+        return 0
+    except Exception as e:
+        print(f"[INVITATIONS] Error loading invitation codes: {e}")
+        return 0
+
 def load_dynamic_customers():
     """
     Load dynamically registered customers from JSON file into USERS dictionary.
@@ -12160,8 +12228,23 @@ For claims or questions, please contact:
             try:
                 data = json.loads(body)
                 
-                # Generate unique code (secrets is imported at module level)
-                code = f"PHINS-2026-{secrets.token_hex(4).upper()}"
+                # Support custom code for restoration, otherwise generate new
+                custom_code = data.get('code', '').strip().upper()
+                if custom_code and custom_code.startswith('PHINS-'):
+                    # Admin is restoring a specific code
+                    code = custom_code
+                    if code in INVITATION_CODES:
+                        # Code already exists, just return it
+                        self._set_json_headers(200)
+                        self.wfile.write(json.dumps({
+                            'success': True,
+                            'message': 'Invitation code already exists',
+                            'invitation': INVITATION_CODES[code]
+                        }).encode('utf-8'))
+                        return
+                else:
+                    # Generate unique code (secrets is imported at module level)
+                    code = f"PHINS-2026-{secrets.token_hex(4).upper()}"
                 
                 # Calculate expiration (default 30 days)
                 expires_days = int(data.get('expires_days', 30))
@@ -12181,6 +12264,8 @@ For claims or questions, please contact:
                 
                 INVITATION_CODES[code] = invitation
                 save_ledger_data()
+                # Also save to persistent file for Railway deployment persistence
+                save_invitation_codes_to_file()
                 
                 self._set_json_headers(201)
                 self.wfile.write(json.dumps({
@@ -12242,7 +12327,10 @@ For claims or questions, please contact:
                 
                 # Generate unique referral code
                 # Format: REF-{CUSTOMER_SHORT_ID}-{RANDOM}
-                customer_short = customer_id[-4:] if len(customer_id) >= 4 else customer_id
+                # Extract only alphanumeric characters from customer_id for cleaner code
+                import re
+                customer_nums = re.sub(r'[^0-9]', '', customer_id)  # Get only numbers
+                customer_short = customer_nums[-4:] if len(customer_nums) >= 4 else customer_nums or 'CUST'
                 code = f"REF-{customer_short}-{secrets.token_hex(3).upper()}"
                 
                 # Ensure unique
@@ -12292,6 +12380,8 @@ For claims or questions, please contact:
                 
                 # Persist changes
                 save_ledger_data()
+                # Also save to persistent file for Railway deployment persistence
+                save_invitation_codes_to_file()
                 
                 # Generate registration link
                 base_url = os.environ.get('BASE_URL', 'https://phins-portal-production.up.railway.app')
@@ -12770,6 +12860,8 @@ For claims or questions, please contact:
                 
                 # ========== PERSIST ALL DATA ==========
                 save_ledger_data()
+                # Save invitation codes to persistent file (used code status updated)
+                save_invitation_codes_to_file()
                 
                 # Also append to dynamic seeds file for server restart persistence
                 append_customer_to_seeds(email, password, name, customer_id, registration_date)
@@ -24081,6 +24173,12 @@ def run_server(port: int = PORT) -> None:
     dynamic_count = load_dynamic_customers()
     if dynamic_count > 0:
         print(f"✓ Loaded {dynamic_count} dynamically registered customers")
+    
+    # Load invitation codes from persistent file
+    print("🎟️ Loading invitation codes...")
+    invitation_count = load_invitation_codes_from_file()
+    if invitation_count > 0:
+        print(f"✓ Loaded {invitation_count} invitation codes from persistent storage")
     
     # Initialize PHINS Balance Sheet (General Reserves)
     print("💰 Initializing PHINS Balance Sheet...")
