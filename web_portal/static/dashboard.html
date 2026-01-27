@@ -493,6 +493,7 @@
         <a href="/dashboard.html#billing-settings">💳 Billing</a>
         <a href="/dashboard.html#health-wallet">🏥 Wallet</a>
         <a href="/dashboard.html#claims">Claims</a>
+        <a href="/dashboard.html#referrals">🎁 Referrals</a>
         <a href="/foundation-dashboard.html">🤝 Community</a>
         <div class="nav-divider"></div>
         <select id="language-selector" class="language-selector" onchange="changeLanguage(this.value)">
@@ -706,6 +707,17 @@
         <div style="font-size: 20px; font-weight: 700; margin-top: 12px;">Claims</div>
         <div style="font-size: 14px; margin: 8px 0; color: rgba(255,255,255,0.9);">File or track claims</div>
         <div style="color: rgba(255,255,255,0.85); font-size: 13px;">Submit • Track • History</div>
+      </a>
+      
+      <!-- Referral Program Button -->
+      <a href="#referrals" class="action-card" style="text-decoration: none; color: inherit; padding: 24px; border-radius: 16px; background: linear-gradient(135deg, #ff6b35 0%, #f7931e 100%); color: white; box-shadow: 0 8px 30px rgba(255, 107, 53, 0.25); transition: transform 0.2s, box-shadow 0.2s;" onmouseover="this.style.transform='translateY(-4px)';this.style.boxShadow='0 12px 40px rgba(255, 107, 53, 0.35)';" onmouseout="this.style.transform='';this.style.boxShadow='0 8px 30px rgba(255, 107, 53, 0.25)';">
+        <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+          <div class="stat-icon" style="font-size: 36px;">🎁</div>
+          <span id="referral-count-badge" style="background: rgba(255,255,255,0.2); padding: 4px 10px; border-radius: 12px; font-size: 12px;">10 LEFT</span>
+        </div>
+        <div style="font-size: 20px; font-weight: 700; margin-top: 12px;">Refer Friends</div>
+        <div style="font-size: 14px; margin: 8px 0; color: rgba(255,255,255,0.9);">Earn rewards together</div>
+        <div style="color: rgba(255,255,255,0.85); font-size: 13px;">Invite • Share • Earn</div>
       </a>
       
     </div>
@@ -1493,6 +1505,106 @@
         </div>
         <div style="margin-top:24px">
           <a href="/savings-portfolio.html" class="link">View Detailed Portfolio Analysis</a>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== REFERRAL PROGRAM SECTION ==================== -->
+    <section id="referrals" class="section-content" style="background: linear-gradient(135deg, #ff6b35 0%, #f7931e 100%); border-radius: 16px; padding: 28px; margin-bottom: 32px; border: 1px solid rgba(255, 107, 53, 0.2); color: white;">
+      <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 16px; margin-bottom: 24px;">
+        <div>
+          <h2 style="color: white; margin: 0;">🎁 Referral Program</h2>
+          <p style="opacity: 0.9; margin: 8px 0 0 0;">Invite friends and earn rewards! Generate up to 10 referral codes.</p>
+        </div>
+        <div style="display: flex; gap: 12px;">
+          <button onclick="loadReferralData()" style="background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.3); color: white; padding: 10px 16px; border-radius: 8px; cursor: pointer; font-weight: 600;">🔄 Refresh</button>
+          <button onclick="generateReferralCode()" id="generate-referral-btn" style="background: linear-gradient(135deg, #28a745 0%, #20c997 100%); border: none; color: white; padding: 10px 20px; border-radius: 8px; cursor: pointer; font-weight: 600; box-shadow: 0 4px 12px rgba(40, 167, 69, 0.3);">🎫 Generate Code</button>
+        </div>
+      </div>
+
+      <!-- Referral Stats -->
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 16px; margin-bottom: 24px;">
+        <div style="background: rgba(255,255,255,0.15); border-radius: 12px; padding: 20px; text-align: center;">
+          <div style="font-size: 2.2rem; font-weight: 700;" id="referral-codes-generated">0</div>
+          <div style="font-size: 0.85rem; opacity: 0.9;">Codes Generated</div>
+        </div>
+        <div style="background: rgba(255,255,255,0.15); border-radius: 12px; padding: 20px; text-align: center;">
+          <div style="font-size: 2.2rem; font-weight: 700;" id="referral-successful">0</div>
+          <div style="font-size: 0.85rem; opacity: 0.9;">Successful Referrals</div>
+        </div>
+        <div style="background: rgba(255,255,255,0.15); border-radius: 12px; padding: 20px; text-align: center;">
+          <div style="font-size: 2.2rem; font-weight: 700;" id="referral-remaining">10</div>
+          <div style="font-size: 0.85rem; opacity: 0.9;">Codes Remaining</div>
+        </div>
+        <div style="background: rgba(255,255,255,0.15); border-radius: 12px; padding: 20px; text-align: center;">
+          <div style="font-size: 2.2rem; font-weight: 700;" id="referral-rewards">$0</div>
+          <div style="font-size: 0.85rem; opacity: 0.9;">Rewards Earned</div>
+        </div>
+      </div>
+
+      <!-- Generated Code Display (hidden by default) -->
+      <div id="new-referral-code-panel" style="display: none; background: rgba(255,255,255,0.95); color: #333; border-radius: 12px; padding: 24px; margin-bottom: 24px;">
+        <h4 style="margin: 0 0 16px 0; color: #28a745;">✅ New Referral Code Generated!</h4>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 16px;">
+          <div>
+            <label style="display: block; font-size: 0.85rem; color: #666; margin-bottom: 4px;">Your Referral Code</label>
+            <div id="new-referral-code" style="font-family: monospace; font-size: 1.4rem; font-weight: bold; color: #0d47a1; letter-spacing: 2px;"></div>
+          </div>
+          <div>
+            <label style="display: block; font-size: 0.85rem; color: #666; margin-bottom: 4px;">Registration Link</label>
+            <input type="text" id="new-referral-link" readonly style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px; font-size: 0.9rem; background: white;">
+          </div>
+        </div>
+        <div style="display: flex; gap: 12px; flex-wrap: wrap;">
+          <button onclick="copyReferralCode()" style="background: #0d47a1; color: white; border: none; padding: 10px 16px; border-radius: 6px; cursor: pointer; font-weight: 600;">📋 Copy Code</button>
+          <button onclick="copyReferralLink()" style="background: #1976d2; color: white; border: none; padding: 10px 16px; border-radius: 6px; cursor: pointer; font-weight: 600;">🔗 Copy Link</button>
+          <button onclick="shareReferralWhatsApp()" style="background: #25d366; color: white; border: none; padding: 10px 16px; border-radius: 6px; cursor: pointer; font-weight: 600;">📱 WhatsApp</button>
+          <button onclick="shareReferralEmail()" style="background: #d44638; color: white; border: none; padding: 10px 16px; border-radius: 6px; cursor: pointer; font-weight: 600;">📧 Email</button>
+        </div>
+      </div>
+
+      <!-- My Referral Codes Table -->
+      <div style="background: rgba(255,255,255,0.95); border-radius: 12px; overflow: hidden;">
+        <div style="padding: 16px 20px; background: rgba(255,255,255,1); border-bottom: 1px solid #eee;">
+          <h3 style="margin: 0; color: #333; font-size: 1.1rem;">📋 My Referral Codes</h3>
+        </div>
+        <div style="overflow-x: auto;">
+          <table style="width: 100%; border-collapse: collapse; font-size: 0.9rem;">
+            <thead>
+              <tr style="background: #f8f9fa;">
+                <th style="padding: 12px 16px; text-align: left; color: #333; font-weight: 600;">Code</th>
+                <th style="padding: 12px 16px; text-align: left; color: #333; font-weight: 600;">Created</th>
+                <th style="padding: 12px 16px; text-align: left; color: #333; font-weight: 600;">Expires</th>
+                <th style="padding: 12px 16px; text-align: center; color: #333; font-weight: 600;">Status</th>
+                <th style="padding: 12px 16px; text-align: center; color: #333; font-weight: 600;">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="referral-codes-table">
+              <tr><td colspan="5" style="padding: 24px; text-align: center; color: #666;">Loading referral codes...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Referred Customers -->
+      <div style="background: rgba(255,255,255,0.95); border-radius: 12px; overflow: hidden; margin-top: 20px;">
+        <div style="padding: 16px 20px; background: rgba(255,255,255,1); border-bottom: 1px solid #eee;">
+          <h3 style="margin: 0; color: #333; font-size: 1.1rem;">👥 Friends You've Referred</h3>
+        </div>
+        <div style="overflow-x: auto;">
+          <table style="width: 100%; border-collapse: collapse; font-size: 0.9rem;">
+            <thead>
+              <tr style="background: #f8f9fa;">
+                <th style="padding: 12px 16px; text-align: left; color: #333; font-weight: 600;">Name</th>
+                <th style="padding: 12px 16px; text-align: left; color: #333; font-weight: 600;">Joined</th>
+                <th style="padding: 12px 16px; text-align: left; color: #333; font-weight: 600;">Code Used</th>
+                <th style="padding: 12px 16px; text-align: center; color: #333; font-weight: 600;">Reward Status</th>
+              </tr>
+            </thead>
+            <tbody id="referred-customers-table">
+              <tr><td colspan="4" style="padding: 24px; text-align: center; color: #666;">No referrals yet. Share your code to invite friends!</td></tr>
+            </tbody>
+          </table>
         </div>
       </div>
     </section>
@@ -6562,6 +6674,272 @@
     // Load saved language
     const savedLang = localStorage.getItem('phins_language');
     if (savedLang) document.getElementById('language-selector').value = savedLang;
+    
+    // ==================== REFERRAL PROGRAM FUNCTIONS ====================
+    
+    let referralData = {
+      codes: [],
+      stats: {},
+      lastGeneratedCode: null,
+      lastGeneratedLink: null
+    };
+    
+    // Load referral data for the customer
+    async function loadReferralData() {
+      const cid = customerId || sessionStorage.getItem('customer_id');
+      if (!cid) {
+        document.getElementById('referral-codes-table').innerHTML = 
+          '<tr><td colspan="5" style="padding: 24px; text-align: center; color: #666;">Please log in to view referral codes</td></tr>';
+        return;
+      }
+      
+      try {
+        const response = await fetch('/api/customer/invitations', {
+          method: 'GET',
+          headers: {
+            'Authorization': `Bearer ${authToken}`,
+            'Content-Type': 'application/json'
+          }
+        });
+        
+        if (!response.ok) {
+          throw new Error('Failed to load referral data');
+        }
+        
+        const data = await response.json();
+        referralData.codes = data.codes || [];
+        referralData.stats = data.stats || {};
+        
+        // Update stats display
+        const codesGenerated = referralData.codes.length;
+        const successfulReferrals = referralData.stats.successful_referrals || 0;
+        const maxAllowed = data.max_allowed || 10;
+        const remaining = maxAllowed - codesGenerated;
+        const rewardsEarned = referralData.stats.total_reward_value || 0;
+        
+        document.getElementById('referral-codes-generated').textContent = codesGenerated;
+        document.getElementById('referral-successful').textContent = successfulReferrals;
+        document.getElementById('referral-remaining').textContent = remaining;
+        document.getElementById('referral-rewards').textContent = '$' + rewardsEarned;
+        
+        // Update generate button state
+        const genBtn = document.getElementById('generate-referral-btn');
+        if (remaining <= 0) {
+          genBtn.disabled = true;
+          genBtn.style.opacity = '0.5';
+          genBtn.style.cursor = 'not-allowed';
+        } else {
+          genBtn.disabled = false;
+          genBtn.style.opacity = '1';
+          genBtn.style.cursor = 'pointer';
+        }
+        
+        // Render codes table
+        renderReferralCodesTable();
+        
+        // Render referred customers table
+        renderReferredCustomersTable();
+        
+      } catch (err) {
+        console.error('Error loading referral data:', err);
+        document.getElementById('referral-codes-table').innerHTML = 
+          '<tr><td colspan="5" style="padding: 24px; text-align: center; color: #dc3545;">Error loading referral data</td></tr>';
+      }
+    }
+    
+    // Render the referral codes table
+    function renderReferralCodesTable() {
+      const tbody = document.getElementById('referral-codes-table');
+      
+      if (!referralData.codes || referralData.codes.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="5" style="padding: 24px; text-align: center; color: #666;">No referral codes yet. Click "Generate Code" to create one!</td></tr>';
+        return;
+      }
+      
+      tbody.innerHTML = referralData.codes.map(code => {
+        const createdDate = new Date(code.created_at).toLocaleDateString();
+        const expiresDate = code.expires_at ? new Date(code.expires_at).toLocaleDateString() : 'Never';
+        const statusColor = code.status === 'active' ? '#28a745' : code.status === 'used' ? '#dc3545' : '#ffc107';
+        const statusText = code.status === 'active' ? 'Active' : code.status === 'used' ? 'Used' : 'Expired';
+        
+        return `
+          <tr style="border-bottom: 1px solid #eee;">
+            <td style="padding: 12px 16px; color: #333; font-family: monospace; font-weight: 600;">${code.code}</td>
+            <td style="padding: 12px 16px; color: #666;">${createdDate}</td>
+            <td style="padding: 12px 16px; color: #666;">${expiresDate}</td>
+            <td style="padding: 12px 16px; text-align: center;">
+              <span style="background: ${statusColor}15; color: ${statusColor}; padding: 4px 12px; border-radius: 20px; font-size: 0.85rem; font-weight: 600;">${statusText}</span>
+            </td>
+            <td style="padding: 12px 16px; text-align: center;">
+              ${code.status === 'active' ? `
+                <button onclick="copyCodeToClipboard('${code.code}')" style="background: #0d47a1; color: white; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 0.8rem; margin-right: 4px;">📋 Copy</button>
+                <button onclick="shareCode('${code.code}')" style="background: #25d366; color: white; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 0.8rem;">📱 Share</button>
+              ` : '<span style="color: #999;">-</span>'}
+            </td>
+          </tr>
+        `;
+      }).join('');
+    }
+    
+    // Render the referred customers table
+    function renderReferredCustomersTable() {
+      const tbody = document.getElementById('referred-customers-table');
+      const referredCustomers = referralData.stats.referred_customers || [];
+      
+      if (!referredCustomers || referredCustomers.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="4" style="padding: 24px; text-align: center; color: #666;">No referrals yet. Share your code to invite friends!</td></tr>';
+        return;
+      }
+      
+      tbody.innerHTML = referredCustomers.map(customer => {
+        const joinedDate = new Date(customer.referred_at).toLocaleDateString();
+        const rewardStatus = customer.reward_claimed ? 'Claimed' : 'Pending';
+        const statusColor = customer.reward_claimed ? '#28a745' : '#ffc107';
+        
+        return `
+          <tr style="border-bottom: 1px solid #eee;">
+            <td style="padding: 12px 16px; color: #333; font-weight: 500;">${customer.name || 'PHINS Customer'}</td>
+            <td style="padding: 12px 16px; color: #666;">${joinedDate}</td>
+            <td style="padding: 12px 16px; color: #666; font-family: monospace;">${customer.code_used}</td>
+            <td style="padding: 12px 16px; text-align: center;">
+              <span style="background: ${statusColor}15; color: ${statusColor}; padding: 4px 12px; border-radius: 20px; font-size: 0.85rem; font-weight: 600;">${rewardStatus}</span>
+            </td>
+          </tr>
+        `;
+      }).join('');
+    }
+    
+    // Generate a new referral code
+    async function generateReferralCode() {
+      const cid = customerId || sessionStorage.getItem('customer_id');
+      if (!cid) {
+        showNotification('❌ Please log in to generate referral codes', 'error');
+        return;
+      }
+      
+      const genBtn = document.getElementById('generate-referral-btn');
+      genBtn.disabled = true;
+      genBtn.textContent = '⏳ Generating...';
+      
+      try {
+        const response = await fetch('/api/customer/invitations/generate', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${authToken}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({})
+        });
+        
+        const data = await response.json();
+        
+        if (!response.ok) {
+          throw new Error(data.error || 'Failed to generate code');
+        }
+        
+        if (data.success && data.invitation) {
+          referralData.lastGeneratedCode = data.invitation.code;
+          referralData.lastGeneratedLink = data.registration_link;
+          
+          // Show the new code panel
+          document.getElementById('new-referral-code').textContent = data.invitation.code;
+          document.getElementById('new-referral-link').value = data.registration_link;
+          document.getElementById('new-referral-code-panel').style.display = 'block';
+          
+          showNotification('✅ Referral code generated! Share it with friends.', 'success');
+          
+          // Reload the referral data
+          await loadReferralData();
+        } else {
+          throw new Error(data.error || 'Unknown error');
+        }
+        
+      } catch (err) {
+        console.error('Error generating referral code:', err);
+        showNotification('❌ ' + (err.message || 'Failed to generate referral code'), 'error');
+      } finally {
+        genBtn.disabled = false;
+        genBtn.textContent = '🎫 Generate Code';
+      }
+    }
+    
+    // Copy referral code to clipboard
+    function copyReferralCode() {
+      if (referralData.lastGeneratedCode) {
+        navigator.clipboard.writeText(referralData.lastGeneratedCode).then(() => {
+          showNotification('📋 Referral code copied!', 'success');
+        }).catch(() => {
+          fallbackCopyReferral(referralData.lastGeneratedCode);
+        });
+      }
+    }
+    
+    // Copy referral link to clipboard
+    function copyReferralLink() {
+      if (referralData.lastGeneratedLink) {
+        navigator.clipboard.writeText(referralData.lastGeneratedLink).then(() => {
+          showNotification('🔗 Registration link copied!', 'success');
+        }).catch(() => {
+          fallbackCopyReferral(referralData.lastGeneratedLink);
+        });
+      }
+    }
+    
+    // Copy specific code to clipboard
+    function copyCodeToClipboard(code) {
+      const link = `${window.location.origin}/register.html?code=${code}`;
+      navigator.clipboard.writeText(link).then(() => {
+        showNotification('📋 Referral link copied!', 'success');
+      }).catch(() => {
+        fallbackCopyReferral(link);
+      });
+    }
+    
+    // Fallback copy method
+    function fallbackCopyReferral(text) {
+      const textarea = document.createElement('textarea');
+      textarea.value = text;
+      document.body.appendChild(textarea);
+      textarea.select();
+      document.execCommand('copy');
+      document.body.removeChild(textarea);
+      showNotification('📋 Copied to clipboard!', 'success');
+    }
+    
+    // Share via WhatsApp
+    function shareReferralWhatsApp() {
+      if (!referralData.lastGeneratedCode || !referralData.lastGeneratedLink) {
+        showNotification('❌ Generate a code first', 'error');
+        return;
+      }
+      const message = `🎁 Join PHINS Insurance!\n\nUse my referral code: ${referralData.lastGeneratedCode}\n\nRegister here: ${referralData.lastGeneratedLink}`;
+      const url = `https://wa.me/?text=${encodeURIComponent(message)}`;
+      window.open(url, '_blank');
+    }
+    
+    // Share via Email
+    function shareReferralEmail() {
+      if (!referralData.lastGeneratedCode || !referralData.lastGeneratedLink) {
+        showNotification('❌ Generate a code first', 'error');
+        return;
+      }
+      const subject = '🎁 PHINS Referral - Join me on PHINS Insurance!';
+      const body = `Hi there!\n\nI'd like to invite you to join PHINS Insurance. Use my referral code and we both get rewards!\n\nReferral Code: ${referralData.lastGeneratedCode}\n\nRegister here: ${referralData.lastGeneratedLink}\n\nSee you there!`;
+      window.location.href = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+    }
+    
+    // Share specific code
+    function shareCode(code) {
+      const link = `${window.location.origin}/register.html?code=${code}`;
+      const message = `🎁 Join PHINS Insurance!\n\nUse my referral code: ${code}\n\nRegister here: ${link}`;
+      const url = `https://wa.me/?text=${encodeURIComponent(message)}`;
+      window.open(url, '_blank');
+    }
+    
+    // Load referral data on page load
+    setTimeout(loadReferralData, 1000);
+    
+    // ==================== END REFERRAL PROGRAM FUNCTIONS ====================
     
     // Load billing details on page load
     loadBillingDetails();

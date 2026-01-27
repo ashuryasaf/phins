@@ -206,6 +206,19 @@ INVITATION_CODES: Dict[str, Dict[str, Any]] = {}
 # Indexed by customer_id -> full customer record with all dates
 REGISTERED_CUSTOMERS: Dict[str, Dict[str, Any]] = {}
 
+# ========== CUSTOMER INVITATIONS (Referral System) ==========
+# Customer-generated invitation codes for referral program
+# Each customer can generate up to 10 invitation codes
+# Indexed by code -> {code, creator_customer_id, created_at, expires_at, used_by, status, reward_status}
+CUSTOMER_INVITATIONS: Dict[str, Dict[str, Any]] = {}
+
+# Referral tracking - maps customer_id to their referral stats
+# {customer_id: {codes_generated: int, successful_referrals: int, codes: [], referred_customers: [], rewards: []}}
+CUSTOMER_REFERRAL_STATS: Dict[str, Dict[str, Any]] = {}
+
+# Maximum invitations per customer
+MAX_CUSTOMER_INVITATIONS = 10
+
 # ========== PHINS MAIN BALANCE SHEET (GENERAL RESERVES) ==========
 # Central company balance sheet for all financial operations
 # Accessible by: admin, accountant, underwriter, claims_adjuster
@@ -587,7 +600,10 @@ def save_ledger_data():
                 'design_settings': DESIGN_SETTINGS,
                 # v1.7 additions - Invitation Codes and Registered Customers
                 'invitation_codes': INVITATION_CODES,
-                'registered_customers': REGISTERED_CUSTOMERS
+                'registered_customers': REGISTERED_CUSTOMERS,
+                # v1.8 additions - Customer Referral System
+                'customer_invitations': CUSTOMER_INVITATIONS,
+                'customer_referral_stats': CUSTOMER_REFERRAL_STATS
             }
             
             # Write to temp file first, then rename for atomic operation
@@ -737,6 +753,7 @@ def load_ledger_data():
     global HEALTH_WALLETS, MEDICAL_PURCHASES, NFT_LEDGER, CUSTOMER_ALLOCATIONS, INVESTMENT_ACCOUNTS, TRANSACTION_LEDGER
     global BILLING, POLICIES, CUSTOMERS, UNDERWRITING_APPLICATIONS, PHINS_BALANCE_SHEET, CLAIMS, CLAIM_FILES, UNDERWRITING_FILES
     global MEDIA_ASSETS, DESIGN_SETTINGS, INVITATION_CODES, REGISTERED_CUSTOMERS
+    global CUSTOMER_INVITATIONS, CUSTOMER_REFERRAL_STATS
     global _loaded_algo_balances, _loaded_trading_bots
     
     # Temporary storage for algo data until services are initialized
@@ -825,6 +842,16 @@ def load_ledger_data():
                     if cust_id not in CUSTOMERS:
                         CUSTOMERS[cust_id] = cust_data
                 print(f"  - Registered Customers: {len(REGISTERED_CUSTOMERS)} customers loaded from persistence")
+        
+        # Load Customer Invitations and Referral Stats (v1.8+)
+        loaded_customer_invitations = data.get('customer_invitations', {})
+        loaded_referral_stats = data.get('customer_referral_stats', {})
+        if loaded_customer_invitations:
+            CUSTOMER_INVITATIONS.update(loaded_customer_invitations)
+            print(f"  - Customer Invitations: {len(CUSTOMER_INVITATIONS)} referral codes loaded from persistence")
+        if loaded_referral_stats:
+            CUSTOMER_REFERRAL_STATS.update(loaded_referral_stats)
+            print(f"  - Customer Referral Stats: {len(CUSTOMER_REFERRAL_STATS)} customer stats loaded from persistence")
         
         print(f"[PERSISTENCE] Loaded ledger data from {LEDGER_PERSISTENCE_FILE}")
         print(f"  - Health Wallets: {len(HEALTH_WALLETS)}")
@@ -3427,6 +3454,7 @@ For claims or questions, please contact:
         # ========== INVITATION CODES API ==========
         # GET /api/invitations - List all invitation codes (Admin only)
         # GET /api/invitations/validate?code=XXX - Validate a code (Public for registration)
+        # GET /api/invitations/stats - Get invitation statistics (Admin only)
         if path == '/api/invitations' or path.startswith('/api/invitations/'):
             # Validate endpoint is public (for registration form)
             if path == '/api/invitations/validate':
@@ -3436,7 +3464,15 @@ For claims or questions, please contact:
                     self.wfile.write(json.dumps({'valid': False, 'error': 'No code provided'}).encode('utf-8'))
                     return
                 
+                # Check BOTH admin-generated and customer-generated invitation codes
                 invitation = INVITATION_CODES.get(code)
+                invitation_type = 'admin'
+                
+                # If not found in admin codes, check customer-generated codes
+                if not invitation:
+                    invitation = CUSTOMER_INVITATIONS.get(code)
+                    invitation_type = 'customer'
+                
                 if not invitation:
                     self._set_json_headers(200)
                     self.wfile.write(json.dumps({'valid': False, 'error': 'Invalid invitation code'}).encode('utf-8'))
@@ -3444,11 +3480,14 @@ For claims or questions, please contact:
                 
                 # Check if expired
                 if invitation.get('expires_at'):
-                    expires = datetime.fromisoformat(invitation['expires_at'])
-                    if datetime.now() > expires:
-                        self._set_json_headers(200)
-                        self.wfile.write(json.dumps({'valid': False, 'error': 'Invitation code has expired'}).encode('utf-8'))
-                        return
+                    try:
+                        expires = datetime.fromisoformat(invitation['expires_at'].replace('Z', '+00:00'))
+                        if datetime.now() > expires.replace(tzinfo=None):
+                            self._set_json_headers(200)
+                            self.wfile.write(json.dumps({'valid': False, 'error': 'Invitation code has expired'}).encode('utf-8'))
+                            return
+                    except Exception:
+                        pass  # If date parsing fails, don't block
                 
                 # Check if already used up
                 if invitation.get('used_count', 0) >= invitation.get('max_uses', 1):
@@ -3462,8 +3501,73 @@ For claims or questions, please contact:
                     self.wfile.write(json.dumps({'valid': False, 'error': 'Invitation code is not active'}).encode('utf-8'))
                     return
                 
+                # Return valid with additional info
+                response_data = {
+                    'valid': True, 
+                    'code': code,
+                    'type': invitation_type
+                }
+                # For customer invitations, include referrer info
+                if invitation_type == 'customer':
+                    response_data['referrer_id'] = invitation.get('creator_customer_id')
+                
                 self._set_json_headers(200)
-                self.wfile.write(json.dumps({'valid': True, 'code': code}).encode('utf-8'))
+                self.wfile.write(json.dumps(response_data).encode('utf-8'))
+                return
+            
+            # Stats endpoint (Admin only)
+            if path == '/api/invitations/stats':
+                if not require_role(session, ['admin']):
+                    self._set_json_headers(403)
+                    self.wfile.write(json.dumps({'error': 'Admin access required'}).encode('utf-8'))
+                    return
+                
+                # Compile comprehensive statistics
+                admin_codes = list(INVITATION_CODES.values())
+                customer_codes = list(CUSTOMER_INVITATIONS.values())
+                
+                # Admin code stats
+                admin_active = len([c for c in admin_codes if get_status_lower(c) == 'active'])
+                admin_used = len([c for c in admin_codes if get_status_lower(c) == 'used'])
+                admin_total_uses = sum(c.get('used_count', 0) for c in admin_codes)
+                
+                # Customer referral stats
+                customer_active = len([c for c in customer_codes if get_status_lower(c) == 'active'])
+                customer_used = len([c for c in customer_codes if get_status_lower(c) == 'used'])
+                customer_total_uses = sum(c.get('used_count', 0) for c in customer_codes)
+                
+                # Top referrers
+                referrer_counts = {}
+                for code in customer_codes:
+                    creator = code.get('creator_customer_id')
+                    if creator:
+                        referrer_counts[creator] = referrer_counts.get(creator, 0) + code.get('used_count', 0)
+                
+                top_referrers = sorted(
+                    [{'customer_id': k, 'referrals': v} for k, v in referrer_counts.items()],
+                    key=lambda x: x['referrals'],
+                    reverse=True
+                )[:10]
+                
+                self._set_json_headers(200)
+                self.wfile.write(json.dumps({
+                    'admin_codes': {
+                        'total': len(admin_codes),
+                        'active': admin_active,
+                        'used': admin_used,
+                        'total_registrations': admin_total_uses
+                    },
+                    'customer_codes': {
+                        'total': len(customer_codes),
+                        'active': customer_active,
+                        'used': customer_used,
+                        'total_referrals': customer_total_uses,
+                        'unique_referrers': len(referrer_counts)
+                    },
+                    'top_referrers': top_referrers,
+                    'total_registrations_via_invitation': admin_total_uses + customer_total_uses,
+                    'referral_stats': list(CUSTOMER_REFERRAL_STATS.values())
+                }).encode('utf-8'))
                 return
             
             # All other invitation endpoints require admin
@@ -3472,17 +3576,77 @@ For claims or questions, please contact:
                 self.wfile.write(json.dumps({'error': 'Admin access required'}).encode('utf-8'))
                 return
             
-            # Return all invitation codes
-            codes_list = list(INVITATION_CODES.values())
-            codes_list.sort(key=lambda x: x.get('created_at', ''), reverse=True)
+            # Return all invitation codes (admin + customer)
+            admin_codes = list(INVITATION_CODES.values())
+            customer_codes = list(CUSTOMER_INVITATIONS.values())
+            
+            # Mark types for display
+            for code in admin_codes:
+                code['invitation_type'] = 'admin'
+            for code in customer_codes:
+                code['invitation_type'] = 'customer'
+            
+            all_codes = admin_codes + customer_codes
+            all_codes.sort(key=lambda x: x.get('created_at', ''), reverse=True)
             
             self._set_json_headers(200)
             self.wfile.write(json.dumps({
-                'codes': codes_list,
-                'total': len(codes_list),
-                'active': len([c for c in codes_list if get_status_lower(c) == 'active']),
-                'used': len([c for c in codes_list if get_status_lower(c) == 'used'])
+                'codes': all_codes,
+                'total': len(all_codes),
+                'admin_codes': len(admin_codes),
+                'customer_codes': len(customer_codes),
+                'active': len([c for c in all_codes if get_status_lower(c) == 'active']),
+                'used': len([c for c in all_codes if get_status_lower(c) == 'used'])
             }).encode('utf-8'))
+            return
+        
+        # ========== CUSTOMER INVITATION API (Referral System) ==========
+        # Allows logged-in customers to generate and manage their own invitation codes
+        if path == '/api/customer/invitations' or path.startswith('/api/customer/invitations/'):
+            # All customer invitation endpoints require authenticated customer
+            if not session:
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Authentication required'}).encode('utf-8'))
+                return
+            
+            customer_id = session.get('customer_id')
+            if not customer_id:
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Customer account required'}).encode('utf-8'))
+                return
+            
+            # GET /api/customer/invitations - List customer's own invitation codes
+            if path == '/api/customer/invitations':
+                # Get customer's invitation codes from CUSTOMER_INVITATIONS
+                customer_codes = [
+                    code for code in CUSTOMER_INVITATIONS.values()
+                    if code.get('creator_customer_id') == customer_id
+                ]
+                customer_codes.sort(key=lambda x: x.get('created_at', ''), reverse=True)
+                
+                # Get referral stats
+                stats = CUSTOMER_REFERRAL_STATS.get(customer_id, {
+                    'codes_generated': 0,
+                    'successful_referrals': 0,
+                    'codes': [],
+                    'referred_customers': [],
+                    'rewards': []
+                })
+                
+                self._set_json_headers(200)
+                self.wfile.write(json.dumps({
+                    'codes': customer_codes,
+                    'total': len(customer_codes),
+                    'active': len([c for c in customer_codes if get_status_lower(c) == 'active']),
+                    'used': len([c for c in customer_codes if get_status_lower(c) == 'used']),
+                    'stats': stats,
+                    'max_allowed': MAX_CUSTOMER_INVITATIONS,
+                    'can_generate_more': len(customer_codes) < MAX_CUSTOMER_INVITATIONS
+                }).encode('utf-8'))
+                return
+            
+            self._set_json_headers(404)
+            self.wfile.write(json.dumps({'error': 'Endpoint not found'}).encode('utf-8'))
             return
         
         # Security monitoring endpoint (Admin only)
@@ -12031,6 +12195,130 @@ For claims or questions, please contact:
                 self.wfile.write(json.dumps({'error': 'Invalid JSON'}).encode('utf-8'))
                 return
         
+        # ========== POST /api/customer/invitations/generate - Customer generates referral code ==========
+        if path == '/api/customer/invitations/generate':
+            auth_header = self.headers.get('Authorization', '')
+            token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+            session = validate_session(token) if token else None
+            
+            if not session:
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Authentication required'}).encode('utf-8'))
+                return
+            
+            customer_id = session.get('customer_id')
+            if not customer_id:
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Customer account required to generate referral codes'}).encode('utf-8'))
+                return
+            
+            # Check if customer exists
+            customer = CUSTOMERS.get(customer_id) or REGISTERED_CUSTOMERS.get(customer_id)
+            if not customer:
+                self._set_json_headers(404)
+                self.wfile.write(json.dumps({'error': 'Customer profile not found'}).encode('utf-8'))
+                return
+            
+            # Count existing codes for this customer
+            existing_codes = [
+                c for c in CUSTOMER_INVITATIONS.values()
+                if c.get('creator_customer_id') == customer_id
+            ]
+            
+            if len(existing_codes) >= MAX_CUSTOMER_INVITATIONS:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({
+                    'error': f'Maximum referral limit reached ({MAX_CUSTOMER_INVITATIONS} codes)',
+                    'limit': MAX_CUSTOMER_INVITATIONS,
+                    'current_count': len(existing_codes)
+                }).encode('utf-8'))
+                return
+            
+            length = int(self.headers.get('Content-Length', 0))
+            body = self.rfile.read(length).decode('utf-8') if length else '{}'
+            
+            try:
+                data = json.loads(body) if body else {}
+                
+                # Generate unique referral code
+                # Format: REF-{CUSTOMER_SHORT_ID}-{RANDOM}
+                customer_short = customer_id[-4:] if len(customer_id) >= 4 else customer_id
+                code = f"REF-{customer_short}-{secrets.token_hex(3).upper()}"
+                
+                # Ensure unique
+                while code in CUSTOMER_INVITATIONS:
+                    code = f"REF-{customer_short}-{secrets.token_hex(3).upper()}"
+                
+                # Calculate expiration (default 90 days for customer referrals)
+                expires_days = min(int(data.get('expires_days', 90)), 365)  # Max 1 year
+                expires_at = (datetime.now() + timedelta(days=expires_days)).isoformat()
+                
+                # Create invitation record
+                invitation = {
+                    'code': code,
+                    'creator_customer_id': customer_id,
+                    'creator_name': customer.get('name', ''),
+                    'creator_email': customer.get('email', ''),
+                    'created_at': datetime.now().isoformat(),
+                    'expires_at': expires_at,
+                    'max_uses': 1,  # Each referral code is single-use
+                    'used_count': 0,
+                    'used_by': [],
+                    'status': 'active',
+                    'notes': data.get('notes', ''),
+                    'reward_status': 'pending'  # For tracking referral rewards
+                }
+                
+                # Store in CUSTOMER_INVITATIONS
+                CUSTOMER_INVITATIONS[code] = invitation
+                
+                # Update customer's referral stats
+                if customer_id not in CUSTOMER_REFERRAL_STATS:
+                    CUSTOMER_REFERRAL_STATS[customer_id] = {
+                        'codes_generated': 0,
+                        'successful_referrals': 0,
+                        'codes': [],
+                        'referred_customers': [],
+                        'rewards': [],
+                        'total_reward_value': 0
+                    }
+                
+                CUSTOMER_REFERRAL_STATS[customer_id]['codes_generated'] += 1
+                CUSTOMER_REFERRAL_STATS[customer_id]['codes'].append({
+                    'code': code,
+                    'created_at': invitation['created_at'],
+                    'status': 'active'
+                })
+                
+                # Persist changes
+                save_ledger_data()
+                
+                # Generate registration link
+                base_url = os.environ.get('BASE_URL', 'https://phins-portal-production.up.railway.app')
+                registration_link = f"{base_url}/register.html?code={code}"
+                
+                self._set_json_headers(201)
+                self.wfile.write(json.dumps({
+                    'success': True,
+                    'message': 'Referral code created successfully',
+                    'invitation': invitation,
+                    'registration_link': registration_link,
+                    'remaining_codes': MAX_CUSTOMER_INVITATIONS - len(existing_codes) - 1,
+                    'total_generated': len(existing_codes) + 1,
+                    'max_allowed': MAX_CUSTOMER_INVITATIONS
+                }).encode('utf-8'))
+                return
+                
+            except json.JSONDecodeError:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'Invalid JSON'}).encode('utf-8'))
+                return
+            except Exception as e:
+                print(f"Error generating customer invitation: {e}")
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': 'Failed to generate referral code'}).encode('utf-8'))
+                return
+        
         # Regular JSON POST requests
         length = int(self.headers.get('Content-Length', 0))
         content_type = (self.headers.get('Content-Type') or '').lower()
@@ -12298,8 +12586,18 @@ For claims or questions, please contact:
                     }).encode('utf-8'))
                     return
                 
-                # Validate invitation code
+                # Validate invitation code - check BOTH admin and customer codes
                 invitation = INVITATION_CODES.get(invitation_code)
+                invitation_type = 'admin'
+                referrer_customer_id = None
+                
+                # If not found in admin codes, check customer-generated codes
+                if not invitation:
+                    invitation = CUSTOMER_INVITATIONS.get(invitation_code)
+                    invitation_type = 'customer'
+                    if invitation:
+                        referrer_customer_id = invitation.get('creator_customer_id')
+                
                 if not invitation:
                     self._set_json_headers(400)
                     self.wfile.write(json.dumps({
@@ -12310,14 +12608,20 @@ For claims or questions, please contact:
                 
                 # Check if expired
                 if invitation.get('expires_at'):
-                    expires = datetime.fromisoformat(invitation['expires_at'])
-                    if datetime.now() > expires:
-                        self._set_json_headers(400)
-                        self.wfile.write(json.dumps({
-                            'error': 'Invitation code has expired',
-                            'code': 'CODE_EXPIRED'
-                        }).encode('utf-8'))
-                        return
+                    try:
+                        expires_str = invitation['expires_at']
+                        # Handle both ISO formats with and without timezone
+                        expires = datetime.fromisoformat(expires_str.replace('Z', '+00:00'))
+                        if datetime.now() > expires.replace(tzinfo=None):
+                            self._set_json_headers(400)
+                            self.wfile.write(json.dumps({
+                                'error': 'Invitation code has expired',
+                                'code': 'CODE_EXPIRED'
+                            }).encode('utf-8'))
+                            return
+                    except Exception as e:
+                        print(f"Date parsing error for invitation code: {e}")
+                        # Don't block if date parsing fails
                 
                 # Check if already used up
                 if invitation.get('used_count', 0) >= invitation.get('max_uses', 1):
@@ -12374,9 +12678,14 @@ For claims or questions, please contact:
                     'dob': dob,
                     # Registration tracking
                     'invitation_code': invitation_code,
+                    'invitation_type': invitation_type,
+                    'referred_by': referrer_customer_id,  # Customer ID of referrer (if customer referral)
                     'registered_at': registration_date,
                     'registered_ip': client_ip,
                     'created_date': registration_date,
+                    # Referral tracking - this customer can also refer others
+                    'referral_codes_generated': 0,
+                    'successful_referrals': 0,
                     # Application tracking (will be populated)
                     'applications': [],
                     # Policy tracking (will be populated)
@@ -12417,6 +12726,47 @@ For claims or questions, please contact:
                     })
                     if invitation['used_count'] >= invitation.get('max_uses', 1):
                         invitation['status'] = 'used'
+                    
+                    # ========== UPDATE REFERRAL STATS (for customer referrals) ==========
+                    if invitation_type == 'customer' and referrer_customer_id:
+                        # Update referrer's stats
+                        if referrer_customer_id not in CUSTOMER_REFERRAL_STATS:
+                            CUSTOMER_REFERRAL_STATS[referrer_customer_id] = {
+                                'codes_generated': 0,
+                                'successful_referrals': 0,
+                                'codes': [],
+                                'referred_customers': [],
+                                'rewards': [],
+                                'total_reward_value': 0
+                            }
+                        
+                        stats = CUSTOMER_REFERRAL_STATS[referrer_customer_id]
+                        stats['successful_referrals'] = stats.get('successful_referrals', 0) + 1
+                        stats['referred_customers'].append({
+                            'customer_id': customer_id,
+                            'name': name,
+                            'email': email,
+                            'referred_at': registration_date,
+                            'code_used': invitation_code
+                        })
+                        
+                        # Update the code status in referral stats
+                        for code_entry in stats.get('codes', []):
+                            if code_entry.get('code') == invitation_code:
+                                code_entry['status'] = 'used'
+                                code_entry['used_at'] = registration_date
+                                code_entry['used_by'] = customer_id
+                                break
+                        
+                        # Mark invitation reward as eligible (can be claimed later)
+                        invitation['reward_status'] = 'eligible'
+                        
+                        # Update referrer's customer record if exists
+                        referrer = CUSTOMERS.get(referrer_customer_id) or REGISTERED_CUSTOMERS.get(referrer_customer_id)
+                        if referrer:
+                            referrer['successful_referrals'] = referrer.get('successful_referrals', 0) + 1
+                        
+                        print(f"[REFERRAL] Customer {referrer_customer_id} referred new customer {customer_id} via code {invitation_code}")
                 
                 # ========== PERSIST ALL DATA ==========
                 save_ledger_data()
@@ -12424,14 +12774,25 @@ For claims or questions, please contact:
                 # Also append to dynamic seeds file for server restart persistence
                 append_customer_to_seeds(email, password, name, customer_id, registration_date)
                 
-                self._set_json_headers(201)
-                self.wfile.write(json.dumps({
+                # Build success response
+                response_data = {
                     'success': True,
                     'customer_id': customer_id,
                     'email': email,
                     'registered_at': registration_date,
                     'message': 'Account created successfully. Please login with your credentials.'
-                }).encode('utf-8'))
+                }
+                
+                # Add referral info if applicable
+                if referrer_customer_id:
+                    referrer = CUSTOMERS.get(referrer_customer_id) or REGISTERED_CUSTOMERS.get(referrer_customer_id)
+                    response_data['referred_by'] = {
+                        'customer_id': referrer_customer_id,
+                        'name': referrer.get('name', 'A PHINS Customer') if referrer else 'A PHINS Customer'
+                    }
+                
+                self._set_json_headers(201)
+                self.wfile.write(json.dumps(response_data).encode('utf-8'))
             except json.JSONDecodeError:
                 self._set_json_headers(400)
                 self.wfile.write(json.dumps({'error': 'Invalid JSON payload'}).encode('utf-8'))
