@@ -1294,9 +1294,42 @@
       <div class="section-header" style="margin-bottom: 24px;">
         <div>
           <h2 style="color: white; margin: 0;">🎟️ Invitation Code Management</h2>
-          <p style="opacity: 0.9; margin: 4px 0 0 0; font-size: 0.9rem;">Generate and manage registration invitation codes</p>
+          <p style="opacity: 0.9; margin: 4px 0 0 0; font-size: 0.9rem;">Generate and manage registration invitation codes (Admin + Customer Referrals)</p>
         </div>
-        <button onclick="loadInvitationCodes()" style="background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.3); color: white; padding: 8px 16px; border-radius: 8px; cursor: pointer; font-weight: 600;">🔄 Refresh</button>
+        <div style="display: flex; gap: 8px;">
+          <button onclick="loadInvitationStats()" style="background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.3); color: white; padding: 8px 16px; border-radius: 8px; cursor: pointer; font-weight: 600;">📊 Stats</button>
+          <button onclick="loadInvitationCodes()" style="background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.3); color: white; padding: 8px 16px; border-radius: 8px; cursor: pointer; font-weight: 600;">🔄 Refresh</button>
+        </div>
+      </div>
+      
+      <!-- Invitation Statistics Panel (hidden by default) -->
+      <div id="invitation-stats-panel" style="display: none; background: rgba(255,255,255,0.95); color: #333; border-radius: 12px; padding: 24px; margin-bottom: 20px;">
+        <h3 style="margin: 0 0 16px 0; color: #ff6b35;">📊 Invitation Statistics</h3>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; margin-bottom: 20px;">
+          <div style="background: #e3f2fd; border-radius: 12px; padding: 16px; text-align: center;">
+            <div style="font-size: 2rem; font-weight: 700; color: #1565c0;" id="stats-admin-total">0</div>
+            <div style="font-size: 0.85rem; color: #666;">Admin Codes</div>
+          </div>
+          <div style="background: #fff3e0; border-radius: 12px; padding: 16px; text-align: center;">
+            <div style="font-size: 2rem; font-weight: 700; color: #ff6b35;" id="stats-customer-total">0</div>
+            <div style="font-size: 0.85rem; color: #666;">Customer Referrals</div>
+          </div>
+          <div style="background: #e8f5e9; border-radius: 12px; padding: 16px; text-align: center;">
+            <div style="font-size: 2rem; font-weight: 700; color: #28a745;" id="stats-registrations">0</div>
+            <div style="font-size: 0.85rem; color: #666;">Total Registrations</div>
+          </div>
+          <div style="background: #fce4ec; border-radius: 12px; padding: 16px; text-align: center;">
+            <div style="font-size: 2rem; font-weight: 700; color: #e91e63;" id="stats-unique-referrers">0</div>
+            <div style="font-size: 0.85rem; color: #666;">Unique Referrers</div>
+          </div>
+        </div>
+        <div style="margin-top: 16px;">
+          <h4 style="margin: 0 0 12px 0; font-size: 1rem;">🏆 Top Referrers</h4>
+          <div id="top-referrers-list" style="display: flex; flex-wrap: wrap; gap: 8px;">
+            <span style="color: #666;">Loading...</span>
+          </div>
+        </div>
+        <button onclick="document.getElementById('invitation-stats-panel').style.display='none'" style="margin-top: 16px; background: #6c757d; color: white; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer;">Close</button>
       </div>
       
       <!-- Generate New Code -->
@@ -1403,14 +1436,15 @@
             <thead>
               <tr style="border-bottom: 2px solid rgba(255,255,255,0.2);">
                 <th style="text-align: left; padding: 10px 8px;">Code</th>
+                <th style="text-align: center; padding: 10px 8px;">Type</th>
                 <th style="text-align: center; padding: 10px 8px;">Uses</th>
                 <th style="text-align: left; padding: 10px 8px;">Expires</th>
                 <th style="text-align: left; padding: 10px 8px;">Status</th>
-                <th style="text-align: left; padding: 10px 8px;">Notes</th>
+                <th style="text-align: left; padding: 10px 8px;">Creator</th>
               </tr>
             </thead>
             <tbody id="invitation-codes-list">
-              <tr><td colspan="5" style="text-align: center; padding: 20px; opacity: 0.7;">Loading...</td></tr>
+              <tr><td colspan="6" style="text-align: center; padding: 20px; opacity: 0.7;">Loading...</td></tr>
             </tbody>
           </table>
         </div>
@@ -5238,10 +5272,12 @@
         }
         
         const data = await response.json();
-        countSpan.textContent = `${data.active || 0} active / ${data.total || 0} total`;
+        const adminCount = data.admin_codes || data.total || 0;
+        const customerCount = data.customer_codes || 0;
+        countSpan.textContent = `${data.active || 0} active / ${data.total || 0} total (Admin: ${adminCount}, Customer Referrals: ${customerCount})`;
         
         if (!data.codes || data.codes.length === 0) {
-          tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; padding: 20px; opacity: 0.7;">No invitation codes yet. Generate one above!</td></tr>';
+          tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; padding: 20px; opacity: 0.7;">No invitation codes yet. Generate one above!</td></tr>';
           return;
         }
         
@@ -5256,18 +5292,73 @@
           const expiresDate = code.expires_at ? new Date(code.expires_at).toLocaleDateString() : 'Never';
           const isExpired = code.expires_at && new Date(code.expires_at) < new Date();
           
+          // Show invitation type (admin or customer referral)
+          const inviteType = code.invitation_type || 'admin';
+          const typeBadge = inviteType === 'customer'
+            ? '<span style="background: #ff6b35; padding: 4px 8px; border-radius: 12px; font-size: 0.75rem;">👥 Referral</span>'
+            : '<span style="background: #1565c0; padding: 4px 8px; border-radius: 12px; font-size: 0.75rem;">🔑 Admin</span>';
+          
+          // Show creator info
+          const creatorInfo = inviteType === 'customer' 
+            ? (code.creator_name || code.creator_customer_id || 'Customer')
+            : (code.created_by || 'Admin');
+          
           return `<tr style="border-bottom: 1px solid rgba(255,255,255,0.1);">
             <td style="padding: 12px 8px; font-family: monospace; letter-spacing: 1px;">${code.code}</td>
+            <td style="padding: 12px 8px; text-align: center;">${typeBadge}</td>
             <td style="padding: 12px 8px; text-align: center;">${code.used_count || 0}/${code.max_uses || 1}</td>
             <td style="padding: 12px 8px; ${isExpired ? 'color: #ffcccc;' : ''}">${expiresDate}</td>
             <td style="padding: 12px 8px;">${statusBadge}</td>
-            <td style="padding: 12px 8px; font-size: 0.85rem; opacity: 0.8;">${code.notes || '-'}</td>
+            <td style="padding: 12px 8px; font-size: 0.85rem; opacity: 0.8;">${creatorInfo}</td>
           </tr>`;
         }).join('');
         
       } catch (error) {
         console.error('Error loading invitation codes:', error);
-        tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; padding: 20px; color: #ffcccc;">Error loading codes</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; padding: 20px; color: #ffcccc;">Error loading codes</td></tr>';
+      }
+    }
+    
+    // Load invitation statistics
+    async function loadInvitationStats() {
+      try {
+        const response = await fetch('/api/invitations/stats', {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        
+        if (!response.ok) {
+          throw new Error('Failed to load stats');
+        }
+        
+        const data = await response.json();
+        
+        // Update stats display
+        document.getElementById('stats-admin-total').textContent = data.admin_codes?.total || 0;
+        document.getElementById('stats-customer-total').textContent = data.customer_codes?.total || 0;
+        document.getElementById('stats-registrations').textContent = data.total_registrations_via_invitation || 0;
+        document.getElementById('stats-unique-referrers').textContent = data.customer_codes?.unique_referrers || 0;
+        
+        // Update top referrers
+        const topReferrers = data.top_referrers || [];
+        const topRefDiv = document.getElementById('top-referrers-list');
+        
+        if (topReferrers.length === 0) {
+          topRefDiv.innerHTML = '<span style="color: #666; font-style: italic;">No referrers yet</span>';
+        } else {
+          topRefDiv.innerHTML = topReferrers.map((r, i) => {
+            const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : '⭐';
+            return `<span style="background: ${i < 3 ? '#fff3e0' : '#f5f5f5'}; padding: 6px 12px; border-radius: 20px; font-size: 0.9rem;">
+              ${medal} ${r.customer_id}: <strong>${r.referrals}</strong> referrals
+            </span>`;
+          }).join('');
+        }
+        
+        // Show the panel
+        document.getElementById('invitation-stats-panel').style.display = 'block';
+        
+      } catch (error) {
+        console.error('Error loading invitation stats:', error);
+        showToast('❌ Failed to load statistics');
       }
     }
     
