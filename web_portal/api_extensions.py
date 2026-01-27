@@ -1949,7 +1949,9 @@ def dispatch_get(path: str, session: Dict, query_params: Dict, client_ip: str) -
     """
     # Foundation invitations validation (public)
     # Support both query param (?code=XXX) and path param (/validate/XXX) formats
-    if path == '/api/invitations/validate' or path == '/api/foundation-invitations/validate':
+    # NOTE: /api/invitations/validate is handled in server.py for regular invitation codes
+    # This only handles /api/foundation-invitations/validate for community foundation invites
+    if path == '/api/foundation-invitations/validate':
         code = query_params.get('code', [''])[0]
         return handle_invitation_validate(code)
     
