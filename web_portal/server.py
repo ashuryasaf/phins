@@ -50,6 +50,58 @@ def get_status_lower(item: Dict) -> str:
     """Get item's status in lowercase with spaces converted to underscores."""
     return (item.get('status') or '').lower().replace(' ', '_')
 
+
+# ==============================================================================
+# DATA INTEGRITY: Safe numeric conversion for consistent calculations
+# ==============================================================================
+def safe_float(val, default: float = 0.0) -> float:
+    """
+    Safely convert value to float, handling None, empty strings, and invalid types.
+    
+    This function ensures data integrity across all dashboard calculations by
+    preventing TypeErrors and ValueErrors when summing numeric fields that may
+    be stored as strings or contain null values.
+    
+    Args:
+        val: The value to convert (can be int, float, str, None)
+        default: Default value if conversion fails
+    
+    Returns:
+        float: The converted value or default
+    
+    Examples:
+        safe_float(100) -> 100.0
+        safe_float("100.50") -> 100.5
+        safe_float(None) -> 0.0
+        safe_float("invalid") -> 0.0
+    """
+    if val is None:
+        return default
+    try:
+        return float(val)
+    except (TypeError, ValueError):
+        return default
+
+
+def safe_int(val, default: int = 0) -> int:
+    """
+    Safely convert value to int, handling None, empty strings, and invalid types.
+    
+    Args:
+        val: The value to convert
+        default: Default value if conversion fails
+    
+    Returns:
+        int: The converted value or default
+    """
+    if val is None:
+        return default
+    try:
+        return int(float(val))  # Handle "100.0" string -> 100
+    except (TypeError, ValueError):
+        return default
+
+
 # Import billing engine
 try:
     sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
@@ -3034,18 +3086,23 @@ def get_bi_data_actuary() -> Dict[str, Any]:
     except Exception:
         latest_uploaded = None
 
+    # DATA INTEGRITY: Using safe_float for all numeric aggregations
+    total_exposure = sum(safe_float(p.get('coverage_amount', 0)) for p in POLICIES.values())
+    total_premium = sum(safe_float(p.get('annual_premium', 0)) for p in POLICIES.values())
+    claims_paid_amount = sum(safe_float(c.get('approved_amount', 0)) for c in CLAIMS.values() if status_eq(c, 'paid'))
+    
     return {
         'total_policies': len(POLICIES),
-        'total_exposure': sum(p.get('coverage_amount', 0) for p in POLICIES.values()),
-        'average_premium': sum(p.get('annual_premium', 0) for p in POLICIES.values()) / max(len(POLICIES), 1),
+        'total_exposure': round(total_exposure, 2),
+        'average_premium': round(total_premium / max(len(POLICIES), 1), 2),
         'risk_distribution': {
             'low': sum(1 for p in POLICIES.values() if p.get('risk_score') == 'low'),
             'medium': sum(1 for p in POLICIES.values() if p.get('risk_score') == 'medium'),
             'high': sum(1 for p in POLICIES.values() if p.get('risk_score') == 'high'),
             'very_high': sum(1 for p in POLICIES.values() if p.get('risk_score') == 'very_high')
         },
-        'claims_ratio': len(CLAIMS) / max(len(POLICIES), 1),
-        'loss_ratio': sum(c.get('approved_amount', 0) for c in CLAIMS.values() if status_eq(c, 'paid')) / max(sum(p.get('annual_premium', 0) for p in POLICIES.values()), 1),
+        'claims_ratio': round(len(CLAIMS) / max(len(POLICIES), 1), 4),
+        'loss_ratio': round(claims_paid_amount / max(total_premium, 1), 4),
         'policy_by_type': {
             'life': sum(1 for p in POLICIES.values() if p.get('type') == 'life'),
             'health': sum(1 for p in POLICIES.values() if p.get('type') == 'health'),
@@ -3085,17 +3142,19 @@ def get_bi_data_underwriting() -> Dict[str, Any]:
     }
 
 def get_bi_data_accounting() -> Dict[str, Any]:
-    """Generate accounting BI data"""
-    total_premium_collected = sum(p.get('annual_premium', 0) for p in POLICIES.values() if status_eq(p, 'active'))
-    total_claims_paid = sum(c.get('approved_amount', 0) for c in CLAIMS.values() if status_eq(c, 'paid'))
+    """Generate accounting BI data - DATA INTEGRITY: Using safe_float for all numeric values"""
+    total_premium_collected = sum(safe_float(p.get('annual_premium', 0)) for p in POLICIES.values() if status_eq(p, 'active'))
+    total_claims_paid = sum(safe_float(c.get('approved_amount', 0)) for c in CLAIMS.values() if status_eq(c, 'paid'))
+    outstanding_premiums = sum(safe_float(p.get('annual_premium', 0)) * 0.1 for p in POLICIES.values())
+    pending_liability = sum(safe_float(c.get('claimed_amount', 0)) for c in CLAIMS.values() if status_in(c, ['pending', 'under_review']))
     
     return {
-        'total_revenue': total_premium_collected,
-        'total_claims_paid': total_claims_paid,
-        'net_income': total_premium_collected - total_claims_paid,
-        'outstanding_premiums': sum(p.get('annual_premium', 0) * 0.1 for p in POLICIES.values()),  # Mock 10% outstanding
-        'pending_claims_liability': sum(c.get('claimed_amount', 0) for c in CLAIMS.values() if status_in(c, ['pending', 'under_review'])),
-        'profit_margin': ((total_premium_collected - total_claims_paid) / max(total_premium_collected, 1)) * 100,
+        'total_revenue': round(total_premium_collected, 2),
+        'total_claims_paid': round(total_claims_paid, 2),
+        'net_income': round(total_premium_collected - total_claims_paid, 2),
+        'outstanding_premiums': round(outstanding_premiums, 2),
+        'pending_claims_liability': round(pending_liability, 2),
+        'profit_margin': round(((total_premium_collected - total_claims_paid) / max(total_premium_collected, 1)) * 100, 2),
         'monthly_breakdown': [
             {'month': (datetime.now() - timedelta(days=30*i)).strftime('%Y-%m'), 
              'revenue': total_premium_collected / 12, 
@@ -3972,14 +4031,16 @@ For claims or questions, please contact:
             approved_claims = len([c for c in CLAIMS.values() if status_eq(c, 'approved')])
             
             # Billing stats - fixed naming for clarity
+            # DATA INTEGRITY: Using global safe_float() for all numeric conversions
+            
             # Total annual revenue from active policies (expected revenue)
-            total_annual_revenue = sum(p.get('annual_premium', 0) for p in POLICIES.values() if status_eq(p, 'active'))
+            total_annual_revenue = sum(safe_float(p.get('annual_premium', 0)) for p in POLICIES.values() if status_eq(p, 'active'))
             # Total amount actually collected (paid bills)
-            total_collected = sum(b.get('amount_paid', 0) for b in BILLING.values())
+            total_collected = sum(safe_float(b.get('amount_paid', 0)) for b in BILLING.values())
             # Total amount billed
-            total_billed = sum(b.get('amount', 0) for b in BILLING.values())
+            total_billed = sum(safe_float(b.get('amount', 0)) for b in BILLING.values())
             # Outstanding balance (billed but not paid)
-            outstanding_balance = sum(b.get('amount', 0) - b.get('amount_paid', 0) for b in BILLING.values() if status_in(b, ['outstanding', 'pending', 'overdue']))
+            outstanding_balance = sum(safe_float(b.get('amount', 0)) - safe_float(b.get('amount_paid', 0)) for b in BILLING.values() if status_in(b, ['outstanding', 'pending', 'overdue']))
             # Legacy compatibility
             total_revenue = total_annual_revenue
             total_premium_collected = total_billed
@@ -4103,21 +4164,23 @@ For claims or questions, please contact:
                 approved_claims = [c for c in CLAIMS.values() if status_in(c, ['approved', 'paid'])]
                 pending_claims = [c for c in CLAIMS.values() if status_in(c, ['pending', 'under_review'])]
                 
-                # Financial KPIs
-                total_premium = sum(p.get('annual_premium', 0) for p in active_policies)
-                total_coverage = sum(p.get('coverage_amount', 0) for p in active_policies)
-                claims_exposure = sum(c.get('approved_amount', c.get('claimed_amount', 0)) for c in approved_claims)
-                pending_exposure = sum(c.get('claimed_amount', 0) for c in pending_claims)
+                # Financial KPIs - DATA INTEGRITY: Using safe_float for all numeric values
+                total_premium = sum(safe_float(p.get('annual_premium', 0)) for p in active_policies)
+                total_coverage = sum(safe_float(p.get('coverage_amount', 0)) for p in active_policies)
+                claims_exposure = sum(safe_float(c.get('approved_amount', c.get('claimed_amount', 0))) for c in approved_claims)
+                pending_exposure = sum(safe_float(c.get('claimed_amount', 0)) for c in pending_claims)
                 
-                # Calculate risk metrics
-                loss_ratio = (claims_exposure / total_premium * 100) if total_premium > 0 else 0
-                avg_claim_size = claims_exposure / len(approved_claims) if approved_claims else 0
-                claim_frequency = len(CLAIMS) / len(active_policies) if active_policies else 0
+                # Calculate risk metrics with safe division
+                loss_ratio = round((claims_exposure / total_premium * 100), 2) if total_premium > 0 else 0
+                avg_claim_size = round(claims_exposure / len(approved_claims), 2) if approved_claims else 0
+                claim_frequency = round(len(CLAIMS) / len(active_policies), 4) if active_policies else 0
                 
-                # Pipeline health metrics
-                uw_approval_rate = len([a for a in UNDERWRITING_APPLICATIONS.values() if status_eq(a, 'approved')]) / len(UNDERWRITING_APPLICATIONS) * 100 if UNDERWRITING_APPLICATIONS else 0
-                claim_approval_rate = len(approved_claims) / len(CLAIMS) * 100 if CLAIMS else 0
-                collection_rate = sum(b.get('amount_paid', 0) for b in BILLING.values()) / sum(b.get('amount', 0) for b in BILLING.values()) * 100 if BILLING else 0
+                # Pipeline health metrics - DATA INTEGRITY: Using safe_float for billing calculations
+                uw_approval_rate = round(len([a for a in UNDERWRITING_APPLICATIONS.values() if status_eq(a, 'approved')]) / len(UNDERWRITING_APPLICATIONS) * 100, 2) if UNDERWRITING_APPLICATIONS else 0
+                claim_approval_rate = round(len(approved_claims) / len(CLAIMS) * 100, 2) if CLAIMS else 0
+                billing_total = sum(safe_float(b.get('amount', 0)) for b in BILLING.values())
+                billing_paid = sum(safe_float(b.get('amount_paid', 0)) for b in BILLING.values())
+                collection_rate = round(billing_paid / billing_total * 100, 2) if billing_total > 0 else 0
                 
                 # Risk distribution
                 risk_distribution = {}
@@ -6554,9 +6617,10 @@ For claims or questions, please contact:
                              if c.get('customer_id') == customer_id or 
                              any(p.get('id') == c.get('policy_id') for p in customer_policies)]
             
-            # Calculate totals
-            total_coverage = sum(p.get('coverage_amount', 0) for p in active_policies)
-            total_premium = sum(p.get('annual_premium', 0) for p in active_policies)
+            # DATA INTEGRITY: Using global safe_float() for numeric calculations
+            # Calculate totals with safe type conversion
+            total_coverage = sum(safe_float(p.get('coverage_amount', 0)) for p in active_policies)
+            total_premium = sum(safe_float(p.get('annual_premium', 0)) for p in active_policies)
             pending_claims = len([c for c in customer_claims if status_in(c, ['pending', 'under_review'])])
             
             summary = {
@@ -6565,8 +6629,8 @@ For claims or questions, please contact:
                 'total_policies': len(customer_policies),
                 'claims_count': len(customer_claims),
                 'pending_claims': pending_claims,
-                'total_coverage': total_coverage,
-                'total_annual_premium': total_premium,
+                'total_coverage': round(total_coverage, 2),
+                'total_annual_premium': round(total_premium, 2),
                 'monthly_premium': round(total_premium / 12, 2) if total_premium > 0 else 0
             }
             
@@ -6618,10 +6682,11 @@ For claims or questions, please contact:
             # FILTER: Exclude suspended test accounts from billing stats
             bills = [b for b in BILLING.values() if not is_suspended_account(b.get('customer_id', ''))]
             
-            # Calculate comprehensive stats
-            total_billed = sum(float(b.get('amount', 0)) for b in bills)
-            total_collected = sum(float(b.get('amount_paid', 0)) for b in bills)
-            outstanding = sum(float(b.get('amount', 0)) - float(b.get('amount_paid', 0)) 
+            # DATA INTEGRITY: Using global safe_float() for all numeric values
+            # Calculate comprehensive stats with safe type conversion
+            total_billed = sum(safe_float(b.get('amount', 0)) for b in bills)
+            total_collected = sum(safe_float(b.get('amount_paid', 0)) for b in bills)
+            outstanding = sum(safe_float(b.get('amount', 0)) - safe_float(b.get('amount_paid', 0)) 
                              for b in bills if not status_eq(b, 'paid'))
             
             paid_bills = [b for b in bills if status_eq(b, 'paid')]
