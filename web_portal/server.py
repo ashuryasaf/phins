@@ -15617,8 +15617,11 @@ For claims or questions, please contact:
                     # 1. Remove all policies for this customer
                     policies_to_remove = [pid for pid, p in POLICIES.items() if p.get('customer_id') == customer_id]
                     for pid in policies_to_remove:
+                        # Safety check - policy may have been removed by another process
+                        policy = POLICIES.get(pid)
+                        if policy is None:
+                            continue
                         # Record policy removal on ledger before deleting
-                        policy = POLICIES[pid]
                         record_transaction(
                             customer_id=customer_id,
                             tx_type='policy_terminated',
@@ -15631,13 +15634,16 @@ For claims or questions, please contact:
                                 'reason': 'customer_account_reset'
                             }
                         )
-                        del POLICIES[pid]
+                        POLICIES.pop(pid, None)  # Safe delete
                         result['removed']['policies'] += 1
                     
                     # 2. Remove all underwriting applications for this customer
                     apps_to_remove = [aid for aid, a in UNDERWRITING_APPLICATIONS.items() if a.get('customer_id') == customer_id]
                     for aid in apps_to_remove:
-                        app = UNDERWRITING_APPLICATIONS[aid]
+                        # Safety check - application may have been removed by another process
+                        app = UNDERWRITING_APPLICATIONS.get(aid)
+                        if app is None:
+                            continue
                         record_transaction(
                             customer_id=customer_id,
                             tx_type='application_cancelled',
@@ -15649,13 +15655,16 @@ For claims or questions, please contact:
                                 'reason': 'customer_account_reset'
                             }
                         )
-                        del UNDERWRITING_APPLICATIONS[aid]
+                        UNDERWRITING_APPLICATIONS.pop(aid, None)  # Safe delete
                         result['removed']['applications'] += 1
                     
                     # 3. Remove all claims for this customer
                     claims_to_remove = [cid for cid, c in CLAIMS.items() if c.get('customer_id') == customer_id]
                     for cid in claims_to_remove:
-                        claim = CLAIMS[cid]
+                        # Safety check - claim may have been removed by another process
+                        claim = CLAIMS.get(cid)
+                        if claim is None:
+                            continue
                         record_transaction(
                             customer_id=customer_id,
                             tx_type='claim_cancelled',
@@ -15668,14 +15677,14 @@ For claims or questions, please contact:
                                 'reason': 'customer_account_reset'
                             }
                         )
-                        del CLAIMS[cid]
+                        CLAIMS.pop(cid, None)  # Safe delete
                         result['removed']['claims'] += 1
                     
                     # 4. Remove all bills for this customer
                     bills_to_remove = [bid for bid, b in BILLING.items() if b.get('customer_id') == customer_id]
                     for bid in bills_to_remove:
-                        del BILLING[bid]
-                        result['removed']['bills'] += 1
+                        if BILLING.pop(bid, None) is not None:
+                            result['removed']['bills'] += 1
                     
                     # 5. Reset investment accounts (set balance to 0)
                     if customer_id in INVESTMENT_ACCOUNTS:
@@ -15785,8 +15794,12 @@ For claims or questions, please contact:
                     # 7.6 Remove all medical purchases for this customer (wallet purchase history)
                     purchases_to_remove = [pid for pid, p in MEDICAL_PURCHASES.items() if p.get('customer_id') == customer_id]
                     total_purchase_amount = 0
+                    purchases_removed = 0
                     for pid in purchases_to_remove:
-                        purchase = MEDICAL_PURCHASES[pid]
+                        # Safety check - purchase may have been removed by another process
+                        purchase = MEDICAL_PURCHASES.get(pid)
+                        if purchase is None:
+                            continue
                         total_purchase_amount += safe_float(purchase.get('amount', 0))
                         record_transaction(
                             customer_id=customer_id,
@@ -15800,8 +15813,9 @@ For claims or questions, please contact:
                                 'reason': 'customer_account_reset'
                             }
                         )
-                        del MEDICAL_PURCHASES[pid]
-                    result['removed']['medical_purchases'] = len(purchases_to_remove)
+                        MEDICAL_PURCHASES.pop(pid, None)  # Safe delete
+                        purchases_removed += 1
+                    result['removed']['medical_purchases'] = purchases_removed
                     result['removed']['medical_purchase_total'] = round(total_purchase_amount, 2)
                     
                     # 8. Update customer pipeline stage
