@@ -15947,6 +15947,137 @@ For claims or questions, please contact:
                 self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
             return
         
+        # ========== ADMIN: RECALCULATE PREMIUMS ==========
+        # Recalculates premiums for all or specific policies/applications using correct actuarial formula
+        if path == '/api/admin/recalculate-premiums':
+            if not require_role(session, ['admin', 'actuary']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Unauthorized. Admin or Actuary access required.'}).encode('utf-8'))
+                return
+            
+            try:
+                data = json.loads(body or '{}')
+                target_customer_id = data.get('customer_id')  # Optional: limit to specific customer
+                dry_run = data.get('dry_run', True)  # Default to dry-run for safety
+                
+                result = {
+                    'success': True,
+                    'dry_run': dry_run,
+                    'policies_checked': 0,
+                    'policies_corrected': 0,
+                    'applications_checked': 0,
+                    'applications_corrected': 0,
+                    'corrections': []
+                }
+                
+                def recalc_premium_for_item(item):
+                    """Calculate correct premium using actuarial model"""
+                    coverage = float(item.get('coverage_amount', 100000) or 100000)
+                    policy_type = item.get('type') or item.get('policy_type', 'life')
+                    
+                    policy_type_rates = {
+                        'life': 0.25, 'health': 0.25, 'phins_unified': 0.25,
+                        'auto': 0.15, 'property': 0.20, 'business': 0.40
+                    }
+                    base_rate = policy_type_rates.get(policy_type, 0.25)
+                    
+                    age = int(item.get('age', 30) or 30)
+                    age_factor = 1.0 + (max(0, age - 25) * 0.015)
+                    
+                    risk_score = (item.get('risk_score') or item.get('risk_assessment') or 'medium').lower()
+                    risk_factors = {
+                        'very_low': 0.85, 'low': 0.90, 'medium': 1.0, 'moderate': 1.15,
+                        'elevated': 1.25, 'high': 1.35, 'very_high': 1.50
+                    }
+                    risk_factor = risk_factors.get(risk_score, 1.0)
+                    
+                    monthly = (coverage / 1000) * base_rate * age_factor * risk_factor
+                    annual = monthly * 12
+                    
+                    return round(monthly, 2), round(annual, 2)
+                
+                # Check and correct policies
+                for pol_id, policy in POLICIES.items():
+                    if target_customer_id and policy.get('customer_id') != target_customer_id:
+                        continue
+                    
+                    result['policies_checked'] += 1
+                    current_monthly = float(policy.get('monthly_premium', 0) or 0)
+                    current_annual = float(policy.get('annual_premium', 0) or 0)
+                    correct_monthly, correct_annual = recalc_premium_for_item(policy)
+                    
+                    # Check if correction needed (5% tolerance)
+                    if correct_monthly > 0:
+                        diff_pct = abs(current_monthly - correct_monthly) / correct_monthly * 100
+                        if diff_pct > 5:
+                            correction = {
+                                'type': 'policy',
+                                'id': pol_id,
+                                'customer_id': policy.get('customer_id'),
+                                'policy_type': policy.get('type'),
+                                'old_monthly': current_monthly,
+                                'old_annual': current_annual,
+                                'new_monthly': correct_monthly,
+                                'new_annual': correct_annual,
+                                'diff_ratio': round(current_monthly / correct_monthly, 2) if correct_monthly > 0 else 0
+                            }
+                            result['corrections'].append(correction)
+                            
+                            if not dry_run:
+                                policy['monthly_premium'] = correct_monthly
+                                policy['annual_premium'] = correct_annual
+                                policy['premium_recalculated'] = datetime.now().isoformat()
+                                POLICIES[pol_id] = policy
+                            
+                            result['policies_corrected'] += 1
+                
+                # Check and correct applications
+                for app_id, app in UNDERWRITING_APPLICATIONS.items():
+                    if target_customer_id and app.get('customer_id') != target_customer_id:
+                        continue
+                    
+                    result['applications_checked'] += 1
+                    current_monthly = float(app.get('monthly_premium', 0) or 0)
+                    current_annual = float(app.get('annual_premium', 0) or 0)
+                    correct_monthly, correct_annual = recalc_premium_for_item(app)
+                    
+                    if correct_monthly > 0:
+                        diff_pct = abs(current_monthly - correct_monthly) / correct_monthly * 100
+                        if diff_pct > 5:
+                            correction = {
+                                'type': 'application',
+                                'id': app_id,
+                                'customer_id': app.get('customer_id'),
+                                'policy_type': app.get('policy_type'),
+                                'old_monthly': current_monthly,
+                                'old_annual': current_annual,
+                                'new_monthly': correct_monthly,
+                                'new_annual': correct_annual,
+                                'diff_ratio': round(current_monthly / correct_monthly, 2) if correct_monthly > 0 else 0
+                            }
+                            result['corrections'].append(correction)
+                            
+                            if not dry_run:
+                                app['monthly_premium'] = correct_monthly
+                                app['annual_premium'] = correct_annual
+                                app['premium_recalculated'] = datetime.now().isoformat()
+                                UNDERWRITING_APPLICATIONS[app_id] = app
+                            
+                            result['applications_corrected'] += 1
+                
+                if dry_run:
+                    result['message'] = f'DRY RUN: {len(result["corrections"])} items would be corrected. Use dry_run=false to apply changes.'
+                else:
+                    result['message'] = f'Corrected {len(result["corrections"])} items with incorrect premiums.'
+                    save_ledger_data()
+                
+                self._set_json_headers(200)
+                self.wfile.write(json.dumps(result, default=str).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+        
         # ========== PHINS BALANCE SHEET MANAGEMENT API (POST) ==========
         
         # Deposit funds to balance sheet reserves
