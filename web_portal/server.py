@@ -1970,6 +1970,31 @@ def _init_integrity_service():
 
 _init_integrity_service()
 
+# Initialize Advanced Portfolio Integrity Service for cryptographic validation
+advanced_integrity_service = None
+advanced_integrity_enabled = False
+
+def _init_advanced_integrity_service():
+    global advanced_integrity_service, advanced_integrity_enabled
+    try:
+        from services.advanced_portfolio_integrity_service import init_advanced_integrity_service
+        advanced_integrity_service = init_advanced_integrity_service(
+            health_wallets=HEALTH_WALLETS,
+            investment_accounts=INVESTMENT_ACCOUNTS,
+            transaction_ledger=TRANSACTION_LEDGER,
+            nft_ledger=NFT_LEDGER,
+            savings_pipeline_service=savings_pipeline_service,
+            portfolio_tracker_service=portfolio_tracker_service,
+            unified_balance_service=unified_balance_service,
+            record_transaction_func=record_transaction
+        )
+        advanced_integrity_enabled = True
+        print("✓ Advanced Portfolio Integrity service enabled (cryptographic validation)")
+    except ImportError as e:
+        print(f"Warning: Advanced Portfolio Integrity service not available: {e}")
+
+_init_advanced_integrity_service()
+
 # Initialize Customer Data Access Service for enforcing data isolation
 customer_access_service = None
 customer_access_enabled = False
@@ -10090,6 +10115,113 @@ For claims or questions, please contact:
                 report = integrity_service.validate_customer_integrity(customer_id, auto_correct=auto_correct)
                 self._set_json_headers()
                 self.wfile.write(json.dumps(report.to_dict(), default=str).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+        
+        # ========== ADVANCED PORTFOLIO INTEGRITY ENDPOINTS ==========
+        
+        # Get verified display data for all portfolio tabs (cryptographically signed)
+        if path == '/api/portfolio/display-data':
+            if not advanced_integrity_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Advanced integrity service unavailable'}).encode('utf-8'))
+                return
+            
+            requested_customer_id = qs.get('customer_id', [''])[0]
+            
+            # SECURITY: Enforce customer data isolation
+            authorized, customer_id, error = authorize_customer_data(
+                session, requested_customer_id, 'portfolio display data'
+            )
+            if not authorized:
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': error}).encode('utf-8'))
+                return
+            
+            if not customer_id:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'customer_id required'}).encode('utf-8'))
+                return
+            
+            try:
+                display_data = advanced_integrity_service.get_display_data(customer_id)
+                self._set_json_headers()
+                self.wfile.write(json.dumps(display_data, default=str).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+        
+        # Advanced integrity validation with configurable strictness
+        if path == '/api/portfolio/validate-integrity':
+            if not advanced_integrity_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Advanced integrity service unavailable'}).encode('utf-8'))
+                return
+            
+            requested_customer_id = qs.get('customer_id', [''])[0]
+            validation_level = qs.get('level', ['standard'])[0].lower()
+            
+            # SECURITY: Enforce customer data isolation
+            authorized, customer_id, error = authorize_customer_data(
+                session, requested_customer_id, 'advanced integrity validation'
+            )
+            if not authorized:
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': error}).encode('utf-8'))
+                return
+            
+            if not customer_id:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'customer_id required'}).encode('utf-8'))
+                return
+            
+            try:
+                from services.advanced_portfolio_integrity_service import ValidationLevel
+                level_map = {
+                    'standard': ValidationLevel.STANDARD,
+                    'strict': ValidationLevel.STRICT,
+                    'audit': ValidationLevel.AUDIT
+                }
+                level = level_map.get(validation_level, ValidationLevel.STANDARD)
+                
+                result = advanced_integrity_service.validate_integrity(customer_id, level)
+                self._set_json_headers()
+                self.wfile.write(json.dumps(result.to_dict(), default=str).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+        
+        # Capture balance snapshot (creates cryptographic record)
+        if path == '/api/portfolio/snapshot':
+            if not advanced_integrity_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Advanced integrity service unavailable'}).encode('utf-8'))
+                return
+            
+            requested_customer_id = qs.get('customer_id', [''])[0]
+            
+            # SECURITY: Enforce customer data isolation
+            authorized, customer_id, error = authorize_customer_data(
+                session, requested_customer_id, 'portfolio snapshot'
+            )
+            if not authorized:
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': error}).encode('utf-8'))
+                return
+            
+            if not customer_id:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'customer_id required'}).encode('utf-8'))
+                return
+            
+            try:
+                snapshot = advanced_integrity_service.capture_balance_snapshot(customer_id)
+                self._set_json_headers()
+                self.wfile.write(json.dumps(snapshot.to_dict(), default=str).encode('utf-8'))
             except Exception as e:
                 self._set_json_headers(500)
                 self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
@@ -20983,6 +21115,87 @@ For claims or questions, please contact:
                     'investment_balance_reset': True,
                     'message': 'Savings accounts reset successfully'
                 }).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+        
+        # ========== ADVANCED PORTFOLIO RESET (with cryptographic audit trail) ==========
+        # Comprehensive reset of all portfolio display tabs with full audit trail
+        if path == '/api/portfolio/reset':
+            if not advanced_integrity_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Advanced integrity service unavailable'}).encode('utf-8'))
+                return
+            
+            try:
+                # Get session from authorization header
+                auth_header = self.headers.get('Authorization', '')
+                token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+                session = validate_session(token) if token else None
+                
+                if not session:
+                    self._set_json_headers(401)
+                    self.wfile.write(json.dumps({'error': 'Authentication required'}).encode('utf-8'))
+                    return
+                
+                data = json.loads(body)
+                requested_customer_id = data.get('customer_id')
+                reset_type = data.get('reset_type', 'full')  # full, balances, allocations
+                preserve_history = data.get('preserve_history', True)
+                
+                # SECURITY: Enforce customer data isolation
+                authorized, customer_id, error = authorize_customer_data(
+                    session, requested_customer_id, 'portfolio reset'
+                )
+                if not authorized:
+                    self._set_json_headers(403)
+                    self.wfile.write(json.dumps({'error': error}).encode('utf-8'))
+                    return
+                
+                if not customer_id:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'customer_id required'}).encode('utf-8'))
+                    return
+                
+                # Validate reset_type
+                valid_reset_types = ['full', 'balances', 'allocations']
+                if reset_type not in valid_reset_types:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({
+                        'error': f'Invalid reset_type. Valid: {valid_reset_types}'
+                    }).encode('utf-8'))
+                    return
+                
+                # Execute the reset with full audit trail
+                result = advanced_integrity_service.reset_portfolio(
+                    customer_id=customer_id,
+                    reset_type=reset_type,
+                    preserve_history=preserve_history
+                )
+                
+                # Also reset portfolio service accounts if full reset
+                if reset_type == 'full' and portfolio_enabled and portfolio_service:
+                    try:
+                        accounts = portfolio_service.get_customer_accounts(customer_id)
+                        for acc in accounts:
+                            if acc.account_id in portfolio_service.accounts:
+                                del portfolio_service.accounts[acc.account_id]
+                    except Exception as e:
+                        print(f"Warning: Could not reset portfolio service accounts: {e}")
+                
+                # Save ledger data
+                save_ledger_data()
+                
+                if audit:
+                    try:
+                        audit.log(customer_id, 'reset', 'portfolio', result.audit_token, 
+                                 {'reset_type': reset_type, 'components': result.components_reset})
+                    except Exception:
+                        pass
+                
+                self._set_json_headers()
+                self.wfile.write(json.dumps(result.to_dict(), default=str).encode('utf-8'))
             except Exception as e:
                 self._set_json_headers(400)
                 self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))

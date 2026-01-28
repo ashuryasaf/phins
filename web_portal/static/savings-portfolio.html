@@ -828,6 +828,14 @@
             border-left: 4px solid var(--danger);
         }
         
+        .toast.info {
+            border-left: 4px solid #3b82f6;
+        }
+        
+        .toast.warning {
+            border-left: 4px solid #f59e0b;
+        }
+        
         @keyframes slideIn {
             from { transform: translateX(100%); opacity: 0; }
             to { transform: translateX(0); opacity: 1; }
@@ -905,6 +913,77 @@
                     <span>📊</span> Real-time P&L tracking
                 </div>
                 <button onclick="window.location.href='/algo-trading.html'" style="margin-top: 8px; padding: 6px 12px; background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.3); border-radius: 6px; color: white; cursor: pointer; font-size: 0.8rem;">View Algo Dashboard →</button>
+            </div>
+        </div>
+        
+        <!-- Data Integrity Control Panel -->
+        <div id="integrityPanel" style="background: linear-gradient(135deg, #1e293b 0%, #334155 100%); border: 1px solid #475569; border-radius: 12px; padding: 16px; margin-bottom: 24px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 16px;">
+                <div style="flex: 1; min-width: 300px;">
+                    <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 8px;">
+                        <span style="font-size: 1.5rem;" id="integrityIcon">🔒</span>
+                        <div>
+                            <div style="font-weight: 600; color: white;">Data Integrity Status</div>
+                            <div style="font-size: 0.85rem; color: #94a3b8;" id="integrityStatus">Checking...</div>
+                        </div>
+                    </div>
+                    <div style="display: flex; gap: 16px; flex-wrap: wrap; font-size: 0.8rem; color: #94a3b8;">
+                        <span>Score: <strong id="integrityScore" style="color: #4ade80;">--</strong>/100</span>
+                        <span>Hash: <code id="integrityHash" style="color: #60a5fa; font-family: monospace;">----</code></span>
+                        <span>Seq: <strong id="integritySeq" style="color: #f59e0b;">#0</strong></span>
+                    </div>
+                </div>
+                <div style="display: flex; gap: 8px; align-items: center;">
+                    <button onclick="validatePortfolioIntegrity()" style="padding: 10px 16px; background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%); border: none; border-radius: 8px; color: white; cursor: pointer; font-weight: 600; font-size: 0.85rem; display: flex; align-items: center; gap: 6px;">
+                        <span>🔍</span> Verify
+                    </button>
+                    <button onclick="showResetModal()" style="padding: 10px 16px; background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%); border: none; border-radius: 8px; color: white; cursor: pointer; font-weight: 600; font-size: 0.85rem; display: flex; align-items: center; gap: 6px;">
+                        <span>🔄</span> Reset All Tabs
+                    </button>
+                </div>
+            </div>
+            <!-- Integrity Issues (hidden by default) -->
+            <div id="integrityIssues" style="display: none; margin-top: 12px; padding: 12px; background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.3); border-radius: 8px;">
+                <div style="font-weight: 600; color: #f87171; margin-bottom: 8px;">⚠️ Issues Detected</div>
+                <ul id="integrityIssuesList" style="margin: 0; padding-left: 20px; color: #fca5a5; font-size: 0.85rem;"></ul>
+            </div>
+        </div>
+        
+        <!-- Reset Confirmation Modal -->
+        <div id="resetModal" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.85); z-index: 1001; align-items: center; justify-content: center;">
+            <div style="background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%); border: 1px solid #475569; border-radius: 16px; padding: 2rem; max-width: 500px; width: 90%;">
+                <div style="text-align: center; margin-bottom: 1.5rem;">
+                    <span style="font-size: 3rem;">⚠️</span>
+                    <h2 style="color: white; margin: 1rem 0 0.5rem;">Reset All Display Tabs?</h2>
+                    <p style="color: #94a3b8; font-size: 0.9rem;">This will reset all portfolio balances to zero. This action is recorded on the blockchain ledger with a unique audit token.</p>
+                </div>
+                
+                <div style="background: rgba(59, 130, 246, 0.1); border: 1px solid rgba(59, 130, 246, 0.3); border-radius: 8px; padding: 12px; margin-bottom: 1.5rem;">
+                    <div style="font-weight: 600; color: #60a5fa; margin-bottom: 8px;">📋 Tabs to be Reset:</div>
+                    <ul style="margin: 0; padding-left: 20px; color: #94a3b8; font-size: 0.85rem;">
+                        <li>💰 Total Portfolio Value</li>
+                        <li>💊 Health Wallet</li>
+                        <li>📊 Invested Assets (Index, Bonds, Crypto)</li>
+                        <li>💵 Investment Cash</li>
+                        <li>🤖 Algo Trading Portfolio</li>
+                    </ul>
+                </div>
+                
+                <div style="margin-bottom: 1.5rem;">
+                    <label style="display: flex; align-items: center; gap: 8px; color: #94a3b8; font-size: 0.9rem; cursor: pointer;">
+                        <input type="checkbox" id="preserveHistoryCheck" checked style="width: 18px; height: 18px;">
+                        Preserve transaction history for audit purposes
+                    </label>
+                </div>
+                
+                <div style="display: flex; gap: 1rem;">
+                    <button onclick="executePortfolioReset()" style="flex: 1; padding: 12px 20px; background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%); border: none; border-radius: 8px; color: white; cursor: pointer; font-weight: 600; font-size: 0.95rem;">
+                        🔄 Confirm Reset
+                    </button>
+                    <button onclick="hideResetModal()" style="padding: 12px 20px; background: #475569; border: none; border-radius: 8px; color: white; cursor: pointer; font-weight: 600; font-size: 0.95rem;">
+                        Cancel
+                    </button>
+                </div>
             </div>
         </div>
         
@@ -2098,13 +2177,25 @@
             const container = document.getElementById('toastContainer');
             const toast = document.createElement('div');
             toast.className = `toast ${type}`;
+            
+            // Icon mapping for different toast types
+            const icons = {
+                'success': '&#10003;',
+                'error': '&#10007;',
+                'info': 'ℹ️',
+                'warning': '⚠️'
+            };
+            const icon = icons[type] || icons['info'];
+            
             toast.innerHTML = `
-                <span>${type === 'success' ? '&#10003;' : '&#10007;'}</span>
+                <span>${icon}</span>
                 <span>${message}</span>
             `;
             container.appendChild(toast);
             
-            setTimeout(() => toast.remove(), 3000);
+            // Longer display time for warnings and info
+            const duration = (type === 'warning' || type === 'info') ? 4000 : 3000;
+            setTimeout(() => toast.remove(), duration);
         }
         
         function formatCurrency(value) {
@@ -2479,6 +2570,253 @@
         window.addSavingsWithIntegrity = addSavingsWithIntegrity;
         window.verifyIntegrity = verifyIntegrity;
         window.autoCorrectIntegrity = autoCorrectIntegrity;
+        
+        // ========== ADVANCED PORTFOLIO INTEGRITY FUNCTIONS ==========
+        
+        // Load advanced integrity display data
+        async function loadAdvancedDisplayData() {
+            try {
+                const response = await authFetch(`/api/portfolio/display-data?customer_id=${customerId}`);
+                const data = await response.json();
+                
+                if (data.error) {
+                    console.warn('Advanced display data not available:', data.error);
+                    return null;
+                }
+                
+                // Store globally
+                window.advancedDisplayData = data;
+                
+                // Update integrity panel
+                updateIntegrityPanel(data);
+                
+                // Update display tabs from verified data
+                if (data.display_tabs) {
+                    const tabs = data.display_tabs;
+                    
+                    // Total Portfolio Value
+                    document.getElementById('totalValue').textContent = tabs.total_portfolio.formatted;
+                    
+                    // Health Wallet
+                    document.getElementById('cashBalance').textContent = tabs.health_wallet.formatted;
+                    
+                    // Invested Assets
+                    document.getElementById('investedValue').textContent = tabs.invested_assets.formatted;
+                    
+                    // Investment Cash
+                    const investCashEl = document.getElementById('investmentCashBalance');
+                    if (investCashEl) {
+                        investCashEl.textContent = tabs.investment_cash.formatted;
+                    }
+                    
+                    // Algo Trading Portfolio
+                    document.getElementById('algoPortfolioValue').textContent = tabs.algo_trading.formatted;
+                    
+                    // Update algo P&L display
+                    if (tabs.algo_trading.breakdown) {
+                        const pnl = tabs.algo_trading.breakdown.total_pnl || 0;
+                        const pnlEl = document.getElementById('algoPnl');
+                        if (pnl !== 0) {
+                            pnlEl.innerHTML = `<span>${pnl >= 0 ? '📈' : '📉'}</span> ${pnl >= 0 ? '+' : ''}${formatCurrency(pnl)} P&L`;
+                            pnlEl.style.color = pnl >= 0 ? '#4caf50' : '#ef5350';
+                        }
+                    }
+                    
+                    // Store for transfer validation
+                    window.availableInvestmentCash = tabs.investment_cash.value;
+                    updateTransferButtonState();
+                }
+                
+                return data;
+            } catch (e) {
+                console.error('Failed to load advanced display data:', e);
+                return null;
+            }
+        }
+        
+        // Update integrity panel display
+        function updateIntegrityPanel(data) {
+            const iconEl = document.getElementById('integrityIcon');
+            const statusEl = document.getElementById('integrityStatus');
+            const scoreEl = document.getElementById('integrityScore');
+            const hashEl = document.getElementById('integrityHash');
+            const seqEl = document.getElementById('integritySeq');
+            const issuesPanel = document.getElementById('integrityIssues');
+            const issuesList = document.getElementById('integrityIssuesList');
+            
+            if (!data) {
+                statusEl.textContent = 'Service unavailable';
+                iconEl.textContent = '❓';
+                return;
+            }
+            
+            // Update score and status
+            const score = data.integrity_score || 0;
+            scoreEl.textContent = score;
+            
+            if (data.integrity_valid) {
+                iconEl.textContent = '✅';
+                statusEl.textContent = 'All data verified and secure';
+                statusEl.style.color = '#4ade80';
+                scoreEl.style.color = '#4ade80';
+            } else if (score >= 70) {
+                iconEl.textContent = '⚠️';
+                statusEl.textContent = 'Minor issues detected';
+                statusEl.style.color = '#fbbf24';
+                scoreEl.style.color = '#fbbf24';
+            } else {
+                iconEl.textContent = '❌';
+                statusEl.textContent = 'Integrity issues - reset recommended';
+                statusEl.style.color = '#f87171';
+                scoreEl.style.color = '#f87171';
+            }
+            
+            // Update hash and sequence
+            if (data.verification) {
+                hashEl.textContent = data.verification.hash_signature || '----';
+                seqEl.textContent = '#' + (data.verification.sequence_number || 0);
+            }
+            
+            // Show issues if any
+            const issues = data.verification?.issues || [];
+            const warnings = data.verification?.warnings || [];
+            const allIssues = [...issues, ...warnings];
+            
+            if (allIssues.length > 0) {
+                issuesPanel.style.display = 'block';
+                issuesList.innerHTML = allIssues.map(issue => `<li>${issue}</li>`).join('');
+            } else {
+                issuesPanel.style.display = 'none';
+            }
+        }
+        
+        // Validate portfolio integrity with detailed report
+        async function validatePortfolioIntegrity() {
+            showToast('Validating integrity...', 'info');
+            
+            try {
+                const response = await authFetch(`/api/portfolio/validate-integrity?customer_id=${customerId}&level=strict`);
+                const result = await response.json();
+                
+                if (result.error) {
+                    showToast('Validation failed: ' + result.error, 'error');
+                    return;
+                }
+                
+                console.log('Integrity Validation Result:', result);
+                
+                // Update panel
+                updateIntegrityPanel({
+                    integrity_valid: result.is_valid,
+                    integrity_score: result.score,
+                    verification: {
+                        hash_signature: result.current_snapshot?.hash_signature?.substring(0, 16) + '...',
+                        sequence_number: result.current_snapshot?.sequence_number,
+                        issues: result.issues,
+                        warnings: result.warnings
+                    }
+                });
+                
+                if (result.is_valid) {
+                    showToast(`Integrity verified! Score: ${result.score}/100`, 'success');
+                } else {
+                    showToast(`Issues found: ${result.issues.join(', ')}`, 'warning');
+                }
+                
+                // Show recommendations if any
+                if (result.recommendations && result.recommendations.length > 0) {
+                    console.log('Recommendations:', result.recommendations);
+                }
+                
+                return result;
+            } catch (e) {
+                showToast('Validation failed: ' + e.message, 'error');
+                return null;
+            }
+        }
+        
+        // Show reset confirmation modal
+        function showResetModal() {
+            document.getElementById('resetModal').style.display = 'flex';
+        }
+        
+        // Hide reset confirmation modal
+        function hideResetModal() {
+            document.getElementById('resetModal').style.display = 'none';
+        }
+        
+        // Execute comprehensive portfolio reset
+        async function executePortfolioReset() {
+            const preserveHistory = document.getElementById('preserveHistoryCheck').checked;
+            
+            hideResetModal();
+            showToast('Resetting portfolio...', 'info');
+            
+            try {
+                const response = await authFetch('/api/portfolio/reset', {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        customer_id: customerId,
+                        reset_type: 'full',
+                        preserve_history: preserveHistory
+                    })
+                });
+                
+                const result = await response.json();
+                
+                if (result.error) {
+                    showToast('Reset failed: ' + result.error, 'error');
+                    return;
+                }
+                
+                if (result.success) {
+                    console.log('Portfolio Reset Result:', result);
+                    
+                    // Show success with audit token
+                    showToast(`Portfolio reset complete! Audit: ${result.audit_token}`, 'success');
+                    
+                    // Show what was reset
+                    if (result.components_reset && result.components_reset.length > 0) {
+                        console.log('Components reset:', result.components_reset);
+                    }
+                    
+                    // Reload all data
+                    await Promise.all([
+                        loadPortfolioData(),
+                        loadAdvancedDisplayData(),
+                        loadAlgoPortfolio(),
+                        loadTransactions()
+                    ]);
+                    
+                    // Update projections
+                    updateProjections();
+                    
+                    showToast('All display tabs have been reset to zero', 'success');
+                } else {
+                    showToast('Reset failed', 'error');
+                }
+            } catch (e) {
+                showToast('Reset failed: ' + e.message, 'error');
+            }
+        }
+        
+        // Load advanced display data on page load
+        document.addEventListener('DOMContentLoaded', async () => {
+            // Wait for main load, then load advanced data
+            setTimeout(async () => {
+                await loadAdvancedDisplayData();
+            }, 800);
+            
+            // Refresh integrity status every 60 seconds
+            setInterval(loadAdvancedDisplayData, 60000);
+        });
+        
+        // Expose new functions globally
+        window.loadAdvancedDisplayData = loadAdvancedDisplayData;
+        window.validatePortfolioIntegrity = validatePortfolioIntegrity;
+        window.showResetModal = showResetModal;
+        window.hideResetModal = hideResetModal;
+        window.executePortfolioReset = executePortfolioReset;
     </script>
 </body>
 </html>
