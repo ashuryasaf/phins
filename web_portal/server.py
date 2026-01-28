@@ -11706,19 +11706,29 @@ For claims or questions, please contact:
             
             # ========== SYSTEMATIC BILLING EXECUTION ==========
             
-            # 1. Get all active policies
-            active_policies = [p for p in POLICIES.values() if status_eq(p, 'active')]
+            # 1. Get all policies and analyze their statuses
+            all_policies = list(POLICIES.values())
+            policy_statuses = {}
+            for p in all_policies:
+                status = get_status_lower(p)
+                policy_statuses[status] = policy_statuses.get(status, 0) + 1
             
-            # 2. Get existing outstanding bills (to avoid duplicate billing)
-            existing_outstanding_bills = {
-                b.get('policy_id'): b 
-                for b in BILLING.values() 
-                if b.get('status') in ['outstanding', 'partial'] and b.get('policy_id')
-            }
+            # 2. Get billable policies - active or approved (case insensitive)
+            billable_statuses = ['active', 'approved', 'in_force', 'inforce']
+            active_policies = [p for p in all_policies if status_eq(p, *billable_statuses)]
             
-            # 3. Track billing results
+            # 3. Get existing outstanding bills (to avoid duplicate billing)
+            existing_outstanding_bills = {}
+            for b in BILLING.values():
+                bill_status = (b.get('status') or '').lower()
+                if bill_status in ['outstanding', 'partial', 'pending'] and b.get('policy_id'):
+                    existing_outstanding_bills[b.get('policy_id')] = b
+            
+            # 4. Track billing results with diagnostics
             billing_results = {
-                'total_policies': len(active_policies),
+                'total_policies_in_system': len(all_policies),
+                'policy_status_breakdown': policy_statuses,
+                'billable_policies_found': len(active_policies),
                 'already_billed': 0,
                 'newly_billed': 0,
                 'skipped': 0,
@@ -11730,7 +11740,62 @@ For claims or questions, please contact:
                 'errors': []
             }
             
-            # 4. Process each active policy
+            # 5. If no active policies found, check if there are approved underwriting apps
+            # that can be auto-converted to policies
+            if len(active_policies) == 0:
+                # Check approved underwriting applications that don't have policies yet
+                approved_apps = [a for a in UNDERWRITING_APPLICATIONS.values() 
+                               if status_eq(a, 'approved') and not is_suspended_account(a.get('customer_id', ''))]
+                
+                for app in approved_apps:
+                    app_id = app.get('id') or app.get('application_id')
+                    customer_id = app.get('customer_id')
+                    policy_id = app.get('policy_id')
+                    
+                    # Skip if already has a policy
+                    if policy_id and policy_id in POLICIES:
+                        continue
+                    
+                    # Create policy from approved application
+                    try:
+                        new_policy_id = f"POL-{datetime.now().strftime('%Y%m%d')}-{random.randint(10000, 99999)}"
+                        annual_premium = float(app.get('annual_premium', 0) or app.get('coverage_amount', 0) * 0.05 or 0)
+                        monthly_premium = annual_premium / 12
+                        
+                        new_policy = {
+                            'id': new_policy_id,
+                            'policy_id': new_policy_id,
+                            'customer_id': customer_id,
+                            'underwriting_id': app_id,
+                            'type': app.get('policy_type', 'phins_unified'),
+                            'status': 'active',
+                            'coverage_amount': float(app.get('coverage_amount', 0)),
+                            'annual_premium': annual_premium,
+                            'monthly_premium': monthly_premium,
+                            'billing_frequency': 'monthly',
+                            'start_date': datetime.now().isoformat(),
+                            'created_date': datetime.now().isoformat(),
+                            'activation_date': datetime.now().isoformat(),
+                            'created_by': 'ai_insights_bill_all'
+                        }
+                        
+                        POLICIES[new_policy_id] = new_policy
+                        app['policy_id'] = new_policy_id
+                        active_policies.append(new_policy)
+                        
+                        billing_results['policies_auto_created'] = billing_results.get('policies_auto_created', 0) + 1
+                        
+                    except Exception as e:
+                        billing_results['errors'].append({
+                            'type': 'policy_creation',
+                            'app_id': app_id,
+                            'error': str(e)
+                        })
+            
+            # Update count after potential policy creation
+            billing_results['billable_policies_found'] = len(active_policies)
+            
+            # 6. Process each billable policy
             for policy in active_policies:
                 policy_id = policy.get('id') or policy.get('policy_id')
                 customer_id = policy.get('customer_id')
@@ -11754,12 +11819,18 @@ For claims or questions, please contact:
                     })
                     continue
                 
-                # Skip if no valid premium amount
+                # Calculate premium amount from multiple sources
                 monthly_premium = float(policy.get('monthly_premium', 0) or policy.get('premium', 0) or 0)
                 annual_premium = float(policy.get('annual_premium', 0) or 0)
+                coverage_amount = float(policy.get('coverage_amount', 0) or 0)
+                
+                # If no premium set, calculate from coverage (5% annual rate typical for insurance)
+                if monthly_premium <= 0 and annual_premium <= 0 and coverage_amount > 0:
+                    annual_premium = coverage_amount * 0.05
+                    monthly_premium = annual_premium / 12
                 
                 # Calculate billing amount based on billing frequency
-                billing_frequency = policy.get('billing_frequency', 'monthly').lower()
+                billing_frequency = (policy.get('billing_frequency', '') or 'monthly').lower()
                 if billing_frequency == 'annual':
                     bill_amount = annual_premium if annual_premium > 0 else monthly_premium * 12
                 elif billing_frequency == 'quarterly':
@@ -11771,12 +11842,16 @@ For claims or questions, please contact:
                     billing_results['skipped'] += 1
                     billing_results['policies_skipped'].append({
                         'policy_id': policy_id,
-                        'reason': 'no_premium_amount'
+                        'customer_id': customer_id,
+                        'reason': 'no_premium_amount',
+                        'monthly_premium': monthly_premium,
+                        'annual_premium': annual_premium,
+                        'coverage_amount': coverage_amount
                     })
                     continue
                 
                 try:
-                    # 5. Create the bill
+                    # 7. Create the bill
                     bill_id = f"BILL-{datetime.now().strftime('%Y%m%d')}-{random.randint(10000, 99999)}"
                     due_days = 30 if billing_frequency == 'monthly' else (90 if billing_frequency == 'quarterly' else 365)
                     
@@ -11801,7 +11876,7 @@ For claims or questions, please contact:
                     # Store the bill
                     BILLING[bill_id] = bill
                     
-                    # 6. Record transaction on ledger
+                    # 8. Record transaction on ledger
                     ledger_tx = record_transaction(
                         customer_id=customer_id,
                         tx_type='billing_created',
@@ -11816,7 +11891,7 @@ For claims or questions, please contact:
                         }
                     )
                     
-                    # 7. Track results
+                    # 9. Track results
                     billing_results['newly_billed'] += 1
                     billing_results['total_amount_billed'] += bill_amount
                     billing_results['bills_created'].append({
@@ -11829,7 +11904,7 @@ For claims or questions, please contact:
                     })
                     billing_results['ledger_entries'].append(ledger_tx)
                     
-                    # 8. Audit logging
+                    # 10. Audit logging
                     if audit:
                         try:
                             audit.log(actor, 'create', 'bill', bill_id, {
@@ -11903,9 +11978,17 @@ For claims or questions, please contact:
                 'actor': actor,
                 'timestamp': datetime.now().isoformat(),
                 
+                # Diagnostic information
+                'diagnostics': {
+                    'total_policies_in_system': billing_results['total_policies_in_system'],
+                    'policy_status_breakdown': billing_results['policy_status_breakdown'],
+                    'billable_policies_found': billing_results['billable_policies_found'],
+                    'policies_auto_created': billing_results.get('policies_auto_created', 0)
+                },
+                
                 # Billing summary
                 'summary': {
-                    'total_active_policies': billing_results['total_policies'],
+                    'total_active_policies': billing_results['billable_policies_found'],
                     'bills_created': billing_results['newly_billed'],
                     'already_billed': billing_results['already_billed'],
                     'skipped': billing_results['skipped'],
@@ -11939,11 +12022,321 @@ For claims or questions, please contact:
                 'errors': billing_results['errors'] if billing_results['errors'] else None,
                 
                 # Message for UI
-                'message': f"Successfully created {billing_results['newly_billed']} bills totaling ${billing_results['total_amount_billed']:,.2f}. {billing_results['already_billed']} policies already had outstanding bills."
+                'message': f"Successfully created {billing_results['newly_billed']} bills totaling ${billing_results['total_amount_billed']:,.2f}. {billing_results['already_billed']} policies already had outstanding bills." if billing_results['newly_billed'] > 0 else f"No new bills created. System has {billing_results['total_policies_in_system']} policies with statuses: {billing_results['policy_status_breakdown']}. Billable: {billing_results['billable_policies_found']}, Already billed: {billing_results['already_billed']}, Skipped: {billing_results['skipped']}."
             }
             
             self._set_json_headers()
             self.wfile.write(json.dumps(response, default=str).encode('utf-8'))
+            return
+        
+        # ========== BILLING VALIDATION API ==========
+        # Check billing integrity: customers billed vs balance sheet records
+        
+        if path == '/api/admin/billing-validation':
+            # Check authorization - only admin and accountant
+            if not require_role(session, ['admin', 'accountant']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Unauthorized. Admin or Accountant access required.'}).encode('utf-8'))
+                return
+            
+            initialize_balance_sheet()
+            
+            # Validate billing data integrity
+            validation_results = {
+                'customers_validated': 0,
+                'discrepancies_found': [],
+                'missing_bills': [],
+                'unbilled_policies': [],
+                'balance_sheet_mismatch': None,
+                'recommendations': []
+            }
+            
+            # 1. Calculate total billed and paid from BILLING store
+            total_billed = sum(float(b.get('amount', b.get('amount_due', 0))) for b in BILLING.values())
+            total_paid = sum(float(b.get('amount_paid', 0)) for b in BILLING.values() if b.get('status') == 'paid')
+            
+            # 2. Compare with balance sheet premium income
+            balance_sheet_premium = PHINS_BALANCE_SHEET['revenue_breakdown']['premium_income']
+            
+            if abs(total_paid - balance_sheet_premium) > 0.01:
+                validation_results['balance_sheet_mismatch'] = {
+                    'total_paid_in_billing': round(total_paid, 2),
+                    'balance_sheet_premium': round(balance_sheet_premium, 2),
+                    'difference': round(total_paid - balance_sheet_premium, 2),
+                    'message': 'Paid bills total does not match balance sheet premium income'
+                }
+                validation_results['recommendations'].append({
+                    'action': 'reconcile_premium_income',
+                    'details': f'Sync balance sheet premium income (${balance_sheet_premium:,.2f}) with actual paid bills (${total_paid:,.2f})'
+                })
+            
+            # 3. Check each customer for billing issues
+            for customer_id, customer in CUSTOMERS.items():
+                if is_suspended_account(customer_id):
+                    continue
+                
+                validation_results['customers_validated'] += 1
+                
+                # Get customer's policies
+                customer_policies = [p for p in POLICIES.values() if p.get('customer_id') == customer_id]
+                active_policies = [p for p in customer_policies if status_eq(p, 'active', 'approved', 'in_force')]
+                
+                # Get customer's bills
+                customer_bills = [b for b in BILLING.values() if b.get('customer_id') == customer_id]
+                paid_bills = [b for b in customer_bills if b.get('status') == 'paid']
+                outstanding_bills = [b for b in customer_bills if b.get('status') in ['outstanding', 'partial']]
+                
+                # Check: Active policies without any bills
+                for policy in active_policies:
+                    policy_id = policy.get('id') or policy.get('policy_id')
+                    policy_bills = [b for b in customer_bills if b.get('policy_id') == policy_id]
+                    
+                    if len(policy_bills) == 0:
+                        validation_results['unbilled_policies'].append({
+                            'customer_id': customer_id,
+                            'customer_name': customer.get('name', 'Unknown'),
+                            'policy_id': policy_id,
+                            'policy_status': policy.get('status'),
+                            'monthly_premium': policy.get('monthly_premium', 0),
+                            'annual_premium': policy.get('annual_premium', 0)
+                        })
+            
+            # 4. Check for test/mock data indicators
+            test_data_indicators = []
+            
+            # Check health wallets for demo data
+            for cust_id, wallet in HEALTH_WALLETS.items():
+                if is_suspended_account(cust_id):
+                    continue
+                transactions = wallet.get('transactions', [])
+                for tx in transactions:
+                    desc = (tx.get('description', '') or tx.get('type', '')).lower()
+                    if 'demo' in desc or 'test' in desc or 'initial deposit' in desc:
+                        test_data_indicators.append({
+                            'type': 'health_wallet',
+                            'customer_id': cust_id,
+                            'transaction': tx.get('description', tx.get('type')),
+                            'amount': tx.get('amount', 0)
+                        })
+            
+            # Check investment accounts for demo data
+            for cust_id, account in INVESTMENT_ACCOUNTS.items():
+                if is_suspended_account(cust_id):
+                    continue
+                deposits = account.get('deposits', [])
+                for dep in deposits:
+                    desc = (dep.get('description', '') or dep.get('source', '')).lower()
+                    if 'demo' in desc or 'test' in desc or 'initial' in desc:
+                        test_data_indicators.append({
+                            'type': 'investment_account',
+                            'customer_id': cust_id,
+                            'description': dep.get('description', dep.get('source')),
+                            'amount': dep.get('amount', 0)
+                        })
+            
+            # Check claims for test data
+            for claim_id, claim in CLAIMS.items():
+                if is_suspended_account(claim.get('customer_id', '')):
+                    continue
+                desc = (claim.get('description', '') or '').lower()
+                if 'test' in desc or 'demo' in desc:
+                    test_data_indicators.append({
+                        'type': 'claim',
+                        'claim_id': claim_id,
+                        'customer_id': claim.get('customer_id'),
+                        'description': claim.get('description')
+                    })
+            
+            validation_results['test_data_found'] = test_data_indicators
+            
+            if len(test_data_indicators) > 0:
+                validation_results['recommendations'].append({
+                    'action': 'cleanup_test_data',
+                    'details': f'Found {len(test_data_indicators)} test/demo data entries that may need cleanup'
+                })
+            
+            if len(validation_results['unbilled_policies']) > 0:
+                validation_results['recommendations'].append({
+                    'action': 'bill_unbilled_policies',
+                    'details': f'{len(validation_results["unbilled_policies"])} active policies have never been billed'
+                })
+            
+            # Summary
+            validation_results['summary'] = {
+                'total_customers': validation_results['customers_validated'],
+                'total_billed_amount': round(total_billed, 2),
+                'total_paid_amount': round(total_paid, 2),
+                'balance_sheet_premium': round(balance_sheet_premium, 2),
+                'unbilled_policies_count': len(validation_results['unbilled_policies']),
+                'test_data_entries': len(test_data_indicators),
+                'is_valid': len(validation_results['discrepancies_found']) == 0 and validation_results['balance_sheet_mismatch'] is None
+            }
+            
+            self._set_json_headers()
+            self.wfile.write(json.dumps(validation_results, default=str).encode('utf-8'))
+            return
+        
+        # ========== CLEANUP TEST/MOCK DATA API ==========
+        # Remove demo data that wasn't added via application or manually
+        
+        if path == '/api/admin/cleanup-mock-data':
+            # Check authorization - admin only
+            if not require_role(session, ['admin']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Unauthorized. Admin access required.'}).encode('utf-8'))
+                return
+            
+            # Get query parameters
+            dry_run = qs.get('dry_run', ['true'])[0].lower() != 'false'
+            target_customer = qs.get('customer_id', [None])[0]
+            
+            cleanup_results = {
+                'dry_run': dry_run,
+                'items_to_remove': [],
+                'items_removed': [],
+                'wallets_cleaned': 0,
+                'investments_cleaned': 0,
+                'claims_cleaned': 0,
+                'ledger_entries_cleaned': 0
+            }
+            
+            # Define patterns that indicate test/mock data
+            test_patterns = ['demo', 'test', 'initial deposit', 'initial allocation', 'sample', 'mock']
+            
+            def is_test_data(text):
+                if not text:
+                    return False
+                text_lower = text.lower()
+                return any(pattern in text_lower for pattern in test_patterns)
+            
+            # 1. Clean Health Wallets demo transactions
+            for cust_id, wallet in list(HEALTH_WALLETS.items()):
+                if target_customer and cust_id != target_customer:
+                    continue
+                if is_suspended_account(cust_id):
+                    continue
+                
+                transactions = wallet.get('transactions', [])
+                original_count = len(transactions)
+                demo_transactions = []
+                clean_transactions = []
+                
+                demo_balance_reduction = 0
+                for tx in transactions:
+                    desc = tx.get('description', '') or tx.get('type', '') or ''
+                    if is_test_data(desc):
+                        demo_transactions.append(tx)
+                        demo_balance_reduction += abs(float(tx.get('amount', 0)))
+                    else:
+                        clean_transactions.append(tx)
+                
+                if demo_transactions:
+                    cleanup_results['items_to_remove'].append({
+                        'type': 'health_wallet_transactions',
+                        'customer_id': cust_id,
+                        'count': len(demo_transactions),
+                        'balance_reduction': round(demo_balance_reduction, 2)
+                    })
+                    
+                    if not dry_run:
+                        wallet['transactions'] = clean_transactions
+                        # Adjust balance (remove demo deposits)
+                        wallet['balance'] = max(0, float(wallet.get('balance', 0)) - demo_balance_reduction)
+                        cleanup_results['wallets_cleaned'] += 1
+                        cleanup_results['items_removed'].extend(demo_transactions)
+            
+            # 2. Clean Investment Accounts demo deposits
+            for cust_id, account in list(INVESTMENT_ACCOUNTS.items()):
+                if target_customer and cust_id != target_customer:
+                    continue
+                if is_suspended_account(cust_id):
+                    continue
+                
+                deposits = account.get('deposits', [])
+                demo_deposits = []
+                clean_deposits = []
+                
+                demo_deposit_total = 0
+                for dep in deposits:
+                    desc = dep.get('description', '') or dep.get('source', '') or ''
+                    if is_test_data(desc):
+                        demo_deposits.append(dep)
+                        demo_deposit_total += abs(float(dep.get('amount', 0)))
+                    else:
+                        clean_deposits.append(dep)
+                
+                if demo_deposits:
+                    cleanup_results['items_to_remove'].append({
+                        'type': 'investment_deposits',
+                        'customer_id': cust_id,
+                        'count': len(demo_deposits),
+                        'total_amount': round(demo_deposit_total, 2)
+                    })
+                    
+                    if not dry_run:
+                        account['deposits'] = clean_deposits
+                        # Adjust balance
+                        account['balance'] = max(0, float(account.get('balance', 0)) - demo_deposit_total)
+                        cleanup_results['investments_cleaned'] += 1
+                        cleanup_results['items_removed'].extend(demo_deposits)
+            
+            # 3. Clean test claims (but don't delete real claims)
+            for claim_id, claim in list(CLAIMS.items()):
+                if target_customer and claim.get('customer_id') != target_customer:
+                    continue
+                if is_suspended_account(claim.get('customer_id', '')):
+                    continue
+                
+                desc = claim.get('description', '') or ''
+                if is_test_data(desc):
+                    cleanup_results['items_to_remove'].append({
+                        'type': 'claim',
+                        'claim_id': claim_id,
+                        'customer_id': claim.get('customer_id'),
+                        'description': desc[:50]
+                    })
+                    
+                    if not dry_run:
+                        del CLAIMS[claim_id]
+                        cleanup_results['claims_cleaned'] += 1
+            
+            # 4. Clean test ledger entries
+            for tx_id, tx in list(TRANSACTION_LEDGER.items()):
+                if target_customer and tx.get('customer_id') != target_customer:
+                    continue
+                if is_suspended_account(tx.get('customer_id', '')):
+                    continue
+                
+                desc = tx.get('description', '') or ''
+                if is_test_data(desc):
+                    cleanup_results['items_to_remove'].append({
+                        'type': 'ledger_entry',
+                        'tx_id': tx_id,
+                        'customer_id': tx.get('customer_id'),
+                        'description': desc[:50]
+                    })
+                    
+                    if not dry_run:
+                        del TRANSACTION_LEDGER[tx_id]
+                        cleanup_results['ledger_entries_cleaned'] += 1
+            
+            # Save changes if not dry run
+            if not dry_run:
+                save_ledger_data()
+                cleanup_results['message'] = f"Cleanup complete. Removed {len(cleanup_results['items_removed'])} test/demo data entries."
+            else:
+                cleanup_results['message'] = f"Dry run complete. Found {len(cleanup_results['items_to_remove'])} test/demo data entries. Add ?dry_run=false to actually remove them."
+            
+            cleanup_results['summary'] = {
+                'wallets_cleaned': cleanup_results['wallets_cleaned'],
+                'investments_cleaned': cleanup_results['investments_cleaned'],
+                'claims_cleaned': cleanup_results['claims_cleaned'],
+                'ledger_entries_cleaned': cleanup_results['ledger_entries_cleaned'],
+                'total_items': len(cleanup_results['items_to_remove'])
+            }
+            
+            self._set_json_headers()
+            self.wfile.write(json.dumps(cleanup_results, default=str).encode('utf-8'))
             return
         
         # ========== END BILL ALL POLICIES API ==========

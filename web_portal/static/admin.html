@@ -2884,17 +2884,35 @@
           const summary = data.summary;
           const integrity = data.data_integrity;
           const currentState = data.current_state;
+          const diagnostics = data.diagnostics || {};
           
           // Build comprehensive result message
-          let message = '✅ BULK BILLING COMPLETED\n';
+          let message = summary.bills_created > 0 ? '✅ BULK BILLING COMPLETED\n' : '⚠️ BULK BILLING - NO NEW BILLS CREATED\n';
           message += '═══════════════════════════════════════\n\n';
+          
+          // Show diagnostics if no bills created
+          if (summary.bills_created === 0) {
+            message += '🔍 DIAGNOSTICS:\n';
+            message += `• Total Policies in System: ${diagnostics.total_policies_in_system || 0}\n`;
+            message += `• Billable Policies Found: ${diagnostics.billable_policies_found || 0}\n`;
+            message += `• Policies Auto-Created: ${diagnostics.policies_auto_created || 0}\n`;
+            
+            // Show policy status breakdown
+            if (diagnostics.policy_status_breakdown) {
+              message += `• Policy Status Breakdown:\n`;
+              for (const [status, count] of Object.entries(diagnostics.policy_status_breakdown)) {
+                message += `   - ${status}: ${count}\n`;
+              }
+            }
+            message += '\n';
+          }
           
           message += '📊 BILLING SUMMARY:\n';
           message += `• Total Active Policies: ${summary.total_active_policies}\n`;
           message += `• Bills Created: ${summary.bills_created}\n`;
           message += `• Already Billed: ${summary.already_billed}\n`;
           message += `• Skipped: ${summary.skipped}\n`;
-          message += `• Total Amount Billed: $${summary.total_amount_billed.toLocaleString('en-US', {minimumFractionDigits: 2})}\n\n`;
+          message += `• Total Amount Billed: $${(summary.total_amount_billed || 0).toLocaleString('en-US', {minimumFractionDigits: 2})}\n\n`;
           
           message += '🔒 DATA INTEGRITY:\n';
           message += `• Ledger Entries Created: ${integrity.ledger_entries_created}\n`;
@@ -2903,16 +2921,39 @@
           message += `• Database Synced: ${integrity.database_synced ? 'Yes ✓' : 'N/A'}\n\n`;
           
           message += '📈 CURRENT STATE:\n';
-          message += `• Total Outstanding: $${currentState.total_outstanding_amount.toLocaleString('en-US', {minimumFractionDigits: 2})}\n`;
+          message += `• Total Outstanding: $${(currentState.total_outstanding_amount || 0).toLocaleString('en-US', {minimumFractionDigits: 2})}\n`;
           message += `• Outstanding Bills: ${currentState.total_outstanding_bills}\n`;
           message += `• Paid Bills: ${currentState.total_paid_bills}\n`;
-          message += `• Premium Collected: $${currentState.premium_income_collected.toLocaleString('en-US', {minimumFractionDigits: 2})}`;
+          message += `• Premium Collected: $${(currentState.premium_income_collected || 0).toLocaleString('en-US', {minimumFractionDigits: 2})}`;
+          
+          // Show skipped policies details if any
+          if (data.policies_skipped && data.policies_skipped.length > 0) {
+            message += `\n\n📋 SKIPPED POLICIES (${data.policies_skipped.length}):\n`;
+            data.policies_skipped.slice(0, 5).forEach(p => {
+              message += `• ${p.policy_id}: ${p.reason}\n`;
+            });
+            if (data.policies_skipped.length > 5) {
+              message += `   ... and ${data.policies_skipped.length - 5} more\n`;
+            }
+          }
           
           if (data.errors && data.errors.length > 0) {
             message += `\n\n⚠️ ERRORS (${data.errors.length}):\n`;
             data.errors.slice(0, 5).forEach(err => {
               message += `• ${err.policy_id || err.type}: ${err.error}\n`;
             });
+          }
+          
+          // Add recommendation if no bills created
+          if (summary.bills_created === 0) {
+            message += '\n\n💡 RECOMMENDATION:\n';
+            if ((diagnostics.total_policies_in_system || 0) === 0) {
+              message += 'No policies in system. Approve underwriting applications first.';
+            } else if (summary.already_billed > 0) {
+              message += 'All billable policies already have outstanding bills.';
+            } else {
+              message += 'Check if policies have "active" status and valid premium amounts.';
+            }
           }
           
           alert(message);
@@ -2997,6 +3038,168 @@
       }, 8000);
     }
     
+    // ========== BILLING VALIDATION ==========
+    // Check billing data integrity across system
+    async function validateBilling() {
+      try {
+        const response = await fetch('/api/admin/billing-validation', {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        
+        if (response.ok) {
+          const data = await response.json();
+          const summary = data.summary;
+          
+          let message = '🔍 BILLING VALIDATION REPORT\n';
+          message += '═══════════════════════════════════════\n\n';
+          
+          message += '📊 SUMMARY:\n';
+          message += `• Customers Validated: ${summary.total_customers}\n`;
+          message += `• Total Billed Amount: $${(summary.total_billed_amount || 0).toLocaleString('en-US', {minimumFractionDigits: 2})}\n`;
+          message += `• Total Paid Amount: $${(summary.total_paid_amount || 0).toLocaleString('en-US', {minimumFractionDigits: 2})}\n`;
+          message += `• Balance Sheet Premium: $${(summary.balance_sheet_premium || 0).toLocaleString('en-US', {minimumFractionDigits: 2})}\n`;
+          message += `• Data Valid: ${summary.is_valid ? 'Yes ✓' : 'No ⚠️'}\n\n`;
+          
+          // Balance sheet mismatch
+          if (data.balance_sheet_mismatch) {
+            message += '⚠️ BALANCE SHEET MISMATCH:\n';
+            message += `• Paid Bills Total: $${data.balance_sheet_mismatch.total_paid_in_billing.toLocaleString('en-US', {minimumFractionDigits: 2})}\n`;
+            message += `• Balance Sheet Premium: $${data.balance_sheet_mismatch.balance_sheet_premium.toLocaleString('en-US', {minimumFractionDigits: 2})}\n`;
+            message += `• Difference: $${data.balance_sheet_mismatch.difference.toLocaleString('en-US', {minimumFractionDigits: 2})}\n\n`;
+          }
+          
+          // Unbilled policies
+          if (data.unbilled_policies && data.unbilled_policies.length > 0) {
+            message += `📋 UNBILLED POLICIES (${data.unbilled_policies.length}):\n`;
+            data.unbilled_policies.slice(0, 5).forEach(p => {
+              message += `• ${p.policy_id} - ${p.customer_name} (Status: ${p.policy_status})\n`;
+            });
+            if (data.unbilled_policies.length > 5) {
+              message += `   ... and ${data.unbilled_policies.length - 5} more\n`;
+            }
+            message += '\n';
+          }
+          
+          // Test data found
+          if (data.test_data_found && data.test_data_found.length > 0) {
+            message += `🧪 TEST/DEMO DATA FOUND (${data.test_data_found.length}):\n`;
+            data.test_data_found.slice(0, 5).forEach(t => {
+              message += `• ${t.type}: ${t.customer_id || t.claim_id} - ${t.description || t.transaction}\n`;
+            });
+            if (data.test_data_found.length > 5) {
+              message += `   ... and ${data.test_data_found.length - 5} more\n`;
+            }
+            message += '\n';
+          }
+          
+          // Recommendations
+          if (data.recommendations && data.recommendations.length > 0) {
+            message += '💡 RECOMMENDATIONS:\n';
+            data.recommendations.forEach(rec => {
+              message += `• ${rec.action}: ${rec.details}\n`;
+            });
+          }
+          
+          alert(message);
+          console.log('Billing Validation Results:', data);
+          
+        } else if (response.status === 403) {
+          alert('⚠️ Access Denied: Admin or Accountant role required');
+        } else {
+          alert('Failed to validate billing: ' + response.status);
+        }
+      } catch (err) {
+        alert('Error validating billing: ' + err.message);
+        console.error('Billing Validation Error:', err);
+      }
+    }
+    
+    // ========== CLEANUP TEST DATA ==========
+    // Remove demo/test data from wallets, investments, claims, ledger
+    async function cleanupTestData() {
+      // First do a dry run to show what will be removed
+      try {
+        const dryRunResponse = await fetch('/api/admin/cleanup-mock-data?dry_run=true', {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        
+        if (!dryRunResponse.ok) {
+          if (dryRunResponse.status === 403) {
+            alert('⚠️ Access Denied: Admin role required');
+          } else {
+            alert('Failed to scan for test data: ' + dryRunResponse.status);
+          }
+          return;
+        }
+        
+        const dryRunData = await dryRunResponse.json();
+        
+        if (dryRunData.items_to_remove.length === 0) {
+          alert('✅ No test/demo data found to clean up.\n\nYour data is already clean!');
+          return;
+        }
+        
+        // Show confirmation with details
+        let confirmMessage = '🧹 CLEANUP TEST DATA\n';
+        confirmMessage += '═══════════════════════════════════════\n\n';
+        confirmMessage += `Found ${dryRunData.items_to_remove.length} test/demo data entries:\n\n`;
+        
+        // Group by type
+        const byType = {};
+        dryRunData.items_to_remove.forEach(item => {
+          const type = item.type;
+          if (!byType[type]) byType[type] = [];
+          byType[type].push(item);
+        });
+        
+        for (const [type, items] of Object.entries(byType)) {
+          confirmMessage += `• ${type}: ${items.length} entries\n`;
+        }
+        
+        confirmMessage += '\n⚠️ This action cannot be undone!\n\n';
+        confirmMessage += 'Do you want to remove this test data?';
+        
+        if (!confirm(confirmMessage)) {
+          return;
+        }
+        
+        // Execute actual cleanup
+        const cleanupResponse = await fetch('/api/admin/cleanup-mock-data?dry_run=false', {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        
+        if (cleanupResponse.ok) {
+          const cleanupData = await cleanupResponse.json();
+          
+          let resultMessage = '✅ CLEANUP COMPLETE\n';
+          resultMessage += '═══════════════════════════════════════\n\n';
+          resultMessage += `• Health Wallets Cleaned: ${cleanupData.summary.wallets_cleaned}\n`;
+          resultMessage += `• Investment Accounts Cleaned: ${cleanupData.summary.investments_cleaned}\n`;
+          resultMessage += `• Claims Cleaned: ${cleanupData.summary.claims_cleaned}\n`;
+          resultMessage += `• Ledger Entries Cleaned: ${cleanupData.summary.ledger_entries_cleaned}\n`;
+          resultMessage += `• Total Items Removed: ${cleanupData.summary.total_items}\n\n`;
+          resultMessage += cleanupData.message;
+          
+          alert(resultMessage);
+          
+          // Refresh dashboards
+          await loadBalanceSheet();
+          await loadAIInsights();
+          if (typeof loadDashboardStats === 'function') {
+            await loadDashboardStats();
+          }
+          
+          console.log('Cleanup Results:', cleanupData);
+        } else {
+          alert('Cleanup failed: ' + cleanupResponse.status);
+        }
+        
+      } catch (err) {
+        alert('Error during cleanup: ' + err.message);
+        console.error('Cleanup Error:', err);
+      }
+    }
+    
     // Load AI/BI Financial Insights
     async function loadAIInsights() {
       try {
@@ -3054,10 +3257,18 @@
               const isPremiumCollection = rec.action && rec.action.toLowerCase().includes('premium collection');
               const actionButton = isPremiumCollection ? `
                 <div style="margin-top: 10px; padding-top: 10px; border-top: 1px solid rgba(255,255,255,0.1);">
-                  <button onclick="executeBillAll()" class="btn" style="background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); color: white; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: bold; display: inline-flex; align-items: center; gap: 6px;" title="Generate bills for all active policies">
-                    <span style="font-size: 16px;">📄</span> Bill All Policies
-                  </button>
-                  <span style="font-size: 11px; color: rgba(255,255,255,0.6); margin-left: 8px;">Systematic billing for all active policies</span>
+                  <div style="display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px;">
+                    <button onclick="executeBillAll()" class="btn" style="background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); color: white; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: bold; display: inline-flex; align-items: center; gap: 6px;" title="Generate bills for all active policies">
+                      <span style="font-size: 16px;">📄</span> Bill All Policies
+                    </button>
+                    <button onclick="validateBilling()" class="btn" style="background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%); color: white; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: bold; display: inline-flex; align-items: center; gap: 6px;" title="Validate billing data integrity">
+                      <span style="font-size: 16px;">🔍</span> Validate Billing
+                    </button>
+                    <button onclick="cleanupTestData()" class="btn" style="background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%); color: white; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: bold; display: inline-flex; align-items: center; gap: 6px;" title="Remove test/demo data">
+                      <span style="font-size: 16px;">🧹</span> Cleanup Test Data
+                    </button>
+                  </div>
+                  <span style="font-size: 11px; color: rgba(255,255,255,0.6);">Actions: Bill all policies, validate data integrity, or cleanup test/mock data</span>
                 </div>
               ` : '';
               
