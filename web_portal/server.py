@@ -11225,6 +11225,177 @@ For claims or questions, please contact:
             recommendations = []
             risk_alerts = []
             
+            # ========== BILLING VALIDATION CHECKS ==========
+            # Check for billing discrepancies and validation issues
+            
+            billing_validation = {
+                'unbilled_customers': [],
+                'duplicate_bills': [],
+                'bills_not_on_balance_sheet': [],
+                'overbilled_customers': [],
+                'missing_premium_policies': []
+            }
+            
+            # 4a. Find customers with active policies but no billing records
+            for policy in active_policies:
+                policy_id = policy.get('id') or policy.get('policy_id')
+                customer_id = policy.get('customer_id')
+                
+                # Skip suspended accounts
+                if is_suspended_account(customer_id):
+                    continue
+                
+                # Check if this policy has any bills
+                policy_bills = [b for b in BILLING.values() if b.get('policy_id') == policy_id]
+                
+                if len(policy_bills) == 0:
+                    monthly_premium = float(policy.get('monthly_premium', 0) or 0)
+                    annual_premium = float(policy.get('annual_premium', 0) or 0)
+                    if monthly_premium > 0 or annual_premium > 0:
+                        billing_validation['unbilled_customers'].append({
+                            'customer_id': customer_id,
+                            'policy_id': policy_id,
+                            'monthly_premium': monthly_premium,
+                            'annual_premium': annual_premium,
+                            'issue': 'Active policy with no billing records'
+                        })
+                    else:
+                        billing_validation['missing_premium_policies'].append({
+                            'customer_id': customer_id,
+                            'policy_id': policy_id,
+                            'issue': 'Active policy with no premium amount set'
+                        })
+            
+            # 4b. Check for duplicate bills (same customer+policy billed multiple times in same month)
+            from collections import defaultdict
+            billing_by_customer_policy_month = defaultdict(list)
+            for bill_id, bill in BILLING.items():
+                customer_id = bill.get('customer_id')
+                policy_id = bill.get('policy_id')
+                created_date = bill.get('created_date', '')
+                billing_period = bill.get('billing_period', '')
+                
+                # Skip suspended accounts
+                if is_suspended_account(customer_id):
+                    continue
+                
+                # Get billing month from period or created date
+                if billing_period:
+                    month_key = billing_period[:7] if len(billing_period) >= 7 else billing_period
+                elif created_date:
+                    month_key = created_date[:7] if len(created_date) >= 7 else created_date
+                else:
+                    month_key = 'unknown'
+                
+                key = f"{customer_id}:{policy_id}:{month_key}"
+                billing_by_customer_policy_month[key].append({
+                    'bill_id': bill_id,
+                    'amount': float(bill.get('amount', bill.get('amount_due', 0))),
+                    'status': bill.get('status', ''),
+                    'created_date': created_date
+                })
+            
+            for key, bills in billing_by_customer_policy_month.items():
+                if len(bills) > 1:
+                    parts = key.split(':')
+                    billing_validation['duplicate_bills'].append({
+                        'customer_id': parts[0] if len(parts) > 0 else '',
+                        'policy_id': parts[1] if len(parts) > 1 else '',
+                        'billing_period': parts[2] if len(parts) > 2 else '',
+                        'bills': bills,
+                        'total_billed': sum(b['amount'] for b in bills),
+                        'issue': f'Customer billed {len(bills)} times for same period'
+                    })
+            
+            # 4c. Check if paid bills are reflected in balance sheet premium income
+            total_paid_from_bills = sum(
+                float(b.get('amount_paid', 0)) for b in BILLING.values()
+                if float(b.get('amount_paid', 0)) > 0 and not is_suspended_account(b.get('customer_id', ''))
+            )
+            
+            if abs(total_paid_from_bills - premium_income) > 1.0:  # Allow $1 tolerance
+                billing_validation['bills_not_on_balance_sheet'].append({
+                    'total_paid_from_bills': round(total_paid_from_bills, 2),
+                    'balance_sheet_premium_income': round(premium_income, 2),
+                    'discrepancy': round(total_paid_from_bills - premium_income, 2),
+                    'issue': 'Paid bills not fully reflected on balance sheet'
+                })
+            
+            # 4d. Check for overbilled customers
+            for customer_id in set(b.get('customer_id') for b in BILLING.values()):
+                if is_suspended_account(customer_id):
+                    continue
+                    
+                customer_bills = [b for b in BILLING.values() if b.get('customer_id') == customer_id]
+                customer_policies = [p for p in POLICIES.values() if p.get('customer_id') == customer_id and status_eq(p, 'active')]
+                
+                if not customer_policies:
+                    continue
+                
+                # Expected monthly premium
+                expected_monthly = sum(float(p.get('monthly_premium', 0) or 0) for p in customer_policies)
+                
+                # Total amount paid in last 30 days
+                recent_paid = sum(
+                    float(b.get('amount_paid', 0)) for b in customer_bills
+                    if b.get('paid_date') and (datetime.now() - datetime.fromisoformat(b['paid_date'].replace('Z', ''))).days <= 30
+                )
+                
+                if expected_monthly > 0 and recent_paid > expected_monthly * 1.5:
+                    billing_validation['overbilled_customers'].append({
+                        'customer_id': customer_id,
+                        'expected_monthly': round(expected_monthly, 2),
+                        'recent_paid_30_days': round(recent_paid, 2),
+                        'overage': round(recent_paid - expected_monthly, 2),
+                        'issue': 'Customer paid significantly more than expected in last 30 days'
+                    })
+            
+            # Generate insight based on billing validation
+            total_billing_issues = (
+                len(billing_validation['unbilled_customers']) +
+                len(billing_validation['duplicate_bills']) +
+                len(billing_validation['bills_not_on_balance_sheet']) +
+                len(billing_validation['overbilled_customers'])
+            )
+            
+            if total_billing_issues > 0:
+                issue_details = []
+                if billing_validation['unbilled_customers']:
+                    issue_details.append(f"{len(billing_validation['unbilled_customers'])} unbilled customers")
+                if billing_validation['duplicate_bills']:
+                    issue_details.append(f"{len(billing_validation['duplicate_bills'])} duplicate billing cases")
+                if billing_validation['bills_not_on_balance_sheet']:
+                    discrepancy = billing_validation['bills_not_on_balance_sheet'][0]['discrepancy']
+                    issue_details.append(f"${abs(discrepancy):,.2f} billing discrepancy")
+                if billing_validation['overbilled_customers']:
+                    issue_details.append(f"{len(billing_validation['overbilled_customers'])} overbilled customers")
+                
+                insights.append({
+                    'type': 'billing_validation',
+                    'severity': 'warning' if total_billing_issues < 5 else 'high',
+                    'title': 'Billing Validation Issues Detected',
+                    'description': f'{total_billing_issues} billing validation issues found: ' + ', '.join(issue_details),
+                    'impact': 'Revenue accuracy may be affected - review billing data'
+                })
+                
+                recommendations.append({
+                    'priority': 2,
+                    'action': 'Review Billing Validation',
+                    'details': f'Address {total_billing_issues} billing issues to ensure accurate revenue tracking',
+                    'expected_result': 'Improved billing accuracy and customer satisfaction'
+                })
+            
+            if billing_validation['missing_premium_policies']:
+                insights.append({
+                    'type': 'policy_configuration',
+                    'severity': 'warning',
+                    'title': 'Policies Missing Premium Configuration',
+                    'description': f'{len(billing_validation["missing_premium_policies"])} active policies have no premium amount set',
+                    'impact': 'These policies cannot be billed until premium is configured'
+                })
+            
+            # ========== END BILLING VALIDATION CHECKS ==========
+            
             # Insight: Premium Collection Status
             if premium_income == 0 and total_monthly_premium_potential > 0:
                 insights.append({
@@ -11357,6 +11528,17 @@ For claims or questions, please contact:
                         'score': round(integrity_score, 1),
                         'status': 'VALID' if integrity_score >= 75 else 'WARNING' if integrity_score >= 50 else 'CRITICAL',
                         'checks': integrity_checks
+                    },
+                    
+                    # Billing Validation (new)
+                    'billing_validation': {
+                        'total_issues': total_billing_issues,
+                        'unbilled_customers': billing_validation['unbilled_customers'],
+                        'duplicate_bills': billing_validation['duplicate_bills'],
+                        'bills_not_on_balance_sheet': billing_validation['bills_not_on_balance_sheet'],
+                        'overbilled_customers': billing_validation['overbilled_customers'],
+                        'missing_premium_policies': billing_validation['missing_premium_policies'],
+                        'status': 'OK' if total_billing_issues == 0 else 'ISSUES_FOUND'
                     }
                 },
                 'timestamp': datetime.now().isoformat()
@@ -11722,9 +11904,12 @@ For claims or questions, please contact:
                 'already_billed': 0,
                 'newly_billed': 0,
                 'skipped': 0,
+                'skipped_no_premium': 0,
+                'skipped_suspended': 0,
                 'total_amount_billed': 0.0,
                 'bills_created': [],
                 'policies_skipped': [],
+                'policies_eligible': [],  # Policies that COULD be billed but weren't
                 'ledger_entries': [],
                 'balance_sheet_updated': False,
                 'errors': []
@@ -11748,8 +11933,10 @@ For claims or questions, please contact:
                 # Skip suspended accounts
                 if is_suspended_account(customer_id):
                     billing_results['skipped'] += 1
+                    billing_results['skipped_suspended'] += 1
                     billing_results['policies_skipped'].append({
                         'policy_id': policy_id,
+                        'customer_id': customer_id,
                         'reason': 'suspended_account'
                     })
                     continue
@@ -11769,9 +11956,13 @@ For claims or questions, please contact:
                 
                 if bill_amount <= 0:
                     billing_results['skipped'] += 1
+                    billing_results['skipped_no_premium'] += 1
                     billing_results['policies_skipped'].append({
                         'policy_id': policy_id,
-                        'reason': 'no_premium_amount'
+                        'customer_id': customer_id,
+                        'reason': 'no_premium_amount',
+                        'monthly_premium': monthly_premium,
+                        'annual_premium': annual_premium
                     })
                     continue
                 
@@ -11896,6 +12087,44 @@ For claims or questions, please contact:
                 if b.get('status') in ['outstanding', 'partial']
             )
             
+            # Generate detailed message based on results
+            if billing_results['newly_billed'] > 0:
+                message = f"Successfully created {billing_results['newly_billed']} bills totaling ${billing_results['total_amount_billed']:,.2f}. {billing_results['already_billed']} policies already had outstanding bills."
+            elif billing_results['total_policies'] == 0:
+                message = "No active policies found in the system. Please ensure policies are created and approved before billing."
+            elif billing_results['already_billed'] == billing_results['total_policies']:
+                message = f"All {billing_results['total_policies']} active policies already have outstanding bills. No new bills needed."
+            elif billing_results['skipped_no_premium'] > 0 and billing_results['already_billed'] == 0:
+                message = f"No bills created. {billing_results['skipped_no_premium']} policies have no premium amount configured. Please set monthly_premium or annual_premium on these policies."
+            else:
+                reasons = []
+                if billing_results['already_billed'] > 0:
+                    reasons.append(f"{billing_results['already_billed']} already have outstanding bills")
+                if billing_results['skipped_no_premium'] > 0:
+                    reasons.append(f"{billing_results['skipped_no_premium']} have no premium amount set")
+                if billing_results['skipped_suspended'] > 0:
+                    reasons.append(f"{billing_results['skipped_suspended']} are suspended test accounts")
+                message = f"No new bills created. {billing_results['total_policies']} active policies analyzed: " + "; ".join(reasons) if reasons else "No billable policies found."
+            
+            # Detailed skip analysis for zero-bill scenarios
+            skip_analysis = {
+                'total_active_policies': billing_results['total_policies'],
+                'already_billed': billing_results['already_billed'],
+                'skipped_no_premium': billing_results['skipped_no_premium'],
+                'skipped_suspended': billing_results['skipped_suspended'],
+                'other_skipped': billing_results['skipped'] - billing_results['skipped_no_premium'] - billing_results['skipped_suspended'],
+                'eligible_but_not_billed': billing_results['total_policies'] - billing_results['already_billed'] - billing_results['skipped'],
+                'recommendation': None
+            }
+            
+            # Add recommendation based on analysis
+            if billing_results['skipped_no_premium'] > 0:
+                skip_analysis['recommendation'] = 'Configure premium amounts on policies with missing premiums'
+            elif billing_results['total_policies'] == 0:
+                skip_analysis['recommendation'] = 'Create and approve customer policies before billing'
+            elif billing_results['already_billed'] == billing_results['total_policies']:
+                skip_analysis['recommendation'] = 'Collect payments on existing outstanding bills before generating new ones'
+            
             response = {
                 'success': True,
                 'action': 'bill_all_policies',
@@ -11909,9 +12138,14 @@ For claims or questions, please contact:
                     'bills_created': billing_results['newly_billed'],
                     'already_billed': billing_results['already_billed'],
                     'skipped': billing_results['skipped'],
+                    'skipped_no_premium': billing_results['skipped_no_premium'],
+                    'skipped_suspended': billing_results['skipped_suspended'],
                     'total_amount_billed': round(billing_results['total_amount_billed'], 2),
                     'errors_count': len(billing_results['errors'])
                 },
+                
+                # Skip analysis for debugging zero-bill scenarios
+                'skip_analysis': skip_analysis,
                 
                 # Created bills details
                 'bills_created': billing_results['bills_created'][:50],  # Limit to first 50 for response size
@@ -11939,7 +12173,7 @@ For claims or questions, please contact:
                 'errors': billing_results['errors'] if billing_results['errors'] else None,
                 
                 # Message for UI
-                'message': f"Successfully created {billing_results['newly_billed']} bills totaling ${billing_results['total_amount_billed']:,.2f}. {billing_results['already_billed']} policies already had outstanding bills."
+                'message': message
             }
             
             self._set_json_headers()
@@ -11986,6 +12220,184 @@ For claims or questions, please contact:
             return
         
         # ========== END SUSPENDED TEST ACCOUNTS MANAGEMENT API ==========
+        
+        # ========== DEMO DATA CLEANUP API ==========
+        # Clean up demo/test data while preserving real customer data
+        
+        if path == '/api/admin/cleanup-demo-data':
+            if not require_role(session, ['admin']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Unauthorized. Admin access required.'}).encode('utf-8'))
+                return
+            
+            # Protected customer IDs that should NOT be removed
+            PROTECTED_CUSTOMERS = {
+                'CUST-ASAF-001',  # asaf@assurance.co.il - real customer
+                'CUST-EFRAT-001',  # efrat@phins.ai - real customer
+                'CUST-SHOSH-001',  # shosh@phins.ai - real customer
+                'CUST-ASI-001',  # asi@phins.ai - real customer
+            }
+            
+            cleanup_results = {
+                'demo_transactions_removed': 0,
+                'test_wallets_cleared': 0,
+                'test_investments_cleared': 0,
+                'demo_claims_removed': 0,
+                'demo_bills_removed': 0,
+                'test_accounts_suspended': 0,
+                'balance_sheet_corrected': False,
+                'details': []
+            }
+            
+            try:
+                # 1. Clean up demo health wallet transactions (keep structure, remove demo deposits)
+                for cust_id, wallet in list(HEALTH_WALLETS.items()):
+                    if cust_id in PROTECTED_CUSTOMERS:
+                        # Remove only demo transactions, not real ones
+                        original_txs = wallet.get('transactions', [])
+                        real_txs = [
+                            tx for tx in original_txs 
+                            if 'demo' not in str(tx.get('description', '')).lower() 
+                            and 'demo' not in str(tx.get('source', '')).lower()
+                            and tx.get('type') not in ['initial_deposit']  # Remove initial demo deposits
+                        ]
+                        
+                        if len(real_txs) < len(original_txs):
+                            demo_removed = len(original_txs) - len(real_txs)
+                            cleanup_results['demo_transactions_removed'] += demo_removed
+                            
+                            # Recalculate balance from real transactions only
+                            wallet['transactions'] = real_txs
+                            new_balance = sum(
+                                float(tx.get('amount', 0)) if tx.get('type') in ['deposit', 'credit_transfer'] 
+                                else -float(tx.get('amount', 0))
+                                for tx in real_txs
+                            )
+                            wallet['balance'] = max(0, new_balance)
+                            
+                            cleanup_results['details'].append(
+                                f"Health wallet {cust_id}: Removed {demo_removed} demo txs, balance now ${wallet['balance']:.2f}"
+                            )
+                    elif 'TEST' in cust_id.upper():
+                        # Completely clear test account wallets
+                        wallet['balance'] = 0
+                        wallet['transactions'] = []
+                        cleanup_results['test_wallets_cleared'] += 1
+                
+                # 2. Clean up demo investment account deposits
+                for cust_id, account in list(INVESTMENT_ACCOUNTS.items()):
+                    if cust_id in PROTECTED_CUSTOMERS:
+                        # Remove demo deposits
+                        original_deps = account.get('deposits', [])
+                        real_deps = [
+                            dep for dep in original_deps
+                            if 'demo' not in str(dep.get('description', '')).lower()
+                            and 'demo' not in str(dep.get('source', '')).lower()
+                            and dep.get('type') not in ['initial_deposit']
+                        ]
+                        
+                        if len(real_deps) < len(original_deps):
+                            demo_removed = len(original_deps) - len(real_deps)
+                            cleanup_results['demo_transactions_removed'] += demo_removed
+                            
+                            account['deposits'] = real_deps
+                            # Recalculate balances
+                            new_balance = sum(float(d.get('amount', 0)) for d in real_deps)
+                            account['balance'] = max(0, new_balance)
+                            account['index_balance'] = max(0, sum(float(d.get('index_amount', 0)) for d in real_deps))
+                            account['bonds_balance'] = max(0, sum(float(d.get('bonds_amount', 0)) for d in real_deps))
+                            account['crypto_balance'] = max(0, sum(float(d.get('crypto_amount', 0)) for d in real_deps))
+                            
+                            cleanup_results['details'].append(
+                                f"Investment {cust_id}: Removed {demo_removed} demo deposits, balance now ${account['balance']:.2f}"
+                            )
+                    elif 'TEST' in cust_id.upper():
+                        account['balance'] = 0
+                        account['deposits'] = []
+                        cleanup_results['test_investments_cleared'] += 1
+                
+                # 3. Remove claims with 'test' or 'demo' in description (but not for protected customers)
+                for claim_id, claim in list(CLAIMS.items()):
+                    cust_id = claim.get('customer_id', '')
+                    description = str(claim.get('description', '')).lower()
+                    
+                    is_test_claim = (
+                        'test' in description or 
+                        'demo' in description or
+                        'sample' in description
+                    )
+                    
+                    if is_test_claim and cust_id not in PROTECTED_CUSTOMERS:
+                        del CLAIMS[claim_id]
+                        cleanup_results['demo_claims_removed'] += 1
+                        cleanup_results['details'].append(f"Removed test claim: {claim_id}")
+                
+                # 4. Add test customer IDs to suspended accounts
+                for cust_id in list(CUSTOMERS.keys()):
+                    if 'TEST' in cust_id.upper() and cust_id not in SUSPENDED_TEST_ACCOUNTS:
+                        SUSPENDED_TEST_ACCOUNTS.add(cust_id)
+                        cleanup_results['test_accounts_suspended'] += 1
+                
+                # 5. Run balance sheet reconciliation to correct any discrepancies
+                # Calculate expected values from actual (non-demo) transaction data
+                expected_premium_income = sum(
+                    float(b.get('amount_paid', 0)) for b in BILLING.values()
+                    if float(b.get('amount_paid', 0)) > 0 
+                    and not is_suspended_account(b.get('customer_id', ''))
+                    and 'demo' not in str(b.get('description', '')).lower()
+                )
+                
+                expected_claims_paid = sum(
+                    float(c.get('paid_amount', 0) or c.get('approved_amount', 0)) 
+                    for c in CLAIMS.values()
+                    if status_eq(c, 'paid')
+                    and not is_suspended_account(c.get('customer_id', ''))
+                )
+                
+                # Update balance sheet if there are discrepancies
+                current_premium_income = PHINS_BALANCE_SHEET['revenue_breakdown']['premium_income']
+                current_claims_paid = PHINS_BALANCE_SHEET['expense_breakdown']['claims_paid']
+                
+                if abs(expected_premium_income - current_premium_income) > 1.0 or abs(expected_claims_paid - current_claims_paid) > 1.0:
+                    PHINS_BALANCE_SHEET['revenue_breakdown']['premium_income'] = expected_premium_income
+                    PHINS_BALANCE_SHEET['total_revenue'] = sum(PHINS_BALANCE_SHEET['revenue_breakdown'].values())
+                    PHINS_BALANCE_SHEET['expense_breakdown']['claims_paid'] = expected_claims_paid
+                    PHINS_BALANCE_SHEET['total_expenses'] = sum(PHINS_BALANCE_SHEET['expense_breakdown'].values())
+                    PHINS_BALANCE_SHEET['last_updated'] = datetime.now().isoformat()
+                    PHINS_BALANCE_SHEET['audit_log'].append({
+                        'action': 'demo_data_cleanup',
+                        'actor': session.get('username', 'admin') if session else 'admin',
+                        'timestamp': datetime.now().isoformat(),
+                        'details': 'Balance sheet corrected after demo data cleanup'
+                    })
+                    cleanup_results['balance_sheet_corrected'] = True
+                    cleanup_results['details'].append(
+                        f"Balance sheet corrected: Premium income ${expected_premium_income:.2f}, Claims paid ${expected_claims_paid:.2f}"
+                    )
+                
+                # Save changes
+                save_ledger_data()
+                
+                self._set_json_headers()
+                self.wfile.write(json.dumps({
+                    'success': True,
+                    'message': 'Demo data cleanup completed',
+                    'results': cleanup_results,
+                    'protected_customers': list(PROTECTED_CUSTOMERS),
+                    'note': 'Real customer data (asaf@assurance.co.il, etc.) was preserved'
+                }, default=str).encode('utf-8'))
+                
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({
+                    'success': False,
+                    'error': str(e),
+                    'partial_results': cleanup_results
+                }).encode('utf-8'))
+            
+            return
+        
+        # ========== END DEMO DATA CLEANUP API ==========
 
         # Investment portfolio endpoint (legacy - redirect to new API)
         if path.startswith('/api/investment-portfolio'):
