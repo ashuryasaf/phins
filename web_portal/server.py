@@ -3032,33 +3032,61 @@ def generate_customer_id() -> str:
     return f"CUST-{random.randint(10000, 99999)}"
 
 def calculate_premium(policy_data: Dict[str, Any]) -> Dict[str, float]:
-    """Calculate premium based on policy type and customer data"""
-    base_premium = {
-        'life': 1200,
-        'health': 800,
-        'auto': 600,
-        'property': 1500,
-        'business': 3000
-    }.get(policy_data.get('type', 'life'), 1000)
+    """
+    Calculate premium based on policy type and customer data.
     
-    # Age factor
-    age = policy_data.get('age', 30)
-    age_factor = 1.0 + (max(0, age - 25) * 0.02)
+    PRICING MODEL (aligned with frontend apply.js):
+    - Base rate: $0.25 per $1,000 coverage per month
+    - Age factor: 1.0 + (age - 25) * 0.015 (1.5% per year over 25)
+    - Risk factor: varies by underwriting assessment
+    - Policy type modifier: adjusts for different risk profiles
     
-    # Coverage factor
+    This ensures the premium shown on application matches billing.
+    """
     coverage = policy_data.get('coverage_amount', 100000)
-    coverage_factor = coverage / 100000
     
-    # Risk factor based on underwriting
+    # Policy type base rate multipliers (per $1000 coverage per month)
+    # These are multiplicative adjustments to the base rate
+    policy_type_rates = {
+        'life': 0.25,           # Base rate: $0.25 per $1000/month
+        'health': 0.25,         # Same as life for unified pricing
+        'phins_unified': 0.25,  # PHINS unified contract
+        'auto': 0.15,           # Lower risk profile
+        'property': 0.20,       # Property coverage
+        'business': 0.40        # Higher commercial rates
+    }
+    base_rate = policy_type_rates.get(policy_data.get('type', 'life'), 0.25)
+    
+    # Age factor: 1.5% increase per year over 25 (matches frontend)
+    age = policy_data.get('age', 30)
+    age_factor = 1.0 + (max(0, age - 25) * 0.015)
+    
+    # Risk factor based on underwriting assessment
     risk_score = policy_data.get('risk_score', 'medium')
-    risk_factors = {'low': 0.8, 'medium': 1.0, 'high': 1.3, 'very_high': 1.6}
+    risk_factors = {
+        'very_low': 0.85,
+        'low': 0.90,
+        'medium': 1.0,
+        'moderate': 1.15,
+        'elevated': 1.25,
+        'high': 1.35,
+        'very_high': 1.50
+    }
     risk_factor = risk_factors.get(risk_score, 1.0)
     
-    annual_premium = base_premium * age_factor * coverage_factor * risk_factor
+    # Calculate monthly premium: (coverage / 1000) * base_rate * age_factor * risk_factor
+    monthly_premium = (coverage / 1000) * base_rate * age_factor * risk_factor
+    
+    # Annual premium
+    annual_premium = monthly_premium * 12
+    
+    # Quarterly with 3% discount
+    quarterly_premium = monthly_premium * 3 * 0.97
+    
     return {
         'annual': round(annual_premium, 2),
-        'monthly': round(annual_premium / 12, 2),
-        'quarterly': round(annual_premium / 4, 2)
+        'monthly': round(monthly_premium, 2),
+        'quarterly': round(quarterly_premium, 2)
     }
 
 def get_bi_data_actuary() -> Dict[str, Any]:
