@@ -15598,7 +15598,9 @@ For claims or questions, please contact:
                         'policies': 0,
                         'applications': 0,
                         'claims': 0,
-                        'bills': 0
+                        'bills': 0,
+                        'medical_purchases': 0,
+                        'medical_purchase_total': 0
                     },
                     'ledger_preserved': keep_ledger,
                     'ready_for': ['new_applications', 'increase_coverage', 'new_deposits']
@@ -15752,6 +15754,55 @@ For claims or questions, please contact:
                             'in_positions': 0,
                             'total_pnl': 0
                         }
+                    
+                    # 7.5 Reset savings pipeline account if exists
+                    if savings_pipeline_enabled and savings_pipeline_service:
+                        try:
+                            pipeline_account = savings_pipeline_service.accounts.get(customer_id)
+                            if pipeline_account:
+                                old_cash = float(pipeline_account.cash_balance or 0)
+                                old_allocated = float(pipeline_account.total_allocated or 0)
+                                if old_cash > 0 or old_allocated > 0:
+                                    record_transaction(
+                                        customer_id=customer_id,
+                                        tx_type='pipeline_reset',
+                                        amount=-(old_cash + old_allocated),
+                                        description=f'Savings pipeline reset to $0',
+                                        metadata={
+                                            'old_cash_balance': old_cash,
+                                            'old_total_allocated': old_allocated,
+                                            'reason': 'customer_account_reset'
+                                        }
+                                    )
+                                # Reset the pipeline account
+                                pipeline_account.cash_balance = 0
+                                pipeline_account.total_allocated = 0
+                                pipeline_account.allocation_history = []
+                                result['pipeline_reset'] = True
+                        except Exception as e:
+                            print(f"Pipeline reset note: {e}")
+                    
+                    # 7.6 Remove all medical purchases for this customer (wallet purchase history)
+                    purchases_to_remove = [pid for pid, p in MEDICAL_PURCHASES.items() if p.get('customer_id') == customer_id]
+                    total_purchase_amount = 0
+                    for pid in purchases_to_remove:
+                        purchase = MEDICAL_PURCHASES[pid]
+                        total_purchase_amount += safe_float(purchase.get('amount', 0))
+                        record_transaction(
+                            customer_id=customer_id,
+                            tx_type='purchase_reset',
+                            amount=0,
+                            description=f'Medical purchase {pid} removed - account reset',
+                            metadata={
+                                'purchase_id': pid,
+                                'product_name': purchase.get('product_name'),
+                                'amount': purchase.get('amount'),
+                                'reason': 'customer_account_reset'
+                            }
+                        )
+                        del MEDICAL_PURCHASES[pid]
+                    result['removed']['medical_purchases'] = len(purchases_to_remove)
+                    result['removed']['medical_purchase_total'] = round(total_purchase_amount, 2)
                     
                     # 8. Update customer pipeline stage
                     if customer_id in CUSTOMERS:
