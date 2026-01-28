@@ -441,9 +441,10 @@
     <div id="balance-sheet-section" class="section-content" style="margin-top: 24px; background: linear-gradient(135deg, #0d47a1 0%, #1565c0 100%); border-radius: 12px; padding: 20px; color: white;">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
         <h3 style="color: white; margin: 0;">🏦 PHINS General Reserves (Balance Sheet)</h3>
-        <div style="display: flex; gap: 8px;">
+        <div style="display: flex; gap: 8px; flex-wrap: wrap;">
           <button onclick="loadAIInsights()" class="btn" style="background: rgba(156,39,176,0.4); color: white; border: 1px solid rgba(156,39,176,0.6); padding: 8px 16px; border-radius: 8px; cursor: pointer;" title="AI-powered financial analysis">🤖 AI Insights</button>
           <button onclick="reconcileBalanceSheet()" class="btn" style="background: rgba(76,175,80,0.3); color: white; border: 1px solid rgba(76,175,80,0.5); padding: 8px 16px; border-radius: 8px; cursor: pointer;" title="Verify data integrity">✅ Reconcile</button>
+          <button onclick="cleanupDemoData()" class="btn" style="background: rgba(239,154,154,0.3); color: white; border: 1px solid rgba(239,154,154,0.5); padding: 8px 16px; border-radius: 8px; cursor: pointer;" title="Remove demo/test data while preserving real customers">🧹 Clean Demo Data</button>
           <button onclick="loadBalanceSheet()" class="btn" style="background: rgba(255,255,255,0.2); color: white; border: 1px solid rgba(255,255,255,0.3); padding: 8px 16px; border-radius: 8px; cursor: pointer;">🔄 Refresh</button>
         </div>
       </div>
@@ -569,6 +570,14 @@
             <h5 style="color: #81c784; margin: 0 0 12px 0;">✅ Recommendations</h5>
             <div id="ai-recommendations-content" style="font-size: 13px; line-height: 1.6;">
               Loading recommendations...
+            </div>
+          </div>
+          
+          <!-- Billing Validation -->
+          <div id="ai-billing-validation" style="background: rgba(0,0,0,0.2); border-radius: 10px; padding: 16px; margin-bottom: 16px; display: none;">
+            <h5 style="color: #ffb74d; margin: 0 0 12px 0;">🔍 Billing Validation</h5>
+            <div id="ai-billing-validation-content" style="font-size: 13px; line-height: 1.6;">
+              Loading validation...
             </div>
           </div>
           
@@ -2950,8 +2959,8 @@
             await loadCustomerList();
           }
           
-          // Show success notification
-          showBillAllSuccessNotification(summary);
+          // Show success notification with skip analysis
+          showBillAllSuccessNotification(summary, data.skip_analysis);
           
         } else if (response.status === 403) {
           alert('⚠️ Access Denied: Admin or Accountant role required for bulk billing');
@@ -2971,30 +2980,132 @@
     }
     
     // Show success notification toast for bill all action
-    function showBillAllSuccessNotification(summary) {
+    function showBillAllSuccessNotification(summary, skipAnalysis) {
       const notification = document.createElement('div');
-      notification.style.cssText = 'position: fixed; bottom: 20px; right: 20px; background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: white; padding: 16px 24px; border-radius: 12px; box-shadow: 0 10px 40px rgba(0,0,0,0.3); z-index: 10001; animation: slideIn 0.3s ease-out; max-width: 400px;';
+      
+      // Determine notification style based on results
+      const hasIssues = summary.bills_created === 0 && summary.total_active_policies > 0;
+      const bgColor = hasIssues 
+        ? 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)' 
+        : 'linear-gradient(135deg, #10b981 0%, #059669 100%)';
+      const icon = hasIssues ? '⚠️' : '✅';
+      
+      let message = '';
+      if (summary.bills_created > 0) {
+        message = `${summary.bills_created} bills created • $${summary.total_amount_billed.toLocaleString('en-US', {minimumFractionDigits: 2})} billed`;
+      } else if (summary.total_active_policies === 0) {
+        message = 'No active policies found in the system';
+      } else if (summary.already_billed === summary.total_active_policies) {
+        message = `All ${summary.total_active_policies} policies already have outstanding bills`;
+      } else {
+        let reasons = [];
+        if (summary.already_billed > 0) reasons.push(`${summary.already_billed} already billed`);
+        if (summary.skipped_no_premium > 0) reasons.push(`${summary.skipped_no_premium} no premium set`);
+        if (summary.skipped_suspended > 0) reasons.push(`${summary.skipped_suspended} suspended`);
+        message = reasons.join(' • ') || 'No billable policies found';
+      }
+      
+      notification.style.cssText = `position: fixed; bottom: 20px; right: 20px; background: ${bgColor}; color: white; padding: 16px 24px; border-radius: 12px; box-shadow: 0 10px 40px rgba(0,0,0,0.3); z-index: 10001; animation: slideIn 0.3s ease-out; max-width: 450px;`;
       notification.innerHTML = `
-        <div style="display: flex; align-items: center; gap: 12px;">
-          <span style="font-size: 28px;">✅</span>
-          <div>
+        <div style="display: flex; align-items: flex-start; gap: 12px;">
+          <span style="font-size: 28px;">${icon}</span>
+          <div style="flex: 1;">
             <div style="font-weight: bold; font-size: 15px;">Bulk Billing Complete</div>
             <div style="font-size: 13px; opacity: 0.9; margin-top: 4px;">
-              ${summary.bills_created} bills created • $${summary.total_amount_billed.toLocaleString('en-US', {minimumFractionDigits: 2})} billed
+              ${message}
             </div>
+            ${skipAnalysis && skipAnalysis.recommendation ? `
+              <div style="font-size: 11px; opacity: 0.8; margin-top: 6px; padding-top: 6px; border-top: 1px solid rgba(255,255,255,0.2);">
+                💡 ${skipAnalysis.recommendation}
+              </div>
+            ` : ''}
           </div>
           <button onclick="this.parentElement.parentElement.remove()" style="background: none; border: none; color: white; cursor: pointer; font-size: 18px; margin-left: auto;">×</button>
         </div>
       `;
       document.body.appendChild(notification);
       
-      // Auto-remove after 8 seconds
+      // Auto-remove after 10 seconds (longer for messages with recommendations)
+      const timeout = skipAnalysis && skipAnalysis.recommendation ? 12000 : 8000;
       setTimeout(() => {
         if (notification.parentElement) {
           notification.style.animation = 'fadeOut 0.3s ease-out';
           setTimeout(() => notification.remove(), 300);
         }
-      }, 8000);
+      }, timeout);
+    }
+    
+    // Clean up demo/test data while preserving real customers
+    async function cleanupDemoData() {
+      const confirmed = confirm(
+        '🧹 CLEAN UP DEMO DATA\n' +
+        '═══════════════════════════════════════\n\n' +
+        'This action will:\n\n' +
+        '✓ Remove demo deposits from wallets\n' +
+        '✓ Remove demo investment deposits\n' +
+        '✓ Remove test claims/bills\n' +
+        '✓ Suspend test accounts\n' +
+        '✓ Correct balance sheet discrepancies\n\n' +
+        '⚠️ PROTECTED DATA:\n' +
+        '• asaf@assurance.co.il (CUST-ASAF-001)\n' +
+        '• efrat@phins.ai (CUST-EFRAT-001)\n' +
+        '• Other real customer data\n\n' +
+        'Continue with cleanup?'
+      );
+      
+      if (!confirmed) return;
+      
+      try {
+        const response = await fetch('/api/admin/cleanup-demo-data', {
+          method: 'GET',
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        
+        if (response.ok) {
+          const data = await response.json();
+          const results = data.results;
+          
+          let message = '✅ DEMO DATA CLEANUP COMPLETE\n';
+          message += '═══════════════════════════════════════\n\n';
+          
+          message += '📊 CLEANUP SUMMARY:\n';
+          message += `• Demo transactions removed: ${results.demo_transactions_removed}\n`;
+          message += `• Test wallets cleared: ${results.test_wallets_cleared}\n`;
+          message += `• Test investments cleared: ${results.test_investments_cleared}\n`;
+          message += `• Demo claims removed: ${results.demo_claims_removed}\n`;
+          message += `• Demo bills removed: ${results.demo_bills_removed}\n`;
+          message += `• Test accounts suspended: ${results.test_accounts_suspended}\n`;
+          message += `• Balance sheet corrected: ${results.balance_sheet_corrected ? 'Yes ✓' : 'No (already correct)'}\n\n`;
+          
+          if (results.details && results.details.length > 0) {
+            message += '📝 DETAILS:\n';
+            results.details.slice(0, 10).forEach(detail => {
+              message += `• ${detail}\n`;
+            });
+            if (results.details.length > 10) {
+              message += `... and ${results.details.length - 10} more\n`;
+            }
+          }
+          
+          message += '\n✅ Protected customers preserved.';
+          
+          alert(message);
+          console.log('Demo data cleanup results:', data);
+          
+          // Refresh balance sheet and AI insights
+          await loadBalanceSheet();
+          await loadAIInsights();
+          
+        } else if (response.status === 403) {
+          alert('⚠️ Access Denied: Admin role required for demo data cleanup');
+        } else {
+          const errorData = await response.json().catch(() => ({}));
+          alert(`❌ Cleanup Failed: ${errorData.error || response.status}`);
+        }
+      } catch (err) {
+        alert('❌ Error during cleanup: ' + err.message);
+        console.error('Cleanup error:', err);
+      }
     }
     
     // Load AI/BI Financial Insights
@@ -3084,6 +3195,116 @@
           netEl.style.color = proj.projected_net_income >= 0 ? '#81c784' : '#ef9a9a';
           
           document.getElementById('ai-proj-reserve').textContent = '$' + proj.projected_reserve_balance.toLocaleString();
+          
+          // Update billing validation section
+          const billingValidation = ai.billing_validation;
+          const validationPanel = document.getElementById('ai-billing-validation');
+          const validationContent = document.getElementById('ai-billing-validation-content');
+          
+          if (billingValidation && billingValidation.total_issues > 0) {
+            validationPanel.style.display = 'block';
+            
+            let validationHtml = '';
+            
+            // Unbilled customers
+            if (billingValidation.unbilled_customers && billingValidation.unbilled_customers.length > 0) {
+              validationHtml += `
+                <div style="margin-bottom: 12px; padding: 10px; background: rgba(255,255,255,0.05); border-radius: 8px; border-left: 3px solid #ffb74d;">
+                  <div style="font-weight: bold; color: #ffb74d;">⚠️ Unbilled Customers (${billingValidation.unbilled_customers.length})</div>
+                  <div style="color: rgba(255,255,255,0.9); margin-top: 4px;">
+                    Active policies with no billing records:
+                    <ul style="margin: 8px 0 0 20px; padding: 0;">
+                      ${billingValidation.unbilled_customers.slice(0, 5).map(c => 
+                        `<li>${c.policy_id} - Monthly: $${(c.monthly_premium || 0).toLocaleString()}</li>`
+                      ).join('')}
+                      ${billingValidation.unbilled_customers.length > 5 ? `<li><em>...and ${billingValidation.unbilled_customers.length - 5} more</em></li>` : ''}
+                    </ul>
+                  </div>
+                </div>
+              `;
+            }
+            
+            // Duplicate bills
+            if (billingValidation.duplicate_bills && billingValidation.duplicate_bills.length > 0) {
+              validationHtml += `
+                <div style="margin-bottom: 12px; padding: 10px; background: rgba(255,255,255,0.05); border-radius: 8px; border-left: 3px solid #ef9a9a;">
+                  <div style="font-weight: bold; color: #ef9a9a;">🔄 Duplicate Billing (${billingValidation.duplicate_bills.length})</div>
+                  <div style="color: rgba(255,255,255,0.9); margin-top: 4px;">
+                    Customers billed multiple times for same period:
+                    <ul style="margin: 8px 0 0 20px; padding: 0;">
+                      ${billingValidation.duplicate_bills.slice(0, 5).map(d => 
+                        `<li>${d.customer_id} - ${d.billing_period}: ${d.bills.length} bills totaling $${d.total_billed.toLocaleString()}</li>`
+                      ).join('')}
+                      ${billingValidation.duplicate_bills.length > 5 ? `<li><em>...and ${billingValidation.duplicate_bills.length - 5} more</em></li>` : ''}
+                    </ul>
+                  </div>
+                </div>
+              `;
+            }
+            
+            // Balance sheet discrepancy
+            if (billingValidation.bills_not_on_balance_sheet && billingValidation.bills_not_on_balance_sheet.length > 0) {
+              const discrepancy = billingValidation.bills_not_on_balance_sheet[0];
+              validationHtml += `
+                <div style="margin-bottom: 12px; padding: 10px; background: rgba(255,255,255,0.05); border-radius: 8px; border-left: 3px solid #ef9a9a;">
+                  <div style="font-weight: bold; color: #ef9a9a;">📊 Balance Sheet Discrepancy</div>
+                  <div style="color: rgba(255,255,255,0.9); margin-top: 4px;">
+                    Paid bills not fully reflected on balance sheet:
+                    <ul style="margin: 8px 0 0 20px; padding: 0;">
+                      <li>Total paid from bills: $${discrepancy.total_paid_from_bills.toLocaleString()}</li>
+                      <li>Balance sheet shows: $${discrepancy.balance_sheet_premium_income.toLocaleString()}</li>
+                      <li><strong>Discrepancy: $${Math.abs(discrepancy.discrepancy).toLocaleString()}</strong></li>
+                    </ul>
+                    <div style="margin-top: 8px;">
+                      <button onclick="reconcileBalanceSheet()" class="btn" style="background: rgba(76,175,80,0.5); color: white; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 12px;">
+                        ✅ Run Reconciliation
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              `;
+            }
+            
+            // Overbilled customers
+            if (billingValidation.overbilled_customers && billingValidation.overbilled_customers.length > 0) {
+              validationHtml += `
+                <div style="margin-bottom: 12px; padding: 10px; background: rgba(255,255,255,0.05); border-radius: 8px; border-left: 3px solid #ffb74d;">
+                  <div style="font-weight: bold; color: #ffb74d;">💰 Potential Overbilling (${billingValidation.overbilled_customers.length})</div>
+                  <div style="color: rgba(255,255,255,0.9); margin-top: 4px;">
+                    Customers paid significantly more than expected:
+                    <ul style="margin: 8px 0 0 20px; padding: 0;">
+                      ${billingValidation.overbilled_customers.slice(0, 5).map(c => 
+                        `<li>${c.customer_id}: Expected $${c.expected_monthly.toLocaleString()}/mo, Paid $${c.recent_paid_30_days.toLocaleString()} (last 30 days)</li>`
+                      ).join('')}
+                    </ul>
+                  </div>
+                </div>
+              `;
+            }
+            
+            // Missing premium policies
+            if (billingValidation.missing_premium_policies && billingValidation.missing_premium_policies.length > 0) {
+              validationHtml += `
+                <div style="margin-bottom: 12px; padding: 10px; background: rgba(255,255,255,0.05); border-radius: 8px; border-left: 3px solid #ce93d8;">
+                  <div style="font-weight: bold; color: #ce93d8;">⚙️ Configuration Issue (${billingValidation.missing_premium_policies.length})</div>
+                  <div style="color: rgba(255,255,255,0.9); margin-top: 4px;">
+                    Active policies with no premium amount set:
+                    <ul style="margin: 8px 0 0 20px; padding: 0;">
+                      ${billingValidation.missing_premium_policies.slice(0, 5).map(p => 
+                        `<li>${p.policy_id} - ${p.customer_id}</li>`
+                      ).join('')}
+                      ${billingValidation.missing_premium_policies.length > 5 ? `<li><em>...and ${billingValidation.missing_premium_policies.length - 5} more</em></li>` : ''}
+                    </ul>
+                  </div>
+                </div>
+              `;
+            }
+            
+            validationContent.innerHTML = validationHtml;
+          } else {
+            validationPanel.style.display = 'block';
+            validationContent.innerHTML = '<div style="color: #81c784;">✅ No billing validation issues detected. All billing data is consistent.</div>';
+          }
           
           console.log('AI Insights loaded:', ai);
         } else if (response.status === 403) {
