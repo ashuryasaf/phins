@@ -556,8 +556,8 @@
         <div style="display: flex; align-items: center; gap: 12px;">
           <div style="width: 48px; height: 48px; background: linear-gradient(135deg, #e1bee7 0%, #ce93d8 100%); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 1.5rem; animation: pulse-ai 2s ease-in-out infinite;">🤖</div>
           <div>
-            <h2 style="margin: 0; color: white; font-size: 1.3rem; font-weight: 700;">PHINS AI Assistant</h2>
-            <p style="margin: 2px 0 0 0; color: rgba(255,255,255,0.8); font-size: 0.85rem;">Ask me anything about your account</p>
+            <h2 style="margin: 0; color: white; font-size: 1.3rem; font-weight: 700;">🤖 PHINS AI Assistant</h2>
+            <p style="margin: 2px 0 0 0; color: rgba(255,255,255,0.8); font-size: 0.85rem;">Your complete service hub — policies, claims, community & more</p>
           </div>
         </div>
         <div style="display: flex; gap: 8px;">
@@ -568,16 +568,60 @@
       
       <!-- Help Panel (Hidden by default) -->
       <div id="ai-help-panel" style="display: none; background: rgba(255,255,255,0.1); border-radius: 12px; padding: 16px; margin-bottom: 16px; color: white;">
-        <h4 style="margin: 0 0 12px 0;">💬 Try asking:</h4>
-        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 8px; font-size: 0.85rem;">
-          <div>• "Show me all my billings"</div>
-          <div>• "How much do I pay monthly?"</div>
-          <div>• "My personal data report"</div>
-          <div>• "How much savings in 5 years?"</div>
-          <div>• "I want to apply for new policy"</div>
-          <div>• "Pay my bills"</div>
-          <div>• "I want to save $10,000"</div>
-          <div>• "What's my coverage?"</div>
+        <h4 style="margin: 0 0 12px 0;">💬 I can help you with:</h4>
+        
+        <!-- Service Categories -->
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; margin-bottom: 16px;">
+          <!-- Policy Management -->
+          <div style="background: rgba(21, 101, 192, 0.3); border-radius: 8px; padding: 12px;">
+            <div style="font-weight: 600; margin-bottom: 8px;">📋 Policy Management</div>
+            <div style="font-size: 0.85rem; opacity: 0.9;">• Apply for new policy • View my policies • Policy details</div>
+          </div>
+          
+          <!-- Financial Services -->
+          <div style="background: rgba(46, 125, 50, 0.3); border-radius: 8px; padding: 12px;">
+            <div style="font-weight: 600; margin-bottom: 8px;">💰 Financial Services</div>
+            <div style="font-size: 0.85rem; opacity: 0.9;">• Pay bills • Billing report • Savings calculator • Investments • Health wallet</div>
+          </div>
+          
+          <!-- Claims & Support -->
+          <div style="background: rgba(239, 108, 0, 0.3); border-radius: 8px; padding: 12px;">
+            <div style="font-weight: 600; margin-bottom: 8px;">🆘 Claims & Support</div>
+            <div style="font-size: 0.85rem; opacity: 0.9;">• File a claim • Claims status • Contact support</div>
+          </div>
+          
+          <!-- Community & Social -->
+          <div style="background: rgba(123, 31, 162, 0.3); border-radius: 8px; padding: 12px;">
+            <div style="font-weight: 600; margin-bottom: 8px;">🤝 Community & Social</div>
+            <div style="font-size: 0.85rem; opacity: 0.9;">• Join community • Refer friends • Share referral code</div>
+          </div>
+          
+          <!-- Account Management -->
+          <div style="background: rgba(69, 90, 100, 0.3); border-radius: 8px; padding: 12px;">
+            <div style="font-weight: 600; margin-bottom: 8px;">👤 Account Management</div>
+            <div style="font-size: 0.85rem; opacity: 0.9;">• Personal data • Update profile • Account settings</div>
+          </div>
+          
+          <!-- Reports & Analytics -->
+          <div style="background: rgba(0, 137, 123, 0.3); border-radius: 8px; padding: 12px;">
+            <div style="font-weight: 600; margin-bottom: 8px;">📊 Reports & Analytics</div>
+            <div style="font-size: 0.85rem; opacity: 0.9;">• Savings report • Coverage info • Balance info</div>
+          </div>
+        </div>
+        
+        <!-- Example Phrases -->
+        <div style="border-top: 1px solid rgba(255,255,255,0.2); padding-top: 12px;">
+          <div style="font-weight: 600; margin-bottom: 8px;">✨ Try saying:</div>
+          <div style="display: flex; flex-wrap: wrap; gap: 8px;" id="ai-help-suggestions">
+            <span onclick="document.getElementById('ai-query-input').value='Apply for new policy';processAIQuery();" style="background: rgba(255,255,255,0.2); padding: 6px 12px; border-radius: 16px; font-size: 0.8rem; cursor: pointer; transition: all 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.3)'" onmouseout="this.style.background='rgba(255,255,255,0.2)'">"Apply for new policy"</span>
+            <span onclick="document.getElementById('ai-query-input').value='Join the community';processAIQuery();" style="background: rgba(255,255,255,0.2); padding: 6px 12px; border-radius: 16px; font-size: 0.8rem; cursor: pointer; transition: all 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.3)'" onmouseout="this.style.background='rgba(255,255,255,0.2)'">"Join the community"</span>
+            <span onclick="document.getElementById('ai-query-input').value='Refer a friend';processAIQuery();" style="background: rgba(255,255,255,0.2); padding: 6px 12px; border-radius: 16px; font-size: 0.8rem; cursor: pointer; transition: all 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.3)'" onmouseout="this.style.background='rgba(255,255,255,0.2)'">"Refer a friend"</span>
+            <span onclick="document.getElementById('ai-query-input').value='File a claim';processAIQuery();" style="background: rgba(255,255,255,0.2); padding: 6px 12px; border-radius: 16px; font-size: 0.8rem; cursor: pointer; transition: all 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.3)'" onmouseout="this.style.background='rgba(255,255,255,0.2)'">"File a claim"</span>
+            <span onclick="document.getElementById('ai-query-input').value='Show my billing report';processAIQuery();" style="background: rgba(255,255,255,0.2); padding: 6px 12px; border-radius: 16px; font-size: 0.8rem; cursor: pointer; transition: all 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.3)'" onmouseout="this.style.background='rgba(255,255,255,0.2)'">"Show my billing report"</span>
+            <span onclick="document.getElementById('ai-query-input').value='How much savings in 5 years?';processAIQuery();" style="background: rgba(255,255,255,0.2); padding: 6px 12px; border-radius: 16px; font-size: 0.8rem; cursor: pointer; transition: all 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.3)'" onmouseout="this.style.background='rgba(255,255,255,0.2)'">"Savings in 5 years?"</span>
+            <span onclick="document.getElementById('ai-query-input').value='Check my investments';processAIQuery();" style="background: rgba(255,255,255,0.2); padding: 6px 12px; border-radius: 16px; font-size: 0.8rem; cursor: pointer; transition: all 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.3)'" onmouseout="this.style.background='rgba(255,255,255,0.2)'">"Check my investments"</span>
+            <span onclick="document.getElementById('ai-query-input').value='Pay my bills';processAIQuery();" style="background: rgba(255,255,255,0.2); padding: 6px 12px; border-radius: 16px; font-size: 0.8rem; cursor: pointer; transition: all 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.3)'" onmouseout="this.style.background='rgba(255,255,255,0.2)'">"Pay my bills"</span>
+          </div>
         </div>
       </div>
       
@@ -585,7 +629,7 @@
       <div style="display: flex; gap: 10px; margin-bottom: 16px;">
         <div style="flex: 1; position: relative;">
           <input type="text" id="ai-query-input" 
-                 placeholder="Ask me anything... e.g., 'Show my billing report' or 'How much do I save monthly?'" 
+                 placeholder="Ask me anything... e.g., 'Apply for policy', 'Join community', 'Refer a friend', 'File a claim'" 
                  style="width: 100%; padding: 16px 50px 16px 20px; border-radius: 12px; border: 2px solid rgba(255,255,255,0.3); background: rgba(255,255,255,0.95); font-size: 1rem; outline: none; transition: all 0.3s;"
                  onkeypress="if(event.key==='Enter') processAIQuery()"
                  onfocus="this.style.borderColor='#e1bee7'; this.style.boxShadow='0 0 20px rgba(225, 190, 231, 0.5)';"
@@ -612,14 +656,28 @@
         <p id="voice-transcript" style="margin: 8px 0 0 0; font-style: italic; opacity: 0.9;"></p>
       </div>
       
-      <!-- Quick Action Buttons -->
-      <div style="display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px;">
-        <button onclick="quickAIAction('billing_report')" class="ai-quick-btn" style="background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.3); color: white; padding: 8px 14px; border-radius: 20px; cursor: pointer; font-size: 0.85rem; transition: all 0.2s;">📊 Billing Report</button>
-        <button onclick="quickAIAction('savings_calc')" class="ai-quick-btn" style="background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.3); color: white; padding: 8px 14px; border-radius: 20px; cursor: pointer; font-size: 0.85rem; transition: all 0.2s;">💰 Savings Calculator</button>
+      <!-- Quick Action Buttons - Row 1: Core Services -->
+      <div style="display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px;">
+        <button onclick="quickAIAction('apply_policy')" class="ai-quick-btn" style="background: rgba(21, 101, 192, 0.4); border: 1px solid rgba(255,255,255,0.3); color: white; padding: 8px 14px; border-radius: 20px; cursor: pointer; font-size: 0.85rem; transition: all 0.2s;">📝 Apply New Policy</button>
         <button onclick="quickAIAction('my_policies')" class="ai-quick-btn" style="background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.3); color: white; padding: 8px 14px; border-radius: 20px; cursor: pointer; font-size: 0.85rem; transition: all 0.2s;">📋 My Policies</button>
         <button onclick="quickAIAction('pay_bills')" class="ai-quick-btn" style="background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.3); color: white; padding: 8px 14px; border-radius: 20px; cursor: pointer; font-size: 0.85rem; transition: all 0.2s;">💳 Pay Bills</button>
+        <button onclick="quickAIAction('file_claim')" class="ai-quick-btn" style="background: rgba(239, 108, 0, 0.4); border: 1px solid rgba(255,255,255,0.3); color: white; padding: 8px 14px; border-radius: 20px; cursor: pointer; font-size: 0.85rem; transition: all 0.2s;">🆘 File Claim</button>
+      </div>
+      
+      <!-- Quick Action Buttons - Row 2: Financial & Reports -->
+      <div style="display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px;">
+        <button onclick="quickAIAction('billing_report')" class="ai-quick-btn" style="background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.3); color: white; padding: 8px 14px; border-radius: 20px; cursor: pointer; font-size: 0.85rem; transition: all 0.2s;">📊 Billing Report</button>
+        <button onclick="quickAIAction('savings_calc')" class="ai-quick-btn" style="background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.3); color: white; padding: 8px 14px; border-radius: 20px; cursor: pointer; font-size: 0.85rem; transition: all 0.2s;">💰 Savings Calculator</button>
+        <button onclick="quickAIAction('investments')" class="ai-quick-btn" style="background: rgba(46, 125, 50, 0.4); border: 1px solid rgba(255,255,255,0.3); color: white; padding: 8px 14px; border-radius: 20px; cursor: pointer; font-size: 0.85rem; transition: all 0.2s;">📈 Investments</button>
+        <button onclick="quickAIAction('health_wallet')" class="ai-quick-btn" style="background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.3); color: white; padding: 8px 14px; border-radius: 20px; cursor: pointer; font-size: 0.85rem; transition: all 0.2s;">🏥 Health Wallet</button>
+      </div>
+      
+      <!-- Quick Action Buttons - Row 3: Community & Account -->
+      <div style="display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px;">
+        <button onclick="quickAIAction('join_community')" class="ai-quick-btn" style="background: rgba(123, 31, 162, 0.4); border: 1px solid rgba(255,255,255,0.3); color: white; padding: 8px 14px; border-radius: 20px; cursor: pointer; font-size: 0.85rem; transition: all 0.2s;">🤝 Join Community</button>
+        <button onclick="quickAIAction('referrals')" class="ai-quick-btn" style="background: rgba(255, 107, 53, 0.4); border: 1px solid rgba(255,255,255,0.3); color: white; padding: 8px 14px; border-radius: 20px; cursor: pointer; font-size: 0.85rem; transition: all 0.2s;">🎁 Refer Friends</button>
         <button onclick="quickAIAction('personal_data')" class="ai-quick-btn" style="background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.3); color: white; padding: 8px 14px; border-radius: 20px; cursor: pointer; font-size: 0.85rem; transition: all 0.2s;">👤 Personal Data</button>
-        <button onclick="quickAIAction('file_claim')" class="ai-quick-btn" style="background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.3); color: white; padding: 8px 14px; border-radius: 20px; cursor: pointer; font-size: 0.85rem; transition: all 0.2s;">🆘 File Claim</button>
+        <button onclick="quickAIAction('contact_support')" class="ai-quick-btn" style="background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.3); color: white; padding: 8px 14px; border-radius: 20px; cursor: pointer; font-size: 0.85rem; transition: all 0.2s;">📞 Contact Support</button>
       </div>
       
       <!-- AI Response Area -->
@@ -1636,6 +1694,379 @@
       claims: []
     };
     
+    // ==================== AI SERVICES CONFIGURATION ====================
+    // This configuration makes the AI Assistant extensible for future features
+    // Add new services here and they will automatically be available to customers
+    
+    const AI_SERVICES_CONFIG = {
+      // Version for tracking updates
+      version: '2.0.0',
+      
+      // Service categories for organized display
+      categories: {
+        POLICY: { name: 'Policy Management', icon: '📋', color: '#1565c0' },
+        FINANCIAL: { name: 'Financial Services', icon: '💰', color: '#2e7d32' },
+        CLAIMS: { name: 'Claims & Support', icon: '🆘', color: '#ef6c00' },
+        COMMUNITY: { name: 'Community & Social', icon: '🤝', color: '#7b1fa2' },
+        ACCOUNT: { name: 'Account Management', icon: '👤', color: '#455a64' },
+        REPORTS: { name: 'Reports & Analytics', icon: '📊', color: '#00897b' }
+      },
+      
+      // All available services - easily extensible
+      services: {
+        // Policy Management
+        APPLY_POLICY: {
+          id: 'apply_policy',
+          name: 'Apply for New Policy',
+          description: 'Start a new insurance application',
+          icon: '📝',
+          category: 'POLICY',
+          keywords: ['apply for', 'new policy', 'get insurance', 'buy policy', 'purchase policy', 'want insurance', 'apply new', 'start policy', 'need insurance', 'get covered', 'sign up', 'enroll'],
+          action: 'navigate',
+          target: '/apply.html',
+          quickAction: true,
+          enabled: true
+        },
+        VIEW_POLICIES: {
+          id: 'view_policies',
+          name: 'My Policies',
+          description: 'View all your active policies',
+          icon: '📋',
+          category: 'POLICY',
+          keywords: ['my policies', 'show policies', 'view policies', 'policy list', 'active policies', 'insurance policies', 'coverage'],
+          action: 'report',
+          handler: 'generatePolicyReport',
+          quickAction: true,
+          enabled: true
+        },
+        POLICY_DETAILS: {
+          id: 'policy_details',
+          name: 'Policy Details',
+          description: 'Get detailed information about a specific policy',
+          icon: '🔍',
+          category: 'POLICY',
+          keywords: ['policy details', 'policy information', 'policy info', 'about my policy'],
+          action: 'report',
+          handler: 'generatePolicyReport',
+          quickAction: false,
+          enabled: true
+        },
+        
+        // Financial Services
+        PAY_BILLS: {
+          id: 'pay_bills',
+          name: 'Pay Bills',
+          description: 'Make a payment on your account',
+          icon: '💳',
+          category: 'FINANCIAL',
+          keywords: ['pay my bill', 'make payment', 'pay now', 'pay premium', 'want to pay', 'pay bills', 'payment'],
+          action: 'navigate',
+          target: '#billing-settings',
+          quickAction: true,
+          enabled: true
+        },
+        BILLING_REPORT: {
+          id: 'billing_report',
+          name: 'Billing Report',
+          description: 'View your complete billing history',
+          icon: '📊',
+          category: 'FINANCIAL',
+          keywords: ['billing report', 'all my billings', 'billing history', 'payment history', 'show billing', 'my bills', 'invoices', 'billing summary'],
+          action: 'report',
+          handler: 'generateBillingReport',
+          quickAction: true,
+          enabled: true
+        },
+        SAVINGS_CALCULATOR: {
+          id: 'savings_calculator',
+          name: 'Savings Calculator',
+          description: 'Calculate your savings projections',
+          icon: '💰',
+          category: 'FINANCIAL',
+          keywords: ['savings calculator', 'calculate savings', 'savings projection', 'how much will i have', 'future savings', 'savings in', 'years', 'projection', 'forecast'],
+          action: 'calculate',
+          handler: 'calculateProjection',
+          quickAction: true,
+          enabled: true
+        },
+        INVESTMENTS: {
+          id: 'investments',
+          name: 'Investments Portfolio',
+          description: 'View and manage your investment portfolio',
+          icon: '📈',
+          category: 'FINANCIAL',
+          keywords: ['investments', 'portfolio', 'stocks', 'bonds', 'crypto', 'investment value', 'my investments', 'trading', 'investment portfolio'],
+          action: 'navigate',
+          target: '/savings-portfolio.html',
+          quickAction: true,
+          enabled: true
+        },
+        HEALTH_WALLET: {
+          id: 'health_wallet',
+          name: 'Health Wallet',
+          description: 'Access your health wallet and medical funds',
+          icon: '🏥',
+          category: 'FINANCIAL',
+          keywords: ['health wallet', 'medical wallet', 'wallet balance', 'health funds', 'medical funds', 'pharmacy', 'health spending'],
+          action: 'navigate',
+          target: '#health-wallet',
+          quickAction: true,
+          enabled: true
+        },
+        MONTHLY_COST: {
+          id: 'monthly_cost',
+          name: 'Monthly Cost Info',
+          description: 'See how much you pay monthly',
+          icon: '💵',
+          category: 'FINANCIAL',
+          keywords: ['how much do i pay', 'monthly payment', 'monthly premium', 'pay monthly', 'monthly cost', 'premium amount', 'pay every month'],
+          action: 'info',
+          handler: 'showMonthlyCost',
+          quickAction: false,
+          enabled: true
+        },
+        MONTHLY_SAVINGS: {
+          id: 'monthly_savings',
+          name: 'Monthly Savings Info',
+          description: 'See how much you save monthly',
+          icon: '🐷',
+          category: 'FINANCIAL',
+          keywords: ['how much do i save', 'monthly savings', 'save every month', 'saving amount', 'monthly contribution'],
+          action: 'info',
+          handler: 'showMonthlySavings',
+          quickAction: false,
+          enabled: true
+        },
+        
+        // Claims & Support
+        FILE_CLAIM: {
+          id: 'file_claim',
+          name: 'File a Claim',
+          description: 'Submit a new insurance claim',
+          icon: '🆘',
+          category: 'CLAIMS',
+          keywords: ['file a claim', 'submit claim', 'make claim', 'new claim', 'want to claim', 'report claim', 'claim insurance'],
+          action: 'navigate',
+          target: '#claims',
+          quickAction: true,
+          enabled: true
+        },
+        CLAIMS_STATUS: {
+          id: 'claims_status',
+          name: 'Claims Status',
+          description: 'Check status of your claims',
+          icon: '📝',
+          category: 'CLAIMS',
+          keywords: ['claims status', 'claim status', 'my claims', 'claims history', 'track claim', 'claim progress'],
+          action: 'report',
+          handler: 'generateClaimsReport',
+          quickAction: false,
+          enabled: true
+        },
+        CONTACT_SUPPORT: {
+          id: 'contact_support',
+          name: 'Contact Support',
+          description: 'Get help from our support team',
+          icon: '📞',
+          category: 'CLAIMS',
+          keywords: ['contact support', 'help', 'support', 'customer service', 'speak to agent', 'talk to someone', 'assistance', 'need help'],
+          action: 'custom',
+          handler: 'showContactSupport',
+          quickAction: false,
+          enabled: true
+        },
+        
+        // Community & Social
+        JOIN_COMMUNITY: {
+          id: 'join_community',
+          name: 'Join Community',
+          description: 'Join the PHINS community foundation',
+          icon: '🤝',
+          category: 'COMMUNITY',
+          keywords: ['join community', 'community', 'foundation', 'phins community', 'member community', 'social', 'connect', 'community foundation', 'join foundation'],
+          action: 'navigate',
+          target: '/foundation-dashboard.html',
+          quickAction: true,
+          enabled: true
+        },
+        REFERRALS: {
+          id: 'referrals',
+          name: 'Refer Friends',
+          description: 'Invite friends and earn rewards',
+          icon: '🎁',
+          category: 'COMMUNITY',
+          keywords: ['refer', 'referral', 'invite friends', 'share', 'referral code', 'earn rewards', 'invite', 'refer friends', 'get referral', 'referral program'],
+          action: 'navigate',
+          target: '#referrals',
+          quickAction: true,
+          enabled: true
+        },
+        SHARE_CODE: {
+          id: 'share_code',
+          name: 'Share Referral Code',
+          description: 'Generate and share your referral code',
+          icon: '🎫',
+          category: 'COMMUNITY',
+          keywords: ['share code', 'generate code', 'my code', 'referral link', 'share link', 'get my code'],
+          action: 'custom',
+          handler: 'showShareReferralCode',
+          quickAction: false,
+          enabled: true
+        },
+        
+        // Account Management
+        PERSONAL_DATA: {
+          id: 'personal_data',
+          name: 'Personal Data',
+          description: 'View your personal information',
+          icon: '👤',
+          category: 'ACCOUNT',
+          keywords: ['personal data', 'my profile', 'my information', 'personal report', 'my details', 'about me', 'account info'],
+          action: 'report',
+          handler: 'generatePersonalDataReport',
+          quickAction: true,
+          enabled: true
+        },
+        UPDATE_PROFILE: {
+          id: 'update_profile',
+          name: 'Update Profile',
+          description: 'Update your account information',
+          icon: '✏️',
+          category: 'ACCOUNT',
+          keywords: ['update my', 'change my', 'edit profile', 'update information', 'change address', 'update profile', 'edit info', 'modify details'],
+          action: 'navigate',
+          target: '#billing-settings',
+          quickAction: false,
+          enabled: true
+        },
+        SETTINGS: {
+          id: 'settings',
+          name: 'Account Settings',
+          description: 'Manage your account settings',
+          icon: '⚙️',
+          category: 'ACCOUNT',
+          keywords: ['settings', 'account settings', 'preferences', 'change password', 'security', 'notifications'],
+          action: 'navigate',
+          target: '#billing-settings',
+          quickAction: false,
+          enabled: true
+        },
+        
+        // Reports & Analytics
+        SAVINGS_REPORT: {
+          id: 'savings_report',
+          name: 'Savings Report',
+          description: 'View your savings and investment summary',
+          icon: '📈',
+          category: 'REPORTS',
+          keywords: ['savings report', 'investment report', 'my savings', 'portfolio report', 'investment summary', 'savings summary'],
+          action: 'report',
+          handler: 'generateSavingsReport',
+          quickAction: false,
+          enabled: true
+        },
+        COVERAGE_INFO: {
+          id: 'coverage_info',
+          name: 'Coverage Information',
+          description: 'View your coverage details',
+          icon: '🛡️',
+          category: 'REPORTS',
+          keywords: ['my coverage', 'coverage amount', 'what\'s my coverage', 'how much coverage', 'insured for', 'coverage details'],
+          action: 'info',
+          handler: 'showCoverageInfo',
+          quickAction: false,
+          enabled: true
+        },
+        BALANCE_INFO: {
+          id: 'balance_info',
+          name: 'Balance Information',
+          description: 'Check all your account balances',
+          icon: '💎',
+          category: 'REPORTS',
+          keywords: ['my balance', 'savings balance', 'account balance', 'how much do i have', 'total balance'],
+          action: 'info',
+          handler: 'showBalanceInfo',
+          quickAction: false,
+          enabled: true
+        }
+      },
+      
+      // Quick suggestions shown in help panel
+      suggestions: [
+        "Show me all my billings",
+        "How much do I pay monthly?",
+        "My personal data report",
+        "How much savings in 5 years?",
+        "I want to apply for new policy",
+        "Pay my bills",
+        "Join the community",
+        "Refer a friend",
+        "File a claim",
+        "Check my investments",
+        "What's my coverage?",
+        "Show my health wallet"
+      ],
+      
+      // Get all enabled services
+      getEnabledServices() {
+        return Object.values(this.services).filter(s => s.enabled);
+      },
+      
+      // Get services by category
+      getServicesByCategory(categoryId) {
+        return this.getEnabledServices().filter(s => s.category === categoryId);
+      },
+      
+      // Get quick action services
+      getQuickActionServices() {
+        return this.getEnabledServices().filter(s => s.quickAction);
+      },
+      
+      // Find service by keyword match
+      findServiceByKeyword(query) {
+        const q = query.toLowerCase();
+        let bestMatch = null;
+        let bestScore = 0;
+        
+        for (const service of this.getEnabledServices()) {
+          for (const keyword of service.keywords) {
+            if (q.includes(keyword)) {
+              const score = keyword.length;
+              if (score > bestScore) {
+                bestScore = score;
+                bestMatch = service;
+              }
+            }
+          }
+        }
+        
+        return bestMatch;
+      },
+      
+      // Add new service dynamically (for future features)
+      addService(serviceConfig) {
+        if (serviceConfig.id && !this.services[serviceConfig.id.toUpperCase()]) {
+          this.services[serviceConfig.id.toUpperCase()] = {
+            ...serviceConfig,
+            enabled: serviceConfig.enabled !== false
+          };
+          console.log(`[AI Assistant] New service added: ${serviceConfig.name}`);
+          return true;
+        }
+        return false;
+      },
+      
+      // Enable/disable a service
+      toggleService(serviceId, enabled) {
+        const key = serviceId.toUpperCase();
+        if (this.services[key]) {
+          this.services[key].enabled = enabled;
+          return true;
+        }
+        return false;
+      }
+    };
+    
     // Initialize voice recognition
     function initVoiceRecognition() {
       if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
@@ -1756,38 +2187,33 @@
       }
     }
     
-    // Intent classification
+    // Intent classification - Uses AI_SERVICES_CONFIG for extensibility
     function classifyIntent(query) {
-      const intents = {
-        // Report intents
-        REPORT_BILLING: ['billing report', 'all my billings', 'billing history', 'payment history', 'show billing', 'my bills', 'invoices'],
-        REPORT_PERSONAL: ['personal data', 'my profile', 'my information', 'personal report', 'my details', 'about me'],
-        REPORT_POLICY: ['policy report', 'my policies', 'coverage report', 'insurance summary', 'policy summary', 'what policies'],
-        REPORT_SAVINGS: ['savings report', 'investment report', 'my savings', 'portfolio report', 'investment summary'],
-        REPORT_CLAIMS: ['claims report', 'my claims', 'claims history', 'claim status'],
-        
-        // Information intents
-        INFO_MONTHLY_COST: ['how much do i pay', 'monthly payment', 'monthly premium', 'pay monthly', 'monthly cost', 'premium amount', 'pay every month', 'risk cover cost'],
-        INFO_MONTHLY_SAVINGS: ['how much do i save', 'monthly savings', 'save every month', 'saving amount', 'monthly contribution'],
-        INFO_COVERAGE: ['my coverage', 'coverage amount', 'what\'s my coverage', 'how much coverage', 'insured for', 'risk cover'],
-        INFO_BALANCE: ['my balance', 'savings balance', 'account balance', 'how much do i have', 'wallet balance'],
-        
-        // Calculation intents
+      // First try to match using the AI_SERVICES_CONFIG
+      const matchedService = AI_SERVICES_CONFIG.findServiceByKeyword(query);
+      
+      if (matchedService) {
+        const entities = extractEntities(query);
+        return { 
+          type: 'SERVICE_' + matchedService.id.toUpperCase(), 
+          service: matchedService,
+          entities, 
+          query 
+        };
+      }
+      
+      // Fallback to legacy intents for backward compatibility
+      const legacyIntents = {
+        // Calculation intents (not directly mapped to services)
         CALC_PROJECTION: ['savings in', 'will i have in', 'years', 'projection', 'future value', 'compound', 'forecast'],
-        
-        // Action intents
-        ACTION_APPLY: ['apply for', 'new policy', 'get insurance', 'buy policy', 'purchase policy', 'want insurance', 'apply new'],
-        ACTION_PAY: ['pay my bill', 'make payment', 'pay now', 'pay premium', 'want to pay'],
-        ACTION_SAVE: ['want to save', 'save $', 'invest $', 'deposit', 'add to savings'],
-        ACTION_CLAIM: ['file a claim', 'submit claim', 'make claim', 'new claim', 'want to claim'],
-        ACTION_UPDATE: ['update my', 'change my', 'edit profile', 'update information', 'change address']
+        ACTION_SAVE: ['want to save', 'save $', 'invest $', 'deposit', 'add to savings']
       };
       
-      // Find best matching intent
+      // Find best matching legacy intent
       let bestIntent = 'UNKNOWN';
       let bestScore = 0;
       
-      for (const [intent, keywords] of Object.entries(intents)) {
+      for (const [intent, keywords] of Object.entries(legacyIntents)) {
         for (const keyword of keywords) {
           if (query.includes(keyword)) {
             const score = keyword.length;
@@ -1836,71 +2262,229 @@
       return entities;
     }
     
-    // Execute intent
+    // Execute intent - Enhanced to use AI_SERVICES_CONFIG
     async function executeIntent(intent, originalQuery) {
       // Load customer data if not cached
       await loadCustomerDataForAI();
       
+      // Check if this is a service-based intent (from AI_SERVICES_CONFIG)
+      if (intent.type.startsWith('SERVICE_') && intent.service) {
+        await executeServiceAction(intent.service, intent.entities);
+        return;
+      }
+      
+      // Handle legacy and special intents
       switch (intent.type) {
-        case 'REPORT_BILLING':
-          await generateBillingReport();
-          break;
-        case 'REPORT_PERSONAL':
-          await generatePersonalDataReport();
-          break;
-        case 'REPORT_POLICY':
-          await generatePolicyReport();
-          break;
-        case 'REPORT_SAVINGS':
-          await generateSavingsReport();
-          break;
-        case 'REPORT_CLAIMS':
-          await generateClaimsReport();
-          break;
-        case 'INFO_MONTHLY_COST':
-          await showMonthlyCost();
-          break;
-        case 'INFO_MONTHLY_SAVINGS':
-          await showMonthlySavings();
-          break;
-        case 'INFO_COVERAGE':
-          await showCoverageInfo();
-          break;
-        case 'INFO_BALANCE':
-          await showBalanceInfo();
-          break;
         case 'CALC_PROJECTION':
           await calculateProjection(intent.entities);
-          break;
-        case 'ACTION_APPLY':
-          navigateToAction('apply');
-          break;
-        case 'ACTION_PAY':
-          navigateToAction('pay');
           break;
         case 'ACTION_SAVE':
           navigateToAction('save', intent.entities);
           break;
-        case 'ACTION_CLAIM':
-          navigateToAction('claim');
-          break;
-        case 'ACTION_UPDATE':
-          navigateToAction('update');
-          break;
         default:
-          showAIResponse(`
-            <div style="text-align: center; padding: 20px;">
-              <div style="font-size: 3rem; margin-bottom: 16px;">🤔</div>
-              <h3 style="color: #333; margin-bottom: 12px;">I'm not sure what you mean</h3>
-              <p style="color: #666;">Try one of these:</p>
-              <div style="display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 16px;">
-                <button onclick="quickAIAction('billing_report')" style="background: #667eea; color: white; border: none; padding: 8px 16px; border-radius: 20px; cursor: pointer;">📊 Billing Report</button>
-                <button onclick="quickAIAction('savings_calc')" style="background: #28a745; color: white; border: none; padding: 8px 16px; border-radius: 20px; cursor: pointer;">💰 Savings Calculator</button>
-                <button onclick="quickAIAction('my_policies')" style="background: #17a2b8; color: white; border: none; padding: 8px 16px; border-radius: 20px; cursor: pointer;">📋 My Policies</button>
-              </div>
-            </div>
-          `);
+          showUnknownIntentResponse();
       }
+    }
+    
+    // Execute service action based on AI_SERVICES_CONFIG
+    async function executeServiceAction(service, entities = {}) {
+      console.log(`[AI Assistant] Executing service: ${service.name}`, service);
+      
+      switch (service.action) {
+        case 'navigate':
+          // Show confirmation and navigate
+          showNavigationResponse(service);
+          break;
+          
+        case 'report':
+          // Call the report handler function
+          if (service.handler && typeof window[service.handler] === 'function') {
+            await window[service.handler]();
+          } else {
+            showAIError(`Report handler not found: ${service.handler}`);
+          }
+          break;
+          
+        case 'info':
+          // Call the info handler function
+          if (service.handler && typeof window[service.handler] === 'function') {
+            await window[service.handler]();
+          } else {
+            showAIError(`Info handler not found: ${service.handler}`);
+          }
+          break;
+          
+        case 'calculate':
+          // Call calculation handler with entities
+          if (service.handler && typeof window[service.handler] === 'function') {
+            await window[service.handler](entities);
+          } else {
+            showAIError(`Calculation handler not found: ${service.handler}`);
+          }
+          break;
+          
+        case 'custom':
+          // Call custom handler
+          if (service.handler && typeof window[service.handler] === 'function') {
+            await window[service.handler](entities);
+          } else {
+            showAIError(`Custom handler not found: ${service.handler}`);
+          }
+          break;
+          
+        default:
+          showAIError(`Unknown action type: ${service.action}`);
+      }
+    }
+    
+    // Show navigation response with confirmation
+    function showNavigationResponse(service) {
+      const categoryInfo = AI_SERVICES_CONFIG.categories[service.category] || {};
+      const categoryColor = categoryInfo.color || '#667eea';
+      
+      showAIResponse(`
+        <div style="text-align: center; padding: 30px;">
+          <div style="font-size: 4rem; margin-bottom: 16px;">${service.icon}</div>
+          <h3 style="color: #333; margin-bottom: 8px;">${service.name}</h3>
+          <p style="color: #666; margin-bottom: 24px;">${service.description}</p>
+          <button onclick="window.location.href='${service.target}'" 
+                  style="background: linear-gradient(135deg, ${categoryColor} 0%, ${categoryColor}dd 100%); color: white; border: none; padding: 14px 40px; border-radius: 25px; cursor: pointer; font-size: 1.1rem; font-weight: 600; box-shadow: 0 4px 15px ${categoryColor}40;">
+            Go to ${service.name} →
+          </button>
+          <div style="margin-top: 20px;">
+            <p style="color: #999; font-size: 0.85rem;">Or try asking something else:</p>
+            <div style="display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 12px;">
+              ${getRelatedServiceButtons(service)}
+            </div>
+          </div>
+        </div>
+      `);
+    }
+    
+    // Get related service buttons for suggestions
+    function getRelatedServiceButtons(currentService) {
+      const relatedServices = AI_SERVICES_CONFIG.getQuickActionServices()
+        .filter(s => s.id !== currentService.id)
+        .slice(0, 3);
+      
+      return relatedServices.map(s => `
+        <button onclick="quickAIAction('${s.id}')" 
+                style="background: #f0f0f0; color: #333; border: none; padding: 8px 16px; border-radius: 20px; cursor: pointer; font-size: 0.85rem;">
+          ${s.icon} ${s.name}
+        </button>
+      `).join('');
+    }
+    
+    // Show unknown intent response with helpful suggestions
+    function showUnknownIntentResponse() {
+      const quickServices = AI_SERVICES_CONFIG.getQuickActionServices().slice(0, 6);
+      const serviceButtons = quickServices.map(s => {
+        const categoryInfo = AI_SERVICES_CONFIG.categories[s.category] || {};
+        const bgColor = categoryInfo.color || '#667eea';
+        return `
+          <button onclick="quickAIAction('${s.id}')" 
+                  style="background: ${bgColor}; color: white; border: none; padding: 8px 16px; border-radius: 20px; cursor: pointer; font-size: 0.85rem;">
+            ${s.icon} ${s.name}
+          </button>
+        `;
+      }).join('');
+      
+      showAIResponse(`
+        <div style="text-align: center; padding: 20px;">
+          <div style="font-size: 3rem; margin-bottom: 16px;">🤖</div>
+          <h3 style="color: #333; margin-bottom: 12px;">I'm here to help!</h3>
+          <p style="color: #666; margin-bottom: 16px;">I didn't quite understand that. Here are some things I can help you with:</p>
+          <div style="display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 16px;">
+            ${serviceButtons}
+          </div>
+          <p style="color: #999; font-size: 0.85rem; margin-top: 20px;">Click ❓ for more options or try typing your question differently.</p>
+        </div>
+      `);
+    }
+    
+    // Custom handler: Show contact support
+    function showContactSupport() {
+      showAIResponse(`
+        <div style="padding: 20px;">
+          <div style="text-align: center; margin-bottom: 24px;">
+            <div style="font-size: 3rem; margin-bottom: 12px;">📞</div>
+            <h3 style="color: #333; margin-bottom: 8px;">Contact PHINS Support</h3>
+            <p style="color: #666;">We're here to help you 24/7</p>
+          </div>
+          
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px;">
+            <div style="background: linear-gradient(135deg, #1565c0 0%, #1976d2 100%); color: white; padding: 20px; border-radius: 12px; text-align: center;">
+              <div style="font-size: 2rem; margin-bottom: 8px;">📧</div>
+              <div style="font-weight: 600;">Email Support</div>
+              <div style="font-size: 0.9rem; opacity: 0.9; margin-top: 4px;">support@phins.ai</div>
+            </div>
+            <div style="background: linear-gradient(135deg, #2e7d32 0%, #43a047 100%); color: white; padding: 20px; border-radius: 12px; text-align: center;">
+              <div style="font-size: 2rem; margin-bottom: 8px;">📱</div>
+              <div style="font-weight: 600;">Phone Support</div>
+              <div style="font-size: 0.9rem; opacity: 0.9; margin-top: 4px;">1-800-PHINS-AI</div>
+            </div>
+            <div style="background: linear-gradient(135deg, #7b1fa2 0%, #9c27b0 100%); color: white; padding: 20px; border-radius: 12px; text-align: center;">
+              <div style="font-size: 2rem; margin-bottom: 8px;">💬</div>
+              <div style="font-weight: 600;">Live Chat</div>
+              <div style="font-size: 0.9rem; opacity: 0.9; margin-top: 4px;">Available 24/7</div>
+            </div>
+          </div>
+          
+          <div style="background: #f8f9fa; border-radius: 12px; padding: 16px; margin-top: 20px;">
+            <h4 style="margin: 0 0 12px 0; color: #333;">💡 Quick Help Tips</h4>
+            <ul style="margin: 0; padding-left: 20px; color: #555; font-size: 0.9rem;">
+              <li>For billing questions, try asking me "Show my billing report"</li>
+              <li>To file a claim, say "File a claim"</li>
+              <li>For policy questions, ask "Show my policies"</li>
+            </ul>
+          </div>
+        </div>
+      `);
+    }
+    
+    // Custom handler: Show share referral code
+    function showShareReferralCode() {
+      const profile = customerDataCache.profile || {};
+      const customerName = profile.name || profile.full_name || 'Customer';
+      
+      showAIResponse(`
+        <div style="padding: 20px;">
+          <div style="text-align: center; margin-bottom: 24px;">
+            <div style="font-size: 3rem; margin-bottom: 12px;">🎁</div>
+            <h3 style="color: #333; margin-bottom: 8px;">Share & Earn Rewards!</h3>
+            <p style="color: #666;">Invite friends to join PHINS and earn rewards together</p>
+          </div>
+          
+          <div style="background: linear-gradient(135deg, #ff6b35 0%, #f7931e 100%); color: white; padding: 24px; border-radius: 16px; margin-bottom: 20px;">
+            <div style="text-align: center;">
+              <div style="font-size: 0.85rem; opacity: 0.9; margin-bottom: 8px;">Your Referral Program</div>
+              <div style="font-size: 1.8rem; font-weight: 700; margin-bottom: 16px;">💰 Earn $50 per referral!</div>
+              <p style="font-size: 0.9rem; opacity: 0.9;">When your friends sign up and get their first policy, you both get rewarded.</p>
+            </div>
+          </div>
+          
+          <div style="display: flex; gap: 12px; flex-wrap: wrap; justify-content: center;">
+            <button onclick="window.location.href='#referrals'" 
+                    style="background: linear-gradient(135deg, #28a745 0%, #20c997 100%); color: white; border: none; padding: 14px 28px; border-radius: 25px; cursor: pointer; font-weight: 600; font-size: 1rem;">
+              🎫 Generate Referral Code
+            </button>
+            <button onclick="window.location.href='#referrals'" 
+                    style="background: #f0f0f0; color: #333; border: none; padding: 14px 28px; border-radius: 25px; cursor: pointer; font-weight: 600; font-size: 1rem;">
+              📋 View My Codes
+            </button>
+          </div>
+          
+          <div style="background: #f8f9fa; border-radius: 12px; padding: 16px; margin-top: 20px;">
+            <h4 style="margin: 0 0 12px 0; color: #333;">📈 How it works</h4>
+            <ol style="margin: 0; padding-left: 20px; color: #555; font-size: 0.9rem;">
+              <li style="margin-bottom: 8px;">Generate a unique referral code</li>
+              <li style="margin-bottom: 8px;">Share with friends via WhatsApp, Email, or direct link</li>
+              <li style="margin-bottom: 8px;">Friends sign up using your code</li>
+              <li>You both receive $50 credit when they activate a policy!</li>
+            </ol>
+          </div>
+        </div>
+      `);
     }
     
     // Load customer data for AI
@@ -2385,16 +2969,47 @@
     
     // Quick AI action
     function quickAIAction(action) {
+      // Enhanced query map using AI_SERVICES_CONFIG
       const queryMap = {
+        // Policy Management
+        'apply_policy': 'I want to apply for a new policy',
+        'view_policies': 'Show me my policies',
+        'my_policies': 'Show me my policies',
+        'policy_details': 'Show my policy details',
+        
+        // Financial Services
+        'pay_bills': 'I want to pay my bills',
         'billing_report': 'Show me all my billings',
         'savings_calc': 'How much savings will I have in 5 years?',
-        'my_policies': 'Show me my policies',
-        'pay_bills': 'I want to pay my bills',
+        'savings_calculator': 'How much savings will I have in 5 years?',
+        'investments': 'Show my investments portfolio',
+        'health_wallet': 'Show my health wallet',
+        'monthly_cost': 'How much do I pay monthly?',
+        'monthly_savings': 'How much do I save monthly?',
+        
+        // Claims & Support
+        'file_claim': 'I want to file a claim',
+        'claims_status': 'Show my claims status',
+        'contact_support': 'I need to contact support',
+        
+        // Community & Social
+        'join_community': 'I want to join the community',
+        'referrals': 'I want to refer a friend',
+        'share_code': 'Show my referral code',
+        
+        // Account Management
         'personal_data': 'Show my personal data',
-        'file_claim': 'I want to file a claim'
+        'update_profile': 'I want to update my profile',
+        'settings': 'Show account settings',
+        
+        // Reports & Analytics
+        'savings_report': 'Show my savings report',
+        'coverage_info': 'What is my coverage?',
+        'balance_info': 'Show my balance'
       };
       
-      document.getElementById('ai-query-input').value = queryMap[action] || '';
+      const query = queryMap[action] || action;
+      document.getElementById('ai-query-input').value = query;
       processAIQuery();
     }
     
