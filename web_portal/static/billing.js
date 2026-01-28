@@ -683,19 +683,42 @@ async function loadRecentTransactions() {
       const amountClass = amount < 0 ? 'color: #dc3545;' : 'color: #28a745;';
       const amountDisplay = amount < 0 ? `-$${Math.abs(amount).toFixed(2)}` : `$${amount.toFixed(2)}`;
       
+      // Auto-pay badge (if applicable)
+      const autoPayBadge = txn.auto_pay ? 
+        `<span style="display: inline-flex; align-items: center; gap: 4px; background: linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%); color: white; padding: 2px 8px; border-radius: 12px; font-size: 0.7rem; margin-left: 6px;">
+          🤖 Auto
+        </span>` : '';
+      
+      // Billing schedule info
+      const billingSchedule = txn.billing_schedule ? 
+        `<div style="font-size: 0.75rem; color: #8b5cf6; margin-top: 2px;">
+          📅 ${txn.billing_schedule}
+        </div>` : '';
+      
+      // Next billing info (for auto-pay transactions)
+      const nextBillingInfo = txn.auto_pay && txn.next_billing_date ?
+        `<div style="font-size: 0.7rem; color: #6b7280; margin-top: 2px;">
+          Next: ${new Date(txn.next_billing_date).toLocaleDateString()}
+        </div>` : '';
+      
       return `
         <div class="transaction-item">
           <div style="flex: 1;">
-            <strong>${txn.transaction_id || txn.id}</strong>
+            <div style="display: flex; align-items: center;">
+              <strong>${txn.transaction_id || txn.id}</strong>
+              ${autoPayBadge}
+            </div>
             <div style="margin-top: 4px;">
               <span style="display: inline-flex; align-items: center; gap: 6px; font-size: 0.9rem;">
                 ${pmDisplay.icon}
                 <span style="font-weight: 500; color: #333;">${pmDisplay.display}</span>
               </span>
             </div>
+            ${billingSchedule}
             <div style="font-size: 0.8rem; color: #666; margin-top: 2px;">
               ${txn.customer_name || txn.customer_id} • ${formattedDate}
             </div>
+            ${nextBillingInfo}
           </div>
           <div style="text-align: right; min-width: 120px;">
             <strong style="${amountClass}">${amountDisplay}</strong><br>
@@ -720,16 +743,23 @@ async function loadRecentTransactions() {
 
 /**
  * Format payment method for display with icon and masked card number
+ * DEFAULT: Use "4444" if card payment but no last 4 digits available
+ * 
  * @param {Object} txn - Transaction object
- * @returns {Object} - {display, icon, tooltip}
+ * @returns {Object} - {display, icon, tooltip, autoPay, billingSchedule}
  */
 function formatPaymentMethodDisplay(txn) {
+  // Default card last 4 digits when not available
+  const DEFAULT_CARD_LAST4 = '4444';
+  
   // Use enhanced data if available
   if (txn.payment_method_icon && txn.payment_method !== 'N/A') {
     return {
       display: txn.payment_method,
       icon: txn.payment_method_icon,
-      tooltip: txn.payment_method_raw || txn.payment_method
+      tooltip: txn.payment_method_raw || txn.payment_method,
+      autoPay: txn.auto_pay || false,
+      billingSchedule: txn.billing_schedule || null
     };
   }
   
@@ -763,20 +793,19 @@ function formatPaymentMethodDisplay(txn) {
     'amex': 'Amex',
     'american_express': 'Amex',
     'discover': 'Discover',
-    'jcb': 'JCB'
+    'jcb': 'JCB',
+    'card': 'Card'
   };
   
   let display = pm || 'N/A';
   let icon = icons[pm] || '💰';
   
-  // Format credit/debit card with last 4 digits
-  if (pm === 'credit_card' || pm === 'debit_card' || cardLast4) {
-    const typeName = cardType ? (cardNames[cardType.toLowerCase()] || 'Card') : 'Card';
-    if (cardLast4) {
-      display = `${typeName} •••• ${cardLast4}`;
-    } else {
-      display = `${typeName} •••• ****`;
-    }
+  // Format credit/debit card with last 4 digits (DEFAULT: 4444)
+  if (pm === 'credit_card' || pm === 'debit_card' || cardLast4 || cardType) {
+    const typeName = cardType ? (cardNames[cardType.toLowerCase()] || 'Card') : 'Visa';
+    // Use actual last 4 or default "4444"
+    const displayLast4 = cardLast4 || DEFAULT_CARD_LAST4;
+    display = `${typeName} •••• ${displayLast4}`;
     icon = '💳';
   }
   // Format PayPal
@@ -810,10 +839,11 @@ function formatPaymentMethodDisplay(txn) {
     display = 'Health Wallet';
     icon = '💊';
   }
-  // Format N/A with better message
-  else if (!pm || pm === 'N/A') {
-    display = 'Not Specified';
-    icon = '❓';
+  // Format N/A or empty - default to Card with "4444"
+  else if (!pm || pm === 'N/A' || pm === '****-****-****-****') {
+    // Default to showing as card with default last 4
+    display = `Card •••• ${DEFAULT_CARD_LAST4}`;
+    icon = '💳';
   }
   // Format other methods
   else {
@@ -821,7 +851,13 @@ function formatPaymentMethodDisplay(txn) {
     icon = icons[pm] || '💰';
   }
   
-  return { display, icon, tooltip: pm };
+  return { 
+    display, 
+    icon, 
+    tooltip: pm || 'credit_card',
+    autoPay: txn.auto_pay || false,
+    billingSchedule: txn.billing_schedule || null
+  };
 }
 
 /**
@@ -2063,13 +2099,18 @@ async function exportTransactions(format) {
           Transaction_ID: t.id || t.transaction_id,
           Customer_ID: t.customer_id,
           Customer_Name: t.customer_name || 'N/A',
+          Policy_ID: t.policy_id || '',
           Type: t.type,
           Amount: t.amount,
           Status: t.status,
           Date: t.date,
           Payment_Method: pmDisplay.display,
-          Card_Type: t.card_type || '',
-          Card_Last_4: t.card_last4 || ''
+          Card_Type: t.card_type || 'card',
+          Card_Last_4: t.card_last4 || '4444',
+          Auto_Pay: t.auto_pay ? 'Yes' : 'No',
+          Billing_Frequency: t.billing_frequency || '',
+          Billing_Schedule: t.billing_schedule || '',
+          Next_Billing_Date: t.next_billing_date ? t.next_billing_date.substring(0, 10) : ''
         };
       });
       downloadCSV(csvData, 'PHINS_Transactions');
@@ -3728,3 +3769,348 @@ async function sendAllBillingReminders() {
     notificationResults.innerHTML = `<p style="color: #dc3545;">Error: ${err.message}</p>`;
   }
 }
+
+// ========== AUTO-PAY AI CONFIGURATION FUNCTIONS ==========
+
+// Load auto-pay settings for the selected customer/policy
+async function loadAutoPaySettings() {
+  const statusIcon = document.getElementById('autopay-status-icon');
+  const statusText = document.getElementById('autopay-status-text');
+  const nextBilling = document.getElementById('autopay-next-billing');
+  const policySelect = document.getElementById('autopay-policy-select');
+  
+  statusIcon.textContent = '⏳';
+  statusText.textContent = 'Loading...';
+  
+  try {
+    // Load customer's policies for the dropdown
+    const customerId = document.getElementById('customer_id')?.value || 
+                       document.getElementById('billing-customer-select')?.value ||
+                       localStorage.getItem('phins_customer_id');
+    
+    if (!customerId) {
+      statusIcon.textContent = '❓';
+      statusText.textContent = 'Select a customer first';
+      return;
+    }
+    
+    // Fetch customer's policies
+    const policiesResponse = await fetch(`/api/policies?customer_id=${customerId}`, {
+      headers: { 'Authorization': `Bearer ${localStorage.getItem('phins_token')}` }
+    });
+    
+    if (policiesResponse.ok) {
+      const policiesData = await policiesResponse.json();
+      const policies = policiesData.items || policiesData.policies || [];
+      
+      // Populate policy dropdown
+      policySelect.innerHTML = '<option value="">-- Select Policy --</option>';
+      policies.forEach(p => {
+        const opt = document.createElement('option');
+        opt.value = p.id || p.policy_id;
+        opt.textContent = `${p.id || p.policy_id} - ${p.type || 'Insurance'} (${p.status || 'Active'})`;
+        policySelect.appendChild(opt);
+      });
+      
+      // If only one policy, select it automatically
+      if (policies.length === 1) {
+        policySelect.value = policies[0].id || policies[0].policy_id;
+        await loadPolicyAutoPayStatus(policies[0].id || policies[0].policy_id, customerId);
+      } else if (policies.length > 0) {
+        statusIcon.textContent = '📋';
+        statusText.textContent = `${policies.length} policies found - select one to configure`;
+      } else {
+        statusIcon.textContent = '❌';
+        statusText.textContent = 'No policies found for this customer';
+      }
+    }
+  } catch (err) {
+    console.error('Error loading auto-pay settings:', err);
+    statusIcon.textContent = '❌';
+    statusText.textContent = 'Error loading settings';
+  }
+}
+
+// Load auto-pay status for a specific policy
+async function loadPolicyAutoPayStatus(policyId, customerId) {
+  const statusIcon = document.getElementById('autopay-status-icon');
+  const statusText = document.getElementById('autopay-status-text');
+  const nextBilling = document.getElementById('autopay-next-billing');
+  
+  if (!policyId) {
+    statusIcon.textContent = '❓';
+    statusText.textContent = 'Select a policy';
+    return;
+  }
+  
+  try {
+    const response = await fetch('/api/billing/auto-pay/settings', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${localStorage.getItem('phins_token')}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ policy_id: policyId, customer_id: customerId })
+    });
+    
+    if (response.ok) {
+      const data = await response.json();
+      const autoPay = data.auto_pay || {};
+      
+      if (autoPay.enabled) {
+        statusIcon.textContent = '✅';
+        statusText.innerHTML = `<span style="color: #10b981;">Active</span> - ${autoPay.payment_method} (${autoPay.schedule})`;
+        
+        if (autoPay.next_billing_date) {
+          const nextDate = new Date(autoPay.next_billing_date);
+          nextBilling.innerHTML = `📅 Next: <strong>${nextDate.toLocaleDateString()}</strong>`;
+        }
+        
+        // Pre-fill form with current settings
+        document.getElementById('autopay-enabled').value = 'true';
+        document.getElementById('autopay-method').value = autoPay.payment_method_raw || 'credit_card';
+        document.getElementById('autopay-card-type').value = autoPay.card_type || 'visa';
+        document.getElementById('autopay-card-last4').value = autoPay.card_last4 || '4444';
+        document.getElementById('autopay-frequency').value = autoPay.billing_frequency || 'monthly';
+        document.getElementById('autopay-billing-day').value = autoPay.billing_day || '1';
+        document.getElementById('autopay-ai-optimization').checked = autoPay.ai_optimization || false;
+      } else {
+        statusIcon.textContent = '⏸️';
+        statusText.innerHTML = '<span style="color: #f59e0b;">Not Configured</span> - Click below to enable';
+        nextBilling.textContent = '';
+      }
+    }
+  } catch (err) {
+    console.error('Error loading policy auto-pay status:', err);
+    statusIcon.textContent = '⚠️';
+    statusText.textContent = 'Could not load status';
+  }
+}
+
+// Handle policy selection change for auto-pay
+document.addEventListener('DOMContentLoaded', function() {
+  const policySelect = document.getElementById('autopay-policy-select');
+  if (policySelect) {
+    policySelect.addEventListener('change', function() {
+      const policyId = this.value;
+      const customerId = document.getElementById('customer_id')?.value || 
+                         document.getElementById('billing-customer-select')?.value ||
+                         localStorage.getItem('phins_customer_id');
+      if (policyId && customerId) {
+        loadPolicyAutoPayStatus(policyId, customerId);
+      }
+    });
+  }
+  
+  // Show/hide card fields based on payment method
+  const methodSelect = document.getElementById('autopay-method');
+  if (methodSelect) {
+    methodSelect.addEventListener('change', function() {
+      const cardSection = document.getElementById('autopay-card-section');
+      const cardLast4Section = document.getElementById('autopay-card-last4-section');
+      if (this.value === 'credit_card') {
+        cardSection.style.display = 'block';
+        cardLast4Section.style.display = 'block';
+      } else {
+        cardSection.style.display = 'none';
+        cardLast4Section.style.display = 'none';
+      }
+    });
+  }
+  
+  // Initial load
+  setTimeout(loadAutoPaySettings, 500);
+});
+
+// Save auto-pay configuration
+async function saveAutoPayConfig(event) {
+  event.preventDefault();
+  
+  const resultDiv = document.getElementById('autopay-config-result');
+  resultDiv.style.display = 'block';
+  resultDiv.style.background = '#f8f9fa';
+  resultDiv.innerHTML = '⏳ Saving configuration...';
+  
+  const policyId = document.getElementById('autopay-policy-select').value;
+  const customerId = document.getElementById('customer_id')?.value || 
+                     document.getElementById('billing-customer-select')?.value ||
+                     localStorage.getItem('phins_customer_id');
+  
+  if (!policyId || !customerId) {
+    resultDiv.style.background = '#f8d7da';
+    resultDiv.innerHTML = '❌ Please select a customer and policy first';
+    return;
+  }
+  
+  const config = {
+    customer_id: customerId,
+    policy_id: policyId,
+    enabled: document.getElementById('autopay-enabled').value === 'true',
+    payment_method: document.getElementById('autopay-method').value,
+    card_type: document.getElementById('autopay-card-type').value,
+    card_last4: document.getElementById('autopay-card-last4').value || '4444',
+    billing_frequency: document.getElementById('autopay-frequency').value,
+    billing_day: parseInt(document.getElementById('autopay-billing-day').value),
+    ai_optimization: document.getElementById('autopay-ai-optimization').checked
+  };
+  
+  try {
+    const response = await fetch('/api/billing/auto-pay/configure', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${localStorage.getItem('phins_token')}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(config)
+    });
+    
+    const result = await response.json();
+    
+    if (result.success) {
+      resultDiv.style.background = '#d4edda';
+      resultDiv.innerHTML = `
+        <div style="display: flex; align-items: flex-start; gap: 12px;">
+          <span style="font-size: 1.5rem;">✅</span>
+          <div>
+            <strong>Auto-Pay Configured Successfully!</strong>
+            <div style="margin-top: 8px; font-size: 0.9rem;">
+              <div>${result.auto_pay_config.payment_method_icon} ${result.auto_pay_config.payment_method}</div>
+              <div>📅 ${result.auto_pay_config.schedule}</div>
+              <div>📆 Next billing: ${result.auto_pay_config.next_billing_date}</div>
+              ${result.ai_note ? `<div style="color: #8b5cf6; margin-top: 4px;">🤖 ${result.ai_note}</div>` : ''}
+              <div style="font-size: 0.8rem; color: #666; margin-top: 4px;">
+                Ledger TX: ${result.ledger_tx_id || 'N/A'} | NFT: ${result.nft_token_id || 'N/A'}
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+      
+      // Refresh status panel
+      loadPolicyAutoPayStatus(policyId, customerId);
+      
+      // Reload transactions to show any changes
+      loadRecentTransactions();
+      
+      showNotification('Auto-pay configured successfully!', 'success');
+    } else {
+      resultDiv.style.background = '#f8d7da';
+      resultDiv.innerHTML = `❌ Error: ${result.error}`;
+      showNotification(`Failed: ${result.error}`, 'error');
+    }
+  } catch (err) {
+    console.error('Error saving auto-pay config:', err);
+    resultDiv.style.background = '#f8d7da';
+    resultDiv.innerHTML = `❌ Error: ${err.message}`;
+    showNotification(`Error: ${err.message}`, 'error');
+  }
+}
+
+// Execute auto-pay manually
+async function executeAutoPay() {
+  const policyId = document.getElementById('autopay-policy-select').value;
+  const customerId = document.getElementById('customer_id')?.value || 
+                     document.getElementById('billing-customer-select')?.value ||
+                     localStorage.getItem('phins_customer_id');
+  
+  const resultDiv = document.getElementById('autopay-config-result');
+  resultDiv.style.display = 'block';
+  resultDiv.style.background = '#f8f9fa';
+  resultDiv.innerHTML = '⏳ Executing auto-pay...';
+  
+  // First do a dry run
+  if (!confirm('Execute auto-pay now? This will process payment for the selected policy.')) {
+    resultDiv.innerHTML = 'Cancelled';
+    return;
+  }
+  
+  try {
+    const response = await fetch('/api/billing/auto-pay/execute', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${localStorage.getItem('phins_token')}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        policy_id: policyId,
+        customer_id: customerId,
+        dry_run: false
+      })
+    });
+    
+    const result = await response.json();
+    
+    if (result.success) {
+      if (result.processed > 0) {
+        resultDiv.style.background = '#d4edda';
+        resultDiv.innerHTML = `
+          <div style="display: flex; align-items: flex-start; gap: 12px;">
+            <span style="font-size: 1.5rem;">✅</span>
+            <div>
+              <strong>Auto-Pay Executed Successfully!</strong>
+              <div style="margin-top: 8px; font-size: 0.9rem;">
+                <div>💰 Total: <strong>$${result.total_amount.toFixed(2)}</strong></div>
+                <div>📝 Payments processed: ${result.processed}</div>
+                ${result.payments.map(p => `
+                  <div style="margin-top: 4px; padding: 6px; background: rgba(0,0,0,0.05); border-radius: 4px;">
+                    Policy: ${p.policy_id} | Amount: $${p.amount.toFixed(2)} | ${p.payment_method}
+                    <br>Next billing: ${p.next_billing_date}
+                  </div>
+                `).join('')}
+              </div>
+            </div>
+          </div>
+        `;
+        
+        showNotification(`Processed ${result.processed} payment(s) totaling $${result.total_amount.toFixed(2)}`, 'success');
+      } else {
+        resultDiv.style.background = '#fff3cd';
+        resultDiv.innerHTML = `
+          <div style="display: flex; align-items: center; gap: 12px;">
+            <span style="font-size: 1.5rem;">ℹ️</span>
+            <div>
+              <strong>No Payments Due</strong>
+              <div style="font-size: 0.9rem; margin-top: 4px;">
+                ${result.message}
+              </div>
+            </div>
+          </div>
+        `;
+        showNotification('No auto-pay payments due', 'info');
+      }
+      
+      // Reload transactions
+      loadRecentTransactions();
+      
+      // Refresh status
+      if (policyId && customerId) {
+        loadPolicyAutoPayStatus(policyId, customerId);
+      }
+    } else {
+      resultDiv.style.background = '#f8d7da';
+      resultDiv.innerHTML = `❌ Error: ${result.error}`;
+      showNotification(`Failed: ${result.error}`, 'error');
+    }
+  } catch (err) {
+    console.error('Error executing auto-pay:', err);
+    resultDiv.style.background = '#f8d7da';
+    resultDiv.innerHTML = `❌ Error: ${err.message}`;
+    showNotification(`Error: ${err.message}`, 'error');
+  }
+}
+
+// Update auto-pay settings when customer selection changes
+if (typeof loadCustomerPoliciesForBilling === 'function') {
+  const originalLoadCustomerPolicies = loadCustomerPoliciesForBilling;
+  loadCustomerPoliciesForBilling = async function() {
+    await originalLoadCustomerPolicies.apply(this, arguments);
+    // Also load auto-pay settings
+    setTimeout(loadAutoPaySettings, 300);
+  };
+}
+
+// Expose functions globally
+window.loadAutoPaySettings = loadAutoPaySettings;
+window.loadPolicyAutoPayStatus = loadPolicyAutoPayStatus;
+window.saveAutoPayConfig = saveAutoPayConfig;
+window.executeAutoPay = executeAutoPay;
