@@ -2214,6 +2214,32 @@ except ImportError as e:
     supplier_service_enabled = False
     print(f"Warning: Supplier Management service not available: {e}")
 
+# ============ SUPPLY CHAIN ECOSYSTEM SERVICE ============
+# Invitation-only B2B supply chain with adjustable commission (11% default)
+SUPPLIER_INVITATIONS: Dict[str, Dict[str, Any]] = {}  # code -> invitation data
+SUPPLY_CHAIN_LEDGER: Dict[str, Dict[str, Any]] = {}  # entry_id -> ledger entry
+
+supply_chain_service = None
+supply_chain_enabled = False
+try:
+    from services.supply_chain_ecosystem_service import init_supply_chain_service
+    supply_chain_service = init_supply_chain_service(
+        suppliers=SUPPLIERS,
+        invitations=SUPPLIER_INVITATIONS,
+        offers=SUPPLIER_OFFERS,
+        orders=SUPPLIER_ORDERS,
+        ledger=SUPPLY_CHAIN_LEDGER,
+        health_wallets=HEALTH_WALLETS,
+        billing=BILLING,
+        nft_ledger=NFT_LEDGER,
+        transaction_ledger=TRANSACTION_LEDGER,
+        record_transaction_func=record_transaction
+    )
+    supply_chain_enabled = True
+    print("✓ Supply Chain Ecosystem service enabled (invitation-only B2B, 11% commission)")
+except ImportError as e:
+    print(f"Warning: Supply Chain Ecosystem service not available: {e}")
+
 # Reinsurance contracts (scaffolding; DB schema not yet extended)
 REINSURANCE_CONTRACTS: Dict[str, Dict[str, Any]] = {}  # contract_id -> contract details
 
@@ -5183,6 +5209,176 @@ For claims or questions, please contact:
             
             self._set_json_headers()
             self.wfile.write(json.dumps(safe_supplier).encode('utf-8'))
+            return
+        
+        # ========== SUPPLY CHAIN ECOSYSTEM GET ENDPOINTS ==========
+        
+        # Get invitation codes (admin only)
+        if path == '/api/supply-chain/invitations':
+            if not require_role(session, ['admin']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Admin access required'}).encode('utf-8'))
+                return
+            
+            if not supply_chain_enabled or not supply_chain_service:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Supply chain service unavailable'}).encode('utf-8'))
+                return
+            
+            try:
+                status_filter = qs.get('status', [None])[0]
+                created_by_filter = qs.get('created_by', [None])[0]
+                
+                invitations = supply_chain_service.get_invitations(
+                    status=status_filter,
+                    created_by=created_by_filter
+                )
+                
+                self._set_json_headers()
+                self.wfile.write(json.dumps({'items': invitations}).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+        
+        # Validate invitation code (public - for registration form)
+        if path.startswith('/api/supply-chain/invitations/') and '/validate' in path:
+            if not supply_chain_enabled or not supply_chain_service:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Supply chain service unavailable'}).encode('utf-8'))
+                return
+            
+            try:
+                code = path.split('/')[4]
+                result = supply_chain_service.validate_invitation_code(code)
+                
+                self._set_json_headers()
+                self.wfile.write(json.dumps(result).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+        
+        # Get fee schedule
+        if path == '/api/supply-chain/fee-schedule':
+            if not supply_chain_enabled or not supply_chain_service:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Supply chain service unavailable'}).encode('utf-8'))
+                return
+            
+            try:
+                fee_schedule = supply_chain_service.get_fee_schedule()
+                self._set_json_headers()
+                self.wfile.write(json.dumps(fee_schedule).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+        
+        # Get pending settlements
+        if path == '/api/supply-chain/settlements':
+            if not require_role(session, ['admin', 'accountant', 'supplier']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Unauthorized'}).encode('utf-8'))
+                return
+            
+            if not supply_chain_enabled or not supply_chain_service:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Supply chain service unavailable'}).encode('utf-8'))
+                return
+            
+            try:
+                user = get_session_user(session) or {}
+                role = (user.get('role') or '').lower()
+                
+                # Suppliers can only see their own settlements
+                supplier_id = None
+                if role == 'supplier':
+                    supplier_id = session.get('supplier_id')
+                else:
+                    supplier_id = qs.get('supplier_id', [None])[0]
+                
+                settlements = supply_chain_service.get_pending_settlements(supplier_id)
+                
+                self._set_json_headers()
+                self.wfile.write(json.dumps(settlements, default=str).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+        
+        # Get platform analytics (admin only)
+        if path == '/api/supply-chain/analytics':
+            if not require_role(session, ['admin', 'actuary']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Admin access required'}).encode('utf-8'))
+                return
+            
+            if not supply_chain_enabled or not supply_chain_service:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Supply chain service unavailable'}).encode('utf-8'))
+                return
+            
+            try:
+                analytics = supply_chain_service.get_platform_analytics()
+                
+                self._set_json_headers()
+                self.wfile.write(json.dumps(analytics, default=str).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+        
+        # Verify ledger integrity (admin only)
+        if path == '/api/supply-chain/ledger/verify':
+            if not require_role(session, ['admin']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Admin access required'}).encode('utf-8'))
+                return
+            
+            if not supply_chain_enabled or not supply_chain_service:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Supply chain service unavailable'}).encode('utf-8'))
+                return
+            
+            try:
+                integrity = supply_chain_service.verify_ledger_integrity()
+                
+                self._set_json_headers()
+                self.wfile.write(json.dumps(integrity, default=str).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+        
+        # Get ledger entries
+        if path == '/api/supply-chain/ledger':
+            if not require_role(session, ['admin', 'accountant']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Unauthorized'}).encode('utf-8'))
+                return
+            
+            if not supply_chain_enabled or not supply_chain_service:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Supply chain service unavailable'}).encode('utf-8'))
+                return
+            
+            try:
+                supplier_id = qs.get('supplier_id', [None])[0]
+                entry_type = qs.get('entry_type', [None])[0]
+                limit = int(qs.get('limit', [100])[0])
+                
+                entries = supply_chain_service.get_ledger_entries(
+                    supplier_id=supplier_id,
+                    entry_type=entry_type,
+                    limit=limit
+                )
+                
+                self._set_json_headers()
+                self.wfile.write(json.dumps({'items': entries}).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
             return
 
         # Token registry (enabled-only for customers)
@@ -15244,6 +15440,330 @@ For claims or questions, please contact:
             except Exception as e:
                 self._set_json_headers(500)
                 self.wfile.write(json.dumps({'error': 'Bind failed', 'details': str(e)}).encode('utf-8'))
+            return
+
+        # ========== SUPPLY CHAIN ECOSYSTEM API ENDPOINTS ==========
+        # Invitation-only B2B marketplace with adjustable commission (11% default)
+        
+        # Generate supplier invitation code (admin only)
+        if path == '/api/supply-chain/invitations':
+            auth_header = self.headers.get('Authorization', '')
+            token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+            session = validate_session(token) if token else None
+            if not require_role(session, ['admin']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Admin access required'}).encode('utf-8'))
+                return
+            
+            if not supply_chain_enabled or not supply_chain_service:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Supply chain service unavailable'}).encode('utf-8'))
+                return
+            
+            try:
+                data = json.loads(body or '{}')
+                admin_user = (session or {}).get('username', 'admin')
+                
+                result = supply_chain_service.generate_invitation_code(
+                    created_by=admin_user,
+                    supplier_type=data.get('supplier_type'),
+                    max_uses=int(data.get('max_uses', 1)),
+                    expires_days=int(data.get('expires_days', 30)),
+                    referrer_id=data.get('referrer_id'),
+                    commission_override=float(data['commission_override']) if data.get('commission_override') else None,
+                    notes=data.get('notes', '')
+                )
+                
+                self._set_json_headers(201)
+                self.wfile.write(json.dumps(result, default=str).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+        
+        # Register supplier with invitation code
+        if path == '/api/supply-chain/register':
+            if not supply_chain_enabled or not supply_chain_service:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Supply chain service unavailable'}).encode('utf-8'))
+                return
+            
+            try:
+                data = json.loads(body or '{}')
+                result = supply_chain_service.register_supplier(data)
+                
+                self._set_json_headers(201)
+                self.wfile.write(json.dumps(result, default=str).encode('utf-8'))
+            except ValueError as e:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+        
+        # Approve supplier (admin only)
+        if path.startswith('/api/supply-chain/suppliers/') and path.endswith('/approve'):
+            auth_header = self.headers.get('Authorization', '')
+            token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+            session = validate_session(token) if token else None
+            if not require_role(session, ['admin']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Admin access required'}).encode('utf-8'))
+                return
+            
+            if not supply_chain_enabled or not supply_chain_service:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Supply chain service unavailable'}).encode('utf-8'))
+                return
+            
+            try:
+                supplier_id = path.split('/')[4]
+                data = json.loads(body or '{}')
+                admin_user = (session or {}).get('username', 'admin')
+                
+                result = supply_chain_service.approve_supplier(
+                    supplier_id=supplier_id,
+                    approved_by=admin_user,
+                    notes=data.get('notes', '')
+                )
+                
+                self._set_json_headers(200)
+                self.wfile.write(json.dumps(result, default=str).encode('utf-8'))
+            except ValueError as e:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+        
+        # Reject supplier (admin only)
+        if path.startswith('/api/supply-chain/suppliers/') and path.endswith('/reject'):
+            auth_header = self.headers.get('Authorization', '')
+            token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+            session = validate_session(token) if token else None
+            if not require_role(session, ['admin']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Admin access required'}).encode('utf-8'))
+                return
+            
+            if not supply_chain_enabled or not supply_chain_service:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Supply chain service unavailable'}).encode('utf-8'))
+                return
+            
+            try:
+                supplier_id = path.split('/')[4]
+                data = json.loads(body or '{}')
+                admin_user = (session or {}).get('username', 'admin')
+                
+                result = supply_chain_service.reject_supplier(
+                    supplier_id=supplier_id,
+                    rejected_by=admin_user,
+                    reason=data.get('reason', 'Not specified')
+                )
+                
+                self._set_json_headers(200)
+                self.wfile.write(json.dumps(result, default=str).encode('utf-8'))
+            except ValueError as e:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+        
+        # Update fee schedule (admin only)
+        if path == '/api/supply-chain/fee-schedule':
+            auth_header = self.headers.get('Authorization', '')
+            token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+            session = validate_session(token) if token else None
+            if not require_role(session, ['admin']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Admin access required'}).encode('utf-8'))
+                return
+            
+            if not supply_chain_enabled or not supply_chain_service:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Supply chain service unavailable'}).encode('utf-8'))
+                return
+            
+            try:
+                data = json.loads(body or '{}')
+                admin_user = (session or {}).get('username', 'admin')
+                
+                result = supply_chain_service.update_fee_schedule(data, admin_user)
+                
+                self._set_json_headers(200)
+                self.wfile.write(json.dumps(result, default=str).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+        
+        # Create marketplace order
+        if path == '/api/supply-chain/orders':
+            auth_header = self.headers.get('Authorization', '')
+            token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+            session = validate_session(token) if token else None
+            if not session:
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Authentication required'}).encode('utf-8'))
+                return
+            
+            if not supply_chain_enabled or not supply_chain_service:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Supply chain service unavailable'}).encode('utf-8'))
+                return
+            
+            try:
+                data = json.loads(body or '{}')
+                customer_id = data.get('customer_id') or session.get('customer_id')
+                
+                if not customer_id:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'customer_id required'}).encode('utf-8'))
+                    return
+                
+                result = supply_chain_service.create_order(
+                    customer_id=customer_id,
+                    supplier_id=data.get('supplier_id'),
+                    offer_id=data.get('offer_id'),
+                    data=data
+                )
+                
+                self._set_json_headers(201)
+                self.wfile.write(json.dumps(result, default=str).encode('utf-8'))
+            except ValueError as e:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+        
+        # Complete order (supplier only)
+        if path.startswith('/api/supply-chain/orders/') and path.endswith('/complete'):
+            auth_header = self.headers.get('Authorization', '')
+            token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+            session = validate_session(token) if token else None
+            if not session:
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Authentication required'}).encode('utf-8'))
+                return
+            
+            if not supply_chain_enabled or not supply_chain_service:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Supply chain service unavailable'}).encode('utf-8'))
+                return
+            
+            try:
+                order_id = path.split('/')[4]
+                completed_by = session.get('username', 'system')
+                
+                result = supply_chain_service.complete_order(order_id, completed_by)
+                
+                self._set_json_headers(200)
+                self.wfile.write(json.dumps(result, default=str).encode('utf-8'))
+            except ValueError as e:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+        
+        # Process settlement (admin only)
+        if path.startswith('/api/supply-chain/settlements/') and '/process' in path:
+            auth_header = self.headers.get('Authorization', '')
+            token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+            session = validate_session(token) if token else None
+            if not require_role(session, ['admin', 'accountant']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Admin/Accountant access required'}).encode('utf-8'))
+                return
+            
+            if not supply_chain_enabled or not supply_chain_service:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Supply chain service unavailable'}).encode('utf-8'))
+                return
+            
+            try:
+                supplier_id = path.split('/')[4]
+                processed_by = (session or {}).get('username', 'admin')
+                
+                result = supply_chain_service.process_settlement(supplier_id, processed_by)
+                
+                self._set_json_headers(200)
+                self.wfile.write(json.dumps(result, default=str).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+        
+        # Supplier P&L report
+        if path.startswith('/api/supply-chain/suppliers/') and path.endswith('/pnl'):
+            auth_header = self.headers.get('Authorization', '')
+            token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+            session = validate_session(token) if token else None
+            if not session:
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Authentication required'}).encode('utf-8'))
+                return
+            
+            if not supply_chain_enabled or not supply_chain_service:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Supply chain service unavailable'}).encode('utf-8'))
+                return
+            
+            try:
+                supplier_id = path.split('/')[4]
+                data = json.loads(body or '{}')
+                
+                result = supply_chain_service.generate_supplier_pnl(
+                    supplier_id=supplier_id,
+                    period_start=data.get('period_start'),
+                    period_end=data.get('period_end')
+                )
+                
+                self._set_json_headers(200)
+                self.wfile.write(json.dumps(result, default=str).encode('utf-8'))
+            except ValueError as e:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+        
+        # Supplier statistics
+        if path.startswith('/api/supply-chain/suppliers/') and path.endswith('/statistics'):
+            auth_header = self.headers.get('Authorization', '')
+            token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+            session = validate_session(token) if token else None
+            if not session:
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Authentication required'}).encode('utf-8'))
+                return
+            
+            if not supply_chain_enabled or not supply_chain_service:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Supply chain service unavailable'}).encode('utf-8'))
+                return
+            
+            try:
+                supplier_id = path.split('/')[4]
+                result = supply_chain_service.get_supplier_statistics(supplier_id)
+                
+                self._set_json_headers(200)
+                self.wfile.write(json.dumps(result, default=str).encode('utf-8'))
+            except ValueError as e:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
             return
 
         # Admin: Bulk upload customers (JSON list or CSV)
