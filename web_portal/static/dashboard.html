@@ -568,16 +568,47 @@
       
       <!-- Help Panel (Hidden by default) -->
       <div id="ai-help-panel" style="display: none; background: rgba(255,255,255,0.1); border-radius: 12px; padding: 16px; margin-bottom: 16px; color: white;">
-        <h4 style="margin: 0 0 12px 0;">💬 Try asking:</h4>
-        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 8px; font-size: 0.85rem;">
-          <div>• "Show me all my billings"</div>
-          <div>• "How much do I pay monthly?"</div>
-          <div>• "My personal data report"</div>
-          <div>• "How much savings in 5 years?"</div>
-          <div>• "I want to apply for new policy"</div>
-          <div>• "Pay my bills"</div>
-          <div>• "I want to save $10,000"</div>
-          <div>• "What's my coverage?"</div>
+        <h4 style="margin: 0 0 12px 0;">💬 Try asking (voice or text):</h4>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; font-size: 0.85rem;">
+          <div style="background: rgba(255,255,255,0.05); padding: 8px; border-radius: 8px;">
+            <div style="font-weight: 600; margin-bottom: 4px;">📊 Reports</div>
+            <div>• "Show me all my billings"</div>
+            <div>• "My personal data report"</div>
+            <div>• "What's my coverage?"</div>
+          </div>
+          <div style="background: rgba(255,255,255,0.05); padding: 8px; border-radius: 8px;">
+            <div style="font-weight: 600; margin-bottom: 4px;">🏘️ Community</div>
+            <div>• "Join community foundation"</div>
+            <div>• "Show my community"</div>
+            <div>• "Community events"</div>
+          </div>
+          <div style="background: rgba(255,255,255,0.05); padding: 8px; border-radius: 8px;">
+            <div style="font-weight: 600; margin-bottom: 4px;">📝 Policies</div>
+            <div>• "Apply for new policy"</div>
+            <div>• "Get insurance quote"</div>
+            <div>• "Upgrade my coverage"</div>
+          </div>
+          <div style="background: rgba(255,255,255,0.05); padding: 8px; border-radius: 8px;">
+            <div style="font-weight: 600; margin-bottom: 4px;">🛒 Medical Services</div>
+            <div>• "Buy medical equipment"</div>
+            <div>• "Order medication"</div>
+            <div>• "Book doctor appointment"</div>
+          </div>
+          <div style="background: rgba(255,255,255,0.05); padding: 8px; border-radius: 8px;">
+            <div style="font-weight: 600; margin-bottom: 4px;">💰 Finances</div>
+            <div>• "Pay my bills"</div>
+            <div>• "How much savings in 5 years?"</div>
+            <div>• "Check wallet balance"</div>
+          </div>
+          <div style="background: rgba(255,255,255,0.05); padding: 8px; border-radius: 8px;">
+            <div style="font-weight: 600; margin-bottom: 4px;">🆘 Claims & Support</div>
+            <div>• "File a claim"</div>
+            <div>• "Track my claim"</div>
+            <div>• "Contact support"</div>
+          </div>
+        </div>
+        <div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid rgba(255,255,255,0.2); font-size: 0.8rem; opacity: 0.9;">
+          💡 <strong>Tip:</strong> Press the 🎤 button and speak naturally. Say things like "I want to..." or "Show me..." or "Help me with..."
         </div>
       </div>
       
@@ -612,14 +643,42 @@
         <p id="voice-transcript" style="margin: 8px 0 0 0; font-style: italic; opacity: 0.9;"></p>
       </div>
       
-      <!-- Quick Action Buttons -->
-      <div style="display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px;">
-        <button onclick="quickAIAction('billing_report')" class="ai-quick-btn" style="background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.3); color: white; padding: 8px 14px; border-radius: 20px; cursor: pointer; font-size: 0.85rem; transition: all 0.2s;">📊 Billing Report</button>
-        <button onclick="quickAIAction('savings_calc')" class="ai-quick-btn" style="background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.3); color: white; padding: 8px 14px; border-radius: 20px; cursor: pointer; font-size: 0.85rem; transition: all 0.2s;">💰 Savings Calculator</button>
-        <button onclick="quickAIAction('my_policies')" class="ai-quick-btn" style="background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.3); color: white; padding: 8px 14px; border-radius: 20px; cursor: pointer; font-size: 0.85rem; transition: all 0.2s;">📋 My Policies</button>
-        <button onclick="quickAIAction('pay_bills')" class="ai-quick-btn" style="background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.3); color: white; padding: 8px 14px; border-radius: 20px; cursor: pointer; font-size: 0.85rem; transition: all 0.2s;">💳 Pay Bills</button>
-        <button onclick="quickAIAction('personal_data')" class="ai-quick-btn" style="background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.3); color: white; padding: 8px 14px; border-radius: 20px; cursor: pointer; font-size: 0.85rem; transition: all 0.2s;">👤 Personal Data</button>
-        <button onclick="quickAIAction('file_claim')" class="ai-quick-btn" style="background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.3); color: white; padding: 8px 14px; border-radius: 20px; cursor: pointer; font-size: 0.85rem; transition: all 0.2s;">🆘 File Claim</button>
+      <!-- Quick Action Buttons - Expandable Categories -->
+      <div id="ai-quick-actions" style="margin-bottom: 16px;">
+        <!-- Primary Actions Row -->
+        <div style="display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px;">
+          <button onclick="quickAIAction('billing_report')" class="ai-quick-btn" style="background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.3); color: white; padding: 8px 14px; border-radius: 20px; cursor: pointer; font-size: 0.85rem; transition: all 0.2s;">📊 Billing Report</button>
+          <button onclick="quickAIAction('savings_calc')" class="ai-quick-btn" style="background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.3); color: white; padding: 8px 14px; border-radius: 20px; cursor: pointer; font-size: 0.85rem; transition: all 0.2s;">💰 Savings Calculator</button>
+          <button onclick="quickAIAction('my_policies')" class="ai-quick-btn" style="background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.3); color: white; padding: 8px 14px; border-radius: 20px; cursor: pointer; font-size: 0.85rem; transition: all 0.2s;">📋 My Policies</button>
+          <button onclick="quickAIAction('pay_bills')" class="ai-quick-btn" style="background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.3); color: white; padding: 8px 14px; border-radius: 20px; cursor: pointer; font-size: 0.85rem; transition: all 0.2s;">💳 Pay Bills</button>
+          <button onclick="quickAIAction('personal_data')" class="ai-quick-btn" style="background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.3); color: white; padding: 8px 14px; border-radius: 20px; cursor: pointer; font-size: 0.85rem; transition: all 0.2s;">👤 Personal Data</button>
+          <button onclick="quickAIAction('file_claim')" class="ai-quick-btn" style="background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.3); color: white; padding: 8px 14px; border-radius: 20px; cursor: pointer; font-size: 0.85rem; transition: all 0.2s;">🆘 File Claim</button>
+        </div>
+        
+        <!-- NEW: Services & Community Actions Row -->
+        <div style="display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px;">
+          <button onclick="quickAIAction('join_community')" class="ai-quick-btn" style="background: linear-gradient(135deg, rgba(94,53,177,0.4) 0%, rgba(126,87,194,0.4) 100%); border: 1px solid rgba(255,255,255,0.4); color: white; padding: 8px 14px; border-radius: 20px; cursor: pointer; font-size: 0.85rem; transition: all 0.2s;">🤝 Join Community</button>
+          <button onclick="quickAIAction('show_community')" class="ai-quick-btn" style="background: linear-gradient(135deg, rgba(94,53,177,0.4) 0%, rgba(126,87,194,0.4) 100%); border: 1px solid rgba(255,255,255,0.4); color: white; padding: 8px 14px; border-radius: 20px; cursor: pointer; font-size: 0.85rem; transition: all 0.2s;">🏘️ My Community</button>
+          <button onclick="quickAIAction('apply_policy')" class="ai-quick-btn" style="background: linear-gradient(135deg, rgba(21,101,192,0.4) 0%, rgba(25,118,210,0.4) 100%); border: 1px solid rgba(255,255,255,0.4); color: white; padding: 8px 14px; border-radius: 20px; cursor: pointer; font-size: 0.85rem; transition: all 0.2s;">📝 Apply New Policy</button>
+          <button onclick="quickAIAction('buy_equipment')" class="ai-quick-btn" style="background: linear-gradient(135deg, rgba(0,150,136,0.4) 0%, rgba(38,166,154,0.4) 100%); border: 1px solid rgba(255,255,255,0.4); color: white; padding: 8px 14px; border-radius: 20px; cursor: pointer; font-size: 0.85rem; transition: all 0.2s;">🛒 Medical Equipment</button>
+          <button onclick="quickAIAction('book_consultation')" class="ai-quick-btn" style="background: linear-gradient(135deg, rgba(233,30,99,0.4) 0%, rgba(240,98,146,0.4) 100%); border: 1px solid rgba(255,255,255,0.4); color: white; padding: 8px 14px; border-radius: 20px; cursor: pointer; font-size: 0.85rem; transition: all 0.2s;">🩺 Book Doctor</button>
+          <button onclick="quickAIAction('pharmacy')" class="ai-quick-btn" style="background: linear-gradient(135deg, rgba(255,152,0,0.4) 0%, rgba(255,183,77,0.4) 100%); border: 1px solid rgba(255,255,255,0.4); color: white; padding: 8px 14px; border-radius: 20px; cursor: pointer; font-size: 0.85rem; transition: all 0.2s;">💊 Pharmacy</button>
+        </div>
+        
+        <!-- Expandable More Actions -->
+        <div id="ai-more-actions" style="display: none; flex-wrap: wrap; gap: 8px; margin-bottom: 10px;">
+          <button onclick="quickAIAction('refer_friend')" class="ai-quick-btn" style="background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.3); color: white; padding: 8px 14px; border-radius: 20px; cursor: pointer; font-size: 0.85rem; transition: all 0.2s;">🎁 Refer Friend</button>
+          <button onclick="quickAIAction('investment_portfolio')" class="ai-quick-btn" style="background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.3); color: white; padding: 8px 14px; border-radius: 20px; cursor: pointer; font-size: 0.85rem; transition: all 0.2s;">📈 Investments</button>
+          <button onclick="quickAIAction('wallet_balance')" class="ai-quick-btn" style="background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.3); color: white; padding: 8px 14px; border-radius: 20px; cursor: pointer; font-size: 0.85rem; transition: all 0.2s;">💰 Wallet Balance</button>
+          <button onclick="quickAIAction('home_care')" class="ai-quick-btn" style="background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.3); color: white; padding: 8px 14px; border-radius: 20px; cursor: pointer; font-size: 0.85rem; transition: all 0.2s;">🏠 Home Care</button>
+          <button onclick="quickAIAction('change_password')" class="ai-quick-btn" style="background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.3); color: white; padding: 8px 14px; border-radius: 20px; cursor: pointer; font-size: 0.85rem; transition: all 0.2s;">🔒 Change Password</button>
+          <button onclick="quickAIAction('contact_support')" class="ai-quick-btn" style="background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.3); color: white; padding: 8px 14px; border-radius: 20px; cursor: pointer; font-size: 0.85rem; transition: all 0.2s;">📞 Contact Support</button>
+        </div>
+        
+        <!-- Toggle More Button -->
+        <button onclick="toggleMoreAIActions()" id="ai-more-toggle" style="background: rgba(255,255,255,0.1); border: 1px dashed rgba(255,255,255,0.4); color: rgba(255,255,255,0.9); padding: 6px 14px; border-radius: 16px; cursor: pointer; font-size: 0.8rem; transition: all 0.2s; width: 100%;">
+          ⬇️ Show More Actions
+        </button>
       </div>
       
       <!-- AI Response Area -->
@@ -1636,40 +1695,131 @@
       claims: []
     };
     
-    // Initialize voice recognition
+    // Initialize voice recognition with enhanced natural language support
     function initVoiceRecognition() {
       if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
         const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
         recognition = new SpeechRecognition();
         recognition.continuous = false;
         recognition.interimResults = true;
-        recognition.lang = 'en-US';
+        
+        // Get language from user preference
+        const savedLang = localStorage.getItem('phins_language') || 'en';
+        const langMap = {
+          'en': 'en-US',
+          'es': 'es-ES',
+          'fr': 'fr-FR',
+          'de': 'de-DE',
+          'he': 'he-IL'
+        };
+        recognition.lang = langMap[savedLang] || 'en-US';
         
         recognition.onresult = (event) => {
-          const transcript = Array.from(event.results)
+          let transcript = Array.from(event.results)
             .map(result => result[0].transcript)
             .join('');
+          
+          // Natural language preprocessing for better intent matching
+          transcript = preprocessVoiceInput(transcript);
           
           document.getElementById('voice-transcript').textContent = transcript;
           
           if (event.results[0].isFinal) {
             document.getElementById('ai-query-input').value = transcript;
             stopVoiceInput();
-            // Auto-process after voice input
-            setTimeout(() => processAIQuery(), 500);
+            // Show confirmation feedback
+            showVoiceFeedback(transcript);
+            // Auto-process after voice input with slight delay for UX
+            setTimeout(() => processAIQuery(), 700);
           }
         };
         
         recognition.onerror = (event) => {
           console.error('Voice recognition error:', event.error);
           stopVoiceInput();
-          showAIError('Voice recognition error: ' + event.error);
+          if (event.error === 'no-speech') {
+            showAIError('No speech detected. Please try again and speak clearly.');
+          } else if (event.error === 'not-allowed') {
+            showAIError('Microphone access denied. Please allow microphone permissions.');
+          } else {
+            showAIError('Voice recognition error: ' + event.error);
+          }
         };
         
         recognition.onend = () => {
           if (isListening) stopVoiceInput();
         };
       }
+    }
+    
+    // Preprocess voice input for better intent matching
+    function preprocessVoiceInput(transcript) {
+      let processed = transcript.toLowerCase().trim();
+      
+      // Common voice command variations mapping to standard queries
+      const voicePatterns = [
+        // Community
+        [/(?:i want to |help me |please )?(?:join|sign up for|become member of) (?:a |the )?community/i, 'join community foundation'],
+        [/show (?:me )?(?:my )?community/i, 'show my community'],
+        
+        // Policy
+        [/(?:i want to |help me |i need to )?(?:apply|sign up|get) (?:for )?(?:a |new )?(?:policy|insurance|coverage)/i, 'apply for new policy'],
+        [/(?:get|give) (?:me )?(?:a |an )?(?:insurance )?quote/i, 'apply for new policy'],
+        
+        // Medical Equipment
+        [/(?:i want to |help me |i need to )?(?:buy|purchase|order|get) (?:some )?medical (?:equipment|device|supplies)/i, 'buy medical equipment'],
+        [/(?:i need |get me )(?:a )?wheelchair/i, 'buy medical equipment'],
+        [/(?:i need |get me )(?:a )?walker/i, 'buy medical equipment'],
+        
+        // Consultation
+        [/(?:i want to |help me |i need to )?(?:book|schedule|make) (?:a |an )?(?:doctor |medical )?(?:appointment|consultation)/i, 'book doctor consultation'],
+        [/(?:see|talk to|speak with) (?:a )?doctor/i, 'book doctor consultation'],
+        
+        // Pharmacy
+        [/(?:i want to |help me |i need to )?(?:order|buy|get|refill) (?:my )?(?:medication|medicine|prescription|drugs)/i, 'order medication'],
+        
+        // Billing
+        [/show (?:me )?(?:my |all )?bills/i, 'show me all my billings'],
+        [/(?:i want to |help me )?pay (?:my )?(?:bill|premium)/i, 'pay my bills'],
+        
+        // Claims
+        [/(?:i want to |help me |i need to )?(?:file|submit|make) (?:a |an )?(?:new )?claim/i, 'file a claim'],
+        [/(?:check|track|see) (?:my )?claim/i, 'track my claim'],
+        
+        // Support
+        [/(?:i need |get me |connect me to )?(?:help|support|assistance)/i, 'contact support'],
+        [/talk to (?:a |an )?(?:agent|human|person|representative)/i, 'contact support'],
+        
+        // Referral
+        [/(?:i want to )?(?:refer|invite) (?:a )?friend/i, 'refer a friend'],
+        
+        // Balance
+        [/(?:what(?:'s| is) |check |show (?:me )?)?my (?:wallet )?balance/i, 'check wallet balance'],
+        
+        // Savings
+        [/how much (?:will i |do i )(?:have|save) in (\d+) years/i, 'how much savings will I have in $1 years']
+      ];
+      
+      // Apply pattern matching
+      for (const [pattern, replacement] of voicePatterns) {
+        if (pattern.test(processed)) {
+          processed = processed.replace(pattern, replacement);
+          break;
+        }
+      }
+      
+      return processed;
+    }
+    
+    // Show voice confirmation feedback
+    function showVoiceFeedback(transcript) {
+      const voiceBtn = document.getElementById('voice-btn');
+      voiceBtn.style.background = 'linear-gradient(135deg, #4caf50 0%, #66bb6a 100%)';
+      voiceBtn.innerHTML = '✓';
+      setTimeout(() => {
+        voiceBtn.style.background = 'linear-gradient(135deg, #7b1fa2 0%, #9c27b0 100%)';
+        voiceBtn.innerHTML = '🎤';
+      }, 1500);
     }
     
     // Start voice input
@@ -1756,31 +1906,74 @@
       }
     }
     
-    // Intent classification
+    // Intent classification - Extensible AI Action Registry
     function classifyIntent(query) {
+      // ============================================================================
+      // PHINS AI ACTION REGISTRY - Add new intents here for future features
+      // Format: INTENT_NAME: ['keyword1', 'keyword2', ...]
+      // Longer keywords get higher priority in matching
+      // ============================================================================
       const intents = {
         // Report intents
         REPORT_BILLING: ['billing report', 'all my billings', 'billing history', 'payment history', 'show billing', 'my bills', 'invoices'],
         REPORT_PERSONAL: ['personal data', 'my profile', 'my information', 'personal report', 'my details', 'about me'],
         REPORT_POLICY: ['policy report', 'my policies', 'coverage report', 'insurance summary', 'policy summary', 'what policies'],
         REPORT_SAVINGS: ['savings report', 'investment report', 'my savings', 'portfolio report', 'investment summary'],
-        REPORT_CLAIMS: ['claims report', 'my claims', 'claims history', 'claim status'],
+        REPORT_CLAIMS: ['claims report', 'my claims', 'claims history', 'claim status', 'track my claim', 'track claim'],
         
         // Information intents
         INFO_MONTHLY_COST: ['how much do i pay', 'monthly payment', 'monthly premium', 'pay monthly', 'monthly cost', 'premium amount', 'pay every month', 'risk cover cost'],
         INFO_MONTHLY_SAVINGS: ['how much do i save', 'monthly savings', 'save every month', 'saving amount', 'monthly contribution'],
         INFO_COVERAGE: ['my coverage', 'coverage amount', 'what\'s my coverage', 'how much coverage', 'insured for', 'risk cover'],
-        INFO_BALANCE: ['my balance', 'savings balance', 'account balance', 'how much do i have', 'wallet balance'],
+        INFO_BALANCE: ['my balance', 'savings balance', 'account balance', 'how much do i have', 'wallet balance', 'check balance', 'check my wallet'],
         
         // Calculation intents
         CALC_PROJECTION: ['savings in', 'will i have in', 'years', 'projection', 'future value', 'compound', 'forecast'],
         
-        // Action intents
-        ACTION_APPLY: ['apply for', 'new policy', 'get insurance', 'buy policy', 'purchase policy', 'want insurance', 'apply new'],
-        ACTION_PAY: ['pay my bill', 'make payment', 'pay now', 'pay premium', 'want to pay'],
-        ACTION_SAVE: ['want to save', 'save $', 'invest $', 'deposit', 'add to savings'],
-        ACTION_CLAIM: ['file a claim', 'submit claim', 'make claim', 'new claim', 'want to claim'],
-        ACTION_UPDATE: ['update my', 'change my', 'edit profile', 'update information', 'change address']
+        // ============================================================================
+        // COMMUNITY ACTIONS - Join/Show Community Foundations
+        // ============================================================================
+        ACTION_JOIN_COMMUNITY: ['join community', 'join foundation', 'join a foundation', 'become member', 'community membership', 'join the community', 'want to join community', 'sign up community'],
+        ACTION_SHOW_COMMUNITY: ['show community', 'my community', 'community dashboard', 'view community', 'community page', 'foundation dashboard', 'show foundation', 'my foundations', 'community events', 'see community'],
+        ACTION_CREATE_FOUNDATION: ['create foundation', 'start foundation', 'new foundation', 'create community', 'start community'],
+        
+        // ============================================================================
+        // POLICY ACTIONS - Apply/Manage Policies
+        // ============================================================================
+        ACTION_APPLY: ['apply for', 'new policy', 'get insurance', 'buy policy', 'purchase policy', 'want insurance', 'apply new', 'apply for policy', 'get a quote', 'insurance quote', 'buy insurance', 'need insurance', 'want policy', 'upgrade coverage', 'increase coverage'],
+        
+        // ============================================================================
+        // MEDICAL EQUIPMENT & SERVICES - Buy equipment, book consultations
+        // ============================================================================
+        ACTION_BUY_EQUIPMENT: ['buy medical equipment', 'medical equipment', 'buy equipment', 'purchase equipment', 'medical devices', 'buy devices', 'need wheelchair', 'need walker', 'mobility aid', 'medical supplies', 'buy supplies', 'order equipment'],
+        ACTION_BOOK_CONSULTATION: ['book doctor', 'book consultation', 'doctor appointment', 'see doctor', 'medical consultation', 'schedule appointment', 'book appointment', 'consult doctor', 'talk to doctor', 'telemedicine', 'online doctor'],
+        ACTION_PHARMACY: ['pharmacy', 'order medication', 'buy medication', 'order medicine', 'buy medicine', 'prescription', 'refill prescription', 'need medication', 'get medicine', 'medication order', 'drug refill'],
+        ACTION_HOME_CARE: ['home care', 'home nursing', 'home health', 'caregiver', 'need nurse', 'home assistance', 'nursing care', 'in-home care'],
+        
+        // ============================================================================
+        // PAYMENT & FINANCIAL ACTIONS
+        // ============================================================================
+        ACTION_PAY: ['pay my bill', 'make payment', 'pay now', 'pay premium', 'want to pay', 'pay bills'],
+        ACTION_SAVE: ['want to save', 'save $', 'invest $', 'deposit', 'add to savings', 'add funds', 'deposit funds'],
+        ACTION_TRANSFER: ['transfer funds', 'transfer money', 'move funds', 'transfer to wallet', 'transfer to investment'],
+        
+        // ============================================================================
+        // CLAIMS ACTIONS
+        // ============================================================================
+        ACTION_CLAIM: ['file a claim', 'submit claim', 'make claim', 'new claim', 'want to claim', 'file claim', 'start claim'],
+        
+        // ============================================================================
+        // ACCOUNT & SETTINGS ACTIONS
+        // ============================================================================
+        ACTION_UPDATE: ['update my', 'change my', 'edit profile', 'update information', 'change address', 'update profile'],
+        ACTION_CHANGE_PASSWORD: ['change password', 'reset password', 'new password', 'update password', 'password change'],
+        ACTION_REFERRAL: ['refer friend', 'referral code', 'invite friend', 'share referral', 'get referral', 'referral link', 'invite someone'],
+        ACTION_CONTACT_SUPPORT: ['contact support', 'help me', 'need help', 'customer service', 'talk to agent', 'speak to someone', 'support ticket', 'get help'],
+        
+        // ============================================================================
+        // INVESTMENT ACTIONS
+        // ============================================================================
+        ACTION_INVESTMENT: ['view investments', 'investment portfolio', 'my investments', 'check investments', 'portfolio', 'stock portfolio', 'crypto portfolio']
       };
       
       // Find best matching intent
@@ -1836,12 +2029,16 @@
       return entities;
     }
     
-    // Execute intent
+    // Execute intent - Extended handler for all customer services
     async function executeIntent(intent, originalQuery) {
       // Load customer data if not cached
       await loadCustomerDataForAI();
       
+      // Record AI interaction for data integrity (non-blocking)
+      recordAIInteraction(intent.type, originalQuery);
+      
       switch (intent.type) {
+        // ============== REPORT INTENTS ==============
         case 'REPORT_BILLING':
           await generateBillingReport();
           break;
@@ -1857,6 +2054,8 @@
         case 'REPORT_CLAIMS':
           await generateClaimsReport();
           break;
+          
+        // ============== INFO INTENTS ==============
         case 'INFO_MONTHLY_COST':
           await showMonthlyCost();
           break;
@@ -1869,37 +2068,121 @@
         case 'INFO_BALANCE':
           await showBalanceInfo();
           break;
+          
+        // ============== CALCULATION INTENTS ==============
         case 'CALC_PROJECTION':
           await calculateProjection(intent.entities);
           break;
-        case 'ACTION_APPLY':
-          navigateToAction('apply');
+          
+        // ============== COMMUNITY ACTIONS ==============
+        case 'ACTION_JOIN_COMMUNITY':
+          await navigateToCommunity('join');
           break;
+        case 'ACTION_SHOW_COMMUNITY':
+          await navigateToCommunity('show');
+          break;
+        case 'ACTION_CREATE_FOUNDATION':
+          await navigateToCommunity('create');
+          break;
+          
+        // ============== POLICY ACTIONS ==============
+        case 'ACTION_APPLY':
+          await navigateToAction('apply');
+          break;
+          
+        // ============== MEDICAL SERVICES ==============
+        case 'ACTION_BUY_EQUIPMENT':
+          await navigateToMedical('equipment');
+          break;
+        case 'ACTION_BOOK_CONSULTATION':
+          await navigateToMedical('consultation');
+          break;
+        case 'ACTION_PHARMACY':
+          await navigateToMedical('pharmacy');
+          break;
+        case 'ACTION_HOME_CARE':
+          await navigateToMedical('homecare');
+          break;
+          
+        // ============== PAYMENT ACTIONS ==============
         case 'ACTION_PAY':
-          navigateToAction('pay');
+          await navigateToAction('pay');
           break;
         case 'ACTION_SAVE':
-          navigateToAction('save', intent.entities);
+          await navigateToAction('save', intent.entities);
           break;
+        case 'ACTION_TRANSFER':
+          await navigateToAction('transfer');
+          break;
+          
+        // ============== CLAIMS ACTIONS ==============
         case 'ACTION_CLAIM':
-          navigateToAction('claim');
+          await navigateToAction('claim');
           break;
+          
+        // ============== ACCOUNT ACTIONS ==============
         case 'ACTION_UPDATE':
-          navigateToAction('update');
+          await navigateToAction('update');
           break;
+        case 'ACTION_CHANGE_PASSWORD':
+          await navigateToAction('password');
+          break;
+        case 'ACTION_REFERRAL':
+          await navigateToAction('referral');
+          break;
+        case 'ACTION_CONTACT_SUPPORT':
+          await navigateToAction('support');
+          break;
+          
+        // ============== INVESTMENT ACTIONS ==============
+        case 'ACTION_INVESTMENT':
+          await navigateToAction('investment');
+          break;
+          
+        // ============== UNKNOWN INTENT ==============
         default:
           showAIResponse(`
             <div style="text-align: center; padding: 20px;">
-              <div style="font-size: 3rem; margin-bottom: 16px;">🤔</div>
-              <h3 style="color: #333; margin-bottom: 12px;">I'm not sure what you mean</h3>
-              <p style="color: #666;">Try one of these:</p>
-              <div style="display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 16px;">
-                <button onclick="quickAIAction('billing_report')" style="background: #667eea; color: white; border: none; padding: 8px 16px; border-radius: 20px; cursor: pointer;">📊 Billing Report</button>
-                <button onclick="quickAIAction('savings_calc')" style="background: #28a745; color: white; border: none; padding: 8px 16px; border-radius: 20px; cursor: pointer;">💰 Savings Calculator</button>
-                <button onclick="quickAIAction('my_policies')" style="background: #17a2b8; color: white; border: none; padding: 8px 16px; border-radius: 20px; cursor: pointer;">📋 My Policies</button>
+              <div style="font-size: 3rem; margin-bottom: 16px;">🤖</div>
+              <h3 style="color: #333; margin-bottom: 12px;">I'm here to help!</h3>
+              <p style="color: #666; margin-bottom: 16px;">I didn't quite understand that. Try one of these popular actions:</p>
+              <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin-top: 16px; max-width: 600px; margin-left: auto; margin-right: auto;">
+                <button onclick="quickAIAction('join_community')" style="background: linear-gradient(135deg, #5e35b1 0%, #7e57c2 100%); color: white; border: none; padding: 12px 16px; border-radius: 12px; cursor: pointer; font-size: 0.9rem;">🤝 Join Community</button>
+                <button onclick="quickAIAction('apply_policy')" style="background: linear-gradient(135deg, #1565c0 0%, #1976d2 100%); color: white; border: none; padding: 12px 16px; border-radius: 12px; cursor: pointer; font-size: 0.9rem;">📝 Apply Policy</button>
+                <button onclick="quickAIAction('buy_equipment')" style="background: linear-gradient(135deg, #009688 0%, #26a69a 100%); color: white; border: none; padding: 12px 16px; border-radius: 12px; cursor: pointer; font-size: 0.9rem;">🛒 Medical Equipment</button>
+                <button onclick="quickAIAction('billing_report')" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; padding: 12px 16px; border-radius: 12px; cursor: pointer; font-size: 0.9rem;">📊 Billing Report</button>
+                <button onclick="quickAIAction('file_claim')" style="background: linear-gradient(135deg, #ff9800 0%, #f57c00 100%); color: white; border: none; padding: 12px 16px; border-radius: 12px; cursor: pointer; font-size: 0.9rem;">🆘 File Claim</button>
+                <button onclick="quickAIAction('contact_support')" style="background: linear-gradient(135deg, #607d8b 0%, #78909c 100%); color: white; border: none; padding: 12px 16px; border-radius: 12px; cursor: pointer; font-size: 0.9rem;">📞 Get Support</button>
               </div>
+              <p style="color: #999; font-size: 0.85rem; margin-top: 20px;">💡 Try saying: "Join community", "Apply for new policy", or "Buy medical equipment"</p>
             </div>
           `);
+      }
+    }
+    
+    // Record AI interaction for data integrity and analytics
+    async function recordAIInteraction(intentType, query) {
+      try {
+        const cid = customerId || sessionStorage.getItem('customer_id');
+        if (!cid) return;
+        
+        await fetch('/api/customer/ai-interaction', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${authToken}`
+          },
+          body: JSON.stringify({
+            customer_id: cid,
+            intent_type: intentType,
+            query: query,
+            timestamp: new Date().toISOString(),
+            source: 'ai_assistant'
+          })
+        });
+      } catch (err) {
+        // Non-critical, don't block UI
+        console.log('AI interaction recording (non-critical):', err);
       }
     }
     
@@ -2380,22 +2663,454 @@
             </div>
           `);
           break;
+          
+        case 'password':
+          showAIResponse(`
+            <div style="text-align: center; padding: 30px;">
+              <div style="font-size: 4rem; margin-bottom: 16px;">🔒</div>
+              <h3 style="color: #333;">Change Password</h3>
+              <p style="color: #666; margin-bottom: 24px;">Update your account security</p>
+              <button onclick="document.getElementById('billing-settings').scrollIntoView({behavior:'smooth'}); setTimeout(() => { const btn = document.querySelector('[onclick*=\\'showPasswordModal\\']'); if(btn) btn.click(); }, 500);" style="background: linear-gradient(135deg, #1565c0 0%, #1976d2 100%); color: white; border: none; padding: 14px 40px; border-radius: 25px; cursor: pointer; font-size: 1.1rem;">🔐 Change Password</button>
+            </div>
+          `);
+          recordCustomerAction('ai_password_change_view', 0, 'Viewed password change via AI assistant');
+          break;
+          
+        case 'referral':
+          showAIResponse(`
+            <div style="padding: 24px;">
+              <div style="text-align: center; margin-bottom: 24px;">
+                <div style="font-size: 4rem; margin-bottom: 12px;">🎁</div>
+                <h3 style="color: #333; margin: 0 0 8px 0;">Refer a Friend</h3>
+                <p style="color: #666; margin: 0;">Share PHINS and earn rewards together</p>
+              </div>
+              
+              <div style="background: linear-gradient(135deg, #fff3e0 0%, #ffe0b2 100%); border-radius: 12px; padding: 20px; margin-bottom: 20px;">
+                <h4 style="margin: 0 0 12px 0; color: #e65100;">🎁 Referral Benefits</h4>
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px;">
+                  <div style="display: flex; align-items: center; gap: 8px;"><span style="font-size: 1.2rem;">💰</span> $50 credit for each referral</div>
+                  <div style="display: flex; align-items: center; gap: 8px;"><span style="font-size: 1.2rem;">🎉</span> Friend gets $25 welcome bonus</div>
+                  <div style="display: flex; align-items: center; gap: 8px;"><span style="font-size: 1.2rem;">📈</span> Bonus grows with more referrals</div>
+                  <div style="display: flex; align-items: center; gap: 8px;"><span style="font-size: 1.2rem;">🏆</span> Unlock premium perks</div>
+                </div>
+              </div>
+              
+              <div style="text-align: center;">
+                <button onclick="document.getElementById('referrals').scrollIntoView({behavior:'smooth'})" style="background: linear-gradient(135deg, #ff6b35 0%, #f7931e 100%); color: white; border: none; padding: 16px 40px; border-radius: 25px; cursor: pointer; font-size: 1.1rem; font-weight: 600;">🎁 Go to Referrals</button>
+              </div>
+            </div>
+          `);
+          recordCustomerAction('ai_referral_view', 0, 'Viewed referral program via AI assistant');
+          break;
+          
+        case 'support':
+          showAIResponse(`
+            <div style="padding: 24px;">
+              <div style="text-align: center; margin-bottom: 24px;">
+                <div style="font-size: 4rem; margin-bottom: 12px;">📞</div>
+                <h3 style="color: #333; margin: 0 0 8px 0;">Contact Support</h3>
+                <p style="color: #666; margin: 0;">We're here to help!</p>
+              </div>
+              
+              <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 24px;">
+                <div style="background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%); border-radius: 12px; padding: 20px; text-align: center;">
+                  <div style="font-size: 2.5rem; margin-bottom: 8px;">💬</div>
+                  <div style="font-weight: 600; color: #1565c0;">Live Chat</div>
+                  <div style="font-size: 0.85rem; color: #666; margin: 8px 0;">Chat with an agent now</div>
+                  <button onclick="startLiveChat()" style="background: #1565c0; color: white; border: none; padding: 10px 20px; border-radius: 8px; cursor: pointer; font-weight: 600; margin-top: 8px;">Start Chat</button>
+                </div>
+                <div style="background: linear-gradient(135deg, #e8f5e9 0%, #c8e6c9 100%); border-radius: 12px; padding: 20px; text-align: center;">
+                  <div style="font-size: 2.5rem; margin-bottom: 8px;">📧</div>
+                  <div style="font-weight: 600; color: #2e7d32;">Email</div>
+                  <div style="font-size: 0.85rem; color: #666; margin: 8px 0;">support@phins.ai</div>
+                  <button onclick="window.location.href='mailto:support@phins.ai'" style="background: #2e7d32; color: white; border: none; padding: 10px 20px; border-radius: 8px; cursor: pointer; font-weight: 600; margin-top: 8px;">Send Email</button>
+                </div>
+                <div style="background: linear-gradient(135deg, #fff3e0 0%, #ffe0b2 100%); border-radius: 12px; padding: 20px; text-align: center;">
+                  <div style="font-size: 2.5rem; margin-bottom: 8px;">📱</div>
+                  <div style="font-weight: 600; color: #e65100;">Phone</div>
+                  <div style="font-size: 0.85rem; color: #666; margin: 8px 0;">1-800-PHINS-AI</div>
+                  <button onclick="window.location.href='tel:1-800-744-6724'" style="background: #e65100; color: white; border: none; padding: 10px 20px; border-radius: 8px; cursor: pointer; font-weight: 600; margin-top: 8px;">Call Now</button>
+                </div>
+              </div>
+              
+              <div style="background: #f5f5f5; border-radius: 8px; padding: 16px; text-align: center;">
+                <p style="margin: 0; color: #666;">🕐 Support Hours: 24/7 for emergencies | 8 AM - 8 PM EST for general inquiries</p>
+              </div>
+            </div>
+          `);
+          recordCustomerAction('ai_support_view', 0, 'Viewed support options via AI assistant');
+          break;
+          
+        case 'investment':
+          showAIResponse(`
+            <div style="text-align: center; padding: 30px;">
+              <div style="font-size: 4rem; margin-bottom: 16px;">📈</div>
+              <h3 style="color: #333;">Investment Portfolio</h3>
+              <p style="color: #666; margin-bottom: 24px;">View and manage your investments</p>
+              <button onclick="window.location.href='/savings-portfolio.html'" style="background: linear-gradient(135deg, #1565c0 0%, #1976d2 100%); color: white; border: none; padding: 14px 40px; border-radius: 25px; cursor: pointer; font-size: 1.1rem;">📈 View Portfolio</button>
+            </div>
+          `);
+          recordCustomerAction('ai_investment_view', 0, 'Viewed investments via AI assistant');
+          break;
+          
+        case 'transfer':
+          showAIResponse(`
+            <div style="text-align: center; padding: 30px;">
+              <div style="font-size: 4rem; margin-bottom: 16px;">🔄</div>
+              <h3 style="color: #333;">Transfer Funds</h3>
+              <p style="color: #666; margin-bottom: 24px;">Move funds between your accounts</p>
+              <button onclick="document.getElementById('health-wallet').scrollIntoView({behavior:'smooth'}); setTimeout(() => showTransferModal(), 500);" style="background: linear-gradient(135deg, #7b1fa2 0%, #9c27b0 100%); color: white; border: none; padding: 14px 40px; border-radius: 25px; cursor: pointer; font-size: 1.1rem;">🔄 Transfer Now</button>
+            </div>
+          `);
+          recordCustomerAction('ai_transfer_view', 0, 'Viewed transfer options via AI assistant');
+          break;
       }
     }
     
-    // Quick AI action
+    // Start live chat helper
+    function startLiveChat() {
+      showNotification('💬 Connecting to live chat...', 'info');
+      recordCustomerAction('ai_live_chat_start', 0, 'Started live chat via AI assistant');
+      // This would connect to a live chat service
+    }
+    
+    // Quick AI action - Extensible action mapping
     function quickAIAction(action) {
+      // ============================================================================
+      // AI ACTION QUERY MAP - Add new quick actions here
+      // Maps button actions to natural language queries
+      // ============================================================================
       const queryMap = {
+        // Reports
         'billing_report': 'Show me all my billings',
         'savings_calc': 'How much savings will I have in 5 years?',
         'my_policies': 'Show me my policies',
-        'pay_bills': 'I want to pay my bills',
         'personal_data': 'Show my personal data',
-        'file_claim': 'I want to file a claim'
+        
+        // Community Actions
+        'join_community': 'I want to join a community foundation',
+        'show_community': 'Show my community dashboard',
+        'create_foundation': 'I want to create a foundation',
+        
+        // Policy Actions
+        'apply_policy': 'I want to apply for a new policy',
+        
+        // Medical Services
+        'buy_equipment': 'I want to buy medical equipment',
+        'book_consultation': 'I want to book a doctor consultation',
+        'pharmacy': 'I need to order medication',
+        'home_care': 'I need home care services',
+        
+        // Financial Actions
+        'pay_bills': 'I want to pay my bills',
+        'wallet_balance': 'Check my wallet balance',
+        'investment_portfolio': 'Show my investment portfolio',
+        
+        // Claims & Support
+        'file_claim': 'I want to file a claim',
+        'contact_support': 'I need to contact support',
+        
+        // Account Actions
+        'refer_friend': 'I want to refer a friend',
+        'change_password': 'I want to change my password'
       };
       
       document.getElementById('ai-query-input').value = queryMap[action] || '';
       processAIQuery();
+    }
+    
+    // Toggle more AI actions visibility
+    function toggleMoreAIActions() {
+      const moreActions = document.getElementById('ai-more-actions');
+      const toggleBtn = document.getElementById('ai-more-toggle');
+      
+      if (moreActions.style.display === 'none' || moreActions.style.display === '') {
+        moreActions.style.display = 'flex';
+        toggleBtn.innerHTML = '⬆️ Show Less';
+      } else {
+        moreActions.style.display = 'none';
+        toggleBtn.innerHTML = '⬇️ Show More Actions';
+      }
+    }
+    
+    // ============================================================================
+    // COMMUNITY NAVIGATION - Handles all community-related actions
+    // ============================================================================
+    async function navigateToCommunity(action) {
+      const cid = customerId || sessionStorage.getItem('customer_id');
+      
+      switch (action) {
+        case 'join':
+          showAIResponse(`
+            <div style="padding: 24px;">
+              <div style="text-align: center; margin-bottom: 24px;">
+                <div style="font-size: 4rem; margin-bottom: 12px;">🤝</div>
+                <h3 style="color: #333; margin: 0 0 8px 0;">Join a Community Foundation</h3>
+                <p style="color: #666; margin: 0;">Connect with others and access exclusive benefits</p>
+              </div>
+              
+              <div style="background: linear-gradient(135deg, #ede7f6 0%, #e8eaf6 100%); border-radius: 12px; padding: 20px; margin-bottom: 20px;">
+                <h4 style="margin: 0 0 12px 0; color: #5e35b1;">✨ Foundation Benefits</h4>
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px;">
+                  <div style="display: flex; align-items: center; gap: 8px;"><span style="font-size: 1.2rem;">🎁</span> Group discounts on premiums</div>
+                  <div style="display: flex; align-items: center; gap: 8px;"><span style="font-size: 1.2rem;">💰</span> Shared savings pools</div>
+                  <div style="display: flex; align-items: center; gap: 8px;"><span style="font-size: 1.2rem;">🏥</span> Community health programs</div>
+                  <div style="display: flex; align-items: center; gap: 8px;"><span style="font-size: 1.2rem;">🤝</span> Mutual support network</div>
+                </div>
+              </div>
+              
+              <div style="text-align: center;">
+                <button onclick="window.location.href='/foundation-dashboard.html'" style="background: linear-gradient(135deg, #5e35b1 0%, #7e57c2 100%); color: white; border: none; padding: 16px 40px; border-radius: 25px; cursor: pointer; font-size: 1.1rem; font-weight: 600; box-shadow: 0 4px 15px rgba(94, 53, 177, 0.3);">🏘️ Browse Foundations</button>
+                <p style="color: #666; font-size: 0.9rem; margin-top: 12px;">Explore available community foundations</p>
+              </div>
+            </div>
+          `);
+          recordCustomerAction('ai_community_join_view', 0, 'Viewed community join options via AI assistant');
+          break;
+          
+        case 'show':
+          showAIResponse(`
+            <div style="padding: 24px;">
+              <div style="text-align: center; margin-bottom: 24px;">
+                <div style="font-size: 4rem; margin-bottom: 12px;">🏘️</div>
+                <h3 style="color: #333; margin: 0 0 8px 0;">My Community Dashboard</h3>
+                <p style="color: #666; margin: 0;">View your foundations and community activities</p>
+              </div>
+              
+              <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 16px; margin-bottom: 24px;">
+                <div style="background: linear-gradient(135deg, #5e35b1 0%, #7e57c2 100%); color: white; padding: 16px; border-radius: 12px; text-align: center;">
+                  <div style="font-size: 1.5rem; font-weight: 700;" id="ai-community-count">-</div>
+                  <div style="font-size: 0.85rem; opacity: 0.9;">My Foundations</div>
+                </div>
+                <div style="background: linear-gradient(135deg, #4caf50 0%, #66bb6a 100%); color: white; padding: 16px; border-radius: 12px; text-align: center;">
+                  <div style="font-size: 1.5rem; font-weight: 700;" id="ai-community-members">-</div>
+                  <div style="font-size: 0.85rem; opacity: 0.9;">Total Members</div>
+                </div>
+                <div style="background: linear-gradient(135deg, #ff9800 0%, #ffb300 100%); color: white; padding: 16px; border-radius: 12px; text-align: center;">
+                  <div style="font-size: 1.5rem; font-weight: 700;" id="ai-community-events">-</div>
+                  <div style="font-size: 0.85rem; opacity: 0.9;">Upcoming Events</div>
+                </div>
+              </div>
+              
+              <div style="text-align: center;">
+                <button onclick="window.location.href='/foundation-dashboard.html'" style="background: linear-gradient(135deg, #5e35b1 0%, #7e57c2 100%); color: white; border: none; padding: 16px 40px; border-radius: 25px; cursor: pointer; font-size: 1.1rem; font-weight: 600;">🏘️ Go to Community</button>
+              </div>
+            </div>
+          `);
+          // Load community stats
+          loadCommunityStatsForAI();
+          break;
+          
+        case 'create':
+          showAIResponse(`
+            <div style="padding: 24px; text-align: center;">
+              <div style="font-size: 4rem; margin-bottom: 16px;">🌟</div>
+              <h3 style="color: #333; margin: 0 0 12px 0;">Create a Foundation</h3>
+              <p style="color: #666; margin-bottom: 24px;">Start your own community and bring people together</p>
+              <button onclick="window.location.href='/foundation-dashboard.html'" style="background: linear-gradient(135deg, #5e35b1 0%, #7e57c2 100%); color: white; border: none; padding: 16px 40px; border-radius: 25px; cursor: pointer; font-size: 1.1rem; font-weight: 600;">🚀 Start Foundation</button>
+            </div>
+          `);
+          break;
+      }
+    }
+    
+    // Load community stats for AI response
+    async function loadCommunityStatsForAI() {
+      try {
+        const response = await fetch('/api/foundations/customer-memberships', {
+          headers: { 'Authorization': `Bearer ${authToken}` }
+        });
+        if (response.ok) {
+          const data = await response.json();
+          const memberships = data.memberships || [];
+          document.getElementById('ai-community-count').textContent = memberships.length;
+          document.getElementById('ai-community-members').textContent = memberships.reduce((sum, m) => sum + (m.member_count || 0), 0);
+          document.getElementById('ai-community-events').textContent = memberships.reduce((sum, m) => sum + (m.upcoming_events || 0), 0);
+        }
+      } catch (err) {
+        console.log('Community stats loading (non-critical):', err);
+      }
+    }
+    
+    // ============================================================================
+    // MEDICAL SERVICES NAVIGATION - Buy equipment, book consultations, pharmacy
+    // ============================================================================
+    async function navigateToMedical(action) {
+      const walletBal = walletBalance || 0;
+      
+      switch (action) {
+        case 'equipment':
+          showAIResponse(`
+            <div style="padding: 24px;">
+              <div style="text-align: center; margin-bottom: 24px;">
+                <div style="font-size: 4rem; margin-bottom: 12px;">🛒</div>
+                <h3 style="color: #333; margin: 0 0 8px 0;">Medical Equipment Store</h3>
+                <p style="color: #666; margin: 0;">Browse and purchase medical devices and supplies</p>
+              </div>
+              
+              <div style="background: linear-gradient(135deg, #e8f5e9 0%, #c8e6c9 100%); border-radius: 12px; padding: 16px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
+                <div>
+                  <div style="font-size: 0.85rem; color: #2e7d32;">💰 Health Wallet Balance</div>
+                  <div style="font-size: 1.5rem; font-weight: 700; color: #1b5e20;">${formatCurrency(walletBal)}</div>
+                </div>
+                <button onclick="addFundsToWallet()" style="background: #4caf50; color: white; border: none; padding: 10px 20px; border-radius: 8px; cursor: pointer; font-weight: 600;">➕ Add Funds</button>
+              </div>
+              
+              <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 24px;">
+                <div onclick="showMedicalCategory('devices')" style="background: white; border: 2px solid #e0e0e0; border-radius: 12px; padding: 16px; text-align: center; cursor: pointer; transition: all 0.2s;" onmouseover="this.style.borderColor='#009688'; this.style.transform='translateY(-2px)'" onmouseout="this.style.borderColor='#e0e0e0'; this.style.transform=''">
+                  <div style="font-size: 2rem; margin-bottom: 8px;">🦽</div>
+                  <div style="font-weight: 600; color: #333;">Mobility Aids</div>
+                  <div style="font-size: 0.8rem; color: #666;">Wheelchairs, walkers</div>
+                </div>
+                <div onclick="showMedicalCategory('devices')" style="background: white; border: 2px solid #e0e0e0; border-radius: 12px; padding: 16px; text-align: center; cursor: pointer; transition: all 0.2s;" onmouseover="this.style.borderColor='#009688'; this.style.transform='translateY(-2px)'" onmouseout="this.style.borderColor='#e0e0e0'; this.style.transform=''">
+                  <div style="font-size: 2rem; margin-bottom: 8px;">🩺</div>
+                  <div style="font-weight: 600; color: #333;">Monitoring</div>
+                  <div style="font-size: 0.8rem; color: #666;">BP monitors, glucose</div>
+                </div>
+                <div onclick="showMedicalCategory('supplies')" style="background: white; border: 2px solid #e0e0e0; border-radius: 12px; padding: 16px; text-align: center; cursor: pointer; transition: all 0.2s;" onmouseover="this.style.borderColor='#009688'; this.style.transform='translateY(-2px)'" onmouseout="this.style.borderColor='#e0e0e0'; this.style.transform=''">
+                  <div style="font-size: 2rem; margin-bottom: 8px;">🧴</div>
+                  <div style="font-weight: 600; color: #333;">Supplies</div>
+                  <div style="font-size: 0.8rem; color: #666;">Daily care items</div>
+                </div>
+                <div onclick="showMedicalCategory('devices')" style="background: white; border: 2px solid #e0e0e0; border-radius: 12px; padding: 16px; text-align: center; cursor: pointer; transition: all 0.2s;" onmouseover="this.style.borderColor='#009688'; this.style.transform='translateY(-2px)'" onmouseout="this.style.borderColor='#e0e0e0'; this.style.transform=''">
+                  <div style="font-size: 2rem; margin-bottom: 8px;">🛏️</div>
+                  <div style="font-weight: 600; color: #333;">Home Medical</div>
+                  <div style="font-size: 0.8rem; color: #666;">Beds, lifts, rails</div>
+                </div>
+              </div>
+              
+              <div style="text-align: center;">
+                <button onclick="document.getElementById('health-wallet').scrollIntoView({behavior:'smooth'}); showMedicalCategory('devices');" style="background: linear-gradient(135deg, #009688 0%, #26a69a 100%); color: white; border: none; padding: 16px 40px; border-radius: 25px; cursor: pointer; font-size: 1.1rem; font-weight: 600;">🛒 Browse All Equipment</button>
+              </div>
+            </div>
+          `);
+          recordCustomerAction('ai_medical_equipment_view', 0, 'Viewed medical equipment via AI assistant');
+          break;
+          
+        case 'consultation':
+          showAIResponse(`
+            <div style="padding: 24px;">
+              <div style="text-align: center; margin-bottom: 24px;">
+                <div style="font-size: 4rem; margin-bottom: 12px;">🩺</div>
+                <h3 style="color: #333; margin: 0 0 8px 0;">Book a Consultation</h3>
+                <p style="color: #666; margin: 0;">Connect with healthcare professionals</p>
+              </div>
+              
+              <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 24px;">
+                <div style="background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%); border-radius: 12px; padding: 20px; text-align: center;">
+                  <div style="font-size: 2.5rem; margin-bottom: 8px;">👨‍⚕️</div>
+                  <div style="font-weight: 600; color: #1565c0;">General Physician</div>
+                  <div style="font-size: 0.85rem; color: #666; margin: 8px 0;">General health consultations</div>
+                  <button onclick="bookConsultation('general')" style="background: #1565c0; color: white; border: none; padding: 10px 20px; border-radius: 8px; cursor: pointer; font-weight: 600; margin-top: 8px;">Book Now</button>
+                </div>
+                <div style="background: linear-gradient(135deg, #fce4ec 0%, #f8bbd9 100%); border-radius: 12px; padding: 20px; text-align: center;">
+                  <div style="font-size: 2.5rem; margin-bottom: 8px;">🧠</div>
+                  <div style="font-weight: 600; color: #c2185b;">Specialist</div>
+                  <div style="font-size: 0.85rem; color: #666; margin: 8px 0;">Specialized care consultations</div>
+                  <button onclick="bookConsultation('specialist')" style="background: #c2185b; color: white; border: none; padding: 10px 20px; border-radius: 8px; cursor: pointer; font-weight: 600; margin-top: 8px;">Book Now</button>
+                </div>
+                <div style="background: linear-gradient(135deg, #e8f5e9 0%, #c8e6c9 100%); border-radius: 12px; padding: 20px; text-align: center;">
+                  <div style="font-size: 2.5rem; margin-bottom: 8px;">💬</div>
+                  <div style="font-weight: 600; color: #2e7d32;">Telemedicine</div>
+                  <div style="font-size: 0.85rem; color: #666; margin: 8px 0;">Online video consultation</div>
+                  <button onclick="bookConsultation('telemedicine')" style="background: #2e7d32; color: white; border: none; padding: 10px 20px; border-radius: 8px; cursor: pointer; font-weight: 600; margin-top: 8px;">Book Now</button>
+                </div>
+              </div>
+              
+              <div style="background: #fff3e0; border-left: 4px solid #ff9800; padding: 12px 16px; border-radius: 0 8px 8px 0;">
+                <strong style="color: #e65100;">💡 Tip:</strong> <span style="color: #666;">Telemedicine consultations are covered up to 100% by your PHINS policy!</span>
+              </div>
+            </div>
+          `);
+          recordCustomerAction('ai_consultation_view', 0, 'Viewed consultation booking via AI assistant');
+          break;
+          
+        case 'pharmacy':
+          showAIResponse(`
+            <div style="padding: 24px;">
+              <div style="text-align: center; margin-bottom: 24px;">
+                <div style="font-size: 4rem; margin-bottom: 12px;">💊</div>
+                <h3 style="color: #333; margin: 0 0 8px 0;">Pharmacy Services</h3>
+                <p style="color: #666; margin: 0;">Order medications and manage prescriptions</p>
+              </div>
+              
+              <div style="background: linear-gradient(135deg, #e8f5e9 0%, #c8e6c9 100%); border-radius: 12px; padding: 16px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
+                <div>
+                  <div style="font-size: 0.85rem; color: #2e7d32;">💰 Health Wallet Balance</div>
+                  <div style="font-size: 1.5rem; font-weight: 700; color: #1b5e20;">${formatCurrency(walletBal)}</div>
+                </div>
+                <button onclick="addFundsToWallet()" style="background: #4caf50; color: white; border: none; padding: 10px 20px; border-radius: 8px; cursor: pointer; font-weight: 600;">➕ Add Funds</button>
+              </div>
+              
+              <div style="display: grid; gap: 12px; margin-bottom: 24px;">
+                <div onclick="document.getElementById('health-wallet').scrollIntoView({behavior:'smooth'}); showMedicalCategory('pharmacy');" style="background: white; border: 2px solid #4caf50; border-radius: 12px; padding: 16px; display: flex; align-items: center; gap: 16px; cursor: pointer; transition: all 0.2s;" onmouseover="this.style.backgroundColor='#f1f8e9'" onmouseout="this.style.backgroundColor='white'">
+                  <div style="font-size: 2rem;">📋</div>
+                  <div>
+                    <div style="font-weight: 600; color: #333;">Refill Prescription</div>
+                    <div style="font-size: 0.85rem; color: #666;">Order your regular medications</div>
+                  </div>
+                </div>
+                <div onclick="document.getElementById('health-wallet').scrollIntoView({behavior:'smooth'}); showMedicalCategory('pharmacy');" style="background: white; border: 2px solid #2196f3; border-radius: 12px; padding: 16px; display: flex; align-items: center; gap: 16px; cursor: pointer; transition: all 0.2s;" onmouseover="this.style.backgroundColor='#e3f2fd'" onmouseout="this.style.backgroundColor='white'">
+                  <div style="font-size: 2rem;">🔍</div>
+                  <div>
+                    <div style="font-weight: 600; color: #333;">Search Medications</div>
+                    <div style="font-size: 0.85rem; color: #666;">Find and order new medications</div>
+                  </div>
+                </div>
+              </div>
+              
+              <div style="text-align: center;">
+                <button onclick="document.getElementById('health-wallet').scrollIntoView({behavior:'smooth'}); showMedicalCategory('pharmacy');" style="background: linear-gradient(135deg, #4caf50 0%, #66bb6a 100%); color: white; border: none; padding: 16px 40px; border-radius: 25px; cursor: pointer; font-size: 1.1rem; font-weight: 600;">💊 Go to Pharmacy</button>
+              </div>
+            </div>
+          `);
+          recordCustomerAction('ai_pharmacy_view', 0, 'Viewed pharmacy via AI assistant');
+          break;
+          
+        case 'homecare':
+          showAIResponse(`
+            <div style="padding: 24px;">
+              <div style="text-align: center; margin-bottom: 24px;">
+                <div style="font-size: 4rem; margin-bottom: 12px;">🏠</div>
+                <h3 style="color: #333; margin: 0 0 8px 0;">Home Care Services</h3>
+                <p style="color: #666; margin: 0;">Professional care in the comfort of your home</p>
+              </div>
+              
+              <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 24px;">
+                <div style="background: linear-gradient(135deg, #e8f5e9 0%, #c8e6c9 100%); border-radius: 12px; padding: 20px; text-align: center;">
+                  <div style="font-size: 2.5rem; margin-bottom: 8px;">👩‍⚕️</div>
+                  <div style="font-weight: 600; color: #2e7d32;">Nursing Care</div>
+                  <div style="font-size: 0.85rem; color: #666; margin: 8px 0;">Professional nursing at home</div>
+                </div>
+                <div style="background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%); border-radius: 12px; padding: 20px; text-align: center;">
+                  <div style="font-size: 2.5rem; margin-bottom: 8px;">🤝</div>
+                  <div style="font-weight: 600; color: #1565c0;">Caregiver</div>
+                  <div style="font-size: 0.85rem; color: #666; margin: 8px 0;">Daily assistance and support</div>
+                </div>
+                <div style="background: linear-gradient(135deg, #fff3e0 0%, #ffe0b2 100%); border-radius: 12px; padding: 20px; text-align: center;">
+                  <div style="font-size: 2.5rem; margin-bottom: 8px;">💪</div>
+                  <div style="font-weight: 600; color: #e65100;">Physical Therapy</div>
+                  <div style="font-size: 0.85rem; color: #666; margin: 8px 0;">Rehabilitation at home</div>
+                </div>
+              </div>
+              
+              <div style="text-align: center;">
+                <button onclick="document.getElementById('health-wallet').scrollIntoView({behavior:'smooth'}); showMedicalCategory('homecare');" style="background: linear-gradient(135deg, #009688 0%, #26a69a 100%); color: white; border: none; padding: 16px 40px; border-radius: 25px; cursor: pointer; font-size: 1.1rem; font-weight: 600;">🏠 Browse Home Care</button>
+              </div>
+            </div>
+          `);
+          recordCustomerAction('ai_homecare_view', 0, 'Viewed home care services via AI assistant');
+          break;
+      }
+    }
+    
+    // Book consultation helper
+    function bookConsultation(type) {
+      showNotification(`📅 Booking ${type} consultation...`, 'info');
+      // Scroll to health wallet and open consultation category
+      document.getElementById('health-wallet').scrollIntoView({behavior:'smooth'});
+      setTimeout(() => showMedicalCategory('consultation'), 500);
+      recordCustomerAction('ai_consultation_book', 0, `Initiated ${type} consultation booking via AI assistant`);
     }
     
     // Show AI response
