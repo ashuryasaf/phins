@@ -24,9 +24,34 @@
       font-size: 0.85rem;
       font-weight: bold;
     }
-    .status-success, .status-completed { background-color: #d4edda; color: #155724; }
-    .status-failed { background-color: #f8d7da; color: #721c24; }
-    .status-pending { background-color: #fff3cd; color: #856404; }
+    .status-success, .status-completed, .status-paid { background-color: #d4edda; color: #155724; }
+    .status-failed, .status-rejected, .status-declined { background-color: #f8d7da; color: #721c24; }
+    .status-pending, .status-outstanding, .status-processing { background-color: #fff3cd; color: #856404; }
+    
+    /* Payment Method Display */
+    .payment-method-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 10px;
+      background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+      border-radius: 16px;
+      font-size: 0.85rem;
+      font-weight: 500;
+      color: #495057;
+      border: 1px solid #dee2e6;
+    }
+    .payment-method-badge .icon {
+      font-size: 1rem;
+    }
+    .payment-method-badge.visa { background: linear-gradient(135deg, #1a1f71 0%, #00349e 100%); color: white; border: none; }
+    .payment-method-badge.mastercard { background: linear-gradient(135deg, #eb001b 0%, #f79e1b 100%); color: white; border: none; }
+    .payment-method-badge.amex { background: linear-gradient(135deg, #006fcf 0%, #00aeef 100%); color: white; border: none; }
+    .payment-method-badge.paypal { background: linear-gradient(135deg, #003087 0%, #009cde 100%); color: white; border: none; }
+    .payment-method-badge.apple { background: linear-gradient(135deg, #000 0%, #333 100%); color: white; border: none; }
+    .payment-method-badge.google { background: linear-gradient(135deg, #4285f4 0%, #34a853 50%, #fbbc05 100%); color: white; border: none; }
+    .payment-method-badge.bank { background: linear-gradient(135deg, #2e7d32 0%, #43a047 100%); color: white; border: none; }
+    .payment-method-badge.crypto { background: linear-gradient(135deg, #f7931a 0%, #ffc107 100%); color: white; border: none; }
     .alert-box {
       padding: 1rem;
       margin: 1rem 0;
