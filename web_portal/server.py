@@ -6951,11 +6951,139 @@ For claims or questions, please contact:
                 transactions = []
                 now_str = datetime.now().isoformat()
                 
+                # Helper function to format payment method with card details
+                def format_payment_method(bill, policy=None):
+                    """
+                    Format payment method with card type and last 4 digits.
+                    Returns: {display, method, card_type, card_last4, icon}
+                    """
+                    raw_method = bill.get('payment_method', '')
+                    pm_info = bill.get('payment_method_info', {})
+                    
+                    # Try to get card details from multiple sources
+                    card_last4 = (
+                        pm_info.get('card_last4') or
+                        bill.get('card_last4') or
+                        (policy.get('payment_setup', {}).get('card_last4') if policy else None) or
+                        None
+                    )
+                    card_type = (
+                        pm_info.get('card_type') or
+                        bill.get('card_type') or
+                        (policy.get('payment_setup', {}).get('card_type') if policy else None) or
+                        None
+                    )
+                    
+                    # Card type icons and display names
+                    card_icons = {
+                        'visa': '💳',
+                        'mastercard': '💳',
+                        'amex': '💳',
+                        'american_express': '💳',
+                        'discover': '💳',
+                        'jcb': '💳',
+                        'diners': '💳',
+                        'unknown': '💳'
+                    }
+                    
+                    card_display_names = {
+                        'visa': 'Visa',
+                        'mastercard': 'Mastercard',
+                        'amex': 'Amex',
+                        'american_express': 'Amex',
+                        'discover': 'Discover',
+                        'jcb': 'JCB',
+                        'diners': 'Diners',
+                        'unknown': 'Card'
+                    }
+                    
+                    # Method icons
+                    method_icons = {
+                        'credit_card': '💳',
+                        'debit_card': '💳',
+                        'paypal': '🅿️',
+                        'apple_pay': '🍎',
+                        'google_pay': '📱',
+                        'bank_transfer': '🏦',
+                        'wire': '🏦',
+                        'crypto': '₿',
+                        'crypto_btc': '₿',
+                        'crypto_eth': 'Ξ',
+                        'crypto_usdc': '💲',
+                        'health_wallet': '💊',
+                        'internal': '🔄'
+                    }
+                    
+                    result = {
+                        'display': 'N/A',
+                        'method': raw_method or 'unknown',
+                        'card_type': None,
+                        'card_last4': None,
+                        'icon': '❓'
+                    }
+                    
+                    # Build display string based on payment method
+                    if raw_method in ['credit_card', 'debit_card'] or card_last4:
+                        ct = (card_type or 'card').lower()
+                        icon = card_icons.get(ct, '💳')
+                        display_name = card_display_names.get(ct, 'Card')
+                        
+                        if card_last4:
+                            result['display'] = f"{display_name} •••• {card_last4}"
+                            result['card_last4'] = card_last4
+                            result['card_type'] = ct
+                        else:
+                            result['display'] = f"{display_name} •••• ****"
+                        result['icon'] = icon
+                        
+                    elif raw_method == 'paypal':
+                        result['display'] = 'PayPal'
+                        result['icon'] = '🅿️'
+                        
+                    elif raw_method == 'apple_pay':
+                        result['display'] = 'Apple Pay'
+                        result['icon'] = '🍎'
+                        
+                    elif raw_method == 'google_pay':
+                        result['display'] = 'Google Pay'
+                        result['icon'] = '📱'
+                        
+                    elif raw_method in ['bank_transfer', 'wire', 'Bank Transfer']:
+                        result['display'] = 'Bank Transfer'
+                        result['icon'] = '🏦'
+                        
+                    elif raw_method.startswith('crypto') or raw_method in ['btc', 'eth', 'usdc']:
+                        crypto_name = raw_method.replace('crypto_', '').upper() or 'Crypto'
+                        result['display'] = f"Crypto ({crypto_name})"
+                        result['icon'] = method_icons.get(raw_method, '₿')
+                        
+                    elif raw_method == 'health_wallet':
+                        result['display'] = 'Health Wallet'
+                        result['icon'] = '💊'
+                        
+                    elif raw_method == 'internal' or raw_method == 'internal_transfer':
+                        result['display'] = 'Internal Transfer'
+                        result['icon'] = '🔄'
+                        
+                    elif raw_method and raw_method != 'N/A':
+                        # Capitalize unknown methods
+                        result['display'] = raw_method.replace('_', ' ').title()
+                        result['icon'] = method_icons.get(raw_method, '💰')
+                        
+                    return result
+                
                 # Get bills as transactions
                 for bill_id, bill in list(BILLING.items()):
                     try:
                         customer = CUSTOMERS.get(bill.get('customer_id', ''), {})
                         customer_name = customer.get('name', bill.get('customer_id', 'N/A'))
+                        
+                        # Get policy for payment setup info
+                        policy_id = bill.get('policy_id')
+                        policy = POLICIES.get(policy_id, {}) if policy_id else {}
+                        
+                        # Format payment method
+                        pm = format_payment_method(bill, policy)
                         
                         transactions.append({
                             'id': bill_id,
@@ -6966,7 +7094,11 @@ For claims or questions, please contact:
                             'amount': float(bill.get('amount', 0) or 0),
                             'status': 'paid' if status_eq(bill, 'paid') else (bill.get('status') or 'pending'),
                             'date': bill.get('created_date') or now_str,
-                            'payment_method': bill.get('payment_method') or 'N/A'
+                            'payment_method': pm['display'],
+                            'payment_method_raw': pm['method'],
+                            'payment_method_icon': pm['icon'],
+                            'card_type': pm['card_type'],
+                            'card_last4': pm['card_last4']
                         })
                     except Exception:
                         continue
@@ -6985,7 +7117,11 @@ For claims or questions, please contact:
                                 'amount': -float(claim.get('approved_amount', 0) or 0),
                                 'status': 'completed',
                                 'date': claim.get('approval_date') or claim.get('filed_date') or now_str,
-                                'payment_method': 'Bank Transfer'
+                                'payment_method': 'Bank Transfer',
+                                'payment_method_raw': 'bank_transfer',
+                                'payment_method_icon': '🏦',
+                                'card_type': None,
+                                'card_last4': None
                             })
                     except Exception:
                         continue
@@ -19298,19 +19434,58 @@ For claims or questions, please contact:
                     self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
                 return
             
-            # Get recent transactions
+            # Get recent transactions (enhanced with payment method details)
             if path == '/api/billing/transactions':
                 try:
+                    # Helper function to format payment method
+                    def format_pm_display(bill, policy=None):
+                        raw_method = bill.get('payment_method', '')
+                        card_last4 = bill.get('card_last4') or (policy.get('payment_setup', {}).get('card_last4') if policy else None)
+                        card_type = bill.get('card_type') or (policy.get('payment_setup', {}).get('card_type') if policy else None)
+                        
+                        card_names = {'visa': 'Visa', 'mastercard': 'Mastercard', 'amex': 'Amex', 'discover': 'Discover'}
+                        icons = {'credit_card': '💳', 'debit_card': '💳', 'paypal': '🅿️', 'apple_pay': '🍎', 
+                                 'google_pay': '📱', 'bank_transfer': '🏦', 'crypto': '₿'}
+                        
+                        if raw_method in ['credit_card', 'debit_card'] or card_last4:
+                            ct = (card_type or 'card').lower()
+                            display_name = card_names.get(ct, 'Card')
+                            display = f"{display_name} •••• {card_last4}" if card_last4 else f"{display_name} •••• ****"
+                            return {'display': display, 'icon': '💳', 'raw': raw_method, 'card_type': ct, 'card_last4': card_last4}
+                        elif raw_method == 'paypal':
+                            return {'display': 'PayPal', 'icon': '🅿️', 'raw': raw_method, 'card_type': None, 'card_last4': None}
+                        elif raw_method == 'apple_pay':
+                            return {'display': 'Apple Pay', 'icon': '🍎', 'raw': raw_method, 'card_type': None, 'card_last4': None}
+                        elif raw_method == 'google_pay':
+                            return {'display': 'Google Pay', 'icon': '📱', 'raw': raw_method, 'card_type': None, 'card_last4': None}
+                        elif raw_method in ['bank_transfer', 'Bank Transfer', 'wire']:
+                            return {'display': 'Bank Transfer', 'icon': '🏦', 'raw': 'bank_transfer', 'card_type': None, 'card_last4': None}
+                        elif raw_method.startswith('crypto'):
+                            crypto_name = raw_method.replace('crypto_', '').upper() or 'Crypto'
+                            return {'display': f'Crypto ({crypto_name})', 'icon': '₿', 'raw': raw_method, 'card_type': None, 'card_last4': None}
+                        elif raw_method and raw_method != 'N/A' and raw_method != '****-****-****-****':
+                            return {'display': raw_method.replace('_', ' ').title(), 'icon': icons.get(raw_method, '💰'), 'raw': raw_method, 'card_type': None, 'card_last4': None}
+                        return {'display': 'Not Specified', 'icon': '❓', 'raw': '', 'card_type': None, 'card_last4': None}
+                    
                     # Get recent transactions from billing history
                     transactions = []
                     for bill_id, bill in BILLING.items():
+                        policy = POLICIES.get(bill.get('policy_id', ''), {})
+                        customer = CUSTOMERS.get(bill.get('customer_id', ''), {})
+                        pm = format_pm_display(bill, policy)
+                        
                         transactions.append({
                             'transaction_id': bill_id,
                             'customer_id': bill.get('customer_id', 'N/A'),
-                            'amount': float(bill.get('amount_due', 0)),
+                            'customer_name': customer.get('name', bill.get('customer_id', 'N/A')),
+                            'amount': float(bill.get('amount_due', 0) or bill.get('amount', 0)),
                             'status': 'success' if status_eq(bill, 'paid') else bill.get('status', 'pending'),
                             'timestamp': bill.get('created_date', datetime.now().isoformat()),
-                            'payment_method': bill.get('payment_method', '****-****-****-****')
+                            'payment_method': pm['display'],
+                            'payment_method_raw': pm['raw'],
+                            'payment_method_icon': pm['icon'],
+                            'card_type': pm['card_type'],
+                            'card_last4': pm['card_last4']
                         })
                     
                     # Sort by timestamp desc and limit to 50
@@ -19405,6 +19580,25 @@ For claims or questions, please contact:
                     
                     # If successful card/PayPal payment, update billing record
                     if result.success and result.status == 'completed' and policy_id:
+                        # Extract card details for display (if card payment)
+                        card_number = data.get('card_number', '')
+                        card_last4 = card_number[-4:] if card_number and len(card_number) >= 4 else None
+                        card_type = None
+                        
+                        # Detect card type from number
+                        if card_number:
+                            clean_num = card_number.replace(' ', '').replace('-', '')
+                            if clean_num.startswith('4'):
+                                card_type = 'visa'
+                            elif clean_num[:2] in ['51', '52', '53', '54', '55'] or (len(clean_num) >= 4 and 2221 <= int(clean_num[:4]) <= 2720):
+                                card_type = 'mastercard'
+                            elif clean_num[:2] in ['34', '37']:
+                                card_type = 'amex'
+                            elif clean_num.startswith('6011') or clean_num.startswith('65'):
+                                card_type = 'discover'
+                            else:
+                                card_type = 'card'
+                        
                         # Find and update billing record (case-insensitive)
                         for bill_id, bill in BILLING.items():
                             if bill.get('policy_id') == policy_id and status_in(bill, ['outstanding', 'partial']):
@@ -19416,6 +19610,16 @@ For claims or questions, please contact:
                                 bill['payment_method'] = method
                                 bill['transaction_id'] = result.transaction_id
                                 bill['updated_date'] = datetime.now().isoformat()
+                                
+                                # Store card details for display (not full number - just type and last 4)
+                                if card_last4:
+                                    bill['card_last4'] = card_last4
+                                    bill['card_type'] = card_type
+                                    bill['payment_method_info'] = {
+                                        'card_last4': card_last4,
+                                        'card_type': card_type,
+                                        'method': method
+                                    }
                                 
                                 # Record premium revenue on PHINS Balance Sheet
                                 try:

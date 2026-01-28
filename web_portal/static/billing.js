@@ -663,27 +663,180 @@ async function loadRecentTransactions() {
       return;
     }
     
-    list.innerHTML = transactions.map(txn => `
-      <div class="transaction-item">
-        <div>
-          <strong>${txn.transaction_id}</strong><br>
-          <small>${txn.customer_id} • ${txn.payment_method || '****'}</small><br>
-          <small>${new Date(txn.timestamp).toLocaleString()}</small>
-        </div>
-        <div style="text-align: right;">
-          <strong>$${Number(txn.amount).toFixed(2)}</strong><br>
-          <span class="transaction-status status-${txn.status}">${txn.status.toUpperCase()}</span><br>
-          <div class="action-buttons" style="margin-top: 0.5rem;">
-            ${txn.status === 'success' ? 
-              `<button class="btn-small btn-refund" onclick="refundTransaction('${txn.transaction_id}')">Refund</button>` : 
+    // Store for export functionality
+    window.lastTransactions = transactions;
+    
+    list.innerHTML = transactions.map(txn => {
+      // Format payment method with icon and masking
+      const pmDisplay = formatPaymentMethodDisplay(txn);
+      
+      // Format timestamp
+      const timestamp = txn.timestamp || txn.date;
+      const formattedDate = timestamp ? new Date(timestamp).toLocaleString() : 'N/A';
+      
+      // Determine status class and display
+      const statusClass = getStatusClass(txn.status);
+      const statusDisplay = (txn.status || 'pending').toUpperCase();
+      
+      // Format amount with color based on transaction type
+      const amount = Number(txn.amount || 0);
+      const amountClass = amount < 0 ? 'color: #dc3545;' : 'color: #28a745;';
+      const amountDisplay = amount < 0 ? `-$${Math.abs(amount).toFixed(2)}` : `$${amount.toFixed(2)}`;
+      
+      return `
+        <div class="transaction-item">
+          <div style="flex: 1;">
+            <strong>${txn.transaction_id || txn.id}</strong>
+            <div style="margin-top: 4px;">
+              <span style="display: inline-flex; align-items: center; gap: 6px; font-size: 0.9rem;">
+                ${pmDisplay.icon}
+                <span style="font-weight: 500; color: #333;">${pmDisplay.display}</span>
+              </span>
+            </div>
+            <div style="font-size: 0.8rem; color: #666; margin-top: 2px;">
+              ${txn.customer_name || txn.customer_id} • ${formattedDate}
+            </div>
+          </div>
+          <div style="text-align: right; min-width: 120px;">
+            <strong style="${amountClass}">${amountDisplay}</strong><br>
+            <span class="transaction-status ${statusClass}">${statusDisplay}</span>
+            ${(txn.status === 'success' || txn.status === 'paid') && amount > 0 ? 
+              `<div style="margin-top: 6px;">
+                <button class="btn-small btn-refund" onclick="refundTransaction('${txn.transaction_id || txn.id}')" title="Process Refund">
+                  ↩️ Refund
+                </button>
+              </div>` : 
               ''}
           </div>
         </div>
-      </div>
-    `).join('');
+      `;
+    }).join('');
   } catch (err) {
     console.error('Failed to load transactions:', err);
+    const list = document.getElementById('transaction-list');
+    list.innerHTML = '<p class="error">Failed to load transactions</p>';
   }
+}
+
+/**
+ * Format payment method for display with icon and masked card number
+ * @param {Object} txn - Transaction object
+ * @returns {Object} - {display, icon, tooltip}
+ */
+function formatPaymentMethodDisplay(txn) {
+  // Use enhanced data if available
+  if (txn.payment_method_icon && txn.payment_method !== 'N/A') {
+    return {
+      display: txn.payment_method,
+      icon: txn.payment_method_icon,
+      tooltip: txn.payment_method_raw || txn.payment_method
+    };
+  }
+  
+  // Fallback formatting for legacy data
+  const pm = txn.payment_method || '';
+  const cardLast4 = txn.card_last4;
+  const cardType = txn.card_type;
+  
+  // Icon mappings
+  const icons = {
+    'credit_card': '💳',
+    'debit_card': '💳',
+    'paypal': '🅿️',
+    'apple_pay': '🍎',
+    'google_pay': '📱',
+    'bank_transfer': '🏦',
+    'Bank Transfer': '🏦',
+    'wire': '🏦',
+    'crypto': '₿',
+    'crypto_btc': '₿',
+    'crypto_eth': 'Ξ',
+    'health_wallet': '💊',
+    'internal': '🔄',
+    'N/A': '❓'
+  };
+  
+  // Card type display names
+  const cardNames = {
+    'visa': 'Visa',
+    'mastercard': 'Mastercard',
+    'amex': 'Amex',
+    'american_express': 'Amex',
+    'discover': 'Discover',
+    'jcb': 'JCB'
+  };
+  
+  let display = pm || 'N/A';
+  let icon = icons[pm] || '💰';
+  
+  // Format credit/debit card with last 4 digits
+  if (pm === 'credit_card' || pm === 'debit_card' || cardLast4) {
+    const typeName = cardType ? (cardNames[cardType.toLowerCase()] || 'Card') : 'Card';
+    if (cardLast4) {
+      display = `${typeName} •••• ${cardLast4}`;
+    } else {
+      display = `${typeName} •••• ****`;
+    }
+    icon = '💳';
+  }
+  // Format PayPal
+  else if (pm === 'paypal' || pm.toLowerCase().includes('paypal')) {
+    display = 'PayPal';
+    icon = '🅿️';
+  }
+  // Format Apple Pay
+  else if (pm === 'apple_pay') {
+    display = 'Apple Pay';
+    icon = '🍎';
+  }
+  // Format Google Pay
+  else if (pm === 'google_pay') {
+    display = 'Google Pay';
+    icon = '📱';
+  }
+  // Format Bank Transfer
+  else if (pm === 'bank_transfer' || pm === 'Bank Transfer' || pm === 'wire') {
+    display = 'Bank Transfer';
+    icon = '🏦';
+  }
+  // Format Crypto
+  else if (pm.startsWith('crypto') || ['btc', 'eth', 'usdc'].includes(pm.toLowerCase())) {
+    const crypto = pm.replace('crypto_', '').toUpperCase() || 'Crypto';
+    display = `Crypto (${crypto})`;
+    icon = pm.includes('eth') ? 'Ξ' : '₿';
+  }
+  // Format Health Wallet
+  else if (pm === 'health_wallet') {
+    display = 'Health Wallet';
+    icon = '💊';
+  }
+  // Format N/A with better message
+  else if (!pm || pm === 'N/A') {
+    display = 'Not Specified';
+    icon = '❓';
+  }
+  // Format other methods
+  else {
+    display = pm.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+    icon = icons[pm] || '💰';
+  }
+  
+  return { display, icon, tooltip: pm };
+}
+
+/**
+ * Get CSS class for transaction status
+ */
+function getStatusClass(status) {
+  const statusLower = (status || '').toLowerCase();
+  if (['success', 'paid', 'completed', 'approved'].includes(statusLower)) {
+    return 'status-success';
+  } else if (['failed', 'rejected', 'declined'].includes(statusLower)) {
+    return 'status-failed';
+  } else if (['pending', 'processing', 'outstanding'].includes(statusLower)) {
+    return 'status-pending';
+  }
+  return 'status-pending';
 }
 
 async function handlePayment(e) {
@@ -1903,16 +2056,22 @@ async function exportTransactions(format) {
     }
     
     if (format === 'csv') {
-      const csvData = lastTransactions.map(t => ({
-        Transaction_ID: t.id || t.transaction_id,
-        Customer_ID: t.customer_id,
-        Customer_Name: t.customer_name || 'N/A',
-        Type: t.type,
-        Amount: t.amount,
-        Status: t.status,
-        Date: t.date,
-        Payment_Method: t.payment_method || 'N/A'
-      }));
+      const csvData = lastTransactions.map(t => {
+        // Format payment method for export
+        const pmDisplay = formatPaymentMethodDisplay(t);
+        return {
+          Transaction_ID: t.id || t.transaction_id,
+          Customer_ID: t.customer_id,
+          Customer_Name: t.customer_name || 'N/A',
+          Type: t.type,
+          Amount: t.amount,
+          Status: t.status,
+          Date: t.date,
+          Payment_Method: pmDisplay.display,
+          Card_Type: t.card_type || '',
+          Card_Last_4: t.card_last4 || ''
+        };
+      });
       downloadCSV(csvData, 'PHINS_Transactions');
     } else if (format === 'pdf') {
       const content = `
