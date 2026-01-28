@@ -273,6 +273,33 @@
       color: white;
       box-shadow: 0 2px 8px rgba(239, 68, 68, 0.3);
     }
+    
+    /* Bill All notification animations */
+    @keyframes slideIn {
+      from {
+        transform: translateX(100%);
+        opacity: 0;
+      }
+      to {
+        transform: translateX(0);
+        opacity: 1;
+      }
+    }
+    
+    @keyframes fadeOut {
+      from {
+        opacity: 1;
+      }
+      to {
+        opacity: 0;
+      }
+    }
+    
+    /* Bill All button hover effect */
+    .btn-bill-all:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(245, 158, 11, 0.4);
+    }
   </style>
 </head>
 <body>
@@ -2813,6 +2840,163 @@
       }
     }
     
+    // ========== BILL ALL POLICIES - AI Insights Action ==========
+    // Systematic billing for all active policies with full data integrity
+    async function executeBillAll() {
+      // Confirmation dialog with details
+      const confirmed = confirm(
+        '📄 BILL ALL POLICIES\n' +
+        '═══════════════════════════════════════\n\n' +
+        'This action will:\n\n' +
+        '✓ Generate bills for all active policies without outstanding bills\n' +
+        '✓ Update transaction ledger with billing records\n' +
+        '✓ Update balance sheet audit log\n' +
+        '✓ Maintain data integrity across all systems\n' +
+        '✓ Persist data for reports and reconciliation\n\n' +
+        'Continue with systematic billing?'
+      );
+      
+      if (!confirmed) return;
+      
+      // Show processing indicator
+      const processingDiv = document.createElement('div');
+      processingDiv.id = 'bill-all-processing';
+      processingDiv.style.cssText = 'position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: linear-gradient(135deg, #1e3a5f 0%, #2d4a6f 100%); padding: 30px 40px; border-radius: 16px; box-shadow: 0 20px 60px rgba(0,0,0,0.5); z-index: 10000; text-align: center; color: white; border: 1px solid rgba(255,255,255,0.1);';
+      processingDiv.innerHTML = `
+        <div style="font-size: 48px; margin-bottom: 16px;">⏳</div>
+        <div style="font-size: 18px; font-weight: bold; margin-bottom: 8px;">Processing Bulk Billing...</div>
+        <div style="font-size: 14px; color: rgba(255,255,255,0.7);">Generating bills, updating ledgers, reconciling data</div>
+      `;
+      document.body.appendChild(processingDiv);
+      
+      try {
+        const response = await fetch('/api/admin/bill-all-policies', {
+          method: 'GET',
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        
+        // Remove processing indicator
+        const procDiv = document.getElementById('bill-all-processing');
+        if (procDiv) procDiv.remove();
+        
+        if (response.ok) {
+          const data = await response.json();
+          const summary = data.summary;
+          const integrity = data.data_integrity;
+          const currentState = data.current_state;
+          
+          // Build comprehensive result message
+          let message = '✅ BULK BILLING COMPLETED\n';
+          message += '═══════════════════════════════════════\n\n';
+          
+          message += '📊 BILLING SUMMARY:\n';
+          message += `• Total Active Policies: ${summary.total_active_policies}\n`;
+          message += `• Bills Created: ${summary.bills_created}\n`;
+          message += `• Already Billed: ${summary.already_billed}\n`;
+          message += `• Skipped: ${summary.skipped}\n`;
+          message += `• Total Amount Billed: $${summary.total_amount_billed.toLocaleString('en-US', {minimumFractionDigits: 2})}\n\n`;
+          
+          message += '🔒 DATA INTEGRITY:\n';
+          message += `• Ledger Entries Created: ${integrity.ledger_entries_created}\n`;
+          message += `• Balance Sheet Updated: ${integrity.balance_sheet_updated ? 'Yes ✓' : 'No'}\n`;
+          message += `• Persistent Storage: ${integrity.persistent_storage_saved ? 'Saved ✓' : 'Pending'}\n`;
+          message += `• Database Synced: ${integrity.database_synced ? 'Yes ✓' : 'N/A'}\n\n`;
+          
+          message += '📈 CURRENT STATE:\n';
+          message += `• Total Outstanding: $${currentState.total_outstanding_amount.toLocaleString('en-US', {minimumFractionDigits: 2})}\n`;
+          message += `• Outstanding Bills: ${currentState.total_outstanding_bills}\n`;
+          message += `• Paid Bills: ${currentState.total_paid_bills}\n`;
+          message += `• Premium Collected: $${currentState.premium_income_collected.toLocaleString('en-US', {minimumFractionDigits: 2})}`;
+          
+          if (data.errors && data.errors.length > 0) {
+            message += `\n\n⚠️ ERRORS (${data.errors.length}):\n`;
+            data.errors.slice(0, 5).forEach(err => {
+              message += `• ${err.policy_id || err.type}: ${err.error}\n`;
+            });
+          }
+          
+          alert(message);
+          
+          // Log detailed results to console
+          console.log('Bill All Results:', data);
+          console.log('Bills Created:', data.bills_created);
+          console.log('Policies Skipped:', data.policies_skipped);
+          
+          // ========== REFRESH ALL RELEVANT DASHBOARDS ==========
+          
+          // Refresh balance sheet to show updated audit log
+          await loadBalanceSheet();
+          
+          // Refresh AI Insights to reflect new billing state
+          await loadAIInsights();
+          
+          // Refresh billing data if the function exists
+          if (typeof loadBillingData === 'function') {
+            await loadBillingData();
+          }
+          
+          // Refresh dashboard stats
+          if (typeof loadDashboardStats === 'function') {
+            await loadDashboardStats();
+          }
+          
+          // Refresh policies view
+          if (typeof loadPolicies === 'function') {
+            await loadPolicies();
+          }
+          
+          // Refresh customer list to show billing status
+          if (typeof loadCustomerList === 'function') {
+            await loadCustomerList();
+          }
+          
+          // Show success notification
+          showBillAllSuccessNotification(summary);
+          
+        } else if (response.status === 403) {
+          alert('⚠️ Access Denied: Admin or Accountant role required for bulk billing');
+        } else {
+          const errorData = await response.json().catch(() => ({}));
+          alert(`❌ Billing Failed: ${errorData.error || response.status}\n\nPlease check the console for details.`);
+          console.error('Bill All Error:', errorData);
+        }
+      } catch (err) {
+        // Remove processing indicator on error
+        const procDiv = document.getElementById('bill-all-processing');
+        if (procDiv) procDiv.remove();
+        
+        alert('❌ Error executing bulk billing: ' + err.message);
+        console.error('Bill All Error:', err);
+      }
+    }
+    
+    // Show success notification toast for bill all action
+    function showBillAllSuccessNotification(summary) {
+      const notification = document.createElement('div');
+      notification.style.cssText = 'position: fixed; bottom: 20px; right: 20px; background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: white; padding: 16px 24px; border-radius: 12px; box-shadow: 0 10px 40px rgba(0,0,0,0.3); z-index: 10001; animation: slideIn 0.3s ease-out; max-width: 400px;';
+      notification.innerHTML = `
+        <div style="display: flex; align-items: center; gap: 12px;">
+          <span style="font-size: 28px;">✅</span>
+          <div>
+            <div style="font-weight: bold; font-size: 15px;">Bulk Billing Complete</div>
+            <div style="font-size: 13px; opacity: 0.9; margin-top: 4px;">
+              ${summary.bills_created} bills created • $${summary.total_amount_billed.toLocaleString('en-US', {minimumFractionDigits: 2})} billed
+            </div>
+          </div>
+          <button onclick="this.parentElement.parentElement.remove()" style="background: none; border: none; color: white; cursor: pointer; font-size: 18px; margin-left: auto;">×</button>
+        </div>
+      `;
+      document.body.appendChild(notification);
+      
+      // Auto-remove after 8 seconds
+      setTimeout(() => {
+        if (notification.parentElement) {
+          notification.style.animation = 'fadeOut 0.3s ease-out';
+          setTimeout(() => notification.remove(), 300);
+        }
+      }, 8000);
+    }
+    
     // Load AI/BI Financial Insights
     async function loadAIInsights() {
       try {
@@ -2862,16 +3046,30 @@
             insightsContent.innerHTML = '<div style="color: #81c784;">✅ No issues detected - financial data is healthy</div>';
           }
           
-          // Update recommendations
+          // Update recommendations with action buttons
           const recsContent = document.getElementById('ai-recommendations-content');
           if (ai.recommendations && ai.recommendations.length > 0) {
-            recsContent.innerHTML = ai.recommendations.map(rec => `
-              <div style="margin-bottom: 12px; padding: 10px; background: rgba(255,255,255,0.05); border-radius: 8px;">
-                <div style="font-weight: bold; color: #81c784;">Priority ${rec.priority}: ${rec.action}</div>
-                <div style="color: rgba(255,255,255,0.9); margin-top: 4px;">${rec.details}</div>
-                <div style="color: #64b5f6; margin-top: 4px; font-size: 12px;"><em>Expected: ${rec.expected_result}</em></div>
-              </div>
-            `).join('');
+            recsContent.innerHTML = ai.recommendations.map(rec => {
+              // Check if this is the Premium Collection recommendation
+              const isPremiumCollection = rec.action && rec.action.toLowerCase().includes('premium collection');
+              const actionButton = isPremiumCollection ? `
+                <div style="margin-top: 10px; padding-top: 10px; border-top: 1px solid rgba(255,255,255,0.1);">
+                  <button onclick="executeBillAll()" class="btn" style="background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); color: white; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: bold; display: inline-flex; align-items: center; gap: 6px;" title="Generate bills for all active policies">
+                    <span style="font-size: 16px;">📄</span> Bill All Policies
+                  </button>
+                  <span style="font-size: 11px; color: rgba(255,255,255,0.6); margin-left: 8px;">Systematic billing for all active policies</span>
+                </div>
+              ` : '';
+              
+              return `
+                <div style="margin-bottom: 12px; padding: 10px; background: rgba(255,255,255,0.05); border-radius: 8px; ${isPremiumCollection ? 'border: 1px solid rgba(245,158,11,0.3);' : ''}">
+                  <div style="font-weight: bold; color: #81c784;">Priority ${rec.priority}: ${rec.action}</div>
+                  <div style="color: rgba(255,255,255,0.9); margin-top: 4px;">${rec.details}</div>
+                  <div style="color: #64b5f6; margin-top: 4px; font-size: 12px;"><em>Expected: ${rec.expected_result}</em></div>
+                  ${actionButton}
+                </div>
+              `;
+            }).join('');
           } else {
             recsContent.innerHTML = '<div style="color: #81c784;">✅ No immediate actions required</div>';
           }

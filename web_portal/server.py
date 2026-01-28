@@ -11686,6 +11686,268 @@ For claims or questions, please contact:
             }, default=str).encode('utf-8'))
             return
         
+        # ========== BILL ALL POLICIES API ==========
+        # AI Insights Action: Bill all active policies systematically
+        # Triggered from AI Recommendations "Priority 1: Initiate Premium Collection"
+        
+        if path == '/api/admin/bill-all-policies':
+            # Check authorization - only admin and accountant
+            if not require_role(session, ['admin', 'accountant']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Unauthorized. Admin or Accountant access required.'}).encode('utf-8'))
+                return
+            
+            initialize_balance_sheet()
+            
+            # Get the actor for audit trail
+            actor = 'system'
+            if session:
+                actor = session.get('username', 'admin')
+            
+            # ========== SYSTEMATIC BILLING EXECUTION ==========
+            
+            # 1. Get all active policies
+            active_policies = [p for p in POLICIES.values() if status_eq(p, 'active')]
+            
+            # 2. Get existing outstanding bills (to avoid duplicate billing)
+            existing_outstanding_bills = {
+                b.get('policy_id'): b 
+                for b in BILLING.values() 
+                if b.get('status') in ['outstanding', 'partial'] and b.get('policy_id')
+            }
+            
+            # 3. Track billing results
+            billing_results = {
+                'total_policies': len(active_policies),
+                'already_billed': 0,
+                'newly_billed': 0,
+                'skipped': 0,
+                'total_amount_billed': 0.0,
+                'bills_created': [],
+                'policies_skipped': [],
+                'ledger_entries': [],
+                'balance_sheet_updated': False,
+                'errors': []
+            }
+            
+            # 4. Process each active policy
+            for policy in active_policies:
+                policy_id = policy.get('id') or policy.get('policy_id')
+                customer_id = policy.get('customer_id')
+                
+                # Skip if policy already has an outstanding bill
+                if policy_id in existing_outstanding_bills:
+                    billing_results['already_billed'] += 1
+                    billing_results['policies_skipped'].append({
+                        'policy_id': policy_id,
+                        'reason': 'outstanding_bill_exists',
+                        'existing_bill_id': existing_outstanding_bills[policy_id].get('bill_id') or existing_outstanding_bills[policy_id].get('id')
+                    })
+                    continue
+                
+                # Skip suspended accounts
+                if is_suspended_account(customer_id):
+                    billing_results['skipped'] += 1
+                    billing_results['policies_skipped'].append({
+                        'policy_id': policy_id,
+                        'reason': 'suspended_account'
+                    })
+                    continue
+                
+                # Skip if no valid premium amount
+                monthly_premium = float(policy.get('monthly_premium', 0) or policy.get('premium', 0) or 0)
+                annual_premium = float(policy.get('annual_premium', 0) or 0)
+                
+                # Calculate billing amount based on billing frequency
+                billing_frequency = policy.get('billing_frequency', 'monthly').lower()
+                if billing_frequency == 'annual':
+                    bill_amount = annual_premium if annual_premium > 0 else monthly_premium * 12
+                elif billing_frequency == 'quarterly':
+                    bill_amount = (annual_premium / 4) if annual_premium > 0 else monthly_premium * 3
+                else:  # monthly (default)
+                    bill_amount = monthly_premium if monthly_premium > 0 else (annual_premium / 12 if annual_premium > 0 else 0)
+                
+                if bill_amount <= 0:
+                    billing_results['skipped'] += 1
+                    billing_results['policies_skipped'].append({
+                        'policy_id': policy_id,
+                        'reason': 'no_premium_amount'
+                    })
+                    continue
+                
+                try:
+                    # 5. Create the bill
+                    bill_id = f"BILL-{datetime.now().strftime('%Y%m%d')}-{random.randint(10000, 99999)}"
+                    due_days = 30 if billing_frequency == 'monthly' else (90 if billing_frequency == 'quarterly' else 365)
+                    
+                    bill = {
+                        'id': bill_id,
+                        'bill_id': bill_id,
+                        'policy_id': policy_id,
+                        'customer_id': customer_id,
+                        'amount': round(bill_amount, 2),
+                        'amount_due': round(bill_amount, 2),
+                        'amount_paid': 0.0,
+                        'status': 'outstanding',
+                        'billing_frequency': billing_frequency,
+                        'billing_period': datetime.now().strftime('%Y-%m'),
+                        'created_date': datetime.now().isoformat(),
+                        'due_date': (datetime.now() + timedelta(days=due_days)).isoformat(),
+                        'description': f"Premium billing for policy {policy_id}",
+                        'generated_by': 'ai_insights_bill_all',
+                        'actor': actor
+                    }
+                    
+                    # Store the bill
+                    BILLING[bill_id] = bill
+                    
+                    # 6. Record transaction on ledger
+                    ledger_tx = record_transaction(
+                        customer_id=customer_id,
+                        tx_type='billing_created',
+                        amount=bill_amount,
+                        description=f"Bill {bill_id} created for policy {policy_id} via AI Insights Bill All action",
+                        metadata={
+                            'bill_id': bill_id,
+                            'policy_id': policy_id,
+                            'billing_frequency': billing_frequency,
+                            'due_date': bill['due_date'],
+                            'generated_by': 'ai_insights_bill_all'
+                        }
+                    )
+                    
+                    # 7. Track results
+                    billing_results['newly_billed'] += 1
+                    billing_results['total_amount_billed'] += bill_amount
+                    billing_results['bills_created'].append({
+                        'bill_id': bill_id,
+                        'policy_id': policy_id,
+                        'customer_id': customer_id,
+                        'amount': round(bill_amount, 2),
+                        'due_date': bill['due_date'],
+                        'billing_frequency': billing_frequency
+                    })
+                    billing_results['ledger_entries'].append(ledger_tx)
+                    
+                    # 8. Audit logging
+                    if audit:
+                        try:
+                            audit.log(actor, 'create', 'bill', bill_id, {
+                                'policy_id': policy_id,
+                                'amount': bill_amount,
+                                'trigger': 'ai_insights_bill_all'
+                            })
+                        except Exception:
+                            pass
+                    
+                except Exception as bill_error:
+                    billing_results['errors'].append({
+                        'policy_id': policy_id,
+                        'error': str(bill_error)
+                    })
+            
+            # 9. Update PHINS Balance Sheet with billing summary
+            # Note: Premium revenue is only recorded when bills are PAID, not when created
+            # But we record the expected receivable in audit log
+            if billing_results['newly_billed'] > 0:
+                # Add audit entry for bulk billing action
+                PHINS_BALANCE_SHEET['audit_log'].append({
+                    'action': 'ai_insights_bill_all',
+                    'actor': actor,
+                    'timestamp': datetime.now().isoformat(),
+                    'details': f"Bulk billing initiated: {billing_results['newly_billed']} bills created totaling ${billing_results['total_amount_billed']:,.2f}",
+                    'bills_created': billing_results['newly_billed'],
+                    'amount_billed': billing_results['total_amount_billed']
+                })
+                PHINS_BALANCE_SHEET['last_updated'] = datetime.now().isoformat()
+                billing_results['balance_sheet_updated'] = True
+            
+            # 10. Save all changes to persistent storage
+            save_ledger_data()
+            
+            # 11. Database persistence if enabled
+            if USE_DATABASE and database_enabled:
+                try:
+                    from database.manager import DatabaseManager
+                    with DatabaseManager() as db:
+                        for bill_info in billing_results['bills_created']:
+                            try:
+                                db.billing.create(
+                                    id=bill_info['bill_id'],
+                                    policy_id=bill_info['policy_id'],
+                                    customer_id=bill_info['customer_id'],
+                                    amount_due=bill_info['amount'],
+                                    amount_paid=0.0,
+                                    status='outstanding',
+                                    due_date=bill_info['due_date']
+                                )
+                            except Exception:
+                                pass  # Bill may already exist in DB
+                except Exception as db_err:
+                    billing_results['errors'].append({
+                        'type': 'database_sync',
+                        'error': str(db_err)
+                    })
+            
+            # 12. Prepare response with reconciliation summary
+            total_outstanding_after = sum(
+                float(b.get('amount', b.get('amount_due', 0))) - float(b.get('amount_paid', 0))
+                for b in BILLING.values()
+                if b.get('status') in ['outstanding', 'partial']
+            )
+            
+            response = {
+                'success': True,
+                'action': 'bill_all_policies',
+                'triggered_by': 'ai_insights_premium_collection',
+                'actor': actor,
+                'timestamp': datetime.now().isoformat(),
+                
+                # Billing summary
+                'summary': {
+                    'total_active_policies': billing_results['total_policies'],
+                    'bills_created': billing_results['newly_billed'],
+                    'already_billed': billing_results['already_billed'],
+                    'skipped': billing_results['skipped'],
+                    'total_amount_billed': round(billing_results['total_amount_billed'], 2),
+                    'errors_count': len(billing_results['errors'])
+                },
+                
+                # Created bills details
+                'bills_created': billing_results['bills_created'][:50],  # Limit to first 50 for response size
+                
+                # Skipped policies (for debugging)
+                'policies_skipped': billing_results['policies_skipped'][:20],  # Limit to first 20
+                
+                # Data integrity confirmation
+                'data_integrity': {
+                    'ledger_entries_created': len(billing_results['ledger_entries']),
+                    'balance_sheet_updated': billing_results['balance_sheet_updated'],
+                    'persistent_storage_saved': True,
+                    'database_synced': USE_DATABASE and database_enabled
+                },
+                
+                # Current outstanding totals for dashboard update
+                'current_state': {
+                    'total_outstanding_amount': round(total_outstanding_after, 2),
+                    'total_outstanding_bills': len([b for b in BILLING.values() if b.get('status') in ['outstanding', 'partial']]),
+                    'total_paid_bills': len([b for b in BILLING.values() if b.get('status') == 'paid']),
+                    'premium_income_collected': PHINS_BALANCE_SHEET['revenue_breakdown']['premium_income']
+                },
+                
+                # Errors if any
+                'errors': billing_results['errors'] if billing_results['errors'] else None,
+                
+                # Message for UI
+                'message': f"Successfully created {billing_results['newly_billed']} bills totaling ${billing_results['total_amount_billed']:,.2f}. {billing_results['already_billed']} policies already had outstanding bills."
+            }
+            
+            self._set_json_headers()
+            self.wfile.write(json.dumps(response, default=str).encode('utf-8'))
+            return
+        
+        # ========== END BILL ALL POLICIES API ==========
+        
         # ========== END PHINS BALANCE SHEET API ==========
         
         # ========== SUSPENDED TEST ACCOUNTS MANAGEMENT API ==========
