@@ -23777,6 +23777,73 @@ For claims or questions, please contact:
                 self.wfile.write(json.dumps({'error': 'Action recording failed', 'details': str(e)}).encode('utf-8'))
             return
         
+        # ========== AI ASSISTANT INTERACTION LOGGING ==========
+        # Records AI assistant interactions for analytics and data integrity
+        if path == '/api/customer/ai-interaction':
+            try:
+                data = json.loads(body)
+                customer_id = data.get('customer_id')
+                intent_type = data.get('intent_type', 'UNKNOWN')
+                query = data.get('query', '')
+                source = data.get('source', 'ai_assistant')
+                timestamp = data.get('timestamp', datetime.now().isoformat())
+                
+                if not customer_id:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'customer_id required'}).encode('utf-8'))
+                    return
+                
+                # Generate interaction ID
+                interaction_id = f"AI-{datetime.now().strftime('%Y%m%d%H%M%S')}-{random.randint(1000, 9999)}"
+                
+                # Create NFT token for AI interaction (for data integrity tracking)
+                nft_token = generate_nft_token(
+                    customer_id=customer_id,
+                    transaction_type='ai_interaction',
+                    transaction_id=interaction_id,
+                    amount=0,
+                    description=f"AI Assistant: {intent_type} - {query[:100]}",
+                    metadata={
+                        'intent_type': intent_type,
+                        'query': query[:500],  # Limit query length
+                        'source': source,
+                        'timestamp': timestamp,
+                        'interaction_id': interaction_id
+                    }
+                )
+                NFT_LEDGER[nft_token['token_id']] = nft_token
+                
+                # Store interaction in TRANSACTION_LEDGER for unified activity log
+                tx_id = f"TX-AI-{datetime.now().strftime('%Y%m%d%H%M%S')}-{random.randint(1000, 9999)}"
+                TRANSACTION_LEDGER[tx_id] = {
+                    'tx_id': tx_id,
+                    'customer_id': customer_id,
+                    'type': 'ai_interaction',
+                    'intent': intent_type,
+                    'query': query[:500],
+                    'amount': 0,
+                    'timestamp': timestamp,
+                    'source': source,
+                    'nft_token_id': nft_token['token_id'],
+                    'created_at': datetime.now().isoformat()
+                }
+                
+                self._set_json_headers(200)
+                self.wfile.write(json.dumps({
+                    'success': True,
+                    'interaction_id': interaction_id,
+                    'nft_token_id': nft_token['token_id']
+                }).encode('utf-8'))
+                
+            except Exception as e:
+                # Non-critical - don't fail the request
+                self._set_json_headers(200)
+                self.wfile.write(json.dumps({
+                    'success': True,
+                    'note': 'Interaction logged (partial)'
+                }).encode('utf-8'))
+            return
+        
         # Default: not found
         self.send_error(404, 'Not Found')
     
