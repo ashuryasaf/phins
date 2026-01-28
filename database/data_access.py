@@ -270,6 +270,47 @@ class DatabaseDict:
         except KeyError:
             return default
     
+    def pop(self, key: str, *args):
+        """
+        Remove and return item by key.
+        If key not found, return default if provided, else raise KeyError.
+        
+        Args:
+            key: Key to remove
+            *args: Optional default value
+        
+        Returns:
+            The removed value, or default if key not found
+        """
+        try:
+            value = self[key]
+            del self[key]
+            return value
+        except KeyError:
+            if args:
+                return args[0]  # Return default
+            raise
+    
+    def setdefault(self, key: str, default=None):
+        """Get item, setting default if not present"""
+        try:
+            return self[key]
+        except KeyError:
+            self[key] = default
+            return default
+    
+    def update(self, other=None, **kwargs):
+        """Update dict with items from other dict or kwargs"""
+        if other:
+            if hasattr(other, 'items'):
+                for k, v in other.items():
+                    self[k] = v
+            else:
+                for k, v in other:
+                    self[k] = v
+        for k, v in kwargs.items():
+            self[k] = v
+    
     def clear(self):
         """Clear all items (USE WITH CAUTION)"""
         logger.warning(f"Clearing all {self.repository_name}")
