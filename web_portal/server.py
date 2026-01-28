@@ -7783,8 +7783,8 @@ For claims or questions, please contact:
                     'customer_email': 'efrat@phins.ai',
                     'policy_type': 'phins_unified',
                     'coverage_amount': 500000.0,
-                    'annual_premium': 5600.0,
-                    'monthly_premium': 466.67,
+                    'annual_premium': 1552.50,   # Corrected: $500K, age 35, low
+                    'monthly_premium': 129.38,
                     'age': 35,
                     'gender': 'female',
                     'occupation': 'Product Manager',
@@ -7819,8 +7819,8 @@ For claims or questions, please contact:
                     'customer_email': 'asi@phins.ai',
                     'policy_type': 'phins_unified',
                     'coverage_amount': 400000.0,
-                    'annual_premium': 4800.0,
-                    'monthly_premium': 400.0,
+                    'annual_premium': 1323.0,    # Corrected: $400K, age 40, low
+                    'monthly_premium': 110.25,
                     'age': 40,
                     'gender': 'male',
                     'occupation': 'Software Engineer',
@@ -7853,8 +7853,8 @@ For claims or questions, please contact:
                     'customer_email': 'shosh@phins.ai',
                     'policy_type': 'phins_unified',
                     'coverage_amount': 450000.0,
-                    'annual_premium': 5200.0,
-                    'monthly_premium': 433.33,
+                    'annual_premium': 1433.70,   # Corrected: $450K, age 37, low
+                    'monthly_premium': 119.48,
                     'age': 37,
                     'gender': 'female',
                     'occupation': 'Marketing Director',
@@ -15482,8 +15482,8 @@ For claims or questions, please contact:
                             'applicant_email': customer_email,
                             'policy_type': 'health',
                             'coverage_amount': 500000,
-                            'annual_premium': 6000,
-                            'monthly_premium': 500,
+                            'annual_premium': 2294.25,  # Corrected: $500K, age 47, moderate
+                            'monthly_premium': 191.19,
                             # Medical data for pipeline integrity
                             'age': 47,  # Correct age
                             'gender': 'male',
@@ -15540,8 +15540,8 @@ For claims or questions, please contact:
                             'type': 'comprehensive',
                             'status': 'pending_underwriting',
                             'coverage_amount': 500000,
-                            'annual_premium': 6000,
-                            'monthly_premium': 500,
+                            'annual_premium': 2294.25,  # Corrected
+                            'monthly_premium': 191.19,
                             'risk_score': 'low',
                             'created_at': now.isoformat(),
                             'start_date': now.isoformat()
@@ -25505,8 +25505,8 @@ def run_server(port: int = PORT) -> None:
                     'customer_email': 'efrat@phins.ai',
                     'policy_type': 'phins_unified',
                     'coverage_amount': 500000.0,
-                    'annual_premium': 5600.0,
-                    'monthly_premium': 466.67,
+                    'annual_premium': 1552.50,   # Corrected: $500K, age 35, low
+                    'monthly_premium': 129.38,
                     'age': 35,
                     'gender': 'female',
                     'occupation': 'Product Manager',
@@ -25536,8 +25536,8 @@ def run_server(port: int = PORT) -> None:
                     'customer_id': 'CUST-EFRAT-001',
                     'type': 'phins_unified',
                     'coverage_amount': 500000.0,
-                    'annual_premium': 5600.0,
-                    'monthly_premium': 466.67,
+                    'annual_premium': 1552.50,   # Corrected: $500K, age 35, low
+                    'monthly_premium': 129.38,
                     'status': 'active',
                     'risk_score': 'low',
                     'start_date': datetime.now().isoformat(),
@@ -25572,8 +25572,8 @@ def run_server(port: int = PORT) -> None:
                     'customer_email': 'efrat@phins.ai',
                     'policy_type': 'phins_unified',
                     'coverage_amount': 500000.0,
-                    'annual_premium': 5600.0,
-                    'monthly_premium': 466.67,
+                    'annual_premium': 1552.50,   # Corrected: $500K, age 35, low
+                    'monthly_premium': 129.38,
                     'age': 35,
                     'gender': 'female',
                     'occupation': 'Product Manager',
@@ -25733,8 +25733,8 @@ def run_server(port: int = PORT) -> None:
                 'customer_email': 'asaf@assurance.co.il',
                 'policy_type': 'health',
                 'coverage_amount': 500000.0,
-                'annual_premium': 6000.0,
-                'monthly_premium': 500.0,
+                'annual_premium': 2294.25,   # Corrected: $500K, age 47, moderate
+                'monthly_premium': 191.19,
                 'status': 'pending',
                 'risk_score': 'moderate',
                 'risk_assessment': 'moderate',

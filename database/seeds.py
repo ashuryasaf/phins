@@ -343,13 +343,20 @@ def seed_sample_data(session=None):
             logger.info(f"Created health wallet with $20,000 balance for CUST-ASAF-001")
             
             # Create policies for primary customer
+            # PREMIUM CALCULATION (aligned with frontend apply.js):
+            # Base rate: $0.25 per $1000 coverage per month
+            # Age factor for age 47: 1.0 + (47-25) * 0.015 = 1.33
+            # Risk factors: low=0.90, medium=1.0
+            # Life $1M low: 1000 * 0.25 * 1.33 * 0.90 = $299.25/mo = $3,591/yr
+            # Health $500K medium: 500 * 0.25 * 1.33 * 1.0 = $166.25/mo = $1,995/yr
+            # Auto $100K low: 100 * 0.15 * 1.33 * 0.90 = $17.96/mo = $215.46/yr
             policies_data = [
                 {
                     'id': 'POL-ASAF-LIFE-001',
                     'type': 'life',
                     'coverage_amount': 1000000.0,
-                    'annual_premium': 12000.0,
-                    'monthly_premium': 1000.0,
+                    'annual_premium': 3591.0,  # Corrected from 12000
+                    'monthly_premium': 299.25,  # Corrected from 1000
                     'status': 'active',
                     'risk_score': 'low'
                 },
@@ -357,8 +364,8 @@ def seed_sample_data(session=None):
                     'id': 'POL-ASAF-HEALTH-001',
                     'type': 'health',
                     'coverage_amount': 500000.0,
-                    'annual_premium': 6000.0,
-                    'monthly_premium': 500.0,
+                    'annual_premium': 1995.0,  # Corrected from 6000
+                    'monthly_premium': 166.25,  # Corrected from 500
                     'status': 'active',
                     'risk_score': 'medium'
                 },
@@ -366,8 +373,8 @@ def seed_sample_data(session=None):
                     'id': 'POL-ASAF-AUTO-001',
                     'type': 'auto',
                     'coverage_amount': 100000.0,
-                    'annual_premium': 2400.0,
-                    'monthly_premium': 200.0,
+                    'annual_premium': 215.46,  # Corrected from 2400
+                    'monthly_premium': 17.96,  # Corrected from 200
                     'status': 'active',
                     'risk_score': 'low'
                 }
@@ -540,6 +547,8 @@ def seed_sample_data(session=None):
                     
                     # Sync to memory with full medical metadata
                     if sync_primary_to_memory:
+                        # Premium calculation for age 47, moderate risk, $500K health:
+                        # (500000/1000) * 0.25 * 1.33 * 1.15 = $191.19/mo = $2294.25/yr
                         UNDERWRITING_APPLICATIONS[uw_asaf_id] = {
                             'id': uw_asaf_id,
                             'policy_id': 'POL-ASAF-HEALTH-001',
@@ -548,8 +557,8 @@ def seed_sample_data(session=None):
                             'customer_email': 'asaf@assurance.co.il',
                             'policy_type': 'health',
                             'coverage_amount': 500000.0,
-                            'annual_premium': 6000.0,
-                            'monthly_premium': 500.0,
+                            'annual_premium': 2294.25,  # Corrected from 6000
+                            'monthly_premium': 191.19,   # Corrected from 500
                             'status': 'pending',
                             'risk_score': 'moderate',
                             'risk_assessment': 'moderate',
@@ -620,12 +629,13 @@ def seed_sample_data(session=None):
                 'gender': 'female',
                 'occupation': 'Product Manager',
                 'password': _get_env_password('PHINS_USER_EFRAT_PASSWORD', 'efrat@phins.ai'),
+                # Premium: $500K, age 35, low risk: (500*0.25*1.15*0.90) = $129.38/mo = $1552.50/yr
                 'policy': {
                     'id': 'POL-EFRAT-UNIFIED-001',
                     'type': 'phins_unified',
                     'coverage_amount': 500000.0,
-                    'annual_premium': 5600.0,
-                    'monthly_premium': 466.67,
+                    'annual_premium': 1552.50,   # Corrected from 5600
+                    'monthly_premium': 129.38,   # Corrected from 466.67
                     'status': 'active',
                     'risk_score': 'low'
                 },
@@ -651,12 +661,13 @@ def seed_sample_data(session=None):
                 'gender': 'male',
                 'occupation': 'Software Engineer',
                 'password': _get_env_password('PHINS_USER_ASI_PASSWORD', 'asi@phins.ai'),
+                # Premium: $400K, age 40, low risk: (400*0.25*1.225*0.90) = $110.25/mo = $1323.0/yr
                 'policy': {
                     'id': 'POL-ASI-UNIFIED-001',
                     'type': 'phins_unified',
                     'coverage_amount': 400000.0,
-                    'annual_premium': 4800.0,
-                    'monthly_premium': 400.0,
+                    'annual_premium': 1323.0,   # Corrected from 4800
+                    'monthly_premium': 110.25,  # Corrected from 400
                     'status': 'pending_underwriting',
                     'risk_score': 'low'
                 },
@@ -682,12 +693,13 @@ def seed_sample_data(session=None):
                 'gender': 'female',
                 'occupation': 'Marketing Director',
                 'password': _get_env_password('PHINS_USER_SHOSH_PASSWORD', 'shosh@phins.ai'),
+                # Premium: $450K, age 37, low risk: (450*0.25*1.18*0.90) = $119.48/mo = $1433.70/yr
                 'policy': {
                     'id': 'POL-SHOSH-UNIFIED-001',
                     'type': 'phins_unified',
                     'coverage_amount': 450000.0,
-                    'annual_premium': 5200.0,
-                    'monthly_premium': 433.33,
+                    'annual_premium': 1433.70,  # Corrected from 5200
+                    'monthly_premium': 119.48,  # Corrected from 433.33
                     'status': 'pending_underwriting',
                     'risk_score': 'low'
                 },
