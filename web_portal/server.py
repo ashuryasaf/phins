@@ -15600,9 +15600,14 @@ For claims or questions, please contact:
                         'claims': 0,
                         'bills': 0,
                         'medical_purchases': 0,
-                        'medical_purchase_total': 0
+                        'medical_purchase_total': 0,
+                        'transaction_ledger_entries': 0,
+                        'nft_ledger_entries': 0,
+                        'claim_files': 0,
+                        'underwriting_files': 0
                     },
                     'ledger_preserved': keep_ledger,
+                    'complete_reset': not keep_ledger,
                     'ready_for': ['new_applications', 'increase_coverage', 'new_deposits']
                 }
                 
@@ -15818,32 +15823,83 @@ For claims or questions, please contact:
                     result['removed']['medical_purchases'] = purchases_removed
                     result['removed']['medical_purchase_total'] = round(total_purchase_amount, 2)
                     
-                    # 8. Update customer pipeline stage
+                    # 8. Clear transaction ledger for this customer (if not keeping)
+                    if not keep_ledger:
+                        # Clear TRANSACTION_LEDGER entries for this customer
+                        tx_to_remove = [tid for tid, tx in TRANSACTION_LEDGER.items() if tx.get('customer_id') == customer_id]
+                        for tid in tx_to_remove:
+                            TRANSACTION_LEDGER.pop(tid, None)
+                        result['removed']['transaction_ledger_entries'] = len(tx_to_remove)
+                        
+                        # Clear NFT_LEDGER entries for this customer
+                        nft_to_remove = [nid for nid, nft in NFT_LEDGER.items() if nft.get('owner_id') == customer_id]
+                        for nid in nft_to_remove:
+                            NFT_LEDGER.pop(nid, None)
+                        result['removed']['nft_ledger_entries'] = len(nft_to_remove)
+                        
+                        # Clear CLAIM_FILES for this customer's claims
+                        claim_files_to_remove = [fid for fid, f in CLAIM_FILES.items() if f.get('customer_id') == customer_id]
+                        for fid in claim_files_to_remove:
+                            CLAIM_FILES.pop(fid, None)
+                        result['removed']['claim_files'] = len(claim_files_to_remove)
+                        
+                        # Clear UNDERWRITING_FILES for this customer
+                        uw_files_to_remove = [fid for fid, f in UNDERWRITING_FILES.items() if f.get('customer_id') == customer_id]
+                        for fid in uw_files_to_remove:
+                            UNDERWRITING_FILES.pop(fid, None)
+                        result['removed']['underwriting_files'] = len(uw_files_to_remove)
+                    
+                    # 9. Reset customer allocation preferences to defaults
+                    if customer_id in CUSTOMER_ALLOCATIONS:
+                        CUSTOMER_ALLOCATIONS[customer_id] = {
+                            'savings_pct': 25.0,      # Default: 25% savings
+                            'risk_pct': 75.0,         # Default: 75% risk coverage
+                            'wallet_pct': 40.0,       # 40% of savings to Health Wallet
+                            'investment_pct': 50.0,   # 50% of savings to Investment
+                            'algo_pct': 10.0,         # 10% of savings to Algo Trading
+                            'index_pct': 60.0,        # 60% of investment to Index Funds
+                            'bonds_pct': 30.0,        # 30% of investment to Bonds
+                            'crypto_pct': 10.0,       # 10% of investment to Crypto
+                            'updated_at': datetime.now().isoformat(),
+                            'customer_id': customer_id
+                        }
+                        result['allocation_reset'] = True
+                    
+                    # 10. Update customer pipeline stage
                     if customer_id in CUSTOMERS:
                         CUSTOMERS[customer_id]['pipeline_stage'] = 'registered'
                         CUSTOMERS[customer_id]['updated_at'] = datetime.now().isoformat()
+                        # Clear any associated data
+                        CUSTOMERS[customer_id].pop('total_coverage', None)
+                        CUSTOMERS[customer_id].pop('total_premium', None)
+                        CUSTOMERS[customer_id].pop('active_policies', None)
+                        result['customer_profile_cleaned'] = True
                     
-                    # Record final reset transaction on NFT ledger
-                    nft = generate_nft_token(
-                        customer_id=customer_id,
-                        transaction_type='account_reset',
-                        transaction_id=f'RESET-{datetime.now().strftime("%Y%m%d%H%M%S")}',
-                        amount=0,
-                        description='Customer account reset - ready for new applications',
-                        metadata={
-                            'policies_removed': result['removed']['policies'],
-                            'applications_removed': result['removed']['applications'],
-                            'claims_removed': result['removed']['claims'],
-                            'bills_removed': result['removed']['bills']
-                        }
-                    )
-                    result['nft_token_id'] = nft['token_id']
-                    result['block_number'] = nft['block_number']
+                    # 11. Only record NFT if keeping ledger (otherwise it was cleared)
+                    if keep_ledger:
+                        nft = generate_nft_token(
+                            customer_id=customer_id,
+                            transaction_type='account_reset',
+                            transaction_id=f'RESET-{datetime.now().strftime("%Y%m%d%H%M%S")}',
+                            amount=0,
+                            description='Customer account reset - ready for new applications',
+                            metadata={
+                                'policies_removed': result['removed']['policies'],
+                                'applications_removed': result['removed']['applications'],
+                                'claims_removed': result['removed']['claims'],
+                                'bills_removed': result['removed']['bills']
+                            }
+                        )
+                        result['nft_token_id'] = nft['token_id']
+                        result['block_number'] = nft['block_number']
+                    else:
+                        result['ledger_cleared'] = True
+                        result['nft_token_id'] = None
                     
                     # Save all changes
                     save_ledger_data()
                 
-                # Get ledger count for this customer
+                # Get ledger count for this customer (will be 0 if cleared)
                 customer_ledger = [t for t in TRANSACTION_LEDGER.values() if t.get('customer_id') == customer_id]
                 customer_nfts = [n for n in NFT_LEDGER.values() if n.get('owner_id') == customer_id]
                 result['ledger_entries'] = {
@@ -15851,7 +15907,10 @@ For claims or questions, please contact:
                     'nft_tokens': len(customer_nfts)
                 }
                 
-                result['message'] = f'Account reset complete. Customer is now ready for new applications and deposits.'
+                if keep_ledger:
+                    result['message'] = f'Account reset complete. Ledger history preserved. Customer is ready for new applications.'
+                else:
+                    result['message'] = f'COMPLETE reset executed. All data and ledgers cleared. Account credentials preserved. Customer starts fresh with $0 balance.'
                 
                 self._set_json_headers(200)
                 self.wfile.write(json.dumps(result, default=str).encode('utf-8'))
