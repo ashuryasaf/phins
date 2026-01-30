@@ -4994,6 +4994,122 @@ For claims or questions, please contact:
             self.wfile.write(json.dumps({'items': offers}).encode('utf-8'))
             return
 
+        # ============ CUSTOMER MARKETPLACE: Browse approved supplier offerings ============
+        # Public endpoint for customers to browse products/services from approved suppliers
+        if path == '/api/marketplace/offerings':
+            try:
+                # Parse query parameters
+                category = (qs.get('category', [None])[0] or '').strip().lower() or None
+                item_type = (qs.get('type', [None])[0] or '').strip().lower() or None  # service or product
+                wallet_type = (qs.get('wallet', [None])[0] or '').strip().lower() or 'health'
+                search = (qs.get('search', [None])[0] or '').strip().lower() or None
+                supplier_type = (qs.get('supplier_type', [None])[0] or '').strip().lower() or None
+                page_raw = qs.get('page', ['1'])[0]
+                limit_raw = qs.get('limit', ['50'])[0]
+                
+                try:
+                    page = max(1, int(page_raw))
+                    limit = max(1, min(100, int(limit_raw)))
+                except Exception:
+                    page, limit = 1, 50
+                
+                with STATE_LOCK:
+                    # Get all approved suppliers
+                    approved_suppliers = {
+                        sid: s for sid, s in SUPPLIERS.items() 
+                        if s.get('status') == 'approved' and s.get('portal_active', False)
+                    }
+                    approved_supplier_ids = set(approved_suppliers.keys())
+                    
+                    # Get active offers from approved suppliers only
+                    all_offers = [
+                        o for o in SUPPLIER_OFFERS.values() 
+                        if o.get('active', True) and o.get('supplier_id') in approved_supplier_ids
+                    ]
+                
+                # Apply filters
+                filtered_offers = []
+                for offer in all_offers:
+                    # Category filter
+                    if category and (offer.get('category') or '').lower() != category:
+                        continue
+                    
+                    # Item type filter (service/product)
+                    if item_type and (offer.get('item_type') or '').lower() != item_type:
+                        continue
+                    
+                    # Wallet compatibility filter
+                    wallet_compatible = offer.get('wallet_compatible', '[]')
+                    if isinstance(wallet_compatible, str):
+                        try:
+                            wallet_compatible = json.loads(wallet_compatible)
+                        except:
+                            wallet_compatible = ['health', 'general']
+                    if wallet_type and wallet_type not in [w.lower() for w in (wallet_compatible or [])]:
+                        continue
+                    
+                    # Supplier type filter
+                    if supplier_type:
+                        supplier = approved_suppliers.get(offer.get('supplier_id'))
+                        if not supplier or (supplier.get('supplier_type') or '').lower() != supplier_type:
+                            continue
+                    
+                    # Search filter (name, description, category)
+                    if search:
+                        name = (offer.get('name') or '').lower()
+                        desc = (offer.get('description') or '').lower()
+                        cat = (offer.get('category') or '').lower()
+                        if search not in name and search not in desc and search not in cat:
+                            continue
+                    
+                    # Enrich offer with supplier info
+                    supplier = approved_suppliers.get(offer.get('supplier_id'), {})
+                    enriched_offer = dict(offer)
+                    enriched_offer['supplier_name'] = supplier.get('company_name', 'Unknown Supplier')
+                    enriched_offer['supplier_type'] = supplier.get('supplier_type', 'other')
+                    enriched_offer['supplier_rating'] = supplier.get('average_rating', 0.0)
+                    enriched_offer['supplier_reviews'] = supplier.get('total_reviews', 0)
+                    
+                    filtered_offers.append(enriched_offer)
+                
+                # Sort by featured first, then by rating
+                filtered_offers.sort(
+                    key=lambda x: (not x.get('featured', False), -(x.get('supplier_rating') or 0), x.get('name', '')),
+                    reverse=False
+                )
+                
+                # Pagination
+                total = len(filtered_offers)
+                start = (page - 1) * limit
+                end = start + limit
+                paginated_offers = filtered_offers[start:end]
+                
+                # Get available categories for filtering
+                categories = list(set(o.get('category', 'general').lower() for o in all_offers if o.get('category')))
+                supplier_types = list(set(
+                    approved_suppliers.get(o.get('supplier_id'), {}).get('supplier_type', 'other')
+                    for o in all_offers
+                ))
+                
+                self._set_json_headers()
+                self.wfile.write(json.dumps({
+                    'success': True,
+                    'items': paginated_offers,
+                    'page': page,
+                    'limit': limit,
+                    'total': total,
+                    'total_pages': (total + limit - 1) // limit if limit > 0 else 0,
+                    'filters': {
+                        'categories': sorted(categories),
+                        'supplier_types': sorted(supplier_types),
+                        'item_types': ['service', 'product']
+                    }
+                }).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+
         # Supplier: list "orders" (mapped to marketplace transactions for now)
         if path == '/api/supplier/orders':
             if not require_role(session, ['admin', 'supplier']):
