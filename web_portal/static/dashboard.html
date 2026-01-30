@@ -3212,7 +3212,7 @@
         sessionStorage.setItem('customer_id', customerId);
       }
       
-      // If no customer ID found, show error and redirect to login
+      // If no customer ID found, try to fetch from session validation
       // NO HARDCODED FALLBACK - each customer must see only their own data
       if (!customerId) {
         console.error('No customer ID found in session');
@@ -3221,9 +3221,58 @@
           window.location.href = '/login.html';
           return;
         }
-        // If we have auth token but no customer_id, try to get it from the server
-        console.log('Auth token present but no customer_id, attempting to fetch...');
+        // If we have auth token but no customer_id, fetch from session validation endpoint
+        console.log('Auth token present but no customer_id, fetching from server...');
+        try {
+          const sessionResponse = await fetch('/api/session/validate', {
+            method: 'GET',
+            headers: {
+              'Authorization': `Bearer ${authToken}`
+            }
+          });
+          
+          if (sessionResponse.ok) {
+            const sessionInfo = await sessionResponse.json();
+            if (sessionInfo.valid && sessionInfo.customer_id) {
+              customerId = sessionInfo.customer_id;
+              // Store in all expected locations for data integrity
+              localStorage.setItem('customer_id', customerId);
+              sessionStorage.setItem('customer_id', customerId);
+              localStorage.setItem('phins_customer_id', customerId);
+              console.log('Customer ID retrieved from session:', customerId);
+            } else if (sessionInfo.valid && sessionInfo.role && sessionInfo.role !== 'customer') {
+              // Staff user without customer_id - this is normal for admin users viewing dashboard
+              console.log('Staff user session validated:', sessionInfo.role);
+            } else {
+              // Session invalid or no customer_id - redirect to login
+              console.error('Session validation failed or no customer_id');
+              alert('Your session has expired. Please log in again.');
+              localStorage.removeItem('phins_token');
+              window.location.href = '/login.html';
+              return;
+            }
+          } else {
+            // Session validation failed - token may be expired
+            console.error('Session validation request failed');
+            alert('Your session has expired. Please log in again.');
+            localStorage.removeItem('phins_token');
+            window.location.href = '/login.html';
+            return;
+          }
+        } catch (err) {
+          console.error('Error validating session:', err);
+          alert('Unable to verify your session. Please log in again.');
+          localStorage.removeItem('phins_token');
+          window.location.href = '/login.html';
+          return;
+        }
       }
+      
+      // Failsafe: Always hide splash screen after max 8 seconds regardless of errors
+      const splashFailsafe = setTimeout(() => {
+        console.warn('Splash screen failsafe triggered - forcing hide');
+        hideSplashScreen();
+      }, 8000);
       
       try {
         // Load customer info first, then other data
@@ -3244,6 +3293,9 @@
       } catch (err) {
         console.error('Error loading dashboard data:', err);
       }
+      
+      // Clear failsafe since we're about to hide splash normally
+      clearTimeout(splashFailsafe);
       
       // Hide splash screen after data loads (minimum 1.5s for branding)
       setTimeout(hideSplashScreen, 1500);
