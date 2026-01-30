@@ -737,6 +737,137 @@
     </section>
 
     <!-- ==================== SECTION 5: RECENT TRANSACTIONS ==================== -->
+    <!-- ==================== AUTO-PAY AI CONFIGURATION ==================== -->
+    <section class="card" style="padding: 16px; background: linear-gradient(135deg, #f8f9ff 0%, #f0f4ff 100%);">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <span style="font-size: 1.5rem;">🤖</span>
+          <div>
+            <h2 style="margin: 0; font-size: 1.1rem;">Auto-Pay AI Configuration</h2>
+            <p style="color: #666; margin: 2px 0 0 0; font-size: 0.8rem;">Smart automatic billing with AI optimization</p>
+          </div>
+        </div>
+        <button class="btn btn-small" onclick="loadAutoPaySettings()" style="background: linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%); color: white;">
+          🔄 Refresh
+        </button>
+      </div>
+      
+      <!-- Auto-Pay Status Panel -->
+      <div id="autopay-status-panel" style="background: white; border-radius: 8px; padding: 12px; margin-bottom: 12px; border: 1px solid #e0e0e0;">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+          <div>
+            <span style="font-size: 1.2rem;" id="autopay-status-icon">⏳</span>
+            <span style="font-weight: 600; margin-left: 8px;" id="autopay-status-text">Checking status...</span>
+          </div>
+          <div id="autopay-next-billing" style="font-size: 0.85rem; color: #666;">
+            <!-- Next billing date shown here -->
+          </div>
+        </div>
+      </div>
+      
+      <!-- Auto-Pay Configuration Form -->
+      <details id="autopay-config-details">
+        <summary style="cursor: pointer; padding: 8px 12px; background: linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%); color: white; border-radius: 6px; font-weight: 600; font-size: 0.9rem;">
+          ⚙️ Configure Auto-Pay Settings
+        </summary>
+        <div style="background: white; padding: 16px; border-radius: 0 0 8px 8px; border: 1px solid #e0e0e0; border-top: none; margin-top: -4px;">
+          <form id="autopay-config-form" onsubmit="saveAutoPayConfig(event)">
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+              <!-- Policy Selection -->
+              <div>
+                <label style="font-weight: 600; display: block; margin-bottom: 4px;">Policy for Auto-Pay:</label>
+                <select id="autopay-policy-select" required style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 6px;">
+                  <option value="">-- Select Policy --</option>
+                </select>
+              </div>
+              
+              <!-- Enable/Disable -->
+              <div>
+                <label style="font-weight: 600; display: block; margin-bottom: 4px;">Auto-Pay Status:</label>
+                <select id="autopay-enabled" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 6px;">
+                  <option value="true">✅ Enabled</option>
+                  <option value="false">❌ Disabled</option>
+                </select>
+              </div>
+              
+              <!-- Payment Method -->
+              <div>
+                <label style="font-weight: 600; display: block; margin-bottom: 4px;">Payment Method:</label>
+                <select id="autopay-method" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 6px;">
+                  <option value="credit_card">💳 Credit Card</option>
+                  <option value="bank_transfer">🏦 Bank Transfer</option>
+                  <option value="health_wallet">💊 Health Wallet</option>
+                </select>
+              </div>
+              
+              <!-- Card Type (if credit card) -->
+              <div id="autopay-card-section">
+                <label style="font-weight: 600; display: block; margin-bottom: 4px;">Card Type:</label>
+                <select id="autopay-card-type" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 6px;">
+                  <option value="visa">Visa</option>
+                  <option value="mastercard">Mastercard</option>
+                  <option value="amex">American Express</option>
+                  <option value="discover">Discover</option>
+                </select>
+              </div>
+              
+              <!-- Card Last 4 Digits -->
+              <div id="autopay-card-last4-section">
+                <label style="font-weight: 600; display: block; margin-bottom: 4px;">Card Last 4 Digits:</label>
+                <input type="text" id="autopay-card-last4" maxlength="4" pattern="[0-9]{4}" placeholder="4444" value="4444" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 6px;">
+                <small style="color: #666; font-size: 0.75rem;">Default: 4444 if not specified</small>
+              </div>
+              
+              <!-- Billing Frequency -->
+              <div>
+                <label style="font-weight: 600; display: block; margin-bottom: 4px;">Billing Frequency:</label>
+                <select id="autopay-frequency" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 6px;">
+                  <option value="monthly">Monthly</option>
+                  <option value="quarterly">Quarterly (3% discount)</option>
+                  <option value="annual">Annual (10% discount)</option>
+                </select>
+              </div>
+              
+              <!-- Billing Day -->
+              <div>
+                <label style="font-weight: 600; display: block; margin-bottom: 4px;">Billing Day of Month:</label>
+                <select id="autopay-billing-day" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 6px;">
+                  <option value="1">1st</option>
+                  <option value="5">5th</option>
+                  <option value="10">10th</option>
+                  <option value="15">15th</option>
+                  <option value="20">20th</option>
+                  <option value="25">25th</option>
+                </select>
+              </div>
+              
+              <!-- AI Optimization -->
+              <div style="grid-column: span 2;">
+                <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                  <input type="checkbox" id="autopay-ai-optimization" checked style="width: 18px; height: 18px;">
+                  <span style="font-weight: 600;">🤖 Enable AI Optimization</span>
+                  <span style="font-size: 0.8rem; color: #666;">(AI optimizes payment timing based on account patterns)</span>
+                </label>
+              </div>
+            </div>
+            
+            <!-- Submit Button -->
+            <div style="margin-top: 16px; display: flex; gap: 10px;">
+              <button type="submit" class="btn" style="background: linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%); color: white; flex: 1;">
+                💾 Save Auto-Pay Configuration
+              </button>
+              <button type="button" class="btn" onclick="executeAutoPay()" style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: white;">
+                ▶️ Execute Now
+              </button>
+            </div>
+          </form>
+          
+          <!-- Configuration Result -->
+          <div id="autopay-config-result" style="display: none; margin-top: 12px; padding: 12px; border-radius: 6px;"></div>
+        </div>
+      </details>
+    </section>
+
     <section class="card" style="padding: 16px;">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
         <h2 style="margin: 0; font-size: 1.1rem;">📋 Recent Transactions</h2>

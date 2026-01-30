@@ -4493,7 +4493,15 @@
     // ========== SHOPPING CART SYSTEM ==========
     let shoppingCart = [];
     
-    function addToCart(productId, productName, price, category = 'general') {
+    // HTML escape helper function
+    function escapeHtml(text) {
+      if (!text) return '';
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+    
+    function addToCart(productId, productName, price, category = 'general', supplierId = null) {
       // Check if item already in cart
       const existingItem = shoppingCart.find(item => item.id === productId);
       if (existingItem) {
@@ -4504,7 +4512,9 @@
           name: productName,
           price: price,
           category: category,
-          quantity: 1
+          quantity: 1,
+          supplier_id: supplierId,  // Track supplier for marketplace orders
+          is_supplier_offer: !!supplierId
         });
       }
       updateCartDisplay();
@@ -4894,28 +4904,106 @@
     document.addEventListener('DOMContentLoaded', initializeCartPanel);
     // ========== END SHOPPING CART SYSTEM ==========
     
-    function showMedicalCategory(category) {
-      const products = medicalProducts[category] || [];
+    // Map category to supplier type for API filtering
+    const categoryToSupplierType = {
+      consultation: 'healthcare_provider',
+      devices: 'equipment_supplier',
+      supplies: 'equipment_supplier',
+      pharmacy: 'pharmacy',
+      homecare: 'healthcare_provider'
+    };
+    
+    const categoryToItemType = {
+      consultation: 'service',
+      devices: 'product',
+      supplies: 'product',
+      pharmacy: 'product',
+      homecare: 'service'
+    };
+    
+    async function showMedicalCategory(category) {
       const title = categoryTitles[category] || 'Products';
       
       document.getElementById('marketplace-title').textContent = title;
       document.getElementById('medical-marketplace').style.display = 'block';
       
       const grid = document.getElementById('product-grid');
-      grid.innerHTML = products.map(product => `
-        <div class="product-card" style="background: white; border-radius: 12px; padding: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
-          <h3 style="margin: 0 0 8px 0; font-size: 16px;">${product.name}</h3>
-          <p style="color: #666; font-size: 14px; margin: 0 0 12px 0;">${product.description}</p>
-          ${product.duration ? `<p style="color: #888; font-size: 12px; margin: 0 0 8px 0;">⏱️ ${product.duration}</p>` : ''}
-          ${product.category ? `<p style="color: #888; font-size: 12px; margin: 0 0 8px 0;">📁 ${product.category}</p>` : ''}
-          ${product.size ? `<p style="color: #888; font-size: 12px; margin: 0 0 8px 0;">📏 ${product.size}</p>` : ''}
-          <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 16px;">
-            <span style="font-size: 20px; font-weight: bold; color: #28a745;">$${product.price.toFixed(2)}</span>
-            <div style="display: flex; gap: 8px;">
-              <button onclick="addToCart('${product.id}', '${product.name.replace(/'/g, "\\'")}', ${product.price}, '${category}')" 
-                      style="background: linear-gradient(135deg, #ff9800 0%, #f57c00 100%); color: white; border: none; padding: 10px 16px; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 13px;">
-                🛒 Add to Cart
-              </button>
+      grid.innerHTML = '<div style="grid-column: 1/-1; text-align: center; padding: 40px;"><div class="spinner" style="display: inline-block; width: 40px; height: 40px; border: 4px solid #e0e0e0; border-top-color: #1565c0; border-radius: 50%; animation: spin 1s linear infinite;"></div><p style="margin-top: 12px; color: #666;">Loading offerings from approved suppliers...</p></div>';
+      
+      try {
+        // Fetch supplier offerings from API
+        const supplierType = categoryToSupplierType[category] || '';
+        const itemType = categoryToItemType[category] || '';
+        
+        const response = await fetch(`/api/marketplace/offerings?category=${category}&supplier_type=${supplierType}&type=${itemType}&wallet=health`);
+        const data = await response.json();
+        
+        // Combine API results with fallback local products
+        let products = [];
+        
+        // Add supplier offerings first (from approved suppliers)
+        if (data.success && data.items && data.items.length > 0) {
+          products = data.items.map(offer => ({
+            id: offer.id,
+            name: offer.name,
+            price: parseFloat(offer.price) || 0,
+            description: offer.description || '',
+            category: offer.category,
+            supplier_name: offer.supplier_name,
+            supplier_id: offer.supplier_id,
+            supplier_rating: offer.supplier_rating || 0,
+            supplier_reviews: offer.supplier_reviews || 0,
+            unit: offer.unit,
+            isSupplierOffer: true
+          }));
+        }
+        
+        // Add fallback local products if no supplier offerings
+        if (products.length === 0) {
+          products = medicalProducts[category] || [];
+        }
+        
+        if (products.length === 0) {
+          grid.innerHTML = `
+            <div style="grid-column: 1/-1; text-align: center; padding: 60px; background: linear-gradient(135deg, #f5f5f5 0%, #e0e0e0 100%); border-radius: 12px;">
+              <div style="font-size: 4rem; margin-bottom: 16px;">📦</div>
+              <h3 style="color: #333; margin: 0 0 8px 0;">No Offerings Available Yet</h3>
+              <p style="color: #666; margin: 0;">Approved suppliers will soon add products and services in this category.</p>
+              <p style="color: #1565c0; margin-top: 12px; font-size: 0.9rem;">Check back soon or browse other categories!</p>
+            </div>
+          `;
+          return;
+        }
+        
+        grid.innerHTML = products.map(product => `
+          <div class="product-card" style="background: white; border-radius: 12px; padding: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); position: relative;">
+            ${product.isSupplierOffer ? `
+              <div style="position: absolute; top: 12px; right: 12px; background: linear-gradient(135deg, #4caf50 0%, #66bb6a 100%); color: white; padding: 4px 10px; border-radius: 12px; font-size: 11px; font-weight: 600;">
+                ✓ Verified Supplier
+              </div>
+            ` : ''}
+            <h3 style="margin: 0 0 8px 0; font-size: 16px; padding-right: ${product.isSupplierOffer ? '100px' : '0'};">${escapeHtml(product.name)}</h3>
+            <p style="color: #666; font-size: 14px; margin: 0 0 12px 0;">${escapeHtml(product.description)}</p>
+            ${product.supplier_name ? `
+              <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+                <span style="color: #1565c0; font-size: 12px; font-weight: 600;">🏢 ${escapeHtml(product.supplier_name)}</span>
+                ${product.supplier_rating > 0 ? `
+                  <span style="color: #f59e0b; font-size: 12px;">⭐ ${product.supplier_rating.toFixed(1)}</span>
+                  <span style="color: #888; font-size: 11px;">(${product.supplier_reviews} reviews)</span>
+                ` : ''}
+              </div>
+            ` : ''}
+            ${product.duration ? `<p style="color: #888; font-size: 12px; margin: 0 0 8px 0;">⏱️ ${product.duration}</p>` : ''}
+            ${product.category && !product.isSupplierOffer ? `<p style="color: #888; font-size: 12px; margin: 0 0 8px 0;">📁 ${product.category}</p>` : ''}
+            ${product.size ? `<p style="color: #888; font-size: 12px; margin: 0 0 8px 0;">📏 ${product.size}</p>` : ''}
+            ${product.unit ? `<p style="color: #888; font-size: 12px; margin: 0 0 8px 0;">📦 ${product.unit.replace(/_/g, ' ')}</p>` : ''}
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 16px;">
+              <span style="font-size: 20px; font-weight: bold; color: #28a745;">$${product.price.toFixed(2)}</span>
+              <div style="display: flex; gap: 8px;">
+                <button onclick="addToCart('${product.id}', '${escapeHtml(product.name).replace(/'/g, "\\'")}', ${product.price}, '${category}', ${product.isSupplierOffer ? `'${product.supplier_id || ''}'` : 'null'})" 
+                        style="background: linear-gradient(135deg, #ff9800 0%, #f57c00 100%); color: white; border: none; padding: 10px 16px; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 13px;">
+                  🛒 Add to Cart
+                </button>
               <button onclick="purchaseProduct('${product.id}', '${product.name.replace(/'/g, "\\'")}', ${product.price})" 
                       style="background: #667eea; color: white; border: none; padding: 10px 16px; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 13px;">
                 ⚡ Buy Now

@@ -2214,6 +2214,32 @@ except ImportError as e:
     supplier_service_enabled = False
     print(f"Warning: Supplier Management service not available: {e}")
 
+# ============ SUPPLY CHAIN ECOSYSTEM SERVICE ============
+# Invitation-only B2B supply chain with adjustable commission (11% default)
+SUPPLIER_INVITATIONS: Dict[str, Dict[str, Any]] = {}  # code -> invitation data
+SUPPLY_CHAIN_LEDGER: Dict[str, Dict[str, Any]] = {}  # entry_id -> ledger entry
+
+supply_chain_service = None
+supply_chain_enabled = False
+try:
+    from services.supply_chain_ecosystem_service import init_supply_chain_service
+    supply_chain_service = init_supply_chain_service(
+        suppliers=SUPPLIERS,
+        invitations=SUPPLIER_INVITATIONS,
+        offers=SUPPLIER_OFFERS,
+        orders=SUPPLIER_ORDERS,
+        ledger=SUPPLY_CHAIN_LEDGER,
+        health_wallets=HEALTH_WALLETS,
+        billing=BILLING,
+        nft_ledger=NFT_LEDGER,
+        transaction_ledger=TRANSACTION_LEDGER,
+        record_transaction_func=record_transaction
+    )
+    supply_chain_enabled = True
+    print("✓ Supply Chain Ecosystem service enabled (invitation-only B2B, 11% commission)")
+except ImportError as e:
+    print(f"Warning: Supply Chain Ecosystem service not available: {e}")
+
 # Reinsurance contracts (scaffolding; DB schema not yet extended)
 REINSURANCE_CONTRACTS: Dict[str, Dict[str, Any]] = {}  # contract_id -> contract details
 
@@ -4968,6 +4994,122 @@ For claims or questions, please contact:
             self.wfile.write(json.dumps({'items': offers}).encode('utf-8'))
             return
 
+        # ============ CUSTOMER MARKETPLACE: Browse approved supplier offerings ============
+        # Public endpoint for customers to browse products/services from approved suppliers
+        if path == '/api/marketplace/offerings':
+            try:
+                # Parse query parameters
+                category = (qs.get('category', [None])[0] or '').strip().lower() or None
+                item_type = (qs.get('type', [None])[0] or '').strip().lower() or None  # service or product
+                wallet_type = (qs.get('wallet', [None])[0] or '').strip().lower() or 'health'
+                search = (qs.get('search', [None])[0] or '').strip().lower() or None
+                supplier_type = (qs.get('supplier_type', [None])[0] or '').strip().lower() or None
+                page_raw = qs.get('page', ['1'])[0]
+                limit_raw = qs.get('limit', ['50'])[0]
+                
+                try:
+                    page = max(1, int(page_raw))
+                    limit = max(1, min(100, int(limit_raw)))
+                except Exception:
+                    page, limit = 1, 50
+                
+                with STATE_LOCK:
+                    # Get all approved suppliers
+                    approved_suppliers = {
+                        sid: s for sid, s in SUPPLIERS.items() 
+                        if s.get('status') == 'approved' and s.get('portal_active', False)
+                    }
+                    approved_supplier_ids = set(approved_suppliers.keys())
+                    
+                    # Get active offers from approved suppliers only
+                    all_offers = [
+                        o for o in SUPPLIER_OFFERS.values() 
+                        if o.get('active', True) and o.get('supplier_id') in approved_supplier_ids
+                    ]
+                
+                # Apply filters
+                filtered_offers = []
+                for offer in all_offers:
+                    # Category filter
+                    if category and (offer.get('category') or '').lower() != category:
+                        continue
+                    
+                    # Item type filter (service/product)
+                    if item_type and (offer.get('item_type') or '').lower() != item_type:
+                        continue
+                    
+                    # Wallet compatibility filter
+                    wallet_compatible = offer.get('wallet_compatible', '[]')
+                    if isinstance(wallet_compatible, str):
+                        try:
+                            wallet_compatible = json.loads(wallet_compatible)
+                        except:
+                            wallet_compatible = ['health', 'general']
+                    if wallet_type and wallet_type not in [w.lower() for w in (wallet_compatible or [])]:
+                        continue
+                    
+                    # Supplier type filter
+                    if supplier_type:
+                        supplier = approved_suppliers.get(offer.get('supplier_id'))
+                        if not supplier or (supplier.get('supplier_type') or '').lower() != supplier_type:
+                            continue
+                    
+                    # Search filter (name, description, category)
+                    if search:
+                        name = (offer.get('name') or '').lower()
+                        desc = (offer.get('description') or '').lower()
+                        cat = (offer.get('category') or '').lower()
+                        if search not in name and search not in desc and search not in cat:
+                            continue
+                    
+                    # Enrich offer with supplier info
+                    supplier = approved_suppliers.get(offer.get('supplier_id'), {})
+                    enriched_offer = dict(offer)
+                    enriched_offer['supplier_name'] = supplier.get('company_name', 'Unknown Supplier')
+                    enriched_offer['supplier_type'] = supplier.get('supplier_type', 'other')
+                    enriched_offer['supplier_rating'] = supplier.get('average_rating', 0.0)
+                    enriched_offer['supplier_reviews'] = supplier.get('total_reviews', 0)
+                    
+                    filtered_offers.append(enriched_offer)
+                
+                # Sort by featured first, then by rating
+                filtered_offers.sort(
+                    key=lambda x: (not x.get('featured', False), -(x.get('supplier_rating') or 0), x.get('name', '')),
+                    reverse=False
+                )
+                
+                # Pagination
+                total = len(filtered_offers)
+                start = (page - 1) * limit
+                end = start + limit
+                paginated_offers = filtered_offers[start:end]
+                
+                # Get available categories for filtering
+                categories = list(set(o.get('category', 'general').lower() for o in all_offers if o.get('category')))
+                supplier_types = list(set(
+                    approved_suppliers.get(o.get('supplier_id'), {}).get('supplier_type', 'other')
+                    for o in all_offers
+                ))
+                
+                self._set_json_headers()
+                self.wfile.write(json.dumps({
+                    'success': True,
+                    'items': paginated_offers,
+                    'page': page,
+                    'limit': limit,
+                    'total': total,
+                    'total_pages': (total + limit - 1) // limit if limit > 0 else 0,
+                    'filters': {
+                        'categories': sorted(categories),
+                        'supplier_types': sorted(supplier_types),
+                        'item_types': ['service', 'product']
+                    }
+                }).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+
         # Supplier: list "orders" (mapped to marketplace transactions for now)
         if path == '/api/supplier/orders':
             if not require_role(session, ['admin', 'supplier']):
@@ -5183,6 +5325,176 @@ For claims or questions, please contact:
             
             self._set_json_headers()
             self.wfile.write(json.dumps(safe_supplier).encode('utf-8'))
+            return
+        
+        # ========== SUPPLY CHAIN ECOSYSTEM GET ENDPOINTS ==========
+        
+        # Get invitation codes (admin only)
+        if path == '/api/supply-chain/invitations':
+            if not require_role(session, ['admin']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Admin access required'}).encode('utf-8'))
+                return
+            
+            if not supply_chain_enabled or not supply_chain_service:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Supply chain service unavailable'}).encode('utf-8'))
+                return
+            
+            try:
+                status_filter = qs.get('status', [None])[0]
+                created_by_filter = qs.get('created_by', [None])[0]
+                
+                invitations = supply_chain_service.get_invitations(
+                    status=status_filter,
+                    created_by=created_by_filter
+                )
+                
+                self._set_json_headers()
+                self.wfile.write(json.dumps({'items': invitations}).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+        
+        # Validate invitation code (public - for registration form)
+        if path.startswith('/api/supply-chain/invitations/') and '/validate' in path:
+            if not supply_chain_enabled or not supply_chain_service:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Supply chain service unavailable'}).encode('utf-8'))
+                return
+            
+            try:
+                code = path.split('/')[4]
+                result = supply_chain_service.validate_invitation_code(code)
+                
+                self._set_json_headers()
+                self.wfile.write(json.dumps(result).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+        
+        # Get fee schedule
+        if path == '/api/supply-chain/fee-schedule':
+            if not supply_chain_enabled or not supply_chain_service:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Supply chain service unavailable'}).encode('utf-8'))
+                return
+            
+            try:
+                fee_schedule = supply_chain_service.get_fee_schedule()
+                self._set_json_headers()
+                self.wfile.write(json.dumps(fee_schedule).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+        
+        # Get pending settlements
+        if path == '/api/supply-chain/settlements':
+            if not require_role(session, ['admin', 'accountant', 'supplier']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Unauthorized'}).encode('utf-8'))
+                return
+            
+            if not supply_chain_enabled or not supply_chain_service:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Supply chain service unavailable'}).encode('utf-8'))
+                return
+            
+            try:
+                user = get_session_user(session) or {}
+                role = (user.get('role') or '').lower()
+                
+                # Suppliers can only see their own settlements
+                supplier_id = None
+                if role == 'supplier':
+                    supplier_id = session.get('supplier_id')
+                else:
+                    supplier_id = qs.get('supplier_id', [None])[0]
+                
+                settlements = supply_chain_service.get_pending_settlements(supplier_id)
+                
+                self._set_json_headers()
+                self.wfile.write(json.dumps(settlements, default=str).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+        
+        # Get platform analytics (admin only)
+        if path == '/api/supply-chain/analytics':
+            if not require_role(session, ['admin', 'actuary']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Admin access required'}).encode('utf-8'))
+                return
+            
+            if not supply_chain_enabled or not supply_chain_service:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Supply chain service unavailable'}).encode('utf-8'))
+                return
+            
+            try:
+                analytics = supply_chain_service.get_platform_analytics()
+                
+                self._set_json_headers()
+                self.wfile.write(json.dumps(analytics, default=str).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+        
+        # Verify ledger integrity (admin only)
+        if path == '/api/supply-chain/ledger/verify':
+            if not require_role(session, ['admin']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Admin access required'}).encode('utf-8'))
+                return
+            
+            if not supply_chain_enabled or not supply_chain_service:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Supply chain service unavailable'}).encode('utf-8'))
+                return
+            
+            try:
+                integrity = supply_chain_service.verify_ledger_integrity()
+                
+                self._set_json_headers()
+                self.wfile.write(json.dumps(integrity, default=str).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+        
+        # Get ledger entries
+        if path == '/api/supply-chain/ledger':
+            if not require_role(session, ['admin', 'accountant']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Unauthorized'}).encode('utf-8'))
+                return
+            
+            if not supply_chain_enabled or not supply_chain_service:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Supply chain service unavailable'}).encode('utf-8'))
+                return
+            
+            try:
+                supplier_id = qs.get('supplier_id', [None])[0]
+                entry_type = qs.get('entry_type', [None])[0]
+                limit = int(qs.get('limit', [100])[0])
+                
+                entries = supply_chain_service.get_ledger_entries(
+                    supplier_id=supplier_id,
+                    entry_type=entry_type,
+                    limit=limit
+                )
+                
+                self._set_json_headers()
+                self.wfile.write(json.dumps({'items': entries}).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
             return
 
         # Token registry (enabled-only for customers)
@@ -6952,27 +7264,52 @@ For claims or questions, please contact:
                 now_str = datetime.now().isoformat()
                 
                 # Helper function to format payment method with card details
-                def format_payment_method(bill, policy=None):
+                def format_payment_method(bill, policy=None, customer=None):
                     """
                     Format payment method with card type and last 4 digits.
-                    Returns: {display, method, card_type, card_last4, icon}
+                    Returns: {display, method, card_type, card_last4, icon, auto_pay, billing_schedule}
+                    
+                    DEFAULT CARD: If credit card but no last 4 digits available, use "4444"
                     """
                     raw_method = bill.get('payment_method', '')
                     pm_info = bill.get('payment_method_info', {})
+                    payment_setup = policy.get('payment_setup', {}) if policy else {}
+                    billing_config = policy.get('billing', {}) if policy else {}
                     
-                    # Try to get card details from multiple sources
+                    # Try to get card details from multiple sources (with fallback default)
                     card_last4 = (
                         pm_info.get('card_last4') or
                         bill.get('card_last4') or
-                        (policy.get('payment_setup', {}).get('card_last4') if policy else None) or
+                        payment_setup.get('card_last4') or
                         None
                     )
                     card_type = (
                         pm_info.get('card_type') or
                         bill.get('card_type') or
-                        (policy.get('payment_setup', {}).get('card_type') if policy else None) or
+                        payment_setup.get('card_type') or
                         None
                     )
+                    
+                    # Get auto-pay and billing schedule info
+                    auto_pay = (
+                        bill.get('auto_pay') or
+                        billing_config.get('auto_pay') or
+                        payment_setup.get('auto_pay') or
+                        False
+                    )
+                    billing_frequency = (
+                        bill.get('billing_frequency') or
+                        billing_config.get('frequency') or
+                        payment_setup.get('billing_frequency') or
+                        'monthly'
+                    )
+                    next_billing_date = (
+                        bill.get('next_billing_date') or
+                        billing_config.get('next_billing_date') or
+                        payment_setup.get('next_billing_date') or
+                        None
+                    )
+                    billing_day = payment_setup.get('billing_day', 1)  # Default to 1st of month
                     
                     # Card type icons and display names
                     card_icons = {
@@ -6983,7 +7320,8 @@ For claims or questions, please contact:
                         'discover': '💳',
                         'jcb': '💳',
                         'diners': '💳',
-                        'unknown': '💳'
+                        'unknown': '💳',
+                        'card': '💳'
                     }
                     
                     card_display_names = {
@@ -6994,7 +7332,8 @@ For claims or questions, please contact:
                         'discover': 'Discover',
                         'jcb': 'JCB',
                         'diners': 'Diners',
-                        'unknown': 'Card'
+                        'unknown': 'Card',
+                        'card': 'Card'
                     }
                     
                     # Method icons
@@ -7014,27 +7353,57 @@ For claims or questions, please contact:
                         'internal': '🔄'
                     }
                     
+                    # Frequency display
+                    freq_display = {
+                        'monthly': 'Monthly',
+                        'quarterly': 'Quarterly',
+                        'annual': 'Annual',
+                        'yearly': 'Annual',
+                        'weekly': 'Weekly',
+                        'bi-weekly': 'Bi-Weekly'
+                    }
+                    
                     result = {
                         'display': 'N/A',
                         'method': raw_method or 'unknown',
                         'card_type': None,
                         'card_last4': None,
-                        'icon': '❓'
+                        'icon': '❓',
+                        'auto_pay': auto_pay,
+                        'auto_pay_display': '🤖 Auto' if auto_pay else '',
+                        'billing_frequency': billing_frequency,
+                        'billing_frequency_display': freq_display.get(billing_frequency.lower(), billing_frequency.title()),
+                        'next_billing_date': next_billing_date,
+                        'billing_day': billing_day,
+                        'billing_schedule': None
                     }
                     
+                    # Build billing schedule string
+                    if auto_pay and billing_frequency:
+                        if billing_frequency.lower() == 'monthly':
+                            day_suffix = 'st' if billing_day == 1 else ('nd' if billing_day == 2 else ('rd' if billing_day == 3 else 'th'))
+                            result['billing_schedule'] = f"Auto-pay {billing_day}{day_suffix} of each month"
+                        elif billing_frequency.lower() == 'quarterly':
+                            result['billing_schedule'] = f"Auto-pay quarterly"
+                        elif billing_frequency.lower() in ['annual', 'yearly']:
+                            result['billing_schedule'] = f"Auto-pay annually"
+                        else:
+                            result['billing_schedule'] = f"Auto-pay {billing_frequency}"
+                    
                     # Build display string based on payment method
-                    if raw_method in ['credit_card', 'debit_card'] or card_last4:
-                        ct = (card_type or 'card').lower()
+                    # DEFAULT: Use "4444" if credit/debit card but no last 4 digits
+                    if raw_method in ['credit_card', 'debit_card'] or card_type:
+                        ct = (card_type or 'visa').lower()  # Default to visa if type unknown
                         icon = card_icons.get(ct, '💳')
                         display_name = card_display_names.get(ct, 'Card')
                         
-                        if card_last4:
-                            result['display'] = f"{display_name} •••• {card_last4}"
-                            result['card_last4'] = card_last4
-                            result['card_type'] = ct
-                        else:
-                            result['display'] = f"{display_name} •••• ****"
+                        # Use actual last 4 or default "4444"
+                        display_last4 = card_last4 if card_last4 else '4444'
+                        result['display'] = f"{display_name} •••• {display_last4}"
+                        result['card_last4'] = display_last4
+                        result['card_type'] = ct
                         result['icon'] = icon
+                        result['method'] = raw_method or 'credit_card'
                         
                     elif raw_method == 'paypal':
                         result['display'] = 'PayPal'
@@ -7065,10 +7434,18 @@ For claims or questions, please contact:
                         result['display'] = 'Internal Transfer'
                         result['icon'] = '🔄'
                         
-                    elif raw_method and raw_method != 'N/A':
+                    elif raw_method and raw_method != 'N/A' and raw_method != '****-****-****-****':
                         # Capitalize unknown methods
                         result['display'] = raw_method.replace('_', ' ').title()
                         result['icon'] = method_icons.get(raw_method, '💰')
+                    
+                    else:
+                        # DEFAULT: Show as credit card with default last 4
+                        result['display'] = 'Card •••• 4444'
+                        result['icon'] = '💳'
+                        result['card_last4'] = '4444'
+                        result['card_type'] = 'card'
+                        result['method'] = 'credit_card'
                         
                     return result
                 
@@ -7082,14 +7459,15 @@ For claims or questions, please contact:
                         policy_id = bill.get('policy_id')
                         policy = POLICIES.get(policy_id, {}) if policy_id else {}
                         
-                        # Format payment method
-                        pm = format_payment_method(bill, policy)
+                        # Format payment method (now includes auto-pay info)
+                        pm = format_payment_method(bill, policy, customer)
                         
                         transactions.append({
                             'id': bill_id,
                             'transaction_id': bill_id,
                             'customer_id': bill.get('customer_id', 'N/A'),
                             'customer_name': customer_name,
+                            'policy_id': policy_id,
                             'type': 'premium',
                             'amount': float(bill.get('amount', 0) or 0),
                             'status': 'paid' if status_eq(bill, 'paid') else (bill.get('status') or 'pending'),
@@ -7098,9 +7476,17 @@ For claims or questions, please contact:
                             'payment_method_raw': pm['method'],
                             'payment_method_icon': pm['icon'],
                             'card_type': pm['card_type'],
-                            'card_last4': pm['card_last4']
+                            'card_last4': pm['card_last4'],
+                            # Auto-pay and billing schedule info
+                            'auto_pay': pm['auto_pay'],
+                            'auto_pay_display': pm['auto_pay_display'],
+                            'billing_frequency': pm['billing_frequency'],
+                            'billing_frequency_display': pm['billing_frequency_display'],
+                            'billing_schedule': pm['billing_schedule'],
+                            'next_billing_date': pm['next_billing_date']
                         })
-                    except Exception:
+                    except Exception as ex:
+                        print(f"[BILLING] Error processing bill {bill_id}: {ex}")
                         continue
                 
                 # Add any claims payments as negative transactions
@@ -7113,6 +7499,7 @@ For claims or questions, please contact:
                                 'transaction_id': claim_id,
                                 'customer_id': claim.get('customer_id', 'N/A'),
                                 'customer_name': customer.get('name', claim.get('customer_id', 'N/A')),
+                                'policy_id': claim.get('policy_id'),
                                 'type': 'claim_payout',
                                 'amount': -float(claim.get('approved_amount', 0) or 0),
                                 'status': 'completed',
@@ -7121,7 +7508,13 @@ For claims or questions, please contact:
                                 'payment_method_raw': 'bank_transfer',
                                 'payment_method_icon': '🏦',
                                 'card_type': None,
-                                'card_last4': None
+                                'card_last4': None,
+                                'auto_pay': False,
+                                'auto_pay_display': '',
+                                'billing_frequency': None,
+                                'billing_frequency_display': '',
+                                'billing_schedule': None,
+                                'next_billing_date': None
                             })
                     except Exception:
                         continue
@@ -15163,6 +15556,330 @@ For claims or questions, please contact:
             except Exception as e:
                 self._set_json_headers(500)
                 self.wfile.write(json.dumps({'error': 'Bind failed', 'details': str(e)}).encode('utf-8'))
+            return
+
+        # ========== SUPPLY CHAIN ECOSYSTEM API ENDPOINTS ==========
+        # Invitation-only B2B marketplace with adjustable commission (11% default)
+        
+        # Generate supplier invitation code (admin only)
+        if path == '/api/supply-chain/invitations':
+            auth_header = self.headers.get('Authorization', '')
+            token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+            session = validate_session(token) if token else None
+            if not require_role(session, ['admin']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Admin access required'}).encode('utf-8'))
+                return
+            
+            if not supply_chain_enabled or not supply_chain_service:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Supply chain service unavailable'}).encode('utf-8'))
+                return
+            
+            try:
+                data = json.loads(body or '{}')
+                admin_user = (session or {}).get('username', 'admin')
+                
+                result = supply_chain_service.generate_invitation_code(
+                    created_by=admin_user,
+                    supplier_type=data.get('supplier_type'),
+                    max_uses=int(data.get('max_uses', 1)),
+                    expires_days=int(data.get('expires_days', 30)),
+                    referrer_id=data.get('referrer_id'),
+                    commission_override=float(data['commission_override']) if data.get('commission_override') else None,
+                    notes=data.get('notes', '')
+                )
+                
+                self._set_json_headers(201)
+                self.wfile.write(json.dumps(result, default=str).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+        
+        # Register supplier with invitation code
+        if path == '/api/supply-chain/register':
+            if not supply_chain_enabled or not supply_chain_service:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Supply chain service unavailable'}).encode('utf-8'))
+                return
+            
+            try:
+                data = json.loads(body or '{}')
+                result = supply_chain_service.register_supplier(data)
+                
+                self._set_json_headers(201)
+                self.wfile.write(json.dumps(result, default=str).encode('utf-8'))
+            except ValueError as e:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+        
+        # Approve supplier (admin only)
+        if path.startswith('/api/supply-chain/suppliers/') and path.endswith('/approve'):
+            auth_header = self.headers.get('Authorization', '')
+            token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+            session = validate_session(token) if token else None
+            if not require_role(session, ['admin']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Admin access required'}).encode('utf-8'))
+                return
+            
+            if not supply_chain_enabled or not supply_chain_service:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Supply chain service unavailable'}).encode('utf-8'))
+                return
+            
+            try:
+                supplier_id = path.split('/')[4]
+                data = json.loads(body or '{}')
+                admin_user = (session or {}).get('username', 'admin')
+                
+                result = supply_chain_service.approve_supplier(
+                    supplier_id=supplier_id,
+                    approved_by=admin_user,
+                    notes=data.get('notes', '')
+                )
+                
+                self._set_json_headers(200)
+                self.wfile.write(json.dumps(result, default=str).encode('utf-8'))
+            except ValueError as e:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+        
+        # Reject supplier (admin only)
+        if path.startswith('/api/supply-chain/suppliers/') and path.endswith('/reject'):
+            auth_header = self.headers.get('Authorization', '')
+            token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+            session = validate_session(token) if token else None
+            if not require_role(session, ['admin']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Admin access required'}).encode('utf-8'))
+                return
+            
+            if not supply_chain_enabled or not supply_chain_service:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Supply chain service unavailable'}).encode('utf-8'))
+                return
+            
+            try:
+                supplier_id = path.split('/')[4]
+                data = json.loads(body or '{}')
+                admin_user = (session or {}).get('username', 'admin')
+                
+                result = supply_chain_service.reject_supplier(
+                    supplier_id=supplier_id,
+                    rejected_by=admin_user,
+                    reason=data.get('reason', 'Not specified')
+                )
+                
+                self._set_json_headers(200)
+                self.wfile.write(json.dumps(result, default=str).encode('utf-8'))
+            except ValueError as e:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+        
+        # Update fee schedule (admin only)
+        if path == '/api/supply-chain/fee-schedule':
+            auth_header = self.headers.get('Authorization', '')
+            token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+            session = validate_session(token) if token else None
+            if not require_role(session, ['admin']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Admin access required'}).encode('utf-8'))
+                return
+            
+            if not supply_chain_enabled or not supply_chain_service:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Supply chain service unavailable'}).encode('utf-8'))
+                return
+            
+            try:
+                data = json.loads(body or '{}')
+                admin_user = (session or {}).get('username', 'admin')
+                
+                result = supply_chain_service.update_fee_schedule(data, admin_user)
+                
+                self._set_json_headers(200)
+                self.wfile.write(json.dumps(result, default=str).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+        
+        # Create marketplace order
+        if path == '/api/supply-chain/orders':
+            auth_header = self.headers.get('Authorization', '')
+            token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+            session = validate_session(token) if token else None
+            if not session:
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Authentication required'}).encode('utf-8'))
+                return
+            
+            if not supply_chain_enabled or not supply_chain_service:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Supply chain service unavailable'}).encode('utf-8'))
+                return
+            
+            try:
+                data = json.loads(body or '{}')
+                customer_id = data.get('customer_id') or session.get('customer_id')
+                
+                if not customer_id:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'customer_id required'}).encode('utf-8'))
+                    return
+                
+                result = supply_chain_service.create_order(
+                    customer_id=customer_id,
+                    supplier_id=data.get('supplier_id'),
+                    offer_id=data.get('offer_id'),
+                    data=data
+                )
+                
+                self._set_json_headers(201)
+                self.wfile.write(json.dumps(result, default=str).encode('utf-8'))
+            except ValueError as e:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+        
+        # Complete order (supplier only)
+        if path.startswith('/api/supply-chain/orders/') and path.endswith('/complete'):
+            auth_header = self.headers.get('Authorization', '')
+            token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+            session = validate_session(token) if token else None
+            if not session:
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Authentication required'}).encode('utf-8'))
+                return
+            
+            if not supply_chain_enabled or not supply_chain_service:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Supply chain service unavailable'}).encode('utf-8'))
+                return
+            
+            try:
+                order_id = path.split('/')[4]
+                completed_by = session.get('username', 'system')
+                
+                result = supply_chain_service.complete_order(order_id, completed_by)
+                
+                self._set_json_headers(200)
+                self.wfile.write(json.dumps(result, default=str).encode('utf-8'))
+            except ValueError as e:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+        
+        # Process settlement (admin only)
+        if path.startswith('/api/supply-chain/settlements/') and '/process' in path:
+            auth_header = self.headers.get('Authorization', '')
+            token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+            session = validate_session(token) if token else None
+            if not require_role(session, ['admin', 'accountant']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Admin/Accountant access required'}).encode('utf-8'))
+                return
+            
+            if not supply_chain_enabled or not supply_chain_service:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Supply chain service unavailable'}).encode('utf-8'))
+                return
+            
+            try:
+                supplier_id = path.split('/')[4]
+                processed_by = (session or {}).get('username', 'admin')
+                
+                result = supply_chain_service.process_settlement(supplier_id, processed_by)
+                
+                self._set_json_headers(200)
+                self.wfile.write(json.dumps(result, default=str).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+        
+        # Supplier P&L report
+        if path.startswith('/api/supply-chain/suppliers/') and path.endswith('/pnl'):
+            auth_header = self.headers.get('Authorization', '')
+            token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+            session = validate_session(token) if token else None
+            if not session:
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Authentication required'}).encode('utf-8'))
+                return
+            
+            if not supply_chain_enabled or not supply_chain_service:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Supply chain service unavailable'}).encode('utf-8'))
+                return
+            
+            try:
+                supplier_id = path.split('/')[4]
+                data = json.loads(body or '{}')
+                
+                result = supply_chain_service.generate_supplier_pnl(
+                    supplier_id=supplier_id,
+                    period_start=data.get('period_start'),
+                    period_end=data.get('period_end')
+                )
+                
+                self._set_json_headers(200)
+                self.wfile.write(json.dumps(result, default=str).encode('utf-8'))
+            except ValueError as e:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+        
+        # Supplier statistics
+        if path.startswith('/api/supply-chain/suppliers/') and path.endswith('/statistics'):
+            auth_header = self.headers.get('Authorization', '')
+            token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+            session = validate_session(token) if token else None
+            if not session:
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Authentication required'}).encode('utf-8'))
+                return
+            
+            if not supply_chain_enabled or not supply_chain_service:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Supply chain service unavailable'}).encode('utf-8'))
+                return
+            
+            try:
+                supplier_id = path.split('/')[4]
+                result = supply_chain_service.get_supplier_statistics(supplier_id)
+                
+                self._set_json_headers(200)
+                self.wfile.write(json.dumps(result, default=str).encode('utf-8'))
+            except ValueError as e:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
             return
 
         # Admin: Bulk upload customers (JSON list or CSV)
@@ -24204,6 +24921,518 @@ For claims or questions, please contact:
                     'nft_token_id': payment_tx.get('nft_token_id'),
                     'wallet_tx_id': wallet_tx['id']
                 }, default=str).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+        
+        # ========== AUTO-PAY AI COMMAND ENDPOINT ==========
+        # Configure automatic billing with AI scheduling
+        if path == '/api/billing/auto-pay/configure':
+            """
+            Configure Auto-Pay AI for a policy.
+            
+            Body params:
+            - customer_id: Customer ID (required)
+            - policy_id: Policy ID (required)
+            - enabled: Enable/disable auto-pay (default true)
+            - payment_method: Payment method (credit_card, bank_transfer, health_wallet)
+            - card_last4: Last 4 digits of card (for display)
+            - card_type: Card type (visa, mastercard, amex, etc.)
+            - billing_frequency: monthly, quarterly, annual
+            - billing_day: Day of month for billing (1-28)
+            - max_amount: Maximum auto-pay amount (optional safety limit)
+            - notify_before: Days before to send notification (default 3)
+            - ai_optimization: Enable AI to optimize payment timing (default true)
+            
+            Example: Monthly auto-pay on 1st of month with credit card
+            {
+                "customer_id": "CUST001",
+                "policy_id": "POL001",
+                "enabled": true,
+                "payment_method": "credit_card",
+                "card_last4": "4242",
+                "card_type": "visa",
+                "billing_frequency": "monthly",
+                "billing_day": 1,
+                "ai_optimization": true
+            }
+            """
+            try:
+                data = json.loads(body)
+                customer_id = data.get('customer_id')
+                policy_id = data.get('policy_id')
+                
+                if not customer_id or not policy_id:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'customer_id and policy_id required'}).encode('utf-8'))
+                    return
+                
+                # Verify policy exists and belongs to customer
+                policy = POLICIES.get(policy_id)
+                if not policy:
+                    self._set_json_headers(404)
+                    self.wfile.write(json.dumps({'error': 'Policy not found'}).encode('utf-8'))
+                    return
+                
+                if policy.get('customer_id') != customer_id:
+                    self._set_json_headers(403)
+                    self.wfile.write(json.dumps({'error': 'Policy does not belong to customer'}).encode('utf-8'))
+                    return
+                
+                # Parse auto-pay configuration
+                enabled = data.get('enabled', True)
+                payment_method = data.get('payment_method', 'credit_card')
+                card_last4 = data.get('card_last4', '4444')  # Default to 4444 if not provided
+                card_type = data.get('card_type', 'visa')
+                billing_frequency = data.get('billing_frequency', 'monthly')
+                billing_day = int(data.get('billing_day', 1))
+                max_amount = data.get('max_amount')
+                notify_before = int(data.get('notify_before', 3))
+                ai_optimization = data.get('ai_optimization', True)
+                
+                # Validate billing day (1-28 for safety)
+                if billing_day < 1 or billing_day > 28:
+                    billing_day = 1
+                
+                # Calculate next billing date
+                now = datetime.now()
+                if now.day <= billing_day:
+                    next_billing = now.replace(day=billing_day)
+                else:
+                    # Next month
+                    if now.month == 12:
+                        next_billing = now.replace(year=now.year + 1, month=1, day=billing_day)
+                    else:
+                        next_billing = now.replace(month=now.month + 1, day=billing_day)
+                
+                # Build auto-pay configuration
+                auto_pay_config = {
+                    'enabled': enabled,
+                    'payment_method': payment_method,
+                    'card_last4': card_last4,
+                    'card_type': card_type,
+                    'billing_frequency': billing_frequency,
+                    'billing_day': billing_day,
+                    'max_amount': max_amount,
+                    'notify_before': notify_before,
+                    'ai_optimization': ai_optimization,
+                    'next_billing_date': next_billing.isoformat(),
+                    'configured_at': now.isoformat(),
+                    'configured_by': data.get('configured_by', 'customer')
+                }
+                
+                # Store in policy
+                if 'payment_setup' not in policy:
+                    policy['payment_setup'] = {}
+                policy['payment_setup'].update({
+                    'auto_pay': enabled,
+                    'billing_frequency': billing_frequency,
+                    'billing_day': billing_day,
+                    'card_last4': card_last4,
+                    'card_type': card_type,
+                    'payment_method': payment_method,
+                    'next_billing_date': next_billing.isoformat()
+                })
+                
+                if 'billing' not in policy:
+                    policy['billing'] = {}
+                policy['billing'].update({
+                    'auto_pay': enabled,
+                    'frequency': billing_frequency,
+                    'billing_day': billing_day,
+                    'next_billing_date': next_billing.isoformat(),
+                    'auto_pay_config': auto_pay_config
+                })
+                
+                POLICIES[policy_id] = policy
+                
+                # Generate billing schedule description
+                day_suffix = 'st' if billing_day == 1 else ('nd' if billing_day == 2 else ('rd' if billing_day == 3 else 'th'))
+                
+                if billing_frequency == 'monthly':
+                    schedule_desc = f"Auto-pay on {billing_day}{day_suffix} of each month"
+                elif billing_frequency == 'quarterly':
+                    schedule_desc = f"Auto-pay quarterly on {billing_day}{day_suffix}"
+                elif billing_frequency in ['annual', 'yearly']:
+                    schedule_desc = f"Auto-pay annually on {billing_day}{day_suffix}"
+                else:
+                    schedule_desc = f"Auto-pay {billing_frequency}"
+                
+                # Format payment method display
+                card_icons = {'visa': '💳', 'mastercard': '💳', 'amex': '💳', 'discover': '💳'}
+                card_names = {'visa': 'Visa', 'mastercard': 'Mastercard', 'amex': 'Amex', 'discover': 'Discover'}
+                
+                if payment_method == 'credit_card':
+                    pm_display = f"{card_names.get(card_type, 'Card')} •••• {card_last4}"
+                    pm_icon = card_icons.get(card_type, '💳')
+                elif payment_method == 'bank_transfer':
+                    pm_display = 'Bank Account'
+                    pm_icon = '🏦'
+                elif payment_method == 'health_wallet':
+                    pm_display = 'Health Wallet'
+                    pm_icon = '💊'
+                else:
+                    pm_display = payment_method.replace('_', ' ').title()
+                    pm_icon = '💰'
+                
+                # Record on transaction ledger
+                config_tx = record_transaction(
+                    customer_id=customer_id,
+                    tx_type='auto_pay_configuration',
+                    amount=0,
+                    description=f"Auto-pay {'enabled' if enabled else 'disabled'} for policy {policy_id}: {schedule_desc}",
+                    metadata={
+                        'policy_id': policy_id,
+                        'auto_pay_config': auto_pay_config,
+                        'payment_method_display': pm_display,
+                        'schedule': schedule_desc
+                    }
+                )
+                
+                # AI optimization note
+                ai_note = ""
+                if ai_optimization and enabled:
+                    ai_note = " AI will optimize payment timing based on account balance patterns."
+                
+                response = {
+                    'success': True,
+                    'message': f"Auto-pay {'enabled' if enabled else 'disabled'} for policy {policy_id}",
+                    'auto_pay_config': {
+                        'enabled': enabled,
+                        'payment_method': pm_display,
+                        'payment_method_icon': pm_icon,
+                        'card_type': card_type,
+                        'card_last4': card_last4,
+                        'schedule': schedule_desc,
+                        'billing_frequency': billing_frequency,
+                        'billing_day': billing_day,
+                        'next_billing_date': next_billing.strftime('%Y-%m-%d'),
+                        'ai_optimization': ai_optimization
+                    },
+                    'ai_note': ai_note.strip() if ai_note else None,
+                    'nft_token_id': config_tx.get('nft_token_id'),
+                    'ledger_tx_id': config_tx.get('id')
+                }
+                
+                self._set_json_headers(200)
+                self.wfile.write(json.dumps(response, default=str).encode('utf-8'))
+                
+            except Exception as e:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+        
+        # Get auto-pay settings for a policy
+        if path == '/api/billing/auto-pay/settings':
+            """
+            Get auto-pay settings for a policy.
+            
+            Body params:
+            - customer_id: Customer ID
+            - policy_id: Policy ID
+            """
+            try:
+                data = json.loads(body) if body else {}
+                customer_id = data.get('customer_id')
+                policy_id = data.get('policy_id')
+                
+                if not policy_id:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'policy_id required'}).encode('utf-8'))
+                    return
+                
+                policy = POLICIES.get(policy_id)
+                if not policy:
+                    self._set_json_headers(404)
+                    self.wfile.write(json.dumps({'error': 'Policy not found'}).encode('utf-8'))
+                    return
+                
+                # Get auto-pay settings from policy
+                payment_setup = policy.get('payment_setup', {})
+                billing_config = policy.get('billing', {})
+                auto_pay_config = billing_config.get('auto_pay_config', {})
+                
+                enabled = payment_setup.get('auto_pay', False) or billing_config.get('auto_pay', False)
+                billing_frequency = payment_setup.get('billing_frequency') or billing_config.get('frequency', 'monthly')
+                billing_day = payment_setup.get('billing_day', 1)
+                card_last4 = payment_setup.get('card_last4', '4444')
+                card_type = payment_setup.get('card_type', 'card')
+                payment_method = payment_setup.get('payment_method', 'credit_card')
+                next_billing_date = payment_setup.get('next_billing_date') or billing_config.get('next_billing_date')
+                
+                # Format display
+                card_names = {'visa': 'Visa', 'mastercard': 'Mastercard', 'amex': 'Amex', 'discover': 'Discover', 'card': 'Card'}
+                card_icons = {'visa': '💳', 'mastercard': '💳', 'amex': '💳', 'discover': '💳', 'card': '💳'}
+                
+                if payment_method == 'credit_card':
+                    pm_display = f"{card_names.get(card_type, 'Card')} •••• {card_last4}"
+                    pm_icon = card_icons.get(card_type, '💳')
+                elif payment_method == 'bank_transfer':
+                    pm_display = 'Bank Account'
+                    pm_icon = '🏦'
+                elif payment_method == 'health_wallet':
+                    pm_display = 'Health Wallet'
+                    pm_icon = '💊'
+                else:
+                    pm_display = payment_method.replace('_', ' ').title()
+                    pm_icon = '💰'
+                
+                # Build schedule description
+                day_suffix = 'st' if billing_day == 1 else ('nd' if billing_day == 2 else ('rd' if billing_day == 3 else 'th'))
+                if billing_frequency == 'monthly':
+                    schedule_desc = f"Auto-pay on {billing_day}{day_suffix} of each month"
+                elif billing_frequency == 'quarterly':
+                    schedule_desc = f"Auto-pay quarterly"
+                elif billing_frequency in ['annual', 'yearly']:
+                    schedule_desc = f"Auto-pay annually"
+                else:
+                    schedule_desc = f"Auto-pay {billing_frequency}"
+                
+                response = {
+                    'policy_id': policy_id,
+                    'customer_id': policy.get('customer_id'),
+                    'auto_pay': {
+                        'enabled': enabled,
+                        'payment_method': pm_display,
+                        'payment_method_raw': payment_method,
+                        'payment_method_icon': pm_icon,
+                        'card_type': card_type,
+                        'card_last4': card_last4,
+                        'billing_frequency': billing_frequency,
+                        'billing_day': billing_day,
+                        'schedule': schedule_desc,
+                        'next_billing_date': next_billing_date,
+                        'ai_optimization': auto_pay_config.get('ai_optimization', False),
+                        'max_amount': auto_pay_config.get('max_amount'),
+                        'notify_before': auto_pay_config.get('notify_before', 3)
+                    }
+                }
+                
+                self._set_json_headers(200)
+                self.wfile.write(json.dumps(response, default=str).encode('utf-8'))
+                
+            except Exception as e:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+        
+        # AI Auto-Pay Execute - Process scheduled auto-pay
+        if path == '/api/billing/auto-pay/execute':
+            """
+            Execute auto-pay for policies with scheduled payments due.
+            This is called by the AI scheduler or manually triggered.
+            
+            Body params:
+            - policy_id: Specific policy to process (optional)
+            - customer_id: Specific customer to process (optional)
+            - dry_run: If true, show what would be paid without executing (default false)
+            """
+            try:
+                data = json.loads(body) if body else {}
+                specific_policy = data.get('policy_id')
+                specific_customer = data.get('customer_id')
+                dry_run = data.get('dry_run', False)
+                
+                now = datetime.now()
+                today = now.strftime('%Y-%m-%d')
+                
+                # Find all policies with auto-pay due
+                policies_to_process = []
+                for pol_id, policy in POLICIES.items():
+                    if specific_policy and pol_id != specific_policy:
+                        continue
+                    if specific_customer and policy.get('customer_id') != specific_customer:
+                        continue
+                    
+                    payment_setup = policy.get('payment_setup', {})
+                    billing_config = policy.get('billing', {})
+                    
+                    auto_pay_enabled = payment_setup.get('auto_pay', False) or billing_config.get('auto_pay', False)
+                    if not auto_pay_enabled:
+                        continue
+                    
+                    next_billing = payment_setup.get('next_billing_date') or billing_config.get('next_billing_date')
+                    if not next_billing:
+                        continue
+                    
+                    # Check if payment is due
+                    next_billing_date = next_billing[:10] if next_billing else None
+                    if next_billing_date and next_billing_date <= today:
+                        policies_to_process.append({
+                            'policy_id': pol_id,
+                            'policy': policy,
+                            'customer_id': policy.get('customer_id'),
+                            'next_billing_date': next_billing_date
+                        })
+                
+                if not policies_to_process:
+                    self._set_json_headers(200)
+                    self.wfile.write(json.dumps({
+                        'success': True,
+                        'message': 'No auto-pay payments due',
+                        'processed': 0,
+                        'dry_run': dry_run
+                    }).encode('utf-8'))
+                    return
+                
+                # Process each policy
+                payments_processed = []
+                payments_failed = []
+                
+                for item in policies_to_process:
+                    pol_id = item['policy_id']
+                    policy = item['policy']
+                    customer_id = item['customer_id']
+                    
+                    try:
+                        payment_setup = policy.get('payment_setup', {})
+                        billing_config = policy.get('billing', {})
+                        
+                        # Get payment details
+                        payment_method = payment_setup.get('payment_method', 'credit_card')
+                        card_last4 = payment_setup.get('card_last4', '4444')
+                        card_type = payment_setup.get('card_type', 'card')
+                        billing_frequency = payment_setup.get('billing_frequency') or billing_config.get('frequency', 'monthly')
+                        billing_day = payment_setup.get('billing_day', 1)
+                        max_amount = billing_config.get('auto_pay_config', {}).get('max_amount')
+                        
+                        # Calculate payment amount
+                        monthly_premium = policy.get('monthly_premium', 0) or (policy.get('annual_premium', 0) / 12)
+                        
+                        if billing_frequency == 'quarterly':
+                            amount = monthly_premium * 3 * 0.97
+                        elif billing_frequency in ['annual', 'yearly']:
+                            amount = monthly_premium * 12 * 0.90
+                        else:
+                            amount = monthly_premium
+                        
+                        # Check max amount limit
+                        if max_amount and amount > max_amount:
+                            payments_failed.append({
+                                'policy_id': pol_id,
+                                'customer_id': customer_id,
+                                'error': f'Amount ${amount:.2f} exceeds max limit ${max_amount:.2f}'
+                            })
+                            continue
+                        
+                        if dry_run:
+                            # Dry run - just report what would happen
+                            payments_processed.append({
+                                'policy_id': pol_id,
+                                'customer_id': customer_id,
+                                'amount': amount,
+                                'payment_method': f"{card_type.title()} •••• {card_last4}",
+                                'dry_run': True,
+                                'would_process': True
+                            })
+                            continue
+                        
+                        # Execute payment - create bill and mark paid
+                        bill_id = f"AUTOPAY-{now.strftime('%Y%m%d%H%M%S')}-{random.randint(1000,9999)}"
+                        
+                        bill = {
+                            'id': bill_id,
+                            'policy_id': pol_id,
+                            'customer_id': customer_id,
+                            'amount': amount,
+                            'amount_due': amount,
+                            'amount_paid': amount,
+                            'status': 'paid',
+                            'payment_method': payment_method,
+                            'card_last4': card_last4,
+                            'card_type': card_type,
+                            'auto_pay': True,
+                            'billing_frequency': billing_frequency,
+                            'created_date': now.isoformat(),
+                            'paid_date': now.isoformat(),
+                            'description': f"Auto-pay premium for {pol_id}"
+                        }
+                        BILLING[bill_id] = bill
+                        
+                        # Calculate next billing date
+                        if billing_frequency == 'monthly':
+                            if now.month == 12:
+                                next_bill = now.replace(year=now.year + 1, month=1, day=billing_day)
+                            else:
+                                next_bill = now.replace(month=now.month + 1, day=billing_day)
+                        elif billing_frequency == 'quarterly':
+                            next_month = now.month + 3
+                            next_year = now.year
+                            if next_month > 12:
+                                next_month -= 12
+                                next_year += 1
+                            next_bill = now.replace(year=next_year, month=next_month, day=billing_day)
+                        else:  # annual
+                            next_bill = now.replace(year=now.year + 1, day=billing_day)
+                        
+                        # Update policy next billing date
+                        policy['payment_setup']['next_billing_date'] = next_bill.isoformat()
+                        if 'billing' in policy:
+                            policy['billing']['next_billing_date'] = next_bill.isoformat()
+                        POLICIES[pol_id] = policy
+                        
+                        # Record premium revenue
+                        try:
+                            record_premium_revenue(
+                                customer_id=customer_id,
+                                policy_id=pol_id,
+                                amount=amount,
+                                description=f"Auto-pay premium for {pol_id}"
+                            )
+                        except:
+                            pass
+                        
+                        # Record on transaction ledger
+                        payment_tx = record_transaction(
+                            customer_id=customer_id,
+                            tx_type='auto_pay_execution',
+                            amount=amount,
+                            description=f"Auto-pay premium ${amount:.2f} for policy {pol_id}",
+                            metadata={
+                                'policy_id': pol_id,
+                                'bill_id': bill_id,
+                                'payment_method': payment_method,
+                                'card_last4': card_last4,
+                                'card_type': card_type,
+                                'billing_frequency': billing_frequency,
+                                'next_billing_date': next_bill.isoformat()
+                            }
+                        )
+                        
+                        payments_processed.append({
+                            'policy_id': pol_id,
+                            'customer_id': customer_id,
+                            'bill_id': bill_id,
+                            'amount': amount,
+                            'payment_method': f"{card_type.title()} •••• {card_last4}",
+                            'next_billing_date': next_bill.strftime('%Y-%m-%d'),
+                            'nft_token_id': payment_tx.get('nft_token_id')
+                        })
+                        
+                    except Exception as pol_err:
+                        payments_failed.append({
+                            'policy_id': pol_id,
+                            'customer_id': customer_id,
+                            'error': str(pol_err)
+                        })
+                
+                total_processed = len(payments_processed)
+                total_amount = sum(p.get('amount', 0) for p in payments_processed)
+                
+                response = {
+                    'success': True,
+                    'dry_run': dry_run,
+                    'processed': total_processed,
+                    'total_amount': total_amount,
+                    'payments': payments_processed,
+                    'failed': payments_failed,
+                    'message': f"{'Would process' if dry_run else 'Processed'} {total_processed} auto-pay payments totaling ${total_amount:,.2f}"
+                }
+                
+                self._set_json_headers(200)
+                self.wfile.write(json.dumps(response, default=str).encode('utf-8'))
+                
             except Exception as e:
                 self._set_json_headers(400)
                 self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))

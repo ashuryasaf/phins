@@ -368,6 +368,15 @@
         <span class="badge-count" id="pending-count">0</span>
       </div>
       <div class="tab" data-tab="active">Active Suppliers</div>
+      <div class="tab" data-tab="invitations">
+        Invitations
+        <span class="badge-count" id="invitation-count" style="background:#3b82f6;">0</span>
+      </div>
+      <div class="tab" data-tab="fee-schedule">Fee Schedule</div>
+      <div class="tab" data-tab="settlements">
+        Settlements
+        <span class="badge-count" id="settlement-count" style="background:#10b981;">0</span>
+      </div>
       <div class="tab" data-tab="transactions">Transactions</div>
       <div class="tab" data-tab="analytics">AI/BI Analytics</div>
     </div>
@@ -460,6 +469,148 @@
             </thead>
             <tbody id="active-body">
               <tr><td colspan="8" class="muted-text">Loading...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tab: Invitations -->
+    <div class="tab-content" id="tab-invitations">
+      <div class="card">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+          <h3 style="margin:0;">Supplier Invitation Codes</h3>
+          <button class="btn" onclick="showGenerateInvitation()" style="background:#3b82f6; color:white;">
+            + Generate Invitation
+          </button>
+        </div>
+        
+        <div style="background:var(--bg); padding:16px; border-radius:8px; margin-bottom:16px;">
+          <strong>Invitation-Only B2B Registration</strong>
+          <p style="margin:8px 0 0 0; color:var(--text-muted); font-size:0.9rem;">
+            Suppliers can only register using a valid invitation code. Generate codes for specific supplier types or general use.
+          </p>
+        </div>
+
+        <div class="filter-row">
+          <select id="filter-invite-status">
+            <option value="">All Status</option>
+            <option value="active">Active</option>
+            <option value="used">Used</option>
+            <option value="expired">Expired</option>
+            <option value="revoked">Revoked</option>
+          </select>
+          <button class="btn btn-outline" onclick="refreshInvitations()">Refresh</button>
+        </div>
+
+        <div class="table-card">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Code</th>
+                <th>Created By</th>
+                <th>Type Restriction</th>
+                <th>Uses</th>
+                <th>Expires</th>
+                <th>Commission Override</th>
+                <th>Status</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="invitations-body">
+              <tr><td colspan="8" class="muted-text">Loading...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tab: Fee Schedule -->
+    <div class="tab-content" id="tab-fee-schedule">
+      <div class="card">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+          <h3 style="margin:0;">Adjustable Management Fees (Commission)</h3>
+          <button class="btn" onclick="saveFeeSchedule()" style="background:#10b981; color:white;">
+            Save Changes
+          </button>
+        </div>
+
+        <div style="background:linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%); color:white; padding:16px; border-radius:8px; margin-bottom:24px;">
+          <div style="font-size:1.5rem; font-weight:bold;">Default Commission: <span id="base-commission">11</span>%</div>
+          <p style="margin:8px 0 0 0; opacity:0.9;">Adjustable per category. Volume discounts available for high-volume suppliers.</p>
+        </div>
+
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:24px;">
+          <!-- Category Rates -->
+          <div>
+            <h4>Category Commission Rates</h4>
+            <div id="category-rates" style="background:var(--bg); padding:16px; border-radius:8px;">
+              <!-- Populated dynamically -->
+            </div>
+          </div>
+
+          <!-- Volume Discounts -->
+          <div>
+            <h4>Volume Discounts</h4>
+            <div id="volume-discounts" style="background:var(--bg); padding:16px; border-radius:8px;">
+              <!-- Populated dynamically -->
+            </div>
+
+            <h4 style="margin-top:24px;">Fee Limits</h4>
+            <div style="background:var(--bg); padding:16px; border-radius:8px;">
+              <div style="margin-bottom:12px;">
+                <label style="font-size:0.9rem; color:var(--text-muted);">Minimum Fee ($)</label>
+                <input type="number" id="min-fee" value="1.00" step="0.01" style="width:100%; padding:8px; border:1px solid var(--border); border-radius:4px;">
+              </div>
+              <div>
+                <label style="font-size:0.9rem; color:var(--text-muted);">Maximum Fee (%)</label>
+                <input type="number" id="max-fee" value="25" step="1" style="width:100%; padding:8px; border:1px solid var(--border); border-radius:4px;">
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div id="fee-save-result" style="margin-top:16px; display:none;"></div>
+      </div>
+    </div>
+
+    <!-- Tab: Settlements -->
+    <div class="tab-content" id="tab-settlements">
+      <div class="card">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+          <h3 style="margin:0;">Pending Settlements</h3>
+          <button class="btn btn-outline" onclick="refreshSettlements()">Refresh</button>
+        </div>
+
+        <div style="display:grid; grid-template-columns:repeat(3, 1fr); gap:16px; margin-bottom:24px;">
+          <div style="background:var(--bg); padding:16px; border-radius:8px; text-align:center;">
+            <div style="font-size:0.9rem; color:var(--text-muted);">Total Pending</div>
+            <div style="font-size:1.5rem; font-weight:bold; color:#f59e0b;" id="settlement-total">$0.00</div>
+          </div>
+          <div style="background:var(--bg); padding:16px; border-radius:8px; text-align:center;">
+            <div style="font-size:0.9rem; color:var(--text-muted);">Suppliers Awaiting</div>
+            <div style="font-size:1.5rem; font-weight:bold;" id="suppliers-awaiting">0</div>
+          </div>
+          <div style="background:var(--bg); padding:16px; border-radius:8px; text-align:center;">
+            <div style="font-size:0.9rem; color:var(--text-muted);">Avg Settlement</div>
+            <div style="font-size:1.5rem; font-weight:bold;" id="avg-settlement">$0.00</div>
+          </div>
+        </div>
+
+        <div class="table-card">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Supplier ID</th>
+                <th>Company Name</th>
+                <th>Pending Orders</th>
+                <th>Pending Amount</th>
+                <th>Settlement Frequency</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="settlements-body">
+              <tr><td colspan="6" class="muted-text">Loading...</td></tr>
             </tbody>
           </table>
         </div>
@@ -1100,6 +1251,287 @@
     }
 
     // Initialize
+    // ========== INVITATION MANAGEMENT ==========
+    async function refreshInvitations() {
+      const tbody = document.getElementById('invitations-body');
+      tbody.innerHTML = '<tr><td colspan="8" class="muted-text">Loading...</td></tr>';
+      
+      try {
+        const statusFilter = document.getElementById('filter-invite-status').value;
+        let url = '/api/supply-chain/invitations';
+        if (statusFilter) url += `?status=${statusFilter}`;
+        
+        const data = await apiGet(url);
+        const items = data.items || [];
+        
+        document.getElementById('invitation-count').textContent = items.filter(i => i.status === 'active').length;
+        
+        if (!items.length) {
+          tbody.innerHTML = '<tr><td colspan="8" class="muted-text">No invitation codes found</td></tr>';
+          return;
+        }
+        
+        tbody.innerHTML = items.map(i => `
+          <tr>
+            <td><code style="background:var(--bg);padding:4px 8px;border-radius:4px;">${esc(i.code)}</code></td>
+            <td>${esc(i.created_by)}</td>
+            <td>${i.supplier_type ? formatSupplierType(i.supplier_type) : '<span class="muted-text">Any</span>'}</td>
+            <td>${i.used_count}/${i.max_uses}</td>
+            <td>${formatDate(i.expires_at)}</td>
+            <td>${i.commission_override ? i.commission_override + '%' : '<span class="muted-text">Default</span>'}</td>
+            <td><span class="status-badge ${i.status}">${(i.status || '').toUpperCase()}</span></td>
+            <td>
+              ${i.status === 'active' ? `
+                <button class="btn-sm btn-reject" onclick="revokeInvitation('${esc(i.code)}')">Revoke</button>
+                <button class="btn-sm" onclick="copyCode('${esc(i.code)}')" style="background:var(--bg);">Copy</button>
+              ` : ''}
+            </td>
+          </tr>
+        `).join('');
+      } catch (e) {
+        tbody.innerHTML = `<tr><td colspan="8" class="muted-text">Error: ${esc(e.message)}</td></tr>`;
+        console.error('Failed to load invitations:', e);
+      }
+    }
+    
+    function showGenerateInvitation() {
+      const modal = document.getElementById('supplier-modal');
+      const body = document.getElementById('modal-body');
+      const actions = document.getElementById('modal-actions');
+      document.querySelector('#supplier-modal .modal-header h3').textContent = 'Generate Invitation Code';
+      
+      body.innerHTML = `
+        <div style="display:grid; gap:16px;">
+          <div>
+            <label style="display:block;margin-bottom:4px;">Supplier Type Restriction (optional)</label>
+            <select id="invite-type" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:4px;">
+              <option value="">Any Type</option>
+              <option value="doctor">Doctor</option>
+              <option value="lawyer">Lawyer</option>
+              <option value="pharmacy">Pharmacy</option>
+              <option value="delivery">Delivery</option>
+              <option value="hospital">Hospital</option>
+              <option value="clinic">Clinic</option>
+              <option value="laboratory">Laboratory</option>
+              <option value="equipment">Equipment</option>
+              <option value="wellness">Wellness</option>
+              <option value="financial">Financial</option>
+              <option value="tech_provider">Tech Provider</option>
+            </select>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+            <div>
+              <label style="display:block;margin-bottom:4px;">Max Uses</label>
+              <input type="number" id="invite-max-uses" value="1" min="1" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:4px;">
+            </div>
+            <div>
+              <label style="display:block;margin-bottom:4px;">Expires In (days)</label>
+              <input type="number" id="invite-expires" value="30" min="1" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:4px;">
+            </div>
+          </div>
+          <div>
+            <label style="display:block;margin-bottom:4px;">Commission Override % (optional)</label>
+            <input type="number" id="invite-commission" placeholder="e.g., 8 (leave empty for default)" step="0.5" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:4px;">
+          </div>
+          <div>
+            <label style="display:block;margin-bottom:4px;">Notes (optional)</label>
+            <textarea id="invite-notes" rows="2" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:4px;"></textarea>
+          </div>
+        </div>
+        <div id="invite-result" style="margin-top:16px;display:none;"></div>
+      `;
+      
+      actions.innerHTML = `
+        <button class="btn" onclick="generateInvitation()" style="background:#3b82f6;color:white;">Generate Code</button>
+        <button class="btn btn-outline" onclick="closeModal()">Cancel</button>
+      `;
+      
+      modal.classList.add('active');
+    }
+    
+    async function generateInvitation() {
+      const result = document.getElementById('invite-result');
+      result.style.display = 'block';
+      result.innerHTML = '<div class="muted-text">Generating...</div>';
+      
+      try {
+        const data = {
+          supplier_type: document.getElementById('invite-type').value || null,
+          max_uses: parseInt(document.getElementById('invite-max-uses').value) || 1,
+          expires_days: parseInt(document.getElementById('invite-expires').value) || 30,
+          commission_override: document.getElementById('invite-commission').value ? parseFloat(document.getElementById('invite-commission').value) : null,
+          notes: document.getElementById('invite-notes').value
+        };
+        
+        const response = await apiPost('/api/supply-chain/invitations', data);
+        
+        result.innerHTML = `
+          <div style="background:#d1fae5;padding:16px;border-radius:8px;text-align:center;">
+            <div style="font-size:0.9rem;color:#065f46;margin-bottom:8px;">Invitation Code Generated</div>
+            <div style="font-size:1.5rem;font-weight:bold;font-family:monospace;color:#065f46;">${esc(response.invitation.code)}</div>
+            <button onclick="copyCode('${esc(response.invitation.code)}')" style="margin-top:12px;padding:8px 16px;background:#10b981;color:white;border:none;border-radius:4px;cursor:pointer;">
+              Copy to Clipboard
+            </button>
+          </div>
+        `;
+        
+        refreshInvitations();
+      } catch (e) {
+        result.innerHTML = `<div style="background:#fee2e2;padding:12px;border-radius:4px;color:#991b1b;">Error: ${esc(e.message)}</div>`;
+      }
+    }
+    
+    async function revokeInvitation(code) {
+      if (!confirm(`Revoke invitation code ${code}?`)) return;
+      
+      try {
+        await apiPost(`/api/supply-chain/invitations/${code}/revoke`, { reason: 'Admin revoked' });
+        alert('Invitation revoked');
+        refreshInvitations();
+      } catch (e) {
+        alert('Error: ' + e.message);
+      }
+    }
+    
+    function copyCode(code) {
+      navigator.clipboard.writeText(code).then(() => {
+        alert('Code copied to clipboard!');
+      }).catch(() => {
+        prompt('Copy this code:', code);
+      });
+    }
+    
+    // ========== FEE SCHEDULE MANAGEMENT ==========
+    async function loadFeeSchedule() {
+      try {
+        const data = await apiGet('/api/supply-chain/fee-schedule');
+        
+        document.getElementById('base-commission').textContent = data.base_commission_pct || 11;
+        document.getElementById('min-fee').value = data.minimum_fee || 1;
+        document.getElementById('max-fee').value = data.maximum_fee_pct || 25;
+        
+        // Category rates
+        const catRates = data.category_adjustments || {};
+        const catHtml = Object.entries(catRates).map(([type, rate]) => `
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border);">
+            <span>${formatSupplierType(type)}</span>
+            <input type="number" data-category="${type}" value="${rate}" step="0.5" min="0" max="100"
+                   style="width:80px;padding:4px 8px;border:1px solid var(--border);border-radius:4px;text-align:right;">
+          </div>
+        `).join('');
+        document.getElementById('category-rates').innerHTML = catHtml || '<div class="muted-text">No categories defined</div>';
+        
+        // Volume discounts
+        const volumes = data.volume_discounts || [];
+        const volHtml = volumes.map((v, i) => `
+          <div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border);">
+            <span>Monthly Volume >= $${v.monthly_volume_min.toLocaleString()}</span>
+            <span style="color:#10b981;font-weight:bold;">-${v.discount_pct}%</span>
+          </div>
+        `).join('');
+        document.getElementById('volume-discounts').innerHTML = volHtml || '<div class="muted-text">No volume discounts</div>';
+        
+      } catch (e) {
+        console.error('Failed to load fee schedule:', e);
+      }
+    }
+    
+    async function saveFeeSchedule() {
+      const result = document.getElementById('fee-save-result');
+      result.style.display = 'block';
+      result.innerHTML = '<div class="muted-text">Saving...</div>';
+      
+      try {
+        const categoryInputs = document.querySelectorAll('#category-rates input[data-category]');
+        const categoryAdjustments = {};
+        categoryInputs.forEach(input => {
+          categoryAdjustments[input.dataset.category] = parseFloat(input.value) || 11;
+        });
+        
+        const updates = {
+          category_adjustments: categoryAdjustments,
+          minimum_fee: parseFloat(document.getElementById('min-fee').value) || 1,
+          maximum_fee_pct: parseFloat(document.getElementById('max-fee').value) || 25
+        };
+        
+        await apiPost('/api/supply-chain/fee-schedule', updates);
+        
+        result.innerHTML = '<div style="background:#d1fae5;padding:12px;border-radius:4px;color:#065f46;">Fee schedule saved successfully!</div>';
+        
+        setTimeout(() => loadFeeSchedule(), 1000);
+      } catch (e) {
+        result.innerHTML = `<div style="background:#fee2e2;padding:12px;border-radius:4px;color:#991b1b;">Error: ${esc(e.message)}</div>`;
+      }
+    }
+    
+    // ========== SETTLEMENTS ==========
+    async function refreshSettlements() {
+      const tbody = document.getElementById('settlements-body');
+      tbody.innerHTML = '<tr><td colspan="6" class="muted-text">Loading...</td></tr>';
+      
+      try {
+        const data = await apiGet('/api/supply-chain/settlements');
+        
+        // Calculate totals
+        let totalPending = 0;
+        let suppliersCount = 0;
+        const entries = Object.entries(data || {}).filter(([k, v]) => typeof v === 'object' && v.pending_amount);
+        
+        entries.forEach(([supplierId, info]) => {
+          totalPending += info.pending_amount || 0;
+          suppliersCount++;
+        });
+        
+        document.getElementById('settlement-total').textContent = formatCurrency(totalPending);
+        document.getElementById('suppliers-awaiting').textContent = suppliersCount;
+        document.getElementById('avg-settlement').textContent = suppliersCount > 0 ? formatCurrency(totalPending / suppliersCount) : '$0.00';
+        document.getElementById('settlement-count').textContent = suppliersCount;
+        
+        if (!entries.length) {
+          tbody.innerHTML = '<tr><td colspan="6" class="muted-text">No pending settlements</td></tr>';
+          return;
+        }
+        
+        // Get supplier details
+        const supplierData = await apiGet('/api/admin/suppliers');
+        const suppliers = {};
+        (supplierData.items || []).forEach(s => suppliers[s.id] = s);
+        
+        tbody.innerHTML = entries.map(([supplierId, info]) => {
+          const supplier = suppliers[supplierId] || {};
+          return `
+            <tr>
+              <td>${esc(supplierId)}</td>
+              <td>${esc(supplier.company_name) || 'Unknown'}</td>
+              <td>${info.pending_orders || 0}</td>
+              <td style="font-weight:bold;color:#f59e0b;">${formatCurrency(info.pending_amount)}</td>
+              <td>${formatSupplierType(supplier.settlement_frequency) || 'Weekly'}</td>
+              <td>
+                <button class="btn-sm btn-approve" onclick="processSettlement('${esc(supplierId)}')">Process Payout</button>
+              </td>
+            </tr>
+          `;
+        }).join('');
+        
+      } catch (e) {
+        tbody.innerHTML = `<tr><td colspan="6" class="muted-text">Error: ${esc(e.message)}</td></tr>`;
+        console.error('Failed to load settlements:', e);
+      }
+    }
+    
+    async function processSettlement(supplierId) {
+      if (!confirm(`Process settlement for supplier ${supplierId}?`)) return;
+      
+      try {
+        const result = await apiPost(`/api/supply-chain/settlements/${supplierId}/process`, {});
+        alert(`Settlement processed: ${result.message}`);
+        refreshSettlements();
+        loadDashboardStats();
+      } catch (e) {
+        alert('Error: ' + e.message);
+      }
+    }
+
     document.addEventListener('DOMContentLoaded', async () => {
       const session = await loadSession();
       if (session) {
@@ -1107,7 +1539,10 @@
           loadDashboardStats(),
           refreshPending(),
           refreshActive(),
-          loadAnalytics()
+          loadAnalytics(),
+          refreshInvitations(),
+          loadFeeSchedule(),
+          refreshSettlements()
         ]);
       }
     });
