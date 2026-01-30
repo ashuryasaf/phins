@@ -147,25 +147,43 @@ if USE_DATABASE:
         
         # TEST ACTUAL CONNECTION before enabling database mode
         # This prevents using broken DatabaseDict wrappers when connection fails
-        try:
-            if check_database_connection():
-                database_enabled = True
-                print("✓ Database connection verified")
-                
-                # Initialize schema and seed data
-                try:
-                    init_database()
-                    seed_default_users()
-                    print("✓ Database initialized and seeded")
-                except Exception as e:
-                    print(f"Warning: Database init/seed failed: {e}")
-            else:
-                print("⚠️  Database connection check failed - using in-memory storage")
-                USE_DATABASE = False
-        except Exception as e:
-            print(f"⚠️  Database connection test failed: {e}")
-            print("   Falling back to in-memory storage with demo data")
-            USE_DATABASE = False
+        # Railway PostgreSQL may take a moment to become available - retry with backoff
+        import time
+        max_retries = 3
+        retry_delay = 2  # seconds
+        
+        for attempt in range(max_retries):
+            try:
+                if check_database_connection():
+                    database_enabled = True
+                    print("✓ Database connection verified")
+                    
+                    # Initialize schema and seed data
+                    try:
+                        init_database()
+                        seed_default_users()
+                        print("✓ Database initialized and seeded")
+                    except Exception as e:
+                        print(f"Warning: Database init/seed failed: {e}")
+                    break
+                else:
+                    if attempt < max_retries - 1:
+                        print(f"⚠️  Database connection check failed (attempt {attempt + 1}/{max_retries}), retrying in {retry_delay}s...")
+                        time.sleep(retry_delay)
+                        retry_delay *= 2  # exponential backoff
+                    else:
+                        print("⚠️  Database connection check failed after all retries - using in-memory storage")
+                        USE_DATABASE = False
+            except Exception as e:
+                if attempt < max_retries - 1:
+                    print(f"⚠️  Database connection test failed (attempt {attempt + 1}/{max_retries}): {e}")
+                    print(f"   Retrying in {retry_delay}s...")
+                    time.sleep(retry_delay)
+                    retry_delay *= 2
+                else:
+                    print(f"⚠️  Database connection test failed after all retries: {e}")
+                    print("   Falling back to in-memory storage with demo data")
+                    USE_DATABASE = False
             
     except ImportError as e:
         print(f"Warning: Database support not available: {e}")

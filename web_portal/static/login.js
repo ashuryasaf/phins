@@ -352,7 +352,8 @@ document.addEventListener('DOMContentLoaded', function () {
       } else if (role === 'supplier') {
         window.location.href = '/supplier-dashboard.html';
       } else if (role === 'customer') {
-        window.location.href = '/client-portal.html';
+        // Direct redirect to dashboard.html for customers (no double redirect)
+        window.location.href = '/dashboard.html';
       } else if (role === 'underwriter') {
         window.location.href = '/underwriter-dashboard.html';
       } else if (role === 'claims' || role === 'claims_adjuster') {
