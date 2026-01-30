@@ -173,6 +173,21 @@ if USE_DATABASE:
                         retry_delay *= 2  # exponential backoff
                     else:
                         print("⚠️  Database connection check failed after all retries - using in-memory storage")
+                        print("=" * 60)
+                        print("DATABASE TROUBLESHOOTING:")
+                        print("-" * 60)
+                        db_url = os.environ.get('DATABASE_URL', '')
+                        if not db_url:
+                            print("  ✗ DATABASE_URL is not set")
+                            print("  → In Railway: Add PostgreSQL service and link to your app")
+                            print("  → See: RAILWAY_POSTGRES_FIX.md for detailed steps")
+                        else:
+                            print("  ✓ DATABASE_URL is set")
+                            print("  ✗ But connection failed - possible causes:")
+                            print("    - PostgreSQL service failed to deploy (check Railway dashboard)")
+                            print("    - Stale credentials (recreate PostgreSQL service)")
+                            print("    - Network/firewall issues")
+                        print("=" * 60)
                         USE_DATABASE = False
             except Exception as e:
                 if attempt < max_retries - 1:
@@ -182,7 +197,24 @@ if USE_DATABASE:
                     retry_delay *= 2
                 else:
                     print(f"⚠️  Database connection test failed after all retries: {e}")
-                    print("   Falling back to in-memory storage with demo data")
+                    print("=" * 60)
+                    print("DATABASE CONNECTION ERROR:")
+                    print("-" * 60)
+                    error_str = str(e).lower()
+                    if 'connection refused' in error_str or 'timeout' in error_str:
+                        print("  → PostgreSQL service may not be running")
+                        print("  → Check Railway dashboard for service status")
+                        print("  → If service shows 'Failed', see RAILWAY_POSTGRES_FIX.md")
+                    elif 'authentication' in error_str or 'password' in error_str:
+                        print("  → Authentication failed - credentials may be stale")
+                        print("  → Delete and recreate DATABASE_URL reference in Railway")
+                    elif 'does not exist' in error_str:
+                        print("  → Database does not exist yet")
+                        print("  → Tables will be auto-created on next successful connection")
+                    else:
+                        print(f"  → Error: {e}")
+                    print("  → Falling back to in-memory storage (data not persisted)")
+                    print("=" * 60)
                     USE_DATABASE = False
             
     except ImportError as e:

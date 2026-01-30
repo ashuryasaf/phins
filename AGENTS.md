@@ -399,9 +399,10 @@ python3 check_database_connection.py
 
 | Variable | Purpose | Default |
 |----------|---------|---------|
-| `USE_DATABASE` | Enable database mode | 0 (disabled) |
-| `USE_SQLITE` | Use SQLite instead of PostgreSQL | 0 |
-| `DATABASE_URL` | PostgreSQL connection string | None |
+| `USE_DATABASE` | Enable database mode | `true` (enabled) |
+| `USE_SQLITE` | Use SQLite instead of PostgreSQL | `false` |
+| `DATABASE_URL` | PostgreSQL connection string | None (falls back to in-memory) |
+| `ENABLE_LEDGER_PERSISTENCE` | Enable ledger data persistence | `false` |
 | `SECRET_KEY` | Session encryption key | Auto-generated |
 | `PORT` | Server port | 8000 |
 
@@ -414,6 +415,47 @@ python3 check_database_connection.py
 5. **Data integrity issues**: Use `safe_float()`/`safe_int()` for conversions
 6. **Status comparison issues**: Use `status_eq()` for case-insensitive checks
 
+## Railway Deployment Troubleshooting
+
+### PostgreSQL Service Failed ("Postgres-AyKP Failed")
+
+This is a **Railway infrastructure issue**, not a code problem. Fix:
+
+1. **Delete the failing PostgreSQL service** in Railway Dashboard
+2. **Create a new PostgreSQL service**: + New → Database → PostgreSQL
+3. **Link DATABASE_URL** to your web service (Variables → Add Reference)
+4. **Set environment variables**:
+   ```
+   USE_DATABASE=true
+   ENABLE_LEDGER_PERSISTENCE=true
+   ```
+5. **Redeploy** the web service
+
+See `RAILWAY_POSTGRES_FIX.md` for detailed steps.
+
+### Diagnostic Endpoints
+
+| Endpoint | Purpose |
+|----------|---------|
+| `/api/health` | Basic health check (Railway uses this) |
+| `/api/diagnostics/db-test` | Database connection test with recommendations |
+| `/api/diagnostics/env-check` | Environment variable status |
+
+### Database Connection Fallback
+
+The app automatically falls back to in-memory storage if PostgreSQL is unavailable:
+- Retries connection 3 times with exponential backoff
+- Logs detailed error messages for troubleshooting
+- Continues running with in-memory data (data not persisted)
+
+Check startup logs for messages like:
+```
+✓ Database connection verified
+✓ Database initialized and seeded
+```
+
+Or error messages pointing to the cause.
+
 ## Related Documentation
 
 - `README.md` - Project overview and features
@@ -422,6 +464,8 @@ python3 check_database_connection.py
 - `DATABASE_IMPLEMENTATION_SUMMARY.md` - Database architecture
 - `DEPLOYMENT.md` - Deployment instructions
 - `RAILWAY_DEPLOYMENT.md` - Railway-specific deployment
+- `RAILWAY_POSTGRES_FIX.md` - PostgreSQL troubleshooting guide
+- `POSTGRES_DEPLOYMENT_ANALYSIS.md` - Detailed PostgreSQL analysis
 - `.github/copilot-instructions.md` - AL language guidance (Business Central)
 - `UNDERWRITING_BOT_IMPLEMENTATION.md` - AI underwriting details
 - `COMMUNITY_FOUNDATION_DESIGN.md` - Foundation feature design

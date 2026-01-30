@@ -1,167 +1,224 @@
-# Railway Postgres Registry Connection Fix
+# Railway PostgreSQL Fix Guide
 
-## Problem
+## Quick Fix for "Postgres-AyKP Failed" Error
 
-Deployment error: **"We were unable to connect to the registry for this image"** for service `Postgres-AyKP`
-
-This error occurs when Railway cannot pull the PostgreSQL Docker image from the container registry to provision your database service.
-
-## Root Cause
-
-This is typically a Railway infrastructure issue, not a code problem. The error can be caused by:
-
-1. **Temporary registry unavailability** - Docker Hub or Railway's registry having connectivity issues
-2. **Corrupted database service state** - The Railway Postgres service configuration is corrupted
-3. **Rate limiting** - Docker Hub rate limits being hit
-4. **Service configuration issues** - Invalid or outdated service configuration
-
-## Quick Fix (Recommended)
-
-### Step 1: Delete the Failing Postgres Service
-
-1. Go to [Railway Dashboard](https://railway.app/dashboard)
-2. Open your PHINS project
-3. Click on the failing **Postgres-AyKP** service
-4. Go to **Settings** → scroll to bottom → **Delete Service**
-5. Confirm deletion
-
-### Step 2: Create a New PostgreSQL Service
-
-1. In your project, click **+ New Service**
-2. Select **Add PostgreSQL** (or Database → PostgreSQL)
-3. Wait for the service to provision (usually 1-2 minutes)
-4. Railway will automatically create a new service with a fresh configuration
-
-### Step 3: Link DATABASE_URL to Your Application
-
-Railway should automatically inject the `DATABASE_URL` environment variable. Verify this:
-
-1. Click on your **main application service** (web-portal)
-2. Go to **Variables** tab
-3. Check if `DATABASE_URL` is listed under "Service Variables"
-4. If not, click **+ Variable Reference** and select the Postgres service's `DATABASE_URL`
-
-### Step 4: Redeploy Your Application
-
-1. Click on your application service
-2. Go to **Deployments** tab
-3. Click **Redeploy** on the latest deployment
-
-## Alternative Fix: Use Railway CLI
-
-```bash
-# Install Railway CLI if not already installed
-npm install -g @railway/cli
-
-# Login to Railway
-railway login
-
-# Link to your project
-railway link
-
-# List services to find the failing one
-railway service
-
-# Delete the failing Postgres service
-railway service delete Postgres-AyKP
-
-# Add a new Postgres database
-railway add -p postgres
-
-# Redeploy
-railway up
-```
-
-## Verify the Fix
-
-After redeployment, verify the database connection:
-
-1. **Check Health Endpoint:**
-   ```bash
-   curl https://[your-app].up.railway.app/api/health
-   ```
-   Expected response:
-   ```json
-   {
-     "status": "healthy",
-     "database": "connected"
-   }
-   ```
-
-2. **Check Database Diagnostic:**
-   ```bash
-   curl https://[your-app].up.railway.app/api/diagnostics/db-test
-   ```
-   Expected response:
-   ```json
-   {
-     "database_url_set": true,
-     "connection_test": "SUCCESS"
-   }
-   ```
-
-## Application Fallback Behavior
-
-The PHINS application is designed to handle database connection failures gracefully:
-
-1. **If Postgres is unavailable**: The app falls back to in-memory storage mode
-2. **Data persistence**: In-memory mode means data is lost on restart
-3. **Health checks**: The `/api/health` endpoint reports the current database status
-
-To verify which mode is active, check the deployment logs or the health endpoint.
-
-## Environment Variables
-
-Ensure these variables are set in your Railway service:
-
-| Variable | Description | Required |
-|----------|-------------|----------|
-| `DATABASE_URL` | PostgreSQL connection string (auto-injected) | Yes |
-| `USE_DATABASE` | Enable database mode (default: `true`) | No |
-| `PORT` | Server port (auto-set by Railway) | No |
-
-## Preventing Future Issues
-
-1. **Use Railway's managed Postgres** - Don't use custom Postgres images
-2. **Enable health checks** - Already configured in `railway.json`
-3. **Monitor deployments** - Check Railway dashboard regularly
-4. **Use connection pooling** - Already configured in `database/config.py`
-
-## If Problems Persist
-
-1. **Check Railway Status**: [status.railway.app](https://status.railway.app)
-2. **Clear Railway Cache**: In project settings, try "Rebuild without cache"
-3. **Contact Railway Support**: [help.railway.app](https://help.railway.app)
-4. **Check Docker Hub Status**: [status.docker.com](https://status.docker.com)
-
-## Technical Details
-
-### Database Configuration (`database/config.py`)
-
-The application handles the `DATABASE_URL` from Railway:
-- Automatically converts `postgres://` to `postgresql://` (SQLAlchemy requirement)
-- Configures connection pooling for production use
-- Falls back to SQLite for local development
-
-### Health Check Configuration (`railway.json`)
-
-```json
-{
-  "deploy": {
-    "healthcheckPath": "/api/health",
-    "healthcheckTimeout": 60
-  }
-}
-```
-
-### Connection Verification (`web_portal/server.py`)
-
-The server performs a connection check at startup:
-1. Tests actual database connectivity
-2. Falls back to in-memory if connection fails
-3. Reports database status in health endpoint
+**Error:** `Postgres-AyKP / 93384fb8 Failed`  
+**Cause:** Railway cannot connect to Docker registry to pull PostgreSQL image  
+**Impact:** Database service won't start, app falls back to in-memory mode  
 
 ---
 
+## Immediate Fix Steps (5 minutes)
+
+### Step 1: Delete the Failing PostgreSQL Service
+
+1. Go to [Railway Dashboard](https://railway.app/dashboard)
+2. Open your PHINS project
+3. Find the **Postgres-AyKP** service (red/failed status)
+4. Click on the service → **Settings** tab
+5. Scroll to bottom → **Delete Service** → Confirm
+
+### Step 2: Create a New PostgreSQL Service
+
+1. In your project, click **+ New**
+2. Select **Database** → **PostgreSQL**
+3. Wait 1-2 minutes for provisioning
+4. The new service will appear with green status
+
+### Step 3: Link Database to Web Service
+
+1. Click on your **web application service** (not the database)
+2. Go to **Variables** tab
+3. Check if `DATABASE_URL` exists:
+   - If missing: Click **+ Add Variable** → **Add Reference** → Select your new PostgreSQL → `DATABASE_URL`
+   - If exists but pointing to old service: Delete it and re-add as above
+
+### Step 4: Set Required Environment Variables
+
+Ensure these variables are set in your **web service**:
+
+| Variable | Value | Purpose |
+|----------|-------|---------|
+| `USE_DATABASE` | `true` | Enable database mode |
+| `ENABLE_LEDGER_PERSISTENCE` | `true` | Enable ledger persistence |
+
+### Step 5: Redeploy
+
+1. Go to **Deployments** tab
+2. Click **Redeploy** on the latest deployment
+3. Wait for deployment to complete (2-3 minutes)
+
+### Step 6: Verify Connection
+
+Test the database diagnostic endpoint:
+
+```bash
+curl https://[your-app].up.railway.app/api/diagnostics/db-test
+```
+
+Expected successful response:
+```json
+{
+  "database_url_set": true,
+  "database_enabled_flag": true,
+  "connection_test": "SUCCESS",
+  "storage_mode": "database"
+}
+```
+
+---
+
+## Preventing Future Issues
+
+### 1. Monitor Railway Status
+
+Before investigating code issues, check [Railway Status](https://status.railway.app) for outages.
+
+### 2. Use Health Checks
+
+The app includes automatic health checks at `/api/health`. Railway uses this to monitor service health.
+
+### 3. Connection Resilience (Already Implemented)
+
+The PHINS app includes:
+- **Automatic retry** with exponential backoff (3 attempts)
+- **Graceful fallback** to in-memory storage if database unavailable
+- **Connection pooling** with pre-ping validation
+- **Detailed diagnostic endpoints** for troubleshooting
+
+### 4. Environment Variable Checklist
+
+For any Railway deployment, ensure these are set:
+
+```bash
+# Required for database mode
+DATABASE_URL=postgresql://...  # Auto-injected by Railway
+USE_DATABASE=true
+
+# Optional but recommended
+ENABLE_LEDGER_PERSISTENCE=true
+PORT=8000
+```
+
+---
+
+## Diagnostic Endpoints
+
+| Endpoint | Purpose |
+|----------|---------|
+| `/api/health` | Basic health check (used by Railway) |
+| `/api/diagnostics/db-test` | Database connection test with recommendations |
+| `/api/diagnostics/env-check` | Environment variable status |
+| `/api/status` | Full system status |
+
+---
+
+## Common Error Scenarios
+
+### Error: "Unable to connect to registry"
+
+**Cause:** Docker Hub rate limiting or Railway infrastructure issue  
+**Fix:** Delete and recreate PostgreSQL service (Steps 1-2 above)
+
+### Error: "Connection refused" or "Timeout"
+
+**Cause:** Database service not running or wrong credentials  
+**Fix:**
+1. Check PostgreSQL service is running (green status)
+2. Verify `DATABASE_URL` references correct service
+3. Redeploy web service
+
+### Error: "Authentication failed"
+
+**Cause:** Stale credentials after PostgreSQL recreation  
+**Fix:**
+1. Go to web service → Variables
+2. Delete `DATABASE_URL`
+3. Re-add as reference to PostgreSQL service
+4. Redeploy
+
+### Error: "Database does not exist"
+
+**Cause:** Fresh PostgreSQL with no tables  
+**Fix:** Tables are auto-created on first connection. Just redeploy.
+
+---
+
+## Railway CLI Quick Commands
+
+```bash
+# Install CLI
+npm i -g @railway/cli
+
+# Login and link project
+railway login
+railway link
+
+# Check service status
+railway status
+
+# View logs
+railway logs
+
+# List environment variables
+railway variables
+
+# Force redeploy
+railway up --force
+
+# Delete failing service
+railway service delete Postgres-AyKP
+
+# Add new PostgreSQL
+railway add --database postgres
+```
+
+---
+
+## Architecture: How Database Fallback Works
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                  Server Startup                          │
+├─────────────────────────────────────────────────────────┤
+│                                                          │
+│  1. Check DATABASE_URL environment variable              │
+│     ├── Not set → Use in-memory storage                  │
+│     └── Set → Continue to step 2                         │
+│                                                          │
+│  2. Test database connection (3 retries)                 │
+│     ├── Success → Use PostgreSQL                         │
+│     └── Failure → Fallback to in-memory                  │
+│                                                          │
+│  3. Initialize tables if needed                          │
+│     ├── Success → Seed default users                     │
+│     └── Failure → Log warning, continue                  │
+│                                                          │
+│  4. Start HTTP server                                    │
+│     └── Health endpoint reports database status          │
+│                                                          │
+└─────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Data Recovery After Recreation
+
+When you delete and recreate PostgreSQL, **data is lost**. For production:
+
+1. **Before deletion:** Export critical data if possible
+2. **After recreation:** Data will need to be re-entered or imported
+3. **For testing environments:** Data loss is expected and acceptable
+
+---
+
+## Support Contacts
+
+- **Railway Status:** https://status.railway.app
+- **Railway Discord:** https://discord.gg/railway
+- **Railway Docs:** https://docs.railway.app
+
+---
+
+*Document Version: 1.0*  
 *Last Updated: January 2026*
-*For PHINS Insurance Platform v2.0*
