@@ -331,6 +331,9 @@ document.addEventListener('DOMContentLoaded', function () {
       sessionStorage.setItem('customer_id', data.customer_id);
       localStorage.setItem('phins_customer_id', data.customer_id);
       console.log('Customer session stored:', data.customer_id);
+    } else if (data.role === 'customer') {
+      // Warning: customer logged in but no customer_id returned
+      console.warn('Customer login successful but no customer_id in response:', data);
     }
     
     // Store device fingerprint for future logins
