@@ -2569,6 +2569,18 @@ def get_session_user(session: dict[str, str] | None) -> Dict[str, Any] | None:
         return USERS.get(username)
 
 
+def get_effective_role(session: dict[str, str] | None) -> str:
+    """Return the effective role for the session (lowercased).
+
+    IMPORTANT: Some principals (e.g., suppliers) are not present in `USERS`, so we must
+    fall back to the session role to avoid authorization scoping bugs.
+    """
+    if not session:
+        return ''
+    user = get_session_user(session) or {}
+    return (user.get('role') or session.get('role') or '').lower()
+
+
 def authorize_customer_data(session: dict[str, str] | None, 
                             requested_customer_id: str | None,
                             resource_type: str = 'data') -> tuple[bool, str | None, str | None]:
@@ -5030,8 +5042,7 @@ For claims or questions, please contact:
                 self.wfile.write(json.dumps({'error': 'Unauthorized'}).encode('utf-8'))
                 return
 
-            user = get_session_user(session) or {}
-            role = (user.get('role') or '').lower()
+            role = get_effective_role(session)
             requested_supplier_id = (qs.get('supplier_id', [None])[0] or '').strip() or None
             supplier_id = (session or {}).get('username') if role == 'supplier' else (requested_supplier_id or None)
 
@@ -5177,8 +5188,7 @@ For claims or questions, please contact:
             except Exception:
                 limit = 50
 
-            user = get_session_user(session) or {}
-            role = (user.get('role') or '').lower()
+            role = get_effective_role(session)
             requested_supplier_id = (qs.get('supplier_id', [None])[0] or '').strip() or None
             supplier_id = (session or {}).get('username') if role == 'supplier' else (requested_supplier_id or None)
 
@@ -5356,7 +5366,8 @@ For claims or questions, please contact:
                 self.wfile.write(json.dumps({'error': 'Supplier access required'}).encode('utf-8'))
                 return
             
-            supplier_id = (session or {}).get('supplier_id')
+            # Stateless sessions only carry username/role; supplier_id must fall back to username.
+            supplier_id = (session or {}).get('supplier_id') or (session or {}).get('username')
             if not supplier_id:
                 self._set_json_headers(404)
                 self.wfile.write(json.dumps({'error': 'Supplier profile not found'}).encode('utf-8'))
@@ -5454,13 +5465,12 @@ For claims or questions, please contact:
                 return
             
             try:
-                user = get_session_user(session) or {}
-                role = (user.get('role') or '').lower()
+                role = get_effective_role(session)
                 
                 # Suppliers can only see their own settlements
                 supplier_id = None
                 if role == 'supplier':
-                    supplier_id = session.get('supplier_id')
+                    supplier_id = session.get('supplier_id') or session.get('username')
                 else:
                     supplier_id = qs.get('supplier_id', [None])[0]
                 
@@ -15346,10 +15356,11 @@ For claims or questions, please contact:
             try:
                 payload = json.loads(body or '{}')
                 user = get_session_user(session) or {}
-                role = (user.get('role') or '').lower()
+                role = (user.get('role') or session.get('role') or '').lower()
                 actor = (session or {}).get('username') if session else 'unknown'
 
                 offer_id = str(payload.get('id') or '').strip() or f"OFF-{datetime.now().strftime('%Y%m%d')}-{random.randint(1000,9999)}"
+                # SECURITY: suppliers must only write offers for themselves.
                 supplier_id = (session or {}).get('username') if role == 'supplier' else str(payload.get('supplier_id') or '').strip()
                 category = str(payload.get('category') or '').strip().lower()
                 name = str(payload.get('name') or '').strip()
@@ -15451,7 +15462,7 @@ For claims or questions, please contact:
                     self.wfile.write(json.dumps({'error': 'Missing id'}).encode('utf-8'))
                     return
                 user = get_session_user(session) or {}
-                role = (user.get('role') or '').lower()
+                role = (user.get('role') or session.get('role') or '').lower()
                 actor = (session or {}).get('username') if session else 'unknown'
                 with STATE_LOCK:
                     existing = SUPPLIER_OFFERS.get(offer_id)
@@ -15459,7 +15470,8 @@ For claims or questions, please contact:
                         self._set_json_headers(404)
                         self.wfile.write(json.dumps({'error': 'Offer not found'}).encode('utf-8'))
                         return
-                    if role == 'supplier' and existing.get('supplier_id') != user.get('username'):
+                    # SECURITY: supplier may only delete own offer.
+                    if role == 'supplier' and existing.get('supplier_id') != (session or {}).get('username'):
                         self._set_json_headers(403)
                         self.wfile.write(json.dumps({'error': 'Forbidden'}).encode('utf-8'))
                         return
