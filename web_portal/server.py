@@ -7597,12 +7597,18 @@ For claims or questions, please contact:
                 self._set_json_headers(401)
                 self.wfile.write(json.dumps({'error': 'Unauthorized'}).encode('utf-8'))
                 return
-            
-            user = get_session_user(session) or {}
-            role = (user.get('role') or '').lower()
-            
-            # Filter by customer for non-admin roles (qs is parse_qs result - values are lists)
-            customer_filter = qs.get('customer_id', [None])[0]
+
+            # SECURITY: enforce strict customer data isolation.
+            requested_customer_id = qs.get('customer_id', [None])[0]
+            authorized, resolved_customer_id, error = authorize_customer_data(
+                session, requested_customer_id, 'ledger'
+            )
+            if not authorized:
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': error}).encode('utf-8'))
+                return
+            customer_filter = resolved_customer_id
+
             tx_type_filter = qs.get('type', [None])[0]
             try:
                 limit = min(int(qs.get('limit', [100])[0]), 500)
@@ -7660,6 +7666,13 @@ For claims or questions, please contact:
         if path == '/api/ledger/validate':
             if not session:
                 self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Unauthorized'}).encode('utf-8'))
+                return
+
+            # SECURITY: this endpoint inspects global ledgers across customers.
+            # Restrict to admin/auditor roles only.
+            if not require_role(session, ['admin', 'accountant', 'actuary']):
+                self._set_json_headers(403)
                 self.wfile.write(json.dumps({'error': 'Unauthorized'}).encode('utf-8'))
                 return
             
@@ -7740,7 +7753,7 @@ For claims or questions, please contact:
                 return
 
             user = get_session_user(session) or {}
-            role = (user.get('role') or '').lower()
+            role = get_effective_role(session)
             session_customer_id = user.get('customer_id') or session.get('customer_id')
             if role == 'customer' and not session_customer_id:
                 self._set_json_headers(400)
