@@ -15527,6 +15527,17 @@ For claims or questions, please contact:
                     self._set_json_headers(400)
                     self.wfile.write(json.dumps({'error': 'Missing transaction_id or status'}).encode('utf-8'))
                     return
+                role = get_effective_role(session)
+                # SECURITY: suppliers can only update their own transactions.
+                # Marketplace stores transactions as ServiceTransaction objects in `marketplace.transactions`.
+                if role == 'supplier':
+                    supplier_id = (session or {}).get('username')
+                    tx_obj = getattr(marketplace, 'transactions', {}).get(transaction_id)
+                    provider_id = getattr(tx_obj, 'provider_id', None) if tx_obj else None
+                    if (not supplier_id) or (not provider_id) or (provider_id != supplier_id):
+                        self._set_json_headers(403)
+                        self.wfile.write(json.dumps({'error': 'Forbidden'}).encode('utf-8'))
+                        return
                 actor = (session or {}).get('username') if session else 'unknown'
                 result = marketplace.update_transaction_status(transaction_id, status, notes)
                 if audit and result.get('success'):
