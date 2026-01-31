@@ -1,6 +1,33 @@
 """
+Comprehensive BI and statistical analytics for system optimization.
+
+Features:
+- Real-time dashboard analytics
+- Predictive analytics for business forecasting
+- Supplier performance analysis
+- Customer behavior analytics
+- Delivery optimization metrics
+- Financial health indicators
+- Operational efficiency tracking
+- AI-powered insights and recommendations
+
+Dashboards:
+- Executive Dashboard (high-level KPIs)
+- Operations Dashboard (delivery, claims, underwriting)
+- Financial Dashboard (revenue, expenses, reserves)
+- Supplier Dashboard (performance, ratings, revenue)
+- Customer Dashboard (engagement, satisfaction, wallet usage)
+"""
+
+import json
+import statistics
+from datetime import datetime, timedelta, timezone
+from typing import Dict, List, Any, Optional, Tuple
+from collections import defaultdict
+import logging
+
+logger = logging.getLogger('phins.bi_analytics')
 PHINS BI and Statistical Analytics Service
-==========================================
 Comprehensive Business Intelligence and Statistical Analysis for:
 - System optimization
 - Performance metrics
@@ -111,6 +138,158 @@ class StatisticalSummary:
 
 class BIAnalyticsService:
     """
+    Business Intelligence and Analytics Service for PHINS platform.
+    
+    Provides:
+    - Real-time metrics and KPIs
+    - Trend analysis
+    - Predictive forecasting
+    - Performance benchmarking
+    - AI-powered recommendations
+    """
+    
+    def __init__(self):
+        """Initialize BI analytics service"""
+        self.cache: Dict[str, Dict[str, Any]] = {}
+        self.cache_ttl_seconds = 300  # 5 minutes cache
+        
+        logger.info("BI Analytics Service initialized")
+    
+    def get_executive_dashboard(
+        self,
+        customers: Dict[str, Any],
+        policies: Dict[str, Any],
+        claims: Dict[str, Any],
+        billing: Dict[str, Any],
+        balance_sheet: Dict[str, Any],
+        suppliers: Dict[str, Any] = None,
+        deliveries: Dict[str, Any] = None
+    ) -> Dict[str, Any]:
+        """
+        Generate executive dashboard with high-level KPIs.
+        
+        Returns comprehensive business health indicators.
+        """
+        now = datetime.now(timezone.utc)
+        
+        # Customer metrics
+        total_customers = len(customers)
+        active_customers = sum(1 for c in customers.values() 
+                             if c.get('status') == 'active')
+        
+        # Policy metrics
+        total_policies = len(policies)
+        active_policies = sum(1 for p in policies.values() 
+                            if p.get('status') == 'active')
+        total_coverage = sum(p.get('coverage_amount', 0) for p in policies.values())
+        
+        # Premium metrics
+        monthly_premium_revenue = sum(p.get('monthly_premium', 0) 
+                                    for p in policies.values() 
+                                    if p.get('status') == 'active')
+        annual_premium_revenue = sum(p.get('annual_premium', 0) 
+                                   for p in policies.values() 
+                                   if p.get('status') == 'active')
+        
+        # Claims metrics
+        total_claims = len(claims)
+        claims_by_status = defaultdict(int)
+        total_claimed = 0.0
+        total_approved = 0.0
+        total_paid = 0.0
+        
+        for claim in claims.values():
+            status = claim.get('status', '').lower()
+            claims_by_status[status] += 1
+            total_claimed += claim.get('claimed_amount', 0)
+            if status in ['approved', 'paid', 'closed']:
+                total_approved += claim.get('approved_amount', 0)
+            if status == 'paid':
+                total_paid += claim.get('approved_amount', 0)
+        
+        claims_approval_rate = (total_approved / total_claimed * 100) if total_claimed > 0 else 0
+        
+        # Billing metrics
+        total_bills = len(billing)
+        outstanding_amount = sum(b.get('amount', 0) - b.get('amount_paid', 0) 
+                               for b in billing.values() 
+                               if b.get('status') != 'paid')
+        
+        # Balance sheet metrics
+        total_assets = balance_sheet.get('total_assets', 0)
+        claims_reserve = balance_sheet.get('claims_reserve', 0)
+        total_liabilities = balance_sheet.get('total_liabilities', 0)
+        net_worth = total_assets - total_liabilities
+        
+        # Supplier metrics (if available)
+        supplier_metrics = {}
+        if suppliers:
+            active_suppliers = sum(1 for s in suppliers.values() 
+                                 if s.get('status') == 'approved')
+            supplier_metrics = {
+                'total_suppliers': len(suppliers),
+                'active_suppliers': active_suppliers,
+                'pending_approval': sum(1 for s in suppliers.values() 
+                                      if s.get('status') == 'pending'),
+            }
+        
+        # Delivery metrics (if available)
+        delivery_metrics = {}
+        if deliveries:
+            active_deliveries = sum(1 for d in deliveries.values() 
+                                  if d.get('status') not in ['completed', 'cancelled'])
+            completed_deliveries = sum(1 for d in deliveries.values() 
+                                     if d.get('status') == 'completed')
+            delivery_metrics = {
+                'active_deliveries': active_deliveries,
+                'completed_deliveries': completed_deliveries,
+                'total_deliveries': len(deliveries),
+            }
+        
+        # Calculate health scores
+        financial_health_score = self._calculate_financial_health_score(
+            balance_sheet, monthly_premium_revenue, total_paid
+        )
+        
+        operational_health_score = self._calculate_operational_health_score(
+            claims_approval_rate, outstanding_amount, annual_premium_revenue
+        )
+        
+        dashboard = {
+            'generated_at': now.isoformat(),
+            'summary': {
+                'total_customers': total_customers,
+                'active_customers': active_customers,
+                'total_policies': total_policies,
+                'active_policies': active_policies,
+                'total_claims': total_claims,
+                'monthly_revenue': monthly_premium_revenue,
+                'annual_revenue_projection': annual_premium_revenue,
+            },
+            'financial': {
+                'total_assets': total_assets,
+                'total_liabilities': total_liabilities,
+                'net_worth': net_worth,
+                'claims_reserve': claims_reserve,
+                'outstanding_receivables': outstanding_amount,
+                'total_coverage': total_coverage,
+                'loss_ratio': (total_paid / annual_premium_revenue * 100) if annual_premium_revenue > 0 else 0,
+            },
+            'claims': {
+                'total': total_claims,
+                'by_status': dict(claims_by_status),
+                'total_claimed': total_claimed,
+                'total_approved': total_approved,
+                'total_paid': total_paid,
+                'approval_rate': round(claims_approval_rate, 2),
+            },
+            'health_scores': {
+                'financial_health': financial_health_score,
+                'operational_health': operational_health_score,
+                'overall_health': round((financial_health_score + operational_health_score) / 2, 2)
+            },
+            'supplier_metrics': supplier_metrics,
+            'delivery_metrics': delivery_metrics,
     Comprehensive BI and Statistical Analytics Service.
     
     Provides:
@@ -290,674 +469,497 @@ class BIAnalyticsService:
         
         return dashboard
     
-    def _get_financial_kpis(self) -> List[Dict]:
-        """Calculate financial KPIs"""
-        kpis = []
+    def get_delivery_analytics(
+        self,
+        delivery_requests: Dict[str, Any],
+        delivery_bids: Dict[str, Any],
+        active_deliveries: Dict[str, Any],
+        delivery_history: Dict[str, Any],
+        supplier_metrics: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """
+        Analyze delivery system performance.
         
-        # Total Premium Revenue
-        total_premium = sum(float(p.get('annual_premium', 0) or 0) for p in self.policies.values())
-        kpis.append(KPIMetric(
-            name="Total Premium Revenue",
-            category=MetricCategory.FINANCIAL,
-            value=round(total_premium, 2),
-            unit="currency",
-            period="all_time"
-        ).to_dict())
+        Returns:
+            Comprehensive delivery analytics
+        """
+        # Request analytics
+        total_requests = len(delivery_requests)
+        open_requests = sum(1 for r in delivery_requests.values() 
+                          if r.get('status') == 'open_for_bidding')
+        accepted_requests = sum(1 for r in delivery_requests.values() 
+                              if r.get('status') == 'bid_accepted')
         
-        # Monthly Premium (estimated)
-        monthly_premium = sum(float(p.get('monthly_premium', 0) or 0) for p in self.policies.values() 
-                             if str(p.get('status', '')).lower() == 'active')
-        kpis.append(KPIMetric(
-            name="Monthly Recurring Premium",
-            category=MetricCategory.FINANCIAL,
-            value=round(monthly_premium, 2),
-            unit="currency",
-            period="monthly"
-        ).to_dict())
+        # Bid analytics
+        total_bids = len(delivery_bids)
+        avg_bids_per_request = total_bids / total_requests if total_requests > 0 else 0
         
-        # Total Claims Paid
-        total_claims_paid = sum(
-            float(c.get('approved_amount', 0) or c.get('paid_amount', 0) or 0)
-            for c in self.claims.values()
-            if str(c.get('status', '')).lower() in ['paid', 'approved']
-        )
-        kpis.append(KPIMetric(
-            name="Total Claims Paid",
-            category=MetricCategory.FINANCIAL,
-            value=round(total_claims_paid, 2),
-            unit="currency",
-            period="all_time"
-        ).to_dict())
+        bid_amounts = [b.get('bid_amount', 0) for b in delivery_bids.values()]
+        avg_bid_amount = statistics.mean(bid_amounts) if bid_amounts else 0
+        median_bid_amount = statistics.median(bid_amounts) if bid_amounts else 0
         
-        # Loss Ratio
-        loss_ratio = (total_claims_paid / total_premium * 100) if total_premium > 0 else 0
-        kpis.append(KPIMetric(
-            name="Loss Ratio",
-            category=MetricCategory.FINANCIAL,
-            value=round(loss_ratio, 2),
-            unit="percentage",
-            period="all_time",
-            target=65.0,
-            target_achieved=loss_ratio <= 65
-        ).to_dict())
+        # Delivery analytics
+        total_active = len(active_deliveries)
+        total_completed = len(delivery_history)
         
-        # Wallet Total Balance
-        wallet_total = sum(float(w.get('balance', 0) or 0) for w in self.health_wallets.values())
-        kpis.append(KPIMetric(
-            name="Total Wallet Balances",
-            category=MetricCategory.FINANCIAL,
-            value=round(wallet_total, 2),
-            unit="currency",
-            period="current"
-        ).to_dict())
+        # Calculate on-time delivery rate
+        on_time_deliveries = 0
+        late_deliveries = 0
         
-        # Investment Account Total
-        investment_total = sum(float(a.get('balance', 0) or 0) for a in self.investment_accounts.values())
-        kpis.append(KPIMetric(
-            name="Total Investment Accounts",
-            category=MetricCategory.FINANCIAL,
-            value=round(investment_total, 2),
-            unit="currency",
-            period="current"
-        ).to_dict())
-        
-        # Outstanding Bills
-        outstanding = sum(
-            float(b.get('amount', 0) or 0) - float(b.get('amount_paid', 0) or 0)
-            for b in self.bills.values()
-            if str(b.get('status', '')).lower() in ['outstanding', 'partial', 'overdue']
-        )
-        kpis.append(KPIMetric(
-            name="Outstanding Premiums",
-            category=MetricCategory.FINANCIAL,
-            value=round(outstanding, 2),
-            unit="currency",
-            period="current"
-        ).to_dict())
-        
-        return kpis
-    
-    def _get_operational_kpis(self) -> List[Dict]:
-        """Calculate operational KPIs"""
-        kpis = []
-        
-        # Policy Processing
-        total_policies = len(self.policies)
-        pending_uw = sum(1 for p in self.policies.values() 
-                        if 'pending' in str(p.get('status', '')).lower())
-        
-        kpis.append(KPIMetric(
-            name="Policies Pending Underwriting",
-            category=MetricCategory.OPERATIONAL,
-            value=pending_uw,
-            unit="count",
-            period="current"
-        ).to_dict())
-        
-        # Claims Processing
-        pending_claims = sum(1 for c in self.claims.values() 
-                           if str(c.get('status', '')).lower() in ['pending', 'under_review'])
-        kpis.append(KPIMetric(
-            name="Pending Claims",
-            category=MetricCategory.OPERATIONAL,
-            value=pending_claims,
-            unit="count",
-            period="current"
-        ).to_dict())
-        
-        # Underwriting Queue
-        pending_apps = sum(1 for a in self.underwriting_apps.values() 
-                         if str(a.get('status', '')).lower() == 'pending')
-        kpis.append(KPIMetric(
-            name="Underwriting Queue Size",
-            category=MetricCategory.OPERATIONAL,
-            value=pending_apps,
-            unit="count",
-            period="current",
-            target=10,
-            target_achieved=pending_apps <= 10
-        ).to_dict())
-        
-        # Supplier Orders
-        if self.supplier_orders:
-            pending_orders = sum(1 for o in self.supplier_orders.values() 
-                               if str(o.get('status', '')).lower() in ['pending', 'processing'])
-            kpis.append(KPIMetric(
-                name="Pending Supplier Orders",
-                category=MetricCategory.OPERATIONAL,
-                value=pending_orders,
-                unit="count",
-                period="current"
-            ).to_dict())
-        
-        # Delivery Requests
-        if self.delivery_requests:
-            open_deliveries = sum(1 for d in self.delivery_requests.values() 
-                                 if str(d.get('status', '')).lower() in ['bidding_open', 'bid_selected', 'picked_up', 'in_transit'])
-            kpis.append(KPIMetric(
-                name="Active Deliveries",
-                category=MetricCategory.OPERATIONAL,
-                value=open_deliveries,
-                unit="count",
-                period="current"
-            ).to_dict())
-        
-        return kpis
-    
-    def _get_customer_kpis(self) -> List[Dict]:
-        """Calculate customer-related KPIs"""
-        kpis = []
-        
-        # Total Customers
-        kpis.append(KPIMetric(
-            name="Total Customers",
-            category=MetricCategory.CUSTOMER,
-            value=len(self.customers),
-            unit="count",
-            period="all_time"
-        ).to_dict())
-        
-        # Customers with Active Policies
-        customers_with_policies = set(p.get('customer_id') for p in self.policies.values() 
-                                      if str(p.get('status', '')).lower() == 'active')
-        kpis.append(KPIMetric(
-            name="Customers with Active Policies",
-            category=MetricCategory.CUSTOMER,
-            value=len(customers_with_policies),
-            unit="count",
-            period="current"
-        ).to_dict())
-        
-        # Average Policies per Customer
-        policies_per_customer = len(self.policies) / len(self.customers) if self.customers else 0
-        kpis.append(KPIMetric(
-            name="Avg Policies per Customer",
-            category=MetricCategory.CUSTOMER,
-            value=round(policies_per_customer, 2),
-            unit="ratio",
-            period="current"
-        ).to_dict())
-        
-        # Customers with Health Wallet
-        customers_with_wallet = len([w for w in self.health_wallets.values() 
-                                    if float(w.get('balance', 0) or 0) > 0])
-        kpis.append(KPIMetric(
-            name="Customers with Active Wallet",
-            category=MetricCategory.CUSTOMER,
-            value=customers_with_wallet,
-            unit="count",
-            period="current"
-        ).to_dict())
-        
-        # Average Wallet Balance
-        wallet_balances = [float(w.get('balance', 0) or 0) for w in self.health_wallets.values()]
-        avg_wallet = statistics.mean(wallet_balances) if wallet_balances else 0
-        kpis.append(KPIMetric(
-            name="Average Wallet Balance",
-            category=MetricCategory.CUSTOMER,
-            value=round(avg_wallet, 2),
-            unit="currency",
-            period="current"
-        ).to_dict())
-        
-        return kpis
-    
-    def _calculate_platform_health_score(self) -> float:
-        """Calculate overall platform health score (0-100)"""
-        score = 100.0
-        
-        # Deduct for high pending claims
-        pending_claims = sum(1 for c in self.claims.values() 
-                           if str(c.get('status', '')).lower() in ['pending', 'under_review'])
-        if pending_claims > 20:
-            score -= min(20, pending_claims * 0.5)
-        
-        # Deduct for high underwriting queue
-        pending_uw = sum(1 for a in self.underwriting_apps.values() 
-                        if str(a.get('status', '')).lower() == 'pending')
-        if pending_uw > 10:
-            score -= min(15, pending_uw * 0.5)
-        
-        # Deduct for high loss ratio
-        total_premium = sum(float(p.get('annual_premium', 0) or 0) for p in self.policies.values())
-        total_claims = sum(float(c.get('approved_amount', 0) or 0) for c in self.claims.values() 
-                          if str(c.get('status', '')).lower() in ['paid', 'approved'])
-        loss_ratio = (total_claims / total_premium * 100) if total_premium > 0 else 0
-        if loss_ratio > 70:
-            score -= min(20, (loss_ratio - 70))
-        
-        # Deduct for low customer engagement
-        active_wallets = sum(1 for w in self.health_wallets.values() if float(w.get('balance', 0) or 0) > 0)
-        wallet_ratio = active_wallets / len(self.customers) if self.customers else 0
-        if wallet_ratio < 0.5:
-            score -= 10
-        
-        return max(0, min(100, round(score, 1)))
-    
-    # =========================================================================
-    # INSIGHTS AND ALERTS
-    # =========================================================================
-    
-    def _generate_insights(self) -> List[Dict]:
-        """Generate AI-powered business insights"""
-        insights = []
-        
-        # Premium Revenue Insight
-        total_premium = sum(float(p.get('annual_premium', 0) or 0) for p in self.policies.values())
-        avg_premium = total_premium / len(self.policies) if self.policies else 0
-        insights.append(BIInsight(
-            insight_id=self._generate_insight_id(),
-            category='financial',
-            title='Premium Book Analysis',
-            description=f'Total premium book of ${total_premium:,.2f} across {len(self.policies)} policies. '
-                       f'Average premium of ${avg_premium:,.2f} per policy.',
-            severity=AlertSeverity.INFO,
-            metric_value=total_premium
-        ).to_dict())
-        
-        # Claims Pattern Insight
-        claim_statuses = defaultdict(int)
-        for c in self.claims.values():
-            status = str(c.get('status', 'unknown')).lower()
-            claim_statuses[status] += 1
-        
-        if claim_statuses:
-            pending_pct = (claim_statuses.get('pending', 0) + claim_statuses.get('under_review', 0)) / len(self.claims) * 100 if self.claims else 0
-            insights.append(BIInsight(
-                insight_id=self._generate_insight_id(),
-                category='claims',
-                title='Claims Processing Status',
-                description=f'{pending_pct:.1f}% of claims are pending processing. '
-                           f'Distribution: {dict(claim_statuses)}',
-                severity=AlertSeverity.WARNING if pending_pct > 30 else AlertSeverity.INFO,
-                metric_value=pending_pct,
-                recommendation='Consider adding claims adjuster resources' if pending_pct > 30 else None
-            ).to_dict())
-        
-        # Supplier Ecosystem Insight
-        if self.suppliers:
-            approved = sum(1 for s in self.suppliers.values() if s.get('status') == 'approved')
-            pending = sum(1 for s in self.suppliers.values() if s.get('status') == 'pending')
-            by_type = defaultdict(int)
-            for s in self.suppliers.values():
-                by_type[s.get('supplier_type', 'other')] += 1
+        for delivery in delivery_history.values():
+            estimated = delivery.get('estimated_delivery_time')
+            actual = delivery.get('actual_delivery_time')
             
-            insights.append(BIInsight(
-                insight_id=self._generate_insight_id(),
-                category='supplier',
-                title='Supplier Ecosystem Health',
-                description=f'{approved} active suppliers, {pending} pending approval. '
-                           f'Categories: {dict(by_type)}',
-                severity=AlertSeverity.INFO,
-                recommendation='Recruit more delivery suppliers' if by_type.get('delivery', 0) < 3 else None
-            ).to_dict())
+            if estimated and actual:
+                try:
+                    est_dt = datetime.fromisoformat(estimated)
+                    act_dt = datetime.fromisoformat(actual)
+                    if act_dt <= est_dt:
+                        on_time_deliveries += 1
+                    else:
+                        late_deliveries += 1
+                except:
+                    pass
         
-        # Wallet Usage Insight
-        total_wallet = sum(float(w.get('balance', 0) or 0) for w in self.health_wallets.values())
-        active_wallets = sum(1 for w in self.health_wallets.values() if float(w.get('balance', 0) or 0) > 0)
-        insights.append(BIInsight(
-            insight_id=self._generate_insight_id(),
-            category='customer',
-            title='Health Wallet Adoption',
-            description=f'{active_wallets} customers with active wallets holding ${total_wallet:,.2f} total. '
-                       f'Adoption rate: {active_wallets/len(self.customers)*100:.1f}%' if self.customers else 'No customers yet.',
-            severity=AlertSeverity.INFO if active_wallets > len(self.customers) * 0.5 else AlertSeverity.WARNING,
-            metric_value=total_wallet
-        ).to_dict())
+        on_time_rate = (on_time_deliveries / (on_time_deliveries + late_deliveries) * 100) \
+                      if (on_time_deliveries + late_deliveries) > 0 else 0
         
-        return insights
-    
-    def _generate_alerts(self) -> List[Dict]:
-        """Generate system alerts"""
-        alerts = []
-        
-        # High pending claims alert
-        pending_claims = sum(1 for c in self.claims.values() 
-                           if str(c.get('status', '')).lower() in ['pending', 'under_review'])
-        if pending_claims > 10:
-            alerts.append(BIInsight(
-                insight_id=self._generate_insight_id(),
-                category='operations',
-                title='High Pending Claims Queue',
-                description=f'{pending_claims} claims awaiting processing',
-                severity=AlertSeverity.WARNING if pending_claims < 20 else AlertSeverity.CRITICAL,
-                recommendation='Prioritize claims processing to maintain SLA'
-            ).to_dict())
-        
-        # High loss ratio alert
-        total_premium = sum(float(p.get('annual_premium', 0) or 0) for p in self.policies.values())
-        total_claims = sum(float(c.get('approved_amount', 0) or 0) for c in self.claims.values() 
-                          if str(c.get('status', '')).lower() in ['paid', 'approved'])
-        loss_ratio = (total_claims / total_premium * 100) if total_premium > 0 else 0
-        
-        if loss_ratio > 75:
-            alerts.append(BIInsight(
-                insight_id=self._generate_insight_id(),
-                category='financial',
-                title='Elevated Loss Ratio',
-                description=f'Loss ratio at {loss_ratio:.1f}% exceeds target of 65%',
-                severity=AlertSeverity.CRITICAL if loss_ratio > 85 else AlertSeverity.WARNING,
-                metric_value=loss_ratio,
-                recommendation='Review underwriting criteria and claims patterns'
-            ).to_dict())
-        
-        # Supplier with pending applications
-        pending_suppliers = sum(1 for s in self.suppliers.values() if s.get('status') == 'pending')
-        if pending_suppliers > 5:
-            alerts.append(BIInsight(
-                insight_id=self._generate_insight_id(),
-                category='supplier',
-                title='Pending Supplier Applications',
-                description=f'{pending_suppliers} supplier applications awaiting review',
-                severity=AlertSeverity.INFO,
-                recommendation='Process supplier applications to expand network'
-            ).to_dict())
-        
-        return alerts
-    
-    # =========================================================================
-    # STATISTICAL ANALYSIS
-    # =========================================================================
-    
-    def get_premium_statistics(self) -> Dict[str, Any]:
-        """Get statistical analysis of premium data"""
-        annual_premiums = [float(p.get('annual_premium', 0) or 0) for p in self.policies.values() if p.get('annual_premium')]
-        monthly_premiums = [float(p.get('monthly_premium', 0) or 0) for p in self.policies.values() if p.get('monthly_premium')]
-        coverage_amounts = [float(p.get('coverage_amount', 0) or 0) for p in self.policies.values() if p.get('coverage_amount')]
-        
-        return {
-            'annual_premium': self._calculate_statistics(annual_premiums).to_dict() if annual_premiums else None,
-            'monthly_premium': self._calculate_statistics(monthly_premiums).to_dict() if monthly_premiums else None,
-            'coverage_amount': self._calculate_statistics(coverage_amounts).to_dict() if coverage_amounts else None,
-            'premium_to_coverage_ratio': {
-                'mean': round(statistics.mean([a/c for a, c in zip(annual_premiums, coverage_amounts) if c > 0]) * 100, 2) if annual_premiums and coverage_amounts else 0,
-                'description': 'Average premium as percentage of coverage'
-            }
-        }
-    
-    def get_claims_statistics(self) -> Dict[str, Any]:
-        """Get statistical analysis of claims data"""
-        claim_amounts = [float(c.get('claimed_amount', 0) or 0) for c in self.claims.values() if c.get('claimed_amount')]
-        approved_amounts = [float(c.get('approved_amount', 0) or 0) for c in self.claims.values() if c.get('approved_amount')]
-        
-        # Claims by status
-        status_counts = defaultdict(int)
-        for c in self.claims.values():
-            status_counts[str(c.get('status', 'unknown')).lower()] += 1
-        
-        # Claims by type
-        type_counts = defaultdict(int)
-        for c in self.claims.values():
-            type_counts[str(c.get('type', 'unknown'))] += 1
-        
-        # Approval rate
-        total_decided = sum(1 for c in self.claims.values() 
-                          if str(c.get('status', '')).lower() in ['approved', 'rejected', 'paid'])
-        approved = sum(1 for c in self.claims.values() 
-                      if str(c.get('status', '')).lower() in ['approved', 'paid'])
-        approval_rate = (approved / total_decided * 100) if total_decided > 0 else 0
-        
-        return {
-            'claimed_amounts': self._calculate_statistics(claim_amounts).to_dict() if claim_amounts else None,
-            'approved_amounts': self._calculate_statistics(approved_amounts).to_dict() if approved_amounts else None,
-            'by_status': dict(status_counts),
-            'by_type': dict(type_counts),
-            'approval_rate': round(approval_rate, 2),
-            'total_claims': len(self.claims),
-            'average_approval_ratio': round(statistics.mean([a/c for a, c in zip(approved_amounts, claim_amounts) if c > 0]) * 100, 2) if approved_amounts and claim_amounts else 0
-        }
-    
-    def get_supplier_analytics(self) -> Dict[str, Any]:
-        """Get supplier ecosystem analytics"""
-        suppliers_list = list(self.suppliers.values())
-        
-        # By status
-        by_status = defaultdict(int)
-        for s in suppliers_list:
-            by_status[s.get('status', 'unknown')] += 1
-        
-        # By type
-        by_type = defaultdict(int)
-        for s in suppliers_list:
-            by_type[s.get('supplier_type', 'other')] += 1
-        
-        # Performance metrics
-        ratings = [float(s.get('average_rating', 0) or 0) for s in suppliers_list if s.get('average_rating')]
-        revenues = [float(s.get('total_revenue', 0) or 0) for s in suppliers_list]
-        orders = [int(s.get('total_orders', 0) or 0) for s in suppliers_list]
-        
-        # Top suppliers by revenue
-        top_by_revenue = sorted(
-            [(s.get('id', s.get('supplier_id')), s.get('company_name'), float(s.get('total_revenue', 0) or 0)) 
-             for s in suppliers_list],
-            key=lambda x: x[2],
+        # Supplier performance
+        top_suppliers = sorted(
+            supplier_metrics.items(),
+            key=lambda x: x[1].get('total_deliveries', 0),
             reverse=True
         )[:5]
         
-        return {
-            'total_suppliers': len(suppliers_list),
-            'by_status': dict(by_status),
-            'by_type': dict(by_type),
-            'rating_statistics': self._calculate_statistics(ratings).to_dict() if ratings else None,
-            'revenue_statistics': self._calculate_statistics(revenues).to_dict() if revenues else None,
-            'orders_statistics': self._calculate_statistics([float(o) for o in orders]).to_dict() if orders else None,
-            'top_suppliers_by_revenue': [
-                {'id': t[0], 'name': t[1], 'revenue': t[2]} for t in top_by_revenue
-            ]
-        }
-    
-    # =========================================================================
-    # FOUNDATION/COMMUNITY ANALYTICS
-    # =========================================================================
-    
-    def get_foundation_analytics(self) -> Dict[str, Any]:
-        """Get community foundation analytics for dashboard"""
-        foundations_list = list(self.foundations.values())
-        
-        if not foundations_list:
-            return {
-                'total_foundations': 0,
-                'message': 'No foundations created yet'
+        top_suppliers_data = [
+            {
+                'supplier_id': sup_id,
+                'total_deliveries': metrics.get('total_deliveries', 0),
+                'total_revenue': metrics.get('total_revenue', 0),
+                'rating': metrics.get('rating', 0),
+                'reliability_score': metrics.get('reliability_score', 0)
             }
+            for sup_id, metrics in top_suppliers
+        ]
         
-        # By type
-        by_type = defaultdict(int)
-        for f in foundations_list:
-            by_type[f.get('foundation_type', 'custom')] += 1
+        # Distance analytics
+        distances = [r.get('distance_km', 0) for r in delivery_requests.values()]
+        avg_distance = statistics.mean(distances) if distances else 0
         
-        # By status
-        by_status = defaultdict(int)
-        for f in foundations_list:
-            by_status[f.get('status', 'draft')] += 1
-        
-        # Fund totals
-        total_fund_balance = sum(float(f.get('total_fund_balance', 0) or 0) for f in foundations_list)
-        
-        # Member counts
-        total_members = sum(int(f.get('current_members', 0) or 0) for f in foundations_list)
-        avg_members = total_members / len(foundations_list) if foundations_list else 0
-        
-        # Detailed fund analytics if available
-        fund_analytics = {}
-        if self.foundation_funds:
-            funds_list = list(self.foundation_funds.values())
-            fund_balances = [float(f.get('balance', 0) or 0) for f in funds_list]
-            fund_analytics = {
-                'total_funds': len(funds_list),
-                'total_balance': round(sum(fund_balances), 2),
-                'fund_statistics': self._calculate_statistics(fund_balances).to_dict() if fund_balances else None,
-                'by_type': dict(defaultdict(int, [(f.get('fund_type', 'custom'), 1) for f in funds_list]))
-            }
+        # Urgency breakdown
+        urgency_breakdown = defaultdict(int)
+        for request in delivery_requests.values():
+            urgency = request.get('urgency', 'standard')
+            urgency_breakdown[urgency] += 1
         
         return {
-            'total_foundations': len(foundations_list),
-            'by_type': dict(by_type),
-            'by_status': dict(by_status),
-            'total_fund_balance': round(total_fund_balance, 2),
-            'total_members': total_members,
-            'average_members': round(avg_members, 1),
-            'fund_analytics': fund_analytics,
-            'active_foundations': sum(1 for f in foundations_list if f.get('status') == 'active'),
-            'insights': [
-                {
-                    'title': 'Foundation Growth Opportunity',
-                    'description': f'{len(foundations_list)} foundations managing ${total_fund_balance:,.2f}. '
-                                  f'Average {avg_members:.1f} members per foundation.',
-                    'recommendation': 'Consider marketing to increase foundation membership'
-                }
-            ]
+            'requests': {
+                'total': total_requests,
+                'open_for_bidding': open_requests,
+                'bid_accepted': accepted_requests,
+                'avg_distance_km': round(avg_distance, 2),
+                'urgency_breakdown': dict(urgency_breakdown)
+            },
+            'bids': {
+                'total': total_bids,
+                'avg_per_request': round(avg_bids_per_request, 2),
+                'avg_amount': round(avg_bid_amount, 2),
+                'median_amount': round(median_bid_amount, 2)
+            },
+            'deliveries': {
+                'active': total_active,
+                'completed': total_completed,
+                'total': total_active + total_completed,
+                'on_time_deliveries': on_time_deliveries,
+                'late_deliveries': late_deliveries,
+                'on_time_rate': round(on_time_rate, 2)
+            },
+            'suppliers': {
+                'total_active': len(supplier_metrics),
+                'top_performers': top_suppliers_data
+            }
         }
     
-    # =========================================================================
-    # DELIVERY ANALYTICS
-    # =========================================================================
-    
-    def get_delivery_analytics(self) -> Dict[str, Any]:
-        """Get delivery service analytics"""
-        if not self.delivery_requests:
-            return {
-                'total_deliveries': 0,
-                'message': 'No delivery data available'
+    def get_customer_analytics(
+        self,
+        customers: Dict[str, Any],
+        health_wallets: Dict[str, Any],
+        investment_accounts: Dict[str, Any],
+        transaction_ledger: Dict[str, Any],
+        policies: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """
+        Analyze customer behavior and engagement.
+        
+        Returns:
+            Customer analytics and insights
+        """
+        total_customers = len(customers)
+        
+        # Wallet analytics
+        wallet_balances = [w.get('balance', 0) for w in health_wallets.values()]
+        total_wallet_balance = sum(wallet_balances)
+        avg_wallet_balance = statistics.mean(wallet_balances) if wallet_balances else 0
+        
+        customers_with_wallets = len(health_wallets)
+        wallet_adoption_rate = (customers_with_wallets / total_customers * 100) if total_customers > 0 else 0
+        
+        # Investment analytics
+        investment_balances = [inv.get('balance', 0) for inv in investment_accounts.values()]
+        total_investment_balance = sum(investment_balances)
+        avg_investment_balance = statistics.mean(investment_balances) if investment_balances else 0
+        
+        customers_with_investments = len(investment_accounts)
+        investment_adoption_rate = (customers_with_investments / total_customers * 100) if total_customers > 0 else 0
+        
+        # Transaction analytics
+        customer_transactions = defaultdict(int)
+        customer_transaction_volume = defaultdict(float)
+        
+        for tx in transaction_ledger.values():
+            customer_id = tx.get('customer_id')
+            if customer_id:
+                customer_transactions[customer_id] += 1
+                customer_transaction_volume[customer_id] += abs(tx.get('amount', 0))
+        
+        avg_transactions_per_customer = (sum(customer_transactions.values()) / len(customer_transactions)) \
+                                       if customer_transactions else 0
+        
+        # Policy ownership
+        customers_with_policies = len(set(p.get('customer_id') for p in policies.values()))
+        policy_adoption_rate = (customers_with_policies / total_customers * 100) if total_customers > 0 else 0
+        
+        # Top customers by transaction volume
+        top_customers = sorted(
+            customer_transaction_volume.items(),
+            key=lambda x: x[1],
+            reverse=True
+        )[:10]
+        
+        top_customers_data = [
+            {
+                'customer_id': cust_id,
+                'transaction_volume': round(volume, 2),
+                'transaction_count': customer_transactions.get(cust_id, 0),
+                'wallet_balance': health_wallets.get(cust_id, {}).get('balance', 0),
+                'investment_balance': investment_accounts.get(cust_id, {}).get('balance', 0)
             }
-        
-        deliveries = list(self.delivery_requests.values())
-        
-        # By status
-        by_status = defaultdict(int)
-        for d in deliveries:
-            status = d.get('status')
-            if hasattr(status, 'value'):
-                status = status.value
-            by_status[str(status)] += 1
-        
-        # By priority
-        by_priority = defaultdict(int)
-        for d in deliveries:
-            priority = d.get('priority')
-            if hasattr(priority, 'value'):
-                priority = priority.value
-            by_priority[str(priority)] += 1
-        
-        # Bidding analytics
-        if self.delivery_bids:
-            bids = list(self.delivery_bids.values())
-            bid_prices = [float(b.get('bid_price', 0) or 0) for b in bids]
-            
-            return {
-                'total_deliveries': len(deliveries),
-                'by_status': dict(by_status),
-                'by_priority': dict(by_priority),
-                'total_bids': len(bids),
-                'avg_bids_per_delivery': round(len(bids) / len(deliveries), 2) if deliveries else 0,
-                'bid_price_statistics': self._calculate_statistics(bid_prices).to_dict() if bid_prices else None,
-                'completed_deliveries': by_status.get('delivered', 0) + by_status.get('confirmed', 0),
-                'success_rate': round(
-                    (by_status.get('delivered', 0) + by_status.get('confirmed', 0)) / len(deliveries) * 100
-                    if deliveries else 0, 2
-                )
-            }
+            for cust_id, volume in top_customers
+        ]
         
         return {
-            'total_deliveries': len(deliveries),
-            'by_status': dict(by_status),
-            'by_priority': dict(by_priority)
+            'summary': {
+                'total_customers': total_customers,
+                'customers_with_wallets': customers_with_wallets,
+                'customers_with_investments': customers_with_investments,
+                'customers_with_policies': customers_with_policies
+            },
+            'wallet_analytics': {
+                'total_balance': round(total_wallet_balance, 2),
+                'avg_balance': round(avg_wallet_balance, 2),
+                'adoption_rate': round(wallet_adoption_rate, 2)
+            },
+            'investment_analytics': {
+                'total_balance': round(total_investment_balance, 2),
+                'avg_balance': round(avg_investment_balance, 2),
+                'adoption_rate': round(investment_adoption_rate, 2)
+            },
+            'transaction_analytics': {
+                'avg_transactions_per_customer': round(avg_transactions_per_customer, 2),
+                'total_transactions': sum(customer_transactions.values())
+            },
+            'policy_adoption_rate': round(policy_adoption_rate, 2),
+            'top_customers': top_customers_data
         }
     
-    # =========================================================================
-    # OPTIMIZATION RECOMMENDATIONS
-    # =========================================================================
+    def get_supplier_analytics(
+        self,
+        suppliers: Dict[str, Any],
+        supplier_orders: Dict[str, Any],
+        supplier_metrics: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """
+        Analyze supplier ecosystem performance.
+        
+        Returns:
+            Supplier analytics and performance metrics
+        """
+        total_suppliers = len(suppliers)
+        
+        # Status breakdown
+        status_breakdown = defaultdict(int)
+        for supplier in suppliers.values():
+            status = supplier.get('status', 'unknown')
+            status_breakdown[status] += 1
+        
+        active_suppliers = status_breakdown.get('approved', 0)
+        pending_suppliers = status_breakdown.get('pending', 0)
+        
+        # Category breakdown
+        category_breakdown = defaultdict(int)
+        for supplier in suppliers.values():
+            category = supplier.get('category', 'unknown')
+            category_breakdown[category] += 1
+        
+        # Order analytics
+        total_orders = len(supplier_orders)
+        
+        orders_by_status = defaultdict(int)
+        total_order_value = 0.0
+        
+        for order in supplier_orders.values():
+            status = order.get('status', 'unknown')
+            orders_by_status[status] += 1
+            total_order_value += order.get('total_amount', 0)
+        
+        avg_order_value = total_order_value / total_orders if total_orders > 0 else 0
+        
+        # Performance metrics
+        supplier_ratings = [m.get('rating', 0) for m in supplier_metrics.values()]
+        avg_supplier_rating = statistics.mean(supplier_ratings) if supplier_ratings else 0
+        
+        # Top performing suppliers
+        top_suppliers = sorted(
+            supplier_metrics.items(),
+            key=lambda x: x[1].get('total_revenue', 0),
+            reverse=True
+        )[:10]
+        
+        top_suppliers_data = [
+            {
+                'supplier_id': sup_id,
+                'total_revenue': metrics.get('total_revenue', 0),
+                'total_orders': metrics.get('total_deliveries', 0),
+                'rating': metrics.get('rating', 0),
+                'reliability_score': metrics.get('reliability_score', 0)
+            }
+            for sup_id, metrics in top_suppliers
+        ]
+        
+        return {
+            'summary': {
+                'total_suppliers': total_suppliers,
+                'active_suppliers': active_suppliers,
+                'pending_approval': pending_suppliers,
+                'avg_supplier_rating': round(avg_supplier_rating, 2)
+            },
+            'status_breakdown': dict(status_breakdown),
+            'category_breakdown': dict(category_breakdown),
+            'orders': {
+                'total_orders': total_orders,
+                'total_order_value': round(total_order_value, 2),
+                'avg_order_value': round(avg_order_value, 2),
+                'orders_by_status': dict(orders_by_status)
+            },
+            'top_suppliers': top_suppliers_data
+        }
     
-    def get_optimization_recommendations(self) -> List[Dict]:
-        """Get AI-powered system optimization recommendations"""
-        recommendations = []
+    def generate_ai_insights(
+        self,
+        dashboard_data: Dict[str, Any]
+    ) -> List[Dict[str, Any]]:
+        """
+        Generate AI-powered insights and recommendations.
         
-        # Underwriting optimization
-        pending_uw = sum(1 for a in self.underwriting_apps.values() 
-                        if str(a.get('status', '')).lower() == 'pending')
-        if pending_uw > 5:
-            recommendations.append({
-                'area': 'Underwriting',
-                'priority': 'high' if pending_uw > 10 else 'medium',
-                'issue': f'{pending_uw} applications pending',
-                'recommendation': 'Enable AI auto-underwriting for low-risk applications',
-                'expected_impact': 'Reduce processing time by 60%'
+        Returns:
+            List of insights with severity and actionable recommendations
+        """
+        insights = []
+        
+        # Financial health insights
+        financial = dashboard_data.get('financial', {})
+        claims = dashboard_data.get('claims', {})
+        
+        loss_ratio = financial.get('loss_ratio', 0)
+        if loss_ratio > 80:
+            insights.append({
+                'category': 'financial',
+                'severity': 'high',
+                'title': 'High Loss Ratio Detected',
+                'description': f'Loss ratio is {loss_ratio:.1f}%, exceeding healthy threshold of 80%',
+                'recommendation': 'Consider: 1) Premium rate adjustments, 2) Stricter underwriting criteria, 3) Claims review process',
+                'impact': 'Sustainable profitability at risk'
+            })
+        elif loss_ratio > 60:
+            insights.append({
+                'category': 'financial',
+                'severity': 'medium',
+                'title': 'Elevated Loss Ratio',
+                'description': f'Loss ratio is {loss_ratio:.1f}%, approaching cautionary threshold',
+                'recommendation': 'Monitor claims trends closely and review premium pricing',
+                'impact': 'Profit margins may be compressed'
             })
         
-        # Claims optimization
-        pending_claims = sum(1 for c in self.claims.values() 
-                           if str(c.get('status', '')).lower() in ['pending', 'under_review'])
-        if pending_claims > 5:
-            recommendations.append({
-                'area': 'Claims',
-                'priority': 'high' if pending_claims > 10 else 'medium',
-                'issue': f'{pending_claims} claims awaiting processing',
-                'recommendation': 'Implement AI-assisted claims triage for faster routing',
-                'expected_impact': 'Reduce average processing time by 40%'
+        # Claims approval rate insights
+        approval_rate = claims.get('approval_rate', 0)
+        if approval_rate < 50:
+            insights.append({
+                'category': 'operations',
+                'severity': 'medium',
+                'title': 'Low Claims Approval Rate',
+                'description': f'Only {approval_rate:.1f}% of claims are approved',
+                'recommendation': 'Review claims adjudication process for efficiency and customer satisfaction',
+                'impact': 'Customer satisfaction and retention risk'
             })
         
-        # Wallet adoption
-        active_wallets = sum(1 for w in self.health_wallets.values() if float(w.get('balance', 0) or 0) > 0)
-        wallet_adoption = active_wallets / len(self.customers) if self.customers else 0
-        if wallet_adoption < 0.6:
-            recommendations.append({
-                'area': 'Customer Engagement',
-                'priority': 'medium',
-                'issue': f'Only {wallet_adoption*100:.1f}% wallet adoption',
-                'recommendation': 'Launch health wallet incentive program',
-                'expected_impact': 'Increase wallet adoption to 80%'
-            })
+        # Outstanding receivables insight
+        outstanding = financial.get('outstanding_receivables', 0)
+        annual_revenue = dashboard_data.get('summary', {}).get('annual_revenue_projection', 0)
         
-        # Supplier diversity
-        if self.suppliers:
-            by_type = defaultdict(int)
-            for s in self.suppliers.values():
-                if s.get('status') == 'approved':
-                    by_type[s.get('supplier_type', 'other')] += 1
-            
-            under_served = [t for t, c in by_type.items() if c < 3]
-            if under_served:
-                recommendations.append({
-                    'area': 'Supplier Network',
-                    'priority': 'medium',
-                    'issue': f'Limited suppliers in: {", ".join(under_served)}',
-                    'recommendation': 'Target recruitment in under-served categories',
-                    'expected_impact': 'Improve service coverage and competitive pricing'
+        if annual_revenue > 0:
+            receivables_ratio = (outstanding / annual_revenue) * 100
+            if receivables_ratio > 10:
+                insights.append({
+                    'category': 'financial',
+                    'severity': 'medium',
+                    'title': 'High Outstanding Receivables',
+                    'description': f'Outstanding receivables are {receivables_ratio:.1f}% of annual revenue',
+                    'recommendation': 'Implement automated payment reminders and collection procedures',
+                    'impact': 'Cash flow constraints'
                 })
         
-        # Delivery optimization
-        if self.delivery_requests:
-            open_deliveries = sum(1 for d in self.delivery_requests.values() 
-                                 if str(d.get('status', '')).lower() == 'bidding_open')
-            no_bids = sum(1 for d in self.delivery_requests.values() 
-                        if str(d.get('status', '')).lower() == 'bidding_open' and
-                        not any(b.get('request_id') == d.get('request_id') for b in self.delivery_bids.values()))
-            
-            if no_bids > 0:
-                recommendations.append({
-                    'area': 'Delivery',
-                    'priority': 'high',
-                    'issue': f'{no_bids} delivery requests with no bids',
-                    'recommendation': 'Expand delivery supplier network or adjust pricing',
-                    'expected_impact': 'Ensure 100% delivery coverage'
-                })
+        # Net worth insight
+        net_worth = financial.get('net_worth', 0)
+        if net_worth < 0:
+            insights.append({
+                'category': 'financial',
+                'severity': 'critical',
+                'title': 'Negative Net Worth',
+                'description': f'Net worth is negative: ${net_worth:,.2f}',
+                'recommendation': 'URGENT: Capital injection required, reduce liabilities, increase revenue',
+                'impact': 'Company solvency at risk'
+            })
         
-        return recommendations
+        # Health scores
+        health_scores = dashboard_data.get('health_scores', {})
+        overall_health = health_scores.get('overall_health', 0)
+        
+        if overall_health >= 80:
+            insights.append({
+                'category': 'success',
+                'severity': 'positive',
+                'title': 'Strong Overall Health',
+                'description': f'Platform health score: {overall_health:.1f}/100',
+                'recommendation': 'Maintain current strategies and consider growth initiatives',
+                'impact': 'Strong foundation for expansion'
+            })
+        elif overall_health < 50:
+            insights.append({
+                'category': 'operations',
+                'severity': 'high',
+                'title': 'Low Platform Health Score',
+                'description': f'Overall health score: {overall_health:.1f}/100',
+                'recommendation': 'Conduct comprehensive review of operations, financials, and customer satisfaction',
+                'impact': 'Platform sustainability concerns'
+            })
+        
+        return insights
+    
+    def predict_revenue_forecast(
+        self,
+        policies: Dict[str, Any],
+        historical_growth_rate: float = 0.05,
+        months_ahead: int = 12
+    ) -> Dict[str, Any]:
+        """
+        Predict revenue forecast for the next N months.
+        
+        Args:
+            policies: Current policies
+            historical_growth_rate: Historical monthly growth rate (default 5%)
+            months_ahead: Number of months to forecast
+            
+        Returns:
+            Revenue forecast by month
+        """
+        # Calculate current monthly recurring revenue (MRR)
+        current_mrr = sum(p.get('monthly_premium', 0) 
+                         for p in policies.values() 
+                         if p.get('status') == 'active')
+        
+        # Generate forecast
+        forecast = []
+        for month in range(1, months_ahead + 1):
+            forecasted_mrr = current_mrr * ((1 + historical_growth_rate) ** month)
+            forecast.append({
+                'month': month,
+                'forecasted_mrr': round(forecasted_mrr, 2),
+                'forecasted_arr': round(forecasted_mrr * 12, 2)
+            })
+        
+        return {
+            'current_mrr': round(current_mrr, 2),
+            'current_arr': round(current_mrr * 12, 2),
+            'growth_rate': historical_growth_rate * 100,
+            'forecast_months': months_ahead,
+            'forecast': forecast
+        }
+    
+    # ========== Private Helper Methods ==========
+    
+    def _calculate_financial_health_score(
+        self,
+        balance_sheet: Dict[str, Any],
+        monthly_revenue: float,
+        claims_paid: float
+    ) -> float:
+        """Calculate financial health score (0-100)"""
+        score = 50.0  # Base score
+        
+        # Net worth contribution (30 points)
+        net_worth = balance_sheet.get('total_assets', 0) - balance_sheet.get('total_liabilities', 0)
+        if net_worth > 0:
+            score += min(30.0, (net_worth / 100000) * 10)
+        
+        # Claims reserve adequacy (30 points)
+        claims_reserve = balance_sheet.get('claims_reserve', 0)
+        if monthly_revenue > 0:
+            reserve_ratio = claims_reserve / (monthly_revenue * 3)  # 3 months of revenue
+            score += min(30.0, reserve_ratio * 30)
+        
+        # Revenue positivity (20 points)
+        if monthly_revenue > 0:
+            score += 20.0
+        
+        return min(100.0, max(0.0, round(score, 2)))
+    
+    def _calculate_operational_health_score(
+        self,
+        claims_approval_rate: float,
+        outstanding_receivables: float,
+        annual_revenue: float
+    ) -> float:
+        """Calculate operational health score (0-100)"""
+        score = 50.0  # Base score
+        
+        # Claims efficiency (30 points)
+        if claims_approval_rate >= 70:
+            score += 30.0
+        elif claims_approval_rate >= 50:
+            score += 20.0
+        elif claims_approval_rate >= 30:
+            score += 10.0
+        
+        # Receivables management (20 points)
+        if annual_revenue > 0:
+            receivables_ratio = outstanding_receivables / annual_revenue
+            if receivables_ratio < 0.05:
+                score += 20.0
+            elif receivables_ratio < 0.10:
+                score += 15.0
+            elif receivables_ratio < 0.20:
+                score += 10.0
+        
+        return min(100.0, max(0.0, round(score, 2)))
 
 
 # Singleton instance
-_bi_service: Optional[BIAnalyticsService] = None
+_bi_analytics_service: Optional[BIAnalyticsService] = None
 
 
-def get_bi_analytics_service(**kwargs) -> BIAnalyticsService:
+def get_bi_analytics_service() -> BIAnalyticsService:
     """Get or create BI analytics service singleton"""
-    global _bi_service
-    if _bi_service is None:
-        _bi_service = BIAnalyticsService(**kwargs)
-    return _bi_service
-
-
-def init_bi_analytics_service(**kwargs) -> BIAnalyticsService:
-    """Initialize BI analytics service with data stores"""
-    global _bi_service
-    _bi_service = BIAnalyticsService(**kwargs)
-    return _bi_service
+    global _bi_analytics_service
+    if _bi_analytics_service is None:
+        _bi_analytics_service = BIAnalyticsService()
+    return _bi_analytics_service
