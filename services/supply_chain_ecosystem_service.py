@@ -379,6 +379,8 @@ class SupplyChainEcosystemService:
         
         # Ledger chain tracking
         self.ledger_chain: List[str] = []  # List of entry hashes in order
+        if self.ledger:
+            self.rebuild_ledger_chain()
     
     # =========================================================================
     # INVITATION MANAGEMENT
@@ -1445,6 +1447,32 @@ class SupplyChainEcosystemService:
     # LEDGER AND DATA INTEGRITY
     # =========================================================================
     
+    def rebuild_ledger_chain(self) -> None:
+        """Rebuild ledger hash chain from stored entries."""
+        entries = sorted(self.ledger.values(), key=lambda x: x.get("timestamp", ""))
+        self.ledger_chain = [e.get("entry_hash") for e in entries if e.get("entry_hash")]
+
+    def record_delivery_event(self,
+                              event_type: str,
+                              customer_id: str,
+                              supplier_id: str,
+                              delivery_request_id: str,
+                              amount: float = 0.0,
+                              metadata: Dict = None) -> Dict[str, Any]:
+        """
+        Record a delivery-bidding event on the supply chain ledger.
+        """
+        entry = self._record_ledger_entry(
+            entry_type=event_type,
+            supplier_id=supplier_id or "SYSTEM",
+            customer_id=customer_id,
+            order_id=delivery_request_id,
+            amount=amount,
+            description=f"Delivery event: {event_type}",
+            metadata=metadata or {}
+        )
+        return entry.to_dict() if hasattr(entry, "to_dict") else entry
+
     def _record_ledger_entry(self, entry_type: str, supplier_id: str,
                             customer_id: str = None, order_id: str = None,
                             amount: float = 0, commission: float = 0,
