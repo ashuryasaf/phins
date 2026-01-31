@@ -1,6 +1,4 @@
 """
-PHINS Business Intelligence and Analytics Service
-=================================================
 Comprehensive BI and statistical analytics for system optimization.
 
 Features:
@@ -29,6 +27,113 @@ from collections import defaultdict
 import logging
 
 logger = logging.getLogger('phins.bi_analytics')
+PHINS BI and Statistical Analytics Service
+Comprehensive Business Intelligence and Statistical Analysis for:
+- System optimization
+- Performance metrics
+- Predictive analytics
+- Trend analysis
+- KPI monitoring
+- Community/Foundation analytics
+
+Provides AI-driven insights for decision making across the platform.
+"""
+
+import json
+import math
+import statistics
+from datetime import datetime, timedelta, timezone
+from typing import Dict, List, Any, Optional, Tuple
+from dataclasses import dataclass, field, asdict
+from enum import Enum
+from collections import defaultdict
+import random
+
+
+class MetricCategory(Enum):
+    """Categories of metrics"""
+    FINANCIAL = "financial"
+    OPERATIONAL = "operational"
+    CUSTOMER = "customer"
+    SUPPLIER = "supplier"
+    CLAIMS = "claims"
+    UNDERWRITING = "underwriting"
+    MARKETPLACE = "marketplace"
+    FOUNDATION = "foundation"
+    DELIVERY = "delivery"
+
+
+class TrendDirection(Enum):
+    """Trend direction indicators"""
+    STRONG_UP = "strong_up"
+    UP = "up"
+    STABLE = "stable"
+    DOWN = "down"
+    STRONG_DOWN = "strong_down"
+
+
+class AlertSeverity(Enum):
+    """Alert severity levels"""
+    CRITICAL = "critical"
+    WARNING = "warning"
+    INFO = "info"
+
+
+@dataclass
+class KPIMetric:
+    """Key Performance Indicator metric"""
+    name: str
+    category: MetricCategory
+    value: float
+    unit: str  # count, currency, percentage, ratio
+    period: str  # daily, weekly, monthly, yearly, all_time
+    trend: TrendDirection = TrendDirection.STABLE
+    change_percentage: float = 0.0
+    target: Optional[float] = None
+    target_achieved: bool = True
+    historical_values: List[float] = field(default_factory=list)
+    
+    def to_dict(self) -> Dict:
+        result = asdict(self)
+        result['category'] = self.category.value
+        result['trend'] = self.trend.value
+        return result
+
+
+@dataclass
+class BIInsight:
+    """Business Intelligence insight"""
+    insight_id: str
+    category: str
+    title: str
+    description: str
+    severity: AlertSeverity
+    metric_value: Optional[float] = None
+    recommendation: Optional[str] = None
+    affected_entities: List[str] = field(default_factory=list)
+    created_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    
+    def to_dict(self) -> Dict:
+        result = asdict(self)
+        result['severity'] = self.severity.value
+        return result
+
+
+@dataclass
+class StatisticalSummary:
+    """Statistical summary of a data series"""
+    count: int
+    mean: float
+    median: float
+    std_dev: float
+    min_value: float
+    max_value: float
+    percentile_25: float
+    percentile_75: float
+    variance: float
+    
+    def to_dict(self) -> Dict:
+        return asdict(self)
 
 
 class BIAnalyticsService:
@@ -185,6 +290,181 @@ class BIAnalyticsService:
             },
             'supplier_metrics': supplier_metrics,
             'delivery_metrics': delivery_metrics,
+    Comprehensive BI and Statistical Analytics Service.
+    
+    Provides:
+    - Real-time KPI monitoring
+    - Trend analysis
+    - Predictive analytics
+    - System optimization recommendations
+    - Community/Foundation analytics
+    - Financial performance tracking
+    """
+    
+    def __init__(self,
+                 customers: Dict = None,
+                 suppliers: Dict = None,
+                 policies: Dict = None,
+                 claims: Dict = None,
+                 bills: Dict = None,
+                 underwriting_apps: Dict = None,
+                 health_wallets: Dict = None,
+                 investment_accounts: Dict = None,
+                 transaction_ledger: Dict = None,
+                 foundations: Dict = None,
+                 foundation_members: Dict = None,
+                 foundation_funds: Dict = None,
+                 supplier_orders: Dict = None,
+                 delivery_requests: Dict = None,
+                 delivery_bids: Dict = None):
+        """Initialize with all data stores"""
+        self.customers = customers or {}
+        self.suppliers = suppliers or {}
+        self.policies = policies or {}
+        self.claims = claims or {}
+        self.bills = bills or {}
+        self.underwriting_apps = underwriting_apps or {}
+        self.health_wallets = health_wallets or {}
+        self.investment_accounts = investment_accounts or {}
+        self.transaction_ledger = transaction_ledger or {}
+        self.foundations = foundations or {}
+        self.foundation_members = foundation_members or {}
+        self.foundation_funds = foundation_funds or {}
+        self.supplier_orders = supplier_orders or {}
+        self.delivery_requests = delivery_requests or {}
+        self.delivery_bids = delivery_bids or {}
+        
+        # Cache for computed metrics
+        self._metrics_cache = {}
+        self._cache_timestamp = None
+        self._cache_ttl_seconds = 300  # 5 minutes
+        
+        self._insight_counter = 0
+    
+    def _generate_insight_id(self) -> str:
+        """Generate unique insight ID"""
+        self._insight_counter += 1
+        return f"INS-{datetime.now().strftime('%Y%m%d')}-{self._insight_counter:05d}"
+    
+    # =========================================================================
+    # STATISTICAL UTILITIES
+    # =========================================================================
+    
+    def _calculate_statistics(self, values: List[float]) -> StatisticalSummary:
+        """Calculate comprehensive statistics for a data series"""
+        if not values:
+            return StatisticalSummary(
+                count=0, mean=0, median=0, std_dev=0,
+                min_value=0, max_value=0,
+                percentile_25=0, percentile_75=0, variance=0
+            )
+        
+        sorted_values = sorted(values)
+        n = len(sorted_values)
+        
+        mean_val = statistics.mean(values)
+        median_val = statistics.median(values)
+        std_dev = statistics.stdev(values) if n > 1 else 0
+        variance = statistics.variance(values) if n > 1 else 0
+        
+        # Percentiles
+        p25_idx = int(n * 0.25)
+        p75_idx = int(n * 0.75)
+        
+        return StatisticalSummary(
+            count=n,
+            mean=round(mean_val, 2),
+            median=round(median_val, 2),
+            std_dev=round(std_dev, 2),
+            min_value=round(min(values), 2),
+            max_value=round(max(values), 2),
+            percentile_25=round(sorted_values[p25_idx], 2),
+            percentile_75=round(sorted_values[p75_idx], 2),
+            variance=round(variance, 2)
+        )
+    
+    def _calculate_trend(self, values: List[float]) -> Tuple[TrendDirection, float]:
+        """Calculate trend direction and percentage change"""
+        if len(values) < 2:
+            return TrendDirection.STABLE, 0.0
+        
+        # Compare last value to average of previous values
+        recent = values[-1]
+        previous_avg = statistics.mean(values[:-1])
+        
+        if previous_avg == 0:
+            return TrendDirection.STABLE, 0.0
+        
+        change_pct = ((recent - previous_avg) / previous_avg) * 100
+        
+        if change_pct > 20:
+            return TrendDirection.STRONG_UP, change_pct
+        elif change_pct > 5:
+            return TrendDirection.UP, change_pct
+        elif change_pct < -20:
+            return TrendDirection.STRONG_DOWN, change_pct
+        elif change_pct < -5:
+            return TrendDirection.DOWN, change_pct
+        else:
+            return TrendDirection.STABLE, change_pct
+    
+    # =========================================================================
+    # CORE KPI DASHBOARD
+    # =========================================================================
+    
+    def get_executive_dashboard(self) -> Dict[str, Any]:
+        """
+        Get executive-level dashboard with key metrics.
+        
+        Returns comprehensive view of platform health and performance.
+        """
+        now = datetime.now(timezone.utc)
+        
+        dashboard = {
+            'generated_at': now.isoformat(),
+            'summary': {},
+            'financial_kpis': [],
+            'operational_kpis': [],
+            'customer_kpis': [],
+            'insights': [],
+            'alerts': []
+        }
+        
+        # Financial KPIs
+        dashboard['financial_kpis'] = self._get_financial_kpis()
+        
+        # Operational KPIs
+        dashboard['operational_kpis'] = self._get_operational_kpis()
+        
+        # Customer KPIs
+        dashboard['customer_kpis'] = self._get_customer_kpis()
+        
+        # Generate insights
+        dashboard['insights'] = self._generate_insights()
+        
+        # Generate alerts
+        dashboard['alerts'] = self._generate_alerts()
+        
+        # Executive summary
+        total_premium = sum(float(p.get('annual_premium', 0) or 0) for p in self.policies.values())
+        total_claims_paid = sum(
+            float(c.get('approved_amount', 0) or c.get('paid_amount', 0) or 0) 
+            for c in self.claims.values() 
+            if str(c.get('status', '')).lower() in ['paid', 'approved']
+        )
+        
+        dashboard['summary'] = {
+            'total_customers': len(self.customers),
+            'total_policies': len(self.policies),
+            'active_policies': sum(1 for p in self.policies.values() if str(p.get('status', '')).lower() == 'active'),
+            'total_premium_book': round(total_premium, 2),
+            'total_claims_paid': round(total_claims_paid, 2),
+            'loss_ratio': round((total_claims_paid / total_premium * 100) if total_premium > 0 else 0, 2),
+            'total_suppliers': len(self.suppliers),
+            'active_suppliers': sum(1 for s in self.suppliers.values() if s.get('status') == 'approved'),
+            'wallet_total_balance': round(sum(float(w.get('balance', 0) or 0) for w in self.health_wallets.values()), 2),
+            'total_foundations': len(self.foundations),
+            'platform_health_score': self._calculate_platform_health_score()
         }
         
         return dashboard
