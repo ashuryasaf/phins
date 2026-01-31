@@ -69,63 +69,72 @@ def seed_default_users(session=None):
         user_repo = UserRepository(session)
         
         # System users - passwords loaded from environment variables
+        # IMPORTANT: Customer-role users MUST have customer_id set to enable dashboard access
         default_users = [
             {
                 'username': 'admin',
                 'password': _get_env_password('PHINS_ADMIN_PASSWORD', 'admin'),
                 'role': 'admin',
                 'name': 'Admin User',
-                'email': 'admin@phins.ai'
+                'email': 'admin@phins.ai',
+                'customer_id': None  # Staff - no customer record
             },
             {
                 'username': 'actuary',
                 'password': _get_env_password('PHINS_ACTUARY_PASSWORD', 'actuary'),
                 'role': 'actuary',
                 'name': 'Actuary User',
-                'email': 'actuary@phins.ai'
+                'email': 'actuary@phins.ai',
+                'customer_id': None
             },
             {
                 'username': 'supplier',
                 'password': _get_env_password('PHINS_SUPPLIER_PASSWORD', 'supplier'),
                 'role': 'supplier',
                 'name': 'Supplier User',
-                'email': 'supplier@phins.ai'
+                'email': 'supplier@phins.ai',
+                'customer_id': None
             },
             {
                 'username': 'underwriter',
                 'password': _get_env_password('PHINS_UNDERWRITER_PASSWORD', 'underwriter'),
                 'role': 'underwriter',
                 'name': 'John Underwriter',
-                'email': 'underwriter@phins.ai'
+                'email': 'underwriter@phins.ai',
+                'customer_id': None
             },
             {
                 'username': 'claims_adjuster',
                 'password': _get_env_password('PHINS_CLAIMS_PASSWORD', 'claims_adjuster'),
                 'role': 'claims',
                 'name': 'Jane Claims',
-                'email': 'claims@phins.ai'
+                'email': 'claims@phins.ai',
+                'customer_id': None
             },
             {
                 'username': 'accountant',
                 'password': _get_env_password('PHINS_ACCOUNTANT_PASSWORD', 'accountant'),
                 'role': 'accountant',
                 'name': 'Bob Accountant',
-                'email': 'accountant@phins.ai'
+                'email': 'accountant@phins.ai',
+                'customer_id': None
             },
             {
                 'username': 'media_ad',
                 'password': _get_env_password('PHINS_MEDIA_PASSWORD', 'media_ad'),
                 'role': 'media',
                 'name': 'Media Admin',
-                'email': 'media@phins.ai'
+                'email': 'media@phins.ai',
+                'customer_id': None
             },
-            # Primary customer account (links to CUST-ASAF-001 in customers table)
+            # Primary customer account - MUST link to CUST-ASAF-001 in customers table
             {
                 'username': 'asaf@assurance.co.il',
                 'password': _get_env_password('PHINS_USER_ASAF_ASSURANCE_PASSWORD', 'asaf@assurance.co.il'),
                 'role': 'customer',
                 'name': 'Asaf Assurance',
-                'email': 'asaf@assurance.co.il'
+                'email': 'asaf@assurance.co.il',
+                'customer_id': 'CUST-ASAF-001'  # Links to Customer record for dashboard
             },
             # Admin account for asaf@phins.ai - PERSISTENT ACCOUNT
             {
@@ -133,7 +142,8 @@ def seed_default_users(session=None):
                 'password': _get_env_password('PHINS_USER_ASAF_PHINS_PASSWORD', 'asaf@phins.ai'),
                 'role': 'admin',
                 'name': 'Asaf PHINS',
-                'email': 'asaf@phins.ai'
+                'email': 'asaf@phins.ai',
+                'customer_id': None  # Admin - no customer linkage
             },
             # Customer account for efrat@phins.ai - PERSISTENT ACCOUNT
             {
@@ -141,7 +151,8 @@ def seed_default_users(session=None):
                 'password': _get_env_password('PHINS_USER_EFRAT_PASSWORD', 'efrat@phins.ai'),
                 'role': 'customer',
                 'name': 'Efrat PHINS',
-                'email': 'efrat@phins.ai'
+                'email': 'efrat@phins.ai',
+                'customer_id': 'CUST-EFRAT-001'  # Links to Customer record for dashboard
             },
             # Customer account for asi@phins.ai - PERSISTENT ACCOUNT
             {
@@ -149,7 +160,8 @@ def seed_default_users(session=None):
                 'password': _get_env_password('PHINS_USER_ASI_PASSWORD', 'asi@phins.ai'),
                 'role': 'customer',
                 'name': 'Asi PHINS',
-                'email': 'asi@phins.ai'
+                'email': 'asi@phins.ai',
+                'customer_id': 'CUST-ASI-001'  # Links to Customer record for dashboard
             },
             # Customer account for shosh@phins.ai - PERSISTENT ACCOUNT
             {
@@ -157,7 +169,8 @@ def seed_default_users(session=None):
                 'password': _get_env_password('PHINS_USER_SHOSH_PASSWORD', 'shosh@phins.ai'),
                 'role': 'customer',
                 'name': 'Shosh PHINS',
-                'email': 'shosh@phins.ai'
+                'email': 'shosh@phins.ai',
+                'customer_id': 'CUST-SHOSH-001'  # Links to Customer record for dashboard
             }
         ]
         
@@ -165,9 +178,18 @@ def seed_default_users(session=None):
             # Check if user already exists
             existing_user = user_repo.get_by_username(user_data['username'])
             if existing_user:
-                # Update role if it has changed (important for role changes like media_ad)
+                # Update role and customer_id if they have changed
+                needs_update = False
                 if existing_user.role != user_data['role']:
                     existing_user.role = user_data['role']
+                    needs_update = True
+                # CRITICAL: Update customer_id for customer-role users (fixes login redirect issue)
+                expected_customer_id = user_data.get('customer_id')
+                if existing_user.customer_id != expected_customer_id:
+                    existing_user.customer_id = expected_customer_id
+                    needs_update = True
+                    logger.info(f"Updated user '{user_data['username']}' customer_id to: {expected_customer_id}")
+                if needs_update:
                     session.commit()
                     logger.info(f"Updated user '{user_data['username']}' role to: {user_data['role']}")
                 else:
@@ -177,7 +199,7 @@ def seed_default_users(session=None):
             # Hash password
             password_hash = hash_password(user_data['password'])
             
-            # Create user
+            # Create user with customer_id for customer-role users
             user_repo.create(
                 username=user_data['username'],
                 password_hash=password_hash['hash'],
@@ -185,9 +207,10 @@ def seed_default_users(session=None):
                 role=user_data['role'],
                 name=user_data['name'],
                 email=user_data['email'],
+                customer_id=user_data.get('customer_id'),  # CRITICAL: Link to Customer record
                 active=True
             )
-            logger.info(f"Created user: {user_data['username']} (Role: {user_data['role']})")
+            logger.info(f"Created user: {user_data['username']} (Role: {user_data['role']}, CustomerID: {user_data.get('customer_id')})")
         
         logger.info("Default users seeded successfully")
         

@@ -162,7 +162,15 @@ if USE_DATABASE:
                     try:
                         init_database()
                         seed_default_users()
-                        print("✓ Database initialized and seeded")
+                        # Also seed sample data to create Customer records for customer-role users
+                        # This ensures customer_id links in users table have valid targets
+                        try:
+                            from database.seeds import seed_sample_data
+                            seed_sample_data()
+                            print("✓ Database initialized, users seeded, and customer records created")
+                        except Exception as sample_err:
+                            print(f"Note: Sample data seeding skipped: {sample_err}")
+                            print("✓ Database initialized and users seeded")
                     except Exception as e:
                         print(f"Warning: Database init/seed failed: {e}")
                     break
