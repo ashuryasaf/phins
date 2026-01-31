@@ -169,6 +169,9 @@ class DataIntegrityService:
             'card_payment', 'credit_card_deposit', 'bank_transfer'
         ]
         
+        # Premium payment types - only the savings allocation counts as a deposit
+        premium_payment_types = ['premium_payment']
+        
         # Withdrawal types (money leaving tracked accounts)
         # Note: claim_payment destination varies (wallet/bank/etc) so counted separately
         # Premium payments go to insurance, not a withdrawal from savings
@@ -194,6 +197,21 @@ class DataIntegrityService:
             
             # Skip internal transfers - they move money within accounts, not in/out
             if any(itt in tx_type for itt in internal_transfer_types):
+                continue
+            
+            # Premium payments: count only the savings portion (if provided)
+            if any(pt in tx_type for pt in premium_payment_types):
+                metadata = tx.get('metadata', {}) or {}
+                if metadata.get('savings_captured_in_pipeline'):
+                    # Savings already captured via pipeline_deposit; avoid double counting
+                    continue
+                savings_allocation = metadata.get('savings_allocation')
+                if savings_allocation is None:
+                    issues.append(
+                        f"Premium payment missing savings_allocation metadata: {tx.get('id', 'unknown')}"
+                    )
+                else:
+                    total_deposits += abs(float(savings_allocation or 0))
                 continue
             
             # Deposits (direct savings/investment deposits)

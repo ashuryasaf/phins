@@ -196,6 +196,49 @@ class TestCustomerBillingDashboard:
         
         self.log('Customer Payment', 'PASS', f'NFT: {nft_token_id[:20]}..., Savings: ${savings_allocated}')
         return True
+
+    def test_checkout_integrity_debug(self):
+        """Test: Checkout integrity debug data is present and valid"""
+        print("\n--- Testing Checkout Integrity Debug ---")
+        
+        resp = self._post('/api/customer/payment', {
+            'customer_id': self.customer_id,
+            'amount': 120.00,
+            'payment_method': 'card',
+            'debug': True
+        })
+        
+        if resp.get('status') != 200:
+            self.log('Checkout Integrity Debug', 'FAIL', f"Status: {resp.get('status')}, Body: {resp.get('body')}")
+            return False
+        
+        body = resp.get('body', {})
+        integrity = body.get('integrity')
+        allocation_checks = body.get('allocation_checks', {})
+        
+        if not integrity:
+            self.log('Checkout Integrity Debug', 'FAIL', 'Missing integrity payload in debug response')
+            return False
+        
+        if not integrity.get('is_valid', False):
+            self.log('Checkout Integrity Debug', 'FAIL', f"Integrity invalid: {integrity.get('issues')}")
+            return False
+        
+        if not allocation_checks.get('savings_risk_sum_ok'):
+            self.log('Checkout Integrity Debug', 'FAIL', 'Savings/risk allocation does not sum to payment amount')
+            return False
+        
+        # Cross-check using integrity endpoint (requires auth)
+        integrity_resp = self._get(f'/api/integrity/check?customer_id={self.customer_id}')
+        if integrity_resp.get('status') == 200:
+            if not integrity_resp.get('body', {}).get('is_valid', False):
+                self.log('Checkout Integrity Debug', 'FAIL', 'Integrity endpoint reported invalid state')
+                return False
+        else:
+            self.log('Checkout Integrity Debug', 'WARN', f"Integrity endpoint unavailable: {integrity_resp.get('status')}")
+        
+        self.log('Checkout Integrity Debug', 'PASS', 'Integrity checks passed with debug payload')
+        return True
     
     def test_billing_allocation_calculation(self):
         """Test: Verify premium allocation percentages"""
@@ -571,6 +614,7 @@ class TestCustomerBillingDashboard:
         # Run tests
         tests = [
             self.test_customer_payment,
+            self.test_checkout_integrity_debug,
             self.test_billing_allocation_calculation,
             self.test_record_customer_action,
             self.test_nft_ledger_integrity,
