@@ -2540,22 +2540,76 @@ def record_failed_login(client_ip: str, server_port: int | None = None):
         if (not PHINS_TEST_MODE) and FAILED_LOGINS[key]['count'] >= MAX_LOGIN_ATTEMPTS:
             FAILED_LOGINS[key]['lockout_until'] = datetime.now().timestamp() + LOCKOUT_DURATION
 
+ROLE_ALIASES = {
+    'claims': 'claims_adjuster',
+    'claims_adjuster': 'claims_adjuster',
+    'claim_adjuster': 'claims_adjuster',
+    'media_ad': 'media',
+    'media': 'media',
+}
+
+def normalize_role(role: str | None) -> str | None:
+    """Normalize role aliases to canonical role names."""
+    if not role:
+        return None
+    key = str(role).strip().lower()
+    return ROLE_ALIASES.get(key, key)
+
+def _normalize_roles(roles: list[str]) -> list[str]:
+    return [r for r in (normalize_role(role) for role in roles) if r]
+
+def resolve_session_context(session: dict[str, str] | None) -> Dict[str, Any]:
+    """
+    Resolve role/customer/supplier context from session with normalization.
+    
+    This keeps role-based access consistent across DB-backed users, in-memory users,
+    and supplier portal sessions.
+    """
+    if not session:
+        return {}
+    username = session.get('username')
+    user = USERS.get(username) if username else None
+    role = normalize_role((user or {}).get('role') or session.get('role'))
+    customer_id = session.get('customer_id') or (user or {}).get('customer_id')
+    
+    # Best-effort customer lookup by email if missing
+    if not customer_id and role == 'customer' and username:
+        for cust_id, cust in CUSTOMERS.items():
+            if cust.get('email', '').lower() == username.lower():
+                customer_id = cust_id
+                break
+    
+    supplier_id = session.get('supplier_id')
+    if not supplier_id and role == 'supplier' and username:
+        suppliers_store = globals().get('SUPPLIERS', {})
+        if isinstance(suppliers_store, dict) and username in suppliers_store:
+            supplier_id = username
+    
+    return {
+        'username': username,
+        'role': role,
+        'customer_id': customer_id,
+        'supplier_id': supplier_id
+    }
+
 def require_role(session: dict[str, str] | None, allowed_roles: list[str]) -> bool:
     """Check if user has required role"""
-    if not session:
-        return False
-    
-    username = session.get('username')
-    if not username:
-        return False
-    
-    user = USERS.get(username)
-    # Prefer authoritative role from user record; fall back to server-side session role if needed.
-    # (Session is stored server-side; this fallback is mainly for robustness when user lookup is unavailable.)
-    role = (user or {}).get('role') or session.get('role')
+    ctx = resolve_session_context(session)
+    role = ctx.get('role')
     if not role:
         return False
-    return role in allowed_roles
+    
+    normalized_allowed = set(_normalize_roles(allowed_roles))
+    if role not in normalized_allowed:
+        return False
+    
+    # Enforce role-specific context
+    if role == 'customer' and not ctx.get('customer_id'):
+        return False
+    if role == 'supplier' and not ctx.get('supplier_id'):
+        return False
+    
+    return True
 
 
 def get_session_user(session: dict[str, str] | None) -> Dict[str, Any] | None:
@@ -2593,17 +2647,17 @@ def authorize_customer_data(session: dict[str, str] | None,
             return
     """
     # Admin roles that can access any customer's data
-    ADMIN_ROLES = ['admin', 'underwriter', 'claims', 'claims_adjuster', 'accountant']
+    ADMIN_ROLES = _normalize_roles(['admin', 'underwriter', 'claims', 'claims_adjuster', 'accountant'])
     
     # No session - require authentication
     if not session:
         return False, None, 'Authentication required'
     
-    # Get user info from session
-    user = get_session_user(session) or {}
-    user_role = (user.get('role') or session.get('role') or '').lower()
-    session_customer_id = user.get('customer_id') or session.get('customer_id')
-    username = session.get('username', 'unknown')
+    # Resolve session context with normalization
+    ctx = resolve_session_context(session)
+    user_role = ctx.get('role') or ''
+    session_customer_id = ctx.get('customer_id')
+    username = ctx.get('username') or 'unknown'
     
     # Admin/staff roles can access any customer's data
     if user_role in ADMIN_ROLES:
@@ -2954,7 +3008,7 @@ def _build_fallback_users() -> Dict[str, Dict[str, Any]]:
     return {
         'admin': {**_get_secure_password('PHINS_ADMIN_PASSWORD', 'admin'), 'role': 'admin', 'name': 'Admin User'},
         'underwriter': {**_get_secure_password('PHINS_UNDERWRITER_PASSWORD', 'underwriter'), 'role': 'underwriter', 'name': 'John Underwriter'},
-        'claims_adjuster': {**_get_secure_password('PHINS_CLAIMS_PASSWORD', 'claims_adjuster'), 'role': 'claims', 'name': 'Jane Claims'},
+        'claims_adjuster': {**_get_secure_password('PHINS_CLAIMS_PASSWORD', 'claims_adjuster'), 'role': 'claims_adjuster', 'name': 'Jane Claims'},
         'accountant': {**_get_secure_password('PHINS_ACCOUNTANT_PASSWORD', 'accountant'), 'role': 'accountant', 'name': 'Bob Accountant'},
         'actuary': {**_get_secure_password('PHINS_ACTUARY_PASSWORD', 'actuary'), 'role': 'actuary', 'name': 'Actuary User'},
         'supplier': {**_get_secure_password('PHINS_SUPPLIER_PASSWORD', 'supplier'), 'role': 'supplier', 'name': 'Supplier User'},
@@ -14035,6 +14089,7 @@ For claims or questions, please contact:
                             break
                 
                 if user:
+                    role = normalize_role(role) or role
                     # Clear failed login attempts on success
                     with STATE_LOCK:
                         k = _security_key(client_ip, server_port)
