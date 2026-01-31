@@ -25992,11 +25992,17 @@ For claims or questions, please contact:
                 payment_method = data.get('payment_method', 'card')
                 create_nft = data.get('create_nft', True)
                 allocate_to_investments = data.get('allocate_to_investments', True)
+                debug = bool(data.get('debug') or data.get('integrity_debug'))
                 
                 if not customer_id or amount <= 0:
                     self._set_json_headers(400)
                     self.wfile.write(json.dumps({'error': 'Invalid customer_id or amount'}).encode('utf-8'))
                     return
+                
+                # Pre-operation integrity snapshot (for debugging/validation)
+                pre_integrity = None
+                if integrity_service_enabled:
+                    pre_integrity = integrity_service.validate_customer_integrity(customer_id)
                 
                 # Get customer's CUSTOM allocation preferences
                 allocation_prefs = get_customer_allocation(customer_id)
@@ -26010,41 +26016,69 @@ For claims or questions, please contact:
                 savings_amount = amount * savings_pct
                 risk_amount = amount * risk_pct
                 
-                # Calculate investment breakdown
-                index_amount = savings_amount * (allocation_prefs['index_pct'] / 100.0)
-                bonds_amount = savings_amount * (allocation_prefs['bonds_pct'] / 100.0)
-                crypto_amount = savings_amount * (allocation_prefs['crypto_pct'] / 100.0)
+                use_pipeline = bool(savings_pipeline_enabled and savings_pipeline_service and not allocate_to_investments)
+                allocation_source = 'pipeline' if use_pipeline else 'direct_investment'
                 
-                # Update customer's investment account
-                if customer_id not in INVESTMENT_ACCOUNTS:
-                    INVESTMENT_ACCOUNTS[customer_id] = {
-                        'balance': 0.0,
-                        'index_balance': 0.0,
-                        'bonds_balance': 0.0,
-                        'crypto_balance': 0.0,
-                        'deposits': [],
-                        'allocations': [],
-                        'created_at': datetime.now().isoformat()
+                # Calculate investment breakdown (based on investment portion of savings)
+                investment_base = savings_amount
+                if use_pipeline:
+                    investment_base = savings_amount * (allocation_prefs['investment_pct'] / 100.0)
+                
+                index_amount = investment_base * (allocation_prefs['index_pct'] / 100.0)
+                bonds_amount = investment_base * (allocation_prefs['bonds_pct'] / 100.0)
+                crypto_amount = investment_base * (allocation_prefs['crypto_pct'] / 100.0)
+                
+                pipeline_configured = False
+                pipeline_config_error = None
+                pipeline_result = None
+                inv_account = None
+                
+                if not use_pipeline:
+                    # Update customer's investment account directly
+                    if customer_id not in INVESTMENT_ACCOUNTS:
+                        INVESTMENT_ACCOUNTS[customer_id] = {
+                            'balance': 0.0,
+                            'index_balance': 0.0,
+                            'bonds_balance': 0.0,
+                            'crypto_balance': 0.0,
+                            'deposits': [],
+                            'allocations': [],
+                            'created_at': datetime.now().isoformat()
+                        }
+                    
+                    inv_account = INVESTMENT_ACCOUNTS[customer_id]
+                    inv_account['balance'] += savings_amount
+                    inv_account['index_balance'] = inv_account.get('index_balance', 0.0) + index_amount
+                    inv_account['bonds_balance'] = inv_account.get('bonds_balance', 0.0) + bonds_amount
+                    inv_account['crypto_balance'] = inv_account.get('crypto_balance', 0.0) + crypto_amount
+                    
+                    # Record deposit in investment account
+                    deposit_record = {
+                        'id': payment_id,
+                        'type': 'premium_allocation',
+                        'amount': savings_amount,
+                        'index_amount': index_amount,
+                        'bonds_amount': bonds_amount,
+                        'crypto_amount': crypto_amount,
+                        'timestamp': datetime.now().isoformat()
                     }
-                
-                inv_account = INVESTMENT_ACCOUNTS[customer_id]
-                inv_account['balance'] += savings_amount
-                inv_account['index_balance'] = inv_account.get('index_balance', 0.0) + index_amount
-                inv_account['bonds_balance'] = inv_account.get('bonds_balance', 0.0) + bonds_amount
-                inv_account['crypto_balance'] = inv_account.get('crypto_balance', 0.0) + crypto_amount
-                
-                # Record deposit in investment account
-                deposit_record = {
-                    'id': payment_id,
-                    'type': 'premium_allocation',
-                    'amount': savings_amount,
-                    'index_amount': index_amount,
-                    'bonds_amount': bonds_amount,
-                    'crypto_amount': crypto_amount,
-                    'timestamp': datetime.now().isoformat()
-                }
-                inv_account['deposits'].append(deposit_record)
-                INVESTMENT_ACCOUNTS[customer_id] = inv_account
+                    inv_account['deposits'].append(deposit_record)
+                    INVESTMENT_ACCOUNTS[customer_id] = inv_account
+                else:
+                    # Configure pipeline to use customer's allocation preferences
+                    try:
+                        from services.savings_pipeline_service import AllocationStrategy
+                        account = savings_pipeline_service.get_or_create_account(customer_id)
+                        account.allocation_strategy = AllocationStrategy.CUSTOM
+                        account.allocation_config.wallet_pct = allocation_prefs['wallet_pct']
+                        account.allocation_config.investment_pct = allocation_prefs['investment_pct']
+                        account.allocation_config.algo_trading_pct = allocation_prefs['algo_pct']
+                        account.allocation_config.index_pct = allocation_prefs['index_pct']
+                        account.allocation_config.bonds_pct = allocation_prefs['bonds_pct']
+                        account.allocation_config.crypto_pct = allocation_prefs['crypto_pct']
+                        pipeline_configured = True
+                    except Exception as config_err:
+                        pipeline_config_error = str(config_err)
                 
                 # Record in master transaction ledger
                 tx = record_transaction(
@@ -26061,7 +26095,9 @@ For claims or questions, please contact:
                         'index_amount': index_amount,
                         'bonds_amount': bonds_amount,
                         'crypto_amount': crypto_amount,
-                        'investment_account_balance': inv_account['balance']
+                        'investment_account_balance': inv_account['balance'] if inv_account else 0.0,
+                        'allocation_source': allocation_source,
+                        'savings_captured_in_pipeline': use_pipeline
                     }
                 )
                 
@@ -26107,19 +26143,33 @@ For claims or questions, please contact:
                             remaining_amount -= payment_for_bill
                             bills_paid.append(bill_id)
                 
-                # Route savings through the AI Pipeline for smart allocation
-                pipeline_result = None
-                if savings_pipeline_enabled and savings_amount > 0:
+                # Route savings through the AI Pipeline for smart allocation (opt-in)
+                if use_pipeline and savings_amount > 0:
                     try:
-                        # Deposit savings to pipeline (will auto-allocate to wallet, investments, algo trading)
                         pipeline_result = savings_pipeline_service.deposit_to_pipeline(
                             customer_id=customer_id,
                             amount=savings_amount,
                             source='premium_payment',
-                            auto_allocate=True  # Let AI optimize allocation
+                            auto_allocate=True  # Uses customer's allocation when configured
                         )
                     except Exception as pipe_err:
                         pipeline_result = {'error': str(pipe_err)}
+                
+                if use_pipeline:
+                    inv_account = INVESTMENT_ACCOUNTS.get(customer_id, {})
+                
+                allocation_checks = {
+                    'savings_risk_sum_ok': abs((savings_amount + risk_amount) - amount) < 0.01,
+                    'investment_breakdown_sum_ok': abs((index_amount + bonds_amount + crypto_amount) - investment_base) < 0.01,
+                    'investment_base': investment_base,
+                    'allocation_source': allocation_source,
+                    'uses_pipeline': use_pipeline
+                }
+                
+                # Post-operation integrity snapshot
+                post_integrity = None
+                if integrity_service_enabled:
+                    post_integrity = integrity_service.validate_customer_integrity(customer_id, auto_correct=True)
                 
                 self._set_json_headers(200)
                 response = {
@@ -26135,14 +26185,39 @@ For claims or questions, please contact:
                         'bonds': bonds_amount,
                         'crypto': crypto_amount
                     },
-                    'investment_account_balance': inv_account['balance'],
-                    'bills_updated': bills_paid
+                    'investment_account_balance': inv_account.get('balance', 0.0) if inv_account else 0.0,
+                    'bills_updated': bills_paid,
+                    'allocation_checks': allocation_checks,
+                    'allocation_source': allocation_source
                 }
                 
                 # Add pipeline allocation details
                 if pipeline_result:
                     response['pipeline_allocation'] = pipeline_result.get('allocation', {})
                     response['ai_optimized'] = True
+                
+                if pipeline_config_error and debug:
+                    response['pipeline_config_error'] = pipeline_config_error
+                if pipeline_configured and debug:
+                    response['pipeline_configured'] = True
+                
+                if post_integrity:
+                    integrity_payload = {
+                        'pre_total': pre_integrity.calculated_total if pre_integrity else 0,
+                        'post_total': post_integrity.calculated_total,
+                        'delta': post_integrity.calculated_total - (pre_integrity.calculated_total if pre_integrity else 0),
+                        'expected_delta': savings_amount,
+                        'is_valid': post_integrity.is_valid,
+                        'issues': post_integrity.issues
+                    }
+                    if debug or not post_integrity.is_valid:
+                        response['integrity'] = integrity_payload
+                
+                # Persist updated ledgers (best-effort)
+                try:
+                    save_ledger_data()
+                except Exception:
+                    pass
                 
                 self.wfile.write(json.dumps(response).encode('utf-8'))
                 
