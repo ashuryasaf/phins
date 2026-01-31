@@ -1,0 +1,117 @@
+{
+  "target": "https://phins-portal-production.up.railway.app",
+  "timestamp": "2026-01-31T21:54:25.649827",
+  "tests": [
+    {
+      "name": "Portal Health Check",
+      "passed": true,
+      "data": {
+        "status": "healthy",
+        "service": "phins-portal",
+        "timestamp": "2026-01-31T21:54:24.291022",
+        "database": "connected",
+        "version": "2.0.0"
+      }
+    },
+    {
+      "name": "PostgreSQL (Postgres-AyKP) Connection",
+      "passed": true,
+      "data": {
+        "database_url_set": true,
+        "use_database_env": "true",
+        "database_enabled_flag": true,
+        "use_database_flag": true,
+        "connection_test": "SUCCESS",
+        "error": null,
+        "storage_mode": "database",
+        "recommendations": [],
+        "database_url_format": "postgresql://postgres:****@postgres-aykp.railway.internal:5432/railway",
+        "postgres_version": "PostgreSQL 17.7 (Debian 17.7-3.pgdg13+1) on x86_64-pc-linux-gnu, compiled by gcc (Debian 14.2.0-19) 14.2.0, 64-bit",
+        "current_database": "railway"
+      }
+    },
+    {
+      "name": "Environment Configuration",
+      "passed": true,
+      "data": {
+        "env_vars_configured": {
+          "PHINS_ADMIN_PASSWORD": true,
+          "PHINS_UNDERWRITER_PASSWORD": true,
+          "PHINS_CLAIMS_PASSWORD": true,
+          "PHINS_ACCOUNTANT_PASSWORD": true,
+          "PHINS_ACTUARY_PASSWORD": true,
+          "PHINS_SUPPLIER_PASSWORD": true,
+          "PHINS_MEDIA_PASSWORD": true,
+          "PHINS_USER_ASAF_PHINS_PASSWORD": true,
+          "DATABASE_URL": true,
+          "USE_DATABASE": "true"
+        },
+        "total_password_vars_set": 9,
+        "all_required_set": true,
+        "message": "Environment configured correctly"
+      }
+    },
+    {
+      "name": "Customer Access Authentication",
+      "passed": true,
+      "data": [
+        [
+          "/api/customers",
+          true,
+          "Auth required"
+        ],
+        [
+          "/api/customer/status?customer_id=CUST001",
+          true,
+          "Auth required"
+        ],
+        [
+          "/api/customer/summary?customer_id=CUST001",
+          true,
+          "Auth required"
+        ],
+        [
+          "/api/policies",
+          true,
+          "Auth required"
+        ],
+        [
+          "/api/claims",
+          true,
+          "Auth required"
+        ]
+      ]
+    },
+    {
+      "name": "Dashboard Page Load",
+      "passed": true,
+      "data": {
+        "loaded": true,
+        "content_length": 397505
+      }
+    },
+    {
+      "name": "Static Assets",
+      "passed": true,
+      "data": [
+        [
+          "/styles.css",
+          true
+        ],
+        [
+          "/login.html",
+          true
+        ],
+        [
+          "/index.html",
+          true
+        ]
+      ]
+    }
+  ],
+  "summary": {
+    "passed": 6,
+    "total": 6,
+    "status": "PASS"
+  }
+}
