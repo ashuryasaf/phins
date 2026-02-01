@@ -14177,22 +14177,13 @@ For claims or questions, please contact:
                 self.wfile.write(json.dumps({'error': 'Internal server error', 'debug': str(e)}).encode('utf-8'))
             return
         
-        # Session Validation Endpoint - validates token and returns user info
+        # Session Validation Endpoint (POST) - validates token and returns user info
+        # NOTE: The frontend uses GET, but we keep POST for backward compatibility.
+        # IMPORTANT: Must validate stateless signed tokens for Railway multi-instance deployments.
         if path == '/api/session/validate':
             auth_header = self.headers.get('Authorization', '')
             token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
-            
-            if not token:
-                self._set_json_headers(401)
-                self.wfile.write(json.dumps({
-                    'valid': False,
-                    'error': 'No token provided'
-                }).encode('utf-8'))
-                return
-            
-            # Check if session exists and is valid
-            with STATE_LOCK:
-                session = SESSIONS.get(token)
+            session = validate_session(token) if token else None
             
             if not session:
                 self._set_json_headers(401)
@@ -14202,28 +14193,29 @@ For claims or questions, please contact:
                 }).encode('utf-8'))
                 return
             
-            # Check if session has expired
-            try:
-                expires = datetime.fromisoformat(session['expires'])
-                if datetime.now() > expires:
-                    with STATE_LOCK:
-                        del SESSIONS[token]
-                    self._set_json_headers(401)
-                    self.wfile.write(json.dumps({
-                        'valid': False,
-                        'error': 'Session expired'
-                    }).encode('utf-8'))
-                    return
-            except Exception:
-                pass
+            username = session.get('username')
+            role = session.get('role')
+            customer_id = session.get('customer_id')
+            
+            # CUSTOMER ID RECOVERY: For customer role without customer_id, try to recover from database
+            if role == 'customer' and not customer_id and username and USE_DATABASE and database_enabled:
+                try:
+                    from database.manager import DatabaseManager
+                    with DatabaseManager() as db:
+                        db_customer = db.customers.get_by_email(username.lower())
+                        if db_customer:
+                            customer_id = db_customer.id
+                            print(f"[SESSION VALIDATE] Recovered customer_id {customer_id} for {username}")
+                except Exception as e:
+                    print(f"[SESSION VALIDATE] Customer recovery failed for {username}: {e}")
             
             # Session is valid - return user info
             self._set_json_headers(200)
             self.wfile.write(json.dumps({
                 'valid': True,
-                'username': session.get('username'),
-                'role': session.get('role'),
-                'customer_id': session.get('customer_id'),
+                'username': username,
+                'role': role,
+                'customer_id': customer_id,
                 'expires': session.get('expires')
             }).encode('utf-8'))
             return
