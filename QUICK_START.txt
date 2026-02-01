@@ -1,0 +1,61 @@
+╔═══════════════════════════════════════════════════════════════╗
+║                                                               ║
+║   HOW TO RESTORE PHINS TO JANUARY 30, 2026 AT 13:00         ║
+║                                                               ║
+╚═══════════════════════════════════════════════════════════════╝
+
+OPTION 1: Quick Restore (Recommended)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Just run this command:
+
+    ./restore_platform.sh
+
+That's it! The script will:
+  1. Show you what will be restored
+  2. Ask for confirmation
+  3. Restore to the correct version
+
+
+OPTION 2: Preview First (Extra Safe)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Step 1: Preview (doesn't change anything)
+
+    ./preview_restore.sh
+
+Step 2: If it looks good, restore
+
+    ./restore_platform.sh
+
+
+WHAT HAPPENS AFTER RESTORE?
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+After restore, create a branch to work from this version:
+
+    git checkout -b restored-jan30
+
+Or, to just go back to the latest version:
+
+    git checkout main
+
+
+NEED HELP?
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Read the full guides:
+  - HOW_TO_RESTORE.md        (quick guide)
+  - RESTORE_GUIDE.md         (detailed guide)
+  - RESTORE_SOLUTION_SUMMARY.md  (complete summary)
+
+
+TARGET VERSION DETAILS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Commit:  337d9aab5340184e499598f3174452db5f99fd93
+Date:    January 30, 2026, 12:51:47 UTC
+Message: Fix customer login redirect and dashboard access
+
+This was the version active at 13:00 on January 30, 2026.
+
