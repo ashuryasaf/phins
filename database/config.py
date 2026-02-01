@@ -3,10 +3,16 @@ Database Configuration for PHINS
 
 Supports both SQLite (development) and PostgreSQL (production).
 Configuration is determined by environment variables.
+
+Railway PostgreSQL SSL:
+- Railway PostgreSQL requires SSL connections
+- SSL mode is automatically configured for Railway deployments
+- For local PostgreSQL, set DB_SSL_MODE=disable if needed
 """
 
 import os
 from typing import Dict, Any
+from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
 
 
 class DatabaseConfig:
@@ -21,6 +27,7 @@ class DatabaseConfig:
     # Note: This is the env var NAME to look up, not a credential value
     ENV_DB_CREDENTIAL = "DB_" + "PASSWORD"  # noqa: S105 - env var name, not a secret
     ENV_USE_SQLITE = "USE_SQLITE"
+    ENV_DB_SSL_MODE = "DB_SSL_MODE"  # SSL mode: require, disable, prefer, verify-ca, verify-full
     
     # Alias for backward compatibility
     ENV_DB_PASSWORD = ENV_DB_CREDENTIAL
@@ -40,6 +47,56 @@ class DatabaseConfig:
     ECHO_SQL = False  # Set to True to log all SQL queries (SECURITY RISK in production)
     
     @classmethod
+    def _add_ssl_to_url(cls, database_url: str) -> str:
+        """
+        Add SSL parameters to PostgreSQL database URL for Railway and other cloud providers.
+        
+        Railway PostgreSQL requires SSL connections. This method ensures the sslmode
+        parameter is set appropriately.
+        """
+        if not database_url or not database_url.startswith('postgresql://'):
+            return database_url
+        
+        # Check if sslmode is already in the URL
+        if 'sslmode=' in database_url:
+            return database_url
+        
+        # Get SSL mode from environment or use 'require' for Railway (default for cloud)
+        ssl_mode = os.environ.get(cls.ENV_DB_SSL_MODE, '')
+        
+        # Auto-detect Railway environment
+        is_railway = os.environ.get('RAILWAY_ENVIRONMENT') or os.environ.get('RAILWAY_SERVICE_NAME')
+        
+        # If no explicit SSL mode and we're on Railway (or cloud DB URL detected), use 'require'
+        if not ssl_mode:
+            # Railway and most cloud providers require SSL
+            # Check if it looks like a cloud database URL (has a cloud provider hostname)
+            parsed = urlparse(database_url)
+            cloud_indicators = ['railway', 'neon', 'supabase', 'render', 'heroku', 'aws', 'azure', 'gcp']
+            is_cloud = any(indicator in (parsed.hostname or '').lower() for indicator in cloud_indicators)
+            
+            if is_railway or is_cloud:
+                ssl_mode = 'require'
+        
+        if ssl_mode:
+            # Parse URL and add sslmode parameter
+            parsed = urlparse(database_url)
+            query_params = parse_qs(parsed.query)
+            query_params['sslmode'] = [ssl_mode]
+            new_query = urlencode(query_params, doseq=True)
+            new_url = urlunparse((
+                parsed.scheme,
+                parsed.netloc,
+                parsed.path,
+                parsed.params,
+                new_query,
+                parsed.fragment
+            ))
+            return new_url
+        
+        return database_url
+    
+    @classmethod
     def get_database_url(cls) -> str:
         """
         Get database URL from environment variables.
@@ -48,6 +105,9 @@ class DatabaseConfig:
         1. DATABASE_URL (full connection string)
         2. Individual DB_* environment variables
         3. SQLite (development fallback)
+        
+        Note: For PostgreSQL, SSL parameters are automatically added for Railway
+        and other cloud deployments to ensure secure connections.
         """
         # Check for full database URL (Railway, Heroku style)
         database_url = os.environ.get(cls.ENV_DATABASE_URL)
@@ -55,6 +115,8 @@ class DatabaseConfig:
             # Railway provides postgres:// but SQLAlchemy needs postgresql://
             if database_url.startswith('postgres://'):
                 database_url = database_url.replace('postgres://', 'postgresql://', 1)
+            # Add SSL parameters for cloud PostgreSQL
+            database_url = cls._add_ssl_to_url(database_url)
             return database_url
         
         # Check if explicitly set to use SQLite
@@ -69,8 +131,12 @@ class DatabaseConfig:
             db_name = os.environ.get(cls.ENV_DB_NAME, 'phins')
             db_user = os.environ.get(cls.ENV_DB_USER, 'postgres')
             db_password = os.environ.get(cls.ENV_DB_PASSWORD, '')
+            ssl_mode = os.environ.get(cls.ENV_DB_SSL_MODE, '')
             
-            return f"postgresql://{db_user}:{db_password}@{db_host}:{db_port}/{db_name}"
+            base_url = f"postgresql://{db_user}:{db_password}@{db_host}:{db_port}/{db_name}"
+            if ssl_mode:
+                base_url += f"?sslmode={ssl_mode}"
+            return base_url
         
         # Default to SQLite for local development
         return cls.get_sqlite_url()

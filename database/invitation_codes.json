@@ -1,28 +1,23 @@
 {
   "version": "1.0",
-  "saved_at": "2026-01-27T09:00:00.000000",
+  "saved_at": "2026-02-01T11:43:35.862538",
   "admin_codes": {
-    "PHINS-2026-68904BEF": {
-      "code": "PHINS-2026-68904BEF",
-      "created_at": "2026-01-27T00:00:00.000000",
-      "created_by": "admin",
-      "expires_at": "2026-02-27T00:00:00.000000",
-      "max_uses": 10,
-      "used_count": 0,
-      "used_by": [],
+    "TESTCODE2026": {
+      "code": "TESTCODE2026",
+      "created_at": "2026-02-01T11:43:34.245039",
+      "created_by": "system",
+      "expires_at": null,
+      "max_uses": 999999,
+      "used_count": 1,
+      "used_by": [
+        {
+          "email": "newcustomer@example.com",
+          "customer_id": "CUST-79750",
+          "used_at": "2026-02-01T11:43:35.840534"
+        }
+      ],
       "status": "active",
-      "notes": "Restored from production session 27.1.2026"
-    },
-    "PHINS-2026-F2A001A4": {
-      "code": "PHINS-2026-F2A001A4",
-      "created_at": "2026-01-27T00:00:00.000000",
-      "created_by": "admin",
-      "expires_at": "2026-02-27T00:00:00.000000",
-      "max_uses": 10,
-      "used_count": 0,
-      "used_by": [],
-      "status": "active",
-      "notes": "Restored from production session 27.1.2026"
+      "notes": "Test mode invitation code - automatically created"
     }
   },
   "customer_codes": {},

@@ -201,7 +201,12 @@ if USE_DATABASE:
                     print("DATABASE CONNECTION ERROR:")
                     print("-" * 60)
                     error_str = str(e).lower()
-                    if 'connection refused' in error_str or 'timeout' in error_str:
+                    if 'ssl' in error_str or 'tls' in error_str or 'certificate' in error_str:
+                        print("  → SSL/TLS connection error")
+                        print("  → Railway PostgreSQL requires SSL connections")
+                        print("  → Set DB_SSL_MODE=require in Railway environment variables")
+                        print("  → If certificate error, try sslmode=require (not verify-full)")
+                    elif 'connection refused' in error_str or 'timeout' in error_str:
                         print("  → PostgreSQL service may not be running")
                         print("  → Check Railway dashboard for service status")
                         print("  → If service shows 'Failed', see RAILWAY_POSTGRES_FIX.md")
@@ -4852,6 +4857,8 @@ For claims or questions, please contact:
                 'connection_test': None,
                 'error': None,
                 'storage_mode': 'database' if (USE_DATABASE and database_enabled) else 'in-memory',
+                'ssl_mode': None,
+                'railway_environment': os.environ.get('RAILWAY_ENVIRONMENT', 'not set'),
                 'recommendations': []
             }
             
@@ -4863,20 +4870,40 @@ For claims or questions, please contact:
                 safe_url = re.sub(r':([^:@]+)@', ':****@', db_url)
                 result['database_url_format'] = safe_url
                 
+                # Parse URL to check SSL configuration
+                parsed = urlparse.urlparse(db_url)
+                query_params = urlparse.parse_qs(parsed.query)
+                result['ssl_mode'] = query_params.get('sslmode', ['not set'])[0]
+                result['db_host'] = parsed.hostname
+                
                 # Parse and validate URL format
                 if db_url.startswith('postgres://'):
                     result['url_needs_fix'] = True
                     result['recommendations'].append('DATABASE_URL uses postgres:// - will be auto-converted to postgresql://')
                 
-                # Test connection
+                # Check if SSL is needed for Railway
+                is_railway = os.environ.get('RAILWAY_ENVIRONMENT') or os.environ.get('RAILWAY_SERVICE_NAME')
+                if is_railway and result['ssl_mode'] == 'not set':
+                    result['recommendations'].append('Railway requires SSL - adding sslmode=require automatically')
+                
+                # Test connection with SSL support
                 try:
                     from sqlalchemy import create_engine, text
-                    # Convert postgres:// to postgresql:// for SQLAlchemy
-                    test_url = db_url
-                    if test_url.startswith('postgres://'):
-                        test_url = test_url.replace('postgres://', 'postgresql://', 1)
+                    from database.config import DatabaseConfig
                     
-                    test_engine = create_engine(test_url, pool_pre_ping=True, connect_args={'connect_timeout': 10})
+                    # Use the config class which handles SSL automatically
+                    test_url = DatabaseConfig.get_database_url()
+                    
+                    # Show the actual URL being used (with SSL params)
+                    safe_test_url = re.sub(r':([^:@]+)@', ':****@', test_url)
+                    result['actual_connection_url'] = safe_test_url
+                    
+                    # Extract SSL mode from actual URL
+                    parsed_test = urlparse.urlparse(test_url)
+                    test_query = urlparse.parse_qs(parsed_test.query)
+                    result['actual_ssl_mode'] = test_query.get('sslmode', ['not set'])[0]
+                    
+                    test_engine = create_engine(test_url, pool_pre_ping=True, connect_args={'connect_timeout': 15})
                     with test_engine.connect() as conn:
                         # Check if we can query
                         pg_result = conn.execute(text("SELECT version()"))
@@ -4888,6 +4915,14 @@ For claims or questions, please contact:
                         db_name = db_result.fetchone()
                         result['current_database'] = db_name[0] if db_name else 'unknown'
                         
+                        # Check SSL connection status
+                        try:
+                            ssl_result = conn.execute(text("SELECT ssl_is_used()"))
+                            ssl_used = ssl_result.fetchone()
+                            result['ssl_connection_active'] = ssl_used[0] if ssl_used else 'unknown'
+                        except Exception:
+                            result['ssl_connection_active'] = 'check not supported'
+                        
                     result['connection_test'] = 'SUCCESS'
                     test_engine.dispose()
                 except Exception as e:
@@ -4896,11 +4931,16 @@ For claims or questions, please contact:
                     result['error'] = error_str
                     
                     # Provide helpful troubleshooting recommendations
-                    if 'connection refused' in error_str.lower():
+                    if 'ssl' in error_str.lower() or 'tls' in error_str.lower() or 'certificate' in error_str.lower():
+                        result['recommendations'].append('SSL/TLS connection error - try setting DB_SSL_MODE=require')
+                        result['recommendations'].append('For Railway, ensure PostgreSQL service is properly linked')
+                        result['recommendations'].append('If certificate error persists, try sslmode=require (not verify-full)')
+                    elif 'connection refused' in error_str.lower():
                         result['recommendations'].append('Database server is not reachable - check if Postgres service is running in Railway')
                         result['recommendations'].append('FIX: Delete and recreate the Postgres service in Railway dashboard')
                     elif 'timeout' in error_str.lower():
                         result['recommendations'].append('Connection timeout - database may be starting up or misconfigured')
+                        result['recommendations'].append('Wait 30 seconds and try again - Railway may be initializing the database')
                     elif 'password' in error_str.lower() or 'authentication' in error_str.lower():
                         result['recommendations'].append('Authentication failed - DATABASE_URL credentials may be incorrect')
                         result['recommendations'].append('FIX: Recreate Postgres service to get fresh credentials')

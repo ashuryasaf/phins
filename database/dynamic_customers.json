@@ -588,5 +588,35 @@
     "customer_id": "CUST-28498",
     "email": "duplicate@example.com",
     "registered_at": "2026-01-20T23:11:02.187049"
+  },
+  {
+    "username": "newcustomer@example.com",
+    "password_hash": "c63e7d17b196f0724f569542d62ab3766e9a77af90951b7ebe855611a18b8dca",
+    "password_salt": "264b7a729ee890546048eea168374c5e",
+    "name": "New Customer",
+    "role": "customer",
+    "customer_id": "CUST-30268",
+    "email": "newcustomer@example.com",
+    "registered_at": "2026-02-01T11:28:20.117840"
+  },
+  {
+    "username": "newcustomer@example.com",
+    "password_hash": "34456f1d7682a380cd6e867552b1a2d5faf6a24aa7c98645b1b92356185f52bc",
+    "password_salt": "30923cefbf990da9cc579075c419bb03",
+    "name": "New Customer",
+    "role": "customer",
+    "customer_id": "CUST-45955",
+    "email": "newcustomer@example.com",
+    "registered_at": "2026-02-01T11:42:14.979611"
+  },
+  {
+    "username": "newcustomer@example.com",
+    "password_hash": "d53da036546054df38758bf93550958c34443c249975a12a2cc8ac17832a4abf",
+    "password_salt": "1315f31397541ae3d7ed84a4949578f1",
+    "name": "New Customer",
+    "role": "customer",
+    "customer_id": "CUST-79750",
+    "email": "newcustomer@example.com",
+    "registered_at": "2026-02-01T11:43:35.840534"
   }
 ]
