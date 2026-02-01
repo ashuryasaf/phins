@@ -1,10 +1,10 @@
 {
   "version": "1.0",
-  "saved_at": "2026-02-01T11:43:35.862538",
+  "saved_at": "2026-02-01T12:09:29.026106",
   "admin_codes": {
     "TESTCODE2026": {
       "code": "TESTCODE2026",
-      "created_at": "2026-02-01T11:43:34.245039",
+      "created_at": "2026-02-01T12:09:27.398223",
       "created_by": "system",
       "expires_at": null,
       "max_uses": 999999,
@@ -12,8 +12,8 @@
       "used_by": [
         {
           "email": "newcustomer@example.com",
-          "customer_id": "CUST-79750",
-          "used_at": "2026-02-01T11:43:35.840534"
+          "customer_id": "CUST-87962",
+          "used_at": "2026-02-01T12:09:29.004339"
         }
       ],
       "status": "active",

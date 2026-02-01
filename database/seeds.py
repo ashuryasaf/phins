@@ -58,6 +58,11 @@ def _get_env_password(env_var: str, username: str) -> str:
         return secrets.token_urlsafe(32)  # Random password that cannot be guessed
 
 
+def _is_env_password_set(env_var: str) -> bool:
+    """Check if a password environment variable is explicitly set (not random)."""
+    return bool(os.environ.get(env_var))
+
+
 def seed_default_users(session=None):
     """Create default system users"""
     should_close = False
@@ -69,9 +74,11 @@ def seed_default_users(session=None):
         user_repo = UserRepository(session)
         
         # System users - passwords loaded from environment variables
+        # Each entry includes env_var for checking if password should be updated
         default_users = [
             {
                 'username': 'admin',
+                'env_var': 'PHINS_ADMIN_PASSWORD',
                 'password': _get_env_password('PHINS_ADMIN_PASSWORD', 'admin'),
                 'role': 'admin',
                 'name': 'Admin User',
@@ -79,6 +86,7 @@ def seed_default_users(session=None):
             },
             {
                 'username': 'actuary',
+                'env_var': 'PHINS_ACTUARY_PASSWORD',
                 'password': _get_env_password('PHINS_ACTUARY_PASSWORD', 'actuary'),
                 'role': 'actuary',
                 'name': 'Actuary User',
@@ -86,6 +94,7 @@ def seed_default_users(session=None):
             },
             {
                 'username': 'supplier',
+                'env_var': 'PHINS_SUPPLIER_PASSWORD',
                 'password': _get_env_password('PHINS_SUPPLIER_PASSWORD', 'supplier'),
                 'role': 'supplier',
                 'name': 'Supplier User',
@@ -93,6 +102,7 @@ def seed_default_users(session=None):
             },
             {
                 'username': 'underwriter',
+                'env_var': 'PHINS_UNDERWRITER_PASSWORD',
                 'password': _get_env_password('PHINS_UNDERWRITER_PASSWORD', 'underwriter'),
                 'role': 'underwriter',
                 'name': 'John Underwriter',
@@ -100,6 +110,7 @@ def seed_default_users(session=None):
             },
             {
                 'username': 'claims_adjuster',
+                'env_var': 'PHINS_CLAIMS_PASSWORD',
                 'password': _get_env_password('PHINS_CLAIMS_PASSWORD', 'claims_adjuster'),
                 'role': 'claims',
                 'name': 'Jane Claims',
@@ -107,6 +118,7 @@ def seed_default_users(session=None):
             },
             {
                 'username': 'accountant',
+                'env_var': 'PHINS_ACCOUNTANT_PASSWORD',
                 'password': _get_env_password('PHINS_ACCOUNTANT_PASSWORD', 'accountant'),
                 'role': 'accountant',
                 'name': 'Bob Accountant',
@@ -114,6 +126,7 @@ def seed_default_users(session=None):
             },
             {
                 'username': 'media_ad',
+                'env_var': 'PHINS_MEDIA_PASSWORD',
                 'password': _get_env_password('PHINS_MEDIA_PASSWORD', 'media_ad'),
                 'role': 'media',
                 'name': 'Media Admin',
@@ -122,6 +135,7 @@ def seed_default_users(session=None):
             # Primary customer account (links to CUST-ASAF-001 in customers table)
             {
                 'username': 'asaf@assurance.co.il',
+                'env_var': 'PHINS_USER_ASAF_ASSURANCE_PASSWORD',
                 'password': _get_env_password('PHINS_USER_ASAF_ASSURANCE_PASSWORD', 'asaf@assurance.co.il'),
                 'role': 'customer',
                 'name': 'Asaf Assurance',
@@ -130,6 +144,7 @@ def seed_default_users(session=None):
             # Admin account for asaf@phins.ai - PERSISTENT ACCOUNT
             {
                 'username': 'asaf@phins.ai',
+                'env_var': 'PHINS_USER_ASAF_PHINS_PASSWORD',
                 'password': _get_env_password('PHINS_USER_ASAF_PHINS_PASSWORD', 'asaf@phins.ai'),
                 'role': 'admin',
                 'name': 'Asaf PHINS',
@@ -138,6 +153,7 @@ def seed_default_users(session=None):
             # Customer account for efrat@phins.ai - PERSISTENT ACCOUNT
             {
                 'username': 'efrat@phins.ai',
+                'env_var': 'PHINS_USER_EFRAT_PASSWORD',
                 'password': _get_env_password('PHINS_USER_EFRAT_PASSWORD', 'efrat@phins.ai'),
                 'role': 'customer',
                 'name': 'Efrat PHINS',
@@ -146,6 +162,7 @@ def seed_default_users(session=None):
             # Customer account for asi@phins.ai - PERSISTENT ACCOUNT
             {
                 'username': 'asi@phins.ai',
+                'env_var': 'PHINS_USER_ASI_PASSWORD',
                 'password': _get_env_password('PHINS_USER_ASI_PASSWORD', 'asi@phins.ai'),
                 'role': 'customer',
                 'name': 'Asi PHINS',
@@ -154,6 +171,7 @@ def seed_default_users(session=None):
             # Customer account for shosh@phins.ai - PERSISTENT ACCOUNT
             {
                 'username': 'shosh@phins.ai',
+                'env_var': 'PHINS_USER_SHOSH_PASSWORD',
                 'password': _get_env_password('PHINS_USER_SHOSH_PASSWORD', 'shosh@phins.ai'),
                 'role': 'customer',
                 'name': 'Shosh PHINS',
@@ -165,11 +183,26 @@ def seed_default_users(session=None):
             # Check if user already exists
             existing_user = user_repo.get_by_username(user_data['username'])
             if existing_user:
+                updated = False
+                
                 # Update role if it has changed (important for role changes like media_ad)
                 if existing_user.role != user_data['role']:
                     existing_user.role = user_data['role']
-                    session.commit()
+                    updated = True
                     logger.info(f"Updated user '{user_data['username']}' role to: {user_data['role']}")
+                
+                # Update password if env var is explicitly set
+                # This ensures passwords are updated on redeploy when env vars are configured
+                env_var = user_data.get('env_var')
+                if env_var and _is_env_password_set(env_var):
+                    password_hash = hash_password(user_data['password'])
+                    existing_user.password_hash = password_hash['hash']
+                    existing_user.password_salt = password_hash['salt']
+                    updated = True
+                    logger.info(f"Updated password for user '{user_data['username']}' from {env_var}")
+                
+                if updated:
+                    session.commit()
                 else:
                     logger.info(f"User '{user_data['username']}' already exists with correct role, skipping...")
                 continue

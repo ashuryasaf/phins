@@ -618,5 +618,15 @@
     "customer_id": "CUST-79750",
     "email": "newcustomer@example.com",
     "registered_at": "2026-02-01T11:43:35.840534"
+  },
+  {
+    "username": "newcustomer@example.com",
+    "password_hash": "ade38535ac09bf8f2095a110b86e4ac7d636b28aa226d69bd60442ee92cf144f",
+    "password_salt": "97ffcc02dc6759d3042dca7bd8760fe9",
+    "name": "New Customer",
+    "role": "customer",
+    "customer_id": "CUST-87962",
+    "email": "newcustomer@example.com",
+    "registered_at": "2026-02-01T12:09:29.004339"
   }
 ]
