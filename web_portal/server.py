@@ -136,7 +136,7 @@ database_enabled = False
 if USE_DATABASE:
     try:
         from database import init_database, check_database_connection, get_database_info
-        from database.seeds import seed_default_users
+        from database.seeds import seed_default_users, seed_sample_data
         from database.data_access import CUSTOMERS as DB_CUSTOMERS
         from database.data_access import POLICIES as DB_POLICIES
         from database.data_access import CLAIMS as DB_CLAIMS
@@ -162,7 +162,14 @@ if USE_DATABASE:
                     try:
                         init_database()
                         seed_default_users()
-                        print("✓ Database initialized and seeded")
+                        # CRITICAL: Also seed sample data to create Customer records with policies
+                        # This creates CUST-ASAF-001, CUST-SHOSH-001, etc. with their policies
+                        try:
+                            seed_sample_data()
+                            print("✓ Database initialized and seeded (users + customer data)")
+                        except Exception as sample_e:
+                            print(f"Warning: Sample data seed partial: {sample_e}")
+                            print("✓ Database initialized and seeded (users only)")
                     except Exception as e:
                         print(f"Warning: Database init/seed failed: {e}")
                     break
@@ -2998,11 +3005,16 @@ if USE_DATABASE and database_enabled:
                     if user:
                         # Get customer_id - either from user record or by looking up by email
                         customer_id = getattr(user, 'customer_id', None)
+                        print(f"[USERS] Found user '{username}' role={user.role} customer_id={customer_id}")
+                        
                         if not customer_id and user.role == 'customer':
                             # Try to find customer by email using repository
                             customer = db.customers.get_by_email(username)
                             if customer:
                                 customer_id = customer.id
+                                print(f"[USERS] Resolved customer_id={customer_id} for '{username}' via email lookup")
+                            else:
+                                print(f"[USERS] WARNING: No customer found for email '{username}'")
                         
                         return {
                             'hash': user.password_hash,
@@ -3011,10 +3023,14 @@ if USE_DATABASE and database_enabled:
                             'name': user.name,
                             'customer_id': customer_id
                         }
+                    else:
+                        print(f"[USERS] User '{username}' not found in database")
             except ImportError as e:
                 print(f"Warning: Database module not available: {e}")
             except Exception as e:
                 print(f"Warning: Error fetching user from database: {e}")
+                import traceback
+                traceback.print_exc()
             
             # FALLBACK: Check in-memory users (always works for admin access)
             fallback_user = _FALLBACK_USERS.get(username)
@@ -3646,50 +3662,13 @@ For claims or questions, please contact:
                 }).encode('utf-8'))
                 return
             
-            # Get session values
-            username = session.get('username')
-            role = session.get('role')
-            customer_id = session.get('customer_id')
-            
-            # CUSTOMER ID RECOVERY: For customer role without customer_id, try to recover from database
-            # This handles edge cases where token was created before customer_id was properly set
-            # NOTE: Includes auto-reconnection if database connection is stale
-            if role == 'customer' and not customer_id and username and USE_DATABASE:
-                try:
-                    from database.manager import DatabaseManager
-                    from database import ensure_connection_healthy, reset_connection
-                    from sqlalchemy.exc import OperationalError, DatabaseError, DisconnectionError
-                    
-                    # Try to ensure connection is healthy
-                    db_healthy = database_enabled
-                    if not db_healthy:
-                        print(f"[SESSION VALIDATE] Database disabled, attempting reconnection...")
-                        if ensure_connection_healthy():
-                            db_healthy = True
-                            globals()['database_enabled'] = True
-                            print(f"[SESSION VALIDATE] Database connection restored!")
-                    
-                    if db_healthy:
-                        with DatabaseManager() as db:
-                            db_customer = db.customers.get_by_email(username.lower())
-                            if db_customer:
-                                customer_id = db_customer.id
-                                print(f"[SESSION VALIDATE] Recovered customer_id {customer_id} for {username}")
-                except (OperationalError, DatabaseError, DisconnectionError) as db_err:
-                    print(f"[SESSION VALIDATE] Database connection error: {db_err}")
-                    try:
-                        reset_connection()
-                    except Exception:
-                        pass
-                except Exception as e:
-                    print(f"[SESSION VALIDATE] Customer recovery failed for {username}: {e}")
-            
+            # Return session data directly - simple and reliable
             self._set_json_headers(200)
             self.wfile.write(json.dumps({
                 'valid': True,
-                'username': username,
-                'role': role,
-                'customer_id': customer_id,
+                'username': session.get('username'),
+                'role': session.get('role'),
+                'customer_id': session.get('customer_id'),
                 'expires': session.get('expires')
             }).encode('utf-8'))
             return
@@ -14173,52 +14152,29 @@ For claims or questions, please contact:
                 
                 # 2. Check customers table (by email) - for customer logins
                 # This runs if: no user found OR user found but password failed (handles password mismatch between tables)
-                # NOTE: database_enabled may be stale - we try anyway with auto-reconnection
-                if not user and USE_DATABASE:
+                if not user and USE_DATABASE and database_enabled:
                     try:
                         from database.manager import DatabaseManager
-                        from database import ensure_connection_healthy, reset_connection
-                        from sqlalchemy.exc import OperationalError, DatabaseError, DisconnectionError
-                        
-                        # Try to ensure connection is healthy before auth
-                        db_healthy = database_enabled
-                        if not db_healthy:
-                            # Try to reconnect
-                            print(f"[AUTH] Database disabled, attempting reconnection for customer login...")
-                            if ensure_connection_healthy():
-                                db_healthy = True
-                                # Update global flag
-                                globals()['database_enabled'] = True
-                                print(f"[AUTH] Database connection restored!")
-                        
-                        if db_healthy:
-                            with DatabaseManager() as db:
-                                # Use repository method to get customer by email
-                                customer = db.customers.get_by_email(username.lower())
-                                if customer and getattr(customer, 'password_hash', None) and getattr(customer, 'password_salt', None):
-                                    if verify_password(password, customer.password_hash, customer.password_salt):
-                                        user = {
-                                            'hash': customer.password_hash,
-                                            'salt': customer.password_salt,
-                                            'role': 'customer',
-                                            'name': customer.name
-                                        }
-                                        customer_id = customer.id
-                                        role = 'customer'
-                                        name = customer.name
-                                        # Update last login
-                                        try:
-                                            db.customers.update_last_login(customer.id)
-                                            db.commit()
-                                        except Exception:
-                                            pass  # Non-critical
-                    except (OperationalError, DatabaseError, DisconnectionError) as db_err:
-                        print(f"[AUTH] Database connection error during customer auth: {db_err}")
-                        # Attempt reconnection for future requests
-                        try:
-                            reset_connection()
-                        except Exception:
-                            pass
+                        with DatabaseManager() as db:
+                            # Use repository method to get customer by email
+                            customer = db.customers.get_by_email(username.lower())
+                            if customer and getattr(customer, 'password_hash', None) and getattr(customer, 'password_salt', None):
+                                if verify_password(password, customer.password_hash, customer.password_salt):
+                                    user = {
+                                        'hash': customer.password_hash,
+                                        'salt': customer.password_salt,
+                                        'role': 'customer',
+                                        'name': customer.name
+                                    }
+                                    customer_id = customer.id
+                                    role = 'customer'
+                                    name = customer.name
+                                    # Update last login
+                                    try:
+                                        db.customers.update_last_login(customer.id)
+                                        db.commit()
+                                    except Exception:
+                                        pass  # Non-critical
                     except Exception as e:
                         print(f"Customer auth check error: {e}")
                         import traceback
@@ -14318,49 +14274,13 @@ For claims or questions, please contact:
                 }).encode('utf-8'))
                 return
             
-            username = session.get('username')
-            role = session.get('role')
-            customer_id = session.get('customer_id')
-            
-            # CUSTOMER ID RECOVERY: For customer role without customer_id, try to recover from database
-            # NOTE: Includes auto-reconnection if database connection is stale
-            if role == 'customer' and not customer_id and username and USE_DATABASE:
-                try:
-                    from database.manager import DatabaseManager
-                    from database import ensure_connection_healthy, reset_connection
-                    from sqlalchemy.exc import OperationalError, DatabaseError, DisconnectionError
-                    
-                    # Try to ensure connection is healthy
-                    db_healthy = database_enabled
-                    if not db_healthy:
-                        print(f"[SESSION VALIDATE POST] Database disabled, attempting reconnection...")
-                        if ensure_connection_healthy():
-                            db_healthy = True
-                            globals()['database_enabled'] = True
-                            print(f"[SESSION VALIDATE POST] Database connection restored!")
-                    
-                    if db_healthy:
-                        with DatabaseManager() as db:
-                            db_customer = db.customers.get_by_email(username.lower())
-                            if db_customer:
-                                customer_id = db_customer.id
-                                print(f"[SESSION VALIDATE POST] Recovered customer_id {customer_id} for {username}")
-                except (OperationalError, DatabaseError, DisconnectionError) as db_err:
-                    print(f"[SESSION VALIDATE POST] Database connection error: {db_err}")
-                    try:
-                        reset_connection()
-                    except Exception:
-                        pass
-                except Exception as e:
-                    print(f"[SESSION VALIDATE POST] Customer recovery failed for {username}: {e}")
-            
-            # Session is valid - return user info
+            # Session is valid - return user info directly
             self._set_json_headers(200)
             self.wfile.write(json.dumps({
                 'valid': True,
-                'username': username,
-                'role': role,
-                'customer_id': customer_id,
+                'username': session.get('username'),
+                'role': session.get('role'),
+                'customer_id': session.get('customer_id'),
                 'expires': session.get('expires')
             }).encode('utf-8'))
             return
