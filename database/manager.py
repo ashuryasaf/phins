@@ -3,14 +3,18 @@ Database Manager
 
 Provides a high-level interface to all repositories for use in the web server.
 Handles session management and provides a clean API for database operations.
+
+IMPORTANT: This manager includes automatic connection recovery. When database
+connections fail, it will attempt to reconnect automatically.
 """
 
 from typing import Optional, List, Dict, Any
 from contextlib import contextmanager
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import OperationalError, DatabaseError, DisconnectionError
 import logging
 
-from database import get_db_session
+from database import get_db_session, reset_connection, ensure_connection_healthy
 from database.repositories import (
     CustomerRepository,
     PolicyRepository,
@@ -31,21 +35,25 @@ class DatabaseManager:
     """
     High-level database manager that provides access to all repositories.
     
+    Includes automatic connection recovery on database errors.
+    
     Usage:
         db_manager = DatabaseManager()
         with db_manager.session_scope() as session:
             customer = db_manager.customers.get_by_id('CUST-123')
     """
     
-    def __init__(self, session: Optional[Session] = None):
+    def __init__(self, session: Optional[Session] = None, max_retries: int = 3):
         """
         Initialize database manager.
         
         Args:
             session: Optional pre-existing session. If not provided, creates new sessions.
+            max_retries: Maximum retry attempts for connection failures (default: 3)
         """
         self._session = session
         self._owns_session = session is None
+        self._max_retries = max_retries
         
         # Initialize repositories (will be set when session is available)
         self._customers = None
@@ -60,11 +68,32 @@ class DatabaseManager:
         self._tokens = None
     
     def _ensure_session(self) -> Session:
-        """Ensure we have a database session"""
+        """
+        Ensure we have a database session with connection recovery.
+        
+        Returns:
+            Valid database session
+        
+        Raises:
+            Exception: If connection cannot be established after retries
+        """
         if self._session is None:
-            self._session = get_db_session()
+            self._session = get_db_session(max_retries=self._max_retries)
             self._owns_session = True
         return self._session
+    
+    def _reset_repositories(self):
+        """Reset all repository references (used after session reset)"""
+        self._customers = None
+        self._policies = None
+        self._claims = None
+        self._underwriting = None
+        self._billing = None
+        self._users = None
+        self._sessions = None
+        self._audit = None
+        self._actuarial = None
+        self._tokens = None
     
     @property
     def customers(self) -> CustomerRepository:
@@ -149,24 +178,19 @@ class DatabaseManager:
     def close(self):
         """Close the session if we own it"""
         if self._owns_session and self._session:
-            self._session.close()
+            try:
+                self._session.close()
+            except Exception as e:
+                logger.debug(f"Session close error (non-critical): {e}")
             self._session = None
-            # Reset repositories
-            self._customers = None
-            self._policies = None
-            self._claims = None
-            self._underwriting = None
-            self._billing = None
-            self._users = None
-            self._sessions = None
-            self._audit = None
-            self._actuarial = None
-            self._tokens = None
+            self._reset_repositories()
     
     @contextmanager
     def session_scope(self):
         """
         Provide a transactional scope around a series of operations.
+        
+        Includes automatic connection recovery on database errors.
         
         Usage:
             db = DatabaseManager()
@@ -178,6 +202,15 @@ class DatabaseManager:
         try:
             yield self
             self.commit()
+        except (OperationalError, DatabaseError, DisconnectionError) as e:
+            logger.error(f"Database connection error in transaction: {e}")
+            self.rollback()
+            # Reset connection for future operations
+            try:
+                reset_connection()
+            except Exception as reset_err:
+                logger.debug(f"Connection reset error: {reset_err}")
+            raise
         except Exception as e:
             logger.error(f"Transaction failed: {e}")
             self.rollback()
