@@ -1674,9 +1674,45 @@
       return '$' + formatNumber(num, decimals);
     }
     
+    function readSessionCache() {
+      const raw = localStorage.getItem('session');
+      if (!raw) return {};
+      try {
+        return JSON.parse(raw);
+      } catch (err) {
+        console.warn('[Dashboard Init] Invalid session cache - clearing', err);
+        localStorage.removeItem('session');
+        return {};
+      }
+    }
+    
+    function normalizeAuthToken(token) {
+      if (!token) return '';
+      const trimmed = String(token).trim();
+      if (!trimmed || trimmed === 'undefined' || trimmed === 'null') return '';
+      return trimmed;
+    }
+    
+    function normalizeCustomerId(value) {
+      if (!value) return null;
+      const trimmed = String(value).trim();
+      if (!trimmed) return null;
+      const lowered = trimmed.toLowerCase();
+      if (lowered === 'null' || lowered === 'undefined' || lowered === 'none') return null;
+      return trimmed;
+    }
+    
     // Customer state
     let customerId = null;
-    let authToken = localStorage.getItem('phins_token');
+    let authToken = normalizeAuthToken(localStorage.getItem('phins_token') || sessionStorage.getItem('phins_token'));
+    const cachedSession = readSessionCache();
+    if (!authToken && cachedSession.token) {
+      authToken = normalizeAuthToken(cachedSession.token);
+      if (authToken) {
+        localStorage.setItem('phins_token', authToken);
+        sessionStorage.setItem('phins_token', authToken);
+      }
+    }
     let walletBalance = 0.00;
     let customerNFTs = [];
     
@@ -3197,28 +3233,45 @@
     document.addEventListener('DOMContentLoaded', async () => {
       // Get customer info from multiple sources (session, local storage, URL params)
       const urlParams = new URLSearchParams(window.location.search);
-      const storedCustomerId = sessionStorage.getItem('customer_id') 
-                             || localStorage.getItem('customer_id')
-                             || urlParams.get('customer_id');
-      
-      // Also try to get from localStorage session object
-      const sessionData = JSON.parse(localStorage.getItem('session') || '{}');
+      const sessionData = readSessionCache();
+      const sessionToken = normalizeAuthToken(sessionData.token);
+      if (!authToken && sessionToken) {
+        authToken = sessionToken;
+        localStorage.setItem('phins_token', authToken);
+        sessionStorage.setItem('phins_token', authToken);
+      }
+      const storedCustomerId = normalizeCustomerId(
+        sessionStorage.getItem('customer_id') ||
+        localStorage.getItem('customer_id') ||
+        localStorage.getItem('phins_customer_id') ||
+        urlParams.get('customer_id')
+      );
+      const sessionCustomerId = normalizeCustomerId(sessionData.customer_id);
       
       console.log('[Dashboard Init] Sources:', {
         sessionStorage: sessionStorage.getItem('customer_id'),
         localStorage: localStorage.getItem('customer_id'),
+        phinsStorage: localStorage.getItem('phins_customer_id'),
         urlParam: urlParams.get('customer_id'),
         sessionObj: sessionData.customer_id,
         authToken: authToken ? 'present' : 'missing'
       });
       
-      if (storedCustomerId) {
+      if (storedCustomerId && sessionCustomerId && sessionToken && authToken === sessionToken && storedCustomerId !== sessionCustomerId) {
+        customerId = sessionCustomerId;
+        sessionStorage.setItem('customer_id', customerId);
+        localStorage.setItem('customer_id', customerId);
+        localStorage.setItem('phins_customer_id', customerId);
+        console.warn('[Dashboard Init] Stored customer_id mismatch - using session customer_id:', customerId);
+      } else if (storedCustomerId) {
         customerId = storedCustomerId;
         console.log('[Dashboard Init] Using stored customer_id:', customerId);
-      } else if (sessionData.customer_id) {
-        customerId = sessionData.customer_id;
+      } else if (sessionCustomerId) {
+        customerId = sessionCustomerId;
         // Store in sessionStorage for consistency
         sessionStorage.setItem('customer_id', customerId);
+        localStorage.setItem('customer_id', customerId);
+        localStorage.setItem('phins_customer_id', customerId);
         console.log('[Dashboard Init] Using session object customer_id:', customerId);
       }
       

@@ -309,6 +309,7 @@ document.addEventListener('DOMContentLoaded', function () {
     
     // Store token and username
     localStorage.setItem('phins_token', data.token);
+    sessionStorage.setItem('phins_token', data.token);
     sessionStorage.setItem('username', username);
     
     // Store session object for ALL users (admin, customer, etc.)
