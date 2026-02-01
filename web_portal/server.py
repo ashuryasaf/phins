@@ -2390,6 +2390,32 @@ def validate_session(token: str) -> dict[str, str] | None:
     if token.startswith('phins_') and '.' in token:
         signed_result = _verify_signed_token(token)
         if signed_result:
+            # CUSTOMER ID RECOVERY:
+            # Some legacy/staff-auth paths can mint a valid token with role=customer but missing customer_id.
+            # Many customer endpoints require session.customer_id for strict data isolation.
+            if (
+                signed_result.get('role') == 'customer'
+                and not signed_result.get('customer_id')
+                and signed_result.get('username')
+                and USE_DATABASE
+                and database_enabled
+            ):
+                try:
+                    from database.manager import DatabaseManager
+                    with DatabaseManager() as db:
+                        db_customer = db.customers.get_by_email(str(signed_result.get('username')).lower())
+                        if db_customer:
+                            signed_result['customer_id'] = db_customer.id
+                            # Cache the recovered id for same-instance fast path
+                            with STATE_LOCK:
+                                SESSIONS[token] = {
+                                    'username': signed_result.get('username'),
+                                    'expires': signed_result.get('expires'),
+                                    'customer_id': signed_result.get('customer_id'),
+                                    'role': signed_result.get('role'),
+                                }
+                except Exception as e:
+                    print(f"[SESSION] Signed token customer_id recovery failed: {e}")
             return signed_result
     
     # Fallback: Check local SESSIONS dict (legacy tokens or same-instance)
