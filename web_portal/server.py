@@ -14873,12 +14873,18 @@ For claims or questions, please contact:
             try:
                 data = json.loads(body)
                 customer_id = sanitize_input(data.get('customer_id', ''), 50)
+                email_param = sanitize_input(data.get('email', ''), 254).lower()  # Allow email lookup
                 password = data.get('password', '')
                 
-                # Validation
-                if not customer_id or not password:
+                # Validation - need at least customer_id OR email
+                if not customer_id and not email_param:
                     self._set_json_headers(400)
-                    self.wfile.write(json.dumps({'error': 'Customer ID and password are required'}).encode('utf-8'))
+                    self.wfile.write(json.dumps({'error': 'Customer ID or email is required'}).encode('utf-8'))
+                    return
+                
+                if not password:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'Password is required'}).encode('utf-8'))
                     return
                 
                 if len(password) < 8:
@@ -14886,14 +14892,44 @@ For claims or questions, please contact:
                     self.wfile.write(json.dumps({'error': 'Password must be at least 8 characters'}).encode('utf-8'))
                     return
                 
-                # Find customer
-                customer = CUSTOMERS.get(customer_id)
+                # Find customer - by ID first, then by email if no ID provided
+                customer = None
+                if customer_id:
+                    customer = CUSTOMERS.get(customer_id)
+                
+                if not customer and email_param:
+                    # Look up by email in CUSTOMERS dict
+                    for cid, cust in CUSTOMERS.items():
+                        if isinstance(cust, dict) and cust.get('email', '').lower() == email_param:
+                            customer = cust
+                            customer_id = cid
+                            break
+                    
+                    # Also check database if not found
+                    if not customer and USE_DATABASE and database_enabled:
+                        try:
+                            from database.manager import DatabaseManager
+                            with DatabaseManager() as db:
+                                db_cust = db.customers.get_by_email(email_param)
+                                if db_cust:
+                                    customer_id = getattr(db_cust, 'id', None)
+                                    customer = {
+                                        'id': customer_id,
+                                        'name': getattr(db_cust, 'name', 'Customer'),
+                                        'email': email_param
+                                    }
+                        except Exception as e:
+                            print(f"Database customer lookup error: {e}")
+                
                 if not customer:
                     self._set_json_headers(404)
-                    self.wfile.write(json.dumps({'error': 'Customer not found'}).encode('utf-8'))
+                    self.wfile.write(json.dumps({
+                        'error': 'Customer not found',
+                        'hint': 'Provide customer_id or email. Use /api/diagnostics/customer-status to find customers.'
+                    }).encode('utf-8'))
                     return
                 
-                email = customer.get('email', '').lower()
+                email = email_param or customer.get('email', '').lower()
                 if not email:
                     self._set_json_headers(400)
                     self.wfile.write(json.dumps({'error': 'Customer has no email address'}).encode('utf-8'))
@@ -14925,6 +14961,41 @@ For claims or questions, please contact:
                 
                 # Write back to database/storage to persist the change
                 CUSTOMERS[customer_id] = customer
+                
+                # ALSO persist to database if enabled
+                if USE_DATABASE and database_enabled:
+                    try:
+                        from database.manager import DatabaseManager
+                        with DatabaseManager() as db:
+                            # Update user table password
+                            db_user = db.users.get_by_username(email)
+                            if db_user:
+                                db_user.password_hash = pwd_hash['hash']
+                                db_user.password_salt = pwd_hash['salt']
+                                db.session.commit()
+                                print(f"[ADMIN] Updated password in users table for {email}")
+                            else:
+                                # Create user if doesn't exist
+                                db.users.create(
+                                    username=email,
+                                    password_hash=pwd_hash['hash'],
+                                    password_salt=pwd_hash['salt'],
+                                    role='customer',
+                                    name=customer.get('name', 'Customer'),
+                                    email=email,
+                                    active=True
+                                )
+                                print(f"[ADMIN] Created user in users table for {email}")
+                            
+                            # Update customers table password
+                            db_cust = db.customers.get_by_email(email)
+                            if db_cust:
+                                db_cust.password_hash = pwd_hash['hash']
+                                db_cust.password_salt = pwd_hash['salt']
+                                db.session.commit()
+                                print(f"[ADMIN] Updated password in customers table for {email}")
+                    except Exception as db_err:
+                        print(f"[ADMIN] Database password update warning: {db_err}")
                 
                 # Log the action
                 record_transaction(
