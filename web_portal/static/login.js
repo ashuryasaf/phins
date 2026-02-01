@@ -40,6 +40,16 @@ document.addEventListener('DOMContentLoaded', function () {
   let resendInterval = null;
   let pendingLoginData = null;
   
+  function safeStorageSet(storage, key, value) {
+    try {
+      storage.setItem(key, value);
+      return true;
+    } catch (err) {
+      console.warn(`Storage set failed (${key}):`, err);
+      return false;
+    }
+  }
+  
   // Generate device fingerprint
   function getDeviceFingerprint() {
     const canvas = document.createElement('canvas');
@@ -311,6 +321,9 @@ document.addEventListener('DOMContentLoaded', function () {
     localStorage.setItem('phins_token', data.token);
     sessionStorage.setItem('phins_token', data.token);
     sessionStorage.setItem('username', username);
+    safeStorageSet(localStorage, 'phins_token', data.token);
+    safeStorageSet(sessionStorage, 'phins_token', data.token);
+    safeStorageSet(sessionStorage, 'username', username);
     
     // Store session object for ALL users (admin, customer, etc.)
     const sessionObj = {
@@ -321,16 +334,16 @@ document.addEventListener('DOMContentLoaded', function () {
       token: data.token,
       login_time: new Date().toISOString()
     };
-    localStorage.setItem('session', JSON.stringify(sessionObj));
-    sessionStorage.setItem('user_role', data.role || 'customer');
+    safeStorageSet(localStorage, 'session', JSON.stringify(sessionObj));
+    safeStorageSet(sessionStorage, 'user_role', data.role || 'customer');
     
     console.log('Session stored:', { username, role: data.role });
     
     // Store customer_id in ALL expected locations for data isolation (customers only)
     if (data.customer_id) {
-      localStorage.setItem('customer_id', data.customer_id);
-      sessionStorage.setItem('customer_id', data.customer_id);
-      localStorage.setItem('phins_customer_id', data.customer_id);
+      safeStorageSet(localStorage, 'customer_id', data.customer_id);
+      safeStorageSet(sessionStorage, 'customer_id', data.customer_id);
+      safeStorageSet(localStorage, 'phins_customer_id', data.customer_id);
       console.log('Customer session stored:', data.customer_id);
     } else if (data.role === 'customer') {
       // Warning: customer logged in but no customer_id returned
@@ -338,7 +351,7 @@ document.addEventListener('DOMContentLoaded', function () {
     }
     
     // Store device fingerprint for future logins
-    localStorage.setItem('phins_device_fp', getDeviceFingerprint());
+    safeStorageSet(localStorage, 'phins_device_fp', getDeviceFingerprint());
     
     // Redirect based on user role
     setTimeout(() => {
