@@ -1674,9 +1674,53 @@
       return '$' + formatNumber(num, decimals);
     }
     
+    function getStorage(type) {
+      try {
+        return window[type];
+      } catch (err) {
+        console.warn(`[Dashboard Init] ${type} unavailable:`, err);
+        return null;
+      }
+    }
+    
+    const localStore = getStorage('localStorage');
+    const sessionStore = getStorage('sessionStorage');
+    
+    function safeStorageGet(store, key) {
+      if (!store) return null;
+      try {
+        return store.getItem(key);
+      } catch (err) {
+        console.warn(`[Dashboard Init] Storage get failed (${key}):`, err);
+        return null;
+      }
+    }
+    
+    function safeStorageSet(store, key, value) {
+      if (!store) return false;
+      try {
+        store.setItem(key, value);
+        return true;
+      } catch (err) {
+        console.warn(`[Dashboard Init] Storage set failed (${key}):`, err);
+        return false;
+      }
+    }
+    
+    function safeStorageRemove(store, key) {
+      if (!store) return false;
+      try {
+        store.removeItem(key);
+        return true;
+      } catch (err) {
+        console.warn(`[Dashboard Init] Storage remove failed (${key}):`, err);
+        return false;
+      }
+    }
+    
     // Customer state
     let customerId = null;
-    let authToken = localStorage.getItem('phins_token');
+    let authToken = safeStorageGet(localStore, 'phins_token') || safeStorageGet(sessionStore, 'phins_token');
     let walletBalance = 0.00;
     let customerNFTs = [];
     
@@ -3195,31 +3239,72 @@
     
     // Initialize on page load
     document.addEventListener('DOMContentLoaded', async () => {
+      // Failsafe: Always hide splash screen after max 8 seconds regardless of errors
+      const splashFailsafe = setTimeout(() => {
+        console.warn('Splash screen failsafe triggered - forcing hide');
+        hideSplashScreen();
+      }, 8000);
+      
       // Get customer info from multiple sources (session, local storage, URL params)
       const urlParams = new URLSearchParams(window.location.search);
-      const storedCustomerId = sessionStorage.getItem('customer_id') 
-                             || localStorage.getItem('customer_id')
+      const storedCustomerId = safeStorageGet(sessionStore, 'customer_id') 
+                             || safeStorageGet(localStore, 'customer_id')
                              || urlParams.get('customer_id');
       
-      // Also try to get from localStorage session object
-      const sessionData = JSON.parse(localStorage.getItem('session') || '{}');
+      // Also try to get from localStorage session object (with safe parsing)
+      let sessionData = {};
+      let sessionParseFailed = false;
+      const sessionRaw = safeStorageGet(localStore, 'session');
+      if (sessionRaw) {
+        try {
+          sessionData = JSON.parse(sessionRaw) || {};
+          if (!sessionData || typeof sessionData !== 'object' || Array.isArray(sessionData)) {
+            sessionData = {};
+          }
+        } catch (err) {
+          sessionParseFailed = true;
+          sessionData = {};
+        }
+      }
+      if (sessionParseFailed) {
+        console.warn('[Dashboard Init] Invalid session data detected, clearing stored session.');
+        safeStorageRemove(localStore, 'session');
+      }
+      
+      const sessionCustomerId = sessionData.customer_id || null;
+      const sessionToken = sessionData.token || null;
+      if (!authToken && sessionToken) {
+        authToken = sessionToken;
+      }
       
       console.log('[Dashboard Init] Sources:', {
-        sessionStorage: sessionStorage.getItem('customer_id'),
-        localStorage: localStorage.getItem('customer_id'),
+        sessionStorage: safeStorageGet(sessionStore, 'customer_id'),
+        localStorage: safeStorageGet(localStore, 'customer_id'),
         urlParam: urlParams.get('customer_id'),
-        sessionObj: sessionData.customer_id,
+        sessionObj: sessionCustomerId,
         authToken: authToken ? 'present' : 'missing'
       });
       
-      if (storedCustomerId) {
+      if (sessionCustomerId) {
+        customerId = sessionCustomerId;
+        if (storedCustomerId && storedCustomerId !== sessionCustomerId) {
+          console.warn('[Dashboard Init] Stored customer_id mismatch; using session customer_id.');
+        }
+        // Store in sessionStorage for consistency
+        safeStorageSet(sessionStore, 'customer_id', customerId);
+        safeStorageSet(localStore, 'customer_id', customerId);
+        console.log('[Dashboard Init] Using session object customer_id:', customerId);
+      } else if (storedCustomerId) {
         customerId = storedCustomerId;
         console.log('[Dashboard Init] Using stored customer_id:', customerId);
-      } else if (sessionData.customer_id) {
-        customerId = sessionData.customer_id;
-        // Store in sessionStorage for consistency
-        sessionStorage.setItem('customer_id', customerId);
-        console.log('[Dashboard Init] Using session object customer_id:', customerId);
+      }
+      
+      // Guard against stale customer_id without an auth token
+      if (!authToken && customerId) {
+        console.warn('[Dashboard Init] Clearing customer_id without auth token for integrity.');
+        safeStorageRemove(sessionStore, 'customer_id');
+        safeStorageRemove(localStore, 'customer_id');
+        customerId = null;
       }
       
       // If no customer ID found, try to fetch from session validation
@@ -3230,6 +3315,7 @@
           console.error('[Dashboard Init] No auth token - redirecting to login');
           alert('Please log in to view your dashboard.');
           window.location.href = '/login.html';
+          clearTimeout(splashFailsafe);
           return;
         }
         // If we have auth token but no customer_id, fetch from session validation endpoint
@@ -3249,9 +3335,9 @@
             if (sessionInfo.valid && sessionInfo.customer_id) {
               customerId = sessionInfo.customer_id;
               // Store in all expected locations for data integrity
-              localStorage.setItem('customer_id', customerId);
-              sessionStorage.setItem('customer_id', customerId);
-              localStorage.setItem('phins_customer_id', customerId);
+              safeStorageSet(localStore, 'customer_id', customerId);
+              safeStorageSet(sessionStore, 'customer_id', customerId);
+              safeStorageSet(localStore, 'phins_customer_id', customerId);
               console.log('[Dashboard Init] Customer ID retrieved from session:', customerId);
             } else if (sessionInfo.valid && sessionInfo.role && sessionInfo.role !== 'customer') {
               // Staff user without customer_id - this is normal for admin users viewing dashboard
@@ -3268,32 +3354,29 @@
               // Session invalid - redirect to login
               console.error('[Dashboard Init] Session validation failed:', sessionInfo);
               alert('Your session has expired. Please log in again.');
-              localStorage.removeItem('phins_token');
+              safeStorageRemove(localStore, 'phins_token');
               window.location.href = '/login.html';
+              clearTimeout(splashFailsafe);
               return;
             }
           } else {
             // Session validation failed - token may be expired
             console.error('[Dashboard Init] Session validation request failed:', sessionResponse.status);
             alert('Your session has expired. Please log in again.');
-            localStorage.removeItem('phins_token');
+            safeStorageRemove(localStore, 'phins_token');
             window.location.href = '/login.html';
+            clearTimeout(splashFailsafe);
             return;
           }
         } catch (err) {
           console.error('[Dashboard Init] Error validating session:', err);
           alert('Unable to verify your session. Please log in again.');
-          localStorage.removeItem('phins_token');
+          safeStorageRemove(localStore, 'phins_token');
           window.location.href = '/login.html';
+          clearTimeout(splashFailsafe);
           return;
         }
       }
-      
-      // Failsafe: Always hide splash screen after max 8 seconds regardless of errors
-      const splashFailsafe = setTimeout(() => {
-        console.warn('Splash screen failsafe triggered - forcing hide');
-        hideSplashScreen();
-      }, 8000);
       
       try {
         // Load customer info first, then other data
@@ -7506,34 +7589,47 @@
     }
 
     // Set username from sessionStorage if available
-    const storedUser = sessionStorage.getItem('username');
-    if (storedUser) {
-      document.getElementById('username').textContent = storedUser;
+    const storedUser = safeStorageGet(sessionStore, 'username');
+    const usernameEl = document.getElementById('username');
+    if (storedUser && usernameEl) {
+      usernameEl.textContent = storedUser;
     }
 
     // Logout functionality
-    document.querySelector('.btn-logout').addEventListener('click', function(e) {
-      e.preventDefault();
-      recordCustomerAction('logout', 0, 'User logged out');
-      sessionStorage.clear();
-      localStorage.removeItem('phins_token');
-      window.location.href = '/';
-    });
+    const logoutBtn = document.querySelector('.btn-logout');
+    if (logoutBtn) {
+      logoutBtn.addEventListener('click', function(e) {
+        e.preventDefault();
+        recordCustomerAction('logout', 0, 'User logged out');
+        sessionStorage.clear();
+        safeStorageRemove(localStore, 'phins_token');
+        safeStorageRemove(sessionStore, 'phins_token');
+        safeStorageRemove(localStore, 'customer_id');
+        safeStorageRemove(localStore, 'phins_customer_id');
+        safeStorageRemove(localStore, 'session');
+        window.location.href = '/';
+      });
+    }
 
     // Language change functionality
     function changeLanguage(lang) {
-      localStorage.setItem('phins_language', lang);
+      safeStorageSet(localStore, 'phins_language', lang);
       recordCustomerAction('settings_change', 0, `Language changed to ${lang}`);
       const notification = document.createElement('div');
       notification.style.cssText = 'position:fixed;top:80px;right:20px;background:#28a745;color:#fff;padding:16px 24px;border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,0.2);z-index:1000;font-weight:600;';
-      notification.textContent = 'Language changed to ' + document.getElementById('language-selector').selectedOptions[0].text;
+      const langSelector = document.getElementById('language-selector');
+      const langLabel = langSelector && langSelector.selectedOptions[0] ? langSelector.selectedOptions[0].text : lang;
+      notification.textContent = 'Language changed to ' + langLabel;
       document.body.appendChild(notification);
       setTimeout(() => notification.remove(), 3000);
     }
     
     // Load saved language
-    const savedLang = localStorage.getItem('phins_language');
-    if (savedLang) document.getElementById('language-selector').value = savedLang;
+    const savedLang = safeStorageGet(localStore, 'phins_language');
+    const languageSelector = document.getElementById('language-selector');
+    if (savedLang && languageSelector) {
+      languageSelector.value = savedLang;
+    }
     
     // ==================== REFERRAL PROGRAM FUNCTIONS ====================
     
