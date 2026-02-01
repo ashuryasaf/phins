@@ -318,6 +318,9 @@ document.addEventListener('DOMContentLoaded', function () {
     msg.style.color = '#28a745';
     
     // Store token and username
+    localStorage.setItem('phins_token', data.token);
+    sessionStorage.setItem('phins_token', data.token);
+    sessionStorage.setItem('username', username);
     safeStorageSet(localStorage, 'phins_token', data.token);
     safeStorageSet(sessionStorage, 'phins_token', data.token);
     safeStorageSet(sessionStorage, 'username', username);
