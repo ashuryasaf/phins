@@ -3204,25 +3204,36 @@
       // Also try to get from localStorage session object
       const sessionData = JSON.parse(localStorage.getItem('session') || '{}');
       
+      console.log('[Dashboard Init] Sources:', {
+        sessionStorage: sessionStorage.getItem('customer_id'),
+        localStorage: localStorage.getItem('customer_id'),
+        urlParam: urlParams.get('customer_id'),
+        sessionObj: sessionData.customer_id,
+        authToken: authToken ? 'present' : 'missing'
+      });
+      
       if (storedCustomerId) {
         customerId = storedCustomerId;
+        console.log('[Dashboard Init] Using stored customer_id:', customerId);
       } else if (sessionData.customer_id) {
         customerId = sessionData.customer_id;
         // Store in sessionStorage for consistency
         sessionStorage.setItem('customer_id', customerId);
+        console.log('[Dashboard Init] Using session object customer_id:', customerId);
       }
       
       // If no customer ID found, try to fetch from session validation
       // NO HARDCODED FALLBACK - each customer must see only their own data
       if (!customerId) {
-        console.error('No customer ID found in session');
+        console.log('[Dashboard Init] No customer ID in storage, checking auth...');
         if (!authToken) {
+          console.error('[Dashboard Init] No auth token - redirecting to login');
           alert('Please log in to view your dashboard.');
           window.location.href = '/login.html';
           return;
         }
         // If we have auth token but no customer_id, fetch from session validation endpoint
-        console.log('Auth token present but no customer_id, fetching from server...');
+        console.log('[Dashboard Init] Auth token present but no customer_id, fetching from server...');
         try {
           const sessionResponse = await fetch('/api/session/validate', {
             method: 'GET',
@@ -3233,19 +3244,29 @@
           
           if (sessionResponse.ok) {
             const sessionInfo = await sessionResponse.json();
+            console.log('[Dashboard Init] Session validation response:', sessionInfo);
+            
             if (sessionInfo.valid && sessionInfo.customer_id) {
               customerId = sessionInfo.customer_id;
               // Store in all expected locations for data integrity
               localStorage.setItem('customer_id', customerId);
               sessionStorage.setItem('customer_id', customerId);
               localStorage.setItem('phins_customer_id', customerId);
-              console.log('Customer ID retrieved from session:', customerId);
+              console.log('[Dashboard Init] Customer ID retrieved from session:', customerId);
             } else if (sessionInfo.valid && sessionInfo.role && sessionInfo.role !== 'customer') {
               // Staff user without customer_id - this is normal for admin users viewing dashboard
-              console.log('Staff user session validated:', sessionInfo.role);
+              console.log('[Dashboard Init] Staff user session validated:', sessionInfo.role);
+              // Staff can view dashboard without customer_id (will see empty customer data)
+            } else if (sessionInfo.valid && sessionInfo.role === 'customer' && !sessionInfo.customer_id) {
+              // Customer role but no customer_id - this is a data issue, try username lookup
+              console.warn('[Dashboard Init] Customer session without customer_id - attempting recovery...');
+              // Don't immediately redirect - let the dashboard load with limited functionality
+              // The session validate endpoint should have tried to recover the customer_id
+              console.error('[Dashboard Init] Customer ID recovery needed - contact support');
+              // Continue loading - some features may work
             } else {
-              // Session invalid or no customer_id - redirect to login
-              console.error('Session validation failed or no customer_id');
+              // Session invalid - redirect to login
+              console.error('[Dashboard Init] Session validation failed:', sessionInfo);
               alert('Your session has expired. Please log in again.');
               localStorage.removeItem('phins_token');
               window.location.href = '/login.html';
@@ -3253,14 +3274,14 @@
             }
           } else {
             // Session validation failed - token may be expired
-            console.error('Session validation request failed');
+            console.error('[Dashboard Init] Session validation request failed:', sessionResponse.status);
             alert('Your session has expired. Please log in again.');
             localStorage.removeItem('phins_token');
             window.location.href = '/login.html';
             return;
           }
         } catch (err) {
-          console.error('Error validating session:', err);
+          console.error('[Dashboard Init] Error validating session:', err);
           alert('Unable to verify your session. Please log in again.');
           localStorage.removeItem('phins_token');
           window.location.href = '/login.html';

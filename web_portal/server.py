@@ -3625,12 +3625,30 @@ For claims or questions, please contact:
                 }).encode('utf-8'))
                 return
             
+            # Get session values
+            username = session.get('username')
+            role = session.get('role')
+            customer_id = session.get('customer_id')
+            
+            # CUSTOMER ID RECOVERY: For customer role without customer_id, try to recover from database
+            # This handles edge cases where token was created before customer_id was properly set
+            if role == 'customer' and not customer_id and username and USE_DATABASE and database_enabled:
+                try:
+                    from database.manager import DatabaseManager
+                    with DatabaseManager() as db:
+                        db_customer = db.customers.get_by_email(username.lower())
+                        if db_customer:
+                            customer_id = db_customer.id
+                            print(f"[SESSION VALIDATE] Recovered customer_id {customer_id} for {username}")
+                except Exception as e:
+                    print(f"[SESSION VALIDATE] Customer recovery failed for {username}: {e}")
+            
             self._set_json_headers(200)
             self.wfile.write(json.dumps({
                 'valid': True,
-                'username': session.get('username'),
-                'role': session.get('role'),
-                'customer_id': session.get('customer_id'),
+                'username': username,
+                'role': role,
+                'customer_id': customer_id,
                 'expires': session.get('expires')
             }).encode('utf-8'))
             return
@@ -5631,8 +5649,9 @@ For claims or questions, please contact:
                 return
 
             user = get_session_user(session) or {}
-            role = (user.get('role') or '').lower() if session else 'admin'
-            session_customer_id = (user.get('customer_id') or session.get('customer_id')) if session else None
+            # IMPORTANT: For customers, use session role directly since they're not in USERS dict
+            role = (user.get('role') or session.get('role', '') if session else '').lower() or ('admin' if not session else '')
+            session_customer_id = user.get('customer_id') or (session.get('customer_id') if session else None)
 
             policy_id = qs.get('id', [None])[0]
             if policy_id:
@@ -5647,7 +5666,20 @@ For claims or questions, please contact:
             else:
                 all_items = list(POLICIES.values())
                 if role == 'customer' and session_customer_id:
+                    # Filter policies for this customer
                     all_items = [p for p in all_items if p.get('customer_id') == session_customer_id]
+                    
+                    # DATABASE FALLBACK: If no policies found via dict, try database directly
+                    if not all_items and USE_DATABASE and database_enabled:
+                        try:
+                            from database.manager import DatabaseManager
+                            with DatabaseManager() as db:
+                                db_policies = db.policies.filter_by(customer_id=session_customer_id)
+                                all_items = [p.to_dict() for p in db_policies]
+                                if all_items:
+                                    print(f"[POLICIES API] Found {len(all_items)} policies via DB fallback for {session_customer_id}")
+                        except Exception as e:
+                            print(f"[POLICIES API] DB fallback error for {session_customer_id}: {e}")
                 else:
                     # Admin/staff view: Filter out suspended test accounts
                     all_items = [p for p in all_items if not is_suspended_account(p.get('customer_id', ''))]
@@ -6193,8 +6225,9 @@ For claims or questions, please contact:
                 return
 
             user = get_session_user(session) or {}
-            role = (user.get('role') or '').lower() if session else 'admin'
-            session_customer_id = (user.get('customer_id') or session.get('customer_id')) if session else None
+            # IMPORTANT: For customers, use session role directly since they're not in USERS dict
+            role = (user.get('role') or session.get('role', '') if session else '').lower() or ('admin' if not session else '')
+            session_customer_id = user.get('customer_id') or (session.get('customer_id') if session else None)
 
             claim_id = qs.get('id', [None])[0]
             status = qs.get('status', [None])[0]
@@ -6223,6 +6256,18 @@ For claims or questions, please contact:
                         pid = c.get('policy_id')
                         return bool(pid and POLICIES.get(pid, {}).get('customer_id') == session_customer_id)
                     claims_list = [c for c in claims_list if _belongs(c)]
+                    
+                    # DATABASE FALLBACK: If no claims found via dict, try database directly
+                    if not claims_list and USE_DATABASE and database_enabled:
+                        try:
+                            from database.manager import DatabaseManager
+                            with DatabaseManager() as db:
+                                db_claims = db.claims.filter_by(customer_id=session_customer_id)
+                                claims_list = [c.to_dict() for c in db_claims]
+                                if claims_list:
+                                    print(f"[CLAIMS API] Found {len(claims_list)} claims via DB fallback for {session_customer_id}")
+                        except Exception as e:
+                            print(f"[CLAIMS API] DB fallback error for {session_customer_id}: {e}")
                 else:
                     # Admin/staff view: Filter out suspended test accounts
                     claims_list = [c for c in claims_list if not is_suspended_account(c.get('customer_id', ''))]
@@ -6909,10 +6954,37 @@ For claims or questions, please contact:
                         return
                     
                 customer = CUSTOMERS.get(requested_customer_id)
+                
+                # DATABASE FALLBACK: If customer not found in CUSTOMERS dict, try database directly
+                # This handles cases where customer exists in DB but dict wasn't synced
+                if not customer and USE_DATABASE and database_enabled:
+                    try:
+                        from database.manager import DatabaseManager
+                        with DatabaseManager() as db:
+                            db_customer = db.customers.get_by_id(requested_customer_id)
+                            if db_customer:
+                                customer = db_customer.to_dict()
+                                print(f"[CUSTOMER API] Found customer {requested_customer_id} via DB fallback")
+                                # Sync to CUSTOMERS dict for future lookups
+                                try:
+                                    CUSTOMERS[requested_customer_id] = customer
+                                except Exception:
+                                    pass  # Non-critical sync
+                            else:
+                                # Try finding by email as last resort (if customer_id looks like email)
+                                if '@' in requested_customer_id:
+                                    db_customer = db.customers.get_by_email(requested_customer_id.lower())
+                                    if db_customer:
+                                        customer = db_customer.to_dict()
+                                        print(f"[CUSTOMER API] Found customer by email {requested_customer_id}")
+                    except Exception as e:
+                        print(f"[CUSTOMER API] DB fallback error for {requested_customer_id}: {e}")
+                
                 if customer:
                     self._set_json_headers()
                     self.wfile.write(json.dumps(customer).encode('utf-8'))
                 else:
+                    print(f"[CUSTOMER API] Customer not found: {requested_customer_id} (role={role}, session_cust={session_customer_id})")
                     self._set_json_headers(404)
                     self.wfile.write(json.dumps({'error': 'Customer not found'}).encode('utf-8'))
             else:
