@@ -3,15 +3,25 @@ Data Access Layer
 
 Provides backward-compatible dictionary-like interface to database.
 This allows gradual migration from in-memory to database storage.
+
+IMPORTANT: This module includes automatic connection recovery. When database
+operations fail due to connection issues, it will attempt to retry with
+reconnection logic.
 """
 
 from typing import Dict, Any, Optional, List
 from datetime import datetime
+from sqlalchemy.exc import OperationalError, DatabaseError, DisconnectionError
 import logging
+import time
 
 from database.manager import DatabaseManager
 
 logger = logging.getLogger(__name__)
+
+# Retry configuration for database operations
+MAX_RETRIES = 3
+RETRY_DELAY = 0.5  # seconds
 
 
 def convert_datetime_strings(data: Dict[str, Any]) -> Dict[str, Any]:
@@ -135,6 +145,8 @@ class DatabaseDict:
     """
     Dictionary-like wrapper around database repository.
     Provides dict API for backward compatibility with existing code.
+    
+    Includes automatic retry logic for connection failures.
     """
     
     def __init__(self, repository_name: str):
@@ -152,92 +164,161 @@ class DatabaseDict:
         """Get the appropriate repository from database manager"""
         return getattr(db, self.repository_name)
     
+    def _execute_with_retry(self, operation, *args, **kwargs):
+        """
+        Execute a database operation with automatic retry on connection failures.
+        
+        Args:
+            operation: The operation function to execute
+            *args, **kwargs: Arguments to pass to the operation
+        
+        Returns:
+            Result of the operation
+        
+        Raises:
+            Last exception if all retries fail
+        """
+        last_error = None
+        
+        for attempt in range(MAX_RETRIES):
+            try:
+                return operation(*args, **kwargs)
+            except (OperationalError, DatabaseError, DisconnectionError) as e:
+                last_error = e
+                logger.warning(f"Database operation failed (attempt {attempt + 1}/{MAX_RETRIES}): {e}")
+                
+                if attempt < MAX_RETRIES - 1:
+                    sleep_time = RETRY_DELAY * (2 ** attempt)
+                    logger.info(f"Retrying in {sleep_time:.1f}s...")
+                    time.sleep(sleep_time)
+            except Exception as e:
+                # Non-connection errors - don't retry
+                raise
+        
+        logger.error(f"Database operation failed after {MAX_RETRIES} attempts")
+        raise last_error
+    
     def _refresh_cache(self):
         """Refresh cache from database"""
-        with DatabaseManager() as db:
-            repo = self._get_repository(db)
-            items = repo.get_all()
-            def _key_for_item(item):
-                # Use correct primary key per repository (prevents subtle bugs like sessions keyed by username)
-                if self.repository_name == 'sessions' and hasattr(item, 'token'):
-                    return item.token
-                if self.repository_name == 'users' and hasattr(item, 'username'):
-                    return item.username
-                if hasattr(item, 'id'):
-                    return item.id
-                if hasattr(item, 'username'):
-                    return item.username
-                if hasattr(item, 'token'):
-                    return item.token
-                return str(item)
+        def _do_refresh():
+            with DatabaseManager() as db:
+                repo = self._get_repository(db)
+                items = repo.get_all()
+                def _key_for_item(item):
+                    # Use correct primary key per repository (prevents subtle bugs like sessions keyed by username)
+                    if self.repository_name == 'sessions' and hasattr(item, 'token'):
+                        return item.token
+                    if self.repository_name == 'users' and hasattr(item, 'username'):
+                        return item.username
+                    if hasattr(item, 'id'):
+                        return item.id
+                    if hasattr(item, 'username'):
+                        return item.username
+                    if hasattr(item, 'token'):
+                        return item.token
+                    return str(item)
 
-            self._cache = {_key_for_item(item): item.to_dict() for item in items}
-            self._cache_valid = True
+                self._cache = {_key_for_item(item): item.to_dict() for item in items}
+                self._cache_valid = True
+        
+        try:
+            self._execute_with_retry(_do_refresh)
+        except Exception as e:
+            logger.error(f"Failed to refresh cache for {self.repository_name}: {e}")
+            # Keep stale cache rather than clearing it
     
     def __getitem__(self, key: str) -> Dict[str, Any]:
-        """Get item by key"""
-        with DatabaseManager() as db:
-            repo = self._get_repository(db)
-            item = repo.get_by_id(key)
-            if item is None:
-                raise KeyError(key)
-            return item.to_dict()
+        """Get item by key with automatic retry"""
+        def _do_get():
+            with DatabaseManager() as db:
+                repo = self._get_repository(db)
+                item = repo.get_by_id(key)
+                if item is None:
+                    raise KeyError(key)
+                return item.to_dict()
+        
+        return self._execute_with_retry(_do_get)
     
     def __setitem__(self, key: str, value: Dict[str, Any]):
-        """Set item by key (create or update)"""
+        """Set item by key (create or update) with automatic retry"""
         # Convert datetime strings to datetime objects
         value = convert_datetime_strings(value)
         
         # Map field names from server format to database format
         value = map_fields_for_repository(self.repository_name, value)
         
-        with DatabaseManager() as db:
-            repo = self._get_repository(db)
-            existing = repo.get_by_id(key)
-            if existing:
-                # Update existing - filter out keys that aren't model attributes
-                update_data = {k: v for k, v in value.items() if hasattr(existing, k)}
-                repo.update(key, **update_data)
-            else:
-                # Create new (ensure id is set)
-                if 'id' not in value and self.repository_name not in ['users', 'sessions']:
-                    value['id'] = key
-                elif 'username' not in value and self.repository_name == 'users':
-                    value['username'] = key
-                elif 'token' not in value and self.repository_name == 'sessions':
-                    value['token'] = key
-                
-                # Filter out keys that aren't valid model attributes to prevent errors
-                try:
-                    model_class = repo.model_class
-                    valid_columns = {c.name for c in model_class.__table__.columns}
-                    filtered_value = {k: v for k, v in value.items() if k in valid_columns}
-                    repo.create(**filtered_value)
-                except Exception as e:
-                    # Fallback: try creating with all values
-                    logger.warning(f"Error filtering columns for {self.repository_name}: {e}")
-                    repo.create(**value)
+        def _do_set():
+            with DatabaseManager() as db:
+                repo = self._get_repository(db)
+                existing = repo.get_by_id(key)
+                if existing:
+                    # Update existing - filter out keys that aren't model attributes
+                    update_data = {k: v for k, v in value.items() if hasattr(existing, k)}
+                    repo.update(key, **update_data)
+                else:
+                    # Create new (ensure id is set)
+                    create_value = value.copy()
+                    if 'id' not in create_value and self.repository_name not in ['users', 'sessions']:
+                        create_value['id'] = key
+                    elif 'username' not in create_value and self.repository_name == 'users':
+                        create_value['username'] = key
+                    elif 'token' not in create_value and self.repository_name == 'sessions':
+                        create_value['token'] = key
+                    
+                    # Filter out keys that aren't valid model attributes to prevent errors
+                    try:
+                        model_class = repo.model_class
+                        valid_columns = {c.name for c in model_class.__table__.columns}
+                        filtered_value = {k: v for k, v in create_value.items() if k in valid_columns}
+                        repo.create(**filtered_value)
+                    except Exception as e:
+                        # Fallback: try creating with all values
+                        logger.warning(f"Error filtering columns for {self.repository_name}: {e}")
+                        repo.create(**create_value)
+        
+        self._execute_with_retry(_do_set)
         self._cache_valid = False
     
     def __delitem__(self, key: str):
-        """Delete item by key"""
-        with DatabaseManager() as db:
-            repo = self._get_repository(db)
-            if not repo.delete(key):
-                raise KeyError(key)
+        """Delete item by key with automatic retry"""
+        def _do_delete():
+            with DatabaseManager() as db:
+                repo = self._get_repository(db)
+                if not repo.delete(key):
+                    raise KeyError(key)
+        
+        self._execute_with_retry(_do_delete)
         self._cache_valid = False
     
     def __contains__(self, key: str) -> bool:
-        """Check if key exists"""
-        with DatabaseManager() as db:
-            repo = self._get_repository(db)
-            return repo.exists(key)
+        """Check if key exists with automatic retry"""
+        def _do_contains():
+            with DatabaseManager() as db:
+                repo = self._get_repository(db)
+                return repo.exists(key)
+        
+        try:
+            return self._execute_with_retry(_do_contains)
+        except Exception:
+            # On failure, fall back to cache if available
+            if self._cache_valid:
+                return key in self._cache
+            return False
     
     def __len__(self) -> int:
-        """Get count of items"""
-        with DatabaseManager() as db:
-            repo = self._get_repository(db)
-            return repo.count()
+        """Get count of items with automatic retry"""
+        def _do_len():
+            with DatabaseManager() as db:
+                repo = self._get_repository(db)
+                return repo.count()
+        
+        try:
+            return self._execute_with_retry(_do_len)
+        except Exception:
+            # On failure, fall back to cache if available
+            if self._cache_valid:
+                return len(self._cache)
+            return 0
     
     def __iter__(self):
         """Iterate over keys"""
@@ -264,10 +345,16 @@ class DatabaseDict:
         return self._cache.items()
     
     def get(self, key: str, default=None):
-        """Get item with default"""
+        """Get item with default, with automatic retry on connection errors"""
         try:
             return self[key]
         except KeyError:
+            return default
+        except (OperationalError, DatabaseError, DisconnectionError) as e:
+            logger.warning(f"Database error getting {self.repository_name}[{key}], returning default: {e}")
+            # Try from cache if available
+            if self._cache_valid and key in self._cache:
+                return self._cache[key]
             return default
     
     def pop(self, key: str, *args):
