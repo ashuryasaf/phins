@@ -4965,6 +4965,7 @@ For claims or questions, please contact:
         if path == '/api/diagnostics/env-check':
             # Only show if env vars are SET, not their values (security)
             env_status = {
+                # Staff/Admin passwords
                 'PHINS_ADMIN_PASSWORD': bool(os.environ.get('PHINS_ADMIN_PASSWORD')),
                 'PHINS_UNDERWRITER_PASSWORD': bool(os.environ.get('PHINS_UNDERWRITER_PASSWORD')),
                 'PHINS_CLAIMS_PASSWORD': bool(os.environ.get('PHINS_CLAIMS_PASSWORD')),
@@ -4972,17 +4973,122 @@ For claims or questions, please contact:
                 'PHINS_ACTUARY_PASSWORD': bool(os.environ.get('PHINS_ACTUARY_PASSWORD')),
                 'PHINS_SUPPLIER_PASSWORD': bool(os.environ.get('PHINS_SUPPLIER_PASSWORD')),
                 'PHINS_MEDIA_PASSWORD': bool(os.environ.get('PHINS_MEDIA_PASSWORD')),
+                # Named user passwords (customers and special accounts)
                 'PHINS_USER_ASAF_PHINS_PASSWORD': bool(os.environ.get('PHINS_USER_ASAF_PHINS_PASSWORD')),
+                'PHINS_USER_ASAF_ASSURANCE_PASSWORD': bool(os.environ.get('PHINS_USER_ASAF_ASSURANCE_PASSWORD')),
+                'PHINS_USER_EFRAT_PASSWORD': bool(os.environ.get('PHINS_USER_EFRAT_PASSWORD')),
+                'PHINS_USER_ASI_PASSWORD': bool(os.environ.get('PHINS_USER_ASI_PASSWORD')),
+                'PHINS_USER_SHOSH_PASSWORD': bool(os.environ.get('PHINS_USER_SHOSH_PASSWORD')),
+                # Database config
                 'DATABASE_URL': bool(os.environ.get('DATABASE_URL')),
                 'USE_DATABASE': os.environ.get('USE_DATABASE', 'not set'),
+                # Legacy password support (for demo/testing)
+                'ALLOW_LEGACY_DEMO_PASSWORDS': os.environ.get('ALLOW_LEGACY_DEMO_PASSWORDS', 'not set'),
             }
-            vars_set = sum(1 for v in env_status.values() if v is True)
+            staff_vars = ['PHINS_ADMIN_PASSWORD', 'PHINS_UNDERWRITER_PASSWORD', 'PHINS_CLAIMS_PASSWORD', 
+                          'PHINS_ACCOUNTANT_PASSWORD', 'PHINS_ACTUARY_PASSWORD']
+            customer_vars = ['PHINS_USER_ASAF_ASSURANCE_PASSWORD', 'PHINS_USER_SHOSH_PASSWORD', 
+                             'PHINS_USER_EFRAT_PASSWORD', 'PHINS_USER_ASI_PASSWORD']
+            staff_set = sum(1 for v in staff_vars if env_status.get(v))
+            customer_set = sum(1 for v in customer_vars if env_status.get(v))
+            
             self._set_json_headers()
             self.wfile.write(json.dumps({
                 'env_vars_configured': env_status,
-                'total_password_vars_set': vars_set,
-                'all_required_set': vars_set >= 7,
-                'message': 'All password env vars must be set for login to work' if vars_set < 7 else 'Environment configured correctly'
+                'staff_passwords_set': staff_set,
+                'customer_passwords_set': customer_set,
+                'all_staff_set': staff_set >= 5,
+                'customers_can_login': customer_set > 0,
+                'message': 'Customer passwords not configured' if customer_set == 0 else 'Environment configured correctly',
+                'action_needed': [] if customer_set > 0 else [
+                    'Set PHINS_USER_ASAF_ASSURANCE_PASSWORD in Railway Variables for asaf@assurance.co.il',
+                    'Set PHINS_USER_SHOSH_PASSWORD in Railway Variables for shosh@phins.ai',
+                    'Then redeploy the service to apply changes'
+                ]
+            }).encode('utf-8'))
+            return
+
+        # Customer Login Status Diagnostic
+        if path == '/api/diagnostics/customer-status':
+            email_param = params.get('email', [''])[0].lower() if 'email' in params else None
+            test_customers = ['asaf@assurance.co.il', 'shosh@phins.ai', 'efrat@phins.ai', 'asi@phins.ai']
+            results = {}
+            
+            check_emails = [email_param] if email_param else test_customers
+            
+            for email in check_emails:
+                customer_info = {
+                    'email': email,
+                    'in_users_dict': False,
+                    'in_customers_dict': False,
+                    'in_db_users': False,
+                    'in_db_customers': False,
+                    'has_password_hash': False,
+                    'role': None,
+                    'customer_id': None,
+                    'can_login': False
+                }
+                
+                # Check USERS dict
+                try:
+                    user = USERS.get(email)
+                    if user:
+                        customer_info['in_users_dict'] = True
+                        customer_info['has_password_hash'] = bool(user.get('hash'))
+                        customer_info['role'] = user.get('role')
+                        customer_info['customer_id'] = user.get('customer_id')
+                        if customer_info['has_password_hash']:
+                            customer_info['can_login'] = True
+                except Exception as e:
+                    customer_info['users_dict_error'] = str(e)
+                
+                # Check database if enabled
+                if USE_DATABASE and database_enabled:
+                    try:
+                        from database.manager import DatabaseManager
+                        with DatabaseManager() as db:
+                            # Check users table
+                            db_user = db.users.get_by_username(email)
+                            if db_user:
+                                customer_info['in_db_users'] = True
+                                customer_info['has_password_hash'] = bool(getattr(db_user, 'password_hash', None))
+                                customer_info['role'] = getattr(db_user, 'role', None)
+                                if customer_info['has_password_hash']:
+                                    customer_info['can_login'] = True
+                            
+                            # Check customers table
+                            db_cust = db.customers.get_by_email(email)
+                            if db_cust:
+                                customer_info['in_db_customers'] = True
+                                customer_info['customer_id'] = getattr(db_cust, 'id', None)
+                                if not customer_info['has_password_hash']:
+                                    customer_info['has_password_hash'] = bool(getattr(db_cust, 'password_hash', None))
+                                    if customer_info['has_password_hash']:
+                                        customer_info['can_login'] = True
+                    except Exception as e:
+                        customer_info['db_error'] = str(e)
+                
+                # Check CUSTOMERS dict
+                try:
+                    for cid, cust in CUSTOMERS.items():
+                        if isinstance(cust, dict) and cust.get('email', '').lower() == email:
+                            customer_info['in_customers_dict'] = True
+                            customer_info['customer_id'] = cid
+                            break
+                except Exception:
+                    pass
+                
+                results[email] = customer_info
+            
+            self._set_json_headers()
+            self.wfile.write(json.dumps({
+                'customer_status': results,
+                'storage_mode': 'database' if (USE_DATABASE and database_enabled) else 'in-memory',
+                'recommendations': [
+                    'If can_login is False, the user needs a password set',
+                    'Use /api/admin/set-customer-password (admin auth required) to set passwords',
+                    'Or configure PHINS_USER_*_PASSWORD env vars and redeploy'
+                ]
             }).encode('utf-8'))
             return
 
