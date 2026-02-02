@@ -101,7 +101,7 @@ def seed_default_users(session=None):
             {
                 'username': 'claims_adjuster',
                 'password': _get_env_password('PHINS_CLAIMS_PASSWORD', 'claims_adjuster'),
-                'role': 'claims',
+                'role': 'claims_adjuster',
                 'name': 'Jane Claims',
                 'email': 'claims@phins.ai'
             },

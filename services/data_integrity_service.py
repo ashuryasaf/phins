@@ -177,7 +177,10 @@ class DataIntegrityService:
         # Premium payments go to insurance, not a withdrawal from savings
         withdrawal_types = [
             'wallet_withdrawal', 'investment_withdrawal', 'withdrawal',
-            'medical_purchase'  # Direct spend from wallet
+            'medical_purchase',  # Direct spend from wallet
+            'delivery_payment',  # Delivery fee deducted from wallet
+            'delivery_fee',      # Alternate delivery fee tag
+            'supplier_payment'   # Supplier payouts from wallet
         ]
         
         # Internal transfer types - these move money within customer accounts

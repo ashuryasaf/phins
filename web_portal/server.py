@@ -24,7 +24,7 @@ import threading
 import time
 import csv
 import io
-from typing import Dict, Any, Tuple
+from typing import Dict, Any, Tuple, List
 
 # ==============================================================================
 # CASE-INSENSITIVE STATUS HELPERS (for data integrity across pipeline)
@@ -676,7 +676,7 @@ def save_ledger_data():
             
             data = {
                 'saved_at': datetime.now().isoformat(),
-                'version': '1.7',
+                'version': '1.9',
                 'health_wallets': HEALTH_WALLETS,
                 'medical_purchases': MEDICAL_PURCHASES,
                 'nft_ledger': NFT_LEDGER,
@@ -705,7 +705,16 @@ def save_ledger_data():
                 'registered_customers': REGISTERED_CUSTOMERS,
                 # v1.8 additions - Customer Referral System
                 'customer_invitations': CUSTOMER_INVITATIONS,
-                'customer_referral_stats': CUSTOMER_REFERRAL_STATS
+                'customer_referral_stats': CUSTOMER_REFERRAL_STATS,
+                # v1.9 additions - Supplier ecosystem + delivery bidding
+                'suppliers': globals().get('SUPPLIERS', {}),
+                'supplier_offers': globals().get('SUPPLIER_OFFERS', {}),
+                'supplier_orders': globals().get('SUPPLIER_ORDERS', {}),
+                'supplier_documents': globals().get('SUPPLIER_DOCUMENTS', {}),
+                'supplier_invitations': globals().get('SUPPLIER_INVITATIONS', {}),
+                'supply_chain_ledger': globals().get('SUPPLY_CHAIN_LEDGER', {}),
+                'delivery_requests': globals().get('DELIVERY_REQUESTS', {}),
+                'delivery_bids': globals().get('DELIVERY_BIDS', {})
             }
             
             # Write to temp file first, then rename for atomic operation
@@ -924,6 +933,8 @@ def load_ledger_data():
     global BILLING, POLICIES, CUSTOMERS, UNDERWRITING_APPLICATIONS, PHINS_BALANCE_SHEET, CLAIMS, CLAIM_FILES, UNDERWRITING_FILES
     global MEDIA_ASSETS, DESIGN_SETTINGS, INVITATION_CODES, REGISTERED_CUSTOMERS
     global CUSTOMER_INVITATIONS, CUSTOMER_REFERRAL_STATS
+    global SUPPLIERS, SUPPLIER_OFFERS, SUPPLIER_ORDERS, SUPPLIER_DOCUMENTS
+    global SUPPLIER_INVITATIONS, SUPPLY_CHAIN_LEDGER, DELIVERY_REQUESTS, DELIVERY_BIDS
     global _loaded_algo_balances, _loaded_trading_bots
     
     # Temporary storage for algo data until services are initialized
@@ -1022,6 +1033,26 @@ def load_ledger_data():
         if loaded_referral_stats:
             CUSTOMER_REFERRAL_STATS.update(loaded_referral_stats)
             print(f"  - Customer Referral Stats: {len(CUSTOMER_REFERRAL_STATS)} customer stats loaded from persistence")
+
+        # Load supplier ecosystem + delivery bidding (v1.9+)
+        if data.get('version', '1.0') >= '1.9':
+            SUPPLIERS.update(data.get('suppliers', {}))
+            SUPPLIER_OFFERS.update(data.get('supplier_offers', {}))
+            SUPPLIER_ORDERS.update(data.get('supplier_orders', {}))
+            SUPPLIER_DOCUMENTS.update(data.get('supplier_documents', {}))
+            SUPPLIER_INVITATIONS.update(data.get('supplier_invitations', {}))
+            SUPPLY_CHAIN_LEDGER.update(data.get('supply_chain_ledger', {}))
+            DELIVERY_REQUESTS.update(data.get('delivery_requests', {}))
+            DELIVERY_BIDS.update(data.get('delivery_bids', {}))
+            try:
+                if 'supply_chain_service' in globals() and supply_chain_service:
+                    supply_chain_service.rebuild_ledger_chain()
+            except Exception:
+                pass
+            print(f"  - Suppliers: {len(SUPPLIERS)}")
+            print(f"  - Supply Chain Ledger: {len(SUPPLY_CHAIN_LEDGER)}")
+            print(f"  - Delivery Requests: {len(DELIVERY_REQUESTS)}")
+            print(f"  - Delivery Bids: {len(DELIVERY_BIDS)}")
         
         print(f"[PERSISTENCE] Loaded ledger data from {LEDGER_PERSISTENCE_FILE}")
         print(f"  - Health Wallets: {len(HEALTH_WALLETS)}")
@@ -2268,6 +2299,8 @@ except ImportError as e:
 # Invitation-only B2B supply chain with adjustable commission (11% default)
 SUPPLIER_INVITATIONS: Dict[str, Dict[str, Any]] = {}  # code -> invitation data
 SUPPLY_CHAIN_LEDGER: Dict[str, Dict[str, Any]] = {}  # entry_id -> ledger entry
+DELIVERY_REQUESTS: Dict[str, Dict[str, Any]] = {}  # request_id -> delivery request
+DELIVERY_BIDS: Dict[str, Dict[str, Any]] = {}  # bid_id -> delivery bid
 
 supply_chain_service = None
 supply_chain_enabled = False
@@ -2289,6 +2322,26 @@ try:
     print("✓ Supply Chain Ecosystem service enabled (invitation-only B2B, 11% commission)")
 except ImportError as e:
     print(f"Warning: Supply Chain Ecosystem service not available: {e}")
+
+# ============ DELIVERY BIDDING SERVICE ============
+delivery_bidding_service = None
+delivery_bidding_enabled = False
+try:
+    from services.delivery_bidding_service import init_delivery_bidding_service
+    delivery_bidding_service = init_delivery_bidding_service(
+        requests=DELIVERY_REQUESTS,
+        bids=DELIVERY_BIDS,
+        suppliers=SUPPLIERS,
+        health_wallets=HEALTH_WALLETS,
+        transaction_ledger=TRANSACTION_LEDGER,
+        supply_chain_service=supply_chain_service,
+        record_transaction_func=record_transaction
+    )
+    delivery_bidding_enabled = True
+    print("✓ Delivery Bidding service enabled (location-based supplier bids)")
+except ImportError as e:
+    delivery_bidding_enabled = False
+    print(f"Warning: Delivery Bidding service not available: {e}")
 
 # Reinsurance contracts (scaffolding; DB schema not yet extended)
 REINSURANCE_CONTRACTS: Dict[str, Dict[str, Any]] = {}  # contract_id -> contract details
@@ -2540,22 +2593,76 @@ def record_failed_login(client_ip: str, server_port: int | None = None):
         if (not PHINS_TEST_MODE) and FAILED_LOGINS[key]['count'] >= MAX_LOGIN_ATTEMPTS:
             FAILED_LOGINS[key]['lockout_until'] = datetime.now().timestamp() + LOCKOUT_DURATION
 
+ROLE_ALIASES = {
+    'claims': 'claims_adjuster',
+    'claims_adjuster': 'claims_adjuster',
+    'claim_adjuster': 'claims_adjuster',
+    'media_ad': 'media',
+    'media': 'media',
+}
+
+def normalize_role(role: str | None) -> str | None:
+    """Normalize role aliases to canonical role names."""
+    if not role:
+        return None
+    key = str(role).strip().lower()
+    return ROLE_ALIASES.get(key, key)
+
+def _normalize_roles(roles: list[str]) -> list[str]:
+    return [r for r in (normalize_role(role) for role in roles) if r]
+
+def resolve_session_context(session: dict[str, str] | None) -> Dict[str, Any]:
+    """
+    Resolve role/customer/supplier context from session with normalization.
+    
+    This keeps role-based access consistent across DB-backed users, in-memory users,
+    and supplier portal sessions.
+    """
+    if not session:
+        return {}
+    username = session.get('username')
+    user = USERS.get(username) if username else None
+    role = normalize_role((user or {}).get('role') or session.get('role'))
+    customer_id = session.get('customer_id') or (user or {}).get('customer_id')
+    
+    # Best-effort customer lookup by email if missing
+    if not customer_id and role == 'customer' and username:
+        for cust_id, cust in CUSTOMERS.items():
+            if cust.get('email', '').lower() == username.lower():
+                customer_id = cust_id
+                break
+    
+    supplier_id = session.get('supplier_id')
+    if not supplier_id and role == 'supplier' and username:
+        suppliers_store = globals().get('SUPPLIERS', {})
+        if isinstance(suppliers_store, dict) and username in suppliers_store:
+            supplier_id = username
+    
+    return {
+        'username': username,
+        'role': role,
+        'customer_id': customer_id,
+        'supplier_id': supplier_id
+    }
+
 def require_role(session: dict[str, str] | None, allowed_roles: list[str]) -> bool:
     """Check if user has required role"""
-    if not session:
-        return False
-    
-    username = session.get('username')
-    if not username:
-        return False
-    
-    user = USERS.get(username)
-    # Prefer authoritative role from user record; fall back to server-side session role if needed.
-    # (Session is stored server-side; this fallback is mainly for robustness when user lookup is unavailable.)
-    role = (user or {}).get('role') or session.get('role')
+    ctx = resolve_session_context(session)
+    role = ctx.get('role')
     if not role:
         return False
-    return role in allowed_roles
+    
+    normalized_allowed = set(_normalize_roles(allowed_roles))
+    if role not in normalized_allowed:
+        return False
+    
+    # Enforce role-specific context
+    if role == 'customer' and not ctx.get('customer_id'):
+        return False
+    if role == 'supplier' and not ctx.get('supplier_id'):
+        return False
+    
+    return True
 
 
 def get_session_user(session: dict[str, str] | None) -> Dict[str, Any] | None:
@@ -2605,17 +2712,17 @@ def authorize_customer_data(session: dict[str, str] | None,
             return
     """
     # Admin roles that can access any customer's data
-    ADMIN_ROLES = ['admin', 'underwriter', 'claims', 'claims_adjuster', 'accountant']
+    ADMIN_ROLES = _normalize_roles(['admin', 'underwriter', 'claims', 'claims_adjuster', 'accountant'])
     
     # No session - require authentication
     if not session:
         return False, None, 'Authentication required'
     
-    # Get user info from session
-    user = get_session_user(session) or {}
-    user_role = (user.get('role') or session.get('role') or '').lower()
-    session_customer_id = user.get('customer_id') or session.get('customer_id')
-    username = session.get('username', 'unknown')
+    # Resolve session context with normalization
+    ctx = resolve_session_context(session)
+    user_role = ctx.get('role') or ''
+    session_customer_id = ctx.get('customer_id')
+    username = ctx.get('username') or 'unknown'
     
     # Admin/staff roles can access any customer's data
     if user_role in ADMIN_ROLES:
@@ -2645,6 +2752,175 @@ def authorize_customer_data(session: dict[str, str] | None,
     # Unknown role - default deny
     print(f"⚠️ ACCESS DENIED: Unknown role '{user_role}' for user '{username}'")
     return False, None, 'Access denied - invalid role'
+
+
+def build_user_role_integrity_report() -> Dict[str, Any]:
+    """
+    Validate user-role consistency across users, customers, and suppliers.
+    """
+    allowed_roles = {
+        'admin', 'underwriter', 'claims_adjuster', 'accountant',
+        'actuary', 'media', 'customer', 'supplier'
+    }
+    issues: List[Dict[str, Any]] = []
+
+    # Collect users from fallback/in-memory sources
+    users_snapshot: Dict[str, Dict[str, Any]] = {}
+    if isinstance(USERS, dict):
+        users_snapshot.update(USERS)
+    else:
+        users_snapshot.update(_FALLBACK_USERS)
+
+    for username, user in users_snapshot.items():
+        role = normalize_role((user or {}).get('role'))
+        customer_id = (user or {}).get('customer_id')
+        supplier_id = (user or {}).get('supplier_id')
+
+        if not role or role not in allowed_roles:
+            issues.append({
+                'type': 'invalid_role',
+                'username': username,
+                'role': role,
+                'detail': 'Role is missing or not supported'
+            })
+            continue
+
+        if role == 'customer':
+            if not customer_id:
+                # Attempt to resolve via email lookup
+                for cust_id, cust in CUSTOMERS.items():
+                    if cust.get('email', '').lower() == username.lower():
+                        customer_id = cust_id
+                        break
+            if not customer_id:
+                issues.append({
+                    'type': 'customer_missing_id',
+                    'username': username,
+                    'detail': 'Customer role without customer_id'
+                })
+            elif customer_id not in CUSTOMERS:
+                issues.append({
+                    'type': 'customer_missing_record',
+                    'username': username,
+                    'customer_id': customer_id,
+                    'detail': 'Customer role without matching customer record'
+                })
+
+        if role == 'supplier':
+            if not supplier_id and username in SUPPLIERS:
+                supplier_id = username
+            if not supplier_id:
+                issues.append({
+                    'type': 'supplier_missing_id',
+                    'username': username,
+                    'detail': 'Supplier role without supplier_id'
+                })
+            elif supplier_id not in SUPPLIERS:
+                issues.append({
+                    'type': 'supplier_missing_record',
+                    'username': username,
+                    'supplier_id': supplier_id,
+                    'detail': 'Supplier role without matching supplier record'
+                })
+
+    # Validate supplier records
+    for supplier_id, supplier in SUPPLIERS.items():
+        if supplier.get('portal_active') and supplier.get('status') != 'approved':
+            issues.append({
+                'type': 'supplier_status_mismatch',
+                'supplier_id': supplier_id,
+                'detail': 'Supplier portal active but status not approved'
+            })
+        if supplier.get('portal_active') and (not supplier.get('password_hash') or not supplier.get('password_salt')):
+            issues.append({
+                'type': 'supplier_missing_credentials',
+                'supplier_id': supplier_id,
+                'detail': 'Supplier portal active without credentials'
+            })
+
+    integrity_status = 'HEALTHY' if not issues else ('WARNING' if len(issues) < 5 else 'CRITICAL')
+
+    return {
+        'integrity_status': integrity_status,
+        'issues': issues,
+        'users_checked': len(users_snapshot),
+        'customers_checked': len(CUSTOMERS),
+        'suppliers_checked': len(SUPPLIERS),
+        'checked_at': datetime.now().isoformat()
+    }
+
+
+def build_community_dashboard_summary(user_id: str | None = None) -> Dict[str, Any]:
+    """Build community dashboard summary for contracts, foundations, investments."""
+    foundation_summary = {'status': 'unavailable'}
+    try:
+        from services.foundation_service import get_foundation_service
+        foundation_service = get_foundation_service()
+        foundations = foundation_service.list_foundations(member_id=user_id, limit=1000)
+        total_fund_balance = sum(safe_float(f.get('total_fund_balance'), 0.0) for f in foundations)
+        total_members = sum(int(f.get('current_members', 0) or 0) for f in foundations)
+        active_foundations = sum(1 for f in foundations if (f.get('status') or '') == 'active')
+        foundation_summary = {
+            'status': 'available',
+            'total_foundations': len(foundations),
+            'active_foundations': active_foundations,
+            'total_members': total_members,
+            'total_fund_balance': round(total_fund_balance, 2)
+        }
+    except Exception:
+        pass
+
+    investment_summary = {
+        'total_accounts': len(INVESTMENT_ACCOUNTS),
+        'total_balance': round(sum(safe_float(a.get('balance'), 0.0) for a in INVESTMENT_ACCOUNTS.values()), 2)
+    }
+
+    contract_summary = {
+        'total_contracts': len(REINSURANCE_CONTRACTS),
+        'active_contracts': sum(1 for c in REINSURANCE_CONTRACTS.values() if c.get('status') == 'active')
+    }
+
+    return {
+        'foundations': foundation_summary,
+        'investments': investment_summary,
+        'contracts': contract_summary,
+        'generated_at': datetime.now().isoformat()
+    }
+
+
+def build_bi_summary() -> Dict[str, Any]:
+    """Build BI summary across supply chain, delivery, and communities."""
+    delivery_summary = {'status': 'unavailable'}
+    if delivery_bidding_enabled and delivery_bidding_service:
+        try:
+            delivery_summary = delivery_bidding_service.get_bi_summary()
+            delivery_summary['status'] = 'available'
+        except Exception:
+            delivery_summary = {'status': 'error'}
+
+    supply_chain_summary = {'status': 'unavailable'}
+    if supply_chain_enabled and supply_chain_service:
+        try:
+            supply_chain_summary = supply_chain_service.get_platform_analytics()
+            supply_chain_summary['status'] = 'available'
+        except Exception:
+            supply_chain_summary = {'status': 'error'}
+
+    community_summary = build_community_dashboard_summary()
+
+    ledger_summary = {
+        'transactions': len(TRANSACTION_LEDGER),
+        'nft_tokens': len(NFT_LEDGER),
+        'supply_chain_entries': len(SUPPLY_CHAIN_LEDGER),
+    }
+
+    return {
+        'delivery_bidding': delivery_summary,
+        'supply_chain': supply_chain_summary,
+        'community': community_summary,
+        'ledger': ledger_summary,
+        'generated_at': datetime.now().isoformat()
+    }
 
 
 def log_malicious_attempt(client_ip: str, reason: str, details: Dict[str, Any] | None = None):
@@ -2966,7 +3242,7 @@ def _build_fallback_users() -> Dict[str, Dict[str, Any]]:
     return {
         'admin': {**_get_secure_password('PHINS_ADMIN_PASSWORD', 'admin'), 'role': 'admin', 'name': 'Admin User'},
         'underwriter': {**_get_secure_password('PHINS_UNDERWRITER_PASSWORD', 'underwriter'), 'role': 'underwriter', 'name': 'John Underwriter'},
-        'claims_adjuster': {**_get_secure_password('PHINS_CLAIMS_PASSWORD', 'claims_adjuster'), 'role': 'claims', 'name': 'Jane Claims'},
+        'claims_adjuster': {**_get_secure_password('PHINS_CLAIMS_PASSWORD', 'claims_adjuster'), 'role': 'claims_adjuster', 'name': 'Jane Claims'},
         'accountant': {**_get_secure_password('PHINS_ACCOUNTANT_PASSWORD', 'accountant'), 'role': 'accountant', 'name': 'Bob Accountant'},
         'actuary': {**_get_secure_password('PHINS_ACTUARY_PASSWORD', 'actuary'), 'role': 'actuary', 'name': 'Actuary User'},
         'supplier': {**_get_secure_password('PHINS_SUPPLIER_PASSWORD', 'supplier'), 'role': 'supplier', 'name': 'Supplier User'},
@@ -5672,6 +5948,192 @@ For claims or questions, please contact:
                 
                 self._set_json_headers()
                 self.wfile.write(json.dumps({'items': entries}).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+
+        # ========== DELIVERY BIDDING GET ENDPOINTS ==========
+        if path == '/api/delivery/requests':
+            if not require_role(session, ['admin', 'customer', 'supplier']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Unauthorized'}).encode('utf-8'))
+                return
+
+            if not delivery_bidding_enabled or not delivery_bidding_service:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Delivery bidding service unavailable'}).encode('utf-8'))
+                return
+
+            ctx = resolve_session_context(session)
+            role = ctx.get('role')
+            customer_id = None
+            supplier_id = None
+
+            if role == 'customer':
+                customer_id = ctx.get('customer_id')
+            elif role == 'supplier':
+                supplier_id = ctx.get('supplier_id')
+            else:
+                customer_id = qs.get('customer_id', [None])[0]
+                supplier_id = qs.get('supplier_id', [None])[0]
+
+            status_filter = qs.get('status', [None])[0]
+            limit = int(qs.get('limit', [100])[0])
+
+            try:
+                items = delivery_bidding_service.list_requests(
+                    customer_id=customer_id,
+                    supplier_id=supplier_id,
+                    status=status_filter,
+                    limit=limit
+                )
+                self._set_json_headers()
+                self.wfile.write(json.dumps({'items': items}).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+
+        if path == '/api/delivery/bids':
+            if not require_role(session, ['admin', 'customer', 'supplier']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Unauthorized'}).encode('utf-8'))
+                return
+
+            if not delivery_bidding_enabled or not delivery_bidding_service:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Delivery bidding service unavailable'}).encode('utf-8'))
+                return
+
+            ctx = resolve_session_context(session)
+            role = ctx.get('role')
+            request_id = qs.get('request_id', [None])[0]
+            status_filter = qs.get('status', [None])[0]
+            limit = int(qs.get('limit', [200])[0])
+
+            supplier_id = None
+            if role == 'supplier':
+                supplier_id = ctx.get('supplier_id')
+            elif role == 'customer':
+                # Customers must scope to their own request
+                if not request_id:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'request_id required for customers'}).encode('utf-8'))
+                    return
+                request = DELIVERY_REQUESTS.get(request_id)
+                if not request or request.get('customer_id') != ctx.get('customer_id'):
+                    self._set_json_headers(403)
+                    self.wfile.write(json.dumps({'error': 'Access denied'}).encode('utf-8'))
+                    return
+            else:
+                supplier_id = qs.get('supplier_id', [None])[0]
+
+            try:
+                items = delivery_bidding_service.list_bids(
+                    request_id=request_id,
+                    supplier_id=supplier_id,
+                    status=status_filter,
+                    limit=limit
+                )
+                self._set_json_headers()
+                self.wfile.write(json.dumps({'items': items}).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+
+        if path == '/api/delivery/analytics':
+            if not require_role(session, ['admin', 'supplier', 'actuary']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Unauthorized'}).encode('utf-8'))
+                return
+
+            if not delivery_bidding_enabled or not delivery_bidding_service:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Delivery bidding service unavailable'}).encode('utf-8'))
+                return
+
+            ctx = resolve_session_context(session)
+            role = ctx.get('role')
+            supplier_id = ctx.get('supplier_id') if role == 'supplier' else qs.get('supplier_id', [None])[0]
+
+            try:
+                summary = delivery_bidding_service.get_bi_summary(supplier_id=supplier_id)
+                self._set_json_headers()
+                self.wfile.write(json.dumps(summary).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+
+        if path == '/api/integrity/delivery-bidding':
+            if not require_role(session, ['admin', 'actuary']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Unauthorized'}).encode('utf-8'))
+                return
+
+            if not delivery_bidding_enabled or not delivery_bidding_service:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Delivery bidding service unavailable'}).encode('utf-8'))
+                return
+
+            try:
+                result = delivery_bidding_service.validate_integrity()
+                self._set_json_headers()
+                self.wfile.write(json.dumps(result).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+
+        if path == '/api/integrity/user-roles':
+            if not require_role(session, ['admin', 'actuary']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Unauthorized'}).encode('utf-8'))
+                return
+
+            try:
+                report = build_user_role_integrity_report()
+                self._set_json_headers()
+                self.wfile.write(json.dumps(report).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+
+        if path == '/api/bi/summary':
+            if not require_role(session, ['admin', 'actuary', 'accountant']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Unauthorized'}).encode('utf-8'))
+                return
+
+            try:
+                summary = build_bi_summary()
+                self._set_json_headers()
+                self.wfile.write(json.dumps(summary).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+
+        if path == '/api/community/dashboard':
+            if not require_role(session, ['admin', 'customer', 'supplier', 'accountant', 'actuary']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Unauthorized'}).encode('utf-8'))
+                return
+
+            ctx = resolve_session_context(session)
+            user_id = None
+            if ctx.get('role') == 'customer':
+                user_id = ctx.get('customer_id')
+            elif ctx.get('role') == 'supplier':
+                user_id = ctx.get('supplier_id')
+
+            try:
+                summary = build_community_dashboard_summary(user_id=user_id)
+                self._set_json_headers()
+                self.wfile.write(json.dumps(summary).encode('utf-8'))
             except Exception as e:
                 self._set_json_headers(500)
                 self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
@@ -14255,6 +14717,7 @@ For claims or questions, please contact:
                             break
                 
                 if user:
+                    role = normalize_role(role) or role
                     # Clear failed login attempts on success
                     with STATE_LOCK:
                         k = _security_key(client_ip, server_port)
@@ -15855,6 +16318,261 @@ For claims or questions, please contact:
 
         # ========== SUPPLY CHAIN ECOSYSTEM API ENDPOINTS ==========
         # Invitation-only B2B marketplace with adjustable commission (11% default)
+
+        # ========== DELIVERY BIDDING POST ENDPOINTS ==========
+        if path == '/api/delivery/requests':
+            auth_header = self.headers.get('Authorization', '')
+            token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+            session = validate_session(token) if token else None
+
+            if not require_role(session, ['admin', 'customer']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Customer or admin access required'}).encode('utf-8'))
+                return
+
+            if not delivery_bidding_enabled or not delivery_bidding_service:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Delivery bidding service unavailable'}).encode('utf-8'))
+                return
+
+            try:
+                data = json.loads(body or '{}')
+                authorized, customer_id, error = authorize_customer_data(
+                    session, data.get('customer_id'), 'delivery request'
+                )
+                if not authorized:
+                    self._set_json_headers(403)
+                    self.wfile.write(json.dumps({'error': error}).encode('utf-8'))
+                    return
+
+                result = delivery_bidding_service.create_request(
+                    customer_id=customer_id,
+                    order_id=data.get('order_id'),
+                    preferences=data.get('preferences'),
+                    location=data.get('location'),
+                    max_bid_amount=data.get('max_bid_amount'),
+                    payment_method=data.get('payment_method', 'health_wallet'),
+                    currency=data.get('currency', 'USD')
+                )
+
+                self._set_json_headers(201)
+                self.wfile.write(json.dumps(result).encode('utf-8'))
+            except ValueError as e:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': 'Delivery request failed', 'details': str(e)}).encode('utf-8'))
+            return
+
+        if path == '/api/delivery/bids':
+            auth_header = self.headers.get('Authorization', '')
+            token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+            session = validate_session(token) if token else None
+
+            if not require_role(session, ['supplier']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Supplier access required'}).encode('utf-8'))
+                return
+
+            if not delivery_bidding_enabled or not delivery_bidding_service:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Delivery bidding service unavailable'}).encode('utf-8'))
+                return
+
+            try:
+                data = json.loads(body or '{}')
+                ctx = resolve_session_context(session)
+                supplier_id = ctx.get('supplier_id')
+                if not supplier_id:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'Supplier session invalid'}).encode('utf-8'))
+                    return
+
+                result = delivery_bidding_service.submit_bid(
+                    request_id=data.get('request_id'),
+                    supplier_id=supplier_id,
+                    amount=data.get('amount'),
+                    eta_minutes=data.get('eta_minutes'),
+                    notes=data.get('notes', '')
+                )
+
+                self._set_json_headers(201)
+                self.wfile.write(json.dumps(result).encode('utf-8'))
+            except ValueError as e:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': 'Bid submission failed', 'details': str(e)}).encode('utf-8'))
+            return
+
+        if path == '/api/delivery/award':
+            auth_header = self.headers.get('Authorization', '')
+            token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+            session = validate_session(token) if token else None
+
+            if not require_role(session, ['admin', 'customer']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Customer or admin access required'}).encode('utf-8'))
+                return
+
+            if not delivery_bidding_enabled or not delivery_bidding_service:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Delivery bidding service unavailable'}).encode('utf-8'))
+                return
+
+            try:
+                data = json.loads(body or '{}')
+                request_id = data.get('request_id')
+                bid_id = data.get('bid_id')
+                request = DELIVERY_REQUESTS.get(request_id)
+                if not request:
+                    self._set_json_headers(404)
+                    self.wfile.write(json.dumps({'error': 'Delivery request not found'}).encode('utf-8'))
+                    return
+
+                authorized, customer_id, error = authorize_customer_data(
+                    session, request.get('customer_id'), 'delivery request'
+                )
+                if not authorized:
+                    self._set_json_headers(403)
+                    self.wfile.write(json.dumps({'error': error}).encode('utf-8'))
+                    return
+
+                result = delivery_bidding_service.award_bid(
+                    request_id=request_id,
+                    bid_id=bid_id,
+                    awarded_by=(session or {}).get('username', 'system')
+                )
+
+                self._set_json_headers(200)
+                self.wfile.write(json.dumps(result).encode('utf-8'))
+            except ValueError as e:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': 'Award failed', 'details': str(e)}).encode('utf-8'))
+            return
+
+        if path == '/api/delivery/accept':
+            auth_header = self.headers.get('Authorization', '')
+            token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+            session = validate_session(token) if token else None
+
+            if not require_role(session, ['supplier']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Supplier access required'}).encode('utf-8'))
+                return
+
+            if not delivery_bidding_enabled or not delivery_bidding_service:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Delivery bidding service unavailable'}).encode('utf-8'))
+                return
+
+            try:
+                data = json.loads(body or '{}')
+                ctx = resolve_session_context(session)
+                supplier_id = ctx.get('supplier_id')
+                result = delivery_bidding_service.accept_assignment(
+                    request_id=data.get('request_id'),
+                    supplier_id=supplier_id
+                )
+                self._set_json_headers(200)
+                self.wfile.write(json.dumps(result).encode('utf-8'))
+            except ValueError as e:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': 'Accept failed', 'details': str(e)}).encode('utf-8'))
+            return
+
+        if path == '/api/delivery/complete':
+            auth_header = self.headers.get('Authorization', '')
+            token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+            session = validate_session(token) if token else None
+
+            if not require_role(session, ['admin', 'supplier']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Supplier or admin access required'}).encode('utf-8'))
+                return
+
+            if not delivery_bidding_enabled or not delivery_bidding_service:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Delivery bidding service unavailable'}).encode('utf-8'))
+                return
+
+            try:
+                data = json.loads(body or '{}')
+                request_id = data.get('request_id')
+                ctx = resolve_session_context(session)
+                supplier_id = ctx.get('supplier_id')
+                if ctx.get('role') == 'admin' and not supplier_id:
+                    request = DELIVERY_REQUESTS.get(request_id)
+                    bid_id = (request or {}).get('awarded_bid_id')
+                    supplier_id = DELIVERY_BIDS.get(bid_id, {}).get('supplier_id')
+
+                result = delivery_bidding_service.mark_delivered(
+                    request_id=request_id,
+                    supplier_id=supplier_id
+                )
+                self._set_json_headers(200)
+                self.wfile.write(json.dumps(result).encode('utf-8'))
+            except ValueError as e:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': 'Completion failed', 'details': str(e)}).encode('utf-8'))
+            return
+
+        if path == '/api/delivery/cancel':
+            auth_header = self.headers.get('Authorization', '')
+            token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+            session = validate_session(token) if token else None
+
+            if not require_role(session, ['admin', 'customer']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Customer or admin access required'}).encode('utf-8'))
+                return
+
+            if not delivery_bidding_enabled or not delivery_bidding_service:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Delivery bidding service unavailable'}).encode('utf-8'))
+                return
+
+            try:
+                data = json.loads(body or '{}')
+                request_id = data.get('request_id')
+                request = DELIVERY_REQUESTS.get(request_id)
+                if not request:
+                    self._set_json_headers(404)
+                    self.wfile.write(json.dumps({'error': 'Delivery request not found'}).encode('utf-8'))
+                    return
+
+                authorized, customer_id, error = authorize_customer_data(
+                    session, request.get('customer_id'), 'delivery request'
+                )
+                if not authorized:
+                    self._set_json_headers(403)
+                    self.wfile.write(json.dumps({'error': error}).encode('utf-8'))
+                    return
+
+                result = delivery_bidding_service.cancel_request(
+                    request_id=request_id,
+                    reason=data.get('reason', '')
+                )
+                self._set_json_headers(200)
+                self.wfile.write(json.dumps(result).encode('utf-8'))
+            except ValueError as e:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': 'Cancellation failed', 'details': str(e)}).encode('utf-8'))
+            return
         
         # Generate supplier invitation code (admin only)
         if path == '/api/supply-chain/invitations':
