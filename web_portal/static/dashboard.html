@@ -1700,6 +1700,8 @@
       const lowered = trimmed.toLowerCase();
       if (lowered === 'null' || lowered === 'undefined' || lowered === 'none') return null;
       return trimmed;
+    }
+    
     function getStorage(type) {
       try {
         return window[type];
@@ -1746,16 +1748,15 @@
     
     // Customer state
     let customerId = null;
-    let authToken = normalizeAuthToken(localStorage.getItem('phins_token') || sessionStorage.getItem('phins_token'));
+    let authToken = normalizeAuthToken(safeStorageGet(localStore, 'phins_token') || safeStorageGet(sessionStore, 'phins_token'));
     const cachedSession = readSessionCache();
     if (!authToken && cachedSession.token) {
       authToken = normalizeAuthToken(cachedSession.token);
       if (authToken) {
-        localStorage.setItem('phins_token', authToken);
-        sessionStorage.setItem('phins_token', authToken);
+        safeStorageSet(localStore, 'phins_token', authToken);
+        safeStorageSet(sessionStore, 'phins_token', authToken);
       }
     }
-    let authToken = safeStorageGet(localStore, 'phins_token') || safeStorageGet(sessionStore, 'phins_token');
     let walletBalance = 0.00;
     let customerNFTs = [];
     
@@ -3286,50 +3287,16 @@
       const sessionToken = normalizeAuthToken(sessionData.token);
       if (!authToken && sessionToken) {
         authToken = sessionToken;
-        localStorage.setItem('phins_token', authToken);
-        sessionStorage.setItem('phins_token', authToken);
+        safeStorageSet(localStore, 'phins_token', authToken);
+        safeStorageSet(sessionStore, 'phins_token', authToken);
       }
       const storedCustomerId = normalizeCustomerId(
-        sessionStorage.getItem('customer_id') ||
-        localStorage.getItem('customer_id') ||
-        localStorage.getItem('phins_customer_id') ||
+        safeStorageGet(sessionStore, 'customer_id') ||
+        safeStorageGet(localStore, 'customer_id') ||
+        safeStorageGet(localStore, 'phins_customer_id') ||
         urlParams.get('customer_id')
       );
       const sessionCustomerId = normalizeCustomerId(sessionData.customer_id);
-      
-      console.log('[Dashboard Init] Sources:', {
-        sessionStorage: sessionStorage.getItem('customer_id'),
-        localStorage: localStorage.getItem('customer_id'),
-        phinsStorage: localStorage.getItem('phins_customer_id'),
-      const storedCustomerId = safeStorageGet(sessionStore, 'customer_id') 
-                             || safeStorageGet(localStore, 'customer_id')
-                             || urlParams.get('customer_id');
-      
-      // Also try to get from localStorage session object (with safe parsing)
-      let sessionData = {};
-      let sessionParseFailed = false;
-      const sessionRaw = safeStorageGet(localStore, 'session');
-      if (sessionRaw) {
-        try {
-          sessionData = JSON.parse(sessionRaw) || {};
-          if (!sessionData || typeof sessionData !== 'object' || Array.isArray(sessionData)) {
-            sessionData = {};
-          }
-        } catch (err) {
-          sessionParseFailed = true;
-          sessionData = {};
-        }
-      }
-      if (sessionParseFailed) {
-        console.warn('[Dashboard Init] Invalid session data detected, clearing stored session.');
-        safeStorageRemove(localStore, 'session');
-      }
-      
-      const sessionCustomerId = sessionData.customer_id || null;
-      const sessionToken = sessionData.token || null;
-      if (!authToken && sessionToken) {
-        authToken = sessionToken;
-      }
       
       console.log('[Dashboard Init] Sources:', {
         sessionStorage: safeStorageGet(sessionStore, 'customer_id'),
@@ -3339,21 +3306,7 @@
         authToken: authToken ? 'present' : 'missing'
       });
       
-      if (storedCustomerId && sessionCustomerId && sessionToken && authToken === sessionToken && storedCustomerId !== sessionCustomerId) {
-        customerId = sessionCustomerId;
-        sessionStorage.setItem('customer_id', customerId);
-        localStorage.setItem('customer_id', customerId);
-        localStorage.setItem('phins_customer_id', customerId);
-        console.warn('[Dashboard Init] Stored customer_id mismatch - using session customer_id:', customerId);
-      } else if (storedCustomerId) {
-        customerId = storedCustomerId;
-        console.log('[Dashboard Init] Using stored customer_id:', customerId);
-      } else if (sessionCustomerId) {
-        customerId = sessionCustomerId;
-        // Store in sessionStorage for consistency
-        sessionStorage.setItem('customer_id', customerId);
-        localStorage.setItem('customer_id', customerId);
-        localStorage.setItem('phins_customer_id', customerId);
+      // Determine customer_id from available sources
       if (sessionCustomerId) {
         customerId = sessionCustomerId;
         if (storedCustomerId && storedCustomerId !== sessionCustomerId) {
