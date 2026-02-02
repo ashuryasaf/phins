@@ -3651,38 +3651,60 @@ For claims or questions, please contact:
             role = session.get('role')
             customer_id = session.get('customer_id')
             
-            # CUSTOMER ID RECOVERY: For customer role without customer_id, try to recover from database
+            # CUSTOMER ID RECOVERY: For customer role without customer_id, try multiple sources
             # This handles edge cases where token was created before customer_id was properly set
-            # NOTE: Includes auto-reconnection if database connection is stale
-            if role == 'customer' and not customer_id and username and USE_DATABASE:
-                try:
-                    from database.manager import DatabaseManager
-                    from database import ensure_connection_healthy, reset_connection
-                    from sqlalchemy.exc import OperationalError, DatabaseError, DisconnectionError
-                    
-                    # Try to ensure connection is healthy
-                    db_healthy = database_enabled
-                    if not db_healthy:
-                        print(f"[SESSION VALIDATE] Database disabled, attempting reconnection...")
-                        if ensure_connection_healthy():
-                            db_healthy = True
-                            globals()['database_enabled'] = True
-                            print(f"[SESSION VALIDATE] Database connection restored!")
-                    
-                    if db_healthy:
-                        with DatabaseManager() as db:
-                            db_customer = db.customers.get_by_email(username.lower())
-                            if db_customer:
-                                customer_id = db_customer.id
-                                print(f"[SESSION VALIDATE] Recovered customer_id {customer_id} for {username}")
-                except (OperationalError, DatabaseError, DisconnectionError) as db_err:
-                    print(f"[SESSION VALIDATE] Database connection error: {db_err}")
+            if role == 'customer' and not customer_id and username:
+                print(f"[SESSION VALIDATE] Customer session without customer_id for {username}, attempting recovery...")
+                
+                # Recovery path 1: Check in-memory CUSTOMERS dict
+                for cid, cust in CUSTOMERS.items():
+                    if cust.get('email', '').lower() == username.lower():
+                        customer_id = cid
+                        print(f"[SESSION VALIDATE] Recovered customer_id {customer_id} from CUSTOMERS dict")
+                        break
+                
+                # Recovery path 2: Check REGISTERED_CUSTOMERS
+                if not customer_id:
+                    for cid, cust in REGISTERED_CUSTOMERS.items():
+                        if cust.get('email', '').lower() == username.lower():
+                            customer_id = cid
+                            print(f"[SESSION VALIDATE] Recovered customer_id {customer_id} from REGISTERED_CUSTOMERS")
+                            break
+                
+                # Recovery path 3: Try database if available
+                if not customer_id and USE_DATABASE:
                     try:
-                        reset_connection()
-                    except Exception:
-                        pass
-                except Exception as e:
-                    print(f"[SESSION VALIDATE] Customer recovery failed for {username}: {e}")
+                        from database.manager import DatabaseManager
+                        from database import ensure_connection_healthy, reset_connection
+                        from sqlalchemy.exc import OperationalError, DatabaseError, DisconnectionError
+                        
+                        db_healthy = database_enabled
+                        if not db_healthy:
+                            print(f"[SESSION VALIDATE] Database disabled, attempting reconnection...")
+                            if ensure_connection_healthy():
+                                db_healthy = True
+                                globals()['database_enabled'] = True
+                                print(f"[SESSION VALIDATE] Database connection restored!")
+                        
+                        if db_healthy:
+                            with DatabaseManager() as db:
+                                db_customer = db.customers.get_by_email(username.lower())
+                                if db_customer:
+                                    customer_id = db_customer.id
+                                    # Also sync to CUSTOMERS dict
+                                    CUSTOMERS[customer_id] = db_customer.to_dict()
+                                    print(f"[SESSION VALIDATE] Recovered customer_id {customer_id} from database")
+                    except (OperationalError, DatabaseError, DisconnectionError) as db_err:
+                        print(f"[SESSION VALIDATE] Database connection error: {db_err}")
+                        try:
+                            reset_connection()
+                        except Exception:
+                            pass
+                    except Exception as e:
+                        print(f"[SESSION VALIDATE] Database recovery failed: {e}")
+                
+                if not customer_id:
+                    print(f"[SESSION VALIDATE] WARNING: Could not recover customer_id for {username}")
             
             self._set_json_headers(200)
             self.wfile.write(json.dumps({
@@ -14255,6 +14277,70 @@ For claims or questions, please contact:
                             break
                 
                 if user:
+                    # ========== CUSTOMER_ID GUARANTEE FOR DATA INTEGRITY ==========
+                    # CRITICAL: For customer role, we MUST have a valid customer_id
+                    # Without it, all customer-specific API calls will fail with 403
+                    # This fixes the systemic pipeline flaw identified in 72-hour analysis
+                    if role == 'customer' and not customer_id:
+                        print(f"[AUTH] WARNING: Customer login without customer_id for {username}, attempting recovery...")
+                        
+                        # Recovery path 1: Check CUSTOMERS dict by email
+                        for cid, cust in CUSTOMERS.items():
+                            if cust.get('email', '').lower() == username.lower():
+                                customer_id = cid
+                                print(f"[AUTH] Recovered customer_id {customer_id} from CUSTOMERS dict")
+                                break
+                        
+                        # Recovery path 2: Check REGISTERED_CUSTOMERS
+                        if not customer_id:
+                            for cid, cust in REGISTERED_CUSTOMERS.items():
+                                if cust.get('email', '').lower() == username.lower():
+                                    customer_id = cid
+                                    print(f"[AUTH] Recovered customer_id {customer_id} from REGISTERED_CUSTOMERS")
+                                    break
+                        
+                        # Recovery path 3: Check dynamic_customers.json entries loaded into USERS
+                        if not customer_id:
+                            # Check if user record has customer_id we missed
+                            if isinstance(user, dict) and user.get('customer_id'):
+                                customer_id = user.get('customer_id')
+                                print(f"[AUTH] Recovered customer_id {customer_id} from user record")
+                        
+                        # Recovery path 4: Generate new customer_id and create record
+                        if not customer_id:
+                            import random
+                            customer_id = f"CUST-{random.randint(10000, 99999)}"
+                            new_customer = {
+                                'id': customer_id,
+                                'email': username.lower(),
+                                'name': name or username.split('@')[0].title(),
+                                'created_date': datetime.now().isoformat(),
+                                'status': 'active',
+                                'auto_created': True,
+                                'auto_created_reason': 'login_without_customer_id'
+                            }
+                            CUSTOMERS[customer_id] = new_customer
+                            REGISTERED_CUSTOMERS[customer_id] = new_customer
+                            print(f"[AUTH] Created new customer record {customer_id} for {username}")
+                            
+                            # Also try to sync to database if available
+                            if USE_DATABASE and database_enabled:
+                                try:
+                                    from database.manager import DatabaseManager
+                                    with DatabaseManager() as db:
+                                        from database.models import Customer
+                                        db_customer = Customer(
+                                            id=customer_id,
+                                            email=username.lower(),
+                                            name=name or username.split('@')[0].title(),
+                                            portal_active=True
+                                        )
+                                        db.session.add(db_customer)
+                                        db.commit()
+                                        print(f"[AUTH] Synced new customer {customer_id} to database")
+                                except Exception as db_err:
+                                    print(f"[AUTH] Failed to sync customer to DB (non-critical): {db_err}")
+                    
                     # Clear failed login attempts on success
                     with STATE_LOCK:
                         k = _security_key(client_ip, server_port)
@@ -14322,37 +14408,59 @@ For claims or questions, please contact:
             role = session.get('role')
             customer_id = session.get('customer_id')
             
-            # CUSTOMER ID RECOVERY: For customer role without customer_id, try to recover from database
-            # NOTE: Includes auto-reconnection if database connection is stale
-            if role == 'customer' and not customer_id and username and USE_DATABASE:
-                try:
-                    from database.manager import DatabaseManager
-                    from database import ensure_connection_healthy, reset_connection
-                    from sqlalchemy.exc import OperationalError, DatabaseError, DisconnectionError
-                    
-                    # Try to ensure connection is healthy
-                    db_healthy = database_enabled
-                    if not db_healthy:
-                        print(f"[SESSION VALIDATE POST] Database disabled, attempting reconnection...")
-                        if ensure_connection_healthy():
-                            db_healthy = True
-                            globals()['database_enabled'] = True
-                            print(f"[SESSION VALIDATE POST] Database connection restored!")
-                    
-                    if db_healthy:
-                        with DatabaseManager() as db:
-                            db_customer = db.customers.get_by_email(username.lower())
-                            if db_customer:
-                                customer_id = db_customer.id
-                                print(f"[SESSION VALIDATE POST] Recovered customer_id {customer_id} for {username}")
-                except (OperationalError, DatabaseError, DisconnectionError) as db_err:
-                    print(f"[SESSION VALIDATE POST] Database connection error: {db_err}")
+            # CUSTOMER ID RECOVERY: For customer role without customer_id, try multiple sources
+            if role == 'customer' and not customer_id and username:
+                print(f"[SESSION VALIDATE POST] Customer session without customer_id for {username}, attempting recovery...")
+                
+                # Recovery path 1: Check in-memory CUSTOMERS dict
+                for cid, cust in CUSTOMERS.items():
+                    if cust.get('email', '').lower() == username.lower():
+                        customer_id = cid
+                        print(f"[SESSION VALIDATE POST] Recovered customer_id {customer_id} from CUSTOMERS dict")
+                        break
+                
+                # Recovery path 2: Check REGISTERED_CUSTOMERS
+                if not customer_id:
+                    for cid, cust in REGISTERED_CUSTOMERS.items():
+                        if cust.get('email', '').lower() == username.lower():
+                            customer_id = cid
+                            print(f"[SESSION VALIDATE POST] Recovered customer_id {customer_id} from REGISTERED_CUSTOMERS")
+                            break
+                
+                # Recovery path 3: Try database if available
+                if not customer_id and USE_DATABASE:
                     try:
-                        reset_connection()
-                    except Exception:
-                        pass
-                except Exception as e:
-                    print(f"[SESSION VALIDATE POST] Customer recovery failed for {username}: {e}")
+                        from database.manager import DatabaseManager
+                        from database import ensure_connection_healthy, reset_connection
+                        from sqlalchemy.exc import OperationalError, DatabaseError, DisconnectionError
+                        
+                        db_healthy = database_enabled
+                        if not db_healthy:
+                            print(f"[SESSION VALIDATE POST] Database disabled, attempting reconnection...")
+                            if ensure_connection_healthy():
+                                db_healthy = True
+                                globals()['database_enabled'] = True
+                                print(f"[SESSION VALIDATE POST] Database connection restored!")
+                        
+                        if db_healthy:
+                            with DatabaseManager() as db:
+                                db_customer = db.customers.get_by_email(username.lower())
+                                if db_customer:
+                                    customer_id = db_customer.id
+                                    # Also sync to CUSTOMERS dict
+                                    CUSTOMERS[customer_id] = db_customer.to_dict()
+                                    print(f"[SESSION VALIDATE POST] Recovered customer_id {customer_id} from database")
+                    except (OperationalError, DatabaseError, DisconnectionError) as db_err:
+                        print(f"[SESSION VALIDATE POST] Database connection error: {db_err}")
+                        try:
+                            reset_connection()
+                        except Exception:
+                            pass
+                    except Exception as e:
+                        print(f"[SESSION VALIDATE POST] Database recovery failed: {e}")
+                
+                if not customer_id:
+                    print(f"[SESSION VALIDATE POST] WARNING: Could not recover customer_id for {username}")
             
             # Session is valid - return user info
             self._set_json_headers(200)
