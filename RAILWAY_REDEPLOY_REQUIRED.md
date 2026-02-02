@@ -1,13 +1,14 @@
-# URGENT: Railway Redeploy Required
+# URGENT: Railway Manual Redeploy Required
 
-## Current Status (February 2, 2026)
+## Current Status (February 2, 2026 ~21:45 UTC)
 
 | Component | Status |
 |-----------|--------|
-| GitHub main branch | ✅ Has the fix |
-| Production server | ❌ Running OLD code |
+| GitHub main branch | ✅ Has ALL fixes (commit b03f807) |
+| Production server | ❌ Running OLD code (duplicate authToken issue) |
 | Database (Postgres-AyKP) | ✅ Connected |
-| GitHub Actions | ⚠️ Failed (non-blocking) |
+| GitHub Actions | ⚠️ Tests queued/failed (non-blocking) |
+| Railway Auto-Deploy | ❌ NOT WORKING - requires manual trigger |
 
 ## Problem
 
@@ -33,9 +34,32 @@ $ curl -s "https://phins-portal-production.up.railway.app/dashboard.html" | grep
     function getStorage(type) {  # <-- NO closing brace! BROKEN!
 ```
 
-## Solution Options
+## Auto-Deploy Issue
 
-### Option 1: Railway Dashboard (Recommended)
+Railway is NOT auto-deploying from GitHub pushes. Multiple pushes to main have been made but production still runs old code.
+
+**Evidence:**
+```bash
+# GitHub main branch (has fix):
+$ grep -c "let authToken" web_portal/static/dashboard.html
+1
+
+# Production (still broken):
+$ curl -s "https://phins-portal-production.up.railway.app/dashboard.html" | grep -c "let authToken"
+2
+```
+
+**Possible causes:**
+1. Railway GitHub integration is misconfigured
+2. Railway is set to manual deploy only
+3. Railway deployment webhook is failing silently
+4. Previous failed GitHub Actions blocked deployment
+
+---
+
+## Solution: Manual Redeploy Required
+
+### Option 1: Railway Dashboard (Recommended - MUST DO)
 
 1. Go to [Railway Dashboard](https://railway.app/dashboard)
 2. Open the **phins-portal** project
