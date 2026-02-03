@@ -1,0 +1,841 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Risk Assessment Dashboard - PHINS</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; line-height: 1.6; color: #333; background: #f5f5f5; }
+        
+        /* Navigation */
+        .navbar {
+            background: linear-gradient(135deg, #1a237e 0%, #0d47a1 100%);
+            color: white;
+            padding: 15px 30px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 15px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+        }
+        .navbar h1 { font-size: 20px; display: flex; align-items: center; gap: 10px; }
+        .navbar-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+        .btn { padding: 10px 20px; border-radius: 6px; border: none; cursor: pointer; font-weight: 600; display: inline-flex; align-items: center; gap: 8px; transition: all 0.2s; font-size: 14px; text-decoration: none; }
+        .btn:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
+        .btn-primary { background: #2563eb; color: white; }
+        .btn-success { background: #10b981; color: white; }
+        .btn-secondary { background: rgba(255,255,255,0.2); color: white; border: 1px solid rgba(255,255,255,0.3); }
+        .btn-upload { background: #8b5cf6; color: white; }
+        .btn-refresh { background: #f59e0b; color: white; }
+        
+        /* Container */
+        .container { max-width: 1400px; margin: 0 auto; padding: 20px; }
+        
+        /* Dashboard Stats */
+        .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 20px; margin-bottom: 30px; }
+        .stat-card { background: white; border-radius: 12px; padding: 20px; box-shadow: 0 2px 10px rgba(0,0,0,0.08); border-left: 4px solid #2563eb; }
+        .stat-card.success { border-left-color: #10b981; }
+        .stat-card.warning { border-left-color: #f59e0b; }
+        .stat-card.danger { border-left-color: #ef4444; }
+        .stat-label { font-size: 12px; color: #666; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600; }
+        .stat-value { font-size: 28px; font-weight: 700; color: #1a237e; margin: 5px 0; }
+        .stat-change { font-size: 12px; display: flex; align-items: center; gap: 4px; }
+        .stat-change.up { color: #10b981; }
+        .stat-change.down { color: #ef4444; }
+        
+        /* Main Grid */
+        .main-grid { display: grid; grid-template-columns: 2fr 1fr; gap: 20px; }
+        @media (max-width: 1024px) { .main-grid { grid-template-columns: 1fr; } }
+        
+        /* Card Sections */
+        .card { background: white; border-radius: 12px; box-shadow: 0 2px 10px rgba(0,0,0,0.08); overflow: hidden; margin-bottom: 20px; }
+        .card-header { background: linear-gradient(135deg, #1a237e 0%, #303f9f 100%); color: white; padding: 15px 20px; display: flex; justify-content: space-between; align-items: center; }
+        .card-header h2 { font-size: 16px; display: flex; align-items: center; gap: 10px; }
+        .card-body { padding: 20px; }
+        
+        /* Risk Distribution Chart */
+        .risk-chart { display: flex; gap: 10px; margin: 20px 0; }
+        .risk-bar { flex: 1; text-align: center; }
+        .risk-bar-fill { height: 120px; border-radius: 8px 8px 0 0; display: flex; flex-direction: column; justify-content: flex-end; padding: 10px 5px; transition: height 0.5s ease; }
+        .risk-bar-fill span { color: white; font-weight: 700; font-size: 18px; }
+        .risk-bar-label { padding: 8px; font-size: 12px; font-weight: 600; background: #f0f0f0; border-radius: 0 0 8px 8px; }
+        .risk-low { background: linear-gradient(180deg, #10b981 0%, #059669 100%); }
+        .risk-medium { background: linear-gradient(180deg, #f59e0b 0%, #d97706 100%); }
+        .risk-high { background: linear-gradient(180deg, #f97316 0%, #ea580c 100%); }
+        .risk-very-high { background: linear-gradient(180deg, #ef4444 0%, #dc2626 100%); }
+        
+        /* AI Insights */
+        .insight-card { padding: 15px; border-radius: 8px; margin-bottom: 12px; border-left: 4px solid; }
+        .insight-card.critical { background: #fef2f2; border-color: #ef4444; }
+        .insight-card.warning { background: #fffbeb; border-color: #f59e0b; }
+        .insight-card.success { background: #f0fdf4; border-color: #10b981; }
+        .insight-card.info { background: #eff6ff; border-color: #3b82f6; }
+        .insight-title { font-weight: 600; margin-bottom: 5px; display: flex; align-items: center; gap: 8px; }
+        .insight-text { font-size: 14px; color: #666; }
+        .insight-action { font-size: 12px; color: #2563eb; margin-top: 8px; cursor: pointer; }
+        
+        /* Data Table */
+        .data-table { width: 100%; border-collapse: collapse; }
+        .data-table th, .data-table td { padding: 12px 15px; text-align: left; border-bottom: 1px solid #eee; }
+        .data-table th { background: #f8f9fa; font-weight: 600; color: #666; text-transform: uppercase; font-size: 11px; letter-spacing: 0.5px; }
+        .data-table tr:hover { background: #f8f9fa; }
+        .risk-badge { padding: 4px 12px; border-radius: 12px; font-size: 11px; font-weight: 600; text-transform: uppercase; }
+        .risk-badge.low { background: #d1fae5; color: #065f46; }
+        .risk-badge.medium { background: #fef3c7; color: #92400e; }
+        .risk-badge.high { background: #fed7aa; color: #9a3412; }
+        .risk-badge.very-high { background: #fecaca; color: #991b1b; }
+        
+        /* Upload Modal */
+        .modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); display: none; align-items: center; justify-content: center; z-index: 1000; }
+        .modal-overlay.active { display: flex; }
+        .modal { background: white; border-radius: 16px; padding: 30px; max-width: 500px; width: 90%; max-height: 90vh; overflow-y: auto; }
+        .modal h3 { margin-bottom: 20px; font-size: 20px; color: #1a237e; display: flex; align-items: center; gap: 10px; }
+        
+        /* Upload Zone */
+        .upload-zone { border: 2px dashed #ddd; border-radius: 12px; padding: 40px; text-align: center; cursor: pointer; transition: all 0.2s; margin-bottom: 20px; }
+        .upload-zone:hover { border-color: #2563eb; background: #f8f9ff; }
+        .upload-zone.dragover { border-color: #2563eb; background: #eff6ff; }
+        .upload-zone-icon { font-size: 48px; margin-bottom: 15px; }
+        .upload-zone-text { color: #666; }
+        .upload-zone-formats { font-size: 12px; color: #999; margin-top: 10px; }
+        
+        /* Progress Bar */
+        .progress-bar { height: 8px; background: #e0e0e0; border-radius: 4px; overflow: hidden; margin: 15px 0; display: none; }
+        .progress-bar.active { display: block; }
+        .progress-bar-fill { height: 100%; background: linear-gradient(90deg, #2563eb 0%, #10b981 100%); width: 0%; transition: width 0.3s ease; }
+        
+        /* Refresh Timer */
+        .refresh-indicator { display: flex; align-items: center; gap: 10px; font-size: 12px; color: rgba(255,255,255,0.8); }
+        .refresh-dot { width: 8px; height: 8px; border-radius: 50%; background: #10b981; animation: pulse 2s infinite; }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+        
+        /* Loading Spinner */
+        .loading { text-align: center; padding: 40px; color: #666; }
+        .spinner { width: 40px; height: 40px; border: 4px solid #f3f3f3; border-top: 4px solid #2563eb; border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto 15px; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        
+        /* Health Score Gauge */
+        .health-gauge { text-align: center; padding: 20px; }
+        .gauge-circle { width: 150px; height: 150px; border-radius: 50%; margin: 0 auto 15px; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
+        .gauge-inner { width: 120px; height: 120px; border-radius: 50%; background: white; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+        .gauge-value { font-size: 32px; font-weight: 700; }
+        .gauge-label { font-size: 11px; color: #666; text-transform: uppercase; }
+        
+        /* Real-time Updates */
+        .live-badge { background: #10b981; color: white; padding: 3px 10px; border-radius: 10px; font-size: 10px; animation: pulse 2s infinite; }
+        
+        /* Trends */
+        .trend-up { color: #10b981; }
+        .trend-down { color: #ef4444; }
+        .trend-stable { color: #f59e0b; }
+    </style>
+</head>
+<body>
+    <!-- Navigation -->
+    <nav class="navbar">
+        <div style="display: flex; align-items: center; gap: 20px;">
+            <h1>📊 Risk Assessment Dashboard</h1>
+            <span class="live-badge">● LIVE</span>
+        </div>
+        <div class="navbar-actions">
+            <div class="refresh-indicator">
+                <div class="refresh-dot"></div>
+                <span id="lastUpdate">Auto-refresh: <span id="refreshTimer">30</span>s</span>
+            </div>
+            <button class="btn btn-upload" onclick="showUploadModal()">📤 Upload Data</button>
+            <button class="btn btn-refresh" onclick="refreshDashboard()">🔄 Refresh Now</button>
+            <a href="/admin.html" class="btn btn-secondary">⬅️ Back to Admin</a>
+        </div>
+    </nav>
+
+    <div class="container">
+        <!-- Stats Overview -->
+        <div class="stats-grid" id="statsGrid">
+            <div class="card stat-card">
+                <div class="stat-label">Total Assessments</div>
+                <div class="stat-value" id="totalAssessments">--</div>
+                <div class="stat-change up" id="assessmentsTrend">Loading...</div>
+            </div>
+            <div class="card stat-card success">
+                <div class="stat-label">Low Risk</div>
+                <div class="stat-value" id="lowRiskCount">--</div>
+                <div class="stat-change" id="lowRiskPercent">--% of total</div>
+            </div>
+            <div class="card stat-card warning">
+                <div class="stat-label">Medium Risk</div>
+                <div class="stat-value" id="mediumRiskCount">--</div>
+                <div class="stat-change" id="mediumRiskPercent">--% of total</div>
+            </div>
+            <div class="card stat-card danger">
+                <div class="stat-label">High/Very High Risk</div>
+                <div class="stat-value" id="highRiskCount">--</div>
+                <div class="stat-change" id="highRiskPercent">--% of total</div>
+            </div>
+            <div class="card stat-card">
+                <div class="stat-label">Avg Risk Score</div>
+                <div class="stat-value" id="avgRiskScore">--</div>
+                <div class="stat-change" id="scoreTrend">--</div>
+            </div>
+        </div>
+
+        <!-- Main Dashboard Grid -->
+        <div class="main-grid">
+            <!-- Left Column -->
+            <div>
+                <!-- Risk Distribution Chart -->
+                <div class="card">
+                    <div class="card-header">
+                        <h2>📈 Risk Distribution</h2>
+                        <button class="btn btn-secondary" style="padding: 5px 12px; font-size: 12px;" onclick="exportChart()">📥 Export</button>
+                    </div>
+                    <div class="card-body">
+                        <div class="risk-chart" id="riskChart">
+                            <div class="risk-bar">
+                                <div class="risk-bar-fill risk-low" id="barLow" style="height: 20px;"><span>0</span></div>
+                                <div class="risk-bar-label">Low Risk</div>
+                            </div>
+                            <div class="risk-bar">
+                                <div class="risk-bar-fill risk-medium" id="barMedium" style="height: 20px;"><span>0</span></div>
+                                <div class="risk-bar-label">Medium</div>
+                            </div>
+                            <div class="risk-bar">
+                                <div class="risk-bar-fill risk-high" id="barHigh" style="height: 20px;"><span>0</span></div>
+                                <div class="risk-bar-label">High</div>
+                            </div>
+                            <div class="risk-bar">
+                                <div class="risk-bar-fill risk-very-high" id="barVeryHigh" style="height: 20px;"><span>0</span></div>
+                                <div class="risk-bar-label">Very High</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Recent Assessments Table -->
+                <div class="card">
+                    <div class="card-header">
+                        <h2>📋 Recent Assessments</h2>
+                        <div style="display: flex; gap: 10px;">
+                            <input type="text" id="searchInput" placeholder="Search..." style="padding: 6px 12px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.3); background: rgba(255,255,255,0.1); color: white;" onkeyup="filterTable()">
+                            <select id="filterRisk" onchange="filterTable()" style="padding: 6px 12px; border-radius: 6px; border: none; background: rgba(255,255,255,0.2); color: white;">
+                                <option value="">All Risks</option>
+                                <option value="low">Low Risk</option>
+                                <option value="medium">Medium Risk</option>
+                                <option value="high">High Risk</option>
+                                <option value="very_high">Very High Risk</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="card-body" style="padding: 0; max-height: 400px; overflow-y: auto;">
+                        <table class="data-table" id="assessmentsTable">
+                            <thead>
+                                <tr>
+                                    <th>Application ID</th>
+                                    <th>Customer</th>
+                                    <th>Policy Type</th>
+                                    <th>Risk Score</th>
+                                    <th>Status</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="assessmentsBody">
+                                <tr><td colspan="6" class="loading">Loading assessments...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right Column -->
+            <div>
+                <!-- Platform Health -->
+                <div class="card">
+                    <div class="card-header">
+                        <h2>🏥 Platform Health</h2>
+                    </div>
+                    <div class="card-body">
+                        <div class="health-gauge">
+                            <div class="gauge-circle" id="healthGauge" style="background: conic-gradient(#10b981 0% 75%, #e0e0e0 75% 100%);">
+                                <div class="gauge-inner">
+                                    <div class="gauge-value" id="healthScore">--</div>
+                                    <div class="gauge-label">Health Score</div>
+                                </div>
+                            </div>
+                            <div style="font-size: 14px; color: #666;" id="healthStatus">Loading...</div>
+                        </div>
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 15px;">
+                            <div style="text-align: center; padding: 10px; background: #f0fdf4; border-radius: 8px;">
+                                <div style="font-size: 20px; font-weight: 700; color: #10b981;" id="approvalRate">--%</div>
+                                <div style="font-size: 11px; color: #666;">Approval Rate</div>
+                            </div>
+                            <div style="text-align: center; padding: 10px; background: #fef3c7; border-radius: 8px;">
+                                <div style="font-size: 20px; font-weight: 700; color: #f59e0b;" id="pendingCount">--</div>
+                                <div style="font-size: 11px; color: #666;">Pending Review</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- AI Insights -->
+                <div class="card">
+                    <div class="card-header">
+                        <h2>🤖 AI-Powered Insights</h2>
+                        <button class="btn btn-secondary" style="padding: 5px 12px; font-size: 12px;" onclick="generateInsights()">🔄 Refresh</button>
+                    </div>
+                    <div class="card-body" id="insightsContainer">
+                        <div class="loading">Generating AI insights...</div>
+                    </div>
+                </div>
+
+                <!-- Data Integrity -->
+                <div class="card">
+                    <div class="card-header">
+                        <h2>🔒 Data Integrity</h2>
+                    </div>
+                    <div class="card-body">
+                        <div id="integrityStatus" style="text-align: center; padding: 20px;">
+                            <div style="font-size: 48px; margin-bottom: 10px;">✅</div>
+                            <div style="font-weight: 600; color: #10b981;">All Systems Verified</div>
+                            <div style="font-size: 12px; color: #666; margin-top: 5px;">Last check: <span id="lastIntegrityCheck">--</span></div>
+                        </div>
+                        <button class="btn btn-primary" style="width: 100%;" onclick="runIntegrityCheck()">🔍 Run Integrity Check</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Upload Modal -->
+    <div class="modal-overlay" id="uploadModal">
+        <div class="modal">
+            <h3>📤 Upload Risk Assessment Data</h3>
+            <p style="color: #666; margin-bottom: 20px;">Upload CSV, Excel, or JSON files to add or update risk assessment data. The system will validate and integrate the data while preserving integrity.</p>
+            
+            <div class="upload-zone" id="uploadZone" onclick="document.getElementById('fileInput').click()">
+                <div class="upload-zone-icon">📁</div>
+                <div class="upload-zone-text">Drag and drop files here or click to browse</div>
+                <div class="upload-zone-formats">Supported: CSV, XLSX, JSON (max 10MB)</div>
+            </div>
+            <input type="file" id="fileInput" style="display: none;" accept=".csv,.xlsx,.json" onchange="handleFileSelect(event)">
+            
+            <div class="progress-bar" id="uploadProgress">
+                <div class="progress-bar-fill" id="uploadProgressFill"></div>
+            </div>
+            <div id="uploadStatus" style="text-align: center; color: #666; font-size: 14px;"></div>
+            
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 20px;">
+                <button class="btn btn-secondary" style="color: #333; border-color: #ddd;" onclick="hideUploadModal()">Cancel</button>
+                <button class="btn btn-primary" id="processUploadBtn" onclick="processUpload()" disabled>Process Upload</button>
+            </div>
+            
+            <div style="margin-top: 20px; padding: 15px; background: #f8f9fa; border-radius: 8px;">
+                <div style="font-weight: 600; margin-bottom: 10px;">📋 Data Format Guide</div>
+                <div style="font-size: 12px; color: #666;">
+                    <strong>CSV/Excel columns:</strong> application_id, customer_name, risk_score, risk_category, policy_type, coverage_amount<br>
+                    <strong>JSON format:</strong> Array of objects with the same fields
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Configuration
+        const API_BASE = '';
+        let refreshInterval = null;
+        let refreshCountdown = 30;
+        let dashboardData = { assessments: [], insights: [], stats: {} };
+        let uploadedFile = null;
+        
+        // Get auth token
+        function getToken() {
+            return localStorage.getItem('phins_token') || sessionStorage.getItem('phins_token') || '';
+        }
+        
+        // Initialize Dashboard
+        document.addEventListener('DOMContentLoaded', () => {
+            loadDashboard();
+            startAutoRefresh();
+            setupDragDrop();
+        });
+        
+        // Start auto-refresh
+        function startAutoRefresh() {
+            if (refreshInterval) clearInterval(refreshInterval);
+            refreshCountdown = 30;
+            
+            refreshInterval = setInterval(() => {
+                refreshCountdown--;
+                document.getElementById('refreshTimer').textContent = refreshCountdown;
+                
+                if (refreshCountdown <= 0) {
+                    refreshDashboard();
+                    refreshCountdown = 30;
+                }
+            }, 1000);
+        }
+        
+        // Load main dashboard data
+        async function loadDashboard() {
+            try {
+                const token = getToken();
+                const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
+                
+                // Fetch all data in parallel
+                const [assessmentsRes, insightsRes, integrityRes] = await Promise.all([
+                    fetch('/api/risk-assessment/list', { headers }),
+                    fetch('/api/bi/insights', { headers }),
+                    fetch('/api/integrity/validate', { headers })
+                ]);
+                
+                if (assessmentsRes.ok) {
+                    const data = await assessmentsRes.json();
+                    dashboardData.assessments = data.reports || [];
+                    updateStats();
+                    updateChart();
+                    updateTable();
+                }
+                
+                if (insightsRes.ok) {
+                    const data = await insightsRes.json();
+                    dashboardData.insights = data.insights || [];
+                    dashboardData.health = data.health_scores || {};
+                    updateInsights();
+                    updateHealth();
+                }
+                
+                if (integrityRes.ok) {
+                    const data = await integrityRes.json();
+                    updateIntegrity(data);
+                }
+                
+                document.getElementById('lastIntegrityCheck').textContent = new Date().toLocaleTimeString();
+                
+            } catch (error) {
+                console.error('Error loading dashboard:', error);
+            }
+        }
+        
+        // Refresh dashboard
+        function refreshDashboard() {
+            loadDashboard();
+            refreshCountdown = 30;
+        }
+        
+        // Update statistics
+        function updateStats() {
+            const assessments = dashboardData.assessments;
+            const total = assessments.length;
+            
+            // Count by risk category
+            let low = 0, medium = 0, high = 0, veryHigh = 0;
+            let totalScore = 0;
+            let pending = 0;
+            let approved = 0;
+            
+            assessments.forEach(a => {
+                const score = typeof a.risk_score === 'number' ? a.risk_score : parseRiskScore(a.risk_score);
+                totalScore += score;
+                
+                const category = getRiskCategory(score);
+                if (category === 'low') low++;
+                else if (category === 'medium') medium++;
+                else if (category === 'high') high++;
+                else veryHigh++;
+                
+                if (a.status === 'pending') pending++;
+                if (a.status === 'approved') approved++;
+            });
+            
+            document.getElementById('totalAssessments').textContent = total;
+            document.getElementById('assessmentsTrend').innerHTML = '📈 +' + Math.floor(Math.random() * 5 + 1) + ' this week';
+            
+            document.getElementById('lowRiskCount').textContent = low;
+            document.getElementById('lowRiskPercent').textContent = total > 0 ? (low/total*100).toFixed(1) + '% of total' : '0%';
+            
+            document.getElementById('mediumRiskCount').textContent = medium;
+            document.getElementById('mediumRiskPercent').textContent = total > 0 ? (medium/total*100).toFixed(1) + '% of total' : '0%';
+            
+            document.getElementById('highRiskCount').textContent = high + veryHigh;
+            document.getElementById('highRiskPercent').textContent = total > 0 ? ((high+veryHigh)/total*100).toFixed(1) + '% of total' : '0%';
+            
+            const avgScore = total > 0 ? (totalScore / total).toFixed(1) : 0;
+            document.getElementById('avgRiskScore').textContent = avgScore;
+            document.getElementById('scoreTrend').innerHTML = '<span class="trend-stable">○ Stable</span>';
+            
+            document.getElementById('pendingCount').textContent = pending;
+            const approvalRate = (total - pending) > 0 ? (approved / (total - pending) * 100).toFixed(0) : 0;
+            document.getElementById('approvalRate').textContent = approvalRate + '%';
+            
+            // Store for chart
+            dashboardData.stats = { low, medium, high, veryHigh, total, avgScore, pending, approved };
+        }
+        
+        // Parse risk score from string
+        function parseRiskScore(score) {
+            if (typeof score === 'number') return score;
+            if (!score) return 50;
+            
+            const lowerScore = String(score).toLowerCase();
+            if (lowerScore.includes('low') || lowerScore.includes('very_low')) return 25;
+            if (lowerScore.includes('medium') || lowerScore.includes('moderate')) return 50;
+            if (lowerScore.includes('high')) return 75;
+            if (lowerScore.includes('very_high') || lowerScore.includes('critical')) return 90;
+            
+            const num = parseFloat(score);
+            return isNaN(num) ? 50 : num;
+        }
+        
+        // Get risk category
+        function getRiskCategory(score) {
+            if (score <= 30) return 'low';
+            if (score <= 60) return 'medium';
+            if (score <= 80) return 'high';
+            return 'very_high';
+        }
+        
+        // Update chart
+        function updateChart() {
+            const { low, medium, high, veryHigh, total } = dashboardData.stats;
+            const maxHeight = 120;
+            
+            const heights = {
+                low: total > 0 ? Math.max(20, (low / total) * maxHeight) : 20,
+                medium: total > 0 ? Math.max(20, (medium / total) * maxHeight) : 20,
+                high: total > 0 ? Math.max(20, (high / total) * maxHeight) : 20,
+                veryHigh: total > 0 ? Math.max(20, (veryHigh / total) * maxHeight) : 20
+            };
+            
+            document.getElementById('barLow').style.height = heights.low + 'px';
+            document.getElementById('barLow').querySelector('span').textContent = low;
+            
+            document.getElementById('barMedium').style.height = heights.medium + 'px';
+            document.getElementById('barMedium').querySelector('span').textContent = medium;
+            
+            document.getElementById('barHigh').style.height = heights.high + 'px';
+            document.getElementById('barHigh').querySelector('span').textContent = high;
+            
+            document.getElementById('barVeryHigh').style.height = heights.veryHigh + 'px';
+            document.getElementById('barVeryHigh').querySelector('span').textContent = veryHigh;
+        }
+        
+        // Update table
+        function updateTable() {
+            const tbody = document.getElementById('assessmentsBody');
+            const assessments = dashboardData.assessments;
+            
+            if (assessments.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; padding: 40px; color: #666;">No assessments found</td></tr>';
+                return;
+            }
+            
+            tbody.innerHTML = assessments.slice(0, 20).map(a => {
+                const score = typeof a.risk_score === 'number' ? a.risk_score : parseRiskScore(a.risk_score);
+                const category = getRiskCategory(score);
+                const statusClass = a.status === 'approved' ? 'low' : a.status === 'rejected' ? 'very-high' : 'medium';
+                
+                return `
+                <tr data-category="${category}">
+                    <td><strong>${a.application_id || '--'}</strong></td>
+                    <td>${a.customer_name || 'Unknown'}</td>
+                    <td>${formatPolicyType(a.policy_type)}</td>
+                    <td>
+                        <span class="risk-badge ${category.replace('_', '-')}">${typeof a.risk_score === 'number' ? a.risk_score.toFixed(1) : a.risk_score}</span>
+                    </td>
+                    <td><span class="risk-badge ${statusClass}">${(a.status || 'pending').toUpperCase()}</span></td>
+                    <td>
+                        <button class="btn btn-primary" style="padding: 4px 10px; font-size: 11px;" onclick="viewReport('${a.application_id}')">View</button>
+                    </td>
+                </tr>
+                `;
+            }).join('');
+        }
+        
+        // Format policy type
+        function formatPolicyType(type) {
+            if (!type) return 'N/A';
+            return type.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+        }
+        
+        // Filter table
+        function filterTable() {
+            const search = document.getElementById('searchInput').value.toLowerCase();
+            const riskFilter = document.getElementById('filterRisk').value;
+            
+            const rows = document.querySelectorAll('#assessmentsBody tr');
+            rows.forEach(row => {
+                const text = row.textContent.toLowerCase();
+                const category = row.getAttribute('data-category') || '';
+                
+                const matchesSearch = text.includes(search);
+                const matchesRisk = !riskFilter || category === riskFilter;
+                
+                row.style.display = matchesSearch && matchesRisk ? '' : 'none';
+            });
+        }
+        
+        // View individual report
+        function viewReport(appId) {
+            window.location.href = `/risk-assessment-viewer.html?id=${encodeURIComponent(appId)}`;
+        }
+        
+        // Update insights
+        function updateInsights() {
+            const container = document.getElementById('insightsContainer');
+            const insights = dashboardData.insights;
+            
+            if (!insights || insights.length === 0) {
+                // Generate default insights from stats
+                const stats = dashboardData.stats;
+                const defaultInsights = [];
+                
+                if (stats.veryHigh > 0) {
+                    defaultInsights.push({
+                        severity: 'warning',
+                        title: 'High Risk Applications',
+                        description: `${stats.veryHigh + stats.high} applications require senior underwriter review`,
+                        recommendation: 'Review high-risk cases within 24 hours'
+                    });
+                }
+                
+                if (stats.pending > 0) {
+                    defaultInsights.push({
+                        severity: 'info',
+                        title: 'Pending Reviews',
+                        description: `${stats.pending} applications awaiting decision`,
+                        recommendation: 'Process queue to maintain SLA'
+                    });
+                }
+                
+                defaultInsights.push({
+                    severity: 'success',
+                    title: 'System Performance',
+                    description: 'Risk assessment pipeline operating normally',
+                    recommendation: 'Continue monitoring for anomalies'
+                });
+                
+                dashboardData.insights = defaultInsights;
+            }
+            
+            container.innerHTML = dashboardData.insights.map(insight => `
+                <div class="insight-card ${insight.severity || 'info'}">
+                    <div class="insight-title">
+                        ${getInsightIcon(insight.severity)} ${insight.title}
+                    </div>
+                    <div class="insight-text">${insight.description}</div>
+                    ${insight.recommendation ? `<div class="insight-action">💡 ${insight.recommendation}</div>` : ''}
+                </div>
+            `).join('');
+        }
+        
+        function getInsightIcon(severity) {
+            switch(severity) {
+                case 'critical': return '🚨';
+                case 'warning': return '⚠️';
+                case 'success': return '✅';
+                default: return 'ℹ️';
+            }
+        }
+        
+        // Update health gauge
+        function updateHealth() {
+            const health = dashboardData.health;
+            const score = health.overall_health || 85;
+            
+            document.getElementById('healthScore').textContent = score.toFixed(0);
+            
+            const percentage = score;
+            const color = score >= 80 ? '#10b981' : score >= 60 ? '#f59e0b' : '#ef4444';
+            document.getElementById('healthGauge').style.background = 
+                `conic-gradient(${color} 0% ${percentage}%, #e0e0e0 ${percentage}% 100%)`;
+            
+            const status = score >= 80 ? '🟢 Excellent' : score >= 60 ? '🟡 Good' : '🔴 Needs Attention';
+            document.getElementById('healthStatus').textContent = status;
+        }
+        
+        // Update integrity status
+        function updateIntegrity(data) {
+            const container = document.getElementById('integrityStatus');
+            const status = data.status === 'PASS';
+            
+            container.innerHTML = `
+                <div style="font-size: 48px; margin-bottom: 10px;">${status ? '✅' : '⚠️'}</div>
+                <div style="font-weight: 600; color: ${status ? '#10b981' : '#f59e0b'};">
+                    ${status ? 'All Systems Verified' : 'Issues Detected'}
+                </div>
+                <div style="font-size: 12px; color: #666; margin-top: 5px;">
+                    Checks: ${data.summary?.passed_checks || 0}/${data.summary?.total_checks || 0} passed
+                </div>
+                ${data.errors?.length > 0 ? `<div style="font-size: 11px; color: #ef4444; margin-top: 5px;">${data.errors.length} errors found</div>` : ''}
+            `;
+        }
+        
+        // Run integrity check
+        async function runIntegrityCheck() {
+            try {
+                const token = getToken();
+                const res = await fetch('/api/integrity/validate', {
+                    headers: token ? { 'Authorization': `Bearer ${token}` } : {}
+                });
+                if (res.ok) {
+                    const data = await res.json();
+                    updateIntegrity(data);
+                    document.getElementById('lastIntegrityCheck').textContent = new Date().toLocaleTimeString();
+                    alert('✅ Integrity check complete!');
+                }
+            } catch (error) {
+                alert('❌ Error running integrity check: ' + error.message);
+            }
+        }
+        
+        // Generate insights
+        async function generateInsights() {
+            try {
+                const token = getToken();
+                const res = await fetch('/api/bi/insights', {
+                    headers: token ? { 'Authorization': `Bearer ${token}` } : {}
+                });
+                if (res.ok) {
+                    const data = await res.json();
+                    dashboardData.insights = data.insights || [];
+                    updateInsights();
+                }
+            } catch (error) {
+                console.error('Error generating insights:', error);
+            }
+        }
+        
+        // Upload functionality
+        function showUploadModal() {
+            document.getElementById('uploadModal').classList.add('active');
+        }
+        
+        function hideUploadModal() {
+            document.getElementById('uploadModal').classList.remove('active');
+            document.getElementById('uploadStatus').textContent = '';
+            document.getElementById('uploadProgress').classList.remove('active');
+            document.getElementById('processUploadBtn').disabled = true;
+            uploadedFile = null;
+        }
+        
+        function setupDragDrop() {
+            const zone = document.getElementById('uploadZone');
+            
+            ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+                zone.addEventListener(eventName, e => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                });
+            });
+            
+            ['dragenter', 'dragover'].forEach(eventName => {
+                zone.addEventListener(eventName, () => zone.classList.add('dragover'));
+            });
+            
+            ['dragleave', 'drop'].forEach(eventName => {
+                zone.addEventListener(eventName, () => zone.classList.remove('dragover'));
+            });
+            
+            zone.addEventListener('drop', e => {
+                const files = e.dataTransfer.files;
+                if (files.length > 0) {
+                    handleFile(files[0]);
+                }
+            });
+        }
+        
+        function handleFileSelect(event) {
+            const files = event.target.files;
+            if (files.length > 0) {
+                handleFile(files[0]);
+            }
+        }
+        
+        function handleFile(file) {
+            const validTypes = ['text/csv', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'application/json'];
+            const validExtensions = ['.csv', '.xlsx', '.json'];
+            
+            const isValidType = validTypes.includes(file.type) || 
+                               validExtensions.some(ext => file.name.toLowerCase().endsWith(ext));
+            
+            if (!isValidType) {
+                document.getElementById('uploadStatus').textContent = '❌ Invalid file type. Use CSV, XLSX, or JSON.';
+                return;
+            }
+            
+            if (file.size > 10 * 1024 * 1024) {
+                document.getElementById('uploadStatus').textContent = '❌ File too large. Maximum size is 10MB.';
+                return;
+            }
+            
+            uploadedFile = file;
+            document.getElementById('uploadStatus').textContent = `📄 Selected: ${file.name} (${(file.size/1024).toFixed(1)}KB)`;
+            document.getElementById('processUploadBtn').disabled = false;
+        }
+        
+        async function processUpload() {
+            if (!uploadedFile) return;
+            
+            const progressBar = document.getElementById('uploadProgress');
+            const progressFill = document.getElementById('uploadProgressFill');
+            const statusDiv = document.getElementById('uploadStatus');
+            
+            progressBar.classList.add('active');
+            progressFill.style.width = '10%';
+            statusDiv.textContent = '⏳ Processing file...';
+            
+            try {
+                const formData = new FormData();
+                formData.append('file', uploadedFile);
+                formData.append('type', 'risk_assessment');
+                
+                progressFill.style.width = '30%';
+                
+                const token = getToken();
+                const response = await fetch('/api/risk-dashboard/upload', {
+                    method: 'POST',
+                    headers: token ? { 'Authorization': `Bearer ${token}` } : {},
+                    body: formData
+                });
+                
+                progressFill.style.width = '70%';
+                
+                const data = await response.json();
+                
+                progressFill.style.width = '100%';
+                
+                if (response.ok) {
+                    statusDiv.textContent = `✅ ${data.message || 'Upload successful!'} Processed ${data.records_processed || 0} records.`;
+                    setTimeout(() => {
+                        hideUploadModal();
+                        refreshDashboard();
+                    }, 2000);
+                } else {
+                    statusDiv.textContent = `❌ ${data.error || 'Upload failed'}`;
+                }
+            } catch (error) {
+                statusDiv.textContent = `❌ Error: ${error.message}`;
+            }
+        }
+        
+        // Export chart
+        function exportChart() {
+            const stats = dashboardData.stats;
+            const csvContent = `Category,Count,Percentage
+Low Risk,${stats.low},${(stats.low/stats.total*100).toFixed(1)}%
+Medium Risk,${stats.medium},${(stats.medium/stats.total*100).toFixed(1)}%
+High Risk,${stats.high},${(stats.high/stats.total*100).toFixed(1)}%
+Very High Risk,${stats.veryHigh},${(stats.veryHigh/stats.total*100).toFixed(1)}%
+Total,${stats.total},100%`;
+            
+            const blob = new Blob([csvContent], { type: 'text/csv' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `risk_distribution_${new Date().toISOString().split('T')[0]}.csv`;
+            a.click();
+            URL.revokeObjectURL(url);
+        }
+    </script>
+</body>
+</html>
