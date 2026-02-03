@@ -106,6 +106,28 @@
         .progress-bar.active { display: block; }
         .progress-bar-fill { height: 100%; background: linear-gradient(90deg, #2563eb 0%, #10b981 100%); width: 0%; transition: width 0.3s ease; }
         
+        /* AI Assessment Toggle */
+        .ai-toggle-container { display: flex; align-items: center; gap: 15px; padding: 15px; background: linear-gradient(135deg, #eff6ff 0%, #f0fdf4 100%); border-radius: 12px; margin-bottom: 20px; border: 1px solid #d1fae5; }
+        .ai-toggle-label { font-weight: 600; color: #1a237e; display: flex; align-items: center; gap: 8px; }
+        .ai-toggle { position: relative; width: 50px; height: 26px; }
+        .ai-toggle input { opacity: 0; width: 0; height: 0; }
+        .ai-toggle-slider { position: absolute; cursor: pointer; inset: 0; background-color: #ccc; transition: 0.3s; border-radius: 26px; }
+        .ai-toggle-slider:before { position: absolute; content: ""; height: 20px; width: 20px; left: 3px; bottom: 3px; background-color: white; transition: 0.3s; border-radius: 50%; }
+        .ai-toggle input:checked + .ai-toggle-slider { background: linear-gradient(90deg, #8b5cf6, #10b981); }
+        .ai-toggle input:checked + .ai-toggle-slider:before { transform: translateX(24px); }
+        .ai-toggle-desc { font-size: 12px; color: #666; flex: 1; }
+        
+        /* AI Results Panel */
+        .ai-results { margin-top: 15px; padding: 15px; background: #fefce8; border-radius: 10px; border-left: 4px solid #eab308; display: none; }
+        .ai-results.active { display: block; }
+        .ai-results-header { font-weight: 700; color: #854d0e; margin-bottom: 10px; display: flex; align-items: center; gap: 8px; }
+        .ai-score { display: inline-flex; align-items: center; gap: 5px; padding: 4px 12px; border-radius: 20px; font-weight: 600; font-size: 13px; }
+        .ai-score.low { background: #d1fae5; color: #065f46; }
+        .ai-score.medium { background: #fef3c7; color: #92400e; }
+        .ai-score.high { background: #fed7aa; color: #9a3412; }
+        .ai-score.very-high { background: #fecaca; color: #991b1b; }
+        .ai-recommendation { margin-top: 10px; padding: 10px; background: white; border-radius: 8px; font-size: 13px; }
+        
         /* Refresh Timer */
         .refresh-indicator { display: flex; align-items: center; gap: 10px; font-size: 12px; color: rgba(255,255,255,0.8); }
         .refresh-dot { width: 8px; height: 8px; border-radius: 50%; background: #10b981; animation: pulse 2s infinite; }
@@ -310,12 +332,25 @@
     <div class="modal-overlay" id="uploadModal">
         <div class="modal">
             <h3>📤 Upload Risk Assessment Data</h3>
-            <p style="color: #666; margin-bottom: 20px;">Upload CSV, Excel, or JSON files to add or update risk assessment data. The system will validate and integrate the data while preserving integrity.</p>
+            <p style="color: #666; margin-bottom: 20px;">Upload files to add or update risk assessment data. Enable AI Assessment for intelligent document analysis.</p>
+            
+            <!-- AI Assessment Toggle -->
+            <div class="ai-toggle-container">
+                <label class="ai-toggle-label">
+                    <span>🤖</span>
+                    <span>AI Assessment</span>
+                </label>
+                <label class="ai-toggle">
+                    <input type="checkbox" id="aiAssessmentToggle" onchange="toggleAIAssessment()">
+                    <span class="ai-toggle-slider"></span>
+                </label>
+                <span class="ai-toggle-desc" id="aiToggleDesc">Enable AI-powered risk analysis for documents, images, and PDFs</span>
+            </div>
             
             <div class="upload-zone" id="uploadZone" onclick="document.getElementById('fileInput').click()">
-                <div class="upload-zone-icon">📁</div>
-                <div class="upload-zone-text">Drag and drop files here or click to browse</div>
-                <div class="upload-zone-formats">Supported: CSV, XLSX, JSON (max 10MB)</div>
+                <div class="upload-zone-icon" id="uploadZoneIcon">📁</div>
+                <div class="upload-zone-text" id="uploadZoneText">Drag and drop files here or click to browse</div>
+                <div class="upload-zone-formats" id="uploadZoneFormats">Supported: CSV, XLSX, JSON (max 10MB)</div>
             </div>
             <input type="file" id="fileInput" style="display: none;" accept=".csv,.xlsx,.json" onchange="handleFileSelect(event)">
             
@@ -324,14 +359,25 @@
             </div>
             <div id="uploadStatus" style="text-align: center; color: #666; font-size: 14px;"></div>
             
+            <!-- AI Assessment Results -->
+            <div class="ai-results" id="aiResultsPanel">
+                <div class="ai-results-header">
+                    <span>🧠</span>
+                    <span>AI Assessment Results</span>
+                </div>
+                <div id="aiResultsContent">
+                    <!-- AI results will be populated here -->
+                </div>
+            </div>
+            
             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 20px;">
                 <button class="btn btn-secondary" style="color: #333; border-color: #ddd;" onclick="hideUploadModal()">Cancel</button>
                 <button class="btn btn-primary" id="processUploadBtn" onclick="processUpload()" disabled>Process Upload</button>
             </div>
             
-            <div style="margin-top: 20px; padding: 15px; background: #f8f9fa; border-radius: 8px;">
+            <div style="margin-top: 20px; padding: 15px; background: #f8f9fa; border-radius: 8px;" id="formatGuide">
                 <div style="font-weight: 600; margin-bottom: 10px;">📋 Data Format Guide</div>
-                <div style="font-size: 12px; color: #666;">
+                <div style="font-size: 12px; color: #666;" id="formatGuideContent">
                     <strong>CSV/Excel columns:</strong> application_id, customer_name, risk_score, risk_category, policy_type, coverage_amount<br>
                     <strong>JSON format:</strong> Array of objects with the same fields
                 </div>
@@ -346,6 +392,7 @@
         let refreshCountdown = 30;
         let dashboardData = { assessments: [], insights: [], stats: {} };
         let uploadedFile = null;
+        let aiAssessmentEnabled = false;
         
         // Get auth token
         function getToken() {
@@ -715,6 +762,11 @@
         // Upload functionality
         function showUploadModal() {
             document.getElementById('uploadModal').classList.add('active');
+            // Reset AI toggle
+            aiAssessmentEnabled = false;
+            document.getElementById('aiAssessmentToggle').checked = false;
+            updateUploadModeUI();
+            document.getElementById('aiResultsPanel').classList.remove('active');
         }
         
         function hideUploadModal() {
@@ -722,7 +774,59 @@
             document.getElementById('uploadStatus').textContent = '';
             document.getElementById('uploadProgress').classList.remove('active');
             document.getElementById('processUploadBtn').disabled = true;
+            document.getElementById('aiResultsPanel').classList.remove('active');
             uploadedFile = null;
+        }
+        
+        // Toggle AI Assessment mode
+        function toggleAIAssessment() {
+            aiAssessmentEnabled = document.getElementById('aiAssessmentToggle').checked;
+            updateUploadModeUI();
+            // Reset file selection when mode changes
+            if (uploadedFile) {
+                uploadedFile = null;
+                document.getElementById('uploadStatus').textContent = '';
+                document.getElementById('processUploadBtn').disabled = true;
+                document.getElementById('fileInput').value = '';
+            }
+        }
+        
+        function updateUploadModeUI() {
+            const fileInput = document.getElementById('fileInput');
+            const zoneIcon = document.getElementById('uploadZoneIcon');
+            const zoneText = document.getElementById('uploadZoneText');
+            const zoneFormats = document.getElementById('uploadZoneFormats');
+            const formatGuide = document.getElementById('formatGuide');
+            const formatGuideContent = document.getElementById('formatGuideContent');
+            const aiToggleDesc = document.getElementById('aiToggleDesc');
+            const processBtn = document.getElementById('processUploadBtn');
+            
+            if (aiAssessmentEnabled) {
+                // AI Assessment mode - accept documents and images
+                fileInput.accept = '.pdf,.png,.jpg,.jpeg,.gif,.bmp,.tiff,.doc,.docx';
+                zoneIcon.textContent = '🤖';
+                zoneText.textContent = 'Upload documents for AI risk assessment';
+                zoneFormats.textContent = 'Supported: PDF, Images (PNG, JPG, GIF), Documents (DOC, DOCX) - max 10MB';
+                aiToggleDesc.textContent = '✅ AI Assessment enabled - upload documents for intelligent analysis';
+                processBtn.textContent = '🧠 Run AI Assessment';
+                formatGuideContent.innerHTML = `
+                    <strong>Medical Reports:</strong> PDF files with health information for risk scoring<br>
+                    <strong>ID Documents:</strong> Passport, driving license scans for verification<br>
+                    <strong>Supporting Documents:</strong> Any additional evidence for underwriting
+                `;
+            } else {
+                // Standard mode - accept data files
+                fileInput.accept = '.csv,.xlsx,.json';
+                zoneIcon.textContent = '📁';
+                zoneText.textContent = 'Drag and drop files here or click to browse';
+                zoneFormats.textContent = 'Supported: CSV, XLSX, JSON (max 10MB)';
+                aiToggleDesc.textContent = 'Enable AI-powered risk analysis for documents, images, and PDFs';
+                processBtn.textContent = 'Process Upload';
+                formatGuideContent.innerHTML = `
+                    <strong>CSV/Excel columns:</strong> application_id, customer_name, risk_score, risk_category, policy_type, coverage_amount<br>
+                    <strong>JSON format:</strong> Array of objects with the same fields
+                `;
+            }
         }
         
         function setupDragDrop() {
@@ -759,14 +863,28 @@
         }
         
         function handleFile(file) {
-            const validTypes = ['text/csv', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'application/json'];
-            const validExtensions = ['.csv', '.xlsx', '.json'];
+            // Validation depends on mode
+            let validTypes, validExtensions;
+            
+            if (aiAssessmentEnabled) {
+                // AI Assessment mode
+                validTypes = ['application/pdf', 'image/png', 'image/jpeg', 'image/gif', 'image/bmp', 'image/tiff',
+                              'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'];
+                validExtensions = ['.pdf', '.png', '.jpg', '.jpeg', '.gif', '.bmp', '.tiff', '.doc', '.docx'];
+            } else {
+                // Standard data upload mode
+                validTypes = ['text/csv', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'application/json'];
+                validExtensions = ['.csv', '.xlsx', '.json'];
+            }
             
             const isValidType = validTypes.includes(file.type) || 
                                validExtensions.some(ext => file.name.toLowerCase().endsWith(ext));
             
             if (!isValidType) {
-                document.getElementById('uploadStatus').textContent = '❌ Invalid file type. Use CSV, XLSX, or JSON.';
+                const modeMsg = aiAssessmentEnabled ? 
+                    '❌ Invalid file type. Use PDF, images (PNG, JPG), or documents (DOC, DOCX) for AI assessment.' :
+                    '❌ Invalid file type. Use CSV, XLSX, or JSON.';
+                document.getElementById('uploadStatus').textContent = modeMsg;
                 return;
             }
             
@@ -786,20 +904,33 @@
             const progressBar = document.getElementById('uploadProgress');
             const progressFill = document.getElementById('uploadProgressFill');
             const statusDiv = document.getElementById('uploadStatus');
+            const aiResultsPanel = document.getElementById('aiResultsPanel');
+            const aiResultsContent = document.getElementById('aiResultsContent');
             
             progressBar.classList.add('active');
             progressFill.style.width = '10%';
-            statusDiv.textContent = '⏳ Processing file...';
+            aiResultsPanel.classList.remove('active');
+            
+            if (aiAssessmentEnabled) {
+                statusDiv.textContent = '🤖 Running AI assessment on document...';
+            } else {
+                statusDiv.textContent = '⏳ Processing file...';
+            }
             
             try {
                 const formData = new FormData();
                 formData.append('file', uploadedFile);
-                formData.append('type', 'risk_assessment');
+                formData.append('type', aiAssessmentEnabled ? 'ai_assessment' : 'risk_assessment');
+                formData.append('ai_assessment', aiAssessmentEnabled ? 'true' : 'false');
                 
                 progressFill.style.width = '30%';
                 
                 const token = getToken();
-                const response = await fetch('/api/risk-dashboard/upload', {
+                
+                // Choose endpoint based on mode
+                const endpoint = aiAssessmentEnabled ? '/api/risk-dashboard/ai-assess' : '/api/risk-dashboard/upload';
+                
+                const response = await fetch(endpoint, {
                     method: 'POST',
                     headers: token ? { 'Authorization': `Bearer ${token}` } : {},
                     body: formData
@@ -812,13 +943,191 @@
                 progressFill.style.width = '100%';
                 
                 if (response.ok) {
-                    statusDiv.textContent = `✅ ${data.message || 'Upload successful!'} Processed ${data.records_processed || 0} records.`;
+                    if (aiAssessmentEnabled && data.assessment) {
+                        // Display AI assessment results
+                        displayAIResults(data.assessment, data);
+                        statusDiv.textContent = `✅ AI Assessment complete!`;
+                    } else {
+                        statusDiv.textContent = `✅ ${data.message || 'Upload successful!'} Processed ${data.records_processed || 0} records.`;
+                        setTimeout(() => {
+                            hideUploadModal();
+                            refreshDashboard();
+                        }, 2000);
+                    }
+                } else {
+                    statusDiv.textContent = `❌ ${data.error || 'Upload failed'}`;
+                }
+            } catch (error) {
+                statusDiv.textContent = `❌ Error: ${error.message}`;
+            }
+        }
+        
+        // Display AI assessment results
+        function displayAIResults(assessment, fullData) {
+            const aiResultsPanel = document.getElementById('aiResultsPanel');
+            const aiResultsContent = document.getElementById('aiResultsContent');
+            
+            // Determine risk level class
+            let riskScore = assessment.risk_score || assessment.overall_risk_score || 0;
+            // Normalize score to 0-1 range if it's in percentage format (0-100)
+            if (riskScore > 1) {
+                riskScore = riskScore / 100;
+            }
+            const riskLevel = assessment.risk_level || determineRiskLevel(riskScore);
+            const riskClass = riskLevel.toLowerCase().replace(/[_\s]/g, '-');
+            
+            // Build results HTML - format score as percentage
+            const displayScore = (riskScore * 100).toFixed(1);
+            let html = `
+                <div style="display: flex; gap: 15px; flex-wrap: wrap; margin-bottom: 15px;">
+                    <div>
+                        <div style="font-size: 12px; color: #666;">Risk Score</div>
+                        <span class="ai-score ${riskClass}">${displayScore}%</span>
+                    </div>
+                    <div>
+                        <div style="font-size: 12px; color: #666;">Risk Level</div>
+                        <span class="ai-score ${riskClass}">${formatRiskLevel(riskLevel)}</span>
+                    </div>
+                    ${assessment.recommendation ? `
+                    <div>
+                        <div style="font-size: 12px; color: #666;">Recommendation</div>
+                        <span class="ai-score ${getRecommendationClass(assessment.recommendation)}">${formatRecommendation(assessment.recommendation)}</span>
+                    </div>
+                    ` : ''}
+                    ${assessment.confidence_level ? `
+                    <div>
+                        <div style="font-size: 12px; color: #666;">Confidence</div>
+                        <span style="font-weight: 600;">${(assessment.confidence_level * 100).toFixed(0)}%</span>
+                    </div>
+                    ` : ''}
+                </div>
+            `;
+            
+            // Component scores if available
+            if (assessment.identity_score !== undefined || assessment.document_score !== undefined) {
+                html += `
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(100px, 1fr)); gap: 10px; margin-bottom: 15px; padding: 10px; background: #f8f9fa; border-radius: 8px;">
+                        ${assessment.identity_score !== undefined ? `<div><span style="font-size: 11px; color: #666;">Identity</span><br><strong>${(assessment.identity_score * 100).toFixed(0)}%</strong></div>` : ''}
+                        ${assessment.document_score !== undefined ? `<div><span style="font-size: 11px; color: #666;">Document</span><br><strong>${(assessment.document_score * 100).toFixed(0)}%</strong></div>` : ''}
+                        ${assessment.medical_score !== undefined ? `<div><span style="font-size: 11px; color: #666;">Medical</span><br><strong>${(assessment.medical_score * 100).toFixed(0)}%</strong></div>` : ''}
+                        ${assessment.fraud_score !== undefined ? `<div><span style="font-size: 11px; color: #666;">Fraud Risk</span><br><strong>${(assessment.fraud_score * 100).toFixed(0)}%</strong></div>` : ''}
+                    </div>
+                `;
+            }
+            
+            // Explanation/details
+            if (assessment.explanation) {
+                html += `<div class="ai-recommendation"><strong>Analysis:</strong> ${assessment.explanation}</div>`;
+            }
+            
+            // Risk factors if available (show top 5 key factors for readability)
+            const MAX_RISK_FACTORS_DISPLAY = 5;
+            if (assessment.risk_factors && assessment.risk_factors.length > 0) {
+                html += `<div style="margin-top: 10px;"><strong style="font-size: 12px;">Key Risk Factors:</strong><ul style="font-size: 12px; margin: 5px 0 0 15px; padding: 0;">`;
+                assessment.risk_factors.slice(0, MAX_RISK_FACTORS_DISPLAY).forEach(f => {
+                    const factorName = f.factor_name || f.name || 'Factor';
+                    const impact = getImpactIcon(f.impact_direction);
+                    html += `<li>${impact} ${factorName}: ${f.explanation || ''}</li>`;
+                });
+                html += `</ul></div>`;
+            }
+            
+            // Actions
+            html += `
+                <div style="display: flex; gap: 10px; margin-top: 15px;">
+                    <button class="btn btn-success" onclick="saveAIAssessment()">💾 Save to Dashboard</button>
+                    <button class="btn btn-secondary" style="color: #333; border-color: #ddd;" onclick="hideUploadModal()">Close</button>
+                </div>
+            `;
+            
+            aiResultsContent.innerHTML = html;
+            aiResultsPanel.classList.add('active');
+            
+            // Store assessment data for saving (using closure-like approach)
+            _pendingAIAssessment = { assessment, fullData };
+        }
+        
+        // Private variable to store pending assessment (not exposed to window)
+        let _pendingAIAssessment = null;
+        
+        function determineRiskLevel(score) {
+            if (score <= 0.3) return 'low';
+            if (score <= 0.5) return 'medium';
+            if (score <= 0.7) return 'high';
+            return 'very_high';
+        }
+        
+        // Get icon for risk factor impact direction
+        function getImpactIcon(impactDirection) {
+            switch ((impactDirection || '').toLowerCase()) {
+                case 'positive': return '⬆️';  // Increases risk
+                case 'negative': return '⬇️';  // Decreases risk
+                default: return '➡️';          // Neutral
+            }
+        }
+        
+        function formatRiskLevel(level) {
+            const map = {
+                'very_low': 'Very Low',
+                'low': 'Low',
+                'medium': 'Medium',
+                'moderate': 'Moderate',
+                'high': 'High',
+                'very_high': 'Very High'
+            };
+            return map[level.toLowerCase()] || level;
+        }
+        
+        function formatRecommendation(rec) {
+            const map = {
+                'approve': '✅ Approve',
+                'approve_conditional': '⚠️ Conditional',
+                'refer_manual': '👤 Manual Review',
+                'decline': '❌ Decline',
+                'pending_info': '📋 More Info Needed'
+            };
+            return map[rec.toLowerCase()] || rec;
+        }
+        
+        function getRecommendationClass(rec) {
+            const map = {
+                'approve': 'low',
+                'approve_conditional': 'medium',
+                'refer_manual': 'medium',
+                'decline': 'very-high',
+                'pending_info': 'medium'
+            };
+            return map[rec.toLowerCase()] || 'medium';
+        }
+        
+        // Save AI assessment to dashboard
+        async function saveAIAssessment() {
+            if (!_pendingAIAssessment) return;
+            
+            const statusDiv = document.getElementById('uploadStatus');
+            statusDiv.textContent = '💾 Saving assessment...';
+            
+            try {
+                const token = getToken();
+                const response = await fetch('/api/risk-dashboard/save-assessment', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+                    },
+                    body: JSON.stringify(_pendingAIAssessment)
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    statusDiv.textContent = '✅ Assessment saved to dashboard!';
                     setTimeout(() => {
                         hideUploadModal();
                         refreshDashboard();
-                    }, 2000);
+                    }, 1500);
                 } else {
-                    statusDiv.textContent = `❌ ${data.error || 'Upload failed'}`;
+                    statusDiv.textContent = `❌ ${data.error || 'Failed to save'}`;
                 }
             } catch (error) {
                 statusDiv.textContent = `❌ Error: ${error.message}`;
