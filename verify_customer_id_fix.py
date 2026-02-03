@@ -9,6 +9,7 @@ fallback strategy.
 
 import sys
 import os
+import time
 
 # Add project root to path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -22,7 +23,7 @@ def test_guarantee_with_new_customer():
     print("TEST 1: New customer (no existing records)")
     print("="*80)
     
-    test_email = f"demo{os.getpid()}@example.com"
+    test_email = f"demo{time.time_ns()}@example.com"
     
     print(f"\nCalling get_customer_id_guaranteed('{test_email}', 'customer')...")
     customer_id = portal.get_customer_id_guaranteed(test_email, 'customer')
@@ -82,7 +83,7 @@ def test_guarantee_with_database_failure():
     portal.USE_DATABASE = False
     
     try:
-        test_email = f"dbfail{os.getpid()}@example.com"
+        test_email = f"dbfail{time.time_ns()}@example.com"
         
         print(f"\nDatabase disabled (USE_DATABASE=False)")
         print(f"Calling get_customer_id_guaranteed('{test_email}', 'customer')...")

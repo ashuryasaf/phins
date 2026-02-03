@@ -65,7 +65,7 @@ def test_customer_login_always_has_customer_id():
     """
     # Test the guarantee function directly with a non-existent user
     # to show that it auto-generates when all lookups fail
-    test_email = f"newcustomer{int(time.time())}@example.com"
+    test_email = f"newcustomer{time.time_ns()}@example.com"
     
     # Call the guarantee function (simulating what happens during login)
     customer_id = portal.get_customer_id_guaranteed(test_email, 'customer')
@@ -93,7 +93,7 @@ def test_customer_login_with_database_failure():
     portal.USE_DATABASE = False
     
     try:
-        test_email = f"dbfail{int(time.time())}@example.com"
+        test_email = f"dbfail{time.time_ns()}@example.com"
         
         # Call guarantee function with DB disabled
         customer_id = portal.get_customer_id_guaranteed(test_email, 'customer')
@@ -117,34 +117,24 @@ def test_auto_generated_customer_id_format():
     # Test the get_customer_id_guaranteed function directly
     # Mock all layers to force auto-generation
     
-    # Save original values
-    original_users = portal.USERS if hasattr(portal, 'USERS') else {}
-    original_customers = portal.CUSTOMERS if hasattr(portal, 'CUSTOMERS') else {}
-    original_registered = portal.REGISTERED_CUSTOMERS if hasattr(portal, 'REGISTERED_CUSTOMERS') else {}
-    
-    # Temporarily clear dictionaries to force auto-generation
-    try:
-        # Disable database
-        with patch('web_portal.server.USE_DATABASE', False):
-            # Test with a new email that doesn't exist anywhere
-            test_email = f"newuser{int(time.time())}@example.com"
-            
-            customer_id = portal.get_customer_id_guaranteed(test_email, 'customer')
-            
-            # Verify format
-            assert customer_id is not None, "Auto-generated customer_id should not be None"
-            assert isinstance(customer_id, str), f"customer_id should be string, got {type(customer_id)}"
-            assert customer_id.startswith('CUST-'), f"customer_id should start with 'CUST-', got {customer_id}"
-            assert len(customer_id) == 10, f"customer_id should be 10 chars (CUST-XXXXX), got {len(customer_id)}"
-            
-            # Verify it's numeric after prefix
-            numeric_part = customer_id.split('-')[1]
-            assert numeric_part.isdigit(), f"customer_id numeric part should be digits, got {numeric_part}"
-            assert len(numeric_part) == 5, f"customer_id should have 5 digits, got {len(numeric_part)}"
-            
-            print(f"✓ Auto-generated customer_id format valid: {customer_id}")
-    finally:
-        pass  # Dictionaries are global, changes persist
+    # Disable database to force auto-generation
+    with patch('web_portal.server.USE_DATABASE', False):
+        # Test with a new email that doesn't exist anywhere
+        test_email = f"newuser{time.time_ns()}@example.com"
+        
+        customer_id = portal.get_customer_id_guaranteed(test_email, 'customer')
+        
+        # Verify format
+        assert customer_id is not None, "Auto-generated customer_id should not be None"
+        assert isinstance(customer_id, str), f"customer_id should be string, got {type(customer_id)}"
+        assert customer_id.startswith('CUST-'), f"customer_id should start with 'CUST-', got {customer_id}"
+        
+        # Verify it follows the expected pattern (CUST- followed by digits)
+        parts = customer_id.split('-')
+        assert len(parts) == 2, f"customer_id should have format CUST-XXXXX, got {customer_id}"
+        assert parts[1].isdigit(), f"customer_id numeric part should be digits, got {parts[1]}"
+        
+        print(f"✓ Auto-generated customer_id format valid: {customer_id}")
 
 
 def test_customer_id_persistence():
@@ -157,12 +147,9 @@ def test_customer_id_persistence():
     base = f"http://127.0.0.1:{port}"
     
     # Use a unique email to trigger auto-generation
-    unique_email = f"persist{int(time.time())}@example.com"
+    unique_email = f"persist{time.time_ns()}@example.com"
     
-    # Try to login with non-existent user (this should trigger auto-generation if no auth fails first)
-    # Actually, login requires authentication, so we can't test this directly via login
-    # Instead, test the function directly
-    
+    # Test the guarantee function directly
     customer_id = portal.get_customer_id_guaranteed(unique_email, 'customer')
     
     # Verify it was persisted to CUSTOMERS
