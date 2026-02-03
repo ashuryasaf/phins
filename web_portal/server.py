@@ -14272,6 +14272,192 @@ For claims or questions, please contact:
                 self.wfile.write(json.dumps({'error': 'Failed to generate referral code'}).encode('utf-8'))
                 return
         
+        # =====================================================================
+        # AI RISK & REPORTS ANALYSIS API ENDPOINTS
+        # Supports file upload (CSV/XLS/ZIP), AI analysis, and report generation
+        # =====================================================================
+        
+        # POST /api/reports/upload - Upload and parse file
+        if path == '/api/reports/upload':
+            auth_header = self.headers.get('Authorization', '')
+            token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+            session = validate_session(token) if token else None
+            
+            # Allow admin, actuary, analyst, or customer roles
+            if not session:
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Authentication required'}).encode('utf-8'))
+                return
+            
+            length = int(self.headers.get('Content-Length', 0))
+            body = self.rfile.read(length).decode('utf-8') if length else '{}'
+            
+            try:
+                data = json.loads(body)
+                filename = data.get('filename', 'upload.csv')
+                file_type = data.get('file_type', 'csv')
+                content_b64 = data.get('content', '')
+                
+                if not content_b64:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'No file content provided'}).encode('utf-8'))
+                    return
+                
+                # Decode base64 content
+                import base64
+                try:
+                    file_content = base64.b64decode(content_b64)
+                except Exception as decode_err:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': f'Invalid base64 content: {str(decode_err)}'}).encode('utf-8'))
+                    return
+                
+                # Get AI reports service
+                from services.ai_risk_reports_service import get_ai_reports_service
+                service = get_ai_reports_service()
+                
+                # Parse the file
+                result = service.parse_file(filename, file_content, file_type)
+                
+                if result.get('error'):
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': result['error']}).encode('utf-8'))
+                    return
+                
+                self._set_json_headers(200)
+                self.wfile.write(json.dumps({
+                    'success': True,
+                    'document_id': result['document_id'],
+                    'filename': result['filename'],
+                    'file_type': result['file_type'],
+                    'encoding': result.get('encoding', 'utf-8'),
+                    'row_count': result.get('row_count', 0),
+                    'column_count': result.get('column_count', 0),
+                    'status': result['status']
+                }).encode('utf-8'))
+                return
+                
+            except json.JSONDecodeError:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'Invalid JSON'}).encode('utf-8'))
+                return
+            except Exception as e:
+                import traceback
+                print(f"Error in /api/reports/upload: {e}")
+                traceback.print_exc()
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+                return
+        
+        # POST /api/reports/analyze - Run AI analysis on parsed document
+        if path == '/api/reports/analyze':
+            auth_header = self.headers.get('Authorization', '')
+            token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+            session = validate_session(token) if token else None
+            
+            if not session:
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Authentication required'}).encode('utf-8'))
+                return
+            
+            length = int(self.headers.get('Content-Length', 0))
+            body = self.rfile.read(length).decode('utf-8') if length else '{}'
+            
+            try:
+                data = json.loads(body)
+                document_id = data.get('document_id')
+                
+                if not document_id:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'document_id required'}).encode('utf-8'))
+                    return
+                
+                # Get AI reports service
+                from services.ai_risk_reports_service import get_ai_reports_service
+                service = get_ai_reports_service()
+                
+                # Run analysis
+                analysis = service.analyze(document_id)
+                
+                # Convert to dict for JSON
+                result = service.to_dict(analysis)
+                result['success'] = True
+                
+                self._set_json_headers(200)
+                self.wfile.write(json.dumps(result, default=str).encode('utf-8'))
+                return
+                
+            except ValueError as ve:
+                self._set_json_headers(404)
+                self.wfile.write(json.dumps({'error': str(ve)}).encode('utf-8'))
+                return
+            except json.JSONDecodeError:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'Invalid JSON'}).encode('utf-8'))
+                return
+            except Exception as e:
+                import traceback
+                print(f"Error in /api/reports/analyze: {e}")
+                traceback.print_exc()
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+                return
+        
+        # POST /api/reports/generate - Generate report from analysis
+        if path == '/api/reports/generate':
+            auth_header = self.headers.get('Authorization', '')
+            token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+            session = validate_session(token) if token else None
+            
+            if not session:
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Authentication required'}).encode('utf-8'))
+                return
+            
+            length = int(self.headers.get('Content-Length', 0))
+            body = self.rfile.read(length).decode('utf-8') if length else '{}'
+            
+            try:
+                data = json.loads(body)
+                analysis_id = data.get('analysis_id')
+                language = data.get('language')  # Optional override
+                
+                if not analysis_id:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'analysis_id required'}).encode('utf-8'))
+                    return
+                
+                # Get AI reports service
+                from services.ai_risk_reports_service import get_ai_reports_service
+                service = get_ai_reports_service()
+                
+                # Generate report
+                report = service.generate_report(analysis_id, language)
+                
+                # Convert to dict for JSON
+                result = service.to_dict(report)
+                result['success'] = True
+                
+                self._set_json_headers(200)
+                self.wfile.write(json.dumps(result, default=str).encode('utf-8'))
+                return
+                
+            except ValueError as ve:
+                self._set_json_headers(404)
+                self.wfile.write(json.dumps({'error': str(ve)}).encode('utf-8'))
+                return
+            except json.JSONDecodeError:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'Invalid JSON'}).encode('utf-8'))
+                return
+            except Exception as e:
+                import traceback
+                print(f"Error in /api/reports/generate: {e}")
+                traceback.print_exc()
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+                return
+        
         # Regular JSON POST requests
         length = int(self.headers.get('Content-Length', 0))
         content_type = (self.headers.get('Content-Type') or '').lower()
