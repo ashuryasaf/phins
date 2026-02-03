@@ -3,7 +3,8 @@
 Manual verification script for customer_id guarantee fix (PR #90).
 
 This script demonstrates that the get_customer_id_guaranteed function
-ensures customer_id is NEVER None for customer role.
+ensures customer_id is NEVER None for customer role using a 5-layer
+fallback strategy.
 """
 
 import sys
@@ -122,7 +123,7 @@ if __name__ == '__main__':
     print("\n" + "="*80)
     print("CUSTOMER DASHBOARD ACCESS FIX VERIFICATION (PR #90)")
     print("="*80)
-    print("\nThis script verifies the 4-layer customer_id guarantee implementation.")
+    print("\nThis script verifies the 5-layer customer_id guarantee implementation.")
     print("The fix ensures customer_id is NEVER None for customer role,")
     print("preventing 403 Forbidden errors on /api/customer/* endpoints.")
     

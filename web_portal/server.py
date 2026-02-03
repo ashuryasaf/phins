@@ -2545,15 +2545,16 @@ def get_customer_id_guaranteed(username: str, role: str) -> str | None:
     """
     GUARANTEE that customer role ALWAYS gets a valid customer_id.
     
-    This function implements a 4-layer fallback strategy to ensure that
+    This function implements a 5-layer fallback strategy to ensure that
     customers logging in always receive a valid customer_id in their token,
     preventing 403 Forbidden errors on /api/customer/* endpoints.
     
-    Tries 4 sources in order:
+    Tries 5 sources in order:
     1. USERS dict (for staff with customer_id)
     2. Database customers table (query by email)
     3. In-memory CUSTOMERS dict (fallback)
-    4. Auto-generate new customer_id (NEVER return None for customer role)
+    4. REGISTERED_CUSTOMERS dict (additional fallback)
+    5. Auto-generate new customer_id (NEVER return None for customer role)
     
     Args:
         username: User's email address
@@ -14562,7 +14563,7 @@ For claims or questions, please contact:
                 
                 if user:
                     # ========== CUSTOMER_ID GUARANTEE FOR DATA INTEGRITY ==========
-                    # CRITICAL: Use the 4-layer guarantee function to ensure customer_id is NEVER null
+                    # CRITICAL: Use the 5-layer guarantee function to ensure customer_id is NEVER null
                     # This fixes the systemic pipeline flaw identified in 84-hour analysis (PR #90)
                     guaranteed_customer_id = get_customer_id_guaranteed(username, role)
                     

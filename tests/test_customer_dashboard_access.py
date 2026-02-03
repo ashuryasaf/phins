@@ -1,7 +1,7 @@
 """
 Test Suite for Customer Dashboard Access Fix (PR #90)
 
-This test suite validates the 4-layer customer_id guarantee implementation
+This test suite validates the 5-layer customer_id guarantee implementation
 that fixes the 84-hour customer dashboard access issue.
 
 Tests verify:
