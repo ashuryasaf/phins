@@ -1,0 +1,1116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PHINS - AI Risk & Reports Analysis</title>
+  <link rel="stylesheet" href="/styles.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <style>
+    :root {
+      --primary: #0d47a1;
+      --primary-light: #1976d2;
+      --accent: #ff6b35;
+      --success: #4caf50;
+      --warning: #ff9800;
+      --danger: #f44336;
+      --bg-light: #f5f7fa;
+      --text-dark: #1a1a2e;
+      --text-muted: #666;
+    }
+    
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+    
+    body {
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      background: var(--bg-light);
+      min-height: 100vh;
+      color: var(--text-dark);
+    }
+    
+    /* Header */
+    .header {
+      background: linear-gradient(135deg, var(--primary) 0%, var(--primary-light) 100%);
+      padding: 1rem 2rem;
+      color: white;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+    }
+    
+    .header h1 {
+      font-size: 1.5rem;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    
+    .header-nav {
+      display: flex;
+      gap: 12px;
+    }
+    
+    .header-nav a {
+      color: white;
+      text-decoration: none;
+      padding: 8px 16px;
+      border-radius: 8px;
+      background: rgba(255,255,255,0.1);
+      transition: background 0.2s;
+    }
+    
+    .header-nav a:hover {
+      background: rgba(255,255,255,0.2);
+    }
+    
+    /* Main Container */
+    .container {
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 2rem;
+    }
+    
+    /* Upload Section */
+    .upload-section {
+      background: white;
+      border-radius: 16px;
+      padding: 2rem;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+      margin-bottom: 2rem;
+    }
+    
+    .upload-zone {
+      border: 3px dashed #ccc;
+      border-radius: 12px;
+      padding: 3rem 2rem;
+      text-align: center;
+      transition: all 0.3s;
+      cursor: pointer;
+      background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+    }
+    
+    .upload-zone:hover, .upload-zone.dragover {
+      border-color: var(--primary);
+      background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%);
+    }
+    
+    .upload-zone.processing {
+      border-color: var(--warning);
+      background: linear-gradient(135deg, #fff8e1 0%, #ffecb3 100%);
+    }
+    
+    .upload-icon {
+      font-size: 4rem;
+      margin-bottom: 1rem;
+    }
+    
+    .upload-text h3 {
+      font-size: 1.3rem;
+      margin-bottom: 0.5rem;
+      color: var(--text-dark);
+    }
+    
+    .upload-text p {
+      color: var(--text-muted);
+      font-size: 0.95rem;
+    }
+    
+    .file-input {
+      display: none;
+    }
+    
+    .supported-formats {
+      display: flex;
+      justify-content: center;
+      gap: 1rem;
+      margin-top: 1.5rem;
+      flex-wrap: wrap;
+    }
+    
+    .format-badge {
+      background: var(--primary);
+      color: white;
+      padding: 6px 14px;
+      border-radius: 20px;
+      font-size: 0.85rem;
+      font-weight: 500;
+    }
+    
+    /* Language Selector */
+    .language-selector {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      margin-top: 1.5rem;
+      padding-top: 1.5rem;
+      border-top: 1px solid #eee;
+    }
+    
+    .language-selector label {
+      font-weight: 500;
+      color: var(--text-dark);
+    }
+    
+    .language-selector select {
+      padding: 10px 20px;
+      border-radius: 8px;
+      border: 2px solid #ddd;
+      font-size: 1rem;
+      cursor: pointer;
+      transition: border-color 0.2s;
+    }
+    
+    .language-selector select:focus {
+      outline: none;
+      border-color: var(--primary);
+    }
+    
+    /* Processing Status */
+    .processing-status {
+      display: none;
+      padding: 1.5rem;
+      background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%);
+      border-radius: 12px;
+      margin-top: 1.5rem;
+    }
+    
+    .processing-status.active {
+      display: block;
+    }
+    
+    .progress-bar {
+      height: 8px;
+      background: #ddd;
+      border-radius: 4px;
+      overflow: hidden;
+      margin: 1rem 0;
+    }
+    
+    .progress-fill {
+      height: 100%;
+      background: linear-gradient(90deg, var(--primary) 0%, var(--primary-light) 100%);
+      border-radius: 4px;
+      transition: width 0.3s;
+      animation: progress-animation 2s infinite;
+    }
+    
+    @keyframes progress-animation {
+      0% { width: 0%; }
+      50% { width: 70%; }
+      100% { width: 100%; }
+    }
+    
+    /* Results Section */
+    .results-section {
+      display: none;
+    }
+    
+    .results-section.active {
+      display: block;
+    }
+    
+    /* Cards Grid */
+    .cards-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 1.5rem;
+      margin-bottom: 2rem;
+    }
+    
+    .stat-card {
+      background: white;
+      border-radius: 12px;
+      padding: 1.5rem;
+      box-shadow: 0 4px 15px rgba(0,0,0,0.08);
+    }
+    
+    .stat-card h4 {
+      color: var(--text-muted);
+      font-size: 0.9rem;
+      margin-bottom: 0.5rem;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    
+    .stat-card .value {
+      font-size: 2rem;
+      font-weight: 700;
+      color: var(--text-dark);
+    }
+    
+    .stat-card.risk-low { border-left: 4px solid var(--success); }
+    .stat-card.risk-medium { border-left: 4px solid var(--warning); }
+    .stat-card.risk-high { border-left: 4px solid var(--danger); }
+    
+    /* Report Panel */
+    .report-panel {
+      background: white;
+      border-radius: 16px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+      overflow: hidden;
+      margin-bottom: 2rem;
+    }
+    
+    .report-header {
+      background: linear-gradient(135deg, var(--primary) 0%, var(--primary-light) 100%);
+      color: white;
+      padding: 1.5rem 2rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    
+    .report-header h2 {
+      font-size: 1.4rem;
+    }
+    
+    .report-actions {
+      display: flex;
+      gap: 10px;
+    }
+    
+    .btn {
+      padding: 10px 20px;
+      border-radius: 8px;
+      border: none;
+      cursor: pointer;
+      font-weight: 500;
+      transition: all 0.2s;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+    }
+    
+    .btn-primary {
+      background: var(--accent);
+      color: white;
+    }
+    
+    .btn-primary:hover {
+      background: #e55a2b;
+      transform: translateY(-2px);
+    }
+    
+    .btn-secondary {
+      background: rgba(255,255,255,0.2);
+      color: white;
+    }
+    
+    .btn-secondary:hover {
+      background: rgba(255,255,255,0.3);
+    }
+    
+    .report-body {
+      padding: 2rem;
+    }
+    
+    /* Report Sections */
+    .report-section {
+      margin-bottom: 2rem;
+      padding-bottom: 2rem;
+      border-bottom: 1px solid #eee;
+    }
+    
+    .report-section:last-child {
+      border-bottom: none;
+      margin-bottom: 0;
+      padding-bottom: 0;
+    }
+    
+    .report-section h3 {
+      color: var(--primary);
+      font-size: 1.2rem;
+      margin-bottom: 1rem;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    
+    .report-section .content {
+      color: var(--text-dark);
+      line-height: 1.7;
+      white-space: pre-line;
+    }
+    
+    /* Charts Container */
+    .charts-container {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 1.5rem;
+      margin: 2rem 0;
+    }
+    
+    .chart-card {
+      background: white;
+      border-radius: 12px;
+      padding: 1.5rem;
+      box-shadow: 0 4px 15px rgba(0,0,0,0.08);
+    }
+    
+    .chart-card h4 {
+      margin-bottom: 1rem;
+      color: var(--text-dark);
+      text-align: center;
+    }
+    
+    .chart-wrapper {
+      position: relative;
+      height: 250px;
+    }
+    
+    /* Risk Gauge */
+    .risk-gauge {
+      text-align: center;
+      padding: 2rem;
+    }
+    
+    .gauge-value {
+      font-size: 4rem;
+      font-weight: 700;
+      color: var(--text-dark);
+    }
+    
+    .gauge-label {
+      font-size: 1.2rem;
+      color: var(--text-muted);
+      margin-top: 0.5rem;
+    }
+    
+    .gauge-bar {
+      height: 12px;
+      background: linear-gradient(90deg, var(--success) 0%, var(--warning) 50%, var(--danger) 100%);
+      border-radius: 6px;
+      margin-top: 1rem;
+      position: relative;
+    }
+    
+    .gauge-indicator {
+      position: absolute;
+      width: 20px;
+      height: 20px;
+      background: white;
+      border: 3px solid var(--text-dark);
+      border-radius: 50%;
+      top: 50%;
+      transform: translate(-50%, -50%);
+      transition: left 0.5s;
+    }
+    
+    /* Recommendations */
+    .recommendations-panel {
+      background: white;
+      border-radius: 16px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+      overflow: hidden;
+    }
+    
+    .recommendations-header {
+      background: linear-gradient(135deg, var(--success) 0%, #66bb6a 100%);
+      color: white;
+      padding: 1.5rem 2rem;
+    }
+    
+    .recommendations-header h2 {
+      font-size: 1.4rem;
+    }
+    
+    .recommendations-list {
+      padding: 1.5rem;
+    }
+    
+    .recommendation-item {
+      background: #f8f9fa;
+      border-radius: 12px;
+      padding: 1.5rem;
+      margin-bottom: 1rem;
+      border-left: 4px solid var(--primary);
+    }
+    
+    .recommendation-item.urgent {
+      border-left-color: var(--danger);
+      background: #fff5f5;
+    }
+    
+    .recommendation-item.high {
+      border-left-color: var(--warning);
+      background: #fff8e1;
+    }
+    
+    .recommendation-item h4 {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 0.5rem;
+    }
+    
+    .priority-badge {
+      font-size: 0.75rem;
+      padding: 4px 10px;
+      border-radius: 12px;
+      font-weight: 600;
+      text-transform: uppercase;
+    }
+    
+    .priority-urgent { background: var(--danger); color: white; }
+    .priority-high { background: var(--warning); color: white; }
+    .priority-medium { background: var(--primary); color: white; }
+    .priority-low { background: #9e9e9e; color: white; }
+    
+    .recommendation-item p {
+      color: var(--text-muted);
+      margin-bottom: 1rem;
+    }
+    
+    .action-items {
+      margin-left: 1.5rem;
+    }
+    
+    .action-items li {
+      color: var(--text-dark);
+      margin-bottom: 0.5rem;
+    }
+    
+    .expected-impact {
+      margin-top: 1rem;
+      padding-top: 1rem;
+      border-top: 1px dashed #ddd;
+      color: var(--success);
+      font-weight: 500;
+    }
+    
+    /* Data Table */
+    .data-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 1rem;
+    }
+    
+    .data-table th, .data-table td {
+      padding: 12px 16px;
+      text-align: left;
+      border-bottom: 1px solid #eee;
+    }
+    
+    .data-table th {
+      background: #f8f9fa;
+      font-weight: 600;
+      color: var(--text-dark);
+    }
+    
+    .data-table tr:hover {
+      background: #f8f9fa;
+    }
+    
+    /* RTL Support */
+    [dir="rtl"] {
+      direction: rtl;
+      text-align: right;
+    }
+    
+    [dir="rtl"] .stat-card { border-left: none; border-right: 4px solid; }
+    [dir="rtl"] .recommendation-item { border-left: none; border-right: 4px solid var(--primary); }
+    [dir="rtl"] .recommendation-item.urgent { border-right-color: var(--danger); }
+    [dir="rtl"] .recommendation-item.high { border-right-color: var(--warning); }
+    
+    /* Responsive */
+    @media (max-width: 768px) {
+      .header {
+        flex-direction: column;
+        gap: 1rem;
+        text-align: center;
+      }
+      
+      .container {
+        padding: 1rem;
+      }
+      
+      .upload-zone {
+        padding: 2rem 1rem;
+      }
+      
+      .cards-grid {
+        grid-template-columns: 1fr;
+      }
+      
+      .charts-container {
+        grid-template-columns: 1fr;
+      }
+    }
+    
+    /* Animations */
+    .fade-in {
+      animation: fadeIn 0.5s ease-out;
+    }
+    
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(20px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    
+    /* File List */
+    .file-list {
+      margin-top: 1rem;
+    }
+    
+    .file-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px 16px;
+      background: #f8f9fa;
+      border-radius: 8px;
+      margin-bottom: 8px;
+    }
+    
+    .file-icon {
+      font-size: 1.5rem;
+    }
+    
+    .file-info {
+      flex: 1;
+    }
+    
+    .file-name {
+      font-weight: 500;
+      color: var(--text-dark);
+    }
+    
+    .file-size {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+    }
+    
+    .file-remove {
+      background: none;
+      border: none;
+      color: var(--danger);
+      cursor: pointer;
+      font-size: 1.2rem;
+    }
+  </style>
+</head>
+<body>
+  <!-- Header -->
+  <header class="header">
+    <h1>
+      <span style="font-size: 2rem;">📊</span>
+      PHINS AI Risk & Reports Analysis
+    </h1>
+    <nav class="header-nav">
+      <a href="/dashboard.html">← Dashboard</a>
+      <a href="/admin-portal.html">Admin Portal</a>
+    </nav>
+  </header>
+  
+  <main class="container">
+    <!-- Upload Section -->
+    <section class="upload-section fade-in">
+      <div class="upload-zone" id="uploadZone" onclick="document.getElementById('fileInput').click()">
+        <div class="upload-icon">📁</div>
+        <div class="upload-text">
+          <h3>Drop files here or click to upload</h3>
+          <p>Upload CSV, XLS, or ZIP files for AI-powered analysis</p>
+          <p style="margin-top: 8px; font-size: 0.85rem;">
+            <strong>Supports:</strong> Insurance policies, Investment portfolios, Risk assessments, Savings data
+          </p>
+        </div>
+        <div class="supported-formats">
+          <span class="format-badge">📄 CSV</span>
+          <span class="format-badge">📊 XLS/XLSX</span>
+          <span class="format-badge">📦 ZIP</span>
+        </div>
+        <input type="file" id="fileInput" class="file-input" accept=".csv,.xls,.xlsx,.zip" multiple>
+      </div>
+      
+      <div class="file-list" id="fileList"></div>
+      
+      <div class="language-selector">
+        <label for="outputLanguage">🌐 Report Language:</label>
+        <select id="outputLanguage">
+          <option value="auto">Auto-detect</option>
+          <option value="english">English</option>
+          <option value="hebrew">עברית (Hebrew)</option>
+          <option value="arabic">العربية (Arabic)</option>
+          <option value="spanish">Español</option>
+          <option value="french">Français</option>
+          <option value="german">Deutsch</option>
+          <option value="russian">Русский</option>
+        </select>
+        
+        <button class="btn btn-primary" id="analyzeBtn" style="margin-left: auto;" disabled>
+          🔍 Analyze & Generate Report
+        </button>
+      </div>
+      
+      <div class="processing-status" id="processingStatus">
+        <h4>🤖 AI Analysis in Progress...</h4>
+        <div class="progress-bar">
+          <div class="progress-fill" id="progressFill"></div>
+        </div>
+        <p id="processingMessage">Parsing uploaded files...</p>
+      </div>
+    </section>
+    
+    <!-- Results Section -->
+    <section class="results-section" id="resultsSection">
+      <!-- Summary Cards -->
+      <div class="cards-grid" id="summaryCards">
+        <!-- Populated dynamically -->
+      </div>
+      
+      <!-- Charts -->
+      <div class="charts-container" id="chartsContainer">
+        <!-- Populated dynamically -->
+      </div>
+      
+      <!-- Report Panel -->
+      <div class="report-panel" id="reportPanel">
+        <div class="report-header">
+          <h2 id="reportTitle">📋 Analysis Report</h2>
+          <div class="report-actions">
+            <button class="btn btn-secondary" onclick="exportReport('pdf')">📥 Export PDF</button>
+            <button class="btn btn-secondary" onclick="exportReport('excel')">📊 Export Excel</button>
+            <button class="btn btn-primary" onclick="regenerateReport()">🔄 Regenerate</button>
+          </div>
+        </div>
+        <div class="report-body" id="reportBody">
+          <!-- Report sections populated dynamically -->
+        </div>
+      </div>
+      
+      <!-- Recommendations Panel -->
+      <div class="recommendations-panel" id="recommendationsPanel">
+        <div class="recommendations-header">
+          <h2>💡 AI Recommendations</h2>
+        </div>
+        <div class="recommendations-list" id="recommendationsList">
+          <!-- Recommendations populated dynamically -->
+        </div>
+      </div>
+    </section>
+  </main>
+  
+  <script>
+    // State
+    let uploadedFiles = [];
+    let currentAnalysis = null;
+    let currentReport = null;
+    let charts = {};
+    
+    // DOM Elements
+    const uploadZone = document.getElementById('uploadZone');
+    const fileInput = document.getElementById('fileInput');
+    const fileList = document.getElementById('fileList');
+    const analyzeBtn = document.getElementById('analyzeBtn');
+    const processingStatus = document.getElementById('processingStatus');
+    const resultsSection = document.getElementById('resultsSection');
+    const outputLanguage = document.getElementById('outputLanguage');
+    
+    // File Upload Handlers
+    uploadZone.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      uploadZone.classList.add('dragover');
+    });
+    
+    uploadZone.addEventListener('dragleave', () => {
+      uploadZone.classList.remove('dragover');
+    });
+    
+    uploadZone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      uploadZone.classList.remove('dragover');
+      handleFiles(e.dataTransfer.files);
+    });
+    
+    fileInput.addEventListener('change', (e) => {
+      handleFiles(e.target.files);
+    });
+    
+    function handleFiles(files) {
+      for (const file of files) {
+        if (!uploadedFiles.find(f => f.name === file.name)) {
+          uploadedFiles.push(file);
+        }
+      }
+      renderFileList();
+      analyzeBtn.disabled = uploadedFiles.length === 0;
+    }
+    
+    function renderFileList() {
+      if (uploadedFiles.length === 0) {
+        fileList.innerHTML = '';
+        return;
+      }
+      
+      fileList.innerHTML = uploadedFiles.map((file, index) => `
+        <div class="file-item">
+          <span class="file-icon">${getFileIcon(file.name)}</span>
+          <div class="file-info">
+            <div class="file-name">${file.name}</div>
+            <div class="file-size">${formatFileSize(file.size)}</div>
+          </div>
+          <button class="file-remove" onclick="removeFile(${index})">✕</button>
+        </div>
+      `).join('');
+    }
+    
+    function getFileIcon(filename) {
+      const ext = filename.split('.').pop().toLowerCase();
+      if (ext === 'csv') return '📄';
+      if (ext === 'xls' || ext === 'xlsx') return '📊';
+      if (ext === 'zip') return '📦';
+      return '📁';
+    }
+    
+    function formatFileSize(bytes) {
+      if (bytes < 1024) return bytes + ' B';
+      if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+      return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+    }
+    
+    function removeFile(index) {
+      uploadedFiles.splice(index, 1);
+      renderFileList();
+      analyzeBtn.disabled = uploadedFiles.length === 0;
+    }
+    
+    // Analysis
+    analyzeBtn.addEventListener('click', startAnalysis);
+    
+    async function startAnalysis() {
+      if (uploadedFiles.length === 0) return;
+      
+      // Show processing status
+      processingStatus.classList.add('active');
+      uploadZone.classList.add('processing');
+      analyzeBtn.disabled = true;
+      resultsSection.classList.remove('active');
+      
+      const progressFill = document.getElementById('progressFill');
+      const processingMessage = document.getElementById('processingMessage');
+      
+      try {
+        // Process each file
+        let allResults = [];
+        
+        for (let i = 0; i < uploadedFiles.length; i++) {
+          const file = uploadedFiles[i];
+          processingMessage.textContent = `Processing ${file.name}... (${i + 1}/${uploadedFiles.length})`;
+          
+          // Read file
+          const content = await readFileAsBase64(file);
+          const fileType = file.name.split('.').pop().toLowerCase();
+          
+          // Upload and parse
+          const parseResponse = await fetch('/api/reports/upload', {
+            method: 'POST',
+            headers: { 
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${localStorage.getItem('phins_token') || ''}`
+            },
+            body: JSON.stringify({
+              filename: file.name,
+              file_type: fileType,
+              content: content
+            })
+          });
+          
+          const parseResult = await parseResponse.json();
+          
+          if (parseResult.error) {
+            throw new Error(parseResult.error);
+          }
+          
+          // Analyze
+          processingMessage.textContent = `Analyzing ${file.name}...`;
+          
+          const analyzeResponse = await fetch('/api/reports/analyze', {
+            method: 'POST',
+            headers: { 
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${localStorage.getItem('phins_token') || ''}`
+            },
+            body: JSON.stringify({
+              document_id: parseResult.document_id
+            })
+          });
+          
+          const analyzeResult = await analyzeResponse.json();
+          allResults.push(analyzeResult);
+        }
+        
+        // Generate report
+        processingMessage.textContent = 'Generating AI report...';
+        
+        const language = outputLanguage.value === 'auto' ? null : outputLanguage.value;
+        const lastAnalysis = allResults[allResults.length - 1];
+        
+        const reportResponse = await fetch('/api/reports/generate', {
+          method: 'POST',
+          headers: { 
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${localStorage.getItem('phins_token') || ''}`
+          },
+          body: JSON.stringify({
+            analysis_id: lastAnalysis.id,
+            language: language
+          })
+        });
+        
+        currentReport = await reportResponse.json();
+        currentAnalysis = lastAnalysis;
+        
+        // Display results
+        displayResults(currentAnalysis, currentReport);
+        
+        // Hide processing, show results
+        processingStatus.classList.remove('active');
+        uploadZone.classList.remove('processing');
+        resultsSection.classList.add('active');
+        
+        // Set RTL if Hebrew
+        if (currentReport.language === 'hebrew') {
+          document.body.setAttribute('dir', 'rtl');
+        } else {
+          document.body.removeAttribute('dir');
+        }
+        
+      } catch (error) {
+        console.error('Analysis error:', error);
+        processingMessage.textContent = `Error: ${error.message}`;
+        progressFill.style.background = 'var(--danger)';
+        
+        setTimeout(() => {
+          processingStatus.classList.remove('active');
+          uploadZone.classList.remove('processing');
+          analyzeBtn.disabled = false;
+        }, 3000);
+      }
+      
+      analyzeBtn.disabled = false;
+    }
+    
+    function readFileAsBase64(file) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          const base64 = reader.result.split(',')[1];
+          resolve(base64);
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+    }
+    
+    function displayResults(analysis, report) {
+      // Summary Cards
+      const riskClass = analysis.risk_score < 30 ? 'risk-low' : (analysis.risk_score < 60 ? 'risk-medium' : 'risk-high');
+      const riskLabel = analysis.risk_score < 30 ? 'Low' : (analysis.risk_score < 60 ? 'Medium' : 'High');
+      
+      document.getElementById('summaryCards').innerHTML = `
+        <div class="stat-card ${riskClass} fade-in">
+          <h4>Risk Score</h4>
+          <div class="value">${analysis.risk_score.toFixed(1)}/100</div>
+          <small>${riskLabel} Risk</small>
+        </div>
+        <div class="stat-card fade-in">
+          <h4>Data Type</h4>
+          <div class="value" style="font-size: 1.5rem;">${capitalizeFirst(analysis.data_classification)}</div>
+        </div>
+        <div class="stat-card fade-in">
+          <h4>Language</h4>
+          <div class="value" style="font-size: 1.5rem;">${analysis.language_name}</div>
+        </div>
+        <div class="stat-card fade-in">
+          <h4>Confidence</h4>
+          <div class="value">${(analysis.confidence * 100).toFixed(0)}%</div>
+        </div>
+        <div class="stat-card fade-in">
+          <h4>Records Analyzed</h4>
+          <div class="value">${analysis.key_metrics?.total_records || 0}</div>
+        </div>
+        <div class="stat-card fade-in">
+          <h4>Processing Time</h4>
+          <div class="value">${analysis.processing_time_ms}ms</div>
+        </div>
+      `;
+      
+      // Charts
+      renderCharts(report.charts);
+      
+      // Report Title
+      document.getElementById('reportTitle').textContent = `📋 ${report.title}`;
+      
+      // Report Sections
+      const reportBody = document.getElementById('reportBody');
+      reportBody.innerHTML = report.sections.map(section => `
+        <div class="report-section fade-in">
+          <h3>${getSectionIcon(section.title)} ${section.title}</h3>
+          <div class="content">${section.content}</div>
+          ${section.data_table ? renderDataTable(section.data_table) : ''}
+        </div>
+      `).join('');
+      
+      // Recommendations
+      const recList = document.getElementById('recommendationsList');
+      recList.innerHTML = report.recommendations.map(rec => `
+        <div class="recommendation-item ${rec.priority} fade-in">
+          <h4>
+            <span class="priority-badge priority-${rec.priority}">${rec.priority}</span>
+            ${rec.title}
+          </h4>
+          <p>${rec.description}</p>
+          <ul class="action-items">
+            ${rec.action_items.map(item => `<li>${item}</li>`).join('')}
+          </ul>
+          <div class="expected-impact">
+            <strong>Expected Impact:</strong> ${rec.expected_impact}
+          </div>
+        </div>
+      `).join('');
+    }
+    
+    function renderCharts(chartConfigs) {
+      const container = document.getElementById('chartsContainer');
+      container.innerHTML = '';
+      
+      // Destroy existing charts
+      Object.values(charts).forEach(chart => chart.destroy());
+      charts = {};
+      
+      chartConfigs.forEach((config, index) => {
+        const chartId = `chart-${index}`;
+        const wrapper = document.createElement('div');
+        wrapper.className = 'chart-card fade-in';
+        wrapper.innerHTML = `
+          <h4>${config.title}</h4>
+          <div class="chart-wrapper">
+            ${config.type === 'gauge' ? renderGauge(config) : `<canvas id="${chartId}"></canvas>`}
+          </div>
+        `;
+        container.appendChild(wrapper);
+        
+        if (config.type !== 'gauge') {
+          const ctx = document.getElementById(chartId).getContext('2d');
+          charts[chartId] = createChart(ctx, config);
+        }
+      });
+    }
+    
+    function renderGauge(config) {
+      const value = config.data.value;
+      const percentage = value / 100;
+      const color = value < 30 ? 'var(--success)' : (value < 60 ? 'var(--warning)' : 'var(--danger)');
+      
+      return `
+        <div class="risk-gauge">
+          <div class="gauge-value" style="color: ${color}">${value.toFixed(1)}</div>
+          <div class="gauge-label">Risk Score</div>
+          <div class="gauge-bar">
+            <div class="gauge-indicator" style="left: ${percentage * 100}%"></div>
+          </div>
+        </div>
+      `;
+    }
+    
+    function createChart(ctx, config) {
+      const chartType = config.type === 'doughnut' ? 'doughnut' : config.type;
+      
+      const chartConfig = {
+        type: chartType,
+        data: {
+          labels: config.data.labels,
+          datasets: [{
+            data: config.data.values,
+            backgroundColor: config.options?.colors || [
+              '#1976d2', '#ff6b35', '#4caf50', '#9c27b0', '#ff9800', '#00bcd4'
+            ],
+            borderWidth: 2,
+            borderColor: '#fff'
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: {
+              position: chartType === 'bar' ? 'top' : 'bottom'
+            }
+          }
+        }
+      };
+      
+      if (chartType === 'bar' && config.options?.horizontal) {
+        chartConfig.options.indexAxis = 'y';
+      }
+      
+      return new Chart(ctx, chartConfig);
+    }
+    
+    function renderDataTable(data) {
+      const keys = Object.keys(data).filter(k => !k.includes('_'));
+      if (keys.length === 0) return '';
+      
+      return `
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Metric</th>
+              <th>Value</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${keys.map(key => `
+              <tr>
+                <td>${formatMetricName(key)}</td>
+                <td>${formatMetricValue(data[key])}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      `;
+    }
+    
+    function getSectionIcon(title) {
+      const lower = title.toLowerCase();
+      if (lower.includes('summary') || lower.includes('תקציר')) return '📝';
+      if (lower.includes('metric') || lower.includes('מדדים')) return '📊';
+      if (lower.includes('factor') || lower.includes('גורמים')) return '🔍';
+      if (lower.includes('pattern') || lower.includes('דפוסים')) return '🔄';
+      if (lower.includes('anomal') || lower.includes('חריגות')) return '⚠️';
+      if (lower.includes('risk') || lower.includes('סיכון')) return '🎯';
+      return '📋';
+    }
+    
+    function formatMetricName(name) {
+      return name.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+    }
+    
+    function formatMetricValue(value) {
+      if (typeof value === 'number') {
+        return value.toLocaleString(undefined, { maximumFractionDigits: 2 });
+      }
+      return value;
+    }
+    
+    function capitalizeFirst(str) {
+      return str.charAt(0).toUpperCase() + str.slice(1);
+    }
+    
+    function exportReport(format) {
+      alert(`Export to ${format.toUpperCase()} - Coming soon!\n\nThis will generate a downloadable ${format.toUpperCase()} file with the complete report.`);
+    }
+    
+    function regenerateReport() {
+      if (currentAnalysis) {
+        startAnalysis();
+      }
+    }
+  </script>
+</body>
+</html>
