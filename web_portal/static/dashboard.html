@@ -3401,11 +3401,33 @@
       }
       
       try {
+        // Check database health before loading data
+        try {
+          const healthCheck = await fetch('/api/health');
+          if (healthCheck.ok) {
+            const health = await healthCheck.json();
+            console.log('[Dashboard Init] Health check:', health);
+            
+            // If database is disconnected or disabled, show warning
+            if (health.database === 'disconnected' || health.database === 'disabled') {
+              console.warn('[Dashboard Init] Database connectivity issue:', health.database);
+              // Show non-blocking warning to user
+              if (health.recovery_recommended) {
+                console.warn('[Dashboard Init] Recovery recommended - some features may be limited');
+              }
+            }
+          }
+        } catch (healthErr) {
+          console.warn('[Dashboard Init] Health check failed:', healthErr);
+          // Continue anyway - non-critical
+        }
+        
         // Load customer info first, then other data
+        // Use Promise.allSettled to continue even if some requests fail
         await loadCustomerInfo();
         
-        // Load wallet balance and data
-        await Promise.all([
+        // Load all other data in parallel, allowing partial failures
+        const results = await Promise.allSettled([
           loadWalletBalance(),
           loadPolicies(),
           loadClaims(),
@@ -3416,20 +3438,45 @@
           loadPortfolioData(),
           loadPipelineInfo()
         ]);
+        
+        // Log any failures but don't block dashboard load
+        results.forEach((result, index) => {
+          if (result.status === 'rejected') {
+            const funcNames = ['loadWalletBalance', 'loadPolicies', 'loadClaims', 'loadBillingInfo', 
+                              'loadTransactionHistory', 'loadCustomerNFTs', 'loadInvestmentPortfolio', 
+                              'loadPortfolioData', 'loadPipelineInfo'];
+            console.warn(`[Dashboard Init] ${funcNames[index]} failed:`, result.reason);
+          }
+        });
       } catch (err) {
-        console.error('Error loading dashboard data:', err);
+        console.error('[Dashboard Init] Error loading dashboard data:', err);
+        // Show error message to user but still hide splash
+        const errorDiv = document.createElement('div');
+        errorDiv.style.cssText = 'position: fixed; top: 80px; right: 20px; background: #f44336; color: white; padding: 16px 24px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.3); z-index: 10000; max-width: 400px;';
+        errorDiv.innerHTML = `
+          <div style="font-weight: bold; margin-bottom: 8px;">⚠️ Dashboard Loading Issue</div>
+          <div style="font-size: 0.9em;">Some data may not be displayed. Please try refreshing the page.</div>
+          <div style="margin-top: 12px; font-size: 0.85em; opacity: 0.9;">Error: ${err.message || 'Unknown error'}</div>
+          <button onclick="this.parentElement.remove()" style="margin-top: 12px; background: rgba(255,255,255,0.2); border: 1px solid white; color: white; padding: 6px 12px; border-radius: 4px; cursor: pointer;">Dismiss</button>
+        `;
+        document.body.appendChild(errorDiv);
+        // Auto-dismiss after 10 seconds
+        setTimeout(() => errorDiv.remove(), 10000);
       }
       
-      // Clear failsafe since we're about to hide splash normally
+      // ALWAYS clear failsafe and hide splash - even on errors
       clearTimeout(splashFailsafe);
       
-      // Hide splash screen after data loads (minimum 1.5s for branding)
+      // Hide splash screen after minimum display time (1.5s for branding)
       setTimeout(hideSplashScreen, 1500);
     });
     
     // Load customer info and update the info panel
     async function loadCustomerInfo() {
-      if (!customerId) return;
+      if (!customerId) {
+        console.warn('[loadCustomerInfo] No customer ID available');
+        return;
+      }
       
       try {
         // Load customer details
@@ -3458,7 +3505,11 @@
             document.getElementById('customer-member-since').textContent = memberSince;
           }
           
-          console.log('Customer info loaded:', customer);
+          console.log('[loadCustomerInfo] Customer info loaded:', customer);
+        } else {
+          console.warn('[loadCustomerInfo] Customer fetch failed:', response.status);
+          // Set basic defaults
+          document.getElementById('customer-account-id').textContent = customerId;
         }
         
         // Load customer summary stats (policies, claims, coverage)
@@ -3472,12 +3523,36 @@
           document.getElementById('customer-claims-count').textContent = summary.claims_count || '0';
           document.getElementById('customer-total-coverage').textContent = 
             '$' + formatNumber(summary.total_coverage || 0, 0);
+          console.log('[loadCustomerInfo] Summary loaded:', summary);
+        } else if (summaryResponse.status === 403) {
+          console.error('[loadCustomerInfo] Access denied to customer summary - customer_id may be invalid');
+          // Set zeros as defaults
+          document.getElementById('customer-policies-count').textContent = '0';
+          document.getElementById('customer-claims-count').textContent = '0';
+          document.getElementById('customer-total-coverage').textContent = '$0';
+        } else if (summaryResponse.status === 400) {
+          console.error('[loadCustomerInfo] Bad request for customer summary - customer_id required');
+          // Set zeros as defaults
+          document.getElementById('customer-policies-count').textContent = '0';
+          document.getElementById('customer-claims-count').textContent = '0';
+          document.getElementById('customer-total-coverage').textContent = '$0';
+        } else {
+          console.warn('[loadCustomerInfo] Summary fetch failed:', summaryResponse.status);
+          // Set zeros as defaults
+          document.getElementById('customer-policies-count').textContent = '0';
+          document.getElementById('customer-claims-count').textContent = '0';
+          document.getElementById('customer-total-coverage').textContent = '$0';
         }
         
       } catch (err) {
-        console.log('Customer info load (non-critical):', err);
-        // Set defaults
-        document.getElementById('customer-account-id').textContent = customerId;
+        console.error('[loadCustomerInfo] Error loading customer info:', err);
+        // Set defaults even on error
+        if (customerId) {
+          document.getElementById('customer-account-id').textContent = customerId;
+        }
+        document.getElementById('customer-policies-count').textContent = '0';
+        document.getElementById('customer-claims-count').textContent = '0';
+        document.getElementById('customer-total-coverage').textContent = '$0';
       }
     }
     
