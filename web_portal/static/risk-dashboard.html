@@ -448,7 +448,7 @@
             });
             
             document.getElementById('totalAssessments').textContent = total;
-            document.getElementById('assessmentsTrend').innerHTML = '📈 +' + Math.floor(Math.random() * 5 + 1) + ' this week';
+            document.getElementById('assessmentsTrend').innerHTML = total > 0 ? `📊 ${total} total` : '📊 No data';
             
             document.getElementById('lowRiskCount').textContent = low;
             document.getElementById('lowRiskPercent').textContent = total > 0 ? (low/total*100).toFixed(1) + '% of total' : '0%';
@@ -639,8 +639,15 @@
         
         // Update health gauge
         function updateHealth() {
-            const health = dashboardData.health;
-            const score = health.overall_health || 85;
+            const health = dashboardData.health || {};
+            const score = health.overall_health;
+            
+            if (score === undefined || score === null) {
+                document.getElementById('healthScore').textContent = 'N/A';
+                document.getElementById('healthGauge').style.background = 'conic-gradient(#e0e0e0 0% 100%)';
+                document.getElementById('healthStatus').textContent = '⏳ Loading...';
+                return;
+            }
             
             document.getElementById('healthScore').textContent = score.toFixed(0);
             
