@@ -4840,6 +4840,281 @@ For claims or questions, please contact:
                 self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
             return
         
+        # ========== BI INSIGHTS ENDPOINT - AI-POWERED RISK ANALYSIS ==========
+        # Provides AI-generated insights for the risk assessment dashboard
+        if path == '/api/bi/insights':
+            if not require_role(session, ['admin', 'underwriter', 'actuary', 'accountant']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Unauthorized'}).encode('utf-8'))
+                return
+            
+            try:
+                # Calculate key metrics for insights generation
+                active_policies = [p for p in POLICIES.values() if status_eq(p, 'active')]
+                total_policies = len(active_policies)
+                pending_uw = [a for a in UNDERWRITING_APPLICATIONS.values() if status_eq(a, 'pending')]
+                approved_apps = [a for a in UNDERWRITING_APPLICATIONS.values() if status_eq(a, 'approved')]
+                total_apps = len(UNDERWRITING_APPLICATIONS)
+                
+                # Risk distribution from underwriting applications
+                risk_low = sum(1 for a in UNDERWRITING_APPLICATIONS.values() 
+                              if str(a.get('risk_assessment') or a.get('risk_score') or '').lower() in ['low', 'very_low'] 
+                              or (isinstance(a.get('risk_score'), (int, float)) and a.get('risk_score') <= 30))
+                risk_medium = sum(1 for a in UNDERWRITING_APPLICATIONS.values() 
+                                 if str(a.get('risk_assessment') or '').lower() in ['medium', 'moderate']
+                                 or (isinstance(a.get('risk_score'), (int, float)) and 30 < a.get('risk_score') <= 60))
+                risk_high = sum(1 for a in UNDERWRITING_APPLICATIONS.values() 
+                               if str(a.get('risk_assessment') or '').lower() == 'high'
+                               or (isinstance(a.get('risk_score'), (int, float)) and 60 < a.get('risk_score') <= 80))
+                risk_very_high = sum(1 for a in UNDERWRITING_APPLICATIONS.values() 
+                                    if str(a.get('risk_assessment') or '').lower() in ['very_high', 'critical']
+                                    or (isinstance(a.get('risk_score'), (int, float)) and a.get('risk_score') > 80))
+                
+                # Claims metrics
+                approved_claims = [c for c in CLAIMS.values() if status_in(c, ['approved', 'paid'])]
+                pending_claims = [c for c in CLAIMS.values() if status_in(c, ['pending', 'under_review'])]
+                total_claims = len(CLAIMS)
+                
+                # Calculate loss ratio
+                total_premium = sum(safe_float(p.get('annual_premium', 0)) for p in active_policies)
+                claims_paid = sum(safe_float(c.get('approved_amount', c.get('claimed_amount', 0))) for c in approved_claims)
+                loss_ratio = (claims_paid / total_premium * 100) if total_premium > 0 else 0
+                
+                # Collection metrics
+                billing_total = sum(safe_float(b.get('amount', 0)) for b in BILLING.values())
+                billing_paid = sum(safe_float(b.get('amount_paid', 0)) for b in BILLING.values())
+                collection_rate = (billing_paid / billing_total * 100) if billing_total > 0 else 100
+                
+                # Calculate health scores
+                financial_health = min(100, max(0, 100 - (loss_ratio - 40) * 2)) if loss_ratio > 40 else 100
+                operational_health = min(100, max(0, 100 - len(pending_uw) * 5 - len(pending_claims) * 3))
+                overall_health = (financial_health + operational_health) / 2
+                
+                # Generate AI-powered insights
+                insights = []
+                
+                # Risk distribution insight
+                if risk_very_high > 0 or risk_high > 0:
+                    insights.append({
+                        'severity': 'warning',
+                        'category': 'risk',
+                        'title': 'High Risk Applications Detected',
+                        'description': f'{risk_high + risk_very_high} applications categorized as high/very high risk require immediate attention',
+                        'recommendation': 'Review high-risk applications within 24 hours with senior underwriter',
+                        'impact': 'Potential claims exposure requires mitigation'
+                    })
+                
+                # Pending queue insight
+                if len(pending_uw) > 5:
+                    insights.append({
+                        'severity': 'warning',
+                        'category': 'operations',
+                        'title': 'Underwriting Backlog',
+                        'description': f'{len(pending_uw)} applications pending review may impact SLA',
+                        'recommendation': 'Allocate additional resources to clear backlog',
+                        'impact': 'Customer experience at risk'
+                    })
+                elif len(pending_uw) > 0:
+                    insights.append({
+                        'severity': 'info',
+                        'category': 'operations',
+                        'title': 'Pending Reviews',
+                        'description': f'{len(pending_uw)} applications awaiting underwriting decision',
+                        'recommendation': 'Process queue to maintain SLA compliance',
+                        'impact': 'Standard operational load'
+                    })
+                
+                # Loss ratio insight
+                if loss_ratio > 70:
+                    insights.append({
+                        'severity': 'critical',
+                        'category': 'financial',
+                        'title': 'Critical Loss Ratio',
+                        'description': f'Loss ratio at {loss_ratio:.1f}% significantly exceeds target of 60%',
+                        'recommendation': 'Immediate review of underwriting criteria and claims process required',
+                        'impact': 'Profitability severely impacted'
+                    })
+                elif loss_ratio > 50:
+                    insights.append({
+                        'severity': 'warning',
+                        'category': 'financial',
+                        'title': 'Elevated Loss Ratio',
+                        'description': f'Loss ratio at {loss_ratio:.1f}% approaching threshold',
+                        'recommendation': 'Monitor claims trends and review pricing strategy',
+                        'impact': 'Profitability margins compressed'
+                    })
+                else:
+                    insights.append({
+                        'severity': 'success',
+                        'category': 'financial',
+                        'title': 'Healthy Loss Ratio',
+                        'description': f'Loss ratio at {loss_ratio:.1f}% within target range',
+                        'recommendation': 'Maintain current underwriting standards',
+                        'impact': 'Strong financial performance'
+                    })
+                
+                # Collection efficiency
+                if collection_rate < 70:
+                    insights.append({
+                        'severity': 'warning',
+                        'category': 'billing',
+                        'title': 'Low Collection Efficiency',
+                        'description': f'Collection rate at {collection_rate:.1f}% below target of 90%',
+                        'recommendation': 'Increase collection efforts and review billing processes',
+                        'impact': 'Cash flow constraints'
+                    })
+                
+                # System health insight
+                insights.append({
+                    'severity': 'success' if overall_health >= 80 else ('warning' if overall_health >= 60 else 'critical'),
+                    'category': 'system',
+                    'title': 'Platform Health Status',
+                    'description': f'Overall platform health score: {overall_health:.0f}/100',
+                    'recommendation': 'Continue monitoring key metrics',
+                    'impact': 'System operating ' + ('optimally' if overall_health >= 80 else ('adequately' if overall_health >= 60 else 'below standards'))
+                })
+                
+                response = {
+                    'success': True,
+                    'generated_at': datetime.now().isoformat(),
+                    'insights': insights,
+                    'health_scores': {
+                        'financial_health': round(financial_health, 1),
+                        'operational_health': round(operational_health, 1),
+                        'overall_health': round(overall_health, 1)
+                    },
+                    'summary': {
+                        'total_assessments': total_apps,
+                        'risk_distribution': {
+                            'low': risk_low,
+                            'medium': risk_medium,
+                            'high': risk_high,
+                            'very_high': risk_very_high
+                        },
+                        'pending_reviews': len(pending_uw),
+                        'loss_ratio': round(loss_ratio, 1),
+                        'collection_rate': round(collection_rate, 1)
+                    }
+                }
+                
+                self._set_json_headers()
+                self.wfile.write(json.dumps(response).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e), 'success': False}).encode('utf-8'))
+            return
+        
+        # ========== INTEGRITY VALIDATION ENDPOINT (GET) ==========
+        # Data integrity check for risk dashboard
+        if path == '/api/integrity/validate':
+            if not require_role(session, ['admin', 'underwriter', 'actuary', 'accountant']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Unauthorized'}).encode('utf-8'))
+                return
+            
+            try:
+                # Run integrity checks across all data stores
+                errors = []
+                warnings = []
+                checks_passed = 0
+                total_checks = 9
+                
+                # Check 1: Customers have valid structure
+                invalid_customers = [c for c in CUSTOMERS.values() if not c.get('id')]
+                if invalid_customers:
+                    errors.append({'category': 'customers', 'severity': 'error', 'message': f'{len(invalid_customers)} customers without valid ID'})
+                else:
+                    checks_passed += 1
+                
+                # Check 2: Policies reference valid customers
+                orphan_policies = [p for p in POLICIES.values() if p.get('customer_id') and p['customer_id'] not in CUSTOMERS]
+                if orphan_policies:
+                    warnings.append({'category': 'policies', 'severity': 'warning', 'message': f'{len(orphan_policies)} policies reference non-existent customers'})
+                else:
+                    checks_passed += 1
+                
+                # Check 3: Underwriting applications have required fields
+                incomplete_uw = [a for a in UNDERWRITING_APPLICATIONS.values() if not a.get('id')]
+                if incomplete_uw:
+                    errors.append({'category': 'underwriting', 'severity': 'error', 'message': f'{len(incomplete_uw)} applications without valid ID'})
+                else:
+                    checks_passed += 1
+                
+                # Check 4: Claims reference valid policies
+                orphan_claims = [c for c in CLAIMS.values() if c.get('policy_id') and c['policy_id'] not in POLICIES]
+                if orphan_claims:
+                    warnings.append({'category': 'claims', 'severity': 'warning', 'message': f'{len(orphan_claims)} claims reference non-existent policies'})
+                else:
+                    checks_passed += 1
+                
+                # Check 5: Billing entries have valid amounts
+                invalid_billing = [b for b in BILLING.values() if safe_float(b.get('amount', 0)) < 0]
+                if invalid_billing:
+                    errors.append({'category': 'billing', 'severity': 'error', 'message': f'{len(invalid_billing)} billing entries with negative amounts'})
+                else:
+                    checks_passed += 1
+                
+                # Check 6: Users have valid roles
+                invalid_roles = [u for u in USERS.values() if not u.get('role') or u['role'] not in ['admin', 'underwriter', 'claims', 'claims_adjuster', 'accountant', 'actuary', 'supplier', 'customer']]
+                if invalid_roles:
+                    warnings.append({'category': 'users', 'severity': 'warning', 'message': f'{len(invalid_roles)} users with invalid or missing roles'})
+                else:
+                    checks_passed += 1
+                
+                # Check 7: Risk scores are in valid range
+                invalid_risk_scores = [a for a in UNDERWRITING_APPLICATIONS.values() 
+                                       if isinstance(a.get('risk_score'), (int, float)) and (a['risk_score'] < 0 or a['risk_score'] > 100)]
+                if invalid_risk_scores:
+                    warnings.append({'category': 'underwriting', 'severity': 'warning', 'message': f'{len(invalid_risk_scores)} applications with out-of-range risk scores'})
+                else:
+                    checks_passed += 1
+                
+                # Check 8: Sessions have valid timestamps
+                stale_sessions = [s for s in SESSIONS.values() if not s.get('created')]
+                if stale_sessions:
+                    warnings.append({'category': 'sessions', 'severity': 'info', 'message': f'{len(stale_sessions)} sessions without creation timestamp'})
+                else:
+                    checks_passed += 1
+                
+                # Check 9: Health wallets have non-negative balances
+                negative_wallets = [w for w in HEALTH_WALLETS.values() if safe_float(w.get('balance', 0)) < 0]
+                if negative_wallets:
+                    errors.append({'category': 'wallets', 'severity': 'error', 'message': f'{len(negative_wallets)} wallets with negative balances'})
+                else:
+                    checks_passed += 1
+                
+                overall_status = 'PASS' if len(errors) == 0 else 'FAIL'
+                
+                response = {
+                    'status': overall_status,
+                    'timestamp': datetime.now().isoformat(),
+                    'summary': {
+                        'total_checks': total_checks,
+                        'passed_checks': checks_passed,
+                        'failed_checks': total_checks - checks_passed,
+                        'errors_found': len(errors),
+                        'warnings_found': len(warnings),
+                        'overall_status': overall_status
+                    },
+                    'validation_results': {
+                        'customers': {'total': len(CUSTOMERS), 'status': 'PASS' if not any(e['category'] == 'customers' for e in errors) else 'FAIL'},
+                        'policies': {'total': len(POLICIES), 'status': 'PASS' if not any(e['category'] == 'policies' for e in errors) else 'FAIL'},
+                        'underwriting': {'total': len(UNDERWRITING_APPLICATIONS), 'status': 'PASS' if not any(e['category'] == 'underwriting' for e in errors) else 'FAIL'},
+                        'claims': {'total': len(CLAIMS), 'status': 'PASS' if not any(e['category'] == 'claims' for e in errors) else 'FAIL'},
+                        'billing': {'total': len(BILLING), 'status': 'PASS' if not any(e['category'] == 'billing' for e in errors) else 'FAIL'},
+                        'users': {'total': len(USERS), 'status': 'PASS' if not any(e['category'] == 'users' for e in errors) else 'FAIL'}
+                    },
+                    'errors': errors,
+                    'warnings': warnings
+                }
+                
+                self._set_json_headers()
+                self.wfile.write(json.dumps(response).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e), 'status': 'ERROR'}).encode('utf-8'))
+            return
+        
         # Financial Reporting Endpoints
         if path == '/api/financial/portfolio-report':
             if not require_role(session, ['admin', 'accountant']):
@@ -16629,6 +16904,215 @@ For claims or questions, please contact:
 
                 self._set_json_headers(201)
                 self.wfile.write(json.dumps({'success': True, 'created': created, 'errors': errors}).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'Upload failed', 'details': str(e)}).encode('utf-8'))
+            return
+
+        # ========== RISK DASHBOARD DATA UPLOAD ENDPOINT ==========
+        # Autonomous risk assessment dashboard - supports CSV, Excel, JSON uploads
+        # Access: admin, underwriter, actuary roles
+        if path == '/api/risk-dashboard/upload':
+            auth_header = self.headers.get('Authorization', '')
+            token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+            session = validate_session(token) if token else None
+            if not require_role(session, ['admin', 'underwriter', 'actuary']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Unauthorized. Admin/Underwriter/Actuary access required.'}).encode('utf-8'))
+                return
+
+            try:
+                content_type = (self.headers.get('Content-Type') or '').lower()
+                actor = (session or {}).get('username') if session else 'admin'
+                processed = 0
+                updated = 0
+                errors_list: list[Dict[str, Any]] = []
+
+                rows: list[Dict[str, Any]] = []
+                
+                # Handle multipart form data (file upload)
+                if content_type.startswith('multipart/form-data'):
+                    boundary = content_type.split('boundary=')[1] if 'boundary=' in content_type else None
+                    if not boundary:
+                        self._set_json_headers(400)
+                        self.wfile.write(json.dumps({'error': 'No boundary in multipart data'}).encode('utf-8'))
+                        return
+                    
+                    body_bytes = body.encode() if isinstance(body, str) else body
+                    fields, files = self._parse_multipart_form(body_bytes, boundary.encode())
+                    up = files.get('file')
+                    if not up:
+                        self._set_json_headers(400)
+                        self.wfile.write(json.dumps({'error': 'Missing file field'}).encode('utf-8'))
+                        return
+                    
+                    filename = str(up.get('filename') or '').strip()
+                    file_bytes: bytes = up.get('data') or b''
+                    lower_name = filename.lower()
+                    
+                    if lower_name.endswith('.csv'):
+                        reader = csv.DictReader(io.StringIO(file_bytes.decode('utf-8', errors='ignore')))
+                        rows = [r for r in reader]
+                    elif lower_name.endswith('.json'):
+                        parsed = json.loads(file_bytes.decode('utf-8', errors='ignore') or '[]')
+                        if isinstance(parsed, dict) and 'items' in parsed:
+                            parsed = parsed['items']
+                        if isinstance(parsed, dict) and 'reports' in parsed:
+                            parsed = parsed['reports']
+                        if not isinstance(parsed, list):
+                            parsed = [parsed]
+                        rows = [dict(r) for r in parsed]
+                    elif lower_name.endswith('.xlsx'):
+                        try:
+                            from openpyxl import load_workbook
+                            wb = load_workbook(io.BytesIO(file_bytes), read_only=True, data_only=True)
+                            ws = wb.active
+                            rows_iter = ws.iter_rows(values_only=True)
+                            headers = next(rows_iter, None)
+                            if headers:
+                                header_names = [str(h).strip() if h is not None else '' for h in headers]
+                                for row in rows_iter:
+                                    if row is None:
+                                        continue
+                                    rec = {}
+                                    empty = True
+                                    for i, cell in enumerate(row):
+                                        key = header_names[i] if i < len(header_names) else f'col_{i+1}'
+                                        if not key:
+                                            key = f'col_{i+1}'
+                                        if cell is not None and str(cell).strip() != '':
+                                            empty = False
+                                        rec[key] = cell
+                                    if not empty:
+                                        rows.append(rec)
+                        except ImportError as e:
+                            self._set_json_headers(500)
+                            self.wfile.write(json.dumps({'error': 'openpyxl required for xlsx upload', 'details': str(e)}).encode('utf-8'))
+                            return
+                    else:
+                        self._set_json_headers(400)
+                        self.wfile.write(json.dumps({'error': 'Unsupported file type. Use .xlsx, .csv, or .json'}).encode('utf-8'))
+                        return
+                elif 'text/csv' in content_type:
+                    reader = csv.DictReader(io.StringIO(body or ''))
+                    rows = [r for r in reader]
+                else:
+                    # Assume JSON
+                    parsed = json.loads(body or '[]')
+                    if isinstance(parsed, dict) and 'items' in parsed:
+                        parsed = parsed['items']
+                    if isinstance(parsed, dict) and 'reports' in parsed:
+                        parsed = parsed['reports']
+                    if not isinstance(parsed, list):
+                        parsed = [parsed]
+                    rows = [dict(r) for r in parsed]
+
+                # Process each row - update or create risk assessment data
+                with STATE_LOCK:
+                    for i, r in enumerate(rows):
+                        try:
+                            app_id = str(r.get('application_id') or r.get('id') or '').strip()
+                            if not app_id:
+                                app_id = f"UW-UPLOAD-{datetime.now().strftime('%Y%m%d')}-{random.randint(1000,9999)}"
+                            
+                            # Get or create the underwriting application
+                            existing_app = UNDERWRITING_APPLICATIONS.get(app_id)
+                            
+                            # Parse risk score
+                            risk_score_raw = r.get('risk_score') or r.get('score') or r.get('risk_assessment')
+                            risk_score = None
+                            if risk_score_raw is not None:
+                                try:
+                                    risk_score = float(risk_score_raw)
+                                except (ValueError, TypeError):
+                                    risk_str = str(risk_score_raw).lower()
+                                    if 'low' in risk_str:
+                                        risk_score = 25
+                                    elif 'medium' in risk_str or 'moderate' in risk_str:
+                                        risk_score = 50
+                                    elif 'high' in risk_str:
+                                        risk_score = 75
+                                    elif 'very' in risk_str or 'critical' in risk_str:
+                                        risk_score = 90
+                            
+                            # Determine risk category from score
+                            risk_category = r.get('risk_category') or r.get('category')
+                            if not risk_category and risk_score is not None:
+                                if risk_score <= 30:
+                                    risk_category = 'low'
+                                elif risk_score <= 60:
+                                    risk_category = 'medium'
+                                elif risk_score <= 80:
+                                    risk_category = 'high'
+                                else:
+                                    risk_category = 'very_high'
+                            
+                            if existing_app:
+                                # Update existing application
+                                if risk_score is not None:
+                                    existing_app['risk_score'] = risk_score
+                                if risk_category:
+                                    existing_app['risk_assessment'] = risk_category
+                                if r.get('customer_name'):
+                                    existing_app['customer_name'] = str(r.get('customer_name')).strip()
+                                if r.get('policy_type'):
+                                    existing_app['policy_type'] = str(r.get('policy_type')).strip()
+                                if r.get('coverage_amount'):
+                                    try:
+                                        existing_app['coverage_amount'] = float(r.get('coverage_amount'))
+                                    except (ValueError, TypeError):
+                                        pass
+                                if r.get('status'):
+                                    existing_app['status'] = str(r.get('status')).strip().lower()
+                                existing_app['last_modified'] = datetime.now().isoformat()
+                                existing_app['modified_by'] = actor
+                                updated += 1
+                            else:
+                                # Create new application entry
+                                customer_name = str(r.get('customer_name') or r.get('name') or 'Unknown').strip()
+                                policy_type = str(r.get('policy_type') or r.get('type') or 'general').strip()
+                                coverage = 0
+                                try:
+                                    coverage = float(r.get('coverage_amount') or r.get('coverage') or 0)
+                                except (ValueError, TypeError):
+                                    pass
+                                status = str(r.get('status') or 'pending').strip().lower()
+                                
+                                new_app = {
+                                    'id': app_id,
+                                    'customer_name': customer_name,
+                                    'policy_type': policy_type,
+                                    'coverage_amount': coverage,
+                                    'risk_score': risk_score or 50,
+                                    'risk_assessment': risk_category or 'medium',
+                                    'status': status,
+                                    'created_date': datetime.now().isoformat(),
+                                    'created_by': actor,
+                                    'source': 'upload'
+                                }
+                                UNDERWRITING_APPLICATIONS[app_id] = new_app
+                                processed += 1
+                        except Exception as e:
+                            errors_list.append({"row": i, "error": str(e)})
+
+                if audit:
+                    try:
+                        audit.log(actor, 'upload', 'risk_dashboard', 'bulk', {
+                            'processed': processed, 
+                            'updated': updated, 
+                            'errors': len(errors_list)
+                        })
+                    except Exception:
+                        pass
+
+                self._set_json_headers(201)
+                self.wfile.write(json.dumps({
+                    'success': True,
+                    'message': 'Risk assessment data uploaded successfully',
+                    'records_processed': processed,
+                    'records_updated': updated,
+                    'errors': errors_list
+                }).encode('utf-8'))
             except Exception as e:
                 self._set_json_headers(400)
                 self.wfile.write(json.dumps({'error': 'Upload failed', 'details': str(e)}).encode('utf-8'))
