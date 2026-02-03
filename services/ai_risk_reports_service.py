@@ -18,6 +18,7 @@ Author: PHINS Platform
 import csv
 import io
 import json
+import os
 import re
 import hashlib
 import zipfile
@@ -364,6 +365,9 @@ class AIRiskReportsService:
             # Store document
             self.documents[doc_id] = result
             
+            # Auto-save for persistence
+            self.save_data()
+            
         except Exception as e:
             result['status'] = 'failed'
             result['error'] = str(e)
@@ -511,6 +515,10 @@ class AIRiskReportsService:
         )
         
         self.analyses[analysis_id] = result
+        
+        # Auto-save for persistence
+        self.save_data()
+        
         return result
     
     def _extract_factors(self, columns: List[str], rows: List[Dict], data_type: DataType) -> List[Factor]:
@@ -783,6 +791,10 @@ class AIRiskReportsService:
         )
         
         self.reports[report_id] = report
+        
+        # Auto-save for persistence
+        self.save_data()
+        
         return report
     
     def _generate_sections(self, analysis: AnalysisResult, lang: str) -> List[ReportSection]:
@@ -1181,22 +1193,246 @@ class AIRiskReportsService:
             return {k: self.to_dict(v) for k, v in obj.items()}
         else:
             return obj
+    
+    # =========================================================================
+    # PERSISTENCE - Save and Load Data
+    # =========================================================================
+    
+    def save_data(self, filepath: str = None) -> bool:
+        """
+        Save all documents, analyses, and reports to a JSON file.
+        
+        Args:
+            filepath: Optional custom filepath. Defaults to AI_REPORTS_DATA_FILE.
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        if filepath is None:
+            filepath = AI_REPORTS_DATA_FILE
+        
+        try:
+            # Convert analyses to serializable format
+            analyses_data = {}
+            for aid, analysis in self.analyses.items():
+                analyses_data[aid] = self.to_dict(analysis)
+            
+            # Convert reports to serializable format
+            reports_data = {}
+            for rid, report in self.reports.items():
+                reports_data[rid] = self.to_dict(report)
+            
+            # Prepare documents (remove parsed_data to save space - can be re-parsed)
+            documents_data = {}
+            for did, doc in self.documents.items():
+                doc_copy = doc.copy()
+                # Keep only metadata, not the full parsed data
+                if 'parsed_data' in doc_copy:
+                    doc_copy['has_parsed_data'] = doc_copy['parsed_data'] is not None
+                    # Store column info but not full row data to save space
+                    if doc_copy['parsed_data']:
+                        doc_copy['columns'] = doc_copy['parsed_data'].get('columns', [])
+                    del doc_copy['parsed_data']
+                documents_data[did] = doc_copy
+            
+            data = {
+                'saved_at': datetime.now().isoformat(),
+                'version': '1.0',
+                'documents': documents_data,
+                'analyses': analyses_data,
+                'reports': reports_data,
+                'stats': {
+                    'total_documents': len(self.documents),
+                    'total_analyses': len(self.analyses),
+                    'total_reports': len(self.reports)
+                }
+            }
+            
+            # Ensure directory exists
+            os.makedirs(os.path.dirname(filepath) if os.path.dirname(filepath) else '.', exist_ok=True)
+            
+            # Write to temp file first for atomic operation
+            temp_file = filepath + '.tmp'
+            with open(temp_file, 'w', encoding='utf-8') as f:
+                json.dump(data, f, default=str, indent=2, ensure_ascii=False)
+            
+            # Atomic rename
+            os.rename(temp_file, filepath)
+            print(f"[AI_REPORTS] Saved data to {filepath} ({len(self.documents)} docs, {len(self.analyses)} analyses, {len(self.reports)} reports)")
+            return True
+            
+        except Exception as e:
+            print(f"[AI_REPORTS] Error saving data: {e}")
+            import traceback
+            traceback.print_exc()
+            return False
+    
+    def load_data(self, filepath: str = None) -> bool:
+        """
+        Load documents, analyses, and reports from a JSON file.
+        
+        Args:
+            filepath: Optional custom filepath. Defaults to AI_REPORTS_DATA_FILE.
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        if filepath is None:
+            filepath = AI_REPORTS_DATA_FILE
+        
+        if not os.path.exists(filepath):
+            print(f"[AI_REPORTS] No saved data file found at {filepath}")
+            return False
+        
+        try:
+            with open(filepath, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            
+            # Load documents
+            documents_data = data.get('documents', {})
+            for did, doc in documents_data.items():
+                # Restore minimal document structure
+                doc['parsed_data'] = None  # Will need to re-upload to re-parse
+                self.documents[did] = doc
+            
+            # Load analyses - reconstruct AnalysisResult objects
+            analyses_data = data.get('analyses', {})
+            for aid, analysis_dict in analyses_data.items():
+                try:
+                    # Reconstruct factors
+                    factors = [Factor(**f) for f in analysis_dict.get('extracted_factors', [])]
+                    
+                    # Reconstruct patterns
+                    patterns = [Pattern(**p) for p in analysis_dict.get('patterns_found', [])]
+                    
+                    # Reconstruct anomalies
+                    anomalies = []
+                    for a in analysis_dict.get('anomalies', []):
+                        a_copy = a.copy()
+                        a_copy['severity'] = Severity(a_copy['severity'])
+                        anomalies.append(Anomaly(**a_copy))
+                    
+                    # Reconstruct analysis
+                    analysis = AnalysisResult(
+                        id=analysis_dict['id'],
+                        document_id=analysis_dict['document_id'],
+                        language=analysis_dict['language'],
+                        language_name=analysis_dict['language_name'],
+                        data_classification=DataType(analysis_dict['data_classification']),
+                        extracted_factors=factors,
+                        patterns_found=patterns,
+                        anomalies=anomalies,
+                        risk_score=analysis_dict['risk_score'],
+                        confidence=analysis_dict['confidence'],
+                        processing_time_ms=analysis_dict['processing_time_ms'],
+                        summary=analysis_dict['summary'],
+                        key_metrics=analysis_dict['key_metrics']
+                    )
+                    self.analyses[aid] = analysis
+                except Exception as e:
+                    print(f"[AI_REPORTS] Error loading analysis {aid}: {e}")
+            
+            # Load reports - reconstruct GeneratedReport objects
+            reports_data = data.get('reports', {})
+            for rid, report_dict in reports_data.items():
+                try:
+                    # Reconstruct sections
+                    sections = [ReportSection(**s) for s in report_dict.get('sections', [])]
+                    
+                    # Reconstruct charts
+                    charts = []
+                    for c in report_dict.get('charts', []):
+                        c_copy = c.copy()
+                        c_copy['type'] = ChartType(c_copy['type'])
+                        charts.append(ChartConfig(**c_copy))
+                    
+                    # Reconstruct recommendations
+                    recommendations = []
+                    for r in report_dict.get('recommendations', []):
+                        r_copy = r.copy()
+                        r_copy['priority'] = Priority(r_copy['priority'])
+                        recommendations.append(Recommendation(**r_copy))
+                    
+                    # Reconstruct report
+                    report = GeneratedReport(
+                        id=report_dict['id'],
+                        analysis_id=report_dict['analysis_id'],
+                        report_type=report_dict['report_type'],
+                        language=report_dict['language'],
+                        title=report_dict['title'],
+                        sections=sections,
+                        charts=charts,
+                        recommendations=recommendations,
+                        generated_at=report_dict['generated_at'],
+                        metadata=report_dict.get('metadata', {})
+                    )
+                    self.reports[rid] = report
+                except Exception as e:
+                    print(f"[AI_REPORTS] Error loading report {rid}: {e}")
+            
+            print(f"[AI_REPORTS] Loaded data from {filepath} ({len(self.documents)} docs, {len(self.analyses)} analyses, {len(self.reports)} reports)")
+            return True
+            
+        except Exception as e:
+            print(f"[AI_REPORTS] Error loading data: {e}")
+            import traceback
+            traceback.print_exc()
+            return False
+    
+    def get_persistence_stats(self) -> Dict[str, Any]:
+        """Get statistics about stored data"""
+        return {
+            'total_documents': len(self.documents),
+            'total_analyses': len(self.analyses),
+            'total_reports': len(self.reports),
+            'documents_by_owner': self._count_by_owner(self.documents),
+            'reports_by_type': self._count_by_type()
+        }
+    
+    def _count_by_owner(self, collection: Dict) -> Dict[str, int]:
+        """Count items by owner"""
+        counts = {}
+        for item in collection.values():
+            owner = item.get('owner_id', 'unknown')
+            counts[owner] = counts.get(owner, 0) + 1
+        return counts
+    
+    def _count_by_type(self) -> Dict[str, int]:
+        """Count reports by type"""
+        counts = {}
+        for report in self.reports.values():
+            rtype = report.report_type
+            counts[rtype] = counts.get(rtype, 0) + 1
+        return counts
 
+
+# Persistence file path
+AI_REPORTS_DATA_FILE = os.environ.get('AI_REPORTS_DATA_FILE', 'data/ai_reports_data.json')
 
 # Singleton instance
 _ai_reports_service: AIRiskReportsService = None
 
 
 def get_ai_reports_service() -> AIRiskReportsService:
-    """Get or create the AI reports service singleton"""
+    """Get or create the AI reports service singleton, loading saved data if available"""
     global _ai_reports_service
     if _ai_reports_service is None:
         _ai_reports_service = AIRiskReportsService()
+        # Load persisted data on first access
+        _ai_reports_service.load_data()
     return _ai_reports_service
 
 
-def init_ai_reports_service() -> AIRiskReportsService:
-    """Initialize the AI reports service"""
+def init_ai_reports_service(load_persisted: bool = True) -> AIRiskReportsService:
+    """
+    Initialize the AI reports service.
+    
+    Args:
+        load_persisted: If True, load previously saved data from disk.
+                       Set to False for testing with fresh state.
+    """
     global _ai_reports_service
     _ai_reports_service = AIRiskReportsService()
+    if load_persisted:
+        _ai_reports_service.load_data()
     return _ai_reports_service
