@@ -2541,6 +2541,125 @@ def validate_session(token: str) -> dict[str, str] | None:
     
     return None
 
+def get_customer_id_guaranteed(username: str, role: str) -> str | None:
+    """
+    GUARANTEE that customer role ALWAYS gets a valid customer_id.
+    
+    This function implements a 5-layer fallback strategy to ensure that
+    customers logging in always receive a valid customer_id in their token,
+    preventing 403 Forbidden errors on /api/customer/* endpoints.
+    
+    Tries 5 sources in order:
+    1. USERS dict (for staff with customer_id)
+    2. Database customers table (query by email)
+    3. In-memory CUSTOMERS dict (fallback)
+    4. REGISTERED_CUSTOMERS dict (additional fallback)
+    5. Auto-generate new customer_id (NEVER return None for customer role)
+    
+    Args:
+        username: User's email address
+        role: User's role ('customer', 'admin', etc.)
+    
+    Returns:
+        str: Valid customer_id (format: CUST-{5 digits}) for customer role
+        None: For non-customer roles (admin, underwriter, etc.)
+    """
+    # For non-customer roles, customer_id is optional
+    if role != 'customer':
+        # Still try to get customer_id if available in USERS dict
+        if username in USERS:
+            user_data = USERS.get(username)
+            if user_data and user_data.get('customer_id'):
+                return user_data['customer_id']
+        return None
+    
+    # Layer 1: Check USERS dict
+    if username in USERS:
+        user_data = USERS.get(username)
+        if user_data and user_data.get('customer_id'):
+            print(f"[AUTH] Found customer_id in USERS dict for {username}")
+            return user_data['customer_id']
+    
+    # Layer 2: Query database
+    if USE_DATABASE:
+        try:
+            from database.manager import DatabaseManager
+            from database import ensure_connection_healthy
+            from sqlalchemy.exc import OperationalError, DatabaseError, DisconnectionError
+            
+            # Check if database is healthy
+            db_healthy = database_enabled
+            if not db_healthy:
+                print(f"[AUTH] Database disabled, attempting reconnection...")
+                if ensure_connection_healthy():
+                    db_healthy = True
+                    globals()['database_enabled'] = True
+                    print(f"[AUTH] Database connection restored!")
+            
+            if db_healthy:
+                with DatabaseManager() as db:
+                    customer = db.customers.get_by_email(username.lower())
+                    if customer:
+                        print(f"[AUTH] Found customer_id {customer.id} in database for {username}")
+                        return customer.id
+        except (OperationalError, DatabaseError, DisconnectionError) as db_err:
+            print(f"[AUTH] Database query failed during customer_id lookup: {db_err}")
+        except Exception as e:
+            print(f"[AUTH] Unexpected error during database lookup: {e}")
+    
+    # Layer 3: Check in-memory CUSTOMERS dict
+    for customer_id, customer_data in CUSTOMERS.items():
+        if customer_data.get('email', '').lower() == username.lower():
+            print(f"[AUTH] Found customer_id {customer_id} in CUSTOMERS dict for {username}")
+            return customer_id
+    
+    # Layer 4: Check REGISTERED_CUSTOMERS dict
+    for customer_id, customer_data in REGISTERED_CUSTOMERS.items():
+        if customer_data.get('email', '').lower() == username.lower():
+            print(f"[AUTH] Found customer_id {customer_id} in REGISTERED_CUSTOMERS for {username}")
+            return customer_id
+    
+    # Layer 5: AUTO-GENERATE (GUARANTEE non-null for customer role)
+    if role == 'customer':
+        import random
+        new_customer_id = f"CUST-{random.randint(10000, 99999)}"
+        print(f"[AUTH WARNING] Auto-generated customer_id for {username}: {new_customer_id}")
+        
+        # Try to persist to in-memory dict
+        CUSTOMERS[new_customer_id] = {
+            'id': new_customer_id,
+            'email': username.lower(),
+            'name': username.split('@')[0].title(),
+            'created_date': datetime.now().isoformat(),
+            'status': 'active',
+            'auto_generated': True,
+            'auto_generated_reason': 'guaranteed_customer_id_generation'
+        }
+        REGISTERED_CUSTOMERS[new_customer_id] = CUSTOMERS[new_customer_id]
+        
+        # Try to persist to database if available
+        if USE_DATABASE and database_enabled:
+            try:
+                from database.manager import DatabaseManager
+                from database.models import Customer
+                with DatabaseManager() as db:
+                    db_customer = Customer(
+                        id=new_customer_id,
+                        email=username.lower(),
+                        name=username.split('@')[0].title(),
+                        portal_active=True
+                    )
+                    db.session.add(db_customer)
+                    db.commit()
+                    print(f"[AUTH] Persisted auto-generated customer {new_customer_id} to database")
+            except Exception as e:
+                print(f"[AUTH] Could not persist auto-generated customer to DB (non-critical): {e}")
+        
+        return new_customer_id
+    
+    # For non-customer roles, None is acceptable
+    return None
+
 # Global token storage (for legacy support, not required for signed tokens)
 ACTIVE_TOKENS: Dict[str, Dict[str, Any]] = {}
 
@@ -14444,68 +14563,23 @@ For claims or questions, please contact:
                 
                 if user:
                     # ========== CUSTOMER_ID GUARANTEE FOR DATA INTEGRITY ==========
-                    # CRITICAL: For customer role, we MUST have a valid customer_id
-                    # Without it, all customer-specific API calls will fail with 403
-                    # This fixes the systemic pipeline flaw identified in 72-hour analysis
-                    if role == 'customer' and not customer_id:
-                        print(f"[AUTH] WARNING: Customer login without customer_id for {username}, attempting recovery...")
-                        
-                        # Recovery path 1: Check CUSTOMERS dict by email
-                        for cid, cust in CUSTOMERS.items():
-                            if cust.get('email', '').lower() == username.lower():
-                                customer_id = cid
-                                print(f"[AUTH] Recovered customer_id {customer_id} from CUSTOMERS dict")
-                                break
-                        
-                        # Recovery path 2: Check REGISTERED_CUSTOMERS
-                        if not customer_id:
-                            for cid, cust in REGISTERED_CUSTOMERS.items():
-                                if cust.get('email', '').lower() == username.lower():
-                                    customer_id = cid
-                                    print(f"[AUTH] Recovered customer_id {customer_id} from REGISTERED_CUSTOMERS")
-                                    break
-                        
-                        # Recovery path 3: Check dynamic_customers.json entries loaded into USERS
-                        if not customer_id:
-                            # Check if user record has customer_id we missed
-                            if isinstance(user, dict) and user.get('customer_id'):
-                                customer_id = user.get('customer_id')
-                                print(f"[AUTH] Recovered customer_id {customer_id} from user record")
-                        
-                        # Recovery path 4: Generate new customer_id and create record
-                        if not customer_id:
-                            import random
-                            customer_id = f"CUST-{random.randint(10000, 99999)}"
-                            new_customer = {
-                                'id': customer_id,
-                                'email': username.lower(),
-                                'name': name or username.split('@')[0].title(),
-                                'created_date': datetime.now().isoformat(),
-                                'status': 'active',
-                                'auto_created': True,
-                                'auto_created_reason': 'login_without_customer_id'
-                            }
-                            CUSTOMERS[customer_id] = new_customer
-                            REGISTERED_CUSTOMERS[customer_id] = new_customer
-                            print(f"[AUTH] Created new customer record {customer_id} for {username}")
-                            
-                            # Also try to sync to database if available
-                            if USE_DATABASE and database_enabled:
-                                try:
-                                    from database.manager import DatabaseManager
-                                    with DatabaseManager() as db:
-                                        from database.models import Customer
-                                        db_customer = Customer(
-                                            id=customer_id,
-                                            email=username.lower(),
-                                            name=name or username.split('@')[0].title(),
-                                            portal_active=True
-                                        )
-                                        db.session.add(db_customer)
-                                        db.commit()
-                                        print(f"[AUTH] Synced new customer {customer_id} to database")
-                                except Exception as db_err:
-                                    print(f"[AUTH] Failed to sync customer to DB (non-critical): {db_err}")
+                    # CRITICAL: Use the 5-layer guarantee function to ensure customer_id is NEVER null
+                    # This fixes the systemic pipeline flaw identified in 84-hour analysis (PR #90)
+                    guaranteed_customer_id = get_customer_id_guaranteed(username, role)
+                    
+                    # For customer role, guaranteed_customer_id is GUARANTEED non-null
+                    if role == 'customer' and not guaranteed_customer_id:
+                        # This should NEVER happen due to the guarantee, but handle defensively
+                        print(f"[AUTH CRITICAL ERROR] get_customer_id_guaranteed failed for {username}")
+                        self._set_json_headers(500)
+                        self.wfile.write(json.dumps({'error': 'Failed to create customer session'}).encode('utf-8'))
+                        return
+                    
+                    # Use guaranteed customer_id (may be None for non-customer roles, which is fine)
+                    customer_id = guaranteed_customer_id
+                    
+                    # Log token creation with customer_id status
+                    print(f"[AUTH] Token created for {username} (role={role}, customer_id={customer_id or 'None'})")
                     
                     # Clear failed login attempts on success
                     with STATE_LOCK:
