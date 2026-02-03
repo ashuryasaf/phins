@@ -11633,12 +11633,16 @@ For claims or questions, please contact:
         # ========== COMPREHENSIVE CUSTOMER API ==========
         # Get all customer data in one API call for dashboard
         if path == '/api/customer/dashboard-data':
-            customer_id = qs.get('customer_id', [''])[0]
+            requested_customer_id = qs.get('customer_id', [''])[0]
             
-            if not customer_id:
-                # Try to get from session
-                if session:
-                    customer_id = session.get('customer_id')
+            # SECURITY: Enforce customer data isolation
+            authorized, customer_id, error = authorize_customer_data(
+                session, requested_customer_id, 'dashboard data'
+            )
+            if not authorized:
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': error or 'Access denied'}).encode('utf-8'))
+                return
             
             if not customer_id:
                 self._set_json_headers(400)
@@ -11760,12 +11764,17 @@ For claims or questions, please contact:
         # ========== UNIFIED ACTIVITY LOG API ==========
         # Get all customer activities across all systems in unified view
         if path == '/api/customer/activity-log':
-            customer_id = qs.get('customer_id', [''])[0]
+            requested_customer_id = qs.get('customer_id', [''])[0]
             limit = int(qs.get('limit', ['50'])[0])
             
-            if not customer_id:
-                if session:
-                    customer_id = session.get('customer_id')
+            # SECURITY: Enforce customer data isolation
+            authorized, customer_id, error = authorize_customer_data(
+                session, requested_customer_id, 'activity log'
+            )
+            if not authorized:
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': error or 'Access denied'}).encode('utf-8'))
+                return
             
             if not customer_id:
                 self._set_json_headers(400)
@@ -22917,7 +22926,16 @@ For claims or questions, please contact:
         if path == '/api/customer/allocation':
             try:
                 data = json.loads(body)
-                customer_id = data.get('customer_id')
+                requested_customer_id = data.get('customer_id')
+                
+                # SECURITY: Enforce customer data isolation
+                authorized, customer_id, error = authorize_customer_data(
+                    session, requested_customer_id, 'allocation preferences'
+                )
+                if not authorized:
+                    self._set_json_headers(403)
+                    self.wfile.write(json.dumps({'error': error or 'Access denied'}).encode('utf-8'))
+                    return
                 
                 if not customer_id:
                     self._set_json_headers(400)
@@ -26340,12 +26358,21 @@ For claims or questions, please contact:
         if path == '/api/customer/payment':
             try:
                 data = json.loads(body)
-                customer_id = data.get('customer_id')
+                requested_customer_id = data.get('customer_id')
                 amount = float(data.get('amount', 0))
                 payment_method = data.get('payment_method', 'card')
                 create_nft = data.get('create_nft', True)
                 allocate_to_investments = data.get('allocate_to_investments', True)
                 debug = bool(data.get('debug') or data.get('integrity_debug'))
+                
+                # SECURITY: Enforce customer data isolation
+                authorized, customer_id, error = authorize_customer_data(
+                    session, requested_customer_id, 'payment'
+                )
+                if not authorized:
+                    self._set_json_headers(403)
+                    self.wfile.write(json.dumps({'error': error or 'Access denied'}).encode('utf-8'))
+                    return
                 
                 if not customer_id or amount <= 0:
                     self._set_json_headers(400)
@@ -26583,7 +26610,16 @@ For claims or questions, please contact:
         if path == '/api/customer/allocation':
             try:
                 data = json.loads(body) if body else {}
-                customer_id = data.get('customer_id')
+                requested_customer_id = data.get('customer_id')
+                
+                # SECURITY: Enforce customer data isolation
+                authorized, customer_id, error = authorize_customer_data(
+                    session, requested_customer_id, 'allocation preferences'
+                )
+                if not authorized:
+                    self._set_json_headers(403)
+                    self.wfile.write(json.dumps({'error': error or 'Access denied'}).encode('utf-8'))
+                    return
                 
                 if not customer_id:
                     self._set_json_headers(400)
@@ -26639,9 +26675,18 @@ For claims or questions, please contact:
         if path == '/api/customer/investment/deposit':
             try:
                 data = json.loads(body)
-                customer_id = data.get('customer_id')
+                requested_customer_id = data.get('customer_id')
                 amount = float(data.get('amount', 0))
                 deposit_type = data.get('deposit_type', 'additional_savings')
+                
+                # SECURITY: Enforce customer data isolation
+                authorized, customer_id, error = authorize_customer_data(
+                    session, requested_customer_id, 'investment deposit'
+                )
+                if not authorized:
+                    self._set_json_headers(403)
+                    self.wfile.write(json.dumps({'error': error or 'Access denied'}).encode('utf-8'))
+                    return
                 
                 if not customer_id or amount <= 0:
                     self._set_json_headers(400)
@@ -26733,7 +26778,16 @@ For claims or questions, please contact:
         if path == '/api/customer/investment/account':
             try:
                 data = json.loads(body) if body else {}
-                customer_id = data.get('customer_id')
+                requested_customer_id = data.get('customer_id')
+                
+                # SECURITY: Enforce customer data isolation
+                authorized, customer_id, error = authorize_customer_data(
+                    session, requested_customer_id, 'investment account'
+                )
+                if not authorized:
+                    self._set_json_headers(403)
+                    self.wfile.write(json.dumps({'error': error or 'Access denied'}).encode('utf-8'))
+                    return
                 
                 if not customer_id:
                     self._set_json_headers(400)
@@ -26778,9 +26832,18 @@ For claims or questions, please contact:
         if path == '/api/customer/transactions':
             try:
                 data = json.loads(body) if body else {}
-                customer_id = data.get('customer_id')
+                requested_customer_id = data.get('customer_id')
                 tx_type = data.get('type')  # Optional filter
                 limit = int(data.get('limit', 50))
+                
+                # SECURITY: Enforce customer data isolation
+                authorized, customer_id, error = authorize_customer_data(
+                    session, requested_customer_id, 'transactions'
+                )
+                if not authorized:
+                    self._set_json_headers(403)
+                    self.wfile.write(json.dumps({'error': error or 'Access denied'}).encode('utf-8'))
+                    return
                 
                 if not customer_id:
                     self._set_json_headers(400)
@@ -26886,10 +26949,19 @@ For claims or questions, please contact:
         if path == '/api/customer/action':
             try:
                 data = json.loads(body)
-                customer_id = data.get('customer_id')
+                requested_customer_id = data.get('customer_id')
                 action_type = data.get('action_type')
                 amount = float(data.get('amount', 0))
                 description = data.get('description', '')
+                
+                # SECURITY: Enforce customer data isolation
+                authorized, customer_id, error = authorize_customer_data(
+                    session, requested_customer_id, 'action recording'
+                )
+                if not authorized:
+                    self._set_json_headers(403)
+                    self.wfile.write(json.dumps({'error': error or 'Access denied'}).encode('utf-8'))
+                    return
                 
                 if not customer_id or not action_type:
                     self._set_json_headers(400)
@@ -26928,11 +27000,20 @@ For claims or questions, please contact:
         if path == '/api/customer/ai-interaction':
             try:
                 data = json.loads(body)
-                customer_id = data.get('customer_id')
+                requested_customer_id = data.get('customer_id')
                 intent_type = data.get('intent_type', 'UNKNOWN')
                 query = data.get('query', '')
                 source = data.get('source', 'ai_assistant')
                 timestamp = data.get('timestamp', datetime.now().isoformat())
+                
+                # SECURITY: Enforce customer data isolation
+                authorized, customer_id, error = authorize_customer_data(
+                    session, requested_customer_id, 'AI interaction'
+                )
+                if not authorized:
+                    self._set_json_headers(403)
+                    self.wfile.write(json.dumps({'error': error or 'Access denied'}).encode('utf-8'))
+                    return
                 
                 if not customer_id:
                     self._set_json_headers(400)
