@@ -608,6 +608,23 @@
   </header>
   
   <main class="container">
+    <!-- Reports History Section -->
+    <section class="reports-history-section" id="reportsHistorySection" style="background: white; border-radius: 16px; padding: 1.5rem 2rem; box-shadow: 0 4px 20px rgba(0,0,0,0.08); margin-bottom: 2rem;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+        <h3 style="margin: 0; color: var(--primary); display: flex; align-items: center; gap: 10px;">
+          📚 Your Report History
+        </h3>
+        <button class="btn btn-secondary" onclick="loadReportHistory()" style="padding: 6px 12px; font-size: 0.85rem;">
+          🔄 Refresh
+        </button>
+      </div>
+      <div id="reportsHistoryList" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 1rem;">
+        <div style="text-align: center; color: var(--text-muted); padding: 2rem; grid-column: 1/-1;">
+          Loading your reports...
+        </div>
+      </div>
+    </section>
+    
     <!-- Upload Section -->
     <section class="upload-section fade-in">
       <div class="upload-zone" id="uploadZone" onclick="document.getElementById('fileInput').click()">
@@ -701,6 +718,7 @@
     let currentAnalysis = null;
     let currentReport = null;
     let charts = {};
+    let reportHistory = [];
     
     // DOM Elements
     const uploadZone = document.getElementById('uploadZone');
@@ -710,6 +728,132 @@
     const processingStatus = document.getElementById('processingStatus');
     const resultsSection = document.getElementById('resultsSection');
     const outputLanguage = document.getElementById('outputLanguage');
+    
+    // Load report history on page load
+    document.addEventListener('DOMContentLoaded', () => {
+      loadReportHistory();
+    });
+    
+    async function loadReportHistory() {
+      const historyList = document.getElementById('reportsHistoryList');
+      
+      try {
+        const response = await fetch('/api/reports/list', {
+          headers: {
+            'Authorization': `Bearer ${localStorage.getItem('phins_token') || ''}`
+          }
+        });
+        
+        if (!response.ok) {
+          if (response.status === 401) {
+            historyList.innerHTML = `
+              <div style="text-align: center; color: var(--text-muted); padding: 2rem; grid-column: 1/-1;">
+                <p>Please <a href="/">log in</a> to view your reports</p>
+              </div>
+            `;
+            return;
+          }
+          throw new Error('Failed to load reports');
+        }
+        
+        const data = await response.json();
+        reportHistory = data.reports || [];
+        
+        if (reportHistory.length === 0) {
+          historyList.innerHTML = `
+            <div style="text-align: center; color: var(--text-muted); padding: 2rem; grid-column: 1/-1;">
+              <p>No reports yet. Upload a file above to generate your first AI analysis report!</p>
+            </div>
+          `;
+          return;
+        }
+        
+        historyList.innerHTML = reportHistory.map(report => `
+          <div class="report-history-card" onclick="viewReport('${report.report_id}')" style="background: #f8f9fa; border-radius: 12px; padding: 1rem; cursor: pointer; transition: all 0.2s; border: 2px solid transparent;">
+            <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px;">
+              <h4 style="margin: 0; font-size: 0.95rem; color: var(--text-dark);">${report.title || 'Analysis Report'}</h4>
+              <span style="font-size: 0.75rem; color: var(--text-muted);">${formatDate(report.generated_at)}</span>
+            </div>
+            <p style="margin: 0 0 8px 0; font-size: 0.85rem; color: var(--text-muted);">📄 ${report.filename || 'Unknown file'}</p>
+            <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+              <span style="font-size: 0.75rem; padding: 4px 8px; background: var(--primary); color: white; border-radius: 4px;">${report.report_type || 'analysis'}</span>
+              ${report.risk_score !== undefined ? `
+                <span style="font-size: 0.75rem; padding: 4px 8px; background: ${getRiskColor(report.risk_score)}; color: white; border-radius: 4px;">Risk: ${report.risk_score.toFixed(1)}</span>
+              ` : ''}
+              <span style="font-size: 0.75rem; padding: 4px 8px; background: #9e9e9e; color: white; border-radius: 4px;">${report.language || 'en'}</span>
+            </div>
+          </div>
+        `).join('');
+        
+        // Add hover effect
+        document.querySelectorAll('.report-history-card').forEach(card => {
+          card.addEventListener('mouseenter', () => {
+            card.style.borderColor = 'var(--primary)';
+            card.style.transform = 'translateY(-2px)';
+            card.style.boxShadow = '0 4px 12px rgba(0,0,0,0.1)';
+          });
+          card.addEventListener('mouseleave', () => {
+            card.style.borderColor = 'transparent';
+            card.style.transform = 'none';
+            card.style.boxShadow = 'none';
+          });
+        });
+        
+      } catch (error) {
+        console.error('Error loading report history:', error);
+        historyList.innerHTML = `
+          <div style="text-align: center; color: var(--text-muted); padding: 2rem; grid-column: 1/-1;">
+            <p>Could not load report history. <button onclick="loadReportHistory()" style="color: var(--primary); background: none; border: none; cursor: pointer; text-decoration: underline;">Try again</button></p>
+          </div>
+        `;
+      }
+    }
+    
+    function formatDate(dateStr) {
+      if (!dateStr) return '';
+      const date = new Date(dateStr);
+      return date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+    }
+    
+    function getRiskColor(score) {
+      if (score < 30) return 'var(--success)';
+      if (score < 60) return 'var(--warning)';
+      return 'var(--danger)';
+    }
+    
+    async function viewReport(reportId) {
+      try {
+        const response = await fetch(`/api/reports/view?id=${reportId}`, {
+          headers: {
+            'Authorization': `Bearer ${localStorage.getItem('phins_token') || ''}`
+          }
+        });
+        
+        if (!response.ok) {
+          throw new Error('Failed to load report');
+        }
+        
+        const report = await response.json();
+        currentReport = report;
+        
+        // Display the report
+        displayResults({
+          risk_score: report.metadata?.risk_score || 50,
+          data_classification: report.report_type,
+          language_name: report.language,
+          confidence: report.metadata?.confidence || 0.8,
+          key_metrics: { total_records: '—' },
+          processing_time_ms: report.metadata?.processing_time_ms || 0
+        }, report);
+        
+        resultsSection.classList.add('active');
+        resultsSection.scrollIntoView({ behavior: 'smooth' });
+        
+      } catch (error) {
+        console.error('Error viewing report:', error);
+        alert('Could not load the report. Please try again.');
+      }
+    }
     
     // File Upload Handlers
     uploadZone.addEventListener('dragover', (e) => {
@@ -879,6 +1023,9 @@
         } else {
           document.body.removeAttribute('dir');
         }
+        
+        // Refresh report history to show new report
+        loadReportHistory();
         
       } catch (error) {
         console.error('Analysis error:', error);
