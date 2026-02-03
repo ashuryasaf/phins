@@ -7491,19 +7491,26 @@ For claims or questions, please contact:
         if path == '/api/customer/summary':
             requested_customer_id = qs.get('customer_id', [None])[0]
             
+            # Diagnostic logging for production troubleshooting
+            print(f"[CUSTOMER SUMMARY] Request from session: {session.get('username') if session else 'None'}, role: {session.get('role') if session else 'None'}, requested_id: {requested_customer_id}")
+            
             # SECURITY: Enforce customer data isolation
             authorized, customer_id, error = authorize_customer_data(
                 session, requested_customer_id, 'customer summary'
             )
             if not authorized:
+                print(f"[CUSTOMER SUMMARY] Authorization failed: {error}")
                 self._set_json_headers(403)
                 self.wfile.write(json.dumps({'error': error}).encode('utf-8'))
                 return
             
             if not customer_id:
+                print(f"[CUSTOMER SUMMARY] No customer_id resolved")
                 self._set_json_headers(400)
                 self.wfile.write(json.dumps({'error': 'customer_id required'}).encode('utf-8'))
                 return
+            
+            print(f"[CUSTOMER SUMMARY] Authorized for customer_id: {customer_id}")
             
             # Get customer's policies (case-insensitive status check)
             customer_policies = [p for p in POLICIES.values() if p.get('customer_id') == customer_id]
@@ -7530,6 +7537,8 @@ For claims or questions, please contact:
                 'total_annual_premium': round(total_premium, 2),
                 'monthly_premium': round(total_premium / 12, 2) if total_premium > 0 else 0
             }
+            
+            print(f"[CUSTOMER SUMMARY] Returning summary: {len(active_policies)} active policies, {len(customer_claims)} claims")
             
             self._set_json_headers()
             self.wfile.write(json.dumps(summary).encode('utf-8'))
