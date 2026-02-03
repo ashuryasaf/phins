@@ -311,10 +311,18 @@ class AIRiskReportsService:
         self.analyses: Dict[str, AnalysisResult] = {}
         self.reports: Dict[str, GeneratedReport] = {}
     
-    def parse_file(self, filename: str, file_content: bytes, file_type: str) -> Dict[str, Any]:
+    def parse_file(self, filename: str, file_content: bytes, file_type: str, 
+                   owner_id: str = None, owner_role: str = None) -> Dict[str, Any]:
         """
         Parse uploaded file and extract structured data.
         Supports CSV, XLS (as CSV), and ZIP containing CSV files.
+        
+        Args:
+            filename: Name of the uploaded file
+            file_content: Raw bytes of the file
+            file_type: Type of file (csv, xls, xlsx, zip)
+            owner_id: ID of the user who uploaded the file (for data isolation)
+            owner_role: Role of the user (admin, customer, etc.)
         """
         doc_id = f"DOC-{datetime.now().strftime('%Y%m%d%H%M%S')}-{random.randint(1000, 9999)}"
         
@@ -325,7 +333,10 @@ class AIRiskReportsService:
             'file_size': len(file_content),
             'status': 'processing',
             'parsed_data': None,
-            'error': None
+            'error': None,
+            'owner_id': owner_id,
+            'owner_role': owner_role,
+            'created_at': datetime.now().isoformat()
         }
         
         try:
@@ -1000,6 +1011,159 @@ class AIRiskReportsService:
             rec_id += 1
         
         return recommendations
+    
+    def get_documents_for_user(self, user_id: str, user_role: str) -> List[Dict]:
+        """
+        Get all documents accessible to a user.
+        Admins can see all documents, customers only see their own.
+        
+        Args:
+            user_id: The user's ID
+            user_role: The user's role (admin, customer, etc.)
+            
+        Returns:
+            List of document metadata (without parsed_data for efficiency)
+        """
+        results = []
+        is_admin = user_role in ['admin', 'actuary', 'underwriter', 'analyst']
+        
+        for doc_id, doc in self.documents.items():
+            # Admin roles can see all documents
+            if is_admin or doc.get('owner_id') == user_id:
+                # Return summary without heavy parsed_data
+                results.append({
+                    'document_id': doc['document_id'],
+                    'filename': doc['filename'],
+                    'file_type': doc['file_type'],
+                    'file_size': doc['file_size'],
+                    'status': doc['status'],
+                    'row_count': doc.get('row_count', 0),
+                    'column_count': doc.get('column_count', 0),
+                    'owner_id': doc.get('owner_id'),
+                    'created_at': doc.get('created_at')
+                })
+        
+        # Sort by created_at descending
+        results.sort(key=lambda x: x.get('created_at', ''), reverse=True)
+        return results
+    
+    def get_reports_for_user(self, user_id: str, user_role: str) -> List[Dict]:
+        """
+        Get all reports accessible to a user.
+        Admins can see all reports, customers only see their own.
+        
+        Args:
+            user_id: The user's ID
+            user_role: The user's role
+            
+        Returns:
+            List of report summaries
+        """
+        results = []
+        is_admin = user_role in ['admin', 'actuary', 'underwriter', 'analyst']
+        
+        for report_id, report in self.reports.items():
+            # Get the associated analysis to check ownership
+            analysis = self.analyses.get(report.analysis_id)
+            if not analysis:
+                continue
+            
+            doc = self.documents.get(analysis.document_id)
+            if not doc:
+                continue
+            
+            # Check access permission
+            if is_admin or doc.get('owner_id') == user_id:
+                results.append({
+                    'report_id': report.id,
+                    'title': report.title,
+                    'report_type': report.report_type,
+                    'language': report.language,
+                    'generated_at': report.generated_at,
+                    'analysis_id': report.analysis_id,
+                    'document_id': analysis.document_id,
+                    'filename': doc.get('filename'),
+                    'risk_score': report.metadata.get('risk_score'),
+                    'confidence': report.metadata.get('confidence'),
+                    'owner_id': doc.get('owner_id')
+                })
+        
+        # Sort by generated_at descending
+        results.sort(key=lambda x: x.get('generated_at', ''), reverse=True)
+        return results
+    
+    def authorize_access(self, resource_type: str, resource_id: str, 
+                        user_id: str, user_role: str) -> Tuple[bool, Optional[str]]:
+        """
+        Check if a user is authorized to access a specific resource.
+        
+        Args:
+            resource_type: 'document', 'analysis', or 'report'
+            resource_id: The ID of the resource
+            user_id: The user's ID
+            user_role: The user's role
+            
+        Returns:
+            Tuple of (is_authorized, error_message)
+        """
+        is_admin = user_role in ['admin', 'actuary', 'underwriter', 'analyst']
+        
+        if is_admin:
+            return True, None
+        
+        if resource_type == 'document':
+            doc = self.documents.get(resource_id)
+            if not doc:
+                return False, f"Document {resource_id} not found"
+            if doc.get('owner_id') != user_id:
+                return False, "Access denied: You can only access your own documents"
+            return True, None
+        
+        elif resource_type == 'analysis':
+            analysis = self.analyses.get(resource_id)
+            if not analysis:
+                return False, f"Analysis {resource_id} not found"
+            doc = self.documents.get(analysis.document_id)
+            if not doc:
+                return False, "Associated document not found"
+            if doc.get('owner_id') != user_id:
+                return False, "Access denied: You can only access your own analyses"
+            return True, None
+        
+        elif resource_type == 'report':
+            report = self.reports.get(resource_id)
+            if not report:
+                return False, f"Report {resource_id} not found"
+            analysis = self.analyses.get(report.analysis_id)
+            if not analysis:
+                return False, "Associated analysis not found"
+            doc = self.documents.get(analysis.document_id)
+            if not doc:
+                return False, "Associated document not found"
+            if doc.get('owner_id') != user_id:
+                return False, "Access denied: You can only access your own reports"
+            return True, None
+        
+        return False, f"Unknown resource type: {resource_type}"
+    
+    def get_report_by_id(self, report_id: str, user_id: str = None, user_role: str = None) -> Optional[GeneratedReport]:
+        """
+        Get a specific report by ID with access control.
+        
+        Args:
+            report_id: The report ID
+            user_id: The requesting user's ID (for access control)
+            user_role: The requesting user's role
+            
+        Returns:
+            The report if found and authorized, None otherwise
+        """
+        if user_id and user_role:
+            is_authorized, error = self.authorize_access('report', report_id, user_id, user_role)
+            if not is_authorized:
+                return None
+        
+        return self.reports.get(report_id)
     
     def to_dict(self, obj) -> Dict:
         """Convert dataclass objects to dictionaries for JSON serialization"""
