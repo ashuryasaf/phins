@@ -5193,6 +5193,16 @@
       
       // Scroll to marketplace
       document.getElementById('medical-marketplace').scrollIntoView({ behavior: 'smooth' });
+    } catch (err) {
+      console.error('Error loading marketplace:', err);
+      grid.innerHTML = `
+        <div style="grid-column: 1/-1; text-align: center; padding: 60px; background: #fff3cd; border: 2px solid #ffc107; border-radius: 12px;">
+          <div style="font-size: 3rem; margin-bottom: 16px;">⚠️</div>
+          <h3 style="color: #856404; margin: 0 0 8px 0;">Unable to Load Products</h3>
+          <p style="color: #856404; margin: 0;">Please try again later or contact support.</p>
+        </div>
+      `;
+    }
     }
     
     function closeMarketplace() {
