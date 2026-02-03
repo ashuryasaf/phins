@@ -251,6 +251,114 @@ else:
     BILLING: Dict[str, Dict[str, Any]] = {}  # bill_id -> bill data (for metrics)
     print("✓ Using in-memory storage (demo data will be loaded at startup)")
 
+
+def attempt_database_recovery():
+    """
+    Attempt to reconnect to database and switch to database-backed storage.
+    Called when database was unavailable at startup but may be available now.
+    Returns True if database is now available and storage was switched.
+    """
+    global CUSTOMERS, POLICIES, CLAIMS, UNDERWRITING_APPLICATIONS, BILLING, database_enabled
+    
+    if not USE_DATABASE:
+        return False
+    
+    if database_enabled:
+        # Already using database
+        return True
+    
+    try:
+        from database import check_database_connection, init_database, reset_connection
+        from database.seeds import seed_default_users
+        
+        # Reset any stale connections first
+        try:
+            reset_connection()
+        except Exception:
+            pass
+        
+        # Try to connect
+        if check_database_connection(retry_on_failure=True):
+            print("[DB-RECOVERY] ✓ Database connection successful!")
+            
+            # Initialize schema and seed data
+            try:
+                init_database()
+                seed_default_users()
+                print("[DB-RECOVERY] ✓ Database initialized and seeded")
+            except Exception as e:
+                print(f"[DB-RECOVERY] Warning: Database init/seed: {e}")
+            
+            # Switch to database-backed storage
+            from database.data_access import (
+                CUSTOMERS as DB_CUSTOMERS_NEW,
+                POLICIES as DB_POLICIES_NEW,
+                CLAIMS as DB_CLAIMS_NEW,
+                UNDERWRITING_APPLICATIONS as DB_UNDERWRITING_NEW,
+                BILLING as DB_BILLING_NEW
+            )
+            
+            CUSTOMERS = DB_CUSTOMERS_NEW
+            POLICIES = DB_POLICIES_NEW
+            CLAIMS = DB_CLAIMS_NEW
+            UNDERWRITING_APPLICATIONS = DB_UNDERWRITING_NEW
+            BILLING = DB_BILLING_NEW
+            database_enabled = True
+            
+            print("[DB-RECOVERY] ✓ Switched to database-backed storage")
+            return True
+        else:
+            print("[DB-RECOVERY] ✗ Database connection check failed")
+            return False
+    except Exception as e:
+        print(f"[DB-RECOVERY] ✗ Recovery failed: {e}")
+        return False
+
+
+def get_customer_with_fallback(customer_id: str) -> dict:
+    """
+    Get customer data with aggressive fallback to database.
+    This ensures we can retrieve customer data even if in-memory storage is empty.
+    """
+    # Try in-memory/dict first
+    customer = CUSTOMERS.get(customer_id)
+    if customer:
+        return customer
+    
+    # If not found and database is available, try direct database lookup
+    if USE_DATABASE:
+        try:
+            from database.manager import DatabaseManager
+            from database import ensure_connection_healthy
+            
+            # Try to ensure database is healthy
+            if ensure_connection_healthy():
+                with DatabaseManager() as db:
+                    db_customer = db.customers.get_by_id(customer_id)
+                    if db_customer:
+                        customer = db_customer.to_dict()
+                        print(f"[CUSTOMER FALLBACK] Found customer {customer_id} via database")
+                        # Sync to in-memory for future lookups
+                        try:
+                            CUSTOMERS[customer_id] = customer
+                        except Exception:
+                            pass
+                        return customer
+                    
+                    # Try by email if customer_id looks like an email
+                    if '@' in customer_id:
+                        db_customer = db.customers.get_by_email(customer_id.lower())
+                        if db_customer:
+                            customer = db_customer.to_dict()
+                            print(f"[CUSTOMER FALLBACK] Found customer by email: {customer_id}")
+                            return customer
+        except Exception as e:
+            print(f"[CUSTOMER FALLBACK] Database lookup failed for {customer_id}: {e}")
+            # Try database recovery if it was unavailable
+            attempt_database_recovery()
+    
+    return None
+
 # Health wallets and medical purchases are always in-memory (not yet in DB schema)
 HEALTH_WALLETS: Dict[str, Dict[str, Any]] = {}  # customer_id -> {balance, transactions, monthly_deposit}
 MEDICAL_PURCHASES: Dict[str, Dict[str, Any]] = {}  # purchase_id -> purchase data
@@ -3569,6 +3677,13 @@ For claims or questions, please contact:
                 else:
                     db_status = 'disabled'
             
+            # Count available customer data
+            customers_count = 0
+            try:
+                customers_count = len(CUSTOMERS) if hasattr(CUSTOMERS, '__len__') else 0
+            except Exception:
+                pass
+            
             health_status = {
                 'status': 'healthy',
                 'service': 'phins-portal',
@@ -3576,8 +3691,16 @@ For claims or questions, please contact:
                 'database': db_status,
                 'database_enabled': database_enabled,
                 'database_connected': db_connected,
+                'storage_mode': 'database' if (USE_DATABASE and database_enabled) else 'in-memory',
+                'customers_available': customers_count,
                 'version': '2.0.0'
             }
+            
+            # If no customers and database is supposed to be used, suggest recovery
+            if customers_count == 0 and USE_DATABASE and not database_enabled:
+                health_status['recovery_recommended'] = True
+                health_status['recovery_url'] = '/api/diagnostics/db-recovery'
+            
             self.wfile.write(json.dumps(health_status).encode('utf-8'))
             return
         
@@ -5040,6 +5163,56 @@ For claims or questions, please contact:
                 result['reconnection_success'] = False
                 result['error'] = str(e)[:500]
                 print(f"[DB-RECONNECT] ✗ Reconnection failed: {e}")
+                self._set_json_headers(500)
+            
+            self.wfile.write(json.dumps(result, indent=2).encode('utf-8'))
+            return
+        
+        # Diagnostic endpoint to attempt full database recovery and storage switch
+        # This is more aggressive than db-reconnect - it will switch storage mode
+        if path == '/api/diagnostics/db-recovery':
+            result = {
+                'previous_status': {
+                    'database_enabled': database_enabled,
+                    'use_database': USE_DATABASE,
+                    'storage_mode': 'database' if database_enabled else 'in-memory',
+                    'customers_count': len(CUSTOMERS) if hasattr(CUSTOMERS, '__len__') else 'unknown'
+                },
+                'recovery_attempted': True,
+                'recovery_success': False,
+                'error': None,
+                'timestamp': datetime.now().isoformat()
+            }
+            
+            if not USE_DATABASE:
+                result['error'] = 'Database mode is disabled (USE_DATABASE=false)'
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps(result).encode('utf-8'))
+                return
+            
+            try:
+                # Attempt full database recovery (including storage switch)
+                recovery_success = attempt_database_recovery()
+                result['recovery_success'] = recovery_success
+                
+                result['current_status'] = {
+                    'database_enabled': database_enabled,
+                    'use_database': USE_DATABASE,
+                    'storage_mode': 'database' if database_enabled else 'in-memory',
+                    'customers_count': len(CUSTOMERS) if hasattr(CUSTOMERS, '__len__') else 'unknown'
+                }
+                
+                if recovery_success:
+                    result['message'] = 'Database recovery successful - now using database storage'
+                    self._set_json_headers(200)
+                else:
+                    result['message'] = 'Database recovery failed - still using in-memory storage'
+                    self._set_json_headers(503)
+                    
+            except Exception as e:
+                result['recovery_success'] = False
+                result['error'] = str(e)[:500]
+                print(f"[DB-RECOVERY API] ✗ Recovery failed: {e}")
                 self._set_json_headers(500)
             
             self.wfile.write(json.dumps(result, indent=2).encode('utf-8'))
@@ -7077,32 +7250,8 @@ For claims or questions, please contact:
                         self.wfile.write(json.dumps({'error': 'Access denied - you can only access your own customer data'}).encode('utf-8'))
                         return
                     
-                customer = CUSTOMERS.get(requested_customer_id)
-                
-                # DATABASE FALLBACK: If customer not found in CUSTOMERS dict, try database directly
-                # This handles cases where customer exists in DB but dict wasn't synced
-                if not customer and USE_DATABASE and database_enabled:
-                    try:
-                        from database.manager import DatabaseManager
-                        with DatabaseManager() as db:
-                            db_customer = db.customers.get_by_id(requested_customer_id)
-                            if db_customer:
-                                customer = db_customer.to_dict()
-                                print(f"[CUSTOMER API] Found customer {requested_customer_id} via DB fallback")
-                                # Sync to CUSTOMERS dict for future lookups
-                                try:
-                                    CUSTOMERS[requested_customer_id] = customer
-                                except Exception:
-                                    pass  # Non-critical sync
-                            else:
-                                # Try finding by email as last resort (if customer_id looks like email)
-                                if '@' in requested_customer_id:
-                                    db_customer = db.customers.get_by_email(requested_customer_id.lower())
-                                    if db_customer:
-                                        customer = db_customer.to_dict()
-                                        print(f"[CUSTOMER API] Found customer by email {requested_customer_id}")
-                    except Exception as e:
-                        print(f"[CUSTOMER API] DB fallback error for {requested_customer_id}: {e}")
+                # Use enhanced fallback function for robust customer retrieval
+                customer = get_customer_with_fallback(requested_customer_id)
                 
                 if customer:
                     self._set_json_headers()
@@ -7117,7 +7266,7 @@ For claims or questions, please contact:
                 if role == 'customer':
                     # For customers, only return their own data
                     if session_customer_id:
-                        customer = CUSTOMERS.get(session_customer_id)
+                        customer = get_customer_with_fallback(session_customer_id)
                         self._set_json_headers()
                         self.wfile.write(json.dumps([customer] if customer else []).encode('utf-8'))
                     else:
@@ -7161,10 +7310,18 @@ For claims or questions, please contact:
                 self.wfile.write(json.dumps({'error': 'Forbidden'}).encode('utf-8'))
                 return
 
-            customer = CUSTOMERS.get(customer_id)
+            customer = get_customer_with_fallback(customer_id)
             if not customer:
-                self._set_json_headers(404)
-                self.wfile.write(json.dumps({'error': 'Customer not found'}).encode('utf-8'))
+                # If database is available but customer not found, suggest recovery
+                if USE_DATABASE and not database_enabled:
+                    self._set_json_headers(503)
+                    self.wfile.write(json.dumps({
+                        'error': 'Customer data unavailable - database not connected',
+                        'recovery_url': '/api/diagnostics/db-recovery'
+                    }).encode('utf-8'))
+                else:
+                    self._set_json_headers(404)
+                    self.wfile.write(json.dumps({'error': 'Customer not found'}).encode('utf-8'))
                 return
 
             policies = [p for p in POLICIES.values() if p.get('customer_id') == customer_id]
