@@ -1,0 +1,1038 @@
+"""
+AI Risk & Reports Analysis Service
+===================================
+Provides AI-powered analysis of uploaded documents (CSV/XLS/ZIP) to generate
+intelligent reports with recommendations for insurance, investment, and risk assessment.
+
+Features:
+- Multi-language support (including Hebrew, Arabic, etc.)
+- Auto-detection of data types (insurance, investment, risk, savings)
+- Pattern recognition and anomaly detection
+- Risk scoring and factor extraction
+- Automated report generation with charts
+- Personalized recommendations
+
+Author: PHINS Platform
+"""
+
+import csv
+import io
+import json
+import re
+import hashlib
+import zipfile
+from datetime import datetime
+from typing import Dict, List, Any, Optional, Tuple
+from enum import Enum
+from dataclasses import dataclass, field, asdict
+import random
+import base64
+
+
+class DataType(Enum):
+    INSURANCE = "insurance"
+    INVESTMENT = "investment"
+    RISK = "risk"
+    SAVINGS = "savings"
+    MIXED = "mixed"
+    UNKNOWN = "unknown"
+
+
+class ChartType(Enum):
+    PIE = "pie"
+    BAR = "bar"
+    LINE = "line"
+    GAUGE = "gauge"
+    SCATTER = "scatter"
+    DOUGHNUT = "doughnut"
+
+
+class Priority(Enum):
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+    URGENT = "urgent"
+
+
+class Severity(Enum):
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+    CRITICAL = "critical"
+
+
+@dataclass
+class ColumnInfo:
+    name: str
+    data_type: str
+    sample_values: List[Any]
+    semantic_type: str = ""
+    is_key_field: bool = False
+
+
+@dataclass
+class Factor:
+    name: str
+    value: Any
+    importance: float
+    category: str
+
+
+@dataclass
+class Pattern:
+    type: str
+    description: str
+    affected_rows: List[int]
+    significance: float
+
+
+@dataclass
+class Anomaly:
+    type: str
+    severity: Severity
+    description: str
+    affected_data: Dict
+    recommendation: str
+
+
+@dataclass
+class ChartConfig:
+    type: ChartType
+    title: str
+    data: Dict
+    options: Dict = field(default_factory=dict)
+
+
+@dataclass
+class ReportSection:
+    title: str
+    content: str
+    data_table: Optional[Dict] = None
+    order: int = 0
+
+
+@dataclass
+class Recommendation:
+    id: str
+    category: str
+    priority: Priority
+    title: str
+    description: str
+    action_items: List[str]
+    expected_impact: str
+
+
+@dataclass
+class AnalysisResult:
+    id: str
+    document_id: str
+    language: str
+    language_name: str
+    data_classification: DataType
+    extracted_factors: List[Factor]
+    patterns_found: List[Pattern]
+    anomalies: List[Anomaly]
+    risk_score: float
+    confidence: float
+    processing_time_ms: int
+    summary: str
+    key_metrics: Dict[str, Any]
+
+
+@dataclass
+class GeneratedReport:
+    id: str
+    analysis_id: str
+    report_type: str
+    language: str
+    title: str
+    sections: List[ReportSection]
+    charts: List[ChartConfig]
+    recommendations: List[Recommendation]
+    generated_at: str
+    metadata: Dict[str, Any]
+
+
+class LanguageDetector:
+    """Detects language from text content"""
+    
+    # Language patterns - character ranges and common words
+    LANGUAGE_PATTERNS = {
+        'hebrew': {
+            'chars': r'[\u0590-\u05FF]',  # Hebrew Unicode range
+            'words': ['של', 'את', 'על', 'עם', 'לא', 'זה', 'או', 'כי', 'אם', 'גם'],
+            'name': 'עברית (Hebrew)'
+        },
+        'arabic': {
+            'chars': r'[\u0600-\u06FF]',  # Arabic Unicode range
+            'words': ['من', 'في', 'على', 'إلى', 'أن', 'هذا', 'التي', 'مع'],
+            'name': 'العربية (Arabic)'
+        },
+        'english': {
+            'chars': r'[a-zA-Z]',
+            'words': ['the', 'is', 'and', 'of', 'to', 'in', 'for', 'with', 'that', 'this'],
+            'name': 'English'
+        },
+        'spanish': {
+            'chars': r'[a-zA-ZáéíóúñüÁÉÍÓÚÑÜ]',
+            'words': ['el', 'la', 'de', 'que', 'en', 'los', 'del', 'las', 'por', 'con'],
+            'name': 'Español (Spanish)'
+        },
+        'french': {
+            'chars': r'[a-zA-ZàâäéèêëïîôùûüÿçœæÀÂÄÉÈÊËÏÎÔÙÛÜŸÇŒÆ]',
+            'words': ['le', 'la', 'de', 'et', 'est', 'en', 'que', 'les', 'des', 'du'],
+            'name': 'Français (French)'
+        },
+        'german': {
+            'chars': r'[a-zA-ZäöüßÄÖÜ]',
+            'words': ['der', 'die', 'und', 'ist', 'von', 'den', 'das', 'mit', 'für', 'auf'],
+            'name': 'Deutsch (German)'
+        },
+        'russian': {
+            'chars': r'[\u0400-\u04FF]',  # Cyrillic Unicode range
+            'words': ['и', 'в', 'на', 'не', 'что', 'он', 'как', 'это', 'по', 'но'],
+            'name': 'Русский (Russian)'
+        },
+        'chinese': {
+            'chars': r'[\u4e00-\u9fff]',  # CJK Unified Ideographs
+            'words': [],  # Chinese doesn't use word boundaries the same way
+            'name': '中文 (Chinese)'
+        },
+        'japanese': {
+            'chars': r'[\u3040-\u309F\u30A0-\u30FF]',  # Hiragana and Katakana
+            'words': [],
+            'name': '日本語 (Japanese)'
+        }
+    }
+    
+    @classmethod
+    def detect(cls, text: str) -> Tuple[str, str, float]:
+        """
+        Detect the primary language of text.
+        Returns: (language_code, language_name, confidence)
+        """
+        if not text or len(text.strip()) < 5:
+            return 'english', 'English', 0.5
+        
+        scores = {}
+        text_lower = text.lower()
+        
+        for lang, patterns in cls.LANGUAGE_PATTERNS.items():
+            score = 0
+            
+            # Check character patterns
+            char_matches = len(re.findall(patterns['chars'], text))
+            char_ratio = char_matches / max(len(text), 1)
+            score += char_ratio * 60
+            
+            # Check common words
+            if patterns['words']:
+                word_matches = sum(1 for word in patterns['words'] if word in text_lower)
+                word_score = (word_matches / len(patterns['words'])) * 40
+                score += word_score
+            
+            scores[lang] = score
+        
+        # Get the highest scoring language
+        best_lang = max(scores, key=scores.get)
+        confidence = min(scores[best_lang] / 100, 1.0)
+        
+        # Default to English if confidence is too low
+        if confidence < 0.2:
+            return 'english', 'English', 0.5
+        
+        return best_lang, cls.LANGUAGE_PATTERNS[best_lang]['name'], confidence
+
+
+class DataClassifier:
+    """Classifies the type of data based on column names and content"""
+    
+    INSURANCE_KEYWORDS = [
+        'policy', 'premium', 'coverage', 'claim', 'insured', 'beneficiary',
+        'deductible', 'underwriting', 'risk', 'פוליסה', 'ביטוח', 'כיסוי',
+        'תביעה', 'פרמיה', 'מבוטח', 'סכום', 'השתתפות עצמית'
+    ]
+    
+    INVESTMENT_KEYWORDS = [
+        'portfolio', 'stock', 'bond', 'fund', 'yield', 'return', 'asset',
+        'equity', 'dividend', 'market', 'תיק', 'השקעה', 'מניה', 'אגרת חוב',
+        'קרן', 'תשואה', 'נכס', 'דיבידנד'
+    ]
+    
+    RISK_KEYWORDS = [
+        'risk', 'score', 'assessment', 'rating', 'exposure', 'probability',
+        'impact', 'mitigation', 'סיכון', 'ציון', 'הערכה', 'דירוג', 'חשיפה'
+    ]
+    
+    SAVINGS_KEYWORDS = [
+        'savings', 'balance', 'deposit', 'withdrawal', 'interest', 'account',
+        'חיסכון', 'יתרה', 'הפקדה', 'משיכה', 'ריבית', 'חשבון'
+    ]
+    
+    @classmethod
+    def classify(cls, columns: List[str], sample_data: List[Dict]) -> Tuple[DataType, float]:
+        """
+        Classify the data type based on columns and content.
+        Returns: (data_type, confidence)
+        """
+        # Combine all text for analysis
+        all_text = ' '.join(columns).lower()
+        if sample_data:
+            for row in sample_data[:10]:
+                all_text += ' ' + ' '.join(str(v).lower() for v in row.values() if v)
+        
+        scores = {
+            DataType.INSURANCE: sum(1 for kw in cls.INSURANCE_KEYWORDS if kw.lower() in all_text),
+            DataType.INVESTMENT: sum(1 for kw in cls.INVESTMENT_KEYWORDS if kw.lower() in all_text),
+            DataType.RISK: sum(1 for kw in cls.RISK_KEYWORDS if kw.lower() in all_text),
+            DataType.SAVINGS: sum(1 for kw in cls.SAVINGS_KEYWORDS if kw.lower() in all_text),
+        }
+        
+        total_score = sum(scores.values())
+        if total_score == 0:
+            return DataType.UNKNOWN, 0.3
+        
+        best_type = max(scores, key=scores.get)
+        confidence = scores[best_type] / max(total_score, 1)
+        
+        # Check for mixed data
+        high_scores = [t for t, s in scores.items() if s > 0 and s >= scores[best_type] * 0.5]
+        if len(high_scores) > 1:
+            return DataType.MIXED, confidence * 0.8
+        
+        return best_type, min(confidence + 0.3, 1.0)
+
+
+class AIRiskReportsService:
+    """Main service for AI-powered risk and reports analysis"""
+    
+    def __init__(self):
+        self.documents: Dict[str, Dict] = {}
+        self.analyses: Dict[str, AnalysisResult] = {}
+        self.reports: Dict[str, GeneratedReport] = {}
+    
+    def parse_file(self, filename: str, file_content: bytes, file_type: str) -> Dict[str, Any]:
+        """
+        Parse uploaded file and extract structured data.
+        Supports CSV, XLS (as CSV), and ZIP containing CSV files.
+        """
+        doc_id = f"DOC-{datetime.now().strftime('%Y%m%d%H%M%S')}-{random.randint(1000, 9999)}"
+        
+        result = {
+            'document_id': doc_id,
+            'filename': filename,
+            'file_type': file_type,
+            'file_size': len(file_content),
+            'status': 'processing',
+            'parsed_data': None,
+            'error': None
+        }
+        
+        try:
+            # Detect encoding
+            encoding = self._detect_encoding(file_content)
+            
+            if file_type.lower() == 'zip':
+                # Handle ZIP file
+                parsed = self._parse_zip(file_content)
+            elif file_type.lower() in ['csv', 'xls', 'xlsx']:
+                # Parse as CSV (XLS files should be converted to CSV format)
+                text_content = file_content.decode(encoding, errors='replace')
+                parsed = self._parse_csv(text_content)
+            else:
+                # Try to parse as CSV
+                text_content = file_content.decode(encoding, errors='replace')
+                parsed = self._parse_csv(text_content)
+            
+            result['encoding'] = encoding
+            result['parsed_data'] = parsed
+            result['status'] = 'completed'
+            result['row_count'] = len(parsed.get('rows', []))
+            result['column_count'] = len(parsed.get('columns', []))
+            
+            # Store document
+            self.documents[doc_id] = result
+            
+        except Exception as e:
+            result['status'] = 'failed'
+            result['error'] = str(e)
+        
+        return result
+    
+    def _detect_encoding(self, content: bytes) -> str:
+        """Detect file encoding"""
+        # Check for BOM markers
+        if content.startswith(b'\xef\xbb\xbf'):
+            return 'utf-8-sig'
+        if content.startswith(b'\xff\xfe'):
+            return 'utf-16-le'
+        if content.startswith(b'\xfe\xff'):
+            return 'utf-16-be'
+        
+        # Try common encodings
+        for encoding in ['utf-8', 'windows-1255', 'iso-8859-8', 'windows-1252', 'latin-1']:
+            try:
+                content.decode(encoding)
+                return encoding
+            except (UnicodeDecodeError, LookupError):
+                continue
+        
+        return 'utf-8'
+    
+    def _parse_csv(self, text_content: str) -> Dict[str, Any]:
+        """Parse CSV content"""
+        # Try different delimiters
+        for delimiter in [',', ';', '\t', '|']:
+            try:
+                reader = csv.DictReader(io.StringIO(text_content), delimiter=delimiter)
+                rows = list(reader)
+                if rows and len(rows[0]) > 1:
+                    columns = list(rows[0].keys()) if rows else []
+                    return {
+                        'columns': columns,
+                        'rows': rows,
+                        'delimiter': delimiter
+                    }
+            except Exception:
+                continue
+        
+        # Fallback: simple line parsing
+        lines = text_content.strip().split('\n')
+        if lines:
+            columns = lines[0].split(',')
+            rows = []
+            for line in lines[1:]:
+                values = line.split(',')
+                rows.append(dict(zip(columns, values)))
+            return {'columns': columns, 'rows': rows, 'delimiter': ','}
+        
+        return {'columns': [], 'rows': [], 'delimiter': ','}
+    
+    def _parse_zip(self, content: bytes) -> Dict[str, Any]:
+        """Parse ZIP file containing CSV files"""
+        combined_data = {'columns': [], 'rows': [], 'files': []}
+        
+        with zipfile.ZipFile(io.BytesIO(content), 'r') as zf:
+            for name in zf.namelist():
+                if name.lower().endswith('.csv'):
+                    with zf.open(name) as f:
+                        file_content = f.read()
+                        encoding = self._detect_encoding(file_content)
+                        text_content = file_content.decode(encoding, errors='replace')
+                        parsed = self._parse_csv(text_content)
+                        
+                        combined_data['files'].append({
+                            'name': name,
+                            'columns': parsed['columns'],
+                            'row_count': len(parsed['rows'])
+                        })
+                        
+                        # Merge columns and rows
+                        for col in parsed['columns']:
+                            if col not in combined_data['columns']:
+                                combined_data['columns'].append(col)
+                        combined_data['rows'].extend(parsed['rows'])
+        
+        return combined_data
+    
+    def analyze(self, document_id: str) -> AnalysisResult:
+        """
+        Perform AI analysis on parsed document.
+        Returns comprehensive analysis with factors, patterns, and risk assessment.
+        """
+        start_time = datetime.now()
+        
+        if document_id not in self.documents:
+            raise ValueError(f"Document {document_id} not found")
+        
+        doc = self.documents[document_id]
+        parsed = doc.get('parsed_data', {})
+        columns = parsed.get('columns', [])
+        rows = parsed.get('rows', [])
+        
+        # Combine all text for language detection
+        all_text = ' '.join(columns)
+        for row in rows[:20]:  # Sample first 20 rows
+            all_text += ' ' + ' '.join(str(v) for v in row.values() if v)
+        
+        # Detect language
+        lang_code, lang_name, lang_confidence = LanguageDetector.detect(all_text)
+        
+        # Classify data type
+        data_type, type_confidence = DataClassifier.classify(columns, rows)
+        
+        # Extract factors
+        factors = self._extract_factors(columns, rows, data_type)
+        
+        # Find patterns
+        patterns = self._find_patterns(rows, data_type)
+        
+        # Detect anomalies
+        anomalies = self._detect_anomalies(rows, data_type)
+        
+        # Calculate risk score
+        risk_score = self._calculate_risk_score(factors, patterns, anomalies)
+        
+        # Generate summary
+        summary = self._generate_summary(lang_code, data_type, len(rows), factors, risk_score)
+        
+        # Extract key metrics
+        key_metrics = self._extract_key_metrics(rows, columns, data_type)
+        
+        processing_time = int((datetime.now() - start_time).total_seconds() * 1000)
+        
+        analysis_id = f"ANA-{datetime.now().strftime('%Y%m%d%H%M%S')}-{random.randint(1000, 9999)}"
+        
+        result = AnalysisResult(
+            id=analysis_id,
+            document_id=document_id,
+            language=lang_code,
+            language_name=lang_name,
+            data_classification=data_type,
+            extracted_factors=factors,
+            patterns_found=patterns,
+            anomalies=anomalies,
+            risk_score=risk_score,
+            confidence=min((lang_confidence + type_confidence) / 2, 1.0),
+            processing_time_ms=processing_time,
+            summary=summary,
+            key_metrics=key_metrics
+        )
+        
+        self.analyses[analysis_id] = result
+        return result
+    
+    def _extract_factors(self, columns: List[str], rows: List[Dict], data_type: DataType) -> List[Factor]:
+        """Extract key factors from the data"""
+        factors = []
+        
+        # Identify numeric columns
+        numeric_cols = []
+        for col in columns:
+            if rows:
+                sample = rows[0].get(col, '')
+                try:
+                    float(str(sample).replace(',', '').replace('₪', '').replace('$', '').replace('€', ''))
+                    numeric_cols.append(col)
+                except (ValueError, TypeError):
+                    pass
+        
+        # Calculate statistics for numeric columns
+        for col in numeric_cols[:5]:  # Top 5 numeric columns
+            values = []
+            for row in rows:
+                try:
+                    val = float(str(row.get(col, 0)).replace(',', '').replace('₪', '').replace('$', '').replace('€', ''))
+                    values.append(val)
+                except (ValueError, TypeError):
+                    continue
+            
+            if values:
+                avg = sum(values) / len(values)
+                total = sum(values)
+                factors.append(Factor(
+                    name=col,
+                    value={'average': round(avg, 2), 'total': round(total, 2), 'count': len(values)},
+                    importance=0.7 if data_type != DataType.UNKNOWN else 0.5,
+                    category='numeric_metric'
+                ))
+        
+        # Data type specific factors
+        if data_type == DataType.INSURANCE:
+            factors.append(Factor(
+                name='Coverage Analysis',
+                value={'records': len(rows), 'type': 'insurance'},
+                importance=0.9,
+                category='insurance'
+            ))
+        elif data_type == DataType.INVESTMENT:
+            factors.append(Factor(
+                name='Portfolio Analysis',
+                value={'records': len(rows), 'type': 'investment'},
+                importance=0.9,
+                category='investment'
+            ))
+        elif data_type == DataType.RISK:
+            factors.append(Factor(
+                name='Risk Assessment',
+                value={'records': len(rows), 'type': 'risk'},
+                importance=0.95,
+                category='risk'
+            ))
+        
+        return factors
+    
+    def _find_patterns(self, rows: List[Dict], data_type: DataType) -> List[Pattern]:
+        """Find patterns in the data"""
+        patterns = []
+        
+        if len(rows) < 2:
+            return patterns
+        
+        # Look for duplicate values
+        for key in list(rows[0].keys())[:5]:
+            values = [row.get(key) for row in rows if row.get(key)]
+            unique_values = set(values)
+            if len(values) > len(unique_values):
+                dup_count = len(values) - len(unique_values)
+                patterns.append(Pattern(
+                    type='duplicate_values',
+                    description=f'Found {dup_count} duplicate values in column "{key}"',
+                    affected_rows=[i for i, v in enumerate(values) if values.count(v) > 1],
+                    significance=0.6
+                ))
+        
+        # Look for empty values
+        empty_counts = {}
+        for key in rows[0].keys():
+            empty_count = sum(1 for row in rows if not row.get(key))
+            if empty_count > 0:
+                empty_counts[key] = empty_count
+        
+        if empty_counts:
+            max_empty = max(empty_counts.values())
+            if max_empty > len(rows) * 0.1:  # More than 10% empty
+                patterns.append(Pattern(
+                    type='missing_data',
+                    description=f'Found columns with missing data: {list(empty_counts.keys())}',
+                    affected_rows=list(range(len(rows))),
+                    significance=0.7
+                ))
+        
+        return patterns
+    
+    def _detect_anomalies(self, rows: List[Dict], data_type: DataType) -> List[Anomaly]:
+        """Detect anomalies in the data"""
+        anomalies = []
+        
+        if len(rows) < 3:
+            return anomalies
+        
+        # Look for outliers in numeric columns
+        for key in list(rows[0].keys())[:5]:
+            values = []
+            for row in rows:
+                try:
+                    val = float(str(row.get(key, 0)).replace(',', '').replace('₪', '').replace('$', '').replace('€', ''))
+                    values.append(val)
+                except (ValueError, TypeError):
+                    continue
+            
+            if len(values) >= 3:
+                avg = sum(values) / len(values)
+                std_dev = (sum((x - avg) ** 2 for x in values) / len(values)) ** 0.5
+                
+                if std_dev > 0:
+                    outliers = [v for v in values if abs(v - avg) > 2 * std_dev]
+                    if outliers:
+                        anomalies.append(Anomaly(
+                            type='outlier',
+                            severity=Severity.MEDIUM if len(outliers) < 3 else Severity.HIGH,
+                            description=f'Found {len(outliers)} outlier values in column "{key}"',
+                            affected_data={'column': key, 'outliers': outliers[:5]},
+                            recommendation=f'Review the extreme values in {key} for accuracy'
+                        ))
+        
+        return anomalies
+    
+    def _calculate_risk_score(self, factors: List[Factor], patterns: List[Pattern], anomalies: List[Anomaly]) -> float:
+        """Calculate overall risk score (0-100)"""
+        base_score = 50  # Start at medium risk
+        
+        # Adjust based on anomalies
+        for anomaly in anomalies:
+            if anomaly.severity == Severity.CRITICAL:
+                base_score += 20
+            elif anomaly.severity == Severity.HIGH:
+                base_score += 10
+            elif anomaly.severity == Severity.MEDIUM:
+                base_score += 5
+            else:
+                base_score += 2
+        
+        # Adjust based on patterns
+        for pattern in patterns:
+            if pattern.type == 'missing_data':
+                base_score += pattern.significance * 15
+            elif pattern.type == 'duplicate_values':
+                base_score += pattern.significance * 5
+        
+        # Adjust based on factors
+        for factor in factors:
+            if factor.category == 'risk':
+                base_score += factor.importance * 10
+        
+        return min(max(base_score, 0), 100)
+    
+    def _generate_summary(self, lang: str, data_type: DataType, row_count: int, 
+                          factors: List[Factor], risk_score: float) -> str:
+        """Generate a summary of the analysis"""
+        summaries = {
+            'hebrew': {
+                'insurance': f'ניתוח נתוני ביטוח: {row_count} רשומות נותחו. ציון סיכון: {risk_score:.1f}/100.',
+                'investment': f'ניתוח תיק השקעות: {row_count} רשומות נותחו. ציון סיכון: {risk_score:.1f}/100.',
+                'risk': f'הערכת סיכונים: {row_count} רשומות נותחו. ציון סיכון כולל: {risk_score:.1f}/100.',
+                'savings': f'ניתוח חיסכון: {row_count} רשומות נותחו. ציון סיכון: {risk_score:.1f}/100.',
+                'default': f'ניתוח נתונים: {row_count} רשומות נותחו. ציון סיכון: {risk_score:.1f}/100.'
+            },
+            'english': {
+                'insurance': f'Insurance data analysis: {row_count} records analyzed. Risk score: {risk_score:.1f}/100.',
+                'investment': f'Investment portfolio analysis: {row_count} records analyzed. Risk score: {risk_score:.1f}/100.',
+                'risk': f'Risk assessment analysis: {row_count} records analyzed. Overall risk score: {risk_score:.1f}/100.',
+                'savings': f'Savings analysis: {row_count} records analyzed. Risk score: {risk_score:.1f}/100.',
+                'default': f'Data analysis: {row_count} records analyzed. Risk score: {risk_score:.1f}/100.'
+            }
+        }
+        
+        lang_summaries = summaries.get(lang, summaries['english'])
+        return lang_summaries.get(data_type.value, lang_summaries['default'])
+    
+    def _extract_key_metrics(self, rows: List[Dict], columns: List[str], data_type: DataType) -> Dict[str, Any]:
+        """Extract key metrics from the data"""
+        metrics = {
+            'total_records': len(rows),
+            'columns_count': len(columns),
+            'data_type': data_type.value
+        }
+        
+        # Calculate totals for numeric columns
+        for col in columns[:10]:
+            values = []
+            for row in rows:
+                try:
+                    val = float(str(row.get(col, 0)).replace(',', '').replace('₪', '').replace('$', '').replace('€', ''))
+                    values.append(val)
+                except (ValueError, TypeError):
+                    continue
+            
+            if values:
+                metrics[f'{col}_total'] = round(sum(values), 2)
+                metrics[f'{col}_avg'] = round(sum(values) / len(values), 2)
+                metrics[f'{col}_min'] = round(min(values), 2)
+                metrics[f'{col}_max'] = round(max(values), 2)
+        
+        return metrics
+    
+    def generate_report(self, analysis_id: str, language: str = None) -> GeneratedReport:
+        """Generate a comprehensive report from analysis results"""
+        if analysis_id not in self.analyses:
+            raise ValueError(f"Analysis {analysis_id} not found")
+        
+        analysis = self.analyses[analysis_id]
+        lang = language or analysis.language
+        
+        report_id = f"RPT-{datetime.now().strftime('%Y%m%d%H%M%S')}-{random.randint(1000, 9999)}"
+        
+        # Generate sections based on data type
+        sections = self._generate_sections(analysis, lang)
+        
+        # Generate charts
+        charts = self._generate_charts(analysis)
+        
+        # Generate recommendations
+        recommendations = self._generate_recommendations(analysis, lang)
+        
+        # Determine report title
+        titles = {
+            'hebrew': {
+                'insurance': 'דו״ח ניתוח ביטוח',
+                'investment': 'דו״ח ניתוח השקעות',
+                'risk': 'דו״ח הערכת סיכונים',
+                'savings': 'דו״ח ניתוח חיסכון',
+                'default': 'דו״ח ניתוח נתונים'
+            },
+            'english': {
+                'insurance': 'Insurance Analysis Report',
+                'investment': 'Investment Analysis Report',
+                'risk': 'Risk Assessment Report',
+                'savings': 'Savings Analysis Report',
+                'default': 'Data Analysis Report'
+            }
+        }
+        
+        lang_titles = titles.get(lang, titles['english'])
+        title = lang_titles.get(analysis.data_classification.value, lang_titles['default'])
+        
+        report = GeneratedReport(
+            id=report_id,
+            analysis_id=analysis_id,
+            report_type=analysis.data_classification.value,
+            language=lang,
+            title=title,
+            sections=sections,
+            charts=charts,
+            recommendations=recommendations,
+            generated_at=datetime.now().isoformat(),
+            metadata={
+                'document_id': analysis.document_id,
+                'risk_score': analysis.risk_score,
+                'confidence': analysis.confidence,
+                'processing_time_ms': analysis.processing_time_ms
+            }
+        )
+        
+        self.reports[report_id] = report
+        return report
+    
+    def _generate_sections(self, analysis: AnalysisResult, lang: str) -> List[ReportSection]:
+        """Generate report sections"""
+        sections = []
+        
+        # Executive Summary
+        sections.append(ReportSection(
+            title='תקציר מנהלים' if lang == 'hebrew' else 'Executive Summary',
+            content=analysis.summary,
+            order=1
+        ))
+        
+        # Key Metrics
+        metrics_content = '\n'.join([f"• {k}: {v}" for k, v in list(analysis.key_metrics.items())[:10]])
+        sections.append(ReportSection(
+            title='מדדים עיקריים' if lang == 'hebrew' else 'Key Metrics',
+            content=metrics_content,
+            data_table=analysis.key_metrics,
+            order=2
+        ))
+        
+        # Factors Analysis
+        if analysis.extracted_factors:
+            factors_content = '\n'.join([
+                f"• {f.name}: {f.value} (חשיבות: {f.importance:.0%})" if lang == 'hebrew' 
+                else f"• {f.name}: {f.value} (Importance: {f.importance:.0%})"
+                for f in analysis.extracted_factors
+            ])
+            sections.append(ReportSection(
+                title='ניתוח גורמים' if lang == 'hebrew' else 'Factors Analysis',
+                content=factors_content,
+                order=3
+            ))
+        
+        # Patterns Found
+        if analysis.patterns_found:
+            patterns_content = '\n'.join([
+                f"• {p.description} (משמעות: {p.significance:.0%})" if lang == 'hebrew'
+                else f"• {p.description} (Significance: {p.significance:.0%})"
+                for p in analysis.patterns_found
+            ])
+            sections.append(ReportSection(
+                title='דפוסים שזוהו' if lang == 'hebrew' else 'Patterns Found',
+                content=patterns_content,
+                order=4
+            ))
+        
+        # Anomalies
+        if analysis.anomalies:
+            anomalies_content = '\n'.join([
+                f"• [{a.severity.value.upper()}] {a.description}"
+                for a in analysis.anomalies
+            ])
+            sections.append(ReportSection(
+                title='חריגות וסיכונים' if lang == 'hebrew' else 'Anomalies & Risks',
+                content=anomalies_content,
+                order=5
+            ))
+        
+        # Risk Assessment
+        risk_level = 'נמוך' if analysis.risk_score < 30 else ('בינוני' if analysis.risk_score < 60 else 'גבוה')
+        risk_level_en = 'Low' if analysis.risk_score < 30 else ('Medium' if analysis.risk_score < 60 else 'High')
+        
+        sections.append(ReportSection(
+            title='הערכת סיכון כוללת' if lang == 'hebrew' else 'Overall Risk Assessment',
+            content=f"ציון סיכון: {analysis.risk_score:.1f}/100 - רמה: {risk_level}" if lang == 'hebrew'
+                    else f"Risk Score: {analysis.risk_score:.1f}/100 - Level: {risk_level_en}",
+            order=6
+        ))
+        
+        return sections
+    
+    def _generate_charts(self, analysis: AnalysisResult) -> List[ChartConfig]:
+        """Generate chart configurations"""
+        charts = []
+        
+        # Risk Score Gauge
+        charts.append(ChartConfig(
+            type=ChartType.GAUGE,
+            title='Risk Score',
+            data={
+                'value': analysis.risk_score,
+                'min': 0,
+                'max': 100,
+                'thresholds': [30, 60, 80]
+            },
+            options={'colors': ['#4caf50', '#ffeb3b', '#ff9800', '#f44336']}
+        ))
+        
+        # Factors Importance Bar Chart
+        if analysis.extracted_factors:
+            charts.append(ChartConfig(
+                type=ChartType.BAR,
+                title='Factors Importance',
+                data={
+                    'labels': [f.name for f in analysis.extracted_factors[:8]],
+                    'values': [f.importance * 100 for f in analysis.extracted_factors[:8]]
+                },
+                options={'horizontal': True}
+            ))
+        
+        # Data Distribution Pie Chart
+        if analysis.key_metrics:
+            numeric_metrics = {k: v for k, v in analysis.key_metrics.items() 
+                             if isinstance(v, (int, float)) and k.endswith('_total')}
+            if numeric_metrics:
+                charts.append(ChartConfig(
+                    type=ChartType.PIE,
+                    title='Data Distribution',
+                    data={
+                        'labels': list(numeric_metrics.keys())[:6],
+                        'values': list(numeric_metrics.values())[:6]
+                    }
+                ))
+        
+        # Anomalies by Severity
+        if analysis.anomalies:
+            severity_counts = {}
+            for a in analysis.anomalies:
+                severity_counts[a.severity.value] = severity_counts.get(a.severity.value, 0) + 1
+            
+            charts.append(ChartConfig(
+                type=ChartType.DOUGHNUT,
+                title='Anomalies by Severity',
+                data={
+                    'labels': list(severity_counts.keys()),
+                    'values': list(severity_counts.values())
+                },
+                options={'colors': ['#4caf50', '#ffeb3b', '#ff9800', '#f44336']}
+            ))
+        
+        return charts
+    
+    def _generate_recommendations(self, analysis: AnalysisResult, lang: str) -> List[Recommendation]:
+        """Generate actionable recommendations"""
+        recommendations = []
+        rec_id = 1
+        
+        # High risk score recommendation
+        if analysis.risk_score > 70:
+            recommendations.append(Recommendation(
+                id=f"REC-{rec_id}",
+                category='risk',
+                priority=Priority.URGENT,
+                title='סקירת סיכונים דחופה' if lang == 'hebrew' else 'Urgent Risk Review Required',
+                description='ציון הסיכון הכולל גבוה ומצריך התייחסות מיידית' if lang == 'hebrew' 
+                           else 'The overall risk score is high and requires immediate attention',
+                action_items=[
+                    'סקור את כל החריגות שזוהו' if lang == 'hebrew' else 'Review all identified anomalies',
+                    'בדוק את הנתונים החריגים' if lang == 'hebrew' else 'Verify outlier data points',
+                    'עדכן את הערכת הסיכון' if lang == 'hebrew' else 'Update risk assessment'
+                ],
+                expected_impact='הפחתת רמת הסיכון ב-20-30%' if lang == 'hebrew' else 'Risk level reduction of 20-30%'
+            ))
+            rec_id += 1
+        
+        # Missing data recommendation
+        missing_patterns = [p for p in analysis.patterns_found if p.type == 'missing_data']
+        if missing_patterns:
+            recommendations.append(Recommendation(
+                id=f"REC-{rec_id}",
+                category='data_quality',
+                priority=Priority.HIGH,
+                title='השלמת נתונים חסרים' if lang == 'hebrew' else 'Complete Missing Data',
+                description='זוהו שדות עם נתונים חסרים המשפיעים על איכות הניתוח' if lang == 'hebrew'
+                           else 'Fields with missing data detected affecting analysis quality',
+                action_items=[
+                    'אסוף את הנתונים החסרים' if lang == 'hebrew' else 'Collect missing data',
+                    'עדכן את המערכת' if lang == 'hebrew' else 'Update the system',
+                    'הרץ ניתוח מחדש' if lang == 'hebrew' else 'Re-run analysis'
+                ],
+                expected_impact='שיפור דיוק הניתוח ב-15-25%' if lang == 'hebrew' else 'Analysis accuracy improvement of 15-25%'
+            ))
+            rec_id += 1
+        
+        # Anomalies recommendation
+        if analysis.anomalies:
+            high_severity = [a for a in analysis.anomalies if a.severity in [Severity.HIGH, Severity.CRITICAL]]
+            if high_severity:
+                recommendations.append(Recommendation(
+                    id=f"REC-{rec_id}",
+                    category='anomalies',
+                    priority=Priority.HIGH,
+                    title='טיפול בחריגות קריטיות' if lang == 'hebrew' else 'Address Critical Anomalies',
+                    description=f'זוהו {len(high_severity)} חריגות ברמה גבוהה או קריטית' if lang == 'hebrew'
+                               else f'{len(high_severity)} high or critical anomalies detected',
+                    action_items=[a.recommendation for a in high_severity[:3]],
+                    expected_impact='הפחתת סיכון והגברת אמינות הנתונים' if lang == 'hebrew' 
+                                   else 'Risk reduction and improved data reliability'
+                ))
+                rec_id += 1
+        
+        # Data type specific recommendations
+        if analysis.data_classification == DataType.INSURANCE:
+            recommendations.append(Recommendation(
+                id=f"REC-{rec_id}",
+                category='insurance',
+                priority=Priority.MEDIUM,
+                title='סקירת כיסויים ביטוחיים' if lang == 'hebrew' else 'Review Insurance Coverage',
+                description='מומלץ לבדוק התאמת הכיסויים לצרכים' if lang == 'hebrew'
+                           else 'Review coverage adequacy against needs',
+                action_items=[
+                    'השווה כיסויים לסיכונים' if lang == 'hebrew' else 'Compare coverage to risks',
+                    'בדוק חפיפות בפוליסות' if lang == 'hebrew' else 'Check for policy overlaps',
+                    'עדכן סכומי ביטוח' if lang == 'hebrew' else 'Update coverage amounts'
+                ],
+                expected_impact='אופטימיזציה של הוצאות ביטוח' if lang == 'hebrew' else 'Insurance expense optimization'
+            ))
+            rec_id += 1
+        elif analysis.data_classification == DataType.INVESTMENT:
+            recommendations.append(Recommendation(
+                id=f"REC-{rec_id}",
+                category='investment',
+                priority=Priority.MEDIUM,
+                title='איזון תיק השקעות' if lang == 'hebrew' else 'Portfolio Rebalancing',
+                description='בדוק את פיזור התיק ואיזון הסיכון' if lang == 'hebrew'
+                           else 'Review portfolio diversification and risk balance',
+                action_items=[
+                    'נתח פיזור נכסים' if lang == 'hebrew' else 'Analyze asset allocation',
+                    'בדוק התאמה לפרופיל סיכון' if lang == 'hebrew' else 'Check risk profile alignment',
+                    'שקול איזון מחדש' if lang == 'hebrew' else 'Consider rebalancing'
+                ],
+                expected_impact='שיפור יחס תשואה/סיכון' if lang == 'hebrew' else 'Improved return/risk ratio'
+            ))
+            rec_id += 1
+        
+        return recommendations
+    
+    def to_dict(self, obj) -> Dict:
+        """Convert dataclass objects to dictionaries for JSON serialization"""
+        if hasattr(obj, '__dataclass_fields__'):
+            result = {}
+            for field_name in obj.__dataclass_fields__:
+                value = getattr(obj, field_name)
+                result[field_name] = self.to_dict(value)
+            return result
+        elif isinstance(obj, list):
+            return [self.to_dict(item) for item in obj]
+        elif isinstance(obj, Enum):
+            return obj.value
+        elif isinstance(obj, dict):
+            return {k: self.to_dict(v) for k, v in obj.items()}
+        else:
+            return obj
+
+
+# Singleton instance
+_ai_reports_service: AIRiskReportsService = None
+
+
+def get_ai_reports_service() -> AIRiskReportsService:
+    """Get or create the AI reports service singleton"""
+    global _ai_reports_service
+    if _ai_reports_service is None:
+        _ai_reports_service = AIRiskReportsService()
+    return _ai_reports_service
+
+
+def init_ai_reports_service() -> AIRiskReportsService:
+    """Initialize the AI reports service"""
+    global _ai_reports_service
+    _ai_reports_service = AIRiskReportsService()
+    return _ai_reports_service

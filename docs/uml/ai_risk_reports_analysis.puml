@@ -1,0 +1,341 @@
+@startuml ai_risk_reports_context
+skinparam monochrome false
+skinparam shadowing false
+skinparam componentStyle rectangle
+skinparam wrapWidth 220
+
+title AI Risk & Reports Analysis - System Context
+
+actor "Admin" as Admin
+actor "Customer" as Customer
+actor "AI Engine" as AI
+
+rectangle "PHINS Platform" {
+  [Risk & Reports Dashboard] as Dashboard
+  [File Upload Service] as Upload
+  [AI Analysis Engine] as Analysis
+  [Report Generator] as Report
+  [Recommendations Engine] as Recommend
+}
+
+database "Document Storage" as Storage
+database "Analysis Results" as Results
+
+Admin --> Dashboard : Upload files\n(CSV/XLS/ZIP)
+Customer --> Dashboard : View reports\nGet recommendations
+
+Dashboard --> Upload : Submit documents
+Upload --> Storage : Store files
+Upload --> Analysis : Trigger analysis
+
+Analysis --> AI : Language detection\nData classification\nPattern extraction
+AI --> Analysis : Insights & factors
+
+Analysis --> Report : Generate visualizations
+Analysis --> Recommend : Generate recommendations
+Report --> Results : Store reports
+Recommend --> Results : Store recommendations
+
+Dashboard <-- Results : Display results
+@enduml
+
+@startuml ai_risk_reports_components
+skinparam monochrome false
+skinparam shadowing false
+skinparam componentStyle rectangle
+skinparam wrapWidth 220
+
+title AI Risk & Reports Analysis - Component Architecture
+
+package "Frontend (Dashboard)" {
+  [File Upload Widget] as UploadWidget
+  [Language Selector] as LangSelect
+  [Report Viewer] as ReportView
+  [Chart Generator] as Charts
+  [Recommendations Panel] as RecPanel
+  [Export Options] as Export
+}
+
+package "Backend Services" {
+  [File Parser Service] as Parser
+  [AI Analysis Service] as AIService
+  [Language Detection] as LangDetect
+  [Data Classifier] as Classifier
+  [Risk Assessor] as RiskAssess
+  [Report Builder] as Builder
+  [Recommendation Engine] as RecEngine
+}
+
+package "AI/ML Components" {
+  [Pattern Recognition] as Pattern
+  [Factor Extraction] as Factors
+  [Anomaly Detection] as Anomaly
+  [Trend Analysis] as Trends
+  [Risk Scoring Model] as RiskModel
+}
+
+package "Data Layer" {
+  database "File Storage" as Files
+  database "Analysis Cache" as Cache
+  database "Report Templates" as Templates
+}
+
+UploadWidget --> Parser : Upload file
+Parser --> LangDetect : Detect language
+Parser --> Classifier : Classify data type
+LangDetect --> AIService
+Classifier --> AIService
+
+AIService --> Pattern
+AIService --> Factors
+AIService --> Anomaly
+AIService --> Trends
+AIService --> RiskModel
+
+AIService --> RiskAssess : Risk factors
+RiskAssess --> Builder : Risk report
+Builder --> RecEngine : Generate recommendations
+
+Parser --> Files : Store raw file
+AIService --> Cache : Store analysis
+Builder --> Templates : Apply template
+
+ReportView <-- Builder : Rendered report
+Charts <-- Builder : Chart data
+RecPanel <-- RecEngine : Recommendations
+Export --> Builder : Export PDF/Excel
+@enduml
+
+@startuml ai_risk_reports_sequence
+skinparam monochrome false
+skinparam shadowing false
+skinparam wrapWidth 220
+
+title Sequence - File Upload → AI Analysis → Report Generation
+
+actor User
+participant "Dashboard" as UI
+participant "Upload API" as Upload
+participant "File Parser" as Parser
+participant "AI Analysis" as AI
+participant "Report Builder" as Report
+participant "Recommendation Engine" as Rec
+
+User -> UI : Select file (CSV/XLS/ZIP)
+UI -> Upload : POST /api/reports/upload
+
+Upload -> Parser : Parse file content
+Parser -> Parser : Detect encoding (UTF-8/Hebrew/etc)
+Parser -> Parser : Extract columns & rows
+Parser --> Upload : Parsed data structure
+
+Upload -> AI : POST /api/reports/analyze
+AI -> AI : Detect language\n(Hebrew, English, etc)
+AI -> AI : Classify data type\n(Insurance, Investment, Risk)
+AI -> AI : Extract key factors:\n- Policy numbers\n- Coverage amounts\n- Risk indicators\n- Dates & periods
+
+AI -> AI : Generate insights:\n- Patterns found\n- Anomalies detected\n- Risk scores calculated
+
+AI --> Upload : Analysis results
+
+Upload -> Report : Build report
+Report -> Report : Select template\n(based on data type)
+Report -> Report : Generate charts:\n- Risk distribution\n- Coverage breakdown\n- Timeline analysis
+Report --> Upload : Report structure
+
+Upload -> Rec : Generate recommendations
+Rec -> Rec : Analyze gaps
+Rec -> Rec : Compare to benchmarks
+Rec -> Rec : Suggest actions
+Rec --> Upload : Recommendations list
+
+Upload --> UI : Complete response:\n- Analysis\n- Report\n- Recommendations
+
+UI -> User : Display interactive report
+User -> UI : Adjust parameters
+UI -> Report : Regenerate with new params
+Report --> UI : Updated report
+@enduml
+
+@startuml ai_risk_reports_data_flow
+skinparam monochrome false
+skinparam shadowing false
+skinparam wrapWidth 220
+
+title Data Flow - Multi-Language Document Processing
+
+|User|
+start
+:Upload document\n(CSV/XLS/ZIP);
+
+|File Parser|
+:Read file bytes;
+:Detect encoding\n(UTF-8, UTF-16, Windows-1255);
+:Parse structure\n(columns, rows, headers);
+
+|Language Detection|
+:Analyze text content;
+:Detect primary language;
+note right
+  Supported Languages:
+  - English
+  - Hebrew (עברית)
+  - Arabic
+  - Spanish
+  - French
+  - German
+  - And 14 more...
+end note
+
+|Data Classifier|
+:Identify data type;
+if (Insurance data?) then (yes)
+  :Extract:\n- Policy numbers\n- Coverage types\n- Premium amounts\n- Claim history;
+elseif (Investment data?) then (yes)
+  :Extract:\n- Portfolio values\n- Asset allocations\n- Returns/yields\n- Risk metrics;
+elseif (Risk assessment?) then (yes)
+  :Extract:\n- Risk factors\n- Scores\n- Indicators\n- Thresholds;
+else (other)
+  :Generic analysis\n- Key metrics\n- Patterns;
+endif
+
+|AI Analysis|
+:Pattern recognition;
+:Anomaly detection;
+:Trend analysis;
+:Risk scoring;
+
+|Report Generator|
+:Select template;
+:Generate visualizations:\n- Pie charts\n- Bar graphs\n- Line trends\n- Risk gauges;
+:Apply localization\n(language-specific);
+
+|Recommendation Engine|
+:Analyze findings;
+:Generate actionable recommendations;
+:Prioritize by impact;
+
+|User|
+:View interactive report;
+:Adjust parameters;
+:Export PDF/Excel;
+stop
+@enduml
+
+@startuml ai_risk_reports_class
+skinparam monochrome false
+skinparam shadowing false
+skinparam wrapWidth 220
+
+title AI Risk & Reports - Domain Model
+
+class UploadedDocument {
+  +id: string
+  +filename: string
+  +file_type: enum {CSV, XLS, ZIP}
+  +file_size: int
+  +encoding: string
+  +uploaded_by: string
+  +uploaded_at: datetime
+  +status: enum {PENDING, PROCESSING, COMPLETED, FAILED}
+}
+
+class ParsedData {
+  +id: string
+  +document_id: string
+  +detected_language: string
+  +data_type: enum {INSURANCE, INVESTMENT, RISK, SAVINGS, MIXED}
+  +columns: list[ColumnInfo]
+  +row_count: int
+  +raw_data: json
+}
+
+class ColumnInfo {
+  +name: string
+  +data_type: string
+  +sample_values: list
+  +semantic_type: string
+  +is_key_field: bool
+}
+
+class AnalysisResult {
+  +id: string
+  +document_id: string
+  +language: string
+  +data_classification: string
+  +extracted_factors: list[Factor]
+  +patterns_found: list[Pattern]
+  +anomalies: list[Anomaly]
+  +risk_score: float
+  +confidence: float
+  +processing_time_ms: int
+}
+
+class Factor {
+  +name: string
+  +value: any
+  +importance: float
+  +category: string
+}
+
+class Pattern {
+  +type: string
+  +description: string
+  +affected_rows: list[int]
+  +significance: float
+}
+
+class Anomaly {
+  +type: string
+  +severity: enum {LOW, MEDIUM, HIGH, CRITICAL}
+  +description: string
+  +affected_data: json
+  +recommendation: string
+}
+
+class GeneratedReport {
+  +id: string
+  +analysis_id: string
+  +report_type: string
+  +language: string
+  +title: string
+  +sections: list[ReportSection]
+  +charts: list[ChartConfig]
+  +generated_at: datetime
+}
+
+class ReportSection {
+  +title: string
+  +content: string
+  +data_table: json
+  +order: int
+}
+
+class ChartConfig {
+  +type: enum {PIE, BAR, LINE, GAUGE, SCATTER}
+  +title: string
+  +data: json
+  +options: json
+}
+
+class Recommendation {
+  +id: string
+  +analysis_id: string
+  +category: string
+  +priority: enum {LOW, MEDIUM, HIGH, URGENT}
+  +title: string
+  +description: string
+  +action_items: list[string]
+  +expected_impact: string
+}
+
+UploadedDocument "1" -- "1" ParsedData
+ParsedData "1" -- "1" AnalysisResult
+AnalysisResult "1" -- "0..*" Factor
+AnalysisResult "1" -- "0..*" Pattern
+AnalysisResult "1" -- "0..*" Anomaly
+AnalysisResult "1" -- "1" GeneratedReport
+GeneratedReport "1" -- "1..*" ReportSection
+GeneratedReport "1" -- "0..*" ChartConfig
+AnalysisResult "1" -- "0..*" Recommendation
+@enduml
