@@ -190,10 +190,15 @@ RISK REPORTS DOCUMENTATION
 
 ## 🚀 Quick Start
 
-1. **Quick Answer**: Read `WHERE_TO_USE_RISK_REPORTS.md`
-2. **Cheat Sheet**: See `RISK_REPORTS_QUICK_REFERENCE.md`
-3. **Complete Guide**: Review `RISK_REPORTS_DASHBOARD_GUIDE.md`
-4. **Architecture**: Check `RISK_REPORTS_ARCHITECTURE.md`
+**Option 1: Web Interface (Recommended)**
+- Visit: `/risk-reports-documentation.html` on your PHINS instance
+- Or from any dashboard, click "Risk Reports Docs" in the navigation
+
+**Option 2: Documentation Files (GitHub)**
+1. **Quick Answer**: Read [WHERE_TO_USE_RISK_REPORTS.md](WHERE_TO_USE_RISK_REPORTS.md)
+2. **Cheat Sheet**: See [RISK_REPORTS_QUICK_REFERENCE.md](RISK_REPORTS_QUICK_REFERENCE.md)
+3. **Complete Guide**: Review [RISK_REPORTS_DASHBOARD_GUIDE.md](RISK_REPORTS_DASHBOARD_GUIDE.md)
+4. **Architecture**: Check [RISK_REPORTS_ARCHITECTURE.md](RISK_REPORTS_ARCHITECTURE.md)
 
 ## ⚠️ Important Notes
 

@@ -1,5 +1,14 @@
 # PHINS Documentation Index
 
+## 🌐 Web-Based Documentation Access
+
+**Easiest Way to Access Documentation:**
+- Visit `/risk-reports-documentation.html` in your PHINS web portal
+- Or click "📚 Risk Reports Docs" in any dashboard navigation menu
+- This provides an interactive, easy-to-navigate interface for all documentation
+
+---
+
 ## Recently Added: Risk Reports Dashboard Documentation
 
 ### Quick Start (Start Here!)
