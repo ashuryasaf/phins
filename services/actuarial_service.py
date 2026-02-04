@@ -352,6 +352,215 @@ class ActuarialTablesStore:
         
         return {'success': True, 'config': asdict(self.config)}
     
+    def update_current_tables(self, table_type: str, table_data: List[Dict], user: str) -> Dict:
+        """Update a specific table within the current version without creating a new version.
+        
+        Args:
+            table_type: One of 'mortality_rates', 'disability_incidence_rates', 
+                       'adl_mortality_multipliers', 'adl_disability_multipliers', 
+                       'adl_benefit_percentages', 'lapse_rates'
+            table_data: List of table row data
+            user: Username making the change
+            
+        Returns:
+            Dict with success status and updated table
+        """
+        valid_types = [
+            'mortality_rates', 'disability_incidence_rates',
+            'adl_mortality_multipliers', 'adl_disability_multipliers',
+            'adl_benefit_percentages', 'lapse_rates'
+        ]
+        
+        if table_type not in valid_types:
+            return {'success': False, 'error': f'Invalid table type: {table_type}. Must be one of {valid_types}'}
+        
+        current_tables = self.versions.get(self.current_version, {})
+        if not current_tables:
+            return {'success': False, 'error': 'No current version found'}
+        
+        old_data = current_tables.get(table_type, [])
+        
+        # Validate the new data
+        if table_type in ['mortality_rates', 'disability_incidence_rates']:
+            for item in table_data:
+                rate = item.get('rate_per_1000', 0)
+                if rate < 0 or rate > 1000:
+                    return {'success': False, 'error': f'{table_type}: rate must be 0-1000, got {rate}'}
+        
+        if table_type in ['adl_mortality_multipliers', 'adl_disability_multipliers']:
+            for item in table_data:
+                mult = item.get('multiplier', 0)
+                if mult < 0.1 or mult > 20:
+                    return {'success': False, 'error': f'{table_type}: multiplier must be 0.1-20, got {mult}'}
+        
+        if table_type == 'adl_benefit_percentages':
+            for item in table_data:
+                pct = item.get('benefit_pct', 0)
+                if pct < 0 or pct > 1:
+                    return {'success': False, 'error': f'{table_type}: benefit_pct must be 0-1, got {pct}'}
+        
+        # Update the table
+        current_tables[table_type] = table_data
+        
+        # Audit log
+        self._log_change('update_table', user, {
+            'table_type': table_type,
+            'old_data': old_data,
+            'new_data': table_data
+        })
+        
+        return {'success': True, 'table_type': table_type, 'data': table_data}
+    
+    def get_default_config(self) -> Dict:
+        """Get the original default underwriting configuration values.
+        
+        Returns:
+            Dict with default configuration values
+        """
+        return {
+            'decline_threshold': 9,
+            'loadings': {6: 0.15, 7: 0.30, 8: 0.50},
+            'coverage_limits': {6: 1000000, 7: 750000, 8: 500000},
+            'disability_exclusion_threshold': 8,
+            'expense_loading_pct': 0.15,
+            'profit_margin_pct': 0.10,
+            'discount_rate': 0.035
+        }
+    
+    def get_default_tables(self) -> Dict:
+        """Get the original default actuarial tables.
+        
+        Returns:
+            Dict with all default table values
+        """
+        return {
+            'mortality_rates': [
+                {'age_min': 0, 'age_max': 30, 'rate_per_1000': 0.5},
+                {'age_min': 30, 'age_max': 40, 'rate_per_1000': 1.2},
+                {'age_min': 40, 'age_max': 50, 'rate_per_1000': 2.5},
+                {'age_min': 50, 'age_max': 60, 'rate_per_1000': 5.0},
+                {'age_min': 60, 'age_max': 70, 'rate_per_1000': 12.0},
+                {'age_min': 70, 'age_max': 80, 'rate_per_1000': 30.0},
+                {'age_min': 80, 'age_max': 120, 'rate_per_1000': 75.0},
+            ],
+            'disability_incidence_rates': [
+                {'age_min': 0, 'age_max': 30, 'rate_per_1000': 2.0},
+                {'age_min': 30, 'age_max': 40, 'rate_per_1000': 4.0},
+                {'age_min': 40, 'age_max': 50, 'rate_per_1000': 8.0},
+                {'age_min': 50, 'age_max': 60, 'rate_per_1000': 15.0},
+                {'age_min': 60, 'age_max': 70, 'rate_per_1000': 30.0},
+                {'age_min': 70, 'age_max': 80, 'rate_per_1000': 50.0},
+                {'age_min': 80, 'age_max': 120, 'rate_per_1000': 80.0},
+            ],
+            'adl_mortality_multipliers': [
+                {'adl': 1, 'multiplier': 0.8},
+                {'adl': 2, 'multiplier': 0.85},
+                {'adl': 3, 'multiplier': 0.9},
+                {'adl': 4, 'multiplier': 0.95},
+                {'adl': 5, 'multiplier': 1.0},
+                {'adl': 6, 'multiplier': 1.1},
+                {'adl': 7, 'multiplier': 1.2},
+                {'adl': 8, 'multiplier': 1.35},
+                {'adl': 9, 'multiplier': 1.5},
+                {'adl': 10, 'multiplier': 1.8},
+            ],
+            'adl_disability_multipliers': [
+                {'adl': 1, 'multiplier': 0.3},
+                {'adl': 2, 'multiplier': 0.5},
+                {'adl': 3, 'multiplier': 0.7},
+                {'adl': 4, 'multiplier': 0.9},
+                {'adl': 5, 'multiplier': 1.0},
+                {'adl': 6, 'multiplier': 1.5},
+                {'adl': 7, 'multiplier': 2.0},
+                {'adl': 8, 'multiplier': 3.0},
+                {'adl': 9, 'multiplier': 5.0},
+                {'adl': 10, 'multiplier': 8.0},
+            ],
+            'adl_benefit_percentages': [
+                {'adl': 1, 'benefit_pct': 0.0},
+                {'adl': 2, 'benefit_pct': 0.0},
+                {'adl': 3, 'benefit_pct': 0.0},
+                {'adl': 4, 'benefit_pct': 0.25},
+                {'adl': 5, 'benefit_pct': 0.25},
+                {'adl': 6, 'benefit_pct': 0.50},
+                {'adl': 7, 'benefit_pct': 0.50},
+                {'adl': 8, 'benefit_pct': 0.85},
+                {'adl': 9, 'benefit_pct': 1.0},
+                {'adl': 10, 'benefit_pct': 1.0},
+            ],
+            'lapse_rates': [
+                {'year': 1, 'rate': 0.08},
+                {'year': 2, 'rate': 0.05},
+                {'year': 3, 'rate': 0.04},
+                {'year_min': 4, 'year_max': 10, 'rate': 0.03},
+                {'year_min': 11, 'year_max': 25, 'rate': 0.02},
+                {'year_min': 26, 'year_max': 100, 'rate': 0.01},
+            ]
+        }
+    
+    def reset_config_to_default(self, user: str) -> Dict:
+        """Reset underwriting configuration to default values.
+        
+        Args:
+            user: Username making the change
+            
+        Returns:
+            Dict with success status and reset config
+        """
+        old_config = asdict(self.config)
+        defaults = self.get_default_config()
+        
+        self.config = UnderwritingConfig(
+            decline_threshold=defaults['decline_threshold'],
+            loadings=defaults['loadings'],
+            coverage_limits=defaults['coverage_limits'],
+            disability_exclusion_threshold=defaults['disability_exclusion_threshold'],
+            expense_loading_pct=defaults['expense_loading_pct'],
+            profit_margin_pct=defaults['profit_margin_pct'],
+            discount_rate=defaults['discount_rate'],
+            last_modified=datetime.now().isoformat(),
+            modified_by=user
+        )
+        
+        # Audit log
+        self._log_change('reset_config', user, {
+            'old_config': old_config,
+            'new_config': asdict(self.config)
+        })
+        
+        return {'success': True, 'config': asdict(self.config)}
+    
+    def reset_tables_to_default(self, table_type: str, user: str) -> Dict:
+        """Reset a specific table to its default values.
+        
+        Args:
+            table_type: The table type to reset (e.g., 'mortality_rates')
+            user: Username making the change
+            
+        Returns:
+            Dict with success status and reset table data
+        """
+        defaults = self.get_default_tables()
+        
+        if table_type not in defaults:
+            return {'success': False, 'error': f'Invalid table type: {table_type}'}
+        
+        current_tables = self.versions.get(self.current_version, {})
+        if not current_tables:
+            return {'success': False, 'error': 'No current version found'}
+        
+        old_data = current_tables.get(table_type, [])
+        current_tables[table_type] = defaults[table_type]
+        
+        # Audit log
+        self._log_change('reset_table', user, {
+            'table_type': table_type,
+            'old_data': old_data,
+            'new_data': defaults[table_type]
+        })
+        
+        return {'success': True, 'table_type': table_type, 'data': defaults[table_type]}
+    
     def _validate_tables(self, tables: Dict) -> Dict:
         """Validate table structure and values"""
         errors = []

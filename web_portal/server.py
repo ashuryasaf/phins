@@ -5324,6 +5324,26 @@ For claims or questions, please contact:
                 self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
             return
         
+        if path == '/api/actuarial/defaults':
+            # Get default configuration and table values for reset functionality
+            if not require_role(session, ['admin', 'actuary']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Access denied. Admin or Actuary role required.'}).encode('utf-8'))
+                return
+            try:
+                from services.actuarial_service import get_actuarial_store
+                store = get_actuarial_store()
+                self._set_json_headers()
+                self.wfile.write(json.dumps({
+                    'success': True,
+                    'config': store.get_default_config(),
+                    'tables': store.get_default_tables()
+                }).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+        
         if path == '/api/actuarial/versions':
             # Get all table versions
             if not require_role(session, ['admin', 'actuary']):
@@ -14374,6 +14394,139 @@ For claims or questions, please contact:
                     self.wfile.write(json.dumps({
                         'success': False,
                         'errors': result['errors']
+                    }).encode('utf-8'))
+                return
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+                return
+        
+        # POST /api/actuarial/table-update - Update a specific table within current version
+        if path == '/api/actuarial/table-update':
+            auth_header = self.headers.get('Authorization', '')
+            token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+            session = validate_session(token) if token else None
+            
+            if not require_role(session, ['admin', 'actuary']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Access denied. Admin or Actuary role required.'}).encode('utf-8'))
+                return
+            
+            length = int(self.headers.get('Content-Length', 0))
+            body = self.rfile.read(length).decode('utf-8') if length else '{}'
+            
+            try:
+                data = json.loads(body)
+                from services.actuarial_service import get_actuarial_store
+                store = get_actuarial_store()
+                
+                table_type = data.get('table_type')
+                table_data = data.get('data', [])
+                
+                if not table_type:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'table_type is required'}).encode('utf-8'))
+                    return
+                
+                result = store.update_current_tables(table_type, table_data, session.get('username', 'admin'))
+                
+                if result['success']:
+                    self._set_json_headers(200)
+                    self.wfile.write(json.dumps({
+                        'success': True,
+                        'message': f"Table {table_type} updated successfully",
+                        'table_type': result['table_type'],
+                        'data': result['data']
+                    }).encode('utf-8'))
+                else:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({
+                        'success': False,
+                        'error': result.get('error', 'Unknown error')
+                    }).encode('utf-8'))
+                return
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+                return
+        
+        # POST /api/actuarial/reset-config - Reset configuration to defaults
+        if path == '/api/actuarial/reset-config':
+            auth_header = self.headers.get('Authorization', '')
+            token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+            session = validate_session(token) if token else None
+            
+            if not require_role(session, ['admin', 'actuary']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Access denied. Admin or Actuary role required.'}).encode('utf-8'))
+                return
+            
+            try:
+                from services.actuarial_service import get_actuarial_store
+                store = get_actuarial_store()
+                
+                result = store.reset_config_to_default(session.get('username', 'admin'))
+                
+                if result['success']:
+                    self._set_json_headers(200)
+                    self.wfile.write(json.dumps({
+                        'success': True,
+                        'message': 'Configuration reset to defaults',
+                        'config': result['config']
+                    }).encode('utf-8'))
+                else:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({
+                        'success': False,
+                        'error': result.get('error', 'Unknown error')
+                    }).encode('utf-8'))
+                return
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+                return
+        
+        # POST /api/actuarial/reset-table - Reset a specific table to defaults
+        if path == '/api/actuarial/reset-table':
+            auth_header = self.headers.get('Authorization', '')
+            token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+            session = validate_session(token) if token else None
+            
+            if not require_role(session, ['admin', 'actuary']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Access denied. Admin or Actuary role required.'}).encode('utf-8'))
+                return
+            
+            length = int(self.headers.get('Content-Length', 0))
+            body = self.rfile.read(length).decode('utf-8') if length else '{}'
+            
+            try:
+                data = json.loads(body)
+                from services.actuarial_service import get_actuarial_store
+                store = get_actuarial_store()
+                
+                table_type = data.get('table_type')
+                
+                if not table_type:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'table_type is required'}).encode('utf-8'))
+                    return
+                
+                result = store.reset_tables_to_default(table_type, session.get('username', 'admin'))
+                
+                if result['success']:
+                    self._set_json_headers(200)
+                    self.wfile.write(json.dumps({
+                        'success': True,
+                        'message': f"Table {table_type} reset to defaults",
+                        'table_type': result['table_type'],
+                        'data': result['data']
+                    }).encode('utf-8'))
+                else:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({
+                        'success': False,
+                        'error': result.get('error', 'Unknown error')
                     }).encode('utf-8'))
                 return
             except Exception as e:
