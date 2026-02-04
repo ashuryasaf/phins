@@ -707,7 +707,7 @@
             </table>
             <div style="margin-top:16px;">
               <button class="btn btn-success" onclick="saveMortalityRates()">💾 Save Changes</button>
-              <button class="btn btn-outline" onclick="loadTables()">↻ Reset</button>
+              <button class="btn btn-outline" onclick="resetMortalityRates()">↻ Reset to Defaults</button>
             </div>
           </div>
         </section>
@@ -730,7 +730,7 @@
             </table>
             <div style="margin-top:16px;">
               <button class="btn btn-success" onclick="saveDisabilityRates()">💾 Save Changes</button>
-              <button class="btn btn-outline" onclick="loadTables()">↻ Reset</button>
+              <button class="btn btn-outline" onclick="resetDisabilityRates()">↻ Reset to Defaults</button>
             </div>
           </div>
         </section>
@@ -792,6 +792,7 @@
           
           <div style="margin-top:16px;">
             <button class="btn btn-success" onclick="saveADLTables()">💾 Save All ADL Tables</button>
+            <button class="btn btn-outline" onclick="resetADLTables()">↻ Reset to Defaults</button>
           </div>
         </section>
         
@@ -864,6 +865,7 @@
           </div>
           
           <button class="btn btn-success" onclick="saveUnderwritingConfig()">💾 Save Underwriting Rules</button>
+          <button class="btn btn-outline" onclick="resetUnderwritingConfig()">↻ Reset to Defaults</button>
         </section>
         
         <!-- Pricing Parameters Section -->
@@ -889,6 +891,7 @@
           </div>
           
           <button class="btn btn-success" onclick="savePricingParams()">💾 Save Pricing Parameters</button>
+          <button class="btn btn-outline" onclick="resetPricingParams()">↻ Reset to Defaults</button>
         </section>
         
         <!-- Portfolio Simulator Section -->
@@ -1246,9 +1249,9 @@
       
       document.getElementById('decline-threshold').value = currentConfig.decline_threshold;
       document.getElementById('disability-exclusion').value = currentConfig.disability_exclusion_threshold;
-      document.getElementById('expense-loading').value = currentConfig.expense_loading_pct * 100;
-      document.getElementById('profit-margin').value = currentConfig.profit_margin_pct * 100;
-      document.getElementById('discount-rate').value = currentConfig.discount_rate * 100;
+      document.getElementById('expense-loading').value = (currentConfig.expense_loading_pct * 100).toFixed(1);
+      document.getElementById('profit-margin').value = (currentConfig.profit_margin_pct * 100).toFixed(1);
+      document.getElementById('discount-rate').value = (currentConfig.discount_rate * 100).toFixed(1);
       
       if (currentConfig.loadings) {
         document.getElementById('loading-6').value = (currentConfig.loadings['6'] || 0.15) * 100;
@@ -1418,6 +1421,353 @@
         }
       } catch (err) {
         alert('❌ Error saving params: ' + err.message);
+      }
+    }
+    
+    // Save mortality rates table
+    async function saveMortalityRates() {
+      if (!currentTables || !currentTables.mortality_rates) {
+        alert('❌ No mortality rates loaded');
+        return;
+      }
+      
+      // Collect data from inputs
+      const rows = document.querySelectorAll('#mortality-table tbody tr');
+      const data = [];
+      rows.forEach(row => {
+        const inputs = row.querySelectorAll('input');
+        if (inputs.length >= 3) {
+          data.push({
+            age_min: parseInt(inputs[0].value),
+            age_max: parseInt(inputs[1].value),
+            rate_per_1000: parseFloat(inputs[2].value)
+          });
+        }
+      });
+      
+      try {
+        const res = await fetch('/api/actuarial/table-update', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            table_type: 'mortality_rates',
+            data: data
+          })
+        });
+        
+        const result = await res.json();
+        if (result.success) {
+          alert('✅ Mortality rates saved successfully!');
+          loadTables();
+        } else {
+          alert('❌ Error: ' + (result.error || 'Unknown error'));
+        }
+      } catch (err) {
+        alert('❌ Error saving mortality rates: ' + err.message);
+      }
+    }
+    
+    // Save disability rates table
+    async function saveDisabilityRates() {
+      if (!currentTables || !currentTables.disability_incidence_rates) {
+        alert('❌ No disability rates loaded');
+        return;
+      }
+      
+      // Collect data from inputs
+      const rows = document.querySelectorAll('#disability-table tbody tr');
+      const data = [];
+      rows.forEach(row => {
+        const inputs = row.querySelectorAll('input');
+        if (inputs.length >= 3) {
+          data.push({
+            age_min: parseInt(inputs[0].value),
+            age_max: parseInt(inputs[1].value),
+            rate_per_1000: parseFloat(inputs[2].value)
+          });
+        }
+      });
+      
+      try {
+        const res = await fetch('/api/actuarial/table-update', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            table_type: 'disability_incidence_rates',
+            data: data
+          })
+        });
+        
+        const result = await res.json();
+        if (result.success) {
+          alert('✅ Disability incidence rates saved successfully!');
+          loadTables();
+        } else {
+          alert('❌ Error: ' + (result.error || 'Unknown error'));
+        }
+      } catch (err) {
+        alert('❌ Error saving disability rates: ' + err.message);
+      }
+    }
+    
+    // Save all ADL tables
+    async function saveADLTables() {
+      if (!currentTables) {
+        alert('❌ No tables loaded');
+        return;
+      }
+      
+      let allSuccess = true;
+      let errors = [];
+      
+      // Collect ADL Mortality multipliers
+      const mortInputs = document.querySelectorAll('.adl-mort-input');
+      const mortData = [];
+      mortInputs.forEach(input => {
+        mortData.push({
+          adl: parseInt(input.dataset.adl),
+          multiplier: parseFloat(input.value)
+        });
+      });
+      
+      // Collect ADL Disability multipliers
+      const disInputs = document.querySelectorAll('.adl-dis-input');
+      const disData = [];
+      disInputs.forEach(input => {
+        disData.push({
+          adl: parseInt(input.dataset.adl),
+          multiplier: parseFloat(input.value)
+        });
+      });
+      
+      // Collect ADL Benefit percentages
+      const benInputs = document.querySelectorAll('.adl-ben-input');
+      const benData = [];
+      benInputs.forEach(input => {
+        benData.push({
+          adl: parseInt(input.dataset.adl),
+          benefit_pct: parseFloat(input.value) / 100  // Convert from % to decimal
+        });
+      });
+      
+      try {
+        // Save mortality multipliers
+        if (mortData.length > 0) {
+          const res1 = await fetch('/api/actuarial/table-update', {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              table_type: 'adl_mortality_multipliers',
+              data: mortData
+            })
+          });
+          const result1 = await res1.json();
+          if (!result1.success) {
+            allSuccess = false;
+            errors.push('ADL Mortality: ' + (result1.error || 'Unknown error'));
+          }
+        }
+        
+        // Save disability multipliers
+        if (disData.length > 0) {
+          const res2 = await fetch('/api/actuarial/table-update', {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              table_type: 'adl_disability_multipliers',
+              data: disData
+            })
+          });
+          const result2 = await res2.json();
+          if (!result2.success) {
+            allSuccess = false;
+            errors.push('ADL Disability: ' + (result2.error || 'Unknown error'));
+          }
+        }
+        
+        // Save benefit percentages
+        if (benData.length > 0) {
+          const res3 = await fetch('/api/actuarial/table-update', {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              table_type: 'adl_benefit_percentages',
+              data: benData
+            })
+          });
+          const result3 = await res3.json();
+          if (!result3.success) {
+            allSuccess = false;
+            errors.push('ADL Benefits: ' + (result3.error || 'Unknown error'));
+          }
+        }
+        
+        if (allSuccess) {
+          alert('✅ All ADL tables saved successfully!');
+          loadTables();
+        } else {
+          alert('❌ Some errors occurred:\n' + errors.join('\n'));
+        }
+      } catch (err) {
+        alert('❌ Error saving ADL tables: ' + err.message);
+      }
+    }
+    
+    // Reset underwriting config to defaults
+    async function resetUnderwritingConfig() {
+      if (!confirm('Are you sure you want to reset Underwriting Rules to default values?')) return;
+      
+      try {
+        const res = await fetch('/api/actuarial/reset-config', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({})
+        });
+        
+        const result = await res.json();
+        if (result.success) {
+          alert('✅ Underwriting rules reset to defaults!');
+          loadConfig();
+        } else {
+          alert('❌ Error: ' + (result.error || 'Unknown error'));
+        }
+      } catch (err) {
+        alert('❌ Error resetting config: ' + err.message);
+      }
+    }
+    
+    // Reset pricing params to defaults
+    async function resetPricingParams() {
+      if (!confirm('Are you sure you want to reset Pricing Parameters to default values?')) return;
+      
+      try {
+        const res = await fetch('/api/actuarial/reset-config', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({})
+        });
+        
+        const result = await res.json();
+        if (result.success) {
+          alert('✅ Pricing parameters reset to defaults!');
+          loadConfig();
+        } else {
+          alert('❌ Error: ' + (result.error || 'Unknown error'));
+        }
+      } catch (err) {
+        alert('❌ Error resetting pricing params: ' + err.message);
+      }
+    }
+    
+    // Reset mortality rates to defaults
+    async function resetMortalityRates() {
+      if (!confirm('Are you sure you want to reset Mortality Rates to default values?')) return;
+      
+      try {
+        const res = await fetch('/api/actuarial/reset-table', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ table_type: 'mortality_rates' })
+        });
+        
+        const result = await res.json();
+        if (result.success) {
+          alert('✅ Mortality rates reset to defaults!');
+          loadTables();
+        } else {
+          alert('❌ Error: ' + (result.error || 'Unknown error'));
+        }
+      } catch (err) {
+        alert('❌ Error resetting mortality rates: ' + err.message);
+      }
+    }
+    
+    // Reset disability rates to defaults
+    async function resetDisabilityRates() {
+      if (!confirm('Are you sure you want to reset Disability Rates to default values?')) return;
+      
+      try {
+        const res = await fetch('/api/actuarial/reset-table', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ table_type: 'disability_incidence_rates' })
+        });
+        
+        const result = await res.json();
+        if (result.success) {
+          alert('✅ Disability rates reset to defaults!');
+          loadTables();
+        } else {
+          alert('❌ Error: ' + (result.error || 'Unknown error'));
+        }
+      } catch (err) {
+        alert('❌ Error resetting disability rates: ' + err.message);
+      }
+    }
+    
+    // Reset ADL tables to defaults
+    async function resetADLTables() {
+      if (!confirm('Are you sure you want to reset ALL ADL tables to default values?')) return;
+      
+      let allSuccess = true;
+      let errors = [];
+      
+      try {
+        // Reset all three ADL tables
+        const tables = ['adl_mortality_multipliers', 'adl_disability_multipliers', 'adl_benefit_percentages'];
+        
+        for (const table_type of tables) {
+          const res = await fetch('/api/actuarial/reset-table', {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ table_type })
+          });
+          
+          const result = await res.json();
+          if (!result.success) {
+            allSuccess = false;
+            errors.push(table_type + ': ' + (result.error || 'Unknown error'));
+          }
+        }
+        
+        if (allSuccess) {
+          alert('✅ All ADL tables reset to defaults!');
+          loadTables();
+        } else {
+          alert('❌ Some errors occurred:\n' + errors.join('\n'));
+        }
+      } catch (err) {
+        alert('❌ Error resetting ADL tables: ' + err.message);
       }
     }
     
