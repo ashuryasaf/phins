@@ -520,9 +520,12 @@ gcloud run deploy phins --source . --platform managed
 ## 📖 Documentation
 
 - **README.md** - This file, overview and features
+- **RISK_REPORTS_DASHBOARD_GUIDE.md** - Complete guide on using risk assessment reports
 - **INTERNATIONALIZATION.md** - Complete i18n guide with 20 language support
 - **.github/copilot-instructions.md** - Architecture guide for AI agents
 - **PYTHON_README.md** - Python implementation details
+- **ADMIN_PORTAL_GUIDE.md** - Admin portal features and workflows
+- **CUSTOMER_APPLICATION_GUIDE.md** - Customer-facing application process
 
 ---
 

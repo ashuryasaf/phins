@@ -3958,6 +3958,30 @@ For claims or questions, please contact:
             }).encode('utf-8'))
             return
         
+        # Session verification endpoint (GET) - similar to validate but simpler
+        if path == '/api/session/verify':
+            if not session:
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({
+                    'valid': False,
+                    'error': 'Not authenticated'
+                }).encode('utf-8'))
+                return
+            
+            username = session.get('username')
+            user = USERS.get(username) if username else None
+            role = (user or {}).get('role') or session.get('role')
+            customer_id = session.get('customer_id')
+            
+            self._set_json_headers(200)
+            self.wfile.write(json.dumps({
+                'valid': True,
+                'username': username,
+                'role': role,
+                'customer_id': customer_id
+            }).encode('utf-8'))
+            return
+        
         # =====================================================================
         # API EXTENSIONS - Community Foundations & OTP Security (GET)
         # =====================================================================
@@ -15684,6 +15708,237 @@ For claims or questions, please contact:
             except Exception as e:
                 self._set_json_headers(400)
                 self.wfile.write(json.dumps({'error': 'Upload failed', 'details': str(e)}).encode('utf-8'))
+            return
+
+        # Risk Assessment Upload Endpoint
+        # Role-based access: admin, underwriter, actuary
+        # Uploads risk assessment data with data integrity validation
+        if path == '/api/risk-assessment/upload':
+            auth_header = self.headers.get('Authorization', '')
+            token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+            session = validate_session(token) if token else None
+            
+            # Authorization check - admin, underwriter, or actuary
+            if not require_role(session, ['admin', 'underwriter', 'actuary']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({
+                    'error': 'Unauthorized. Admin/Underwriter/Actuary access required.'
+                }).encode('utf-8'))
+                return
+
+            try:
+                # Parse the JSON payload
+                payload = json.loads(body or '{}')
+                data = payload.get('data')
+                filename = payload.get('filename', 'unknown')
+                upload_date = payload.get('upload_date', datetime.now().isoformat())
+                
+                if not data:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({
+                        'error': 'Missing data field in payload'
+                    }).encode('utf-8'))
+                    return
+                
+                # Ensure data is a list
+                if not isinstance(data, list):
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({
+                        'error': 'Data must be an array of risk assessment records'
+                    }).encode('utf-8'))
+                    return
+                
+                actor = (session or {}).get('username', 'unknown')
+                upload_id = f"RISK-UPLOAD-{datetime.now().strftime('%Y%m%d%H%M%S')}-{random.randint(1000,9999)}"
+                
+                processed = 0
+                created = 0
+                updated = 0
+                errors = []
+                
+                # Process each record
+                for idx, record in enumerate(data):
+                    try:
+                        # Validate required fields
+                        customer_id = record.get('customer_id', '').strip()
+                        customer_email = record.get('email', '').strip()
+                        risk_score = record.get('risk_score')
+                        
+                        if not (customer_id or customer_email):
+                            errors.append(f"Row {idx + 1}: Missing customer_id or email")
+                            continue
+                        
+                        if risk_score is None:
+                            errors.append(f"Row {idx + 1}: Missing risk_score")
+                            continue
+                        
+                        # Validate risk_score is numeric and in range 0-100
+                        try:
+                            risk_score = float(risk_score)
+                            if risk_score < 0 or risk_score > 100:
+                                errors.append(f"Row {idx + 1}: risk_score must be between 0 and 100")
+                                continue
+                        except (ValueError, TypeError):
+                            errors.append(f"Row {idx + 1}: risk_score must be a number")
+                            continue
+                        
+                        # Find or validate customer
+                        target_customer_id = customer_id
+                        if not target_customer_id and customer_email:
+                            # Find customer by email
+                            for cid, cust in CUSTOMERS.items():
+                                if cust.get('email', '').lower() == customer_email.lower():
+                                    target_customer_id = cid
+                                    break
+                            
+                            if not target_customer_id:
+                                errors.append(f"Row {idx + 1}: Customer with email {customer_email} not found")
+                                continue
+                        
+                        # Verify customer exists
+                        if target_customer_id not in CUSTOMERS:
+                            errors.append(f"Row {idx + 1}: Customer {target_customer_id} not found")
+                            continue
+                        
+                        # Generate application ID if creating new
+                        app_id = record.get('application_id', '').strip()
+                        is_new = False
+                        
+                        if not app_id:
+                            # Create new application
+                            app_id = f"UW-{datetime.now().strftime('%Y%m%d')}-{random.randint(10000,99999)}"
+                            is_new = True
+                        
+                        # Prepare application data
+                        app_data = {
+                            'id': app_id,
+                            'customer_id': target_customer_id,
+                            'risk_score': risk_score,
+                            'assessment_date': record.get('assessment_date', datetime.now().strftime('%Y-%m-%d')),
+                            'status': record.get('status', 'pending'),
+                            'medical_conditions': record.get('medical_conditions', ''),
+                            'occupation_risk': record.get('occupation_risk', ''),
+                            'lifestyle_factors': record.get('lifestyle_factors', ''),
+                            'premium_loading': record.get('premium_loading', 0),
+                            'uploaded_by': actor,
+                            'upload_id': upload_id,
+                            'upload_date': upload_date,
+                            'source': 'bulk_upload',
+                            'created_date': datetime.now().isoformat()
+                        }
+                        
+                        # Preserve existing data if updating
+                        if app_id in UNDERWRITING_APPLICATIONS:
+                            existing = UNDERWRITING_APPLICATIONS[app_id]
+                            # Only update specific fields, preserve the rest
+                            app_data = {
+                                **existing,
+                                'risk_score': risk_score,
+                                'assessment_date': record.get('assessment_date', existing.get('assessment_date')),
+                                'medical_conditions': record.get('medical_conditions', existing.get('medical_conditions', '')),
+                                'occupation_risk': record.get('occupation_risk', existing.get('occupation_risk', '')),
+                                'lifestyle_factors': record.get('lifestyle_factors', existing.get('lifestyle_factors', '')),
+                                'premium_loading': record.get('premium_loading', existing.get('premium_loading', 0)),
+                                'updated_by': actor,
+                                'updated_date': datetime.now().isoformat(),
+                                'upload_id': upload_id
+                            }
+                            updated += 1
+                        else:
+                            created += 1
+                        
+                        # DATA INTEGRITY: Store in UNDERWRITING_APPLICATIONS
+                        UNDERWRITING_APPLICATIONS[app_id] = app_data
+                        
+                        # If database is enabled, persist to database
+                        if USE_DATABASE and database_enabled:
+                            try:
+                                from database.manager import DatabaseManager
+                                from database.models import UnderwritingApplication
+                                
+                                with DatabaseManager() as db:
+                                    # Check if application exists in database
+                                    db_app = db._ensure_session().query(UnderwritingApplication).filter_by(id=app_id).first()
+                                    
+                                    if db_app:
+                                        # Update existing
+                                        db_app.risk_score = risk_score
+                                        db_app.assessment_date = app_data.get('assessment_date')
+                                        db_app.medical_conditions = app_data.get('medical_conditions')
+                                        db_app.occupation_risk = app_data.get('occupation_risk')
+                                        db_app.lifestyle_factors = app_data.get('lifestyle_factors')
+                                        db_app.premium_loading = app_data.get('premium_loading')
+                                    else:
+                                        # Create new
+                                        new_app = UnderwritingApplication(
+                                            id=app_id,
+                                            customer_id=target_customer_id,
+                                            risk_score=risk_score,
+                                            assessment_date=app_data.get('assessment_date'),
+                                            status=app_data.get('status'),
+                                            medical_conditions=app_data.get('medical_conditions'),
+                                            occupation_risk=app_data.get('occupation_risk'),
+                                            lifestyle_factors=app_data.get('lifestyle_factors'),
+                                            premium_loading=app_data.get('premium_loading')
+                                        )
+                                        db._ensure_session().add(new_app)
+                            except Exception as db_error:
+                                # Log but don't fail - in-memory data is already saved
+                                print(f"Database persistence error for {app_id}: {str(db_error)}")
+                        
+                        processed += 1
+                        
+                    except Exception as record_error:
+                        errors.append(f"Row {idx + 1}: {str(record_error)}")
+                        continue
+                
+                # Log the upload in audit trail
+                if audit:
+                    try:
+                        audit.log(
+                            actor,
+                            'upload',
+                            'risk_assessments',
+                            upload_id,
+                            {
+                                'filename': filename,
+                                'processed': processed,
+                                'created': created,
+                                'updated': updated,
+                                'errors': len(errors)
+                            }
+                        )
+                    except Exception:
+                        pass
+                
+                # Return results
+                result = {
+                    'success': True,
+                    'upload_id': upload_id,
+                    'processed': processed,
+                    'created': created,
+                    'updated': updated,
+                    'errors': errors[:10] if errors else [],  # Return first 10 errors
+                    'total_errors': len(errors),
+                    'filename': filename,
+                    'uploaded_by': actor,
+                    'timestamp': datetime.now().isoformat()
+                }
+                
+                self._set_json_headers(201 if created > 0 else 200)
+                self.wfile.write(json.dumps(result).encode('utf-8'))
+                
+            except json.JSONDecodeError:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({
+                    'error': 'Invalid JSON format'
+                }).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({
+                    'error': 'Upload failed',
+                    'details': str(e)
+                }).encode('utf-8'))
             return
 
         # Admin/Actuary: Upload actuarial table via multipart file (XLSX/CSV/JSON)
