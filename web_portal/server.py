@@ -7661,6 +7661,127 @@ For claims or questions, please contact:
             self.wfile.write(json.dumps({'reports': reports, 'total': len(reports)}).encode('utf-8'))
             return
         
+        # =====================================================================
+        # AI RISK & REPORTS ANALYSIS - GET ENDPOINTS
+        # =====================================================================
+        
+        # GET /api/reports/list - List user's reports with data isolation
+        if path == '/api/reports/list':
+            if not session:
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Authentication required'}).encode('utf-8'))
+                return
+            
+            try:
+                from services.ai_risk_reports_service import get_ai_reports_service
+                service = get_ai_reports_service()
+                
+                # Get user info for data isolation
+                user_id = session.get('customer_id') or session.get('username')
+                user_role = session.get('role', 'customer')
+                
+                # Get reports accessible to this user
+                reports = service.get_reports_for_user(user_id, user_role)
+                
+                self._set_json_headers()
+                self.wfile.write(json.dumps({
+                    'success': True,
+                    'reports': reports,
+                    'total': len(reports),
+                    'user_role': user_role
+                }).encode('utf-8'))
+                return
+            except Exception as e:
+                import traceback
+                print(f"Error in /api/reports/list: {e}")
+                traceback.print_exc()
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+                return
+        
+        # GET /api/reports/documents - List user's uploaded documents
+        if path == '/api/reports/documents':
+            if not session:
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Authentication required'}).encode('utf-8'))
+                return
+            
+            try:
+                from services.ai_risk_reports_service import get_ai_reports_service
+                service = get_ai_reports_service()
+                
+                # Get user info for data isolation
+                user_id = session.get('customer_id') or session.get('username')
+                user_role = session.get('role', 'customer')
+                
+                # Get documents accessible to this user
+                documents = service.get_documents_for_user(user_id, user_role)
+                
+                self._set_json_headers()
+                self.wfile.write(json.dumps({
+                    'success': True,
+                    'documents': documents,
+                    'total': len(documents),
+                    'user_role': user_role
+                }).encode('utf-8'))
+                return
+            except Exception as e:
+                import traceback
+                print(f"Error in /api/reports/documents: {e}")
+                traceback.print_exc()
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+                return
+        
+        # GET /api/reports/view - View a specific report with authorization
+        if path.startswith('/api/reports/view'):
+            if not session:
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Authentication required'}).encode('utf-8'))
+                return
+            
+            report_id = qs.get('id', [None])[0]
+            if not report_id:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'Report ID required'}).encode('utf-8'))
+                return
+            
+            try:
+                from services.ai_risk_reports_service import get_ai_reports_service
+                service = get_ai_reports_service()
+                
+                # Get user info for data isolation
+                user_id = session.get('customer_id') or session.get('username')
+                user_role = session.get('role', 'customer')
+                
+                # Check authorization
+                is_authorized, auth_error = service.authorize_access('report', report_id, user_id, user_role)
+                if not is_authorized:
+                    self._set_json_headers(403)
+                    self.wfile.write(json.dumps({'error': auth_error}).encode('utf-8'))
+                    return
+                
+                # Get the report
+                report = service.get_report_by_id(report_id)
+                if not report:
+                    self._set_json_headers(404)
+                    self.wfile.write(json.dumps({'error': 'Report not found'}).encode('utf-8'))
+                    return
+                
+                result = service.to_dict(report)
+                result['success'] = True
+                
+                self._set_json_headers()
+                self.wfile.write(json.dumps(result, default=str).encode('utf-8'))
+                return
+            except Exception as e:
+                import traceback
+                print(f"Error in /api/reports/view: {e}")
+                traceback.print_exc()
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+                return
+        
         # Customers Endpoint
         if path == '/api/customers':
             requested_customer_id = qs.get('id', [None])[0]
@@ -14850,6 +14971,217 @@ For claims or questions, please contact:
                 print(f"Error generating customer invitation: {e}")
                 self._set_json_headers(500)
                 self.wfile.write(json.dumps({'error': 'Failed to generate referral code'}).encode('utf-8'))
+                return
+        
+        # =====================================================================
+        # AI RISK & REPORTS ANALYSIS API ENDPOINTS
+        # Supports file upload (CSV/XLS/ZIP), AI analysis, and report generation
+        # =====================================================================
+        
+        # POST /api/reports/upload - Upload and parse file
+        if path == '/api/reports/upload':
+            auth_header = self.headers.get('Authorization', '')
+            token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+            session = validate_session(token) if token else None
+            
+            # Allow admin, actuary, analyst, or customer roles
+            if not session:
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Authentication required'}).encode('utf-8'))
+                return
+            
+            length = int(self.headers.get('Content-Length', 0))
+            body = self.rfile.read(length).decode('utf-8') if length else '{}'
+            
+            try:
+                data = json.loads(body)
+                filename = data.get('filename', 'upload.csv')
+                file_type = data.get('file_type', 'csv')
+                content_b64 = data.get('content', '')
+                
+                if not content_b64:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'No file content provided'}).encode('utf-8'))
+                    return
+                
+                # Decode base64 content
+                import base64
+                try:
+                    file_content = base64.b64decode(content_b64)
+                except Exception as decode_err:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': f'Invalid base64 content: {str(decode_err)}'}).encode('utf-8'))
+                    return
+                
+                # Get AI reports service
+                from services.ai_risk_reports_service import get_ai_reports_service
+                service = get_ai_reports_service()
+                
+                # Get owner info for data isolation
+                owner_id = session.get('customer_id') or session.get('username')
+                owner_role = session.get('role', 'customer')
+                
+                # Parse the file with owner tracking
+                result = service.parse_file(filename, file_content, file_type, owner_id, owner_role)
+                
+                if result.get('error'):
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': result['error']}).encode('utf-8'))
+                    return
+                
+                self._set_json_headers(200)
+                self.wfile.write(json.dumps({
+                    'success': True,
+                    'document_id': result['document_id'],
+                    'filename': result['filename'],
+                    'file_type': result['file_type'],
+                    'encoding': result.get('encoding', 'utf-8'),
+                    'row_count': result.get('row_count', 0),
+                    'column_count': result.get('column_count', 0),
+                    'status': result['status'],
+                    'owner_id': owner_id
+                }).encode('utf-8'))
+                return
+                
+            except json.JSONDecodeError:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'Invalid JSON'}).encode('utf-8'))
+                return
+            except Exception as e:
+                import traceback
+                print(f"Error in /api/reports/upload: {e}")
+                traceback.print_exc()
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+                return
+        
+        # POST /api/reports/analyze - Run AI analysis on parsed document
+        if path == '/api/reports/analyze':
+            auth_header = self.headers.get('Authorization', '')
+            token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+            session = validate_session(token) if token else None
+            
+            if not session:
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Authentication required'}).encode('utf-8'))
+                return
+            
+            length = int(self.headers.get('Content-Length', 0))
+            body = self.rfile.read(length).decode('utf-8') if length else '{}'
+            
+            try:
+                data = json.loads(body)
+                document_id = data.get('document_id')
+                
+                if not document_id:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'document_id required'}).encode('utf-8'))
+                    return
+                
+                # Get AI reports service
+                from services.ai_risk_reports_service import get_ai_reports_service
+                service = get_ai_reports_service()
+                
+                # Check authorization - customers can only analyze their own documents
+                user_id = session.get('customer_id') or session.get('username')
+                user_role = session.get('role', 'customer')
+                
+                is_authorized, auth_error = service.authorize_access('document', document_id, user_id, user_role)
+                if not is_authorized:
+                    self._set_json_headers(403)
+                    self.wfile.write(json.dumps({'error': auth_error}).encode('utf-8'))
+                    return
+                
+                # Run analysis
+                analysis = service.analyze(document_id)
+                
+                # Convert to dict for JSON
+                result = service.to_dict(analysis)
+                result['success'] = True
+                
+                self._set_json_headers(200)
+                self.wfile.write(json.dumps(result, default=str).encode('utf-8'))
+                return
+                
+            except ValueError as ve:
+                self._set_json_headers(404)
+                self.wfile.write(json.dumps({'error': str(ve)}).encode('utf-8'))
+                return
+            except json.JSONDecodeError:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'Invalid JSON'}).encode('utf-8'))
+                return
+            except Exception as e:
+                import traceback
+                print(f"Error in /api/reports/analyze: {e}")
+                traceback.print_exc()
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+                return
+        
+        # POST /api/reports/generate - Generate report from analysis
+        if path == '/api/reports/generate':
+            auth_header = self.headers.get('Authorization', '')
+            token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+            session = validate_session(token) if token else None
+            
+            if not session:
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Authentication required'}).encode('utf-8'))
+                return
+            
+            length = int(self.headers.get('Content-Length', 0))
+            body = self.rfile.read(length).decode('utf-8') if length else '{}'
+            
+            try:
+                data = json.loads(body)
+                analysis_id = data.get('analysis_id')
+                language = data.get('language')  # Optional override
+                
+                if not analysis_id:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'analysis_id required'}).encode('utf-8'))
+                    return
+                
+                # Get AI reports service
+                from services.ai_risk_reports_service import get_ai_reports_service
+                service = get_ai_reports_service()
+                
+                # Check authorization - customers can only generate reports from their own analyses
+                user_id = session.get('customer_id') or session.get('username')
+                user_role = session.get('role', 'customer')
+                
+                is_authorized, auth_error = service.authorize_access('analysis', analysis_id, user_id, user_role)
+                if not is_authorized:
+                    self._set_json_headers(403)
+                    self.wfile.write(json.dumps({'error': auth_error}).encode('utf-8'))
+                    return
+                
+                # Generate report
+                report = service.generate_report(analysis_id, language)
+                
+                # Convert to dict for JSON
+                result = service.to_dict(report)
+                result['success'] = True
+                
+                self._set_json_headers(200)
+                self.wfile.write(json.dumps(result, default=str).encode('utf-8'))
+                return
+                
+            except ValueError as ve:
+                self._set_json_headers(404)
+                self.wfile.write(json.dumps({'error': str(ve)}).encode('utf-8'))
+                return
+            except json.JSONDecodeError:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'Invalid JSON'}).encode('utf-8'))
+                return
+            except Exception as e:
+                import traceback
+                print(f"Error in /api/reports/generate: {e}")
+                traceback.print_exc()
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
                 return
         
         # Regular JSON POST requests
