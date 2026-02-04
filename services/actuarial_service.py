@@ -383,21 +383,27 @@ class ActuarialTablesStore:
         # Validate the new data
         if table_type in ['mortality_rates', 'disability_incidence_rates']:
             for item in table_data:
-                rate = item.get('rate_per_1000', 0)
-                if rate < 0 or rate > 1000:
-                    return {'success': False, 'error': f'{table_type}: rate must be 0-1000, got {rate}'}
+                rate = item.get('rate_per_1000')
+                if rate is None:
+                    return {'success': False, 'error': f'{table_type}: rate_per_1000 is required'}
+                if rate < 0 or rate > 500:
+                    return {'success': False, 'error': f'{table_type}: rate_per_1000 must be 0-500 per 1000 lives, got {rate}'}
         
         if table_type in ['adl_mortality_multipliers', 'adl_disability_multipliers']:
             for item in table_data:
-                mult = item.get('multiplier', 0)
+                mult = item.get('multiplier')
+                if mult is None:
+                    return {'success': False, 'error': f'{table_type}: multiplier is required'}
                 if mult < 0.1 or mult > 20:
                     return {'success': False, 'error': f'{table_type}: multiplier must be 0.1-20, got {mult}'}
         
         if table_type == 'adl_benefit_percentages':
             for item in table_data:
-                pct = item.get('benefit_pct', 0)
+                pct = item.get('benefit_pct')
+                if pct is None:
+                    return {'success': False, 'error': f'{table_type}: benefit_pct is required'}
                 if pct < 0 or pct > 1:
-                    return {'success': False, 'error': f'{table_type}: benefit_pct must be 0-1, got {pct}'}
+                    return {'success': False, 'error': f'{table_type}: benefit_pct must be 0.0-1.0 (decimal, where 1.0 = 100%), got {pct}'}
         
         # Update the table
         current_tables[table_type] = table_data
