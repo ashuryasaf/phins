@@ -612,7 +612,15 @@ class AIRiskReportsService:
     
     def analyze(self, document_id: str) -> AnalysisResult:
         """
-        Perform AI analysis on parsed document.
+        Perform advanced AI/BI analysis on parsed document using inductive reasoning.
+        
+        This method learns from the uploaded data through:
+        1. Statistical profiling of all columns
+        2. Inductive pattern recognition
+        3. Correlation analysis between fields
+        4. Domain-specific semantic analysis
+        5. Language-aware interpretation
+        
         Returns comprehensive analysis with factors, patterns, and risk assessment.
         """
         start_time = datetime.now()
@@ -625,34 +633,76 @@ class AIRiskReportsService:
         columns = parsed.get('columns', [])
         rows = parsed.get('rows', [])
         
+        # =====================================================================
+        # PHASE 1: INDUCTIVE DATA PROFILING
+        # Learn the structure and semantics of the uploaded data
+        # =====================================================================
+        
         # Combine all text for language detection
         all_text = ' '.join(columns)
-        for row in rows[:20]:  # Sample first 20 rows
+        for row in rows[:50]:  # Sample more rows for better detection
             all_text += ' ' + ' '.join(str(v) for v in row.values() if v)
         
-        # Detect language
+        # Detect language with confidence
         lang_code, lang_name, lang_confidence = LanguageDetector.detect(all_text)
         
-        # Classify data type
+        # Classify data type using semantic analysis
         data_type, type_confidence = DataClassifier.classify(columns, rows)
         
-        # Extract factors
-        factors = self._extract_factors(columns, rows, data_type)
+        # =====================================================================
+        # PHASE 2: ADVANCED STATISTICAL ANALYSIS (BI)
+        # Compute comprehensive statistics for each column
+        # =====================================================================
         
-        # Find patterns
-        patterns = self._find_patterns(rows, data_type)
+        column_profiles = self._profile_columns(columns, rows)
         
-        # Detect anomalies
-        anomalies = self._detect_anomalies(rows, data_type)
+        # =====================================================================
+        # PHASE 3: CORRELATION & RELATIONSHIP DISCOVERY
+        # Find relationships between different data fields
+        # =====================================================================
         
-        # Calculate risk score
-        risk_score = self._calculate_risk_score(factors, patterns, anomalies)
+        correlations = self._find_correlations(columns, rows, column_profiles)
         
-        # Generate summary
-        summary = self._generate_summary(lang_code, data_type, len(rows), factors, risk_score)
+        # =====================================================================
+        # PHASE 4: INDUCTIVE PATTERN LEARNING
+        # Discover patterns and rules from the data
+        # =====================================================================
         
-        # Extract key metrics
-        key_metrics = self._extract_key_metrics(rows, columns, data_type)
+        # Extract factors with enhanced analysis
+        factors = self._extract_factors_advanced(columns, rows, data_type, column_profiles)
+        
+        # Find patterns using inductive reasoning
+        patterns = self._find_patterns_advanced(rows, data_type, column_profiles, correlations)
+        
+        # Detect anomalies with statistical backing
+        anomalies = self._detect_anomalies_advanced(rows, data_type, column_profiles)
+        
+        # =====================================================================
+        # PHASE 5: DOMAIN-SPECIFIC INSIGHTS
+        # Apply domain knowledge based on detected data type
+        # =====================================================================
+        
+        domain_insights = self._generate_domain_insights(data_type, column_profiles, rows, lang_code)
+        
+        # =====================================================================
+        # PHASE 6: RISK ASSESSMENT
+        # Calculate comprehensive risk score
+        # =====================================================================
+        
+        risk_score = self._calculate_risk_score_advanced(
+            factors, patterns, anomalies, correlations, domain_insights
+        )
+        
+        # Generate language-aware summary with insights
+        summary = self._generate_summary_advanced(
+            lang_code, data_type, len(rows), factors, risk_score, 
+            column_profiles, domain_insights
+        )
+        
+        # Extract comprehensive key metrics
+        key_metrics = self._extract_key_metrics_advanced(
+            rows, columns, data_type, column_profiles, correlations, domain_insights
+        )
         
         processing_time = int((datetime.now() - start_time).total_seconds() * 1000)
         
@@ -680,6 +730,647 @@ class AIRiskReportsService:
         self.save_data()
         
         return result
+    
+    # =========================================================================
+    # ADVANCED BI/AI ANALYSIS METHODS
+    # These methods provide deep inductive analysis of uploaded data
+    # =========================================================================
+    
+    def _profile_columns(self, columns: List[str], rows: List[Dict]) -> Dict[str, Dict]:
+        """
+        Create comprehensive statistical profiles for each column.
+        This is the foundation of inductive data analysis.
+        """
+        profiles = {}
+        
+        for col in columns:
+            profile = {
+                'name': col,
+                'type': 'unknown',
+                'count': 0,
+                'null_count': 0,
+                'unique_count': 0,
+                'numeric': False,
+                'values': [],
+                'stats': {}
+            }
+            
+            values = []
+            numeric_values = []
+            
+            for row in rows:
+                val = row.get(col)
+                if val is None or str(val).strip() == '':
+                    profile['null_count'] += 1
+                else:
+                    profile['count'] += 1
+                    values.append(str(val))
+                    
+                    # Try to parse as numeric
+                    try:
+                        clean_val = str(val).replace(',', '').replace('₪', '').replace('$', '').replace('€', '').replace('%', '')
+                        num_val = float(clean_val)
+                        numeric_values.append(num_val)
+                    except (ValueError, TypeError):
+                        pass
+            
+            profile['unique_count'] = len(set(values))
+            profile['values'] = values[:100]  # Store sample
+            
+            # Determine column type and compute statistics
+            if len(numeric_values) > len(values) * 0.5:  # More than 50% numeric
+                profile['numeric'] = True
+                profile['type'] = 'numeric'
+                
+                if numeric_values:
+                    sorted_vals = sorted(numeric_values)
+                    n = len(numeric_values)
+                    mean_val = sum(numeric_values) / n
+                    
+                    # Variance and std dev
+                    variance = sum((x - mean_val) ** 2 for x in numeric_values) / n if n > 0 else 0
+                    std_dev = variance ** 0.5
+                    
+                    # Quartiles
+                    q1_idx = int(n * 0.25)
+                    q2_idx = int(n * 0.5)
+                    q3_idx = int(n * 0.75)
+                    
+                    profile['stats'] = {
+                        'min': round(min(numeric_values), 2),
+                        'max': round(max(numeric_values), 2),
+                        'sum': round(sum(numeric_values), 2),
+                        'mean': round(mean_val, 2),
+                        'median': round(sorted_vals[q2_idx] if n > 0 else 0, 2),
+                        'std_dev': round(std_dev, 2),
+                        'variance': round(variance, 2),
+                        'q1': round(sorted_vals[q1_idx] if n > 0 else 0, 2),
+                        'q3': round(sorted_vals[q3_idx] if n > 0 else 0, 2),
+                        'iqr': round((sorted_vals[q3_idx] - sorted_vals[q1_idx]) if n > 0 else 0, 2),
+                        'count': n,
+                        'range': round(max(numeric_values) - min(numeric_values), 2)
+                    }
+                    
+                    # Detect distribution shape
+                    if std_dev > 0:
+                        skewness = sum((x - mean_val) ** 3 for x in numeric_values) / (n * std_dev ** 3)
+                        profile['stats']['skewness'] = round(skewness, 3)
+                        profile['stats']['distribution'] = 'normal' if abs(skewness) < 0.5 else ('right_skewed' if skewness > 0 else 'left_skewed')
+            else:
+                profile['type'] = 'categorical'
+                # Frequency distribution for categorical
+                freq = {}
+                for v in values:
+                    freq[v] = freq.get(v, 0) + 1
+                
+                sorted_freq = sorted(freq.items(), key=lambda x: x[1], reverse=True)
+                profile['stats'] = {
+                    'top_values': sorted_freq[:10],
+                    'unique_ratio': round(profile['unique_count'] / max(len(values), 1), 3),
+                    'mode': sorted_freq[0][0] if sorted_freq else None,
+                    'mode_count': sorted_freq[0][1] if sorted_freq else 0
+                }
+            
+            # Semantic type detection
+            col_lower = col.lower()
+            if any(x in col_lower for x in ['date', 'time', 'תאריך']):
+                profile['semantic_type'] = 'datetime'
+            elif any(x in col_lower for x in ['email', 'מייל']):
+                profile['semantic_type'] = 'email'
+            elif any(x in col_lower for x in ['phone', 'טלפון', 'נייד']):
+                profile['semantic_type'] = 'phone'
+            elif any(x in col_lower for x in ['price', 'amount', 'premium', 'מחיר', 'סכום', 'פרמיה']):
+                profile['semantic_type'] = 'currency'
+            elif any(x in col_lower for x in ['percent', 'rate', 'אחוז', 'שיעור']):
+                profile['semantic_type'] = 'percentage'
+            elif any(x in col_lower for x in ['id', 'number', 'מספר', 'מזהה']):
+                profile['semantic_type'] = 'identifier'
+            elif any(x in col_lower for x in ['name', 'שם']):
+                profile['semantic_type'] = 'name'
+            elif any(x in col_lower for x in ['status', 'סטטוס', 'מצב']):
+                profile['semantic_type'] = 'status'
+            else:
+                profile['semantic_type'] = 'general'
+            
+            profiles[col] = profile
+        
+        return profiles
+    
+    def _find_correlations(self, columns: List[str], rows: List[Dict], 
+                          profiles: Dict[str, Dict]) -> List[Dict]:
+        """
+        Find correlations between numeric columns.
+        Uses Pearson correlation coefficient.
+        """
+        correlations = []
+        numeric_cols = [col for col, p in profiles.items() if p['numeric']]
+        
+        if len(numeric_cols) < 2 or len(rows) < 3:
+            return correlations
+        
+        # Extract numeric values for each column
+        col_values = {}
+        for col in numeric_cols:
+            values = []
+            for row in rows:
+                try:
+                    val = float(str(row.get(col, 0)).replace(',', '').replace('₪', '').replace('$', '').replace('€', ''))
+                    values.append(val)
+                except:
+                    values.append(0)
+            col_values[col] = values
+        
+        # Calculate correlations between pairs
+        for i, col1 in enumerate(numeric_cols):
+            for col2 in numeric_cols[i+1:]:
+                vals1 = col_values[col1]
+                vals2 = col_values[col2]
+                
+                n = len(vals1)
+                mean1 = sum(vals1) / n
+                mean2 = sum(vals2) / n
+                
+                # Covariance
+                cov = sum((vals1[j] - mean1) * (vals2[j] - mean2) for j in range(n)) / n
+                
+                # Standard deviations
+                std1 = (sum((x - mean1) ** 2 for x in vals1) / n) ** 0.5
+                std2 = (sum((x - mean2) ** 2 for x in vals2) / n) ** 0.5
+                
+                # Pearson correlation
+                if std1 > 0 and std2 > 0:
+                    corr = cov / (std1 * std2)
+                    
+                    if abs(corr) > 0.3:  # Only significant correlations
+                        correlations.append({
+                            'column1': col1,
+                            'column2': col2,
+                            'correlation': round(corr, 3),
+                            'strength': 'strong' if abs(corr) > 0.7 else ('moderate' if abs(corr) > 0.5 else 'weak'),
+                            'direction': 'positive' if corr > 0 else 'negative'
+                        })
+        
+        # Sort by absolute correlation
+        correlations.sort(key=lambda x: abs(x['correlation']), reverse=True)
+        return correlations[:10]  # Top 10 correlations
+    
+    def _extract_factors_advanced(self, columns: List[str], rows: List[Dict], 
+                                  data_type: DataType, profiles: Dict[str, Dict]) -> List[Factor]:
+        """
+        Extract key factors using advanced statistical analysis.
+        """
+        factors = []
+        
+        # Add statistical factors for each numeric column
+        for col, profile in profiles.items():
+            if profile['numeric'] and profile['stats']:
+                stats = profile['stats']
+                
+                # Determine importance based on variance and semantic type
+                importance = 0.5
+                if profile.get('semantic_type') == 'currency':
+                    importance = 0.9
+                elif profile.get('semantic_type') == 'percentage':
+                    importance = 0.8
+                elif stats.get('std_dev', 0) > stats.get('mean', 1) * 0.5:
+                    importance = 0.7  # High variability is important
+                
+                factors.append(Factor(
+                    name=f"{col} Analysis",
+                    value={
+                        'mean': stats.get('mean'),
+                        'median': stats.get('median'),
+                        'range': f"{stats.get('min')} - {stats.get('max')}",
+                        'std_dev': stats.get('std_dev'),
+                        'distribution': stats.get('distribution', 'unknown')
+                    },
+                    importance=importance,
+                    category='statistical'
+                ))
+        
+        # Add categorical distribution factors
+        for col, profile in profiles.items():
+            if not profile['numeric'] and profile['stats'].get('top_values'):
+                top_vals = profile['stats']['top_values'][:5]
+                
+                factors.append(Factor(
+                    name=f"{col} Distribution",
+                    value={
+                        'unique_values': profile['unique_count'],
+                        'top_categories': [{'value': v, 'count': c} for v, c in top_vals],
+                        'concentration': profile['stats'].get('unique_ratio', 0)
+                    },
+                    importance=0.6 if profile.get('semantic_type') == 'status' else 0.4,
+                    category='categorical'
+                ))
+        
+        # Data type specific factors
+        if data_type == DataType.INSURANCE:
+            factors.append(Factor(
+                name='Insurance Data Profile',
+                value={
+                    'record_count': len(rows),
+                    'data_completeness': round(sum(1 for p in profiles.values() if p['null_count'] == 0) / max(len(profiles), 1) * 100, 1),
+                    'domain': 'insurance'
+                },
+                importance=0.95,
+                category='domain'
+            ))
+        elif data_type == DataType.INVESTMENT:
+            factors.append(Factor(
+                name='Investment Data Profile',
+                value={
+                    'record_count': len(rows),
+                    'numeric_fields': sum(1 for p in profiles.values() if p['numeric']),
+                    'domain': 'investment'
+                },
+                importance=0.95,
+                category='domain'
+            ))
+        
+        return factors[:15]  # Return top 15 factors
+    
+    def _find_patterns_advanced(self, rows: List[Dict], data_type: DataType,
+                               profiles: Dict[str, Dict], correlations: List[Dict]) -> List[Pattern]:
+        """
+        Find patterns using inductive reasoning.
+        """
+        patterns = []
+        
+        if len(rows) < 2:
+            return patterns
+        
+        # Pattern 1: Data completeness patterns
+        incomplete_cols = [col for col, p in profiles.items() if p['null_count'] > len(rows) * 0.1]
+        if incomplete_cols:
+            patterns.append(Pattern(
+                type='data_quality',
+                description=f"Incomplete data in {len(incomplete_cols)} columns: {', '.join(incomplete_cols[:3])}",
+                affected_rows=list(range(len(rows))),
+                significance=0.8
+            ))
+        
+        # Pattern 2: Value concentration (potential data issues)
+        for col, profile in profiles.items():
+            if not profile['numeric'] and profile['stats'].get('unique_ratio', 1) < 0.1:
+                mode = profile['stats'].get('mode')
+                mode_count = profile['stats'].get('mode_count', 0)
+                if mode_count > len(rows) * 0.5:
+                    patterns.append(Pattern(
+                        type='value_concentration',
+                        description=f"High concentration in '{col}': '{mode}' appears in {mode_count}/{len(rows)} records ({round(mode_count/len(rows)*100)}%)",
+                        affected_rows=[],
+                        significance=0.6
+                    ))
+        
+        # Pattern 3: Correlation-based patterns
+        for corr in correlations[:3]:
+            direction = "increases" if corr['direction'] == 'positive' else "decreases"
+            patterns.append(Pattern(
+                type='correlation',
+                description=f"{corr['strength'].capitalize()} {corr['direction']} correlation: When '{corr['column1']}' increases, '{corr['column2']}' {direction} (r={corr['correlation']})",
+                affected_rows=[],
+                significance=abs(corr['correlation'])
+            ))
+        
+        # Pattern 4: Distribution patterns
+        for col, profile in profiles.items():
+            if profile['numeric'] and profile['stats'].get('distribution'):
+                dist = profile['stats']['distribution']
+                if dist != 'normal':
+                    patterns.append(Pattern(
+                        type='distribution',
+                        description=f"'{col}' shows {dist.replace('_', ' ')} distribution (skewness: {profile['stats'].get('skewness', 0)})",
+                        affected_rows=[],
+                        significance=0.5
+                    ))
+        
+        # Pattern 5: Outlier patterns
+        for col, profile in profiles.items():
+            if profile['numeric'] and profile['stats']:
+                q1 = profile['stats'].get('q1', 0)
+                q3 = profile['stats'].get('q3', 0)
+                iqr = profile['stats'].get('iqr', 0)
+                if iqr > 0:
+                    lower_bound = q1 - 1.5 * iqr
+                    upper_bound = q3 + 1.5 * iqr
+                    
+                    outlier_count = 0
+                    for row in rows:
+                        try:
+                            val = float(str(row.get(col, 0)).replace(',', '').replace('₪', '').replace('$', '').replace('€', ''))
+                            if val < lower_bound or val > upper_bound:
+                                outlier_count += 1
+                        except:
+                            pass
+                    
+                    if outlier_count > 0:
+                        patterns.append(Pattern(
+                            type='outliers',
+                            description=f"'{col}' has {outlier_count} outlier values outside normal range [{round(lower_bound,2)}, {round(upper_bound,2)}]",
+                            affected_rows=[],
+                            significance=min(outlier_count / len(rows) + 0.3, 1.0)
+                        ))
+        
+        return patterns[:10]
+    
+    def _detect_anomalies_advanced(self, rows: List[Dict], data_type: DataType,
+                                   profiles: Dict[str, Dict]) -> List[Anomaly]:
+        """
+        Detect anomalies using statistical methods.
+        """
+        anomalies = []
+        
+        if len(rows) < 3:
+            return anomalies
+        
+        # Z-score based anomaly detection for numeric columns
+        for col, profile in profiles.items():
+            if profile['numeric'] and profile['stats']:
+                mean = profile['stats'].get('mean', 0)
+                std_dev = profile['stats'].get('std_dev', 0)
+                
+                if std_dev > 0:
+                    extreme_values = []
+                    for i, row in enumerate(rows):
+                        try:
+                            val = float(str(row.get(col, 0)).replace(',', '').replace('₪', '').replace('$', '').replace('€', ''))
+                            z_score = abs(val - mean) / std_dev
+                            if z_score > 3:  # More than 3 standard deviations
+                                extreme_values.append({'row': i, 'value': val, 'z_score': round(z_score, 2)})
+                        except:
+                            pass
+                    
+                    if extreme_values:
+                        severity = Severity.CRITICAL if len(extreme_values) > 5 else (
+                            Severity.HIGH if len(extreme_values) > 2 else Severity.MEDIUM
+                        )
+                        anomalies.append(Anomaly(
+                            type='statistical_outlier',
+                            severity=severity,
+                            description=f"Found {len(extreme_values)} extreme values in '{col}' (>3 standard deviations from mean)",
+                            affected_data={'column': col, 'outliers': extreme_values[:5]},
+                            recommendation=f"Review extreme values in '{col}' for data accuracy"
+                        ))
+        
+        # Data quality anomalies
+        high_null_cols = [col for col, p in profiles.items() if p['null_count'] > len(rows) * 0.3]
+        if high_null_cols:
+            anomalies.append(Anomaly(
+                type='data_quality',
+                severity=Severity.HIGH,
+                description=f"{len(high_null_cols)} columns have >30% missing values: {', '.join(high_null_cols[:3])}",
+                affected_data={'columns': high_null_cols},
+                recommendation="Investigate data collection process for missing values"
+            ))
+        
+        # Suspicious value patterns
+        for col, profile in profiles.items():
+            if profile['numeric'] and profile['stats']:
+                # Check for suspicious zero concentration
+                zero_count = sum(1 for row in rows if str(row.get(col, '')).strip() in ['0', '0.0', '0.00'])
+                if zero_count > len(rows) * 0.3 and zero_count < len(rows) * 0.9:
+                    anomalies.append(Anomaly(
+                        type='suspicious_pattern',
+                        severity=Severity.MEDIUM,
+                        description=f"'{col}' has {round(zero_count/len(rows)*100)}% zero values - may indicate data issues",
+                        affected_data={'column': col, 'zero_count': zero_count},
+                        recommendation=f"Verify if zero values in '{col}' are intentional"
+                    ))
+        
+        return anomalies[:8]
+    
+    def _generate_domain_insights(self, data_type: DataType, profiles: Dict[str, Dict],
+                                  rows: List[Dict], lang: str) -> Dict[str, Any]:
+        """
+        Generate domain-specific insights based on data type.
+        """
+        insights = {
+            'domain': data_type.value,
+            'language': lang,
+            'key_findings': [],
+            'recommendations': [],
+            'metrics': {}
+        }
+        
+        # Find currency/amount columns
+        currency_cols = [col for col, p in profiles.items() 
+                        if p.get('semantic_type') == 'currency' or 
+                        any(x in col.lower() for x in ['amount', 'premium', 'price', 'סכום', 'פרמיה', 'מחיר'])]
+        
+        if data_type == DataType.INSURANCE:
+            insights['key_findings'].append({
+                'type': 'domain_classification',
+                'finding': 'ניתוח נתוני ביטוח' if lang == 'hebrew' else 'Insurance data analysis',
+                'detail': f'{len(rows)} רשומות נותחו' if lang == 'hebrew' else f'{len(rows)} records analyzed'
+            })
+            
+            # Insurance-specific metrics
+            for col in currency_cols[:2]:
+                if col in profiles and profiles[col]['stats']:
+                    stats = profiles[col]['stats']
+                    insights['metrics'][col] = {
+                        'total': stats.get('sum', 0),
+                        'average': stats.get('mean', 0),
+                        'range': f"{stats.get('min', 0)} - {stats.get('max', 0)}"
+                    }
+            
+            if lang == 'hebrew':
+                insights['recommendations'].append('בדוק כיסויים ביטוחיים מול צרכים')
+                insights['recommendations'].append('השווה פרמיות לממוצע בשוק')
+            else:
+                insights['recommendations'].append('Review coverage adequacy against needs')
+                insights['recommendations'].append('Compare premiums to market average')
+                
+        elif data_type == DataType.INVESTMENT:
+            insights['key_findings'].append({
+                'type': 'domain_classification',
+                'finding': 'ניתוח תיק השקעות' if lang == 'hebrew' else 'Investment portfolio analysis',
+                'detail': f'{len(rows)} נכסים נותחו' if lang == 'hebrew' else f'{len(rows)} assets analyzed'
+            })
+            
+            if lang == 'hebrew':
+                insights['recommendations'].append('בדוק פיזור התיק')
+                insights['recommendations'].append('נתח יחס תשואה/סיכון')
+            else:
+                insights['recommendations'].append('Review portfolio diversification')
+                insights['recommendations'].append('Analyze return/risk ratio')
+                
+        elif data_type == DataType.SAVINGS:
+            insights['key_findings'].append({
+                'type': 'domain_classification',
+                'finding': 'ניתוח חיסכון' if lang == 'hebrew' else 'Savings analysis',
+                'detail': f'{len(rows)} רשומות' if lang == 'hebrew' else f'{len(rows)} records'
+            })
+            
+        elif data_type == DataType.RISK:
+            insights['key_findings'].append({
+                'type': 'domain_classification',
+                'finding': 'הערכת סיכונים' if lang == 'hebrew' else 'Risk assessment',
+                'detail': f'{len(rows)} גורמי סיכון נותחו' if lang == 'hebrew' else f'{len(rows)} risk factors analyzed'
+            })
+        
+        # Add data quality insight
+        complete_cols = sum(1 for p in profiles.values() if p['null_count'] == 0)
+        completeness = round(complete_cols / max(len(profiles), 1) * 100, 1)
+        
+        insights['key_findings'].append({
+            'type': 'data_quality',
+            'finding': f'שלמות נתונים: {completeness}%' if lang == 'hebrew' else f'Data completeness: {completeness}%',
+            'detail': f'{complete_cols}/{len(profiles)} שדות מלאים' if lang == 'hebrew' else f'{complete_cols}/{len(profiles)} fields complete'
+        })
+        
+        return insights
+    
+    def _calculate_risk_score_advanced(self, factors: List[Factor], patterns: List[Pattern],
+                                       anomalies: List[Anomaly], correlations: List[Dict],
+                                       domain_insights: Dict) -> float:
+        """
+        Calculate comprehensive risk score using multiple factors.
+        """
+        base_score = 35  # Start at low-medium risk
+        
+        # Factor-based adjustment
+        for factor in factors:
+            if factor.category == 'statistical':
+                # High variance increases risk
+                if isinstance(factor.value, dict) and factor.value.get('std_dev', 0) > factor.value.get('mean', 1) * 0.5:
+                    base_score += 5
+        
+        # Pattern-based adjustment
+        for pattern in patterns:
+            if pattern.type == 'data_quality':
+                base_score += 10
+            elif pattern.type == 'outliers':
+                base_score += pattern.significance * 8
+            elif pattern.type == 'correlation':
+                # Negative correlations in financial data can be risk indicators
+                pass
+        
+        # Anomaly-based adjustment
+        for anomaly in anomalies:
+            if anomaly.severity == Severity.CRITICAL:
+                base_score += 15
+            elif anomaly.severity == Severity.HIGH:
+                base_score += 10
+            elif anomaly.severity == Severity.MEDIUM:
+                base_score += 5
+            else:
+                base_score += 2
+        
+        # Domain-specific adjustment
+        domain = domain_insights.get('domain', 'unknown')
+        if domain == 'risk':
+            base_score += 15  # Risk data inherently higher
+        
+        return min(max(base_score, 0), 100)
+    
+    def _generate_summary_advanced(self, lang: str, data_type: DataType, row_count: int,
+                                   factors: List[Factor], risk_score: float,
+                                   profiles: Dict[str, Dict], domain_insights: Dict) -> str:
+        """
+        Generate comprehensive language-aware summary.
+        """
+        risk_level = 'נמוך' if lang == 'hebrew' else 'Low'
+        if risk_score >= 60:
+            risk_level = 'גבוה' if lang == 'hebrew' else 'High'
+        elif risk_score >= 30:
+            risk_level = 'בינוני' if lang == 'hebrew' else 'Medium'
+        
+        numeric_cols = sum(1 for p in profiles.values() if p['numeric'])
+        cat_cols = len(profiles) - numeric_cols
+        
+        if lang == 'hebrew':
+            type_names = {
+                'insurance': 'ביטוח',
+                'investment': 'השקעות',
+                'risk': 'סיכונים',
+                'savings': 'חיסכון',
+                'mixed': 'מעורב',
+                'unknown': 'כללי'
+            }
+            type_name = type_names.get(data_type.value, 'נתונים')
+            
+            summary = f"""ניתוח AI מקיף של נתוני {type_name}:
+
+📊 סטטיסטיקה:
+• {row_count} רשומות נותחו
+• {len(profiles)} שדות זוהו ({numeric_cols} מספריים, {cat_cols} קטגוריים)
+• {len(factors)} גורמים מרכזיים חולצו
+
+🎯 הערכת סיכון: {risk_score:.0f}/100 ({risk_level})
+
+📈 תובנות עיקריות:
+"""
+            for finding in domain_insights.get('key_findings', [])[:3]:
+                summary += f"• {finding['finding']}: {finding['detail']}\n"
+            
+        else:
+            type_names = {
+                'insurance': 'Insurance',
+                'investment': 'Investment',
+                'risk': 'Risk',
+                'savings': 'Savings',
+                'mixed': 'Mixed',
+                'unknown': 'General'
+            }
+            type_name = type_names.get(data_type.value, 'Data')
+            
+            summary = f"""Comprehensive AI Analysis of {type_name} Data:
+
+📊 Statistics:
+• {row_count} records analyzed
+• {len(profiles)} fields identified ({numeric_cols} numeric, {cat_cols} categorical)
+• {len(factors)} key factors extracted
+
+🎯 Risk Assessment: {risk_score:.0f}/100 ({risk_level})
+
+📈 Key Insights:
+"""
+            for finding in domain_insights.get('key_findings', [])[:3]:
+                summary += f"• {finding['finding']}: {finding['detail']}\n"
+        
+        return summary
+    
+    def _extract_key_metrics_advanced(self, rows: List[Dict], columns: List[str],
+                                      data_type: DataType, profiles: Dict[str, Dict],
+                                      correlations: List[Dict], domain_insights: Dict) -> Dict[str, Any]:
+        """
+        Extract comprehensive key metrics including BI indicators.
+        """
+        metrics = {
+            'total_records': len(rows),
+            'total_columns': len(columns),
+            'data_type': data_type.value,
+            'numeric_columns': sum(1 for p in profiles.values() if p['numeric']),
+            'categorical_columns': sum(1 for p in profiles.values() if not p['numeric']),
+            'correlation_count': len(correlations)
+        }
+        
+        # Data quality metrics
+        total_cells = len(rows) * len(columns)
+        null_cells = sum(p['null_count'] for p in profiles.values())
+        metrics['data_completeness'] = round((1 - null_cells / max(total_cells, 1)) * 100, 1)
+        
+        # Add column-specific metrics
+        for col, profile in list(profiles.items())[:10]:
+            if profile['numeric'] and profile['stats']:
+                metrics[f'{col}_total'] = profile['stats'].get('sum', 0)
+                metrics[f'{col}_avg'] = profile['stats'].get('mean', 0)
+                metrics[f'{col}_min'] = profile['stats'].get('min', 0)
+                metrics[f'{col}_max'] = profile['stats'].get('max', 0)
+        
+        # Add domain metrics
+        metrics['domain_metrics'] = domain_insights.get('metrics', {})
+        
+        # Add top correlations
+        if correlations:
+            metrics['top_correlation'] = {
+                'fields': f"{correlations[0]['column1']} ↔ {correlations[0]['column2']}",
+                'strength': correlations[0]['correlation']
+            }
+        
+        return metrics
     
     def _extract_factors(self, columns: List[str], rows: List[Dict], data_type: DataType) -> List[Factor]:
         """Extract key factors from the data"""
@@ -958,72 +1649,212 @@ class AIRiskReportsService:
         return report
     
     def _generate_sections(self, analysis: AnalysisResult, lang: str) -> List[ReportSection]:
-        """Generate report sections"""
+        """Generate comprehensive report sections with AI/BI insights"""
         sections = []
+        is_hebrew = lang == 'hebrew'
         
-        # Executive Summary
+        # 1. Executive Summary
         sections.append(ReportSection(
-            title='תקציר מנהלים' if lang == 'hebrew' else 'Executive Summary',
+            title='תקציר מנהלים' if is_hebrew else 'Executive Summary',
             content=analysis.summary,
             order=1
         ))
         
-        # Key Metrics
-        metrics_content = '\n'.join([f"• {k}: {v}" for k, v in list(analysis.key_metrics.items())[:10]])
+        # 2. Data Profile Overview
+        total_records = analysis.key_metrics.get('total_records', 0)
+        numeric_cols = analysis.key_metrics.get('numeric_columns', 0)
+        cat_cols = analysis.key_metrics.get('categorical_columns', 0)
+        completeness = analysis.key_metrics.get('data_completeness', 100)
+        
+        if is_hebrew:
+            profile_content = f"""📊 פרופיל הנתונים:
+
+• סה"כ רשומות: {total_records}
+• שדות מספריים: {numeric_cols}
+• שדות קטגוריים: {cat_cols}
+• שלמות נתונים: {completeness}%
+• סוג נתונים: {analysis.data_classification.value}
+• שפה: {analysis.language_name}
+• רמת ביטחון: {analysis.confidence:.0%}"""
+        else:
+            profile_content = f"""📊 Data Profile:
+
+• Total Records: {total_records}
+• Numeric Fields: {numeric_cols}
+• Categorical Fields: {cat_cols}
+• Data Completeness: {completeness}%
+• Data Type: {analysis.data_classification.value}
+• Language: {analysis.language_name}
+• Confidence Level: {analysis.confidence:.0%}"""
+        
         sections.append(ReportSection(
-            title='מדדים עיקריים' if lang == 'hebrew' else 'Key Metrics',
-            content=metrics_content,
-            data_table=analysis.key_metrics,
+            title='פרופיל נתונים' if is_hebrew else 'Data Profile',
+            content=profile_content,
             order=2
         ))
         
-        # Factors Analysis
-        if analysis.extracted_factors:
-            factors_content = '\n'.join([
-                f"• {f.name}: {f.value} (חשיבות: {f.importance:.0%})" if lang == 'hebrew' 
-                else f"• {f.name}: {f.value} (Importance: {f.importance:.0%})"
-                for f in analysis.extracted_factors
-            ])
+        # 3. Statistical Analysis (BI Metrics)
+        stat_factors = [f for f in analysis.extracted_factors if f.category == 'statistical']
+        if stat_factors:
+            if is_hebrew:
+                stats_lines = ['📈 ניתוח סטטיסטי מפורט:\n']
+                for f in stat_factors[:8]:
+                    if isinstance(f.value, dict):
+                        stats_lines.append(f"🔹 {f.name}:")
+                        stats_lines.append(f"   • ממוצע: {f.value.get('mean', 'N/A')}")
+                        stats_lines.append(f"   • חציון: {f.value.get('median', 'N/A')}")
+                        stats_lines.append(f"   • טווח: {f.value.get('range', 'N/A')}")
+                        stats_lines.append(f"   • סטיית תקן: {f.value.get('std_dev', 'N/A')}")
+                        stats_lines.append(f"   • התפלגות: {f.value.get('distribution', 'N/A')}")
+                        stats_lines.append("")
+            else:
+                stats_lines = ['📈 Detailed Statistical Analysis:\n']
+                for f in stat_factors[:8]:
+                    if isinstance(f.value, dict):
+                        stats_lines.append(f"🔹 {f.name}:")
+                        stats_lines.append(f"   • Mean: {f.value.get('mean', 'N/A')}")
+                        stats_lines.append(f"   • Median: {f.value.get('median', 'N/A')}")
+                        stats_lines.append(f"   • Range: {f.value.get('range', 'N/A')}")
+                        stats_lines.append(f"   • Std Dev: {f.value.get('std_dev', 'N/A')}")
+                        stats_lines.append(f"   • Distribution: {f.value.get('distribution', 'N/A')}")
+                        stats_lines.append("")
+            
             sections.append(ReportSection(
-                title='ניתוח גורמים' if lang == 'hebrew' else 'Factors Analysis',
-                content=factors_content,
+                title='ניתוח סטטיסטי' if is_hebrew else 'Statistical Analysis',
+                content='\n'.join(stats_lines),
                 order=3
             ))
         
-        # Patterns Found
-        if analysis.patterns_found:
-            patterns_content = '\n'.join([
-                f"• {p.description} (משמעות: {p.significance:.0%})" if lang == 'hebrew'
-                else f"• {p.description} (Significance: {p.significance:.0%})"
-                for p in analysis.patterns_found
-            ])
+        # 4. Correlation Insights
+        top_corr = analysis.key_metrics.get('top_correlation')
+        if top_corr:
+            if is_hebrew:
+                corr_content = f"""🔗 מתאמים שזוהו:
+
+• הקשר החזק ביותר: {top_corr.get('fields', '')}
+• עוצמת המתאם: {top_corr.get('strength', 0)}
+
+💡 משמעות: מתאמים אלו מצביעים על קשרים פוטנציאליים בין משתנים שיש לקחת בחשבון בניתוח."""
+            else:
+                corr_content = f"""🔗 Correlations Discovered:
+
+• Strongest Relationship: {top_corr.get('fields', '')}
+• Correlation Strength: {top_corr.get('strength', 0)}
+
+💡 Significance: These correlations indicate potential relationships between variables that should be considered in the analysis."""
+            
             sections.append(ReportSection(
-                title='דפוסים שזוהו' if lang == 'hebrew' else 'Patterns Found',
-                content=patterns_content,
+                title='ניתוח מתאמים' if is_hebrew else 'Correlation Analysis',
+                content=corr_content,
                 order=4
             ))
         
-        # Anomalies
-        if analysis.anomalies:
-            anomalies_content = '\n'.join([
-                f"• [{a.severity.value.upper()}] {a.description}"
-                for a in analysis.anomalies
-            ])
+        # 5. Patterns & Trends
+        if analysis.patterns_found:
+            if is_hebrew:
+                patterns_lines = ['🔍 דפוסים ומגמות שזוהו:\n']
+                for i, p in enumerate(analysis.patterns_found, 1):
+                    patterns_lines.append(f"{i}. [{p.type}] {p.description}")
+                    patterns_lines.append(f"   משמעות: {p.significance:.0%}")
+                    patterns_lines.append("")
+            else:
+                patterns_lines = ['🔍 Identified Patterns & Trends:\n']
+                for i, p in enumerate(analysis.patterns_found, 1):
+                    patterns_lines.append(f"{i}. [{p.type}] {p.description}")
+                    patterns_lines.append(f"   Significance: {p.significance:.0%}")
+                    patterns_lines.append("")
+            
             sections.append(ReportSection(
-                title='חריגות וסיכונים' if lang == 'hebrew' else 'Anomalies & Risks',
-                content=anomalies_content,
+                title='דפוסים ומגמות' if is_hebrew else 'Patterns & Trends',
+                content='\n'.join(patterns_lines),
                 order=5
             ))
         
-        # Risk Assessment
-        risk_level = 'נמוך' if analysis.risk_score < 30 else ('בינוני' if analysis.risk_score < 60 else 'גבוה')
-        risk_level_en = 'Low' if analysis.risk_score < 30 else ('Medium' if analysis.risk_score < 60 else 'High')
+        # 6. Anomalies & Warnings
+        if analysis.anomalies:
+            if is_hebrew:
+                anomaly_lines = ['⚠️ חריגות ואזהרות:\n']
+                severity_map = {'critical': '🔴 קריטי', 'high': '🟠 גבוה', 'medium': '🟡 בינוני', 'low': '🟢 נמוך'}
+                for a in analysis.anomalies:
+                    sev_label = severity_map.get(a.severity.value, a.severity.value)
+                    anomaly_lines.append(f"• {sev_label}: {a.description}")
+                    anomaly_lines.append(f"  📋 המלצה: {a.recommendation}")
+                    anomaly_lines.append("")
+            else:
+                anomaly_lines = ['⚠️ Anomalies & Warnings:\n']
+                severity_map = {'critical': '🔴 Critical', 'high': '🟠 High', 'medium': '🟡 Medium', 'low': '🟢 Low'}
+                for a in analysis.anomalies:
+                    sev_label = severity_map.get(a.severity.value, a.severity.value)
+                    anomaly_lines.append(f"• {sev_label}: {a.description}")
+                    anomaly_lines.append(f"  📋 Recommendation: {a.recommendation}")
+                    anomaly_lines.append("")
+            
+            sections.append(ReportSection(
+                title='חריגות ואזהרות' if is_hebrew else 'Anomalies & Warnings',
+                content='\n'.join(anomaly_lines),
+                order=6
+            ))
+        
+        # 7. Risk Assessment
+        risk_score = analysis.risk_score
+        if risk_score < 30:
+            risk_level = 'נמוך' if is_hebrew else 'Low'
+            risk_color = '🟢'
+            risk_desc = 'הנתונים מצביעים על רמת סיכון נמוכה' if is_hebrew else 'Data indicates low risk level'
+        elif risk_score < 60:
+            risk_level = 'בינוני' if is_hebrew else 'Medium'
+            risk_color = '🟡'
+            risk_desc = 'יש לשים לב לגורמי סיכון מסוימים' if is_hebrew else 'Some risk factors require attention'
+        else:
+            risk_level = 'גבוה' if is_hebrew else 'High'
+            risk_color = '🔴'
+            risk_desc = 'נדרשת בדיקה מעמיקה של גורמי הסיכון' if is_hebrew else 'In-depth review of risk factors required'
+        
+        if is_hebrew:
+            risk_content = f"""🎯 הערכת סיכון כוללת:
+
+{risk_color} ציון סיכון: {risk_score:.0f}/100
+📊 רמת סיכון: {risk_level}
+
+{risk_desc}
+
+גורמים המשפיעים על הציון:
+• מספר חריגות: {len(analysis.anomalies)}
+• דפוסים חריגים: {len([p for p in analysis.patterns_found if p.significance > 0.5])}
+• שלמות נתונים: {completeness}%"""
+        else:
+            risk_content = f"""🎯 Overall Risk Assessment:
+
+{risk_color} Risk Score: {risk_score:.0f}/100
+📊 Risk Level: {risk_level}
+
+{risk_desc}
+
+Factors Affecting Score:
+• Number of anomalies: {len(analysis.anomalies)}
+• Unusual patterns: {len([p for p in analysis.patterns_found if p.significance > 0.5])}
+• Data completeness: {completeness}%"""
         
         sections.append(ReportSection(
-            title='הערכת סיכון כוללת' if lang == 'hebrew' else 'Overall Risk Assessment',
-            content=f"ציון סיכון: {analysis.risk_score:.1f}/100 - רמה: {risk_level}" if lang == 'hebrew'
-                    else f"Risk Score: {analysis.risk_score:.1f}/100 - Level: {risk_level_en}",
-            order=6
+            title='הערכת סיכון' if is_hebrew else 'Risk Assessment',
+            content=risk_content,
+            order=7
+        ))
+        
+        # 8. Key Metrics Table
+        metrics_items = []
+        for k, v in list(analysis.key_metrics.items())[:15]:
+            if not k.startswith('domain_') and k != 'top_correlation':
+                if isinstance(v, float):
+                    metrics_items.append(f"• {k}: {v:.2f}")
+                else:
+                    metrics_items.append(f"• {k}: {v}")
+        
+        sections.append(ReportSection(
+            title='מדדים מרכזיים' if is_hebrew else 'Key Metrics',
+            content='\n'.join(metrics_items),
+            data_table=analysis.key_metrics,
+            order=8
         ))
         
         return sections

@@ -605,6 +605,113 @@
       margin-bottom: 1rem;
     }
     
+    /* AI Insights Panel */
+    .insights-panel {
+      background: white;
+      border-radius: 16px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+      overflow: hidden;
+      margin-bottom: 2rem;
+    }
+    
+    .insights-header {
+      background: linear-gradient(135deg, #7c3aed 0%, #5b21b6 100%);
+      color: white;
+      padding: 1.5rem 2rem;
+    }
+    
+    .insights-header h3 {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    
+    .insights-body {
+      padding: 2rem;
+    }
+    
+    .insights-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 1.5rem;
+    }
+    
+    .insight-card {
+      background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+      border-radius: 12px;
+      padding: 1.5rem;
+      border-left: 4px solid #7c3aed;
+    }
+    
+    .insight-card.statistical {
+      border-left-color: #3b82f6;
+    }
+    
+    .insight-card.correlation {
+      border-left-color: #10b981;
+    }
+    
+    .insight-card.pattern {
+      border-left-color: #f59e0b;
+    }
+    
+    .insight-card.anomaly {
+      border-left-color: #ef4444;
+    }
+    
+    .insight-card h5 {
+      color: var(--text-dark);
+      margin-bottom: 1rem;
+      font-size: 1rem;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    
+    .insight-card .insight-detail {
+      font-size: 0.9rem;
+      color: var(--text-muted);
+      line-height: 1.6;
+    }
+    
+    .insight-card .insight-value {
+      font-size: 1.2rem;
+      font-weight: 700;
+      color: var(--primary);
+      margin: 0.5rem 0;
+    }
+    
+    .insight-badge {
+      display: inline-block;
+      padding: 3px 10px;
+      border-radius: 12px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      background: rgba(124, 58, 237, 0.1);
+      color: #7c3aed;
+    }
+    
+    .stat-detail {
+      display: flex;
+      justify-content: space-between;
+      padding: 4px 0;
+      border-bottom: 1px dashed #e2e8f0;
+      font-size: 0.85rem;
+    }
+    
+    .stat-detail:last-child {
+      border-bottom: none;
+    }
+    
+    .stat-detail .label {
+      color: var(--text-muted);
+    }
+    
+    .stat-detail .val {
+      font-weight: 600;
+      color: var(--text-dark);
+    }
+    
     .action-items {
       margin-left: 1.5rem;
       color: var(--text-dark);
@@ -786,6 +893,19 @@
           <div class="risk-indicator" id="riskIndicator"></div>
         </div>
         <p id="riskSummary" style="margin-top: 1rem; color: var(--text-muted);"></p>
+      </div>
+      
+      <!-- AI Insights Panel -->
+      <div class="insights-panel" id="insightsPanel">
+        <div class="insights-header">
+          <h3>🧠 AI Inductive Analysis</h3>
+          <p style="margin-top: 0.5rem; opacity: 0.9; font-size: 0.9rem;">Advanced pattern recognition and statistical insights from your data</p>
+        </div>
+        <div class="insights-body">
+          <div class="insights-grid" id="insightsGrid">
+            <!-- Populated dynamically -->
+          </div>
+        </div>
       </div>
       
       <!-- Charts -->
@@ -1044,32 +1164,71 @@
       const riskScore = analysis.risk_score;
       const riskLevel = riskScore < 30 ? 'low' : (riskScore < 60 ? 'medium' : 'high');
       const riskColor = riskScore < 30 ? 'var(--success)' : (riskScore < 60 ? 'var(--warning)' : 'var(--danger)');
+      const riskLabel = riskScore < 30 ? 'Low Risk' : (riskScore < 60 ? 'Medium Risk' : 'High Risk');
       
-      // Stats Grid
+      // Extract advanced metrics
+      const metrics = analysis.key_metrics || {};
+      const numericCols = metrics.numeric_columns || 0;
+      const categoricalCols = metrics.categorical_columns || 0;
+      const dataCompleteness = metrics.data_completeness || 100;
+      const correlationCount = metrics.correlation_count || 0;
+      const topCorrelation = metrics.top_correlation;
+      
+      // Count patterns and anomalies
+      const patternCount = analysis.patterns_found?.length || 0;
+      const anomalyCount = analysis.anomalies?.length || 0;
+      
+      // Stats Grid - Enhanced with BI metrics
       document.getElementById('statsGrid').innerHTML = `
         <div class="stat-card risk-${riskLevel} fade-in">
-          <h5>Risk Level</h5>
-          <div class="value" style="color: ${riskColor}">${riskLevel.toUpperCase()}</div>
+          <h5>Risk Assessment</h5>
+          <div class="value" style="color: ${riskColor}; font-size: 1.8rem;">${riskScore.toFixed(0)}</div>
+          <small style="color: var(--text-muted);">${riskLabel}</small>
         </div>
         <div class="stat-card fade-in">
-          <h5>Data Type</h5>
-          <div class="value" style="font-size: 1.5rem;">${capitalizeFirst(analysis.data_classification)}</div>
+          <h5>Data Classification</h5>
+          <div class="value" style="font-size: 1.4rem;">📊 ${capitalizeFirst(analysis.data_classification)}</div>
         </div>
         <div class="stat-card fade-in">
-          <h5>Language</h5>
-          <div class="value" style="font-size: 1.5rem;">${analysis.language_name}</div>
+          <h5>Language Detected</h5>
+          <div class="value" style="font-size: 1.4rem;">🌐 ${analysis.language_name}</div>
         </div>
         <div class="stat-card fade-in">
-          <h5>Confidence</h5>
+          <h5>AI Confidence</h5>
           <div class="value">${(analysis.confidence * 100).toFixed(0)}%</div>
+          <small style="color: var(--text-muted);">Analysis accuracy</small>
         </div>
         <div class="stat-card fade-in">
-          <h5>Records</h5>
-          <div class="value">${analysis.key_metrics?.total_records || 0}</div>
+          <h5>Records Analyzed</h5>
+          <div class="value">${metrics.total_records || 0}</div>
+          <small style="color: var(--text-muted);">${numericCols} numeric, ${categoricalCols} categorical fields</small>
         </div>
         <div class="stat-card fade-in">
-          <h5>Factors</h5>
-          <div class="value">${analysis.extracted_factors?.length || 0}</div>
+          <h5>Data Quality</h5>
+          <div class="value" style="color: ${dataCompleteness > 90 ? 'var(--success)' : dataCompleteness > 70 ? 'var(--warning)' : 'var(--danger)'}">${dataCompleteness}%</div>
+          <small style="color: var(--text-muted);">Completeness</small>
+        </div>
+        <div class="stat-card fade-in">
+          <h5>Patterns Found</h5>
+          <div class="value">🔍 ${patternCount}</div>
+          <small style="color: var(--text-muted);">Inductive analysis</small>
+        </div>
+        <div class="stat-card fade-in">
+          <h5>Anomalies</h5>
+          <div class="value" style="color: ${anomalyCount > 3 ? 'var(--danger)' : anomalyCount > 0 ? 'var(--warning)' : 'var(--success)'}">⚠️ ${anomalyCount}</div>
+          <small style="color: var(--text-muted);">Requires attention</small>
+        </div>
+        ${correlationCount > 0 ? `
+        <div class="stat-card fade-in">
+          <h5>Correlations</h5>
+          <div class="value">🔗 ${correlationCount}</div>
+          <small style="color: var(--text-muted);">${topCorrelation ? `Strongest: ${topCorrelation.strength}` : 'Field relationships'}</small>
+        </div>
+        ` : ''}
+        <div class="stat-card fade-in">
+          <h5>Key Factors</h5>
+          <div class="value">📈 ${analysis.extracted_factors?.length || 0}</div>
+          <small style="color: var(--text-muted);">Identified insights</small>
         </div>
       `;
       
@@ -1078,7 +1237,16 @@
       document.getElementById('riskGaugeValue').style.color = riskColor;
       document.getElementById('riskGaugeCircle').style.background = `conic-gradient(${riskColor} ${riskScore * 3.6}deg, #e2e8f0 0deg)`;
       document.getElementById('riskIndicator').style.left = `${riskScore}%`;
-      document.getElementById('riskSummary').textContent = analysis.summary;
+      
+      // Enhanced summary with key insights
+      const summaryParts = [analysis.summary];
+      if (topCorrelation) {
+        summaryParts.push(`\n\n🔗 Key Correlation: ${topCorrelation.fields} (strength: ${topCorrelation.strength})`);
+      }
+      document.getElementById('riskSummary').innerHTML = summaryParts.join('').replace(/\n/g, '<br>');
+      
+      // AI Insights Panel
+      renderInsights(analysis, metrics);
       
       // Charts
       renderCharts(report.charts);
@@ -1108,6 +1276,152 @@
           </div>
         </div>
       `).join('');
+    }
+    
+    function renderInsights(analysis, metrics) {
+      const container = document.getElementById('insightsGrid');
+      let insightsHTML = '';
+      
+      // Statistical factors
+      const statisticalFactors = analysis.extracted_factors?.filter(f => f.category === 'statistical') || [];
+      statisticalFactors.slice(0, 4).forEach(factor => {
+        const value = factor.value;
+        if (typeof value === 'object') {
+          insightsHTML += `
+            <div class="insight-card statistical fade-in">
+              <h5>📊 ${factor.name}</h5>
+              <div class="insight-detail">
+                <div class="stat-detail">
+                  <span class="label">Mean</span>
+                  <span class="val">${value.mean ?? 'N/A'}</span>
+                </div>
+                <div class="stat-detail">
+                  <span class="label">Median</span>
+                  <span class="val">${value.median ?? 'N/A'}</span>
+                </div>
+                <div class="stat-detail">
+                  <span class="label">Range</span>
+                  <span class="val">${value.range ?? 'N/A'}</span>
+                </div>
+                <div class="stat-detail">
+                  <span class="label">Std Dev</span>
+                  <span class="val">${value.std_dev ?? 'N/A'}</span>
+                </div>
+                <div class="stat-detail">
+                  <span class="label">Distribution</span>
+                  <span class="val">${capitalizeFirst(value.distribution ?? 'unknown')}</span>
+                </div>
+              </div>
+              <span class="insight-badge">Importance: ${(factor.importance * 100).toFixed(0)}%</span>
+            </div>
+          `;
+        }
+      });
+      
+      // Correlation insight
+      const topCorr = metrics.top_correlation;
+      if (topCorr) {
+        insightsHTML += `
+          <div class="insight-card correlation fade-in">
+            <h5>🔗 Key Correlation Discovered</h5>
+            <div class="insight-value">${topCorr.fields}</div>
+            <div class="insight-detail">
+              <p>Correlation Strength: <strong>${topCorr.strength}</strong></p>
+              <p>This indicates a ${Math.abs(topCorr.strength) > 0.7 ? 'strong' : Math.abs(topCorr.strength) > 0.5 ? 'moderate' : 'weak'} 
+                 ${topCorr.strength > 0 ? 'positive' : 'negative'} relationship between these variables.</p>
+            </div>
+            <span class="insight-badge">Statistical Correlation</span>
+          </div>
+        `;
+      }
+      
+      // Pattern insights
+      const patterns = analysis.patterns_found || [];
+      patterns.slice(0, 3).forEach(pattern => {
+        insightsHTML += `
+          <div class="insight-card pattern fade-in">
+            <h5>🔍 ${capitalizeFirst(pattern.type)} Pattern</h5>
+            <div class="insight-detail">
+              <p>${pattern.description}</p>
+            </div>
+            <span class="insight-badge">Significance: ${(pattern.significance * 100).toFixed(0)}%</span>
+          </div>
+        `;
+      });
+      
+      // Anomaly insights
+      const anomalies = analysis.anomalies || [];
+      anomalies.slice(0, 2).forEach(anomaly => {
+        const severityColors = {
+          'critical': '#ef4444',
+          'high': '#f59e0b',
+          'medium': '#3b82f6',
+          'low': '#10b981'
+        };
+        insightsHTML += `
+          <div class="insight-card anomaly fade-in">
+            <h5 style="color: ${severityColors[anomaly.severity] || '#6b7280'}">
+              ⚠️ ${capitalizeFirst(anomaly.severity)} Anomaly
+            </h5>
+            <div class="insight-detail">
+              <p><strong>Issue:</strong> ${anomaly.description}</p>
+              <p><strong>Recommendation:</strong> ${anomaly.recommendation}</p>
+            </div>
+            <span class="insight-badge" style="background: ${severityColors[anomaly.severity]}20; color: ${severityColors[anomaly.severity]}">
+              ${anomaly.type}
+            </span>
+          </div>
+        `;
+      });
+      
+      // Domain insight
+      const domainFactors = analysis.extracted_factors?.filter(f => f.category === 'domain') || [];
+      domainFactors.forEach(factor => {
+        if (typeof factor.value === 'object') {
+          insightsHTML += `
+            <div class="insight-card fade-in">
+              <h5>🏷️ ${factor.name}</h5>
+              <div class="insight-detail">
+                ${Object.entries(factor.value).map(([key, val]) => `
+                  <div class="stat-detail">
+                    <span class="label">${capitalizeFirst(key.replace(/_/g, ' '))}</span>
+                    <span class="val">${val}</span>
+                  </div>
+                `).join('')}
+              </div>
+              <span class="insight-badge">Domain Analysis</span>
+            </div>
+          `;
+        }
+      });
+      
+      // Data quality insight
+      insightsHTML += `
+        <div class="insight-card fade-in">
+          <h5>✅ Data Quality Assessment</h5>
+          <div class="insight-detail">
+            <div class="stat-detail">
+              <span class="label">Completeness</span>
+              <span class="val" style="color: ${metrics.data_completeness > 90 ? 'var(--success)' : metrics.data_completeness > 70 ? 'var(--warning)' : 'var(--danger)'}">${metrics.data_completeness}%</span>
+            </div>
+            <div class="stat-detail">
+              <span class="label">Total Fields</span>
+              <span class="val">${metrics.total_columns || 0}</span>
+            </div>
+            <div class="stat-detail">
+              <span class="label">Numeric Fields</span>
+              <span class="val">${metrics.numeric_columns || 0}</span>
+            </div>
+            <div class="stat-detail">
+              <span class="label">Categorical Fields</span>
+              <span class="val">${metrics.categorical_columns || 0}</span>
+            </div>
+          </div>
+          <span class="insight-badge">Quality Score</span>
+        </div>
+      `;
+      
+      container.innerHTML = insightsHTML || '<p style="color: var(--text-muted);">No advanced insights available for this analysis.</p>';
     }
     
     function renderCharts(chartConfigs) {
