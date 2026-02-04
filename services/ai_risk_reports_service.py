@@ -341,18 +341,28 @@ class AIRiskReportsService:
         }
         
         try:
-            # Detect encoding
-            encoding = self._detect_encoding(file_content)
+            file_type_lower = file_type.lower()
             
-            if file_type.lower() == 'zip':
+            if file_type_lower == 'zip':
                 # Handle ZIP file
                 parsed = self._parse_zip(file_content)
-            elif file_type.lower() in ['csv', 'xls', 'xlsx']:
+                encoding = 'utf-8'
+            elif file_type_lower in ['png', 'jpg', 'jpeg', 'gif', 'webp']:
+                # Handle image files
+                parsed = self._parse_image(file_content, filename, file_type_lower)
+                encoding = 'binary'
+            elif file_type_lower == 'pdf':
+                # Handle PDF files
+                parsed = self._parse_pdf(file_content, filename)
+                encoding = 'binary'
+            elif file_type_lower in ['csv', 'xls', 'xlsx']:
                 # Parse as CSV (XLS files should be converted to CSV format)
+                encoding = self._detect_encoding(file_content)
                 text_content = file_content.decode(encoding, errors='replace')
                 parsed = self._parse_csv(text_content)
             else:
                 # Try to parse as CSV
+                encoding = self._detect_encoding(file_content)
                 text_content = file_content.decode(encoding, errors='replace')
                 parsed = self._parse_csv(text_content)
             
@@ -424,31 +434,181 @@ class AIRiskReportsService:
         return {'columns': [], 'rows': [], 'delimiter': ','}
     
     def _parse_zip(self, content: bytes) -> Dict[str, Any]:
-        """Parse ZIP file containing CSV files"""
+        """Parse ZIP file containing CSV, image, and PDF files"""
         combined_data = {'columns': [], 'rows': [], 'files': []}
         
         with zipfile.ZipFile(io.BytesIO(content), 'r') as zf:
             for name in zf.namelist():
-                if name.lower().endswith('.csv'):
-                    with zf.open(name) as f:
-                        file_content = f.read()
+                # Skip directories and hidden files
+                if name.endswith('/') or name.startswith('__') or name.startswith('.'):
+                    continue
+                
+                name_lower = name.lower()
+                ext = name_lower.split('.')[-1] if '.' in name_lower else ''
+                
+                with zf.open(name) as f:
+                    file_content = f.read()
+                
+                parsed = None
+                
+                if ext == 'csv':
+                    encoding = self._detect_encoding(file_content)
+                    text_content = file_content.decode(encoding, errors='replace')
+                    parsed = self._parse_csv(text_content)
+                elif ext in ['png', 'jpg', 'jpeg', 'gif', 'webp']:
+                    parsed = self._parse_image(file_content, name, ext)
+                elif ext == 'pdf':
+                    parsed = self._parse_pdf(file_content, name)
+                elif ext in ['xls', 'xlsx']:
+                    # Try to parse as CSV (basic support)
+                    try:
                         encoding = self._detect_encoding(file_content)
                         text_content = file_content.decode(encoding, errors='replace')
                         parsed = self._parse_csv(text_content)
-                        
-                        combined_data['files'].append({
-                            'name': name,
-                            'columns': parsed['columns'],
-                            'row_count': len(parsed['rows'])
-                        })
-                        
-                        # Merge columns and rows
-                        for col in parsed['columns']:
-                            if col not in combined_data['columns']:
-                                combined_data['columns'].append(col)
-                        combined_data['rows'].extend(parsed['rows'])
+                    except:
+                        pass
+                
+                if parsed:
+                    combined_data['files'].append({
+                        'name': name,
+                        'type': ext,
+                        'columns': parsed.get('columns', []),
+                        'row_count': len(parsed.get('rows', []))
+                    })
+                    
+                    # Merge columns and rows
+                    for col in parsed.get('columns', []):
+                        if col not in combined_data['columns']:
+                            combined_data['columns'].append(col)
+                    combined_data['rows'].extend(parsed.get('rows', []))
         
         return combined_data
+    
+    def _parse_image(self, content: bytes, filename: str, file_type: str) -> Dict[str, Any]:
+        """
+        Parse image file and extract metadata for analysis.
+        Creates a structured data format from image properties.
+        """
+        # Basic image metadata extraction
+        file_size = len(content)
+        
+        # Try to detect image dimensions from header
+        width, height = 0, 0
+        if file_type in ['png']:
+            # PNG header: width at bytes 16-19, height at bytes 20-23
+            if len(content) >= 24:
+                width = int.from_bytes(content[16:20], 'big')
+                height = int.from_bytes(content[20:24], 'big')
+        elif file_type in ['jpg', 'jpeg']:
+            # JPEG - simplified dimension detection
+            # Look for SOF0 marker (0xFF 0xC0)
+            try:
+                i = 0
+                while i < len(content) - 10:
+                    if content[i] == 0xFF and content[i+1] in [0xC0, 0xC1, 0xC2]:
+                        height = int.from_bytes(content[i+5:i+7], 'big')
+                        width = int.from_bytes(content[i+7:i+9], 'big')
+                        break
+                    i += 1
+            except:
+                pass
+        
+        # Extract any text from filename for language detection
+        filename_text = filename.replace('_', ' ').replace('-', ' ')
+        
+        # Create structured data for analysis
+        columns = ['property', 'value', 'category']
+        rows = [
+            {'property': 'filename', 'value': filename, 'category': 'metadata'},
+            {'property': 'file_type', 'value': file_type.upper(), 'category': 'metadata'},
+            {'property': 'file_size_bytes', 'value': str(file_size), 'category': 'metadata'},
+            {'property': 'file_size_kb', 'value': str(round(file_size / 1024, 2)), 'category': 'metadata'},
+            {'property': 'width_px', 'value': str(width), 'category': 'dimensions'},
+            {'property': 'height_px', 'value': str(height), 'category': 'dimensions'},
+            {'property': 'resolution', 'value': f'{width}x{height}', 'category': 'dimensions'},
+            {'property': 'document_type', 'value': 'image', 'category': 'classification'},
+            {'property': 'source_name', 'value': filename_text, 'category': 'context'},
+        ]
+        
+        return {
+            'columns': columns,
+            'rows': rows,
+            'delimiter': None,
+            'file_type': 'image',
+            'original_filename': filename
+        }
+    
+    def _parse_pdf(self, content: bytes, filename: str) -> Dict[str, Any]:
+        """
+        Parse PDF file and extract metadata for analysis.
+        Creates a structured data format from PDF properties.
+        """
+        file_size = len(content)
+        
+        # Basic PDF metadata extraction
+        page_count = 0
+        title = filename
+        author = ''
+        creation_date = ''
+        
+        # Simple PDF parsing for metadata
+        try:
+            content_str = content[:4096].decode('latin-1', errors='ignore')
+            
+            # Count pages (approximate)
+            page_count = content.count(b'/Type /Page') or content.count(b'/Type/Page')
+            
+            # Extract title if present
+            if '/Title' in content_str:
+                start = content_str.find('/Title')
+                if start != -1:
+                    # Try to extract title value
+                    paren_start = content_str.find('(', start)
+                    paren_end = content_str.find(')', paren_start) if paren_start != -1 else -1
+                    if paren_start != -1 and paren_end != -1:
+                        title = content_str[paren_start+1:paren_end][:100]
+            
+            # Extract author if present
+            if '/Author' in content_str:
+                start = content_str.find('/Author')
+                if start != -1:
+                    paren_start = content_str.find('(', start)
+                    paren_end = content_str.find(')', paren_start) if paren_start != -1 else -1
+                    if paren_start != -1 and paren_end != -1:
+                        author = content_str[paren_start+1:paren_end][:100]
+        except:
+            pass
+        
+        # Extract text from filename for context
+        filename_text = filename.replace('_', ' ').replace('-', ' ').replace('.pdf', '')
+        
+        # Detect if filename contains Hebrew
+        has_hebrew = bool(re.search(r'[\u0590-\u05FF]', filename_text))
+        
+        # Create structured data for analysis
+        columns = ['property', 'value', 'category']
+        rows = [
+            {'property': 'filename', 'value': filename, 'category': 'metadata'},
+            {'property': 'file_type', 'value': 'PDF', 'category': 'metadata'},
+            {'property': 'file_size_bytes', 'value': str(file_size), 'category': 'metadata'},
+            {'property': 'file_size_kb', 'value': str(round(file_size / 1024, 2)), 'category': 'metadata'},
+            {'property': 'file_size_mb', 'value': str(round(file_size / (1024*1024), 2)), 'category': 'metadata'},
+            {'property': 'page_count', 'value': str(page_count), 'category': 'content'},
+            {'property': 'title', 'value': title, 'category': 'metadata'},
+            {'property': 'author', 'value': author, 'category': 'metadata'},
+            {'property': 'document_type', 'value': 'pdf', 'category': 'classification'},
+            {'property': 'source_name', 'value': filename_text, 'category': 'context'},
+            {'property': 'has_hebrew', 'value': str(has_hebrew), 'category': 'language'},
+        ]
+        
+        return {
+            'columns': columns,
+            'rows': rows,
+            'delimiter': None,
+            'file_type': 'pdf',
+            'original_filename': filename,
+            'page_count': page_count
+        }
     
     def analyze(self, document_id: str) -> AnalysisResult:
         """
