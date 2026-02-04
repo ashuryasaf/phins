@@ -720,6 +720,37 @@ The customer portal provides:
 - Update profile information
 - View policy documents
 
+## 📊 Web Dashboards & Reports
+
+PHINS includes comprehensive web-based dashboards for all divisions:
+
+### Risk Assessment Report Dashboard
+**URL:** `/risk-assessment-viewer.html`
+
+Comprehensive risk assessment visualization tool featuring:
+- Risk score gauge (0-100 scale) with color-coded categories
+- Applicant profile and demographics
+- Medical conditions analysis with ICD-10 codes
+- Risk factors breakdown with impact percentages
+- Underwriting decision with confidence levels
+- Premium adjustment calculations
+- Policy exclusions and monitoring requirements
+- Export to PDF and print functionality
+
+**Access:** Available to Underwriters, Actuaries, and Admins
+
+**Documentation:** See [RISK_DASHBOARD_GUIDE.md](RISK_DASHBOARD_GUIDE.md) for complete access guide and API integration details.
+
+### Other Division Dashboards
+- **Admin Portal** (`/admin.html`) - System administration
+- **Underwriter Dashboard** (`/underwriter-dashboard.html`) - Underwriting workflow
+- **Claims Adjuster Dashboard** (`/claims-adjuster-dashboard.html`) - Claims processing
+- **Accountant Dashboard** (`/accountant-dashboard.html`) - Financial operations
+- **Actuary Dashboard** (`/actuary-dashboard.html`) - Actuarial analysis
+- **Foundation Dashboard** (`/foundation-dashboard.html`) - Foundation management
+- **Supplier Dashboard** (`/supplier-dashboard.html`) - Supplier operations
+- **Algo Trading** (`/algo-trading.html`) - Automated trading interface
+
 ## API Integrations
 
 The system is designed to support integrations with:
