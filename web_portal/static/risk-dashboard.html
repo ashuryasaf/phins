@@ -350,9 +350,9 @@
             <div class="upload-zone" id="uploadZone" onclick="document.getElementById('fileInput').click()">
                 <div class="upload-zone-icon" id="uploadZoneIcon">📁</div>
                 <div class="upload-zone-text" id="uploadZoneText">Drag and drop files here or click to browse</div>
-                <div class="upload-zone-formats" id="uploadZoneFormats">Supported: CSV, XLSX, JSON (max 10MB)</div>
+                <div class="upload-zone-formats" id="uploadZoneFormats">Supported: CSV, XLS, XLSX, ZIP, PDF, JSON (max 10MB)</div>
             </div>
-            <input type="file" id="fileInput" style="display: none;" accept=".csv,.xlsx,.json" onchange="handleFileSelect(event)">
+            <input type="file" id="fileInput" style="display: none;" accept=".csv,.xls,.xlsx,.zip,.pdf,.json" onchange="handleFileSelect(event)">
             
             <div class="progress-bar" id="uploadProgress">
                 <div class="progress-bar-fill" id="uploadProgressFill"></div>
@@ -378,8 +378,10 @@
             <div style="margin-top: 20px; padding: 15px; background: #f8f9fa; border-radius: 8px;" id="formatGuide">
                 <div style="font-weight: 600; margin-bottom: 10px;">📋 Data Format Guide</div>
                 <div style="font-size: 12px; color: #666;" id="formatGuideContent">
-                    <strong>CSV/Excel columns:</strong> application_id, customer_name, risk_score, risk_category, policy_type, coverage_amount<br>
-                    <strong>JSON format:</strong> Array of objects with the same fields
+                    <strong>CSV/Excel (XLS, XLSX) columns:</strong> application_id, customer_name, risk_score, risk_category, policy_type, coverage_amount<br>
+                    <strong>JSON format:</strong> Array of objects with the same fields<br>
+                    <strong>ZIP files:</strong> Can contain multiple CSV, XLS, XLSX, PDF, or JSON files for batch processing<br>
+                    <strong>PDF files:</strong> Risk assessment reports will be processed and extracted
                 </div>
             </div>
         </div>
@@ -815,16 +817,18 @@
                     <strong>Supporting Documents:</strong> Any additional evidence for underwriting
                 `;
             } else {
-                // Standard mode - accept data files
-                fileInput.accept = '.csv,.xlsx,.json';
+                // Standard mode - accept data files including XLS, ZIP, PDF
+                fileInput.accept = '.csv,.xls,.xlsx,.zip,.pdf,.json';
                 zoneIcon.textContent = '📁';
                 zoneText.textContent = 'Drag and drop files here or click to browse';
-                zoneFormats.textContent = 'Supported: CSV, XLSX, JSON (max 10MB)';
+                zoneFormats.textContent = 'Supported: CSV, XLS, XLSX, ZIP, PDF, JSON (max 10MB)';
                 aiToggleDesc.textContent = 'Enable AI-powered risk analysis for documents, images, and PDFs';
                 processBtn.textContent = 'Process Upload';
                 formatGuideContent.innerHTML = `
-                    <strong>CSV/Excel columns:</strong> application_id, customer_name, risk_score, risk_category, policy_type, coverage_amount<br>
-                    <strong>JSON format:</strong> Array of objects with the same fields
+                    <strong>CSV/Excel (XLS, XLSX) columns:</strong> application_id, customer_name, risk_score, risk_category, policy_type, coverage_amount<br>
+                    <strong>JSON format:</strong> Array of objects with the same fields<br>
+                    <strong>ZIP files:</strong> Can contain multiple CSV, XLS, XLSX, PDF, or JSON files for batch processing<br>
+                    <strong>PDF files:</strong> Risk assessment reports will be processed and extracted
                 `;
             }
         }
@@ -872,9 +876,10 @@
                               'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'];
                 validExtensions = ['.pdf', '.png', '.jpg', '.jpeg', '.gif', '.bmp', '.tiff', '.doc', '.docx'];
             } else {
-                // Standard data upload mode
-                validTypes = ['text/csv', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'application/json'];
-                validExtensions = ['.csv', '.xlsx', '.json'];
+                // Standard data upload mode - now supports CSV, XLS, XLSX, ZIP, PDF, JSON
+                validTypes = ['text/csv', 'application/vnd.ms-excel', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 
+                              'application/json', 'application/zip', 'application/x-zip-compressed', 'application/pdf'];
+                validExtensions = ['.csv', '.xls', '.xlsx', '.zip', '.pdf', '.json'];
             }
             
             const isValidType = validTypes.includes(file.type) || 
@@ -883,7 +888,7 @@
             if (!isValidType) {
                 const modeMsg = aiAssessmentEnabled ? 
                     '❌ Invalid file type. Use PDF, images (PNG, JPG), or documents (DOC, DOCX) for AI assessment.' :
-                    '❌ Invalid file type. Use CSV, XLSX, or JSON.';
+                    '❌ Invalid file type. Use CSV, XLS, XLSX, ZIP, PDF, or JSON.';
                 document.getElementById('uploadStatus').textContent = modeMsg;
                 return;
             }
