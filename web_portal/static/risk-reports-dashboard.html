@@ -11,12 +11,14 @@
       --primary: #0d47a1;
       --primary-light: #1976d2;
       --accent: #ff6b35;
-      --success: #4caf50;
-      --warning: #ff9800;
-      --danger: #f44336;
+      --success: #10b981;
+      --warning: #f59e0b;
+      --danger: #ef4444;
       --bg-light: #f5f7fa;
       --text-dark: #1a1a2e;
-      --text-muted: #666;
+      --text-muted: #64748b;
+      --purple: #7c3aed;
+      --purple-light: #8b5cf6;
     }
     
     * {
@@ -41,10 +43,13 @@
       justify-content: space-between;
       align-items: center;
       box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+      position: sticky;
+      top: 0;
+      z-index: 100;
     }
     
     .header h1 {
-      font-size: 1.5rem;
+      font-size: 1.4rem;
       display: flex;
       align-items: center;
       gap: 12px;
@@ -53,6 +58,7 @@
     .header-nav {
       display: flex;
       gap: 12px;
+      flex-wrap: wrap;
     }
     
     .header-nav a {
@@ -62,6 +68,7 @@
       border-radius: 8px;
       background: rgba(255,255,255,0.1);
       transition: background 0.2s;
+      font-size: 0.9rem;
     }
     
     .header-nav a:hover {
@@ -75,6 +82,23 @@
       padding: 2rem;
     }
     
+    /* Page Title */
+    .page-title {
+      text-align: center;
+      margin-bottom: 2rem;
+    }
+    
+    .page-title h2 {
+      font-size: 2rem;
+      color: var(--primary);
+      margin-bottom: 0.5rem;
+    }
+    
+    .page-title p {
+      color: var(--text-muted);
+      font-size: 1.1rem;
+    }
+    
     /* Upload Section */
     .upload-section {
       background: white;
@@ -84,14 +108,31 @@
       margin-bottom: 2rem;
     }
     
+    .section-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 1.5rem;
+      padding-bottom: 1rem;
+      border-bottom: 2px solid #e2e8f0;
+    }
+    
+    .section-header h3 {
+      color: var(--primary);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 1.3rem;
+    }
+    
     .upload-zone {
-      border: 3px dashed #ccc;
-      border-radius: 12px;
+      border: 3px dashed #cbd5e1;
+      border-radius: 16px;
       padding: 3rem 2rem;
       text-align: center;
       transition: all 0.3s;
       cursor: pointer;
-      background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+      background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
     }
     
     .upload-zone:hover, .upload-zone.dragover {
@@ -101,7 +142,7 @@
     
     .upload-zone.processing {
       border-color: var(--warning);
-      background: linear-gradient(135deg, #fff8e1 0%, #ffecb3 100%);
+      background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%);
     }
     
     .upload-icon {
@@ -109,8 +150,8 @@
       margin-bottom: 1rem;
     }
     
-    .upload-text h3 {
-      font-size: 1.3rem;
+    .upload-text h4 {
+      font-size: 1.2rem;
       margin-bottom: 0.5rem;
       color: var(--text-dark);
     }
@@ -127,7 +168,7 @@
     .supported-formats {
       display: flex;
       justify-content: center;
-      gap: 1rem;
+      gap: 0.75rem;
       margin-top: 1.5rem;
       flex-wrap: wrap;
     }
@@ -141,33 +182,133 @@
       font-weight: 500;
     }
     
-    /* Language Selector */
-    .language-selector {
+    /* Options Row */
+    .options-row {
       display: flex;
+      justify-content: space-between;
       align-items: center;
+      flex-wrap: wrap;
       gap: 1rem;
+      padding: 1.5rem;
+      background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+      border-radius: 12px;
       margin-top: 1.5rem;
-      padding-top: 1.5rem;
-      border-top: 1px solid #eee;
     }
     
-    .language-selector label {
+    .option-group {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+    
+    .option-group label {
       font-weight: 500;
       color: var(--text-dark);
     }
     
-    .language-selector select {
-      padding: 10px 20px;
+    .option-group select {
+      padding: 10px 16px;
       border-radius: 8px;
-      border: 2px solid #ddd;
+      border: 2px solid #e2e8f0;
       font-size: 1rem;
       cursor: pointer;
       transition: border-color 0.2s;
     }
     
-    .language-selector select:focus {
+    .option-group select:focus {
       outline: none;
       border-color: var(--primary);
+    }
+    
+    /* Buttons */
+    .btn {
+      padding: 12px 24px;
+      border-radius: 10px;
+      border: none;
+      cursor: pointer;
+      font-weight: 600;
+      font-size: 1rem;
+      transition: all 0.2s;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+    }
+    
+    .btn-primary {
+      background: linear-gradient(135deg, var(--accent) 0%, #e55a2b 100%);
+      color: white;
+      box-shadow: 0 4px 12px rgba(255, 107, 53, 0.3);
+    }
+    
+    .btn-primary:hover:not(:disabled) {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 20px rgba(255, 107, 53, 0.4);
+    }
+    
+    .btn-primary:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+    
+    .btn-secondary {
+      background: #e2e8f0;
+      color: var(--text-dark);
+    }
+    
+    .btn-secondary:hover {
+      background: #cbd5e1;
+    }
+    
+    .btn-white {
+      background: rgba(255,255,255,0.2);
+      color: white;
+    }
+    
+    .btn-white:hover {
+      background: rgba(255,255,255,0.3);
+    }
+    
+    /* File List */
+    .file-list {
+      margin-top: 1rem;
+    }
+    
+    .file-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px 16px;
+      background: #f8fafc;
+      border-radius: 10px;
+      margin-bottom: 8px;
+      border: 1px solid #e2e8f0;
+    }
+    
+    .file-icon {
+      font-size: 1.5rem;
+    }
+    
+    .file-info {
+      flex: 1;
+    }
+    
+    .file-name {
+      font-weight: 600;
+      color: var(--text-dark);
+    }
+    
+    .file-size {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+    }
+    
+    .file-remove {
+      background: none;
+      border: none;
+      color: var(--danger);
+      cursor: pointer;
+      font-size: 1.2rem;
+      padding: 4px;
     }
     
     /* Processing Status */
@@ -177,32 +318,37 @@
       background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%);
       border-radius: 12px;
       margin-top: 1.5rem;
+      text-align: center;
     }
     
     .processing-status.active {
       display: block;
     }
     
+    .processing-status h4 {
+      color: var(--primary);
+      margin-bottom: 1rem;
+    }
+    
     .progress-bar {
       height: 8px;
-      background: #ddd;
+      background: #c5cae9;
       border-radius: 4px;
       overflow: hidden;
-      margin: 1rem 0;
+      margin-bottom: 0.75rem;
     }
     
     .progress-fill {
       height: 100%;
       background: linear-gradient(90deg, var(--primary) 0%, var(--primary-light) 100%);
       border-radius: 4px;
-      transition: width 0.3s;
-      animation: progress-animation 2s infinite;
+      animation: progress-animation 3s ease-in-out infinite;
     }
     
     @keyframes progress-animation {
-      0% { width: 0%; }
+      0% { width: 5%; }
       50% { width: 70%; }
-      100% { width: 100%; }
+      100% { width: 95%; }
     }
     
     /* Results Section */
@@ -214,11 +360,11 @@
       display: block;
     }
     
-    /* Cards Grid */
-    .cards-grid {
+    /* Stats Grid */
+    .stats-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-      gap: 1.5rem;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 1rem;
       margin-bottom: 2rem;
     }
     
@@ -226,29 +372,37 @@
       background: white;
       border-radius: 12px;
       padding: 1.5rem;
-      box-shadow: 0 4px 15px rgba(0,0,0,0.08);
+      box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+      text-align: center;
     }
     
-    .stat-card h4 {
+    .stat-card h5 {
       color: var(--text-muted);
-      font-size: 0.9rem;
-      margin-bottom: 0.5rem;
+      font-size: 0.8rem;
       text-transform: uppercase;
       letter-spacing: 0.5px;
+      margin-bottom: 0.5rem;
     }
     
     .stat-card .value {
-      font-size: 2rem;
+      font-size: 1.8rem;
       font-weight: 700;
       color: var(--text-dark);
     }
     
-    .stat-card.risk-low { border-left: 4px solid var(--success); }
-    .stat-card.risk-medium { border-left: 4px solid var(--warning); }
-    .stat-card.risk-high { border-left: 4px solid var(--danger); }
+    .stat-card small {
+      display: block;
+      color: var(--text-muted);
+      font-size: 0.8rem;
+      margin-top: 4px;
+    }
     
-    /* Report Panel */
-    .report-panel {
+    .stat-card.risk-low { border-top: 4px solid var(--success); }
+    .stat-card.risk-medium { border-top: 4px solid var(--warning); }
+    .stat-card.risk-high { border-top: 4px solid var(--danger); }
+    
+    /* AI Insights Panel */
+    .insights-panel {
       background: white;
       border-radius: 16px;
       box-shadow: 0 4px 20px rgba(0,0,0,0.08);
@@ -256,100 +410,99 @@
       margin-bottom: 2rem;
     }
     
-    .report-header {
-      background: linear-gradient(135deg, var(--primary) 0%, var(--primary-light) 100%);
+    .insights-header {
+      background: linear-gradient(135deg, var(--purple) 0%, var(--purple-light) 100%);
       color: white;
       padding: 1.5rem 2rem;
+    }
+    
+    .insights-header h3 {
       display: flex;
-      justify-content: space-between;
       align-items: center;
-    }
-    
-    .report-header h2 {
-      font-size: 1.4rem;
-    }
-    
-    .report-actions {
-      display: flex;
       gap: 10px;
+      font-size: 1.2rem;
     }
     
-    .btn {
-      padding: 10px 20px;
-      border-radius: 8px;
-      border: none;
-      cursor: pointer;
-      font-weight: 500;
-      transition: all 0.2s;
-      display: inline-flex;
+    .insights-body {
+      padding: 2rem;
+    }
+    
+    .insights-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 1.5rem;
+    }
+    
+    .insight-card {
+      background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+      border-radius: 12px;
+      padding: 1.5rem;
+      border-left: 4px solid var(--purple);
+    }
+    
+    .insight-card.statistical { border-left-color: #3b82f6; }
+    .insight-card.correlation { border-left-color: var(--success); }
+    .insight-card.pattern { border-left-color: var(--warning); }
+    .insight-card.anomaly { border-left-color: var(--danger); }
+    
+    .insight-card h5 {
+      color: var(--text-dark);
+      margin-bottom: 1rem;
+      font-size: 1rem;
+      display: flex;
       align-items: center;
       gap: 8px;
     }
     
-    .btn-primary {
-      background: var(--accent);
-      color: white;
+    .insight-card .insight-detail {
+      font-size: 0.9rem;
+      color: var(--text-muted);
+      line-height: 1.6;
     }
     
-    .btn-primary:hover {
-      background: #e55a2b;
-      transform: translateY(-2px);
-    }
-    
-    .btn-secondary {
-      background: rgba(255,255,255,0.2);
-      color: white;
-    }
-    
-    .btn-secondary:hover {
-      background: rgba(255,255,255,0.3);
-    }
-    
-    .report-body {
-      padding: 2rem;
-    }
-    
-    /* Report Sections */
-    .report-section {
-      margin-bottom: 2rem;
-      padding-bottom: 2rem;
-      border-bottom: 1px solid #eee;
-    }
-    
-    .report-section:last-child {
-      border-bottom: none;
-      margin-bottom: 0;
-      padding-bottom: 0;
-    }
-    
-    .report-section h3 {
-      color: var(--primary);
+    .insight-card .insight-value {
       font-size: 1.2rem;
-      margin-bottom: 1rem;
-      display: flex;
-      align-items: center;
-      gap: 10px;
+      font-weight: 700;
+      color: var(--primary);
+      margin: 0.5rem 0;
     }
     
-    .report-section .content {
-      color: var(--text-dark);
-      line-height: 1.7;
-      white-space: pre-line;
+    .insight-badge {
+      display: inline-block;
+      padding: 3px 10px;
+      border-radius: 12px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      background: rgba(124, 58, 237, 0.1);
+      color: var(--purple);
+      margin-top: 0.5rem;
     }
+    
+    .stat-detail {
+      display: flex;
+      justify-content: space-between;
+      padding: 4px 0;
+      border-bottom: 1px dashed #e2e8f0;
+      font-size: 0.85rem;
+    }
+    
+    .stat-detail:last-child { border-bottom: none; }
+    .stat-detail .label { color: var(--text-muted); }
+    .stat-detail .val { font-weight: 600; color: var(--text-dark); }
     
     /* Charts Container */
     .charts-container {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
       gap: 1.5rem;
-      margin: 2rem 0;
+      margin-bottom: 2rem;
     }
     
     .chart-card {
       background: white;
       border-radius: 12px;
       padding: 1.5rem;
-      box-shadow: 0 4px 15px rgba(0,0,0,0.08);
+      box-shadow: 0 2px 12px rgba(0,0,0,0.06);
     }
     
     .chart-card h4 {
@@ -370,13 +523,12 @@
     }
     
     .gauge-value {
-      font-size: 4rem;
+      font-size: 3.5rem;
       font-weight: 700;
-      color: var(--text-dark);
     }
     
     .gauge-label {
-      font-size: 1.2rem;
+      font-size: 1rem;
       color: var(--text-muted);
       margin-top: 0.5rem;
     }
@@ -387,6 +539,9 @@
       border-radius: 6px;
       margin-top: 1rem;
       position: relative;
+      max-width: 280px;
+      margin-left: auto;
+      margin-right: auto;
     }
     
     .gauge-indicator {
@@ -401,30 +556,92 @@
       transition: left 0.5s;
     }
     
+    /* Report Panel */
+    .report-panel {
+      background: white;
+      border-radius: 16px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+      overflow: hidden;
+      margin-bottom: 2rem;
+    }
+    
+    .report-header {
+      background: linear-gradient(135deg, var(--primary) 0%, var(--primary-light) 100%);
+      color: white;
+      padding: 1.5rem 2rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 1rem;
+    }
+    
+    .report-header h2 {
+      font-size: 1.3rem;
+    }
+    
+    .report-actions {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    
+    .report-body {
+      padding: 2rem;
+    }
+    
+    .report-section {
+      margin-bottom: 2rem;
+      padding-bottom: 2rem;
+      border-bottom: 1px solid #e2e8f0;
+    }
+    
+    .report-section:last-child {
+      border-bottom: none;
+      margin-bottom: 0;
+      padding-bottom: 0;
+    }
+    
+    .report-section h3 {
+      color: var(--primary);
+      font-size: 1.15rem;
+      margin-bottom: 1rem;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    
+    .report-section .content {
+      color: var(--text-dark);
+      line-height: 1.8;
+      white-space: pre-line;
+    }
+    
     /* Recommendations */
     .recommendations-panel {
       background: white;
       border-radius: 16px;
       box-shadow: 0 4px 20px rgba(0,0,0,0.08);
       overflow: hidden;
+      margin-bottom: 2rem;
     }
     
     .recommendations-header {
-      background: linear-gradient(135deg, var(--success) 0%, #66bb6a 100%);
+      background: linear-gradient(135deg, var(--success) 0%, #059669 100%);
       color: white;
       padding: 1.5rem 2rem;
     }
     
     .recommendations-header h2 {
-      font-size: 1.4rem;
+      font-size: 1.3rem;
     }
     
     .recommendations-list {
-      padding: 1.5rem;
+      padding: 1.5rem 2rem;
     }
     
     .recommendation-item {
-      background: #f8f9fa;
+      background: #f8fafc;
       border-radius: 12px;
       padding: 1.5rem;
       margin-bottom: 1rem;
@@ -433,12 +650,12 @@
     
     .recommendation-item.urgent {
       border-left-color: var(--danger);
-      background: #fff5f5;
+      background: #fef2f2;
     }
     
     .recommendation-item.high {
       border-left-color: var(--warning);
-      background: #fff8e1;
+      background: #fffbeb;
     }
     
     .recommendation-item h4 {
@@ -449,7 +666,7 @@
     }
     
     .priority-badge {
-      font-size: 0.75rem;
+      font-size: 0.7rem;
       padding: 4px 10px;
       border-radius: 12px;
       font-weight: 600;
@@ -459,7 +676,7 @@
     .priority-urgent { background: var(--danger); color: white; }
     .priority-high { background: var(--warning); color: white; }
     .priority-medium { background: var(--primary); color: white; }
-    .priority-low { background: #9e9e9e; color: white; }
+    .priority-low { background: #94a3b8; color: white; }
     
     .recommendation-item p {
       color: var(--text-muted);
@@ -468,18 +685,105 @@
     
     .action-items {
       margin-left: 1.5rem;
+      color: var(--text-dark);
     }
     
     .action-items li {
-      color: var(--text-dark);
       margin-bottom: 0.5rem;
     }
     
     .expected-impact {
       margin-top: 1rem;
       padding-top: 1rem;
-      border-top: 1px dashed #ddd;
+      border-top: 1px dashed #e2e8f0;
       color: var(--success);
+      font-weight: 500;
+    }
+    
+    /* Report History Section */
+    .history-section {
+      background: white;
+      border-radius: 16px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+      overflow: hidden;
+      margin-bottom: 2rem;
+    }
+    
+    .history-header {
+      background: linear-gradient(135deg, #475569 0%, #334155 100%);
+      color: white;
+      padding: 1.5rem 2rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    
+    .history-header h3 {
+      font-size: 1.2rem;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    
+    .history-body {
+      padding: 1.5rem 2rem;
+    }
+    
+    .history-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 1rem;
+    }
+    
+    .history-card {
+      background: #f8fafc;
+      border-radius: 12px;
+      padding: 1rem;
+      cursor: pointer;
+      transition: all 0.2s;
+      border: 2px solid transparent;
+    }
+    
+    .history-card:hover {
+      border-color: var(--primary);
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    }
+    
+    .history-card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 8px;
+    }
+    
+    .history-card-title {
+      font-size: 0.95rem;
+      font-weight: 600;
+      color: var(--text-dark);
+    }
+    
+    .history-card-date {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+    }
+    
+    .history-card-file {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      margin-bottom: 8px;
+    }
+    
+    .history-card-tags {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+    
+    .history-tag {
+      font-size: 0.7rem;
+      padding: 3px 8px;
+      border-radius: 4px;
       font-weight: 500;
     }
     
@@ -493,17 +797,17 @@
     .data-table th, .data-table td {
       padding: 12px 16px;
       text-align: left;
-      border-bottom: 1px solid #eee;
+      border-bottom: 1px solid #e2e8f0;
     }
     
     .data-table th {
-      background: #f8f9fa;
+      background: #f8fafc;
       font-weight: 600;
       color: var(--text-dark);
     }
     
     .data-table tr:hover {
-      background: #f8f9fa;
+      background: #f8fafc;
     }
     
     /* RTL Support */
@@ -516,6 +820,7 @@
     [dir="rtl"] .recommendation-item { border-left: none; border-right: 4px solid var(--primary); }
     [dir="rtl"] .recommendation-item.urgent { border-right-color: var(--danger); }
     [dir="rtl"] .recommendation-item.high { border-right-color: var(--warning); }
+    [dir="rtl"] .insight-card { border-left: none; border-right: 4px solid var(--purple); }
     
     /* Responsive */
     @media (max-width: 768px) {
@@ -533,12 +838,13 @@
         padding: 2rem 1rem;
       }
       
-      .cards-grid {
-        grid-template-columns: 1fr;
+      .options-row {
+        flex-direction: column;
+        align-items: stretch;
       }
       
-      .charts-container {
-        grid-template-columns: 1fr;
+      .stats-grid {
+        grid-template-columns: repeat(2, 1fr);
       }
     }
     
@@ -551,133 +857,118 @@
       from { opacity: 0; transform: translateY(20px); }
       to { opacity: 1; transform: translateY(0); }
     }
-    
-    /* File List */
-    .file-list {
-      margin-top: 1rem;
-    }
-    
-    .file-item {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      padding: 12px 16px;
-      background: #f8f9fa;
-      border-radius: 8px;
-      margin-bottom: 8px;
-    }
-    
-    .file-icon {
-      font-size: 1.5rem;
-    }
-    
-    .file-info {
-      flex: 1;
-    }
-    
-    .file-name {
-      font-weight: 500;
-      color: var(--text-dark);
-    }
-    
-    .file-size {
-      font-size: 0.85rem;
-      color: var(--text-muted);
-    }
-    
-    .file-remove {
-      background: none;
-      border: none;
-      color: var(--danger);
-      cursor: pointer;
-      font-size: 1.2rem;
-    }
   </style>
 </head>
 <body>
   <!-- Header -->
   <header class="header">
     <h1>
-      <span style="font-size: 2rem;">📊</span>
+      <span style="font-size: 1.8rem;">📊</span>
       PHINS AI Risk & Reports Analysis
     </h1>
     <nav class="header-nav">
       <a href="/dashboard.html">← Dashboard</a>
-      <a href="/admin-portal.html">Admin Portal</a>
+      <a href="/risk-dashboard.html">🎯 Assessment</a>
+      <a href="/admin.html">Admin</a>
     </nav>
   </header>
   
   <main class="container">
-    <!-- Reports History Section -->
-    <section class="reports-history-section" id="reportsHistorySection" style="background: white; border-radius: 16px; padding: 1.5rem 2rem; box-shadow: 0 4px 20px rgba(0,0,0,0.08); margin-bottom: 2rem;">
-      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
-        <h3 style="margin: 0; color: var(--primary); display: flex; align-items: center; gap: 10px;">
-          📚 Your Report History
-        </h3>
-        <button class="btn btn-secondary" onclick="loadReportHistory()" style="padding: 6px 12px; font-size: 0.85rem;">
-          🔄 Refresh
-        </button>
-      </div>
-      <div id="reportsHistoryList" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 1rem;">
-        <div style="text-align: center; color: var(--text-muted); padding: 2rem; grid-column: 1/-1;">
-          Loading your reports...
-        </div>
-      </div>
-    </section>
+    <!-- Page Title -->
+    <div class="page-title fade-in">
+      <h2>📈 AI-Powered Reports & Analysis</h2>
+      <p>Upload your documents for intelligent analysis with advanced BI and AI reasoning</p>
+    </div>
     
     <!-- Upload Section -->
     <section class="upload-section fade-in">
+      <div class="section-header">
+        <h3>📁 Upload Documents for Analysis</h3>
+        <span style="background: var(--primary); color: white; padding: 6px 14px; border-radius: 20px; font-size: 0.85rem;">
+          AI + BI Analysis
+        </span>
+      </div>
+      
       <div class="upload-zone" id="uploadZone" onclick="document.getElementById('fileInput').click()">
-        <div class="upload-icon">📁</div>
+        <div class="upload-icon">📤</div>
         <div class="upload-text">
-          <h3>Drop files here or click to upload</h3>
-          <p>Upload CSV, XLS, or ZIP files for AI-powered analysis</p>
-          <p style="margin-top: 8px; font-size: 0.85rem;">
-            <strong>Supports:</strong> Insurance policies, Investment portfolios, Risk assessments, Savings data
+          <h4>Drop files here or click to upload</h4>
+          <p>Upload documents for AI-powered inductive analysis and report generation</p>
+          <p style="margin-top: 8px; font-size: 0.9rem; color: var(--text-muted);">
+            <strong>Auto-detects:</strong> Language (Hebrew, English, etc.) • Data type • Risk factors • Patterns
           </p>
         </div>
         <div class="supported-formats">
           <span class="format-badge">📄 CSV</span>
           <span class="format-badge">📊 XLS/XLSX</span>
           <span class="format-badge">📦 ZIP</span>
+          <span class="format-badge">🖼️ PNG/JPG</span>
+          <span class="format-badge">📕 PDF</span>
         </div>
-        <input type="file" id="fileInput" class="file-input" accept=".csv,.xls,.xlsx,.zip" multiple>
+        <input type="file" id="fileInput" class="file-input" accept=".csv,.xls,.xlsx,.zip,.png,.jpg,.jpeg,.pdf" multiple>
       </div>
       
       <div class="file-list" id="fileList"></div>
       
-      <div class="language-selector">
-        <label for="outputLanguage">🌐 Report Language:</label>
-        <select id="outputLanguage">
-          <option value="auto">Auto-detect</option>
-          <option value="english">English</option>
-          <option value="hebrew">עברית (Hebrew)</option>
-          <option value="arabic">العربية (Arabic)</option>
-          <option value="spanish">Español</option>
-          <option value="french">Français</option>
-          <option value="german">Deutsch</option>
-          <option value="russian">Русский</option>
-        </select>
+      <div class="options-row">
+        <div class="option-group">
+          <label for="outputLanguage">🌐 Report Language:</label>
+          <select id="outputLanguage">
+            <option value="auto">Auto-detect from files</option>
+            <option value="english">English</option>
+            <option value="hebrew">עברית (Hebrew)</option>
+            <option value="arabic">العربية (Arabic)</option>
+            <option value="spanish">Español</option>
+            <option value="french">Français</option>
+            <option value="german">Deutsch</option>
+            <option value="russian">Русский</option>
+          </select>
+        </div>
         
-        <button class="btn btn-primary" id="analyzeBtn" style="margin-left: auto;" disabled>
-          🔍 Analyze & Generate Report
+        <div class="option-group">
+          <label for="analysisType">📋 Analysis Type:</label>
+          <select id="analysisType">
+            <option value="auto">Auto-detect</option>
+            <option value="insurance">Insurance Analysis</option>
+            <option value="investment">Investment Portfolio</option>
+            <option value="risk">Risk Assessment</option>
+            <option value="savings">Savings Analysis</option>
+            <option value="comprehensive">Comprehensive Review</option>
+          </select>
+        </div>
+        
+        <button class="btn btn-primary" id="analyzeBtn" disabled>
+          🔍 Analyze & Generate
         </button>
       </div>
       
       <div class="processing-status" id="processingStatus">
-        <h4>🤖 AI Analysis in Progress...</h4>
+        <h4>🤖 AI Inductive Analysis in Progress...</h4>
         <div class="progress-bar">
           <div class="progress-fill" id="progressFill"></div>
         </div>
-        <p id="processingMessage">Parsing uploaded files...</p>
+        <p id="processingMessage">Parsing and learning from uploaded files...</p>
       </div>
     </section>
     
     <!-- Results Section -->
     <section class="results-section" id="resultsSection">
-      <!-- Summary Cards -->
-      <div class="cards-grid" id="summaryCards">
+      <!-- Stats Grid -->
+      <div class="stats-grid" id="statsGrid">
         <!-- Populated dynamically -->
+      </div>
+      
+      <!-- AI Insights Panel -->
+      <div class="insights-panel" id="insightsPanel">
+        <div class="insights-header">
+          <h3>🧠 AI Inductive Analysis</h3>
+          <p style="margin-top: 0.5rem; opacity: 0.9; font-size: 0.9rem;">Advanced pattern recognition and statistical insights from your data</p>
+        </div>
+        <div class="insights-body">
+          <div class="insights-grid" id="insightsGrid">
+            <!-- Populated dynamically -->
+          </div>
+        </div>
       </div>
       
       <!-- Charts -->
@@ -690,9 +981,8 @@
         <div class="report-header">
           <h2 id="reportTitle">📋 Analysis Report</h2>
           <div class="report-actions">
-            <button class="btn btn-secondary" onclick="exportReport('pdf')">📥 Export PDF</button>
-            <button class="btn btn-secondary" onclick="exportReport('excel')">📊 Export Excel</button>
-            <button class="btn btn-primary" onclick="regenerateReport()">🔄 Regenerate</button>
+            <button class="btn btn-white" onclick="exportReport('pdf')">📥 Export PDF</button>
+            <button class="btn btn-white" onclick="exportReport('excel')">📊 Export Excel</button>
           </div>
         </div>
         <div class="report-body" id="reportBody">
@@ -707,6 +997,23 @@
         </div>
         <div class="recommendations-list" id="recommendationsList">
           <!-- Recommendations populated dynamically -->
+        </div>
+      </div>
+    </section>
+    
+    <!-- Report History Section (Now after results) -->
+    <section class="history-section fade-in" id="historySection">
+      <div class="history-header">
+        <h3>📚 Your Report History</h3>
+        <button class="btn btn-white" onclick="loadReportHistory()" style="padding: 6px 12px; font-size: 0.85rem;">
+          🔄 Refresh
+        </button>
+      </div>
+      <div class="history-body">
+        <div class="history-grid" id="historyGrid">
+          <div style="text-align: center; color: var(--text-muted); padding: 2rem; grid-column: 1/-1;">
+            Loading your reports...
+          </div>
         </div>
       </div>
     </section>
@@ -735,7 +1042,7 @@
     });
     
     async function loadReportHistory() {
-      const historyList = document.getElementById('reportsHistoryList');
+      const historyGrid = document.getElementById('historyGrid');
       
       try {
         const response = await fetch('/api/reports/list', {
@@ -746,7 +1053,7 @@
         
         if (!response.ok) {
           if (response.status === 401) {
-            historyList.innerHTML = `
+            historyGrid.innerHTML = `
               <div style="text-align: center; color: var(--text-muted); padding: 2rem; grid-column: 1/-1;">
                 <p>Please <a href="/">log in</a> to view your reports</p>
               </div>
@@ -760,7 +1067,7 @@
         reportHistory = data.reports || [];
         
         if (reportHistory.length === 0) {
-          historyList.innerHTML = `
+          historyGrid.innerHTML = `
             <div style="text-align: center; color: var(--text-muted); padding: 2rem; grid-column: 1/-1;">
               <p>No reports yet. Upload a file above to generate your first AI analysis report!</p>
             </div>
@@ -768,40 +1075,26 @@
           return;
         }
         
-        historyList.innerHTML = reportHistory.map(report => `
-          <div class="report-history-card" onclick="viewReport('${report.report_id}')" style="background: #f8f9fa; border-radius: 12px; padding: 1rem; cursor: pointer; transition: all 0.2s; border: 2px solid transparent;">
-            <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px;">
-              <h4 style="margin: 0; font-size: 0.95rem; color: var(--text-dark);">${report.title || 'Analysis Report'}</h4>
-              <span style="font-size: 0.75rem; color: var(--text-muted);">${formatDate(report.generated_at)}</span>
+        historyGrid.innerHTML = reportHistory.map(report => `
+          <div class="history-card" onclick="viewReport('${report.report_id}')">
+            <div class="history-card-header">
+              <span class="history-card-title">${report.title || 'Analysis Report'}</span>
+              <span class="history-card-date">${formatDate(report.generated_at)}</span>
             </div>
-            <p style="margin: 0 0 8px 0; font-size: 0.85rem; color: var(--text-muted);">📄 ${report.filename || 'Unknown file'}</p>
-            <div style="display: flex; gap: 8px; flex-wrap: wrap;">
-              <span style="font-size: 0.75rem; padding: 4px 8px; background: var(--primary); color: white; border-radius: 4px;">${report.report_type || 'analysis'}</span>
+            <div class="history-card-file">📄 ${report.filename || 'Unknown file'}</div>
+            <div class="history-card-tags">
+              <span class="history-tag" style="background: var(--primary); color: white;">${report.report_type || 'analysis'}</span>
               ${report.risk_score !== undefined ? `
-                <span style="font-size: 0.75rem; padding: 4px 8px; background: ${getRiskColor(report.risk_score)}; color: white; border-radius: 4px;">Risk: ${report.risk_score.toFixed(1)}</span>
+                <span class="history-tag" style="background: ${getRiskColor(report.risk_score)}; color: white;">Risk: ${report.risk_score.toFixed(0)}</span>
               ` : ''}
-              <span style="font-size: 0.75rem; padding: 4px 8px; background: #9e9e9e; color: white; border-radius: 4px;">${report.language || 'en'}</span>
+              <span class="history-tag" style="background: #64748b; color: white;">${report.language || 'en'}</span>
             </div>
           </div>
         `).join('');
         
-        // Add hover effect
-        document.querySelectorAll('.report-history-card').forEach(card => {
-          card.addEventListener('mouseenter', () => {
-            card.style.borderColor = 'var(--primary)';
-            card.style.transform = 'translateY(-2px)';
-            card.style.boxShadow = '0 4px 12px rgba(0,0,0,0.1)';
-          });
-          card.addEventListener('mouseleave', () => {
-            card.style.borderColor = 'transparent';
-            card.style.transform = 'none';
-            card.style.boxShadow = 'none';
-          });
-        });
-        
       } catch (error) {
         console.error('Error loading report history:', error);
-        historyList.innerHTML = `
+        historyGrid.innerHTML = `
           <div style="text-align: center; color: var(--text-muted); padding: 2rem; grid-column: 1/-1;">
             <p>Could not load report history. <button onclick="loadReportHistory()" style="color: var(--primary); background: none; border: none; cursor: pointer; text-decoration: underline;">Try again</button></p>
           </div>
@@ -836,15 +1129,20 @@
         const report = await response.json();
         currentReport = report;
         
-        // Display the report
-        displayResults({
+        // Create mock analysis for display
+        const mockAnalysis = {
           risk_score: report.metadata?.risk_score || 50,
           data_classification: report.report_type,
           language_name: report.language,
           confidence: report.metadata?.confidence || 0.8,
-          key_metrics: { total_records: '—' },
-          processing_time_ms: report.metadata?.processing_time_ms || 0
-        }, report);
+          key_metrics: report.metadata?.key_metrics || { total_records: '—' },
+          processing_time_ms: report.metadata?.processing_time_ms || 0,
+          extracted_factors: report.metadata?.extracted_factors || [],
+          patterns_found: report.metadata?.patterns_found || [],
+          anomalies: report.metadata?.anomalies || []
+        };
+        
+        displayResults(mockAnalysis, report);
         
         resultsSection.classList.add('active');
         resultsSection.scrollIntoView({ behavior: 'smooth' });
@@ -892,7 +1190,7 @@
       }
       
       fileList.innerHTML = uploadedFiles.map((file, index) => `
-        <div class="file-item">
+        <div class="file-item fade-in">
           <span class="file-icon">${getFileIcon(file.name)}</span>
           <div class="file-info">
             <div class="file-name">${file.name}</div>
@@ -905,10 +1203,12 @@
     
     function getFileIcon(filename) {
       const ext = filename.split('.').pop().toLowerCase();
-      if (ext === 'csv') return '📄';
-      if (ext === 'xls' || ext === 'xlsx') return '📊';
-      if (ext === 'zip') return '📦';
-      return '📁';
+      const icons = {
+        'csv': '📄', 'xls': '📊', 'xlsx': '📊',
+        'zip': '📦', 'png': '🖼️', 'jpg': '🖼️', 
+        'jpeg': '🖼️', 'pdf': '📕'
+      };
+      return icons[ext] || '📁';
     }
     
     function formatFileSize(bytes) {
@@ -939,12 +1239,11 @@
       const processingMessage = document.getElementById('processingMessage');
       
       try {
-        // Process each file
         let allResults = [];
         
         for (let i = 0; i < uploadedFiles.length; i++) {
           const file = uploadedFiles[i];
-          processingMessage.textContent = `Processing ${file.name}... (${i + 1}/${uploadedFiles.length})`;
+          processingMessage.textContent = `Learning from ${file.name}... (${i + 1}/${uploadedFiles.length})`;
           
           // Read file
           const content = await readFileAsBase64(file);
@@ -967,11 +1266,12 @@
           const parseResult = await parseResponse.json();
           
           if (parseResult.error) {
-            throw new Error(parseResult.error);
+            console.warn(`Skipping ${file.name}: ${parseResult.error}`);
+            continue;
           }
           
-          // Analyze
-          processingMessage.textContent = `Analyzing ${file.name}...`;
+          // Analyze with inductive reasoning
+          processingMessage.textContent = `AI analyzing patterns in ${file.name}...`;
           
           const analyzeResponse = await fetch('/api/reports/analyze', {
             method: 'POST',
@@ -985,11 +1285,17 @@
           });
           
           const analyzeResult = await analyzeResponse.json();
-          allResults.push(analyzeResult);
+          if (analyzeResult.id) {
+            allResults.push(analyzeResult);
+          }
+        }
+        
+        if (allResults.length === 0) {
+          throw new Error('No files could be analyzed');
         }
         
         // Generate report
-        processingMessage.textContent = 'Generating AI report...';
+        processingMessage.textContent = 'Generating comprehensive AI report...';
         
         const language = outputLanguage.value === 'auto' ? null : outputLanguage.value;
         const lastAnalysis = allResults[allResults.length - 1];
@@ -1024,7 +1330,10 @@
           document.body.removeAttribute('dir');
         }
         
-        // Refresh report history to show new report
+        // Scroll to results
+        resultsSection.scrollIntoView({ behavior: 'smooth' });
+        
+        // Refresh report history
         loadReportHistory();
         
       } catch (error) {
@@ -1055,47 +1364,87 @@
     }
     
     function displayResults(analysis, report) {
-      // Summary Cards
-      const riskClass = analysis.risk_score < 30 ? 'risk-low' : (analysis.risk_score < 60 ? 'risk-medium' : 'risk-high');
-      const riskLabel = analysis.risk_score < 30 ? 'Low' : (analysis.risk_score < 60 ? 'Medium' : 'High');
+      // Extract metrics
+      const riskScore = analysis.risk_score || 50;
+      const riskLevel = riskScore < 30 ? 'low' : (riskScore < 60 ? 'medium' : 'high');
+      const riskColor = riskScore < 30 ? 'var(--success)' : (riskScore < 60 ? 'var(--warning)' : 'var(--danger)');
+      const riskLabel = riskScore < 30 ? 'Low Risk' : (riskScore < 60 ? 'Medium Risk' : 'High Risk');
       
-      document.getElementById('summaryCards').innerHTML = `
-        <div class="stat-card ${riskClass} fade-in">
-          <h4>Risk Score</h4>
-          <div class="value">${analysis.risk_score.toFixed(1)}/100</div>
-          <small>${riskLabel} Risk</small>
+      const metrics = analysis.key_metrics || {};
+      const numericCols = metrics.numeric_columns || 0;
+      const categoricalCols = metrics.categorical_columns || 0;
+      const dataCompleteness = metrics.data_completeness || 100;
+      const correlationCount = metrics.correlation_count || 0;
+      const topCorrelation = metrics.top_correlation;
+      const patternCount = analysis.patterns_found?.length || 0;
+      const anomalyCount = analysis.anomalies?.length || 0;
+      
+      // Stats Grid - Enhanced with BI metrics
+      document.getElementById('statsGrid').innerHTML = `
+        <div class="stat-card risk-${riskLevel} fade-in">
+          <h5>Risk Assessment</h5>
+          <div class="value" style="color: ${riskColor}; font-size: 2rem;">${riskScore.toFixed(0)}</div>
+          <small>${riskLabel}</small>
         </div>
         <div class="stat-card fade-in">
-          <h4>Data Type</h4>
-          <div class="value" style="font-size: 1.5rem;">${capitalizeFirst(analysis.data_classification)}</div>
+          <h5>Data Classification</h5>
+          <div class="value" style="font-size: 1.3rem;">📊 ${capitalizeFirst(analysis.data_classification || 'Unknown')}</div>
         </div>
         <div class="stat-card fade-in">
-          <h4>Language</h4>
-          <div class="value" style="font-size: 1.5rem;">${analysis.language_name}</div>
+          <h5>Language</h5>
+          <div class="value" style="font-size: 1.3rem;">🌐 ${analysis.language_name || 'Unknown'}</div>
         </div>
         <div class="stat-card fade-in">
-          <h4>Confidence</h4>
-          <div class="value">${(analysis.confidence * 100).toFixed(0)}%</div>
+          <h5>AI Confidence</h5>
+          <div class="value">${((analysis.confidence || 0.8) * 100).toFixed(0)}%</div>
+          <small>Analysis accuracy</small>
         </div>
         <div class="stat-card fade-in">
-          <h4>Records Analyzed</h4>
-          <div class="value">${analysis.key_metrics?.total_records || 0}</div>
+          <h5>Records</h5>
+          <div class="value">${metrics.total_records || '—'}</div>
+          <small>${numericCols} numeric, ${categoricalCols} categorical</small>
         </div>
         <div class="stat-card fade-in">
-          <h4>Processing Time</h4>
-          <div class="value">${analysis.processing_time_ms}ms</div>
+          <h5>Data Quality</h5>
+          <div class="value" style="color: ${dataCompleteness > 90 ? 'var(--success)' : dataCompleteness > 70 ? 'var(--warning)' : 'var(--danger)'}">${dataCompleteness}%</div>
+          <small>Completeness</small>
+        </div>
+        <div class="stat-card fade-in">
+          <h5>Patterns Found</h5>
+          <div class="value">🔍 ${patternCount}</div>
+          <small>Inductive analysis</small>
+        </div>
+        <div class="stat-card fade-in">
+          <h5>Anomalies</h5>
+          <div class="value" style="color: ${anomalyCount > 3 ? 'var(--danger)' : anomalyCount > 0 ? 'var(--warning)' : 'var(--success)'}">⚠️ ${anomalyCount}</div>
+          <small>Requires attention</small>
+        </div>
+        ${correlationCount > 0 ? `
+        <div class="stat-card fade-in">
+          <h5>Correlations</h5>
+          <div class="value">🔗 ${correlationCount}</div>
+          <small>${topCorrelation ? `Strongest: ${topCorrelation.strength}` : 'Relationships'}</small>
+        </div>
+        ` : ''}
+        <div class="stat-card fade-in">
+          <h5>Key Factors</h5>
+          <div class="value">📈 ${analysis.extracted_factors?.length || 0}</div>
+          <small>Insights identified</small>
         </div>
       `;
       
+      // AI Insights Panel
+      renderInsights(analysis, metrics);
+      
       // Charts
-      renderCharts(report.charts);
+      renderCharts(report.charts || []);
       
       // Report Title
-      document.getElementById('reportTitle').textContent = `📋 ${report.title}`;
+      document.getElementById('reportTitle').textContent = `📋 ${report.title || 'Analysis Report'}`;
       
       // Report Sections
       const reportBody = document.getElementById('reportBody');
-      reportBody.innerHTML = report.sections.map(section => `
+      reportBody.innerHTML = (report.sections || []).map(section => `
         <div class="report-section fade-in">
           <h3>${getSectionIcon(section.title)} ${section.title}</h3>
           <div class="content">${section.content}</div>
@@ -1105,7 +1454,7 @@
       
       // Recommendations
       const recList = document.getElementById('recommendationsList');
-      recList.innerHTML = report.recommendations.map(rec => `
+      recList.innerHTML = (report.recommendations || []).map(rec => `
         <div class="recommendation-item ${rec.priority} fade-in">
           <h4>
             <span class="priority-badge priority-${rec.priority}">${rec.priority}</span>
@@ -1113,13 +1462,159 @@
           </h4>
           <p>${rec.description}</p>
           <ul class="action-items">
-            ${rec.action_items.map(item => `<li>${item}</li>`).join('')}
+            ${(rec.action_items || []).map(item => `<li>${item}</li>`).join('')}
           </ul>
           <div class="expected-impact">
             <strong>Expected Impact:</strong> ${rec.expected_impact}
           </div>
         </div>
       `).join('');
+    }
+    
+    function renderInsights(analysis, metrics) {
+      const container = document.getElementById('insightsGrid');
+      let insightsHTML = '';
+      
+      // Statistical factors
+      const statisticalFactors = (analysis.extracted_factors || []).filter(f => f.category === 'statistical');
+      statisticalFactors.slice(0, 4).forEach(factor => {
+        const value = factor.value;
+        if (typeof value === 'object') {
+          insightsHTML += `
+            <div class="insight-card statistical fade-in">
+              <h5>📊 ${factor.name}</h5>
+              <div class="insight-detail">
+                <div class="stat-detail">
+                  <span class="label">Mean</span>
+                  <span class="val">${value.mean ?? 'N/A'}</span>
+                </div>
+                <div class="stat-detail">
+                  <span class="label">Median</span>
+                  <span class="val">${value.median ?? 'N/A'}</span>
+                </div>
+                <div class="stat-detail">
+                  <span class="label">Range</span>
+                  <span class="val">${value.range ?? 'N/A'}</span>
+                </div>
+                <div class="stat-detail">
+                  <span class="label">Std Dev</span>
+                  <span class="val">${value.std_dev ?? 'N/A'}</span>
+                </div>
+                <div class="stat-detail">
+                  <span class="label">Distribution</span>
+                  <span class="val">${capitalizeFirst(value.distribution ?? 'unknown')}</span>
+                </div>
+              </div>
+              <span class="insight-badge">Importance: ${(factor.importance * 100).toFixed(0)}%</span>
+            </div>
+          `;
+        }
+      });
+      
+      // Correlation insight
+      const topCorr = metrics.top_correlation;
+      if (topCorr) {
+        insightsHTML += `
+          <div class="insight-card correlation fade-in">
+            <h5>🔗 Key Correlation Discovered</h5>
+            <div class="insight-value">${topCorr.fields}</div>
+            <div class="insight-detail">
+              <p>Correlation Strength: <strong>${topCorr.strength}</strong></p>
+              <p>This indicates a ${Math.abs(topCorr.strength) > 0.7 ? 'strong' : Math.abs(topCorr.strength) > 0.5 ? 'moderate' : 'weak'} 
+                 ${topCorr.strength > 0 ? 'positive' : 'negative'} relationship.</p>
+            </div>
+            <span class="insight-badge">Statistical Correlation</span>
+          </div>
+        `;
+      }
+      
+      // Pattern insights
+      const patterns = analysis.patterns_found || [];
+      patterns.slice(0, 3).forEach(pattern => {
+        insightsHTML += `
+          <div class="insight-card pattern fade-in">
+            <h5>🔍 ${capitalizeFirst(pattern.type)} Pattern</h5>
+            <div class="insight-detail">
+              <p>${pattern.description}</p>
+            </div>
+            <span class="insight-badge">Significance: ${(pattern.significance * 100).toFixed(0)}%</span>
+          </div>
+        `;
+      });
+      
+      // Anomaly insights
+      const anomalies = analysis.anomalies || [];
+      anomalies.slice(0, 2).forEach(anomaly => {
+        const severityColors = {
+          'critical': '#ef4444',
+          'high': '#f59e0b',
+          'medium': '#3b82f6',
+          'low': '#10b981'
+        };
+        insightsHTML += `
+          <div class="insight-card anomaly fade-in">
+            <h5 style="color: ${severityColors[anomaly.severity] || '#6b7280'}">
+              ⚠️ ${capitalizeFirst(anomaly.severity)} Anomaly
+            </h5>
+            <div class="insight-detail">
+              <p><strong>Issue:</strong> ${anomaly.description}</p>
+              <p><strong>Recommendation:</strong> ${anomaly.recommendation}</p>
+            </div>
+            <span class="insight-badge" style="background: ${severityColors[anomaly.severity]}20; color: ${severityColors[anomaly.severity]}">
+              ${anomaly.type}
+            </span>
+          </div>
+        `;
+      });
+      
+      // Domain insight
+      const domainFactors = (analysis.extracted_factors || []).filter(f => f.category === 'domain');
+      domainFactors.forEach(factor => {
+        if (typeof factor.value === 'object') {
+          insightsHTML += `
+            <div class="insight-card fade-in">
+              <h5>🏷️ ${factor.name}</h5>
+              <div class="insight-detail">
+                ${Object.entries(factor.value).map(([key, val]) => `
+                  <div class="stat-detail">
+                    <span class="label">${capitalizeFirst(key.replace(/_/g, ' '))}</span>
+                    <span class="val">${val}</span>
+                  </div>
+                `).join('')}
+              </div>
+              <span class="insight-badge">Domain Analysis</span>
+            </div>
+          `;
+        }
+      });
+      
+      // Data quality insight
+      insightsHTML += `
+        <div class="insight-card fade-in">
+          <h5>✅ Data Quality Assessment</h5>
+          <div class="insight-detail">
+            <div class="stat-detail">
+              <span class="label">Completeness</span>
+              <span class="val" style="color: ${metrics.data_completeness > 90 ? 'var(--success)' : metrics.data_completeness > 70 ? 'var(--warning)' : 'var(--danger)'}">${metrics.data_completeness || 100}%</span>
+            </div>
+            <div class="stat-detail">
+              <span class="label">Total Fields</span>
+              <span class="val">${metrics.total_columns || 0}</span>
+            </div>
+            <div class="stat-detail">
+              <span class="label">Numeric Fields</span>
+              <span class="val">${metrics.numeric_columns || 0}</span>
+            </div>
+            <div class="stat-detail">
+              <span class="label">Categorical Fields</span>
+              <span class="val">${metrics.categorical_columns || 0}</span>
+            </div>
+          </div>
+          <span class="insight-badge">Quality Score</span>
+        </div>
+      `;
+      
+      container.innerHTML = insightsHTML || '<p style="color: var(--text-muted);">No advanced insights available.</p>';
     }
     
     function renderCharts(chartConfigs) {
@@ -1130,7 +1625,7 @@
       Object.values(charts).forEach(chart => chart.destroy());
       charts = {};
       
-      chartConfigs.forEach((config, index) => {
+      (chartConfigs || []).forEach((config, index) => {
         const chartId = `chart-${index}`;
         const wrapper = document.createElement('div');
         wrapper.className = 'chart-card fade-in';
@@ -1156,7 +1651,7 @@
       
       return `
         <div class="risk-gauge">
-          <div class="gauge-value" style="color: ${color}">${value.toFixed(1)}</div>
+          <div class="gauge-value" style="color: ${color}">${value.toFixed(0)}</div>
           <div class="gauge-label">Risk Score</div>
           <div class="gauge-bar">
             <div class="gauge-indicator" style="left: ${percentage * 100}%"></div>
@@ -1168,14 +1663,14 @@
     function createChart(ctx, config) {
       const chartType = config.type === 'doughnut' ? 'doughnut' : config.type;
       
-      const chartConfig = {
+      return new Chart(ctx, {
         type: chartType,
         data: {
-          labels: config.data.labels,
+          labels: config.data?.labels || [],
           datasets: [{
-            data: config.data.values,
+            data: config.data?.values || [],
             backgroundColor: config.options?.colors || [
-              '#1976d2', '#ff6b35', '#4caf50', '#9c27b0', '#ff9800', '#00bcd4'
+              '#0d47a1', '#ff6b35', '#10b981', '#7c3aed', '#f59e0b', '#06b6d4'
             ],
             borderWidth: 2,
             borderColor: '#fff'
@@ -1185,22 +1680,15 @@
           responsive: true,
           maintainAspectRatio: false,
           plugins: {
-            legend: {
-              position: chartType === 'bar' ? 'top' : 'bottom'
-            }
-          }
+            legend: { position: chartType === 'bar' ? 'top' : 'bottom' }
+          },
+          indexAxis: chartType === 'bar' && config.options?.horizontal ? 'y' : 'x'
         }
-      };
-      
-      if (chartType === 'bar' && config.options?.horizontal) {
-        chartConfig.options.indexAxis = 'y';
-      }
-      
-      return new Chart(ctx, chartConfig);
+      });
     }
     
     function renderDataTable(data) {
-      const keys = Object.keys(data).filter(k => !k.includes('_'));
+      const keys = Object.keys(data || {}).filter(k => !k.includes('_'));
       if (keys.length === 0) return '';
       
       return `
@@ -1224,9 +1712,12 @@
     }
     
     function getSectionIcon(title) {
-      const lower = title.toLowerCase();
+      const lower = (title || '').toLowerCase();
       if (lower.includes('summary') || lower.includes('תקציר')) return '📝';
-      if (lower.includes('metric') || lower.includes('מדדים')) return '📊';
+      if (lower.includes('profile') || lower.includes('פרופיל')) return '📊';
+      if (lower.includes('statistic') || lower.includes('סטטיסטי')) return '📈';
+      if (lower.includes('correlation') || lower.includes('מתאמים')) return '🔗';
+      if (lower.includes('metric') || lower.includes('מדדים')) return '📏';
       if (lower.includes('factor') || lower.includes('גורמים')) return '🔍';
       if (lower.includes('pattern') || lower.includes('דפוסים')) return '🔄';
       if (lower.includes('anomal') || lower.includes('חריגות')) return '⚠️';
@@ -1235,7 +1726,7 @@
     }
     
     function formatMetricName(name) {
-      return name.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+      return (name || '').replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
     }
     
     function formatMetricValue(value) {
@@ -1246,17 +1737,12 @@
     }
     
     function capitalizeFirst(str) {
+      if (!str) return '';
       return str.charAt(0).toUpperCase() + str.slice(1);
     }
     
     function exportReport(format) {
       alert(`Export to ${format.toUpperCase()} - Coming soon!\n\nThis will generate a downloadable ${format.toUpperCase()} file with the complete report.`);
-    }
-    
-    function regenerateReport() {
-      if (currentAnalysis) {
-        startAnalysis();
-      }
     }
   </script>
 </body>
