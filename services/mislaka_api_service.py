@@ -165,14 +165,18 @@ class MislakaAPIService:
         return bool(self.api_key and self.api_secret)
     
     def _get_headers(self, include_auth: bool = True) -> Dict[str, str]:
-        """Get request headers"""
+        """Get request headers with proper authorization"""
         headers = {
-            'Content-Type': 'application/json',
             'Accept': 'application/json',
-            'X-API-Key': self.api_key,
+            'Content-Type': 'application/json',
             'User-Agent': 'PHINS-Platform/1.0',
         }
         
+        # Add authorization header
+        if include_auth and self.api_key:
+            headers['Authorization'] = f'token {self.api_key}'
+        
+        # Also support Bearer token if we have an access token from auth flow
         if include_auth and self.access_token:
             headers['Authorization'] = f'Bearer {self.access_token}'
         
@@ -197,6 +201,11 @@ class MislakaAPIService:
         """
         Make HTTP request to Mislaka API.
         
+        Headers used:
+        - Authorization: token API_KEY_HERE
+        - Accept: application/json
+        - Content-Type: application/json
+        
         Returns: (success, response_data)
         """
         if not REQUESTS_AVAILABLE:
@@ -205,7 +214,8 @@ class MislakaAPIService:
         url = f"{self.BASE_URL}{endpoint}"
         headers = self._get_headers()
         
-        if data:
+        # Add signature header if we have a secret and data
+        if data and self.api_secret:
             headers['X-Signature'] = self._sign_request(data)
         
         try:
@@ -238,24 +248,39 @@ class MislakaAPIService:
         """
         Authenticate with Mislaka API and obtain access token.
         
+        Uses header format:
+        Authorization: token API_KEY_HERE
+        Accept: application/json
+        Content-Type: application/json
+        
         Returns: True if successful
         """
         if not self.is_configured():
             print("[MISLAKA] API credentials not configured")
             return False
         
+        # For token-based auth, we can use the API key directly
+        # The _get_headers method will add: Authorization: token {api_key}
         payload = {
-            'api_key': self.api_key,
             'timestamp': datetime.now().isoformat(),
         }
         
+        # Add signature if secret is available
+        if self.api_secret:
+            payload['signature'] = self._sign_request(payload)
+        
         success, response = self._make_request('POST', self.ENDPOINTS['auth'], data=payload)
         
-        if success and 'access_token' in response:
-            self.access_token = response['access_token']
-            expires_in = response.get('expires_in', 3600)
-            self.token_expires = datetime.now() + timedelta(seconds=expires_in)
-            print(f"[MISLAKA] Authenticated successfully, token expires in {expires_in}s")
+        if success:
+            # If API returns an access token, use it for subsequent requests
+            if 'access_token' in response:
+                self.access_token = response['access_token']
+                expires_in = response.get('expires_in', 3600)
+                self.token_expires = datetime.now() + timedelta(seconds=expires_in)
+                print(f"[MISLAKA] Authenticated with access token, expires in {expires_in}s")
+            else:
+                # API accepts the token directly without access_token flow
+                print("[MISLAKA] Authenticated successfully with API key")
             return True
         
         print(f"[MISLAKA] Authentication failed: {response.get('error', 'Unknown error')}")
