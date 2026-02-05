@@ -245,29 +245,189 @@ class LanguageDetector:
         return best_lang, cls.LANGUAGE_PATTERNS[best_lang]['name'], confidence
 
 
+class HebrewDocumentExtractor:
+    """
+    Extracts structured data from Hebrew insurance/financial documents.
+    Uses pattern recognition to identify key fields.
+    """
+    
+    # Hebrew field patterns for insurance documents
+    FIELD_PATTERNS = {
+        'policy_number': [
+            r'מספר פוליס[הא][\s:]*([0-9\-/]+)',
+            r'פוליס[הא]\s*מס[פ\'][\s:]*([0-9\-/]+)',
+            r'policy[\s#:]*([0-9\-/]+)',
+        ],
+        'id_number': [
+            r'ת\.?ז\.?[\s:]*([0-9]{9})',
+            r'תעודת זהות[\s:]*([0-9]{9})',
+            r'מספר זהות[\s:]*([0-9]{9})',
+            r'ת"ז[\s:]*([0-9]{9})',
+        ],
+        'start_date': [
+            r'תאריך תחילה[\s:]*([0-9]{1,2}[/\-\.][0-9]{1,2}[/\-\.][0-9]{2,4})',
+            r'תחילת ביטוח[\s:]*([0-9]{1,2}[/\-\.][0-9]{1,2}[/\-\.][0-9]{2,4})',
+            r'מתאריך[\s:]*([0-9]{1,2}[/\-\.][0-9]{1,2}[/\-\.][0-9]{2,4})',
+            r'start date[\s:]*([0-9]{1,2}[/\-\.][0-9]{1,2}[/\-\.][0-9]{2,4})',
+        ],
+        'end_date': [
+            r'תאריך סיום[\s:]*([0-9]{1,2}[/\-\.][0-9]{1,2}[/\-\.][0-9]{2,4})',
+            r'תום תקופה[\s:]*([0-9]{1,2}[/\-\.][0-9]{1,2}[/\-\.][0-9]{2,4})',
+            r'עד תאריך[\s:]*([0-9]{1,2}[/\-\.][0-9]{1,2}[/\-\.][0-9]{2,4})',
+        ],
+        'premium': [
+            r'פרמי[הא][\s:]*[₪$]?[\s]*([0-9,\.]+)',
+            r'תשלום חודשי[\s:]*[₪$]?[\s]*([0-9,\.]+)',
+            r'premium[\s:]*[₪$]?[\s]*([0-9,\.]+)',
+            r'סכום לתשלום[\s:]*[₪$]?[\s]*([0-9,\.]+)',
+        ],
+        'cover_amount': [
+            r'סכום ביטוח[\s:]*[₪$]?[\s]*([0-9,\.]+)',
+            r'סכום כיסוי[\s:]*[₪$]?[\s]*([0-9,\.]+)',
+            r'cover[\s:]*[₪$]?[\s]*([0-9,\.]+)',
+            r'סכום מבוטח[\s:]*[₪$]?[\s]*([0-9,\.]+)',
+        ],
+        'insured_name': [
+            r'שם המבוטח[\s:]*([א-ת\s]+)',
+            r'שם מלא[\s:]*([א-ת\s]+)',
+            r'מבוטח[\s:]*([א-ת\s]+)',
+        ],
+        'pension_type': [
+            r'סוג פנסיה[\s:]*([א-ת\s]+)',
+            r'תוכנית פנסיה[\s:]*([א-ת\s]+)',
+            r'קרן פנסיה[\s:]*([א-ת\s]+)',
+        ],
+        'insurance_type': [
+            r'סוג ביטוח[\s:]*([א-ת\s]+)',
+            r'סוג פוליסה[\s:]*([א-ת\s]+)',
+            r'סוג הכיסוי[\s:]*([א-ת\s]+)',
+        ],
+        'beneficiary': [
+            r'מוטב[\s:]*([א-ת\s]+)',
+            r'מוטבים[\s:]*([א-ת\s]+)',
+            r'שם מוטב[\s:]*([א-ת\s]+)',
+        ],
+    }
+    
+    # Insurance product types (Hebrew)
+    PRODUCT_TYPES = {
+        'life': ['ביטוח חיים', 'חיים', 'life'],
+        'health': ['ביטוח בריאות', 'בריאות', 'health'],
+        'pension': ['פנסיה', 'גמל', 'pension', 'קרן פנסיה'],
+        'car': ['ביטוח רכב', 'רכב', 'חובה', 'מקיף'],
+        'home': ['ביטוח דירה', 'דירה', 'מבנה', 'תכולה'],
+        'travel': ['ביטוח נסיעות', 'נסיעות לחו"ל'],
+        'business': ['ביטוח עסק', 'עסקי', 'אחריות מקצועית'],
+    }
+    
+    @classmethod
+    def extract_fields(cls, text: str) -> Dict[str, Any]:
+        """Extract structured fields from Hebrew document text."""
+        extracted = {}
+        
+        for field_name, patterns in cls.FIELD_PATTERNS.items():
+            for pattern in patterns:
+                match = re.search(pattern, text, re.IGNORECASE)
+                if match:
+                    value = match.group(1).strip()
+                    # Clean up numeric values
+                    if field_name in ['premium', 'cover_amount']:
+                        value = value.replace(',', '')
+                        try:
+                            value = float(value)
+                        except ValueError:
+                            pass
+                    extracted[field_name] = value
+                    break
+        
+        # Detect product type
+        text_lower = text.lower()
+        for product_type, keywords in cls.PRODUCT_TYPES.items():
+            if any(kw in text_lower for kw in keywords):
+                extracted['product_type'] = product_type
+                break
+        
+        return extracted
+    
+    @classmethod
+    def analyze_policy_age(cls, start_date_str: str) -> Dict[str, Any]:
+        """Analyze policy age and status."""
+        try:
+            # Try various date formats
+            for fmt in ['%d/%m/%Y', '%d-%m-%Y', '%d.%m.%Y', '%d/%m/%y', '%d-%m-%y']:
+                try:
+                    start_date = datetime.strptime(start_date_str, fmt)
+                    break
+                except ValueError:
+                    continue
+            else:
+                return {}
+            
+            today = datetime.now()
+            age_days = (today - start_date).days
+            age_years = age_days / 365.25
+            
+            return {
+                'start_date': start_date.strftime('%Y-%m-%d'),
+                'policy_age_years': round(age_years, 1),
+                'policy_age_days': age_days,
+                'is_mature': age_years > 10,
+                'status': 'veteran' if age_years > 20 else ('mature' if age_years > 10 else ('established' if age_years > 5 else 'new'))
+            }
+        except Exception:
+            return {}
+    
+    @classmethod
+    def calculate_coverage_ratio(cls, premium: float, cover_amount: float) -> Dict[str, Any]:
+        """Calculate coverage efficiency metrics."""
+        if premium <= 0 or cover_amount <= 0:
+            return {}
+        
+        ratio = cover_amount / premium
+        annual_cost_per_1000 = (premium * 12) / (cover_amount / 1000)
+        
+        return {
+            'coverage_ratio': round(ratio, 2),
+            'annual_cost_per_1000_cover': round(annual_cost_per_1000, 2),
+            'efficiency_rating': 'excellent' if ratio > 5000 else ('good' if ratio > 2000 else ('fair' if ratio > 1000 else 'review_recommended'))
+        }
+
+
 class DataClassifier:
     """Classifies the type of data based on column names and content"""
     
     INSURANCE_KEYWORDS = [
         'policy', 'premium', 'coverage', 'claim', 'insured', 'beneficiary',
         'deductible', 'underwriting', 'risk', 'פוליסה', 'ביטוח', 'כיסוי',
-        'תביעה', 'פרמיה', 'מבוטח', 'סכום', 'השתתפות עצמית'
+        'תביעה', 'פרמיה', 'מבוטח', 'סכום', 'השתתפות עצמית',
+        # Extended Hebrew insurance terms
+        'תאריך תחילה', 'תאריך סיום', 'סכום ביטוח', 'מוטב', 'מוטבים',
+        'קרן פנסיה', 'גמל', 'ביטוח חיים', 'ביטוח בריאות', 'ביטוח רכב',
+        'חובה', 'מקיף', 'צד ג', 'ביטוח דירה', 'תכולה', 'מבנה',
+        'אחריות מקצועית', 'ביטוח נסיעות', 'ביטוח משכנתא'
     ]
     
     INVESTMENT_KEYWORDS = [
         'portfolio', 'stock', 'bond', 'fund', 'yield', 'return', 'asset',
         'equity', 'dividend', 'market', 'תיק', 'השקעה', 'מניה', 'אגרת חוב',
-        'קרן', 'תשואה', 'נכס', 'דיבידנד'
+        'קרן', 'תשואה', 'נכס', 'דיבידנד',
+        # Extended Hebrew investment terms
+        'קופת גמל', 'קרן השתלמות', 'פיקדון', 'תיק ניירות ערך',
+        'מדד', 'שוק ההון', 'ניהול תיקים', 'חיסכון לכל ילד'
     ]
     
     RISK_KEYWORDS = [
         'risk', 'score', 'assessment', 'rating', 'exposure', 'probability',
-        'impact', 'mitigation', 'סיכון', 'ציון', 'הערכה', 'דירוג', 'חשיפה'
+        'impact', 'mitigation', 'סיכון', 'ציון', 'הערכה', 'דירוג', 'חשיפה',
+        # Extended Hebrew risk terms
+        'הערכת סיכונים', 'ניהול סיכונים', 'סיכון תפעולי', 'סיכון שוק'
     ]
     
     SAVINGS_KEYWORDS = [
         'savings', 'balance', 'deposit', 'withdrawal', 'interest', 'account',
-        'חיסכון', 'יתרה', 'הפקדה', 'משיכה', 'ריבית', 'חשבון'
+        'חיסכון', 'יתרה', 'הפקדה', 'משיכה', 'ריבית', 'חשבון',
+        # Extended Hebrew savings terms
+        'תוכנית חיסכון', 'חיסכון פנסיוני', 'קופת חיסכון', 'חיסכון לטווח ארוך'
     ]
     
     @classmethod
@@ -650,39 +810,56 @@ class AIRiskReportsService:
         data_type, type_confidence = DataClassifier.classify(columns, rows)
         
         # =====================================================================
-        # PHASE 2: ADVANCED STATISTICAL ANALYSIS (BI)
+        # PHASE 2: HEBREW DOCUMENT EXTRACTION (for Hebrew insurance documents)
+        # Extract structured fields from Hebrew documents using pattern recognition
+        # =====================================================================
+        
+        hebrew_extracted = {}
+        if lang_code == 'hebrew' or any(re.search(r'[\u0590-\u05FF]', str(v)) for row in rows[:10] for v in row.values()):
+            hebrew_extracted = self._extract_hebrew_document_data(all_text, rows)
+        
+        # =====================================================================
+        # PHASE 3: ADVANCED STATISTICAL ANALYSIS (BI)
         # Compute comprehensive statistics for each column
         # =====================================================================
         
         column_profiles = self._profile_columns(columns, rows)
         
         # =====================================================================
-        # PHASE 3: CORRELATION & RELATIONSHIP DISCOVERY
+        # PHASE 4: CORRELATION & RELATIONSHIP DISCOVERY
         # Find relationships between different data fields
         # =====================================================================
         
         correlations = self._find_correlations(columns, rows, column_profiles)
         
         # =====================================================================
-        # PHASE 4: INDUCTIVE PATTERN LEARNING
+        # PHASE 5: INDUCTIVE PATTERN LEARNING
         # Discover patterns and rules from the data
         # =====================================================================
         
         # Extract factors with enhanced analysis
         factors = self._extract_factors_advanced(columns, rows, data_type, column_profiles)
         
+        # Add Hebrew document factors if available
+        if hebrew_extracted:
+            factors.extend(self._create_hebrew_document_factors(hebrew_extracted, lang_code))
+        
         # Find patterns using inductive reasoning
         patterns = self._find_patterns_advanced(rows, data_type, column_profiles, correlations)
+        
+        # Add Hebrew-specific patterns
+        if hebrew_extracted:
+            patterns.extend(self._find_hebrew_patterns(hebrew_extracted))
         
         # Detect anomalies with statistical backing
         anomalies = self._detect_anomalies_advanced(rows, data_type, column_profiles)
         
         # =====================================================================
-        # PHASE 5: DOMAIN-SPECIFIC INSIGHTS
+        # PHASE 6: DOMAIN-SPECIFIC INSIGHTS
         # Apply domain knowledge based on detected data type
         # =====================================================================
         
-        domain_insights = self._generate_domain_insights(data_type, column_profiles, rows, lang_code)
+        domain_insights = self._generate_domain_insights(data_type, column_profiles, rows, lang_code, hebrew_extracted)
         
         # =====================================================================
         # PHASE 6: RISK ASSESSMENT
@@ -1140,17 +1317,198 @@ class AIRiskReportsService:
         
         return anomalies[:8]
     
+    def _extract_hebrew_document_data(self, all_text: str, rows: List[Dict]) -> Dict[str, Any]:
+        """
+        Extract structured data from Hebrew insurance/financial documents.
+        Uses the HebrewDocumentExtractor for pattern-based extraction.
+        """
+        extracted = HebrewDocumentExtractor.extract_fields(all_text)
+        
+        # Also scan all row values for additional data
+        for row in rows:
+            row_text = ' '.join(str(v) for v in row.values() if v)
+            row_extracted = HebrewDocumentExtractor.extract_fields(row_text)
+            for key, value in row_extracted.items():
+                if key not in extracted:
+                    extracted[key] = value
+        
+        # Analyze policy age if start date found
+        if 'start_date' in extracted:
+            age_info = HebrewDocumentExtractor.analyze_policy_age(extracted['start_date'])
+            extracted.update(age_info)
+        
+        # Calculate coverage ratio if premium and cover found
+        if 'premium' in extracted and 'cover_amount' in extracted:
+            try:
+                premium = float(extracted['premium']) if isinstance(extracted['premium'], str) else extracted['premium']
+                cover = float(extracted['cover_amount']) if isinstance(extracted['cover_amount'], str) else extracted['cover_amount']
+                ratio_info = HebrewDocumentExtractor.calculate_coverage_ratio(premium, cover)
+                extracted.update(ratio_info)
+            except (ValueError, TypeError):
+                pass
+        
+        return extracted
+    
+    def _create_hebrew_document_factors(self, hebrew_extracted: Dict[str, Any], lang: str) -> List[Factor]:
+        """
+        Create analysis factors from extracted Hebrew document data.
+        """
+        factors = []
+        is_hebrew = lang == 'hebrew'
+        
+        # Policy Information Factor
+        policy_info = {}
+        if 'policy_number' in hebrew_extracted:
+            policy_info['מספר פוליסה' if is_hebrew else 'policy_number'] = hebrew_extracted['policy_number']
+        if 'insurance_type' in hebrew_extracted:
+            policy_info['סוג ביטוח' if is_hebrew else 'insurance_type'] = hebrew_extracted['insurance_type']
+        if 'product_type' in hebrew_extracted:
+            policy_info['סוג מוצר' if is_hebrew else 'product_type'] = hebrew_extracted['product_type']
+        
+        if policy_info:
+            factors.append(Factor(
+                name='פרטי פוליסה' if is_hebrew else 'Policy Details',
+                value=policy_info,
+                importance=0.95,
+                category='hebrew_insurance'
+            ))
+        
+        # Financial Details Factor
+        financial_info = {}
+        if 'premium' in hebrew_extracted:
+            financial_info['פרמיה חודשית' if is_hebrew else 'monthly_premium'] = f"₪{hebrew_extracted['premium']}"
+        if 'cover_amount' in hebrew_extracted:
+            financial_info['סכום כיסוי' if is_hebrew else 'cover_amount'] = f"₪{hebrew_extracted['cover_amount']:,}" if isinstance(hebrew_extracted['cover_amount'], (int, float)) else f"₪{hebrew_extracted['cover_amount']}"
+        if 'coverage_ratio' in hebrew_extracted:
+            financial_info['יחס כיסוי/פרמיה' if is_hebrew else 'coverage_ratio'] = hebrew_extracted['coverage_ratio']
+        if 'efficiency_rating' in hebrew_extracted:
+            rating_map = {'excellent': 'מצוין', 'good': 'טוב', 'fair': 'סביר', 'review_recommended': 'מומלץ לבדיקה'}
+            financial_info['דירוג יעילות' if is_hebrew else 'efficiency'] = rating_map.get(hebrew_extracted['efficiency_rating'], hebrew_extracted['efficiency_rating']) if is_hebrew else hebrew_extracted['efficiency_rating']
+        
+        if financial_info:
+            factors.append(Factor(
+                name='נתונים כספיים' if is_hebrew else 'Financial Details',
+                value=financial_info,
+                importance=0.9,
+                category='hebrew_insurance'
+            ))
+        
+        # Policy Timeline Factor
+        timeline_info = {}
+        if 'start_date' in hebrew_extracted:
+            timeline_info['תאריך תחילה' if is_hebrew else 'start_date'] = hebrew_extracted.get('start_date', hebrew_extracted.get('start_date'))
+        if 'policy_age_years' in hebrew_extracted:
+            timeline_info['ותק הפוליסה' if is_hebrew else 'policy_age'] = f"{hebrew_extracted['policy_age_years']} שנים" if is_hebrew else f"{hebrew_extracted['policy_age_years']} years"
+        if 'status' in hebrew_extracted:
+            status_map = {'veteran': 'ותיקה', 'mature': 'בשלה', 'established': 'מבוססת', 'new': 'חדשה'}
+            timeline_info['סטטוס' if is_hebrew else 'status'] = status_map.get(hebrew_extracted['status'], hebrew_extracted['status']) if is_hebrew else hebrew_extracted['status']
+        
+        if timeline_info:
+            factors.append(Factor(
+                name='ציר זמן הפוליסה' if is_hebrew else 'Policy Timeline',
+                value=timeline_info,
+                importance=0.85,
+                category='hebrew_insurance'
+            ))
+        
+        # Insured Person Factor
+        person_info = {}
+        if 'id_number' in hebrew_extracted:
+            # Mask ID for privacy
+            id_num = hebrew_extracted['id_number']
+            masked_id = id_num[:2] + '*****' + id_num[-2:] if len(id_num) >= 4 else '***'
+            person_info['ת.ז.' if is_hebrew else 'id'] = masked_id
+        if 'insured_name' in hebrew_extracted:
+            person_info['שם מבוטח' if is_hebrew else 'insured_name'] = hebrew_extracted['insured_name']
+        if 'beneficiary' in hebrew_extracted:
+            person_info['מוטב' if is_hebrew else 'beneficiary'] = hebrew_extracted['beneficiary']
+        
+        if person_info:
+            factors.append(Factor(
+                name='פרטי מבוטח' if is_hebrew else 'Insured Details',
+                value=person_info,
+                importance=0.8,
+                category='hebrew_insurance'
+            ))
+        
+        return factors
+    
+    def _find_hebrew_patterns(self, hebrew_extracted: Dict[str, Any]) -> List[Pattern]:
+        """
+        Find patterns specific to Hebrew insurance documents.
+        """
+        patterns = []
+        
+        # Policy age pattern
+        if 'policy_age_years' in hebrew_extracted:
+            age = hebrew_extracted['policy_age_years']
+            if age > 20:
+                patterns.append(Pattern(
+                    type='policy_veteran',
+                    description=f"פוליסה ותיקה מאוד ({age} שנים) - מומלץ לבדוק תנאים מול מוצרים חדשים בשוק",
+                    affected_rows=[],
+                    significance=0.9
+                ))
+            elif age > 10:
+                patterns.append(Pattern(
+                    type='policy_mature',
+                    description=f"פוליסה בשלה ({age} שנים) - ייתכן שצברה ערכים או בונוסים",
+                    affected_rows=[],
+                    significance=0.7
+                ))
+        
+        # Coverage efficiency pattern
+        if 'efficiency_rating' in hebrew_extracted:
+            rating = hebrew_extracted['efficiency_rating']
+            if rating == 'review_recommended':
+                patterns.append(Pattern(
+                    type='coverage_efficiency',
+                    description="יחס כיסוי/פרמיה נמוך - מומלץ לבחון חלופות בשוק",
+                    affected_rows=[],
+                    significance=0.85
+                ))
+            elif rating == 'excellent':
+                patterns.append(Pattern(
+                    type='coverage_efficiency',
+                    description="יחס כיסוי/פרמיה מצוין - הפוליסה מספקת ערך טוב",
+                    affected_rows=[],
+                    significance=0.6
+                ))
+        
+        # Product type patterns
+        if 'product_type' in hebrew_extracted:
+            ptype = hebrew_extracted['product_type']
+            if ptype == 'pension':
+                patterns.append(Pattern(
+                    type='pension_product',
+                    description="מוצר פנסיוני - יש לבדוק דמי ניהול ומסלול השקעה",
+                    affected_rows=[],
+                    significance=0.8
+                ))
+            elif ptype == 'life':
+                patterns.append(Pattern(
+                    type='life_insurance',
+                    description="ביטוח חיים - יש לוודא שסכום הכיסוי מתאים לצרכים הנוכחיים",
+                    affected_rows=[],
+                    significance=0.75
+                ))
+        
+        return patterns
+    
     def _generate_domain_insights(self, data_type: DataType, profiles: Dict[str, Dict],
-                                  rows: List[Dict], lang: str) -> Dict[str, Any]:
+                                  rows: List[Dict], lang: str, 
+                                  hebrew_extracted: Dict[str, Any] = None) -> Dict[str, Any]:
         """
         Generate domain-specific insights based on data type.
+        Enhanced with Hebrew document extraction insights.
         """
         insights = {
             'domain': data_type.value,
             'language': lang,
             'key_findings': [],
             'recommendations': [],
-            'metrics': {}
+            'metrics': {},
+            'hebrew_data': hebrew_extracted or {}
         }
         
         # Find currency/amount columns
@@ -1158,11 +1516,77 @@ class AIRiskReportsService:
                         if p.get('semantic_type') == 'currency' or 
                         any(x in col.lower() for x in ['amount', 'premium', 'price', 'סכום', 'פרמיה', 'מחיר'])]
         
+        is_hebrew = lang == 'hebrew'
+        
+        # Add Hebrew document insights if available
+        if hebrew_extracted:
+            # Policy details finding
+            if 'policy_number' in hebrew_extracted:
+                insights['key_findings'].append({
+                    'type': 'policy_identification',
+                    'finding': f"זוהתה פוליסה מס': {hebrew_extracted['policy_number']}" if is_hebrew else f"Identified policy: {hebrew_extracted['policy_number']}",
+                    'detail': hebrew_extracted.get('insurance_type', hebrew_extracted.get('product_type', ''))
+                })
+            
+            # Financial metrics finding
+            if 'premium' in hebrew_extracted:
+                premium = hebrew_extracted['premium']
+                insights['key_findings'].append({
+                    'type': 'premium_analysis',
+                    'finding': f"פרמיה חודשית: ₪{premium}" if is_hebrew else f"Monthly Premium: ₪{premium}",
+                    'detail': f"עלות שנתית: ₪{float(premium) * 12:,.0f}" if is_hebrew else f"Annual cost: ₪{float(premium) * 12:,.0f}"
+                })
+                insights['metrics']['premium'] = {
+                    'monthly': premium,
+                    'annual': float(premium) * 12 if isinstance(premium, (int, float)) else premium
+                }
+            
+            if 'cover_amount' in hebrew_extracted:
+                cover = hebrew_extracted['cover_amount']
+                insights['key_findings'].append({
+                    'type': 'coverage_analysis',
+                    'finding': f"סכום כיסוי: ₪{cover:,}" if is_hebrew and isinstance(cover, (int, float)) else f"Cover Amount: ₪{cover}",
+                    'detail': ''
+                })
+                insights['metrics']['cover_amount'] = cover
+            
+            # Policy age finding
+            if 'policy_age_years' in hebrew_extracted:
+                age = hebrew_extracted['policy_age_years']
+                status = hebrew_extracted.get('status', '')
+                status_hebrew = {'veteran': 'ותיקה', 'mature': 'בשלה', 'established': 'מבוססת', 'new': 'חדשה'}.get(status, status)
+                insights['key_findings'].append({
+                    'type': 'policy_age',
+                    'finding': f"ותק הפוליסה: {age} שנים" if is_hebrew else f"Policy Age: {age} years",
+                    'detail': f"סטטוס: {status_hebrew}" if is_hebrew else f"Status: {status}"
+                })
+            
+            # Coverage efficiency finding
+            if 'efficiency_rating' in hebrew_extracted:
+                rating = hebrew_extracted['efficiency_rating']
+                rating_hebrew = {'excellent': 'מצוין', 'good': 'טוב', 'fair': 'סביר', 'review_recommended': 'מומלץ לבדיקה'}.get(rating, rating)
+                insights['key_findings'].append({
+                    'type': 'efficiency_rating',
+                    'finding': f"דירוג יעילות: {rating_hebrew}" if is_hebrew else f"Efficiency Rating: {rating}",
+                    'detail': f"יחס כיסוי/פרמיה: {hebrew_extracted.get('coverage_ratio', 'N/A')}" if is_hebrew else f"Coverage ratio: {hebrew_extracted.get('coverage_ratio', 'N/A')}"
+                })
+            
+            # Hebrew-specific recommendations
+            if is_hebrew:
+                if hebrew_extracted.get('policy_age_years', 0) > 15:
+                    insights['recommendations'].append('פוליסה ותיקה - מומלץ לבדוק האם התנאים עדיין תחרותיים')
+                if hebrew_extracted.get('efficiency_rating') == 'review_recommended':
+                    insights['recommendations'].append('יחס כיסוי/פרמיה נמוך - כדאי לקבל הצעות מחיר נוספות')
+                if 'pension' in str(hebrew_extracted.get('product_type', '')):
+                    insights['recommendations'].append('מוצר פנסיוני - בדוק דמי ניהול ומסלולי השקעה')
+                insights['recommendations'].append('ודא שהמוטבים מעודכנים')
+                insights['recommendations'].append('בדוק התאמת סכומי הכיסוי לצרכים הנוכחיים')
+        
         if data_type == DataType.INSURANCE:
             insights['key_findings'].append({
                 'type': 'domain_classification',
-                'finding': 'ניתוח נתוני ביטוח' if lang == 'hebrew' else 'Insurance data analysis',
-                'detail': f'{len(rows)} רשומות נותחו' if lang == 'hebrew' else f'{len(rows)} records analyzed'
+                'finding': 'ניתוח נתוני ביטוח' if is_hebrew else 'Insurance data analysis',
+                'detail': f'{len(rows)} רשומות נותחו' if is_hebrew else f'{len(rows)} records analyzed'
             })
             
             # Insurance-specific metrics
@@ -1175,21 +1599,21 @@ class AIRiskReportsService:
                         'range': f"{stats.get('min', 0)} - {stats.get('max', 0)}"
                     }
             
-            if lang == 'hebrew':
+            if is_hebrew and not hebrew_extracted:
                 insights['recommendations'].append('בדוק כיסויים ביטוחיים מול צרכים')
                 insights['recommendations'].append('השווה פרמיות לממוצע בשוק')
-            else:
+            elif not is_hebrew:
                 insights['recommendations'].append('Review coverage adequacy against needs')
                 insights['recommendations'].append('Compare premiums to market average')
                 
         elif data_type == DataType.INVESTMENT:
             insights['key_findings'].append({
                 'type': 'domain_classification',
-                'finding': 'ניתוח תיק השקעות' if lang == 'hebrew' else 'Investment portfolio analysis',
-                'detail': f'{len(rows)} נכסים נותחו' if lang == 'hebrew' else f'{len(rows)} assets analyzed'
+                'finding': 'ניתוח תיק השקעות' if is_hebrew else 'Investment portfolio analysis',
+                'detail': f'{len(rows)} נכסים נותחו' if is_hebrew else f'{len(rows)} assets analyzed'
             })
             
-            if lang == 'hebrew':
+            if is_hebrew:
                 insights['recommendations'].append('בדוק פיזור התיק')
                 insights['recommendations'].append('נתח יחס תשואה/סיכון')
             else:
@@ -1199,15 +1623,15 @@ class AIRiskReportsService:
         elif data_type == DataType.SAVINGS:
             insights['key_findings'].append({
                 'type': 'domain_classification',
-                'finding': 'ניתוח חיסכון' if lang == 'hebrew' else 'Savings analysis',
-                'detail': f'{len(rows)} רשומות' if lang == 'hebrew' else f'{len(rows)} records'
+                'finding': 'ניתוח חיסכון' if is_hebrew else 'Savings analysis',
+                'detail': f'{len(rows)} רשומות' if is_hebrew else f'{len(rows)} records'
             })
             
         elif data_type == DataType.RISK:
             insights['key_findings'].append({
                 'type': 'domain_classification',
-                'finding': 'הערכת סיכונים' if lang == 'hebrew' else 'Risk assessment',
-                'detail': f'{len(rows)} גורמי סיכון נותחו' if lang == 'hebrew' else f'{len(rows)} risk factors analyzed'
+                'finding': 'הערכת סיכונים' if is_hebrew else 'Risk assessment',
+                'detail': f'{len(rows)} גורמי סיכון נותחו' if is_hebrew else f'{len(rows)} risk factors analyzed'
             })
         
         # Add data quality insight
@@ -1216,8 +1640,8 @@ class AIRiskReportsService:
         
         insights['key_findings'].append({
             'type': 'data_quality',
-            'finding': f'שלמות נתונים: {completeness}%' if lang == 'hebrew' else f'Data completeness: {completeness}%',
-            'detail': f'{complete_cols}/{len(profiles)} שדות מלאים' if lang == 'hebrew' else f'{complete_cols}/{len(profiles)} fields complete'
+            'finding': f'שלמות נתונים: {completeness}%' if is_hebrew else f'Data completeness: {completeness}%',
+            'detail': f'{complete_cols}/{len(profiles)} שדות מלאים' if is_hebrew else f'{complete_cols}/{len(profiles)} fields complete'
         })
         
         return insights
