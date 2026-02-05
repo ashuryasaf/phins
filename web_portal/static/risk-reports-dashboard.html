@@ -1619,18 +1619,38 @@
     
     function renderCharts(chartConfigs) {
       const container = document.getElementById('chartsContainer');
+      if (!container) return;
+      
       container.innerHTML = '';
       
-      // Destroy existing charts
-      Object.values(charts).forEach(chart => chart.destroy());
+      // Safely destroy existing charts
+      if (charts && typeof charts === 'object') {
+        Object.keys(charts).forEach(key => {
+          try {
+            if (charts[key] && typeof charts[key].destroy === 'function') {
+              charts[key].destroy();
+            }
+          } catch (e) {
+            console.warn('Error destroying chart:', e);
+          }
+        });
+      }
       charts = {};
       
+      // Check if Chart.js is available
+      if (typeof Chart === 'undefined') {
+        console.warn('Chart.js not loaded');
+        return;
+      }
+      
       (chartConfigs || []).forEach((config, index) => {
+        if (!config || !config.type) return;
+        
         const chartId = `chart-${index}`;
         const wrapper = document.createElement('div');
         wrapper.className = 'chart-card fade-in';
         wrapper.innerHTML = `
-          <h4>${config.title}</h4>
+          <h4>${config.title || 'Chart'}</h4>
           <div class="chart-wrapper">
             ${config.type === 'gauge' ? renderGauge(config) : `<canvas id="${chartId}"></canvas>`}
           </div>
@@ -1638,14 +1658,23 @@
         container.appendChild(wrapper);
         
         if (config.type !== 'gauge') {
-          const ctx = document.getElementById(chartId).getContext('2d');
-          charts[chartId] = createChart(ctx, config);
+          try {
+            const canvas = document.getElementById(chartId);
+            if (canvas) {
+              const ctx = canvas.getContext('2d');
+              if (ctx) {
+                charts[chartId] = createChart(ctx, config);
+              }
+            }
+          } catch (e) {
+            console.warn('Error creating chart:', e);
+          }
         }
       });
     }
     
     function renderGauge(config) {
-      const value = config.data.value;
+      const value = (config.data && config.data.value) ? config.data.value : 0;
       const percentage = value / 100;
       const color = value < 30 ? 'var(--success)' : (value < 60 ? 'var(--warning)' : 'var(--danger)');
       
@@ -1661,30 +1690,37 @@
     }
     
     function createChart(ctx, config) {
-      const chartType = config.type === 'doughnut' ? 'doughnut' : config.type;
+      if (!ctx || !config) return null;
       
-      return new Chart(ctx, {
-        type: chartType,
-        data: {
-          labels: config.data?.labels || [],
-          datasets: [{
-            data: config.data?.values || [],
-            backgroundColor: config.options?.colors || [
-              '#0d47a1', '#ff6b35', '#10b981', '#7c3aed', '#f59e0b', '#06b6d4'
-            ],
-            borderWidth: 2,
-            borderColor: '#fff'
-          }]
-        },
-        options: {
-          responsive: true,
-          maintainAspectRatio: false,
-          plugins: {
-            legend: { position: chartType === 'bar' ? 'top' : 'bottom' }
+      const chartType = config.type === 'doughnut' ? 'doughnut' : (config.type || 'bar');
+      
+      try {
+        return new Chart(ctx, {
+          type: chartType,
+          data: {
+            labels: (config.data && config.data.labels) ? config.data.labels : [],
+            datasets: [{
+              data: (config.data && config.data.values) ? config.data.values : [],
+              backgroundColor: (config.options && config.options.colors) ? config.options.colors : [
+                '#0d47a1', '#ff6b35', '#10b981', '#7c3aed', '#f59e0b', '#06b6d4'
+              ],
+              borderWidth: 2,
+              borderColor: '#fff'
+            }]
           },
-          indexAxis: chartType === 'bar' && config.options?.horizontal ? 'y' : 'x'
-        }
-      });
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+              legend: { position: chartType === 'bar' ? 'top' : 'bottom' }
+            },
+            indexAxis: (chartType === 'bar' && config.options && config.options.horizontal) ? 'y' : 'x'
+          }
+        });
+      } catch (e) {
+        console.warn('Error in createChart:', e);
+        return null;
+      }
     }
     
     function renderDataTable(data) {
