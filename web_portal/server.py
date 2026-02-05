@@ -7782,6 +7782,48 @@ For claims or questions, please contact:
                 self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
                 return
         
+        # GET /api/mislaka/companies - Get list of insurance companies
+        if path == '/api/mislaka/companies':
+            try:
+                from services.mislaka_api_service import get_mislaka_service
+                
+                mislaka = get_mislaka_service()
+                companies = mislaka.get_insurance_companies()
+                
+                self._set_json_headers(200)
+                self.wfile.write(json.dumps({
+                    'companies': companies
+                }, ensure_ascii=False).encode('utf-8'))
+                return
+                
+            except Exception as e:
+                print(f"Error in /api/mislaka/companies: {e}")
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+                return
+        
+        # GET /api/mislaka/status - Check Mislaka API status
+        if path == '/api/mislaka/status':
+            try:
+                from services.mislaka_api_service import get_mislaka_service
+                
+                mislaka = get_mislaka_service()
+                
+                self._set_json_headers(200)
+                self.wfile.write(json.dumps({
+                    'configured': mislaka.is_configured(),
+                    'api_url': mislaka.BASE_URL,
+                    'status': 'ready' if mislaka.is_configured() else 'not_configured',
+                    'message': 'Mislaka API is configured and ready' if mislaka.is_configured() else 'Please configure MISLAKA_API_KEY and MISLAKA_API_SECRET environment variables'
+                }, ensure_ascii=False).encode('utf-8'))
+                return
+                
+            except Exception as e:
+                print(f"Error in /api/mislaka/status: {e}")
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+                return
+        
         # Customers Endpoint
         if path == '/api/customers':
             requested_customer_id = qs.get('id', [None])[0]
@@ -15179,6 +15221,288 @@ For claims or questions, please contact:
             except Exception as e:
                 import traceback
                 print(f"Error in /api/reports/generate: {e}")
+                traceback.print_exc()
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+                return
+        
+        # =====================================================================
+        # MISLAKA API INTEGRATION ENDPOINTS
+        # Integration with Israeli Insurance & Pension Clearinghouse
+        # =====================================================================
+        
+        # POST /api/mislaka/policies - Get policies for a person
+        if path == '/api/mislaka/policies':
+            try:
+                # Verify authentication
+                session = self._get_session()
+                if not session or 'user_id' not in session:
+                    self._set_json_headers(401)
+                    self.wfile.write(json.dumps({'error': 'Authentication required'}).encode('utf-8'))
+                    return
+                
+                length = int(self.headers.get('Content-Length', 0))
+                body = self.rfile.read(length).decode('utf-8') if length else '{}'
+                data = json.loads(body)
+                
+                id_number = data.get('id_number', '')
+                product_type = data.get('product_type', 'all')
+                
+                if not id_number:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'ID number required'}).encode('utf-8'))
+                    return
+                
+                # Validate ID number format (9 digits)
+                if not id_number.isdigit() or len(id_number) != 9:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'Invalid ID number format (must be 9 digits)'}).encode('utf-8'))
+                    return
+                
+                from services.mislaka_api_service import get_mislaka_service, MislakaProductType
+                
+                mislaka = get_mislaka_service()
+                
+                # Check if service is configured
+                if not mislaka.is_configured():
+                    self._set_json_headers(503)
+                    self.wfile.write(json.dumps({
+                        'error': 'Mislaka API not configured',
+                        'message': 'Please configure MISLAKA_API_KEY and MISLAKA_API_SECRET'
+                    }).encode('utf-8'))
+                    return
+                
+                # Map product type
+                ptype_map = {
+                    'all': MislakaProductType.ALL,
+                    'pension': MislakaProductType.PENSION,
+                    'provident': MislakaProductType.PROVIDENT,
+                    'life_insurance': MislakaProductType.LIFE_INSURANCE,
+                    'health_insurance': MislakaProductType.HEALTH_INSURANCE,
+                    'education_fund': MislakaProductType.EDUCATION_FUND,
+                }
+                ptype = ptype_map.get(product_type, MislakaProductType.ALL)
+                
+                # Get policies
+                result = mislaka.get_person_policies(id_number, ptype)
+                
+                # Convert to JSON-serializable format
+                response_data = {
+                    'request_id': result.request_id,
+                    'status': result.status.value,
+                    'timestamp': result.timestamp,
+                    'person': {
+                        'id_number': result.person.id_number[:2] + '*****' + result.person.id_number[-2:],  # Mask ID
+                        'first_name': result.person.first_name,
+                        'last_name': result.person.last_name,
+                    },
+                    'policies': [mislaka.to_dict(p) for p in result.policies],
+                    'total_policies': result.total_policies,
+                    'total_accumulated': result.total_accumulated,
+                    'total_monthly_premium': result.total_monthly_premium,
+                }
+                
+                if result.error_message:
+                    response_data['error'] = result.error_message
+                
+                self._set_json_headers(200)
+                self.wfile.write(json.dumps(response_data, ensure_ascii=False).encode('utf-8'))
+                return
+                
+            except json.JSONDecodeError:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'Invalid JSON'}).encode('utf-8'))
+                return
+            except Exception as e:
+                import traceback
+                print(f"Error in /api/mislaka/policies: {e}")
+                traceback.print_exc()
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+                return
+        
+        # POST /api/mislaka/summary - Get financial summary for a person
+        if path == '/api/mislaka/summary':
+            try:
+                # Verify authentication
+                session = self._get_session()
+                if not session or 'user_id' not in session:
+                    self._set_json_headers(401)
+                    self.wfile.write(json.dumps({'error': 'Authentication required'}).encode('utf-8'))
+                    return
+                
+                length = int(self.headers.get('Content-Length', 0))
+                body = self.rfile.read(length).decode('utf-8') if length else '{}'
+                data = json.loads(body)
+                
+                id_number = data.get('id_number', '')
+                
+                if not id_number:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'ID number required'}).encode('utf-8'))
+                    return
+                
+                from services.mislaka_api_service import get_mislaka_service
+                
+                mislaka = get_mislaka_service()
+                
+                if not mislaka.is_configured():
+                    self._set_json_headers(503)
+                    self.wfile.write(json.dumps({
+                        'error': 'Mislaka API not configured',
+                        'message': 'Please configure MISLAKA_API_KEY and MISLAKA_API_SECRET'
+                    }).encode('utf-8'))
+                    return
+                
+                summary = mislaka.get_person_summary(id_number)
+                
+                # Mask ID in response
+                if 'id_number' in summary:
+                    summary['id_number'] = summary['id_number'][:2] + '*****' + summary['id_number'][-2:]
+                
+                self._set_json_headers(200)
+                self.wfile.write(json.dumps(summary, ensure_ascii=False).encode('utf-8'))
+                return
+                
+            except Exception as e:
+                import traceback
+                print(f"Error in /api/mislaka/summary: {e}")
+                traceback.print_exc()
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+                return
+        
+        # GET /api/mislaka/companies - Get list of insurance companies
+        if path == '/api/mislaka/companies':
+            try:
+                from services.mislaka_api_service import get_mislaka_service
+                
+                mislaka = get_mislaka_service()
+                companies = mislaka.get_insurance_companies()
+                
+                self._set_json_headers(200)
+                self.wfile.write(json.dumps({
+                    'companies': companies
+                }, ensure_ascii=False).encode('utf-8'))
+                return
+                
+            except Exception as e:
+                print(f"Error in /api/mislaka/companies: {e}")
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+                return
+        
+        # POST /api/mislaka/import - Import policies to AI analysis
+        if path == '/api/mislaka/import':
+            try:
+                # Verify authentication
+                session = self._get_session()
+                if not session or 'user_id' not in session:
+                    self._set_json_headers(401)
+                    self.wfile.write(json.dumps({'error': 'Authentication required'}).encode('utf-8'))
+                    return
+                
+                length = int(self.headers.get('Content-Length', 0))
+                body = self.rfile.read(length).decode('utf-8') if length else '{}'
+                data = json.loads(body)
+                
+                id_number = data.get('id_number', '')
+                
+                if not id_number:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'ID number required'}).encode('utf-8'))
+                    return
+                
+                from services.mislaka_api_service import get_mislaka_service
+                from services.ai_risk_reports_service import get_ai_reports_service
+                
+                mislaka = get_mislaka_service()
+                
+                if not mislaka.is_configured():
+                    self._set_json_headers(503)
+                    self.wfile.write(json.dumps({
+                        'error': 'Mislaka API not configured'
+                    }).encode('utf-8'))
+                    return
+                
+                # Get policies from Mislaka
+                result = mislaka.get_person_policies(id_number)
+                
+                if result.status.value != 'success' or not result.policies:
+                    self._set_json_headers(404)
+                    self.wfile.write(json.dumps({
+                        'error': 'No policies found',
+                        'message': result.error_message or 'No policies returned from Mislaka'
+                    }).encode('utf-8'))
+                    return
+                
+                # Convert policies to CSV format for AI analysis
+                import csv
+                import io
+                
+                csv_buffer = io.StringIO()
+                fieldnames = [
+                    'מספר פוליסה', 'סוג מוצר', 'חברה', 'תאריך תחילה', 
+                    'סטטוס', 'פרמיה חודשית', 'סכום כיסוי', 'ערך צבירה',
+                    'דמי ניהול', 'מסלול השקעה', 'מוטבים'
+                ]
+                writer = csv.DictWriter(csv_buffer, fieldnames=fieldnames)
+                writer.writeheader()
+                
+                for p in result.policies:
+                    writer.writerow({
+                        'מספר פוליסה': p.policy_number,
+                        'סוג מוצר': p.product_type,
+                        'חברה': p.company_name,
+                        'תאריך תחילה': p.start_date,
+                        'סטטוס': p.status,
+                        'פרמיה חודשית': p.premium_monthly,
+                        'סכום כיסוי': p.cover_amount,
+                        'ערך צבירה': p.accumulated_value,
+                        'דמי ניהול': f"{p.management_fee_percent}%",
+                        'מסלול השקעה': p.investment_track,
+                        'מוטבים': ', '.join(p.beneficiaries) if p.beneficiaries else ''
+                    })
+                
+                csv_content = csv_buffer.getvalue().encode('utf-8')
+                
+                # Import to AI Reports service
+                ai_service = get_ai_reports_service()
+                
+                user_id = session.get('user_id', 'unknown')
+                user_role = session.get('role', 'customer')
+                
+                # Parse the CSV
+                doc_result = ai_service.parse_file(
+                    filename=f'mislaka_policies_{id_number[-4:]}.csv',
+                    file_content=csv_content,
+                    file_type='csv',
+                    owner_id=user_id,
+                    owner_role=user_role
+                )
+                
+                # Run analysis
+                analysis = ai_service.analyze(doc_result['document_id'])
+                
+                # Generate report
+                report = ai_service.generate_report(analysis.id, language='hebrew')
+                
+                self._set_json_headers(200)
+                self.wfile.write(json.dumps({
+                    'success': True,
+                    'message': f'Imported {len(result.policies)} policies from Mislaka',
+                    'document_id': doc_result['document_id'],
+                    'analysis_id': analysis.id,
+                    'report_id': report.id,
+                    'policies_count': len(result.policies),
+                    'total_accumulated': result.total_accumulated,
+                    'total_monthly_premium': result.total_monthly_premium
+                }, ensure_ascii=False).encode('utf-8'))
+                return
+                
+            except Exception as e:
+                import traceback
+                print(f"Error in /api/mislaka/import: {e}")
                 traceback.print_exc()
                 self._set_json_headers(500)
                 self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))

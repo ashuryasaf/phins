@@ -700,6 +700,158 @@
       font-weight: 500;
     }
     
+    /* Mislaka Integration Section */
+    .mislaka-section {
+      background: white;
+      border-radius: 16px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+      overflow: hidden;
+      margin-bottom: 2rem;
+    }
+    
+    .mislaka-header {
+      background: linear-gradient(135deg, #059669 0%, #047857 100%);
+      color: white;
+      padding: 1.5rem 2rem;
+    }
+    
+    .mislaka-header h3 {
+      font-size: 1.2rem;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 0.5rem;
+    }
+    
+    .mislaka-header p {
+      font-size: 0.9rem;
+      opacity: 0.9;
+    }
+    
+    .mislaka-body {
+      padding: 2rem;
+    }
+    
+    .mislaka-form {
+      display: flex;
+      gap: 1rem;
+      flex-wrap: wrap;
+      align-items: flex-end;
+    }
+    
+    .mislaka-input-group {
+      flex: 1;
+      min-width: 200px;
+    }
+    
+    .mislaka-input-group label {
+      display: block;
+      font-weight: 500;
+      color: var(--text-dark);
+      margin-bottom: 0.5rem;
+    }
+    
+    .mislaka-input-group input,
+    .mislaka-input-group select {
+      width: 100%;
+      padding: 12px 16px;
+      border: 2px solid #e2e8f0;
+      border-radius: 8px;
+      font-size: 1rem;
+      transition: border-color 0.2s;
+    }
+    
+    .mislaka-input-group input:focus,
+    .mislaka-input-group select:focus {
+      outline: none;
+      border-color: var(--success);
+    }
+    
+    .btn-mislaka {
+      background: linear-gradient(135deg, #059669 0%, #047857 100%);
+      color: white;
+      padding: 12px 24px;
+      border: none;
+      border-radius: 8px;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      transition: all 0.2s;
+    }
+    
+    .btn-mislaka:hover:not(:disabled) {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(5, 150, 105, 0.3);
+    }
+    
+    .btn-mislaka:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+    
+    .mislaka-status {
+      margin-top: 1rem;
+      padding: 1rem;
+      border-radius: 8px;
+      display: none;
+    }
+    
+    .mislaka-status.active {
+      display: block;
+    }
+    
+    .mislaka-status.loading {
+      background: #e0f2fe;
+      color: #0369a1;
+    }
+    
+    .mislaka-status.success {
+      background: #d1fae5;
+      color: #047857;
+    }
+    
+    .mislaka-status.error {
+      background: #fee2e2;
+      color: #b91c1c;
+    }
+    
+    .mislaka-results {
+      margin-top: 1.5rem;
+      display: none;
+    }
+    
+    .mislaka-results.active {
+      display: block;
+    }
+    
+    .mislaka-summary {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: 1rem;
+      margin-bottom: 1.5rem;
+    }
+    
+    .mislaka-stat {
+      background: #f8fafc;
+      border-radius: 8px;
+      padding: 1rem;
+      text-align: center;
+    }
+    
+    .mislaka-stat .label {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      text-transform: uppercase;
+    }
+    
+    .mislaka-stat .value {
+      font-size: 1.5rem;
+      font-weight: 700;
+      color: var(--text-dark);
+    }
+    
     /* Report History Section */
     .history-section {
       background: white;
@@ -948,6 +1100,46 @@
           <div class="progress-fill" id="progressFill"></div>
         </div>
         <p id="processingMessage">Parsing and learning from uploaded files...</p>
+      </div>
+    </section>
+    
+    <!-- Mislaka Integration Section -->
+    <section class="mislaka-section fade-in" id="mislakaSection">
+      <div class="mislaka-header">
+        <h3>🏦 מסלקת הביטוח והפנסיה (Mislaka API)</h3>
+        <p>Import insurance and pension data directly from Israel's national clearinghouse</p>
+      </div>
+      <div class="mislaka-body">
+        <div class="mislaka-form">
+          <div class="mislaka-input-group">
+            <label for="mislakaIdNumber">תעודת זהות (ID Number)</label>
+            <input type="text" id="mislakaIdNumber" placeholder="Enter 9-digit ID" maxlength="9" pattern="[0-9]{9}">
+          </div>
+          <div class="mislaka-input-group">
+            <label for="mislakaProductType">סוג מוצר (Product Type)</label>
+            <select id="mislakaProductType">
+              <option value="all">הכל (All)</option>
+              <option value="pension">קרן פנסיה (Pension)</option>
+              <option value="provident">קופת גמל (Provident)</option>
+              <option value="life_insurance">ביטוח חיים (Life Insurance)</option>
+              <option value="health_insurance">ביטוח בריאות (Health)</option>
+              <option value="education_fund">קרן השתלמות (Education Fund)</option>
+            </select>
+          </div>
+          <button class="btn-mislaka" id="mislakaImportBtn" onclick="importFromMislaka()">
+            📥 Import & Analyze
+          </button>
+        </div>
+        
+        <div class="mislaka-status" id="mislakaStatus">
+          <span id="mislakaStatusMessage">Loading...</span>
+        </div>
+        
+        <div class="mislaka-results" id="mislakaResults">
+          <div class="mislaka-summary" id="mislakaSummary">
+            <!-- Populated dynamically -->
+          </div>
+        </div>
       </div>
     </section>
     
@@ -1780,6 +1972,122 @@
     function exportReport(format) {
       alert(`Export to ${format.toUpperCase()} - Coming soon!\n\nThis will generate a downloadable ${format.toUpperCase()} file with the complete report.`);
     }
+    
+    // =========================================================================
+    // MISLAKA API INTEGRATION
+    // Import data from Israeli Insurance & Pension Clearinghouse
+    // =========================================================================
+    
+    async function checkMislakaStatus() {
+      try {
+        const response = await fetch('/api/mislaka/status');
+        const data = await response.json();
+        
+        const section = document.getElementById('mislakaSection');
+        if (!data.configured) {
+          // Show notice that API is not configured
+          const notice = document.createElement('div');
+          notice.style.cssText = 'padding: 1rem; background: #fef3c7; color: #92400e; border-radius: 8px; margin-top: 1rem;';
+          notice.innerHTML = '⚠️ Mislaka API not configured. Contact administrator to enable this feature.';
+          document.querySelector('.mislaka-body').appendChild(notice);
+          document.getElementById('mislakaImportBtn').disabled = true;
+        }
+      } catch (e) {
+        console.log('Mislaka status check failed:', e);
+      }
+    }
+    
+    async function importFromMislaka() {
+      const idNumber = document.getElementById('mislakaIdNumber').value.trim();
+      const productType = document.getElementById('mislakaProductType').value;
+      const statusDiv = document.getElementById('mislakaStatus');
+      const statusMsg = document.getElementById('mislakaStatusMessage');
+      const resultsDiv = document.getElementById('mislakaResults');
+      const importBtn = document.getElementById('mislakaImportBtn');
+      
+      // Validate ID number
+      if (!idNumber || !/^[0-9]{9}$/.test(idNumber)) {
+        statusDiv.className = 'mislaka-status active error';
+        statusMsg.textContent = '❌ Please enter a valid 9-digit ID number';
+        return;
+      }
+      
+      // Show loading state
+      importBtn.disabled = true;
+      statusDiv.className = 'mislaka-status active loading';
+      statusMsg.textContent = '🔄 Connecting to Mislaka API...';
+      resultsDiv.className = 'mislaka-results';
+      
+      try {
+        // Call import API
+        const response = await fetch('/api/mislaka/import', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${localStorage.getItem('phins_token') || ''}`
+          },
+          body: JSON.stringify({
+            id_number: idNumber,
+            product_type: productType
+          })
+        });
+        
+        const data = await response.json();
+        
+        if (!response.ok) {
+          throw new Error(data.error || data.message || 'Import failed');
+        }
+        
+        // Show success
+        statusDiv.className = 'mislaka-status active success';
+        statusMsg.innerHTML = `✅ Successfully imported ${data.policies_count} policies from Mislaka!`;
+        
+        // Show summary
+        resultsDiv.className = 'mislaka-results active';
+        document.getElementById('mislakaSummary').innerHTML = `
+          <div class="mislaka-stat">
+            <div class="label">פוליסות</div>
+            <div class="value">${data.policies_count}</div>
+          </div>
+          <div class="mislaka-stat">
+            <div class="label">צבירה כוללת</div>
+            <div class="value">₪${(data.total_accumulated || 0).toLocaleString()}</div>
+          </div>
+          <div class="mislaka-stat">
+            <div class="label">פרמיה חודשית</div>
+            <div class="value">₪${(data.total_monthly_premium || 0).toLocaleString()}</div>
+          </div>
+          <div class="mislaka-stat">
+            <div class="label">Report ID</div>
+            <div class="value" style="font-size: 0.9rem;">${data.report_id || '—'}</div>
+          </div>
+        `;
+        
+        // Refresh report history
+        loadReportHistory();
+        
+        // Optionally view the generated report
+        if (data.report_id) {
+          setTimeout(() => {
+            if (confirm('View the generated report now?')) {
+              viewReport(data.report_id);
+            }
+          }, 500);
+        }
+        
+      } catch (error) {
+        console.error('Mislaka import error:', error);
+        statusDiv.className = 'mislaka-status active error';
+        statusMsg.textContent = `❌ ${error.message}`;
+      } finally {
+        importBtn.disabled = false;
+      }
+    }
+    
+    // Check Mislaka status on page load
+    document.addEventListener('DOMContentLoaded', () => {
+      checkMislakaStatus();
+    });
   </script>
 </body>
 </html>
