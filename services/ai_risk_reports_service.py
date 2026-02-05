@@ -2017,8 +2017,14 @@ class AIRiskReportsService:
         
         report_id = f"RPT-{datetime.now().strftime('%Y%m%d%H%M%S')}-{random.randint(1000, 9999)}"
         
-        # Generate sections based on data type
-        sections = self._generate_sections(analysis, lang)
+        # Retrieve original document data for content analysis
+        doc_data = None
+        if analysis.document_id in self.documents:
+            doc = self.documents[analysis.document_id]
+            doc_data = doc.get('parsed_data', {})
+        
+        # Generate sections based on data type (now with original data)
+        sections = self._generate_sections(analysis, lang, doc_data)
         
         # Generate charts
         charts = self._generate_charts(analysis)
@@ -2072,8 +2078,9 @@ class AIRiskReportsService:
         
         return report
     
-    def _generate_sections(self, analysis: AnalysisResult, lang: str) -> List[ReportSection]:
-        """Generate comprehensive report sections with AI/BI insights"""
+    def _generate_sections(self, analysis: AnalysisResult, lang: str, 
+                          doc_data: Dict[str, Any] = None) -> List[ReportSection]:
+        """Generate comprehensive report sections with AI/BI insights and actual data content"""
         sections = []
         is_hebrew = lang == 'hebrew'
         
@@ -2084,7 +2091,27 @@ class AIRiskReportsService:
             order=1
         ))
         
-        # 2. Data Profile Overview
+        # 2. ACTUAL DATA CONTENT SECTION - Show extracted data from the files
+        if doc_data:
+            data_content_section = self._generate_data_content_section(doc_data, analysis, is_hebrew)
+            if data_content_section:
+                sections.append(ReportSection(
+                    title='תוכן הנתונים שהועלו' if is_hebrew else 'Uploaded Data Content',
+                    content=data_content_section,
+                    order=2
+                ))
+        
+        # 3. Hebrew Insurance Details (if extracted)
+        hebrew_factors = [f for f in analysis.extracted_factors if f.category == 'hebrew_insurance']
+        if hebrew_factors:
+            hebrew_content = self._generate_hebrew_insurance_section(hebrew_factors, is_hebrew)
+            sections.append(ReportSection(
+                title='פרטי פוליסת ביטוח' if is_hebrew else 'Insurance Policy Details',
+                content=hebrew_content,
+                order=3
+            ))
+        
+        # 4. Data Profile Overview
         total_records = analysis.key_metrics.get('total_records', 0)
         numeric_cols = analysis.key_metrics.get('numeric_columns', 0)
         cat_cols = analysis.key_metrics.get('categorical_columns', 0)
@@ -2282,6 +2309,186 @@ Factors Affecting Score:
         ))
         
         return sections
+    
+    def _generate_data_content_section(self, doc_data: Dict[str, Any], 
+                                        analysis: AnalysisResult, is_hebrew: bool) -> str:
+        """
+        Generate a section showing actual data content from uploaded files.
+        This displays the real values from CSV/ZIP files, not just statistics.
+        """
+        content_lines = []
+        
+        columns = doc_data.get('columns', [])
+        rows = doc_data.get('rows', [])
+        files = doc_data.get('files', [])
+        
+        # If from ZIP, show file list
+        if files:
+            if is_hebrew:
+                content_lines.append("📁 קבצים שנותחו מתוך ה-ZIP:")
+            else:
+                content_lines.append("📁 Files analyzed from ZIP:")
+            
+            for f in files:
+                content_lines.append(f"  • {f.get('name', 'Unknown')} ({f.get('row_count', 0)} שורות)" if is_hebrew else f"  • {f.get('name', 'Unknown')} ({f.get('row_count', 0)} rows)")
+            content_lines.append("")
+        
+        # Show column headers
+        if columns:
+            if is_hebrew:
+                content_lines.append(f"📋 עמודות הנתונים ({len(columns)}):")
+            else:
+                content_lines.append(f"📋 Data Columns ({len(columns)}):")
+            
+            # Display columns in a formatted way
+            col_display = []
+            for col in columns[:20]:  # Limit to 20 columns
+                col_display.append(f"  • {col}")
+            content_lines.extend(col_display)
+            if len(columns) > 20:
+                content_lines.append(f"  ... ועוד {len(columns) - 20} עמודות" if is_hebrew else f"  ... and {len(columns) - 20} more columns")
+            content_lines.append("")
+        
+        # Show sample data rows as table
+        if rows:
+            if is_hebrew:
+                content_lines.append(f"📊 נתונים שחולצו ({len(rows)} רשומות):")
+                content_lines.append("=" * 50)
+            else:
+                content_lines.append(f"📊 Extracted Data ({len(rows)} records):")
+                content_lines.append("=" * 50)
+            
+            # Display first 10 rows with all their values
+            for i, row in enumerate(rows[:15], 1):
+                if is_hebrew:
+                    content_lines.append(f"\n🔹 רשומה {i}:")
+                else:
+                    content_lines.append(f"\n🔹 Record {i}:")
+                
+                for key, value in row.items():
+                    if value and str(value).strip():
+                        # Clean and format the value
+                        val_str = str(value).strip()
+                        # Detect if it's a numeric value
+                        try:
+                            num_val = float(val_str.replace(',', '').replace('₪', '').replace('$', ''))
+                            if num_val > 1000:
+                                val_str = f"₪{num_val:,.0f}" if any(x in key.lower() for x in ['premium', 'cover', 'amount', 'סכום', 'פרמיה', 'כיסוי']) else f"{num_val:,.0f}"
+                        except ValueError:
+                            pass
+                        content_lines.append(f"    {key}: {val_str}")
+            
+            if len(rows) > 15:
+                content_lines.append(f"\n... ועוד {len(rows) - 15} רשומות" if is_hebrew else f"\n... and {len(rows) - 15} more records")
+        
+        # Extract and highlight key insurance/financial fields
+        key_fields = self._extract_key_fields_from_data(rows, is_hebrew)
+        if key_fields:
+            content_lines.append("")
+            if is_hebrew:
+                content_lines.append("🎯 שדות מרכזיים שזוהו:")
+            else:
+                content_lines.append("🎯 Key Fields Identified:")
+            
+            for field_name, field_value in key_fields.items():
+                content_lines.append(f"  • {field_name}: {field_value}")
+        
+        return '\n'.join(content_lines) if content_lines else ""
+    
+    def _extract_key_fields_from_data(self, rows: List[Dict], is_hebrew: bool) -> Dict[str, Any]:
+        """
+        Extract key financial/insurance fields from the actual data rows.
+        """
+        key_fields = {}
+        
+        # Keywords to look for
+        important_keys = {
+            'policy': ['policy', 'פוליסה', 'מספר פוליסה', 'policy_number'],
+            'premium': ['premium', 'פרמיה', 'תשלום', 'payment', 'חודשי'],
+            'cover': ['cover', 'כיסוי', 'סכום ביטוח', 'סכום', 'coverage', 'amount'],
+            'date': ['date', 'תאריך', 'start', 'תחילה', 'end', 'סיום'],
+            'id': ['id', 'ת.ז', 'תעודת זהות', 'מספר זהות', 'identity'],
+            'name': ['name', 'שם', 'מבוטח', 'insured'],
+            'type': ['type', 'סוג', 'תוכנית', 'plan', 'מסלול'],
+            'pension': ['pension', 'פנסיה', 'גמל', 'קרן'],
+            'beneficiary': ['beneficiary', 'מוטב', 'מוטבים'],
+        }
+        
+        for row in rows[:20]:  # Check first 20 rows
+            for col_name, value in row.items():
+                if not value or not str(value).strip():
+                    continue
+                
+                col_lower = col_name.lower()
+                value_str = str(value).strip()
+                
+                for field_type, keywords in important_keys.items():
+                    if any(kw in col_lower for kw in keywords):
+                        label_map = {
+                            'policy': 'מספר פוליסה' if is_hebrew else 'Policy Number',
+                            'premium': 'פרמיה' if is_hebrew else 'Premium',
+                            'cover': 'סכום כיסוי' if is_hebrew else 'Cover Amount',
+                            'date': col_name,
+                            'id': 'מספר זהות' if is_hebrew else 'ID Number',
+                            'name': 'שם' if is_hebrew else 'Name',
+                            'type': 'סוג' if is_hebrew else 'Type',
+                            'pension': 'פנסיה' if is_hebrew else 'Pension',
+                            'beneficiary': 'מוטב' if is_hebrew else 'Beneficiary',
+                        }
+                        
+                        label = label_map.get(field_type, col_name)
+                        
+                        # Format numeric values
+                        if field_type in ['premium', 'cover']:
+                            try:
+                                num_val = float(value_str.replace(',', '').replace('₪', '').replace('$', ''))
+                                value_str = f"₪{num_val:,.0f}"
+                            except ValueError:
+                                pass
+                        
+                        # Mask ID numbers for privacy
+                        if field_type == 'id' and len(value_str) >= 6:
+                            value_str = value_str[:2] + '****' + value_str[-2:]
+                        
+                        if label not in key_fields:
+                            key_fields[label] = value_str
+                        break
+        
+        return key_fields
+    
+    def _generate_hebrew_insurance_section(self, hebrew_factors: List[Factor], 
+                                            is_hebrew: bool) -> str:
+        """
+        Generate a detailed section showing extracted Hebrew insurance policy details.
+        """
+        content_lines = []
+        
+        if is_hebrew:
+            content_lines.append("📋 פרטי הפוליסה שחולצו מהמסמכים:\n")
+        else:
+            content_lines.append("📋 Policy Details Extracted from Documents:\n")
+        
+        for factor in hebrew_factors:
+            # Add factor name as header
+            content_lines.append(f"▸ {factor.name}:")
+            
+            if isinstance(factor.value, dict):
+                for key, val in factor.value.items():
+                    content_lines.append(f"    • {key}: {val}")
+            else:
+                content_lines.append(f"    {factor.value}")
+            
+            content_lines.append("")
+        
+        # Add importance rating
+        if hebrew_factors:
+            avg_importance = sum(f.importance for f in hebrew_factors) / len(hebrew_factors)
+            if is_hebrew:
+                content_lines.append(f"📈 רמת חשיבות ממוצעת: {avg_importance:.0%}")
+            else:
+                content_lines.append(f"📈 Average Importance: {avg_importance:.0%}")
+        
+        return '\n'.join(content_lines)
     
     def _generate_charts(self, analysis: AnalysisResult) -> List[ChartConfig]:
         """Generate chart configurations"""
