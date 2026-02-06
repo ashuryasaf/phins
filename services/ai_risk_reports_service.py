@@ -594,8 +594,8 @@ class AIRiskReportsService:
         return {'columns': [], 'rows': [], 'delimiter': ','}
     
     def _parse_zip(self, content: bytes) -> Dict[str, Any]:
-        """Parse ZIP file containing CSV, image, and PDF files"""
-        combined_data = {'columns': [], 'rows': [], 'files': []}
+        """Parse ZIP file containing CSV, XML (pension), image, and PDF files"""
+        combined_data = {'columns': [], 'rows': [], 'files': [], 'pension_data': None}
         
         with zipfile.ZipFile(io.BytesIO(content), 'r') as zf:
             for name in zf.namelist():
@@ -610,11 +610,20 @@ class AIRiskReportsService:
                     file_content = f.read()
                 
                 parsed = None
+                file_type = ext
                 
                 if ext == 'csv':
                     encoding = self._detect_encoding(file_content)
                     text_content = file_content.decode(encoding, errors='replace')
                     parsed = self._parse_csv(text_content)
+                elif ext == 'xml':
+                    # Check if it's a pension/insurance XML file
+                    parsed = self._parse_pension_xml(file_content, name)
+                    if parsed:
+                        file_type = 'pension_xml'
+                        # Store pension data separately for enhanced analysis
+                        if parsed.get('pension_data'):
+                            combined_data['pension_data'] = parsed.get('pension_data')
                 elif ext in ['png', 'jpg', 'jpeg', 'gif', 'webp']:
                     parsed = self._parse_image(file_content, name, ext)
                 elif ext == 'pdf':
@@ -631,7 +640,7 @@ class AIRiskReportsService:
                 if parsed:
                     combined_data['files'].append({
                         'name': name,
-                        'type': ext,
+                        'type': file_type,
                         'columns': parsed.get('columns', []),
                         'row_count': len(parsed.get('rows', []))
                     })
@@ -643,6 +652,134 @@ class AIRiskReportsService:
                     combined_data['rows'].extend(parsed.get('rows', []))
         
         return combined_data
+    
+    def _parse_pension_xml(self, content: bytes, filename: str) -> Dict[str, Any]:
+        """
+        Parse Israeli pension/insurance XML files using the PensionDataAgent.
+        
+        Supports Mislaka (מסלקה) interface standards:
+        - Type 1: Holdings (אחזקות)
+        - Type 2: Pre-Advice (הודעה מקדימה)
+        - Type 3: Holdings + Pre-Advice Combined
+        - Type 17: Severance (פיצויים)
+        """
+        try:
+            from services.pension_data_agent import get_pension_agent, is_pension_xml
+            
+            # Check if this is a pension XML file
+            if not is_pension_xml(content):
+                # Not a pension XML, try to parse as generic XML
+                return self._parse_generic_xml(content, filename)
+            
+            # Process with PensionDataAgent
+            agent = get_pension_agent()
+            result = agent.process_xml_content(content)
+            
+            pension_data = result.get('data', {})
+            report_text = result.get('report', '')
+            
+            # Convert to CSV-like format for AI analysis
+            columns, rows = agent.to_csv_format(pension_data)
+            
+            # Add summary data as additional rows
+            summary = pension_data.get('summary', {})
+            header = pension_data.get('header', {})
+            clients = pension_data.get('client', [])
+            
+            # Add header info as rows
+            meta_rows = [
+                {'מספר פוליסה': 'סוג ממשק', 'יצרן': pension_data.get('interface_type', ''), 'סוג מוצר': '', 'שם מוצר': '', 'סטטוס': '', 'יתרה': '', 'פיצויים': '', 'מעסיק': ''},
+                {'מספר פוליסה': 'גרסת סכמה', 'יצרן': header.get('schema_version', ''), 'סוג מוצר': '', 'שם מוצר': '', 'סטטוס': '', 'יתרה': '', 'פיצויים': '', 'מעסיק': ''},
+            ]
+            
+            # Add client info
+            if clients:
+                client = clients[0] if isinstance(clients, list) else clients
+                meta_rows.append({
+                    'מספר פוליסה': 'לקוח',
+                    'יצרן': client.get('name', ''),
+                    'סוג מוצר': '',
+                    'שם מוצר': '',
+                    'סטטוס': '',
+                    'יתרה': '',
+                    'פיצויים': '',
+                    'מעסיק': ''
+                })
+            
+            # Prepend meta rows
+            all_rows = meta_rows + rows
+            
+            return {
+                'columns': columns,
+                'rows': all_rows,
+                'delimiter': None,
+                'file_type': 'pension_xml',
+                'original_filename': filename,
+                'pension_data': pension_data,
+                'pension_report': report_text
+            }
+            
+        except ImportError:
+            print("[AI_REPORTS] PensionDataAgent not available, falling back to generic XML parsing")
+            return self._parse_generic_xml(content, filename)
+        except Exception as e:
+            print(f"[AI_REPORTS] Error parsing pension XML: {e}")
+            return self._parse_generic_xml(content, filename)
+    
+    def _parse_generic_xml(self, content: bytes, filename: str) -> Dict[str, Any]:
+        """
+        Parse generic XML file into tabular format.
+        """
+        try:
+            import xml.etree.ElementTree as ET
+            
+            # Decode content
+            encoding = self._detect_encoding(content)
+            xml_str = content.decode(encoding, errors='replace')
+            
+            # Parse XML
+            root = ET.fromstring(xml_str)
+            
+            # Extract all leaf elements as rows
+            columns = ['element', 'value', 'path']
+            rows = []
+            
+            def extract_elements(elem, path=""):
+                current_path = f"{path}/{elem.tag}" if path else elem.tag
+                
+                # If element has text content
+                if elem.text and elem.text.strip():
+                    rows.append({
+                        'element': elem.tag,
+                        'value': elem.text.strip(),
+                        'path': current_path
+                    })
+                
+                # Process attributes
+                for attr, val in elem.attrib.items():
+                    rows.append({
+                        'element': f"{elem.tag}@{attr}",
+                        'value': val,
+                        'path': current_path
+                    })
+                
+                # Process children
+                for child in elem:
+                    extract_elements(child, current_path)
+            
+            extract_elements(root)
+            
+            return {
+                'columns': columns,
+                'rows': rows,
+                'delimiter': None,
+                'file_type': 'xml',
+                'original_filename': filename
+            }
+            
+        except Exception as e:
+            print(f"[AI_REPORTS] Error parsing generic XML: {e}")
+            return {'columns': [], 'rows': [], 'file_type': 'xml', 'error': str(e)}
     
     def _parse_image(self, content: bytes, filename: str, file_type: str) -> Dict[str, Any]:
         """
