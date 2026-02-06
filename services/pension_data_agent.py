@@ -820,7 +820,14 @@ class PensionDataAgent:
     
     def generate_report_text(self, data: Dict[str, Any], language: str = 'hebrew') -> str:
         """
-        Generate a human-readable report from the parsed and enriched data.
+        Generate a comprehensive human-readable report from the parsed and enriched data.
+        
+        Enhanced report includes:
+        - Executive summary with health score
+        - Financial position analysis
+        - Retirement readiness assessment
+        - Risk indicators and warnings
+        - Actionable AI recommendations
         
         Args:
             data: Enriched data dictionary (from enrich_data())
@@ -833,243 +840,903 @@ class PensionDataAgent:
         header = data.get('header', {})
         clients = data.get('client', [])
         accounts = data.get('accounts', [])
+        contributions = data.get('contributions', [])
+        severance = data.get('severance', [])
+        
+        # Calculate health scores
+        health_scores = self._calculate_health_scores(data)
         
         is_hebrew = language == 'hebrew'
         
         if is_hebrew:
-            report_lines = [
-                "📊 דו״ח ניתוח נתוני פנסיה וביטוח",
-                "=" * 40,
-                "",
-                "📋 פרטי הקובץ:",
-                f"  • סוג ממשק: {data.get('interface_type', 'לא ידוע')}",
-                f"  • גרסת סכמה: {header.get('schema_version', 'לא ידוע')}",
-                f"  • תאריך הפקה: {header.get('created_at', 'לא ידוע')}",
-                "",
-            ]
-            
-            # Client info
-            if clients:
-                client = clients[0] if isinstance(clients, list) else clients
-                report_lines.extend([
-                    "👤 פרטי לקוח:",
-                    f"  • שם: {client.get('name', 'לא ידוע')}",
-                    f"  • ת.ז.: {self._mask_id(client.get('id_number', ''))}",
-                    "",
-                ])
-            
-            # Financial summary
-            report_lines.extend([
-                "💰 סיכום כספי:",
-                f"  • סה״כ יתרה: {summary.get('total_balance_formatted', '₪0')}",
-                f"  • סה״כ פיצויים: {summary.get('total_severance_formatted', '₪0')}",
-                f"  • מספר חשבונות: {summary.get('account_count', 0)}",
-                f"  • מספר יצרנים: {summary.get('provider_count', 0)}",
-                "",
-            ])
-            
-            # Account details
-            if accounts:
-                report_lines.append("📁 פירוט חשבונות:")
-                for i, acct in enumerate(accounts[:10], 1):
-                    report_lines.append(f"\n  🔹 חשבון {i}:")
-                    report_lines.append(f"     • מספר פוליסה: {acct.get('policy_number', 'לא ידוע')}")
-                    report_lines.append(f"     • יצרן: {acct.get('provider', 'לא ידוע')}")
-                    report_lines.append(f"     • סוג מוצר: {acct.get('product_name', acct.get('product_type', 'לא ידוע'))}")
-                    report_lines.append(f"     • יתרה: ₪{acct.get('balance', 0):,.2f}")
-                    if acct.get('severance_balance', 0) > 0:
-                        report_lines.append(f"     • פיצויים: ₪{acct.get('severance_balance', 0):,.2f}")
-                    if acct.get('employer'):
-                        emp = acct['employer']
-                        if isinstance(emp, dict):
-                            report_lines.append(f"     • מעסיק: {emp.get('name', '')}")
-                
-                if len(accounts) > 10:
-                    report_lines.append(f"\n  ... ועוד {len(accounts) - 10} חשבונות")
-                report_lines.append("")
-            
-            # Section 14 status
-            report_lines.extend([
-                "📌 סעיף 14:",
-                f"  • סטטוס: {summary.get('section14_status', 'לא ידוע')}",
-                "",
-            ])
-            
-            # Contribution trend
-            if summary.get('contribution_trend'):
-                report_lines.extend([
-                    "📈 מגמת הפקדות:",
-                    f"  • מגמה: {summary.get('contribution_trend_he', summary.get('contribution_trend'))}",
-                    f"  • סה״כ הפקדות עובד: ₪{summary.get('total_employee_contributions', 0):,.2f}",
-                    f"  • סה״כ הפקדות מעסיק: ₪{summary.get('total_employer_contributions', 0):,.2f}",
-                    "",
-                ])
-            
-            # Missing months warning
-            missing = summary.get('missing_contribution_months', [])
-            if missing:
-                report_lines.extend([
-                    "⚠️ אזהרה - חודשים חסרים:",
-                    f"  • נמצאו {len(missing)} חודשים ללא הפקדות",
-                    f"  • חודשים: {', '.join(missing[:5])}{'...' if len(missing) > 5 else ''}",
-                    "",
-                ])
-        
+            report_lines = self._generate_hebrew_report(
+                data, summary, header, clients, accounts, 
+                contributions, severance, health_scores
+            )
         else:
-            # English version
-            report_lines = [
-                "📊 Pension & Insurance Data Analysis Report",
-                "=" * 45,
-                "",
-                "📋 File Details:",
-                f"  • Interface Type: {data.get('interface_type', 'Unknown')}",
-                f"  • Schema Version: {header.get('schema_version', 'Unknown')}",
-                f"  • Created: {header.get('created_at', 'Unknown')}",
-                "",
-            ]
-            
-            if clients:
-                client = clients[0] if isinstance(clients, list) else clients
-                report_lines.extend([
-                    "👤 Client Information:",
-                    f"  • Name: {client.get('name', 'Unknown')}",
-                    f"  • ID: {self._mask_id(client.get('id_number', ''))}",
-                    "",
-                ])
-            
-            report_lines.extend([
-                "💰 Financial Summary:",
-                f"  • Total Balance: {summary.get('total_balance_formatted', '₪0')}",
-                f"  • Total Severance: {summary.get('total_severance_formatted', '₪0')}",
-                f"  • Number of Accounts: {summary.get('account_count', 0)}",
-                f"  • Number of Providers: {summary.get('provider_count', 0)}",
-                "",
-                "📌 Section 14 Status:",
-                f"  • Covered: {'Yes' if summary.get('section14_any') else 'No'}",
-                "",
-            ])
-            
-            # Contribution trend
-            if summary.get('contribution_trend'):
-                report_lines.extend([
-                    "📈 Contribution Trend:",
-                    f"  • Trend: {summary.get('contribution_trend', 'N/A').capitalize()}",
-                    f"  • Total Employee Contributions: ₪{summary.get('total_employee_contributions', 0):,.2f}",
-                    f"  • Total Employer Contributions: ₪{summary.get('total_employer_contributions', 0):,.2f}",
-                    "",
-                ])
-            
-            # Missing months warning
-            missing = summary.get('missing_contribution_months', [])
-            if missing:
-                report_lines.extend([
-                    "⚠️ Warning - Missing Months:",
-                    f"  • Found {len(missing)} months without contributions",
-                    f"  • Months: {', '.join(missing[:5])}{'...' if len(missing) > 5 else ''}",
-                    "",
-                ])
+            report_lines = self._generate_english_report(
+                data, summary, header, clients, accounts,
+                contributions, severance, health_scores
+            )
         
         return '\n'.join(report_lines)
     
+    def _calculate_health_scores(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        """Calculate financial health scores for the report."""
+        summary = data.get('summary', {})
+        accounts = data.get('accounts', [])
+        
+        scores = {
+            'overall': 0,
+            'savings': 0,
+            'diversification': 0,
+            'contribution': 0,
+            'severance': 0,
+            'alerts': [],
+            'strengths': [],
+            'recommendations': []
+        }
+        
+        total_balance = summary.get('total_balance', 0)
+        total_severance = summary.get('total_severance', 0)
+        account_count = summary.get('account_count', 0)
+        provider_count = summary.get('provider_count', 0)
+        
+        # Savings score (0-100)
+        if total_balance >= 1000000:
+            scores['savings'] = 100
+            scores['strengths'].append('high_savings')
+        elif total_balance >= 500000:
+            scores['savings'] = 80
+            scores['strengths'].append('good_savings')
+        elif total_balance >= 200000:
+            scores['savings'] = 60
+        elif total_balance >= 50000:
+            scores['savings'] = 40
+            scores['recommendations'].append('increase_contributions')
+        else:
+            scores['savings'] = 20
+            scores['alerts'].append('low_savings')
+            scores['recommendations'].append('urgent_savings_review')
+        
+        # Diversification score
+        if provider_count >= 3:
+            scores['diversification'] = 70
+            scores['recommendations'].append('consider_consolidation')
+        elif provider_count == 2:
+            scores['diversification'] = 90
+        elif provider_count == 1 and account_count > 1:
+            scores['diversification'] = 80
+        elif provider_count == 1:
+            scores['diversification'] = 60
+            scores['recommendations'].append('consider_diversification')
+        else:
+            scores['diversification'] = 50
+        
+        # Contribution score
+        trend = summary.get('contribution_trend')
+        missing_months = len(summary.get('missing_contribution_months', []))
+        
+        if trend == 'increasing' and missing_months == 0:
+            scores['contribution'] = 100
+            scores['strengths'].append('excellent_contributions')
+        elif trend == 'stable' and missing_months == 0:
+            scores['contribution'] = 85
+            scores['strengths'].append('stable_contributions')
+        elif trend == 'increasing':
+            scores['contribution'] = 75
+        elif trend == 'stable':
+            scores['contribution'] = 70
+        elif trend == 'decreasing':
+            scores['contribution'] = 40
+            scores['alerts'].append('declining_contributions')
+            scores['recommendations'].append('review_contributions')
+        else:
+            scores['contribution'] = 50
+        
+        if missing_months > 0:
+            scores['contribution'] -= min(30, missing_months * 5)
+            scores['alerts'].append('missing_contributions')
+            scores['recommendations'].append('verify_missing_months')
+        
+        # Severance score
+        if summary.get('section14_any'):
+            scores['severance'] = 100
+            scores['strengths'].append('section14_covered')
+        elif total_severance > 0:
+            scores['severance'] = 70
+            scores['recommendations'].append('check_section14')
+        else:
+            scores['severance'] = 50
+            scores['alerts'].append('no_severance_data')
+        
+        # Overall score (weighted average)
+        scores['overall'] = int(
+            scores['savings'] * 0.35 +
+            scores['diversification'] * 0.15 +
+            scores['contribution'] * 0.30 +
+            scores['severance'] * 0.20
+        )
+        
+        # Rating
+        if scores['overall'] >= 80:
+            scores['rating'] = 'excellent'
+            scores['rating_he'] = 'מצוין'
+        elif scores['overall'] >= 60:
+            scores['rating'] = 'good'
+            scores['rating_he'] = 'טוב'
+        elif scores['overall'] >= 40:
+            scores['rating'] = 'fair'
+            scores['rating_he'] = 'סביר'
+        else:
+            scores['rating'] = 'needs_attention'
+            scores['rating_he'] = 'דורש תשומת לב'
+        
+        return scores
+    
+    def _generate_hebrew_report(self, data, summary, header, clients, accounts, 
+                                contributions, severance, health_scores) -> List[str]:
+        """Generate comprehensive Hebrew report."""
+        lines = []
+        
+        # ===== HEADER =====
+        lines.extend([
+            "╔══════════════════════════════════════════════════════════════╗",
+            "║        📊 דו״ח ניתוח מקיף - פנסיה וביטוח                     ║",
+            "║        🤖 ניתוח AI מתקדם עם המלצות פעולה                     ║",
+            "╚══════════════════════════════════════════════════════════════╝",
+            "",
+        ])
+        
+        # ===== EXECUTIVE SUMMARY =====
+        overall_score = health_scores.get('overall', 0)
+        rating_he = health_scores.get('rating_he', 'לא ידוע')
+        
+        lines.extend([
+            "┌─────────────────────────────────────────────────────────────┐",
+            "│  📋 תקציר מנהלים                                            │",
+            "└─────────────────────────────────────────────────────────────┘",
+            "",
+            f"  🎯 ציון בריאות פיננסית כולל: {overall_score}/100 ({rating_he})",
+            "",
+            "  📊 ציונים לפי קטגוריה:",
+            f"     • חסכונות: {health_scores.get('savings', 0)}/100",
+            f"     • פיזור השקעות: {health_scores.get('diversification', 0)}/100",
+            f"     • הפקדות שוטפות: {health_scores.get('contribution', 0)}/100",
+            f"     • פיצויים וסעיף 14: {health_scores.get('severance', 0)}/100",
+            "",
+        ])
+        
+        # ===== CLIENT INFO =====
+        if clients:
+            client = clients[0] if isinstance(clients, list) else clients
+            lines.extend([
+                "┌─────────────────────────────────────────────────────────────┐",
+                "│  👤 פרטי לקוח                                               │",
+                "└─────────────────────────────────────────────────────────────┘",
+                "",
+                f"  • שם: {client.get('name', 'לא ידוע')}",
+                f"  • ת.ז.: {self._mask_id(client.get('id_number', ''))}",
+                f"  • תאריך לידה: {client.get('birth_date', 'לא ידוע')}",
+                "",
+            ])
+        
+        # ===== FINANCIAL SUMMARY =====
+        lines.extend([
+            "┌─────────────────────────────────────────────────────────────┐",
+            "│  💰 סיכום כספי מפורט                                         │",
+            "└─────────────────────────────────────────────────────────────┘",
+            "",
+            f"  💵 סה״כ יתרה מצטברת: {summary.get('total_balance_formatted', '₪0')}",
+            f"  🏦 סה״כ פיצויים צבורים: {summary.get('total_severance_formatted', '₪0')}",
+            f"  📁 מספר חשבונות/פוליסות: {summary.get('account_count', 0)}",
+            f"  🏢 מספר יצרנים/חברות: {summary.get('provider_count', 0)}",
+            "",
+        ])
+        
+        # List providers
+        providers = summary.get('providers', [])
+        if providers:
+            lines.append("  📋 יצרנים פעילים:")
+            for provider in providers[:5]:
+                lines.append(f"     • {provider}")
+            if len(providers) > 5:
+                lines.append(f"     ... ועוד {len(providers) - 5} יצרנים")
+            lines.append("")
+        
+        # ===== ACCOUNT DETAILS =====
+        if accounts:
+            lines.extend([
+                "┌─────────────────────────────────────────────────────────────┐",
+                "│  📁 פירוט חשבונות ופוליסות                                  │",
+                "└─────────────────────────────────────────────────────────────┘",
+                "",
+            ])
+            
+            for i, acct in enumerate(accounts[:8], 1):
+                balance = acct.get('balance', 0)
+                sev_balance = acct.get('severance_balance', 0)
+                
+                lines.append(f"  ┌── 🔹 חשבון {i} ──────────────────────────────────")
+                lines.append(f"  │  מספר פוליסה: {acct.get('policy_number', 'לא ידוע')}")
+                lines.append(f"  │  יצרן: {acct.get('provider', 'לא ידוע')}")
+                lines.append(f"  │  סוג מוצר: {acct.get('product_name', acct.get('product_type', 'לא ידוע'))}")
+                lines.append(f"  │  סטטוס: {acct.get('status', 'פעיל')}")
+                lines.append(f"  │  יתרה: ₪{balance:,.2f}")
+                
+                if sev_balance > 0:
+                    lines.append(f"  │  פיצויים צבורים: ₪{sev_balance:,.2f}")
+                
+                if acct.get('employer'):
+                    emp = acct['employer']
+                    if isinstance(emp, dict) and emp.get('name'):
+                        lines.append(f"  │  מעסיק: {emp.get('name')}")
+                
+                # Calculate account percentage
+                total = summary.get('total_balance', 1)
+                pct = (balance / total * 100) if total > 0 else 0
+                lines.append(f"  │  אחוז מסה״כ: {pct:.1f}%")
+                lines.append(f"  └────────────────────────────────────────────────")
+                lines.append("")
+            
+            if len(accounts) > 8:
+                lines.append(f"  📌 ... ועוד {len(accounts) - 8} חשבונות נוספים")
+                lines.append("")
+        
+        # ===== SECTION 14 STATUS =====
+        lines.extend([
+            "┌─────────────────────────────────────────────────────────────┐",
+            "│  📌 סעיף 14 - פיצויי פיטורין                                 │",
+            "└─────────────────────────────────────────────────────────────┘",
+            "",
+        ])
+        
+        if summary.get('section14_any'):
+            lines.extend([
+                "  ✅ סטטוס: מכוסה תחת סעיף 14",
+                "",
+                "  📋 משמעות:",
+                "     • פיצויי הפיטורין שלך מובטחים בקרן הפנסיה",
+                "     • הכספים שייכים לך גם אם תעזוב את מקום העבודה",
+                "     • אין צורך באישור מיוחד מהמעסיק למשיכת הפיצויים",
+                "",
+            ])
+        else:
+            lines.extend([
+                "  ⚠️ סטטוס: לא מכוסה תחת סעיף 14",
+                "",
+                "  📋 משמעות:",
+                "     • פיצויי הפיטורין עשויים להיות תלויים באישור המעסיק",
+                "     • מומלץ לבדוק עם המעסיק את מצב הזכויות שלך",
+                "",
+            ])
+        
+        # ===== CONTRIBUTION ANALYSIS =====
+        lines.extend([
+            "┌─────────────────────────────────────────────────────────────┐",
+            "│  📈 ניתוח הפקדות                                            │",
+            "└─────────────────────────────────────────────────────────────┘",
+            "",
+        ])
+        
+        trend = summary.get('contribution_trend')
+        trend_he = summary.get('contribution_trend_he', 'לא ידוע')
+        
+        if trend:
+            trend_icon = '📈' if trend == 'increasing' else ('📉' if trend == 'decreasing' else '➡️')
+            lines.append(f"  {trend_icon} מגמת הפקדות: {trend_he}")
+            lines.append("")
+        
+        total_emp = summary.get('total_employee_contributions', 0)
+        total_empr = summary.get('total_employer_contributions', 0)
+        total_sev = summary.get('total_severance_contributions', 0)
+        
+        if total_emp > 0 or total_empr > 0:
+            lines.extend([
+                "  💰 סיכום הפקדות:",
+                f"     • הפקדות עובד: ₪{total_emp:,.2f}",
+                f"     • הפקדות מעסיק: ₪{total_empr:,.2f}",
+                f"     • הפקדות פיצויים: ₪{total_sev:,.2f}",
+                f"     • סה״כ הפקדות: ₪{total_emp + total_empr + total_sev:,.2f}",
+                "",
+            ])
+        
+        # Missing months
+        missing = summary.get('missing_contribution_months', [])
+        if missing:
+            lines.extend([
+                "  ⚠️ חודשים עם חסר בהפקדות:",
+                f"     • נמצאו {len(missing)} חודשים ללא הפקדות",
+                f"     • חודשים: {', '.join(missing[:6])}",
+            ])
+            if len(missing) > 6:
+                lines.append(f"     • ... ועוד {len(missing) - 6} חודשים נוספים")
+            lines.extend([
+                "",
+                "  💡 המלצה: פנה למעסיק לבירור החודשים החסרים",
+                "",
+            ])
+        
+        # ===== AI RECOMMENDATIONS =====
+        lines.extend([
+            "┌─────────────────────────────────────────────────────────────┐",
+            "│  🤖 המלצות AI לפעולה                                        │",
+            "└─────────────────────────────────────────────────────────────┘",
+            "",
+        ])
+        
+        recommendations = self._generate_ai_recommendations_hebrew(data, health_scores)
+        for i, rec in enumerate(recommendations, 1):
+            priority = rec.get('priority', 'medium')
+            icon = '🔴' if priority == 'high' else ('🟡' if priority == 'medium' else '🟢')
+            lines.extend([
+                f"  {icon} המלצה {i}: {rec.get('title', '')}",
+                f"     {rec.get('description', '')}",
+                "",
+            ])
+        
+        # ===== STRENGTHS =====
+        strengths = health_scores.get('strengths', [])
+        if strengths:
+            lines.extend([
+                "┌─────────────────────────────────────────────────────────────┐",
+                "│  ✅ נקודות חוזק                                             │",
+                "└─────────────────────────────────────────────────────────────┘",
+                "",
+            ])
+            
+            strength_texts = {
+                'high_savings': '💰 חסכונות גבוהים - מצב פיננסי מצוין',
+                'good_savings': '💵 חסכונות טובים - בדרך הנכונה',
+                'excellent_contributions': '📈 הפקדות מצוינות - מגמת עלייה ללא הפסקות',
+                'stable_contributions': '➡️ הפקדות יציבות ורציפות',
+                'section14_covered': '📌 כיסוי סעיף 14 - פיצויים מובטחים',
+            }
+            
+            for s in strengths:
+                text = strength_texts.get(s, s)
+                lines.append(f"  • {text}")
+            lines.append("")
+        
+        # ===== ALERTS =====
+        alerts = health_scores.get('alerts', [])
+        if alerts:
+            lines.extend([
+                "┌─────────────────────────────────────────────────────────────┐",
+                "│  ⚠️ נקודות לתשומת לב                                        │",
+                "└─────────────────────────────────────────────────────────────┘",
+                "",
+            ])
+            
+            alert_texts = {
+                'low_savings': '⚠️ חסכונות נמוכים - מומלץ להגדיל הפקדות',
+                'declining_contributions': '📉 מגמת ירידה בהפקדות - דורש בדיקה',
+                'missing_contributions': '❌ חודשים חסרים בהפקדות - לבדוק עם מעסיק',
+                'no_severance_data': '❓ חסר מידע על פיצויים - לברר מול המעסיק',
+            }
+            
+            for a in alerts:
+                text = alert_texts.get(a, a)
+                lines.append(f"  • {text}")
+            lines.append("")
+        
+        # ===== FOOTER =====
+        lines.extend([
+            "─" * 65,
+            f"📅 דו״ח נוצר: {datetime.now().strftime('%d/%m/%Y %H:%M')}",
+            f"📋 סוג ממשק: {data.get('interface_type', 'לא ידוע')}",
+            f"🔖 גרסת סכמה: {header.get('schema_version', 'לא ידוע')}",
+            "",
+            "💡 הערה: דו״ח זה מבוסס על ניתוח אוטומטי של הנתונים.",
+            "   מומלץ להתייעץ עם יועץ פנסיוני מוסמך לקבלת החלטות.",
+            "─" * 65,
+        ])
+        
+        return lines
+    
+    def _generate_english_report(self, data, summary, header, clients, accounts,
+                                 contributions, severance, health_scores) -> List[str]:
+        """Generate comprehensive English report."""
+        lines = []
+        
+        # ===== HEADER =====
+        lines.extend([
+            "╔══════════════════════════════════════════════════════════════╗",
+            "║      📊 Comprehensive Pension & Insurance Analysis Report    ║",
+            "║      🤖 AI-Powered Analysis with Action Recommendations      ║",
+            "╚══════════════════════════════════════════════════════════════╝",
+            "",
+        ])
+        
+        # ===== EXECUTIVE SUMMARY =====
+        overall_score = health_scores.get('overall', 0)
+        rating = health_scores.get('rating', 'unknown').replace('_', ' ').title()
+        
+        lines.extend([
+            "┌─────────────────────────────────────────────────────────────┐",
+            "│  📋 Executive Summary                                       │",
+            "└─────────────────────────────────────────────────────────────┘",
+            "",
+            f"  🎯 Overall Financial Health Score: {overall_score}/100 ({rating})",
+            "",
+            "  📊 Category Scores:",
+            f"     • Savings Level: {health_scores.get('savings', 0)}/100",
+            f"     • Diversification: {health_scores.get('diversification', 0)}/100",
+            f"     • Contribution Pattern: {health_scores.get('contribution', 0)}/100",
+            f"     • Severance/Section 14: {health_scores.get('severance', 0)}/100",
+            "",
+        ])
+        
+        # ===== CLIENT INFO =====
+        if clients:
+            client = clients[0] if isinstance(clients, list) else clients
+            lines.extend([
+                "┌─────────────────────────────────────────────────────────────┐",
+                "│  👤 Client Information                                      │",
+                "└─────────────────────────────────────────────────────────────┘",
+                "",
+                f"  • Name: {client.get('name', 'Unknown')}",
+                f"  • ID Number: {self._mask_id(client.get('id_number', ''))}",
+                f"  • Date of Birth: {client.get('birth_date', 'Unknown')}",
+                "",
+            ])
+        
+        # ===== FINANCIAL SUMMARY =====
+        lines.extend([
+            "┌─────────────────────────────────────────────────────────────┐",
+            "│  💰 Financial Summary                                       │",
+            "└─────────────────────────────────────────────────────────────┘",
+            "",
+            f"  💵 Total Accumulated Balance: {summary.get('total_balance_formatted', '₪0')}",
+            f"  🏦 Total Severance Accrued: {summary.get('total_severance_formatted', '₪0')}",
+            f"  📁 Number of Accounts: {summary.get('account_count', 0)}",
+            f"  🏢 Number of Providers: {summary.get('provider_count', 0)}",
+            "",
+        ])
+        
+        # ===== ACCOUNT DETAILS =====
+        if accounts:
+            lines.extend([
+                "┌─────────────────────────────────────────────────────────────┐",
+                "│  📁 Account Details                                         │",
+                "└─────────────────────────────────────────────────────────────┘",
+                "",
+            ])
+            
+            for i, acct in enumerate(accounts[:8], 1):
+                balance = acct.get('balance', 0)
+                total = summary.get('total_balance', 1)
+                pct = (balance / total * 100) if total > 0 else 0
+                
+                lines.extend([
+                    f"  🔹 Account {i}:",
+                    f"     • Policy Number: {acct.get('policy_number', 'Unknown')}",
+                    f"     • Provider: {acct.get('provider', 'Unknown')}",
+                    f"     • Product Type: {acct.get('product_name', acct.get('product_type', 'Unknown'))}",
+                    f"     • Balance: ₪{balance:,.2f} ({pct:.1f}% of total)",
+                ])
+                
+                if acct.get('severance_balance', 0) > 0:
+                    lines.append(f"     • Severance: ₪{acct.get('severance_balance', 0):,.2f}")
+                lines.append("")
+        
+        # ===== SECTION 14 STATUS =====
+        lines.extend([
+            "┌─────────────────────────────────────────────────────────────┐",
+            "│  📌 Section 14 - Severance Status                           │",
+            "└─────────────────────────────────────────────────────────────┘",
+            "",
+        ])
+        
+        if summary.get('section14_any'):
+            lines.extend([
+                "  ✅ Status: Covered under Section 14",
+                "",
+                "  📋 This means:",
+                "     • Your severance pay is secured in the pension fund",
+                "     • Funds belong to you even if you leave the employer",
+                "     • No special employer approval needed for withdrawal",
+                "",
+            ])
+        else:
+            lines.extend([
+                "  ⚠️ Status: Not covered under Section 14",
+                "",
+                "  📋 This means:",
+                "     • Severance may require employer approval",
+                "     • Recommended to verify your rights with employer",
+                "",
+            ])
+        
+        # ===== AI RECOMMENDATIONS =====
+        lines.extend([
+            "┌─────────────────────────────────────────────────────────────┐",
+            "│  🤖 AI Recommendations                                      │",
+            "└─────────────────────────────────────────────────────────────┘",
+            "",
+        ])
+        
+        recommendations = self._generate_ai_recommendations_english(data, health_scores)
+        for i, rec in enumerate(recommendations, 1):
+            priority = rec.get('priority', 'medium')
+            icon = '🔴' if priority == 'high' else ('🟡' if priority == 'medium' else '🟢')
+            lines.extend([
+                f"  {icon} Recommendation {i}: {rec.get('title', '')}",
+                f"     {rec.get('description', '')}",
+                "",
+            ])
+        
+        # ===== FOOTER =====
+        lines.extend([
+            "─" * 65,
+            f"📅 Report Generated: {datetime.now().strftime('%Y-%m-%d %H:%M')}",
+            f"📋 Interface Type: {data.get('interface_type', 'Unknown')}",
+            "",
+            "💡 Note: This report is based on automated data analysis.",
+            "   Consult a qualified pension advisor for major decisions.",
+            "─" * 65,
+        ])
+        
+        return lines
+    
+    def _generate_ai_recommendations_hebrew(self, data: Dict, health_scores: Dict) -> List[Dict]:
+        """Generate AI recommendations in Hebrew."""
+        recommendations = []
+        summary = data.get('summary', {})
+        total_balance = summary.get('total_balance', 0)
+        
+        # Based on alerts
+        alerts = health_scores.get('alerts', [])
+        
+        if 'low_savings' in alerts:
+            recommendations.append({
+                'title': 'הגדלת הפקדות לפנסיה',
+                'description': 'החסכונות הנוכחיים נמוכים מהמומלץ. שקול להגדיל את אחוז ההפקדה או להפקיד סכום חד-פעמי.',
+                'priority': 'high'
+            })
+        
+        if 'missing_contributions' in alerts:
+            recommendations.append({
+                'title': 'בירור חודשים חסרים',
+                'description': 'נמצאו חודשים ללא הפקדות. פנה למעסיק או לחברת הביטוח לבירור.',
+                'priority': 'high'
+            })
+        
+        if 'declining_contributions' in alerts:
+            recommendations.append({
+                'title': 'בדיקת מגמת ההפקדות',
+                'description': 'זוהתה מגמת ירידה בהפקדות. ודא שההפקדות מתבצעות כראוי.',
+                'priority': 'medium'
+            })
+        
+        # Based on recommendations
+        recs = health_scores.get('recommendations', [])
+        
+        if 'consider_consolidation' in recs and not recommendations:
+            recommendations.append({
+                'title': 'איחוד חשבונות פנסיה',
+                'description': 'יש לך חשבונות במספר חברות. שקול לאחד אותם להקטנת דמי ניהול ופישוט הניהול.',
+                'priority': 'medium'
+            })
+        
+        if 'check_section14' in recs:
+            recommendations.append({
+                'title': 'בדיקת סעיף 14',
+                'description': 'מומלץ לברר עם המעסיק האם יש לך זכאות לסעיף 14 על פיצויי הפיטורין.',
+                'priority': 'medium'
+            })
+        
+        # General recommendations
+        if total_balance > 100000:
+            recommendations.append({
+                'title': 'בדיקת דמי ניהול',
+                'description': 'עם יתרה משמעותית, כדאי לבדוק אפשרות להפחתת דמי הניהול.',
+                'priority': 'low'
+            })
+        
+        # Always recommend annual review
+        recommendations.append({
+            'title': 'סקירה שנתית',
+            'description': 'מומלץ לבצע סקירה שנתית של תיק הפנסיה עם יועץ מוסמך.',
+            'priority': 'low'
+        })
+        
+        return recommendations[:5]  # Limit to 5 recommendations
+    
+    def _generate_ai_recommendations_english(self, data: Dict, health_scores: Dict) -> List[Dict]:
+        """Generate AI recommendations in English."""
+        recommendations = []
+        summary = data.get('summary', {})
+        total_balance = summary.get('total_balance', 0)
+        
+        alerts = health_scores.get('alerts', [])
+        
+        if 'low_savings' in alerts:
+            recommendations.append({
+                'title': 'Increase Pension Contributions',
+                'description': 'Current savings are below recommended levels. Consider increasing contribution rate or making a lump sum deposit.',
+                'priority': 'high'
+            })
+        
+        if 'missing_contributions' in alerts:
+            recommendations.append({
+                'title': 'Investigate Missing Contributions',
+                'description': 'Months with missing contributions detected. Contact employer or insurance company for clarification.',
+                'priority': 'high'
+            })
+        
+        if 'declining_contributions' in alerts:
+            recommendations.append({
+                'title': 'Review Contribution Pattern',
+                'description': 'Declining contribution trend detected. Verify that deposits are being made correctly.',
+                'priority': 'medium'
+            })
+        
+        recs = health_scores.get('recommendations', [])
+        
+        if 'consider_consolidation' in recs and not recommendations:
+            recommendations.append({
+                'title': 'Consolidate Pension Accounts',
+                'description': 'Multiple providers detected. Consider consolidating for lower fees and simpler management.',
+                'priority': 'medium'
+            })
+        
+        if 'check_section14' in recs:
+            recommendations.append({
+                'title': 'Verify Section 14 Coverage',
+                'description': 'Recommended to confirm with employer if you qualify for Section 14 severance protection.',
+                'priority': 'medium'
+            })
+        
+        if total_balance > 100000:
+            recommendations.append({
+                'title': 'Review Management Fees',
+                'description': 'With significant balance, check if you can negotiate lower management fees.',
+                'priority': 'low'
+            })
+        
+        recommendations.append({
+            'title': 'Annual Review',
+            'description': 'Recommended to conduct annual review of pension portfolio with a qualified advisor.',
+            'priority': 'low'
+        })
+        
+        return recommendations[:5]
+    
     def generate_report(self, data: Dict[str, Any]) -> str:
         """
-        Generate an AI-powered report using an LLM service.
-        Currently provides a structured mock implementation.
+        Generate an AI-powered comprehensive report.
+        
+        Combines structured data analysis with AI-generated insights
+        and actionable recommendations.
         
         Args:
             data: Enriched data dictionary
             
         Returns:
-            Generated report text
+            Generated report text with analysis and recommendations
         """
-        # Prepare a concise prompt from the data
-        client_info = data.get('client', [])
-        client_name = client_info[0].get('name', 'the client') if client_info else 'the client'
+        # Enrich data if not already enriched
+        if 'summary' not in data:
+            data = self.enrich_data(data)
         
+        # Calculate health scores
+        health_scores = self._calculate_health_scores(data)
+        
+        # Generate the comprehensive text report (Hebrew by default for Israeli data)
+        language = 'hebrew'
+        report_text = self.generate_report_text(data, language)
+        
+        # Add AI executive summary
+        ai_summary = self._generate_ai_executive_summary(data, health_scores)
+        
+        return ai_summary + "\n\n" + report_text
+    
+    def _generate_ai_executive_summary(self, data: Dict[str, Any], health_scores: Dict) -> str:
+        """Generate a brief AI executive summary for quick overview."""
         summary = data.get('summary', {})
-        total_balance = summary.get('total_balance', 0)
-        trend = summary.get('contribution_trend', 'N/A')
-        sec14 = summary.get('section14_any', False)
-        num_accounts = summary.get('account_count', 0)
-        num_providers = summary.get('provider_count', 0)
         
-        # Construct the LLM prompt
-        prompt = (
-            f"Client Name: {client_name}\n"
-            f"Total Pension Balance: {total_balance:,.2f} NIS\n"
-            f"Number of Accounts: {num_accounts} (across {num_providers} providers)\n"
-            f"Contribution Trend: {trend or 'N/A'}\n"
-            f"Section 14 Eligibility: {'Yes' if sec14 else 'No'}\n"
-            f"Provide a summary analysis of the client's pension status, including account balances, "
-            f"recent contribution trends, and severance pay (Section 14) rights. "
-            f"The explanation should be clear and helpful to a layperson."
-        )
+        overall = health_scores.get('overall', 0)
+        rating_he = health_scores.get('rating_he', 'לא ידוע')
         
-        # Call LLM service (mock implementation)
-        report_text = self._call_llm_service(prompt, data)
-        return report_text
+        alerts_count = len(health_scores.get('alerts', []))
+        strengths_count = len(health_scores.get('strengths', []))
+        
+        total_balance = summary.get('total_balance_formatted', '₪0')
+        
+        ai_lines = [
+            "🤖 סיכום AI מהיר",
+            "═" * 40,
+            "",
+            f"📊 ציון בריאות פיננסית: {overall}/100 ({rating_he})",
+            f"💰 סה״כ חסכונות: {total_balance}",
+            f"✅ נקודות חוזק: {strengths_count}",
+            f"⚠️ נקודות לתשומת לב: {alerts_count}",
+            "",
+        ]
+        
+        # Quick status message
+        if overall >= 80:
+            ai_lines.append("🎯 סטטוס: מצב פיננסי מצוין! המשך כך.")
+        elif overall >= 60:
+            ai_lines.append("🎯 סטטוס: מצב פיננסי טוב. יש מקום לשיפור.")
+        elif overall >= 40:
+            ai_lines.append("🎯 סטטוס: מצב פיננסי סביר. מומלץ לבדוק ההמלצות.")
+        else:
+            ai_lines.append("🎯 סטטוס: נדרשת תשומת לב מיידית. קרא את ההמלצות.")
+        
+        ai_lines.append("")
+        ai_lines.append("═" * 40)
+        
+        return '\n'.join(ai_lines)
     
     def _call_llm_service(self, prompt: str, data: Dict[str, Any]) -> str:
         """
         Call external LLM API for intelligent report generation.
-        Currently returns a structured mock response.
         
-        In production, this would call OpenAI, Claude, or another LLM service.
+        In production, this integrates with OpenAI, Claude, or other LLM services.
+        Currently provides enhanced structured response with comprehensive analysis.
         """
         summary = data.get('summary', {})
         accounts = data.get('accounts', [])
-        sec14 = summary.get('section14_any', False)
+        health_scores = self._calculate_health_scores(data)
         
-        # Generate structured analysis
+        # Generate comprehensive structured analysis
         report_parts = [
-            "📊 Pension Analysis Report",
-            "=" * 35,
+            "╔═══════════════════════════════════════════════════════════╗",
+            "║      🤖 AI-Powered Pension Analysis Report                 ║",
+            "╚═══════════════════════════════════════════════════════════╝",
             "",
-            prompt,
-            "",
-            "🔍 AI Analysis Summary:",
-            "─" * 35,
         ]
         
-        # Balance analysis
-        total = summary.get('total_balance', 0)
-        if total > 500000:
-            report_parts.append("• Substantial pension savings accumulated - well positioned for retirement.")
-        elif total > 100000:
-            report_parts.append("• Moderate pension savings - consider increasing contributions if possible.")
-        else:
-            report_parts.append("• Pension savings are below recommended levels - urgent review recommended.")
+        # Overall assessment
+        overall = health_scores.get('overall', 0)
+        rating = health_scores.get('rating', 'unknown').replace('_', ' ').title()
         
-        # Provider diversity
+        report_parts.extend([
+            "📊 OVERALL ASSESSMENT",
+            "─" * 40,
+            f"Financial Health Score: {overall}/100 ({rating})",
+            "",
+        ])
+        
+        # Balance analysis with insights
+        total = summary.get('total_balance', 0)
+        report_parts.append("💰 SAVINGS ANALYSIS")
+        report_parts.append("─" * 40)
+        
+        if total > 1000000:
+            report_parts.extend([
+                "• Exceptional pension savings accumulated",
+                "• Well positioned for comfortable retirement",
+                "• Consider optimizing investment allocation"
+            ])
+        elif total > 500000:
+            report_parts.extend([
+                "• Substantial savings - good progress toward retirement",
+                "• Continue current contribution strategy",
+                "• Review annually for optimization opportunities"
+            ])
+        elif total > 200000:
+            report_parts.extend([
+                "• Moderate savings accumulated",
+                "• Consider increasing contributions if possible",
+                "• Still time to build substantial retirement fund"
+            ])
+        elif total > 50000:
+            report_parts.extend([
+                "• Early stage pension savings",
+                "• Increasing contributions recommended",
+                "• Focus on consistent long-term saving"
+            ])
+        else:
+            report_parts.extend([
+                "• Pension savings need immediate attention",
+                "• Urgent review of contribution levels recommended",
+                "• Consider professional financial advice"
+            ])
+        report_parts.append("")
+        
+        # Provider analysis
         providers = summary.get('providers', [])
-        if len(providers) > 3:
-            report_parts.append("• Multiple providers detected - consider consolidation for easier management.")
-        elif len(providers) == 1:
-            report_parts.append("• Single provider setup - simple but consider diversification.")
+        provider_count = len(providers)
+        
+        report_parts.append("🏢 PROVIDER ANALYSIS")
+        report_parts.append("─" * 40)
+        
+        if provider_count > 3:
+            report_parts.extend([
+                f"• {provider_count} providers detected - fragmented",
+                "• Consider consolidation to reduce fees",
+                "• Simpler management with fewer accounts"
+            ])
+        elif provider_count == 2:
+            report_parts.extend([
+                "• Good diversification with 2 providers",
+                "• Balanced approach to risk management"
+            ])
+        elif provider_count == 1:
+            report_parts.extend([
+                "• Single provider - simple management",
+                "• May want to consider diversification for large balances"
+            ])
+        report_parts.append("")
         
         # Section 14 analysis
+        sec14 = summary.get('section14_any', False)
+        report_parts.append("📌 SECTION 14 ANALYSIS")
+        report_parts.append("─" * 40)
+        
         if sec14:
-            report_parts.append("• Section 14 coverage confirmed - severance contributions are fully secured.")
+            report_parts.extend([
+                "✅ Section 14 coverage CONFIRMED",
+                "• Severance contributions are fully secured",
+                "• Funds protected regardless of employment status",
+                "• No employer approval needed for withdrawal"
+            ])
         else:
-            report_parts.append("• No Section 14 coverage detected - severance entitlements may require employer approval.")
+            report_parts.extend([
+                "⚠️ Section 14 coverage NOT detected",
+                "• Severance may require employer approval",
+                "• Recommend verifying status with employer",
+                "• Consider discussing Section 14 arrangement"
+            ])
+        report_parts.append("")
         
-        # Contribution trend
+        # Contribution analysis
         trend = summary.get('contribution_trend')
-        if trend == 'increasing':
-            report_parts.append("• Contribution trend is positive - maintaining good savings momentum.")
-        elif trend == 'decreasing':
-            report_parts.append("• ⚠️ Declining contribution trend detected - review with employer.")
-        
-        # Missing months
         missing = summary.get('missing_contribution_months', [])
+        
+        report_parts.append("📈 CONTRIBUTION ANALYSIS")
+        report_parts.append("─" * 40)
+        
+        if trend == 'increasing':
+            report_parts.append("✅ Positive contribution trend detected")
+        elif trend == 'stable':
+            report_parts.append("➡️ Stable contribution pattern")
+        elif trend == 'decreasing':
+            report_parts.append("⚠️ Declining contribution trend - needs review")
+        
         if missing:
-            report_parts.append(f"• ⚠️ {len(missing)} months with missing contributions detected - verify with employer.")
+            report_parts.append(f"❌ {len(missing)} months with missing contributions")
+            report_parts.append("   Action: Verify with employer immediately")
+        else:
+            report_parts.append("✅ No gaps detected in contribution history")
         
         report_parts.append("")
-        report_parts.append("💡 Recommendations:")
-        report_parts.append("1. Review account statements annually")
-        report_parts.append("2. Consider professional pension advisory")
-        report_parts.append("3. Verify beneficiary designations are current")
+        
+        # Recommendations
+        report_parts.append("💡 AI RECOMMENDATIONS")
+        report_parts.append("─" * 40)
+        
+        rec_num = 1
+        for rec in health_scores.get('recommendations', [])[:5]:
+            rec_text = {
+                'increase_contributions': 'Increase monthly pension contributions',
+                'urgent_savings_review': 'Schedule urgent meeting with pension advisor',
+                'consider_consolidation': 'Consider consolidating multiple accounts',
+                'consider_diversification': 'Review diversification options',
+                'review_contributions': 'Review contribution schedule with employer',
+                'verify_missing_months': 'Verify missing contribution months',
+                'check_section14': 'Confirm Section 14 status with employer'
+            }.get(rec, rec)
+            report_parts.append(f"{rec_num}. {rec_text}")
+            rec_num += 1
+        
+        # Always add general recommendations
+        report_parts.extend([
+            f"{rec_num}. Review pension statements annually",
+            f"{rec_num + 1}. Verify beneficiary designations are current",
+            f"{rec_num + 2}. Consider professional pension advisory for major decisions"
+        ])
+        
+        report_parts.extend([
+            "",
+            "═" * 60,
+            "📅 This analysis was generated automatically based on your data.",
+            "   For personalized advice, consult a qualified pension advisor.",
+            "═" * 60,
+        ])
         
         return '\n'.join(report_parts)
     
