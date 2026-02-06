@@ -9,6 +9,16 @@ Supports interface types:
 - Type 2: Pre-Advice (הודעה מקדימה)
 - Type 3: Holdings + Pre-Advice Combined
 - Type 17: Severance (פיצויים)
+- Type 21: Events (אירועים)
+- Type 22: Transference (העברה)
+
+Features:
+- XSD schema validation (when available)
+- Automatic interface type detection
+- Hebrew field mappings for pension/insurance data
+- Data enrichment with derived metrics
+- Report generation in Hebrew and English
+- LLM-ready report generation (mock implementation)
 
 Author: PHINS Platform
 """
@@ -21,7 +31,7 @@ from datetime import datetime
 from typing import Dict, List, Any, Optional, Tuple
 from dataclasses import dataclass, asdict
 
-# Try to import lxml, fall back to xml.etree if not available
+# Try to import lxml for better XML handling, fall back to xml.etree if not available
 try:
     from lxml import etree
     LXML_AVAILABLE = True
@@ -73,9 +83,16 @@ class PensionDataAgent:
     - Holdings reports
     - Contribution reports  
     - Severance (פיצויים) reports
+    
+    Implements the full processing pipeline:
+    1. Interface type detection via SUG-MIMSHAK
+    2. XSD schema validation (optional)
+    3. XML parsing with Hebrew field mappings
+    4. Data enrichment with derived metrics
+    5. Report generation (Hebrew/English)
     """
     
-    # Interface type codes
+    # Interface type codes and names
     INTERFACE_TYPES = {
         1: "Holdings",           # אחזקות
         2: "PreAdvice",          # הודעה מקדימה
@@ -85,7 +102,7 @@ class PensionDataAgent:
         22: "Transference",      # העברה
     }
     
-    # Hebrew field mappings
+    # Hebrew field mappings for standardization
     HEBREW_FIELD_MAP = {
         # Header fields
         'SUG-MIMSHAK': 'interface_type',
@@ -141,6 +158,8 @@ class PensionDataAgent:
         'ביטוח חיים': 'life_insurance',
         'ביטוח מנהלים': 'managers_insurance',
         'פיצויים': 'severance',
+        'קצבה': 'annuity',
+        'תגמולים': 'benefits',
     }
     
     def __init__(self, schema_dir: str = None):
@@ -148,27 +167,48 @@ class PensionDataAgent:
         Initialize the Pension Data Agent.
         
         Args:
-            schema_dir: Directory containing XSD schema files (optional)
+            schema_dir: Directory containing XSD schema files for validation (optional)
         """
-        self.schema_dir = schema_dir or os.path.join(os.path.dirname(__file__), 'schemas')
+        # Set schema directory
+        if schema_dir:
+            self.schema_dir = schema_dir
+        else:
+            # Default to 'schemas' directory relative to this module
+            self.schema_dir = os.path.join(os.path.dirname(__file__), 'schemas')
+        
+        # Map interface type codes to XSD schema filenames
         self.schemas = {
-            1: "holdings_v9.xsd",
-            2: "holdings_v9.xsd",
-            3: "holdings_v9.xsd",
-            17: "severance_v5.xsd",
+            1: "holdings_v9.xsd",       # Holdings schema (v9.7.7)
+            2: "holdings_v9.xsd",       # Pre-advice uses same base schema
+            3: "holdings_v9.xsd",       # Combined holdings schema
+            17: "severance_v5.xsd",     # Severance schema (v5.9.38)
+            21: "events_v7.xsd",        # Events schema
+            22: "transference_v6.xsd",  # Transference schema
         }
+        
+        # Cache for loaded schema validators
         self.schema_cache = {}
         
-        # Try to preload schemas if available
-        if os.path.isdir(self.schema_dir):
-            for code, filename in self.schemas.items():
-                path = os.path.join(self.schema_dir, filename)
-                if os.path.isfile(path) and LXML_AVAILABLE:
-                    try:
-                        schema_doc = etree.parse(path)
-                        self.schema_cache[code] = etree.XMLSchema(schema_doc)
-                    except Exception as e:
-                        print(f"[PENSION] Warning: Could not load schema {filename}: {e}")
+        # Preload schemas for performance if available
+        self._preload_schemas()
+    
+    def _preload_schemas(self):
+        """Preload XSD schema validators for better performance."""
+        if not LXML_AVAILABLE:
+            return  # Schema validation requires lxml
+        
+        if not os.path.isdir(self.schema_dir):
+            return
+        
+        for code, filename in self.schemas.items():
+            path = os.path.join(self.schema_dir, filename)
+            if os.path.isfile(path):
+                try:
+                    schema_doc = etree.parse(path)
+                    self.schema_cache[code] = etree.XMLSchema(schema_doc)
+                    print(f"[PENSION] Loaded schema: {filename}")
+                except Exception as e:
+                    print(f"[PENSION] Warning: Could not load schema {filename}: {e}")
     
     def detect_interface_type(self, xml_content: bytes) -> int:
         """
@@ -178,28 +218,34 @@ class PensionDataAgent:
             xml_content: Raw XML bytes
             
         Returns:
-            Interface type code (1, 2, 3, 17, etc.)
+            Interface type code (1, 2, 3, 17, 21, 22)
+            
+        Raises:
+            ValueError: If XML is invalid or SUG-MIMSHAK cannot be found/parsed
         """
         try:
             if LXML_AVAILABLE:
+                # Use lxml with recovery mode for malformed XML
                 parser = etree.XMLParser(recover=True, encoding='utf-8')
                 root = etree.fromstring(xml_content, parser)
             else:
+                # Standard ElementTree
                 root = etree.fromstring(xml_content.decode('utf-8', errors='replace'))
         except Exception as e:
             raise ValueError(f"Invalid XML format: {e}")
         
-        # Find SUG-MIMSHAK element
+        # Find SUG-MIMSHAK element using various naming conventions
         node = root.find(".//SUG-MIMSHAK")
         if node is None:
-            # Try alternative names
-            for alt in ['SugMimshak', 'SUGMIMSHAK', 'sug-mimshak']:
-                node = root.find(f".//{alt}")
+            # Try alternative names used in different schema versions
+            for alt_name in ['SugMimshak', 'SUGMIMSHAK', 'sug-mimshak', 'SugHaMimshak']:
+                node = root.find(f".//{alt_name}")
                 if node is not None:
                     break
         
         if node is None or node.text is None:
-            # Default to Holdings if not found
+            # Default to Holdings (type 1) if not found
+            print("[PENSION] Warning: SUG-MIMSHAK not found, defaulting to Holdings (type 1)")
             return 1
         
         try:
@@ -211,7 +257,7 @@ class PensionDataAgent:
     
     def validate_xml(self, xml_content: bytes, interface_code: int) -> bool:
         """
-        Validate XML content against XSD schema if available.
+        Validate XML content against XSD schema for the given interface type.
         
         Args:
             xml_content: Raw XML bytes
@@ -219,22 +265,43 @@ class PensionDataAgent:
             
         Returns:
             True if valid or no schema available
+            
+        Note:
+            Validation is non-fatal - warnings are logged but processing continues
         """
         if not LXML_AVAILABLE:
-            return True  # Skip validation without lxml
+            print("[PENSION] lxml not available, skipping schema validation")
+            return True
         
-        if interface_code not in self.schema_cache:
-            return True  # No schema loaded, skip validation
+        if interface_code not in self.schemas:
+            print(f"[PENSION] Unsupported interface type code: {interface_code}")
+            return True
         
-        try:
+        # Check if schema is cached
+        if interface_code in self.schema_cache:
             xml_schema = self.schema_cache[interface_code]
+        else:
+            # Try to load schema on demand
+            schema_file = os.path.join(self.schema_dir, self.schemas[interface_code])
+            if not os.path.isfile(schema_file):
+                print(f"[PENSION] Schema file not found: {schema_file}")
+                return True
+            
+            try:
+                schema_doc = etree.parse(schema_file)
+                xml_schema = etree.XMLSchema(schema_doc)
+                self.schema_cache[interface_code] = xml_schema
+            except Exception as e:
+                print(f"[PENSION] Failed to parse XSD schema: {e}")
+                return True
+        
+        # Validate
+        try:
             doc = etree.fromstring(xml_content)
-            
             if not xml_schema.validate(doc):
-                errors = [str(err) for err in xml_schema.error_log]
-                print(f"[PENSION] XML validation warnings: {errors[:3]}")
-                # Don't fail on validation, just warn
-            
+                # Log validation errors (non-fatal)
+                errors = [str(err) for err in xml_schema.error_log][:5]  # Limit to first 5 errors
+                print(f"[PENSION] XML validation warnings: {errors}")
             return True
         except Exception as e:
             print(f"[PENSION] Validation error (non-fatal): {e}")
@@ -242,14 +309,20 @@ class PensionDataAgent:
     
     def parse_xml(self, xml_content: bytes, interface_code: int = None) -> Dict[str, Any]:
         """
-        Parse XML content into structured Python dict.
+        Parse XML content into a structured Python dictionary.
         
         Args:
             xml_content: Raw XML bytes
             interface_code: Interface type (auto-detected if not provided)
             
         Returns:
-            Structured data dictionary
+            Structured data dictionary containing:
+            - header: File header information
+            - client: Client/person information
+            - accounts: List of pension/insurance accounts
+            - contributions: List of contribution records
+            - severance: Severance details
+            - employers: List of employers
         """
         # Auto-detect interface type if not provided
         if interface_code is None:
@@ -265,47 +338,52 @@ class PensionDataAgent:
         except Exception as e:
             raise ValueError(f"Failed to parse XML: {e}")
         
+        # Initialize result structure
         data = {
             'interface_code': interface_code,
-            'interface_type': self.INTERFACE_TYPES.get(interface_code, f"Type{interface_code}"),
+            'interface_type': self._interface_type_name(interface_code),
         }
         
-        # 1. Parse Header
+        # 1. Parse Header information
         data['header'] = self._parse_header(root, interface_code)
         
-        # 2. Parse Client Info
+        # 2. Parse Client/Person information
         data['client'] = self._parse_clients(root)
         
-        # 3. Parse Accounts/Products
+        # 3. Parse Accounts and Products
         data['accounts'] = self._parse_accounts(root)
         
         # 4. Parse Contributions
         data['contributions'] = self._parse_contributions(root)
         
-        # 5. Parse Severance Details
+        # 5. Parse Severance details
         data['severance'] = self._parse_severance(root, interface_code, data['accounts'])
         
-        # 6. Parse Employers
-        data['employers'] = self._extract_employers(data['accounts'], data['header'])
+        # 6. Extract Employers
+        data['employers'] = self._extract_employers(data['accounts'], data['header'], interface_code)
         
         return data
     
+    def _interface_type_name(self, code: int) -> str:
+        """Map interface code to human-readable name."""
+        return self.INTERFACE_TYPES.get(code, f"Type{code}")
+    
     def _parse_header(self, root, interface_code: int) -> Dict[str, Any]:
-        """Parse header information from XML."""
+        """Parse header information from XML root."""
         header = {
             'interface_code': interface_code,
-            'interface_type': self.INTERFACE_TYPES.get(interface_code, f"Type{interface_code}"),
+            'interface_type': self._interface_type_name(interface_code),
         }
         
-        # Find header element
+        # Find header element (KoteretKovetz or Header)
         header_node = root.find(".//KoteretKovetz")
         if header_node is None:
             header_node = root.find(".//Header")
         if header_node is None:
-            header_node = root  # Use root if no specific header
+            header_node = root  # Use root if no specific header element
         
-        # Extract header fields
-        field_mappings = [
+        # Extract standard header fields
+        header_fields = [
             ('MISPAR-GIRSAT-XML', 'schema_version'),
             ('TAARICH-BITZUA', 'created_at'),
             ('MISPAR-HAKOVETZ', 'file_id'),
@@ -315,9 +393,10 @@ class PensionDataAgent:
             ('SHEM-MEKABEL', 'receiver_name'),
         ]
         
-        for xml_tag, dict_key in field_mappings:
+        for xml_tag, dict_key in header_fields:
             value = header_node.findtext(xml_tag)
             if value is None:
+                # Try without hyphens
                 value = header_node.findtext(xml_tag.replace('-', ''))
             if value:
                 header[dict_key] = value.strip()
@@ -325,33 +404,33 @@ class PensionDataAgent:
         return header
     
     def _parse_clients(self, root) -> List[Dict[str, Any]]:
-        """Parse client/person information."""
+        """Parse client/person information from XML."""
         clients = []
         
-        # Try different client element names
-        client_tags = ['YeshutLakoach', 'YeshutLakohach', 'Lakoach', 'Client', 'Person']
+        # Try different client element naming conventions
+        client_tags = ['YeshutLakoach', 'YeshutLakohach', 'Lakoach', 'Client', 'Person', 'Mevutach']
         
         for tag in client_tags:
             for client_node in root.findall(f".//{tag}"):
                 client = {}
                 
-                # ID number
-                for id_tag in ['MISPAR-ZIHUI-LAKOACH', 'MISPARZEHUT', 'MISPAR-ZEHUT', 'IdNumber']:
+                # ID number - try multiple tag names
+                for id_tag in ['MISPAR-ZIHUI-LAKOACH', 'MISPARZEHUT', 'MISPAR-ZEHUT', 'IdNumber', 'TZ']:
                     val = client_node.findtext(id_tag)
                     if val:
                         client['id_number'] = val.strip()
                         break
                 
-                # Name
-                for name_tag in ['SHEM-LAKOACH', 'SHEM-Prati', 'SHEM-MALE', 'Name']:
+                # Full name
+                for name_tag in ['SHEM-LAKOACH', 'SHEM-Prati', 'SHEM-MALE', 'Name', 'ShemMale']:
                     val = client_node.findtext(name_tag)
                     if val:
                         client['name'] = val.strip()
                         break
                 
                 # First/Last name separately
-                first = client_node.findtext('SHEM-Prati')
-                last = client_node.findtext('SHEM-Mishpacha')
+                first = client_node.findtext('SHEM-Prati') or client_node.findtext('ShemPrati')
+                last = client_node.findtext('SHEM-Mishpacha') or client_node.findtext('ShemMishpacha')
                 if first and last:
                     client['first_name'] = first.strip()
                     client['last_name'] = last.strip()
@@ -359,7 +438,7 @@ class PensionDataAgent:
                         client['name'] = f"{first.strip()} {last.strip()}"
                 
                 # Birth date
-                for date_tag in ['TAARICH-LEYDA', 'BirthDate']:
+                for date_tag in ['TAARICH-LEYDA', 'BirthDate', 'TaarichLeyda']:
                     val = client_node.findtext(date_tag)
                     if val:
                         client['birth_date'] = val.strip()
@@ -371,18 +450,20 @@ class PensionDataAgent:
         return clients
     
     def _parse_accounts(self, root) -> List[Dict[str, Any]]:
-        """Parse account/product information."""
+        """Parse account/product information from XML."""
         accounts = []
         
         # Iterate through providers (YeshutYatzran)
         for provider in root.findall(".//YeshutYatzran"):
-            provider_name = provider.findtext("SHEM-YATZRAN") or ""
-            provider_code = provider.findtext("KOD-YATZRAN") or ""
+            provider_name = provider.findtext("SHEM-YATZRAN") or provider.findtext("ShemYatzran") or ""
+            provider_code = provider.findtext("KOD-YATZRAN") or provider.findtext("KodYatzran") or ""
             
             # Iterate through products (Mutzar)
             for product in provider.findall(".//Mutzar"):
-                product_type = product.findtext("KOD-SUG-MUTZAR") or product.findtext("SUG-MUTZAR") or ""
-                product_name = product.findtext("SHEM-MUTZAR") or ""
+                product_type = (product.findtext("KOD-SUG-MUTZAR") or 
+                               product.findtext("SUG-MUTZAR") or 
+                               product.findtext("SugMutzar") or "")
+                product_name = product.findtext("SHEM-MUTZAR") or product.findtext("ShemMutzar") or ""
                 
                 # Iterate through accounts/policies (HeshbonOPolisa)
                 for acct in product.findall(".//HeshbonOPolisa"):
@@ -399,36 +480,36 @@ class PensionDataAgent:
                     }
                     
                     # Policy number
-                    for tag in ['MISPAR-POLISA-O-HESHBON', 'MISPAR-POLISA', 'PolicyNumber']:
+                    for tag in ['MISPAR-POLISA-O-HESHBON', 'MISPAR-POLISA', 'PolicyNumber', 'MisparPolisa']:
                         val = acct.findtext(tag)
                         if val:
                             account['policy_number'] = val.strip()
                             break
                     
                     # Status
-                    for tag in ['STATUS-POLISA-O-CHESHBON', 'STATUS', 'Status']:
+                    for tag in ['STATUS-POLISA-O-CHESHBON', 'STATUS', 'Status', 'StatusPolisa']:
                         val = acct.findtext(tag)
                         if val:
                             account['status'] = val.strip()
                             break
                     
-                    # Balance
-                    for tag in ['SALDO', 'Saldo', 'Balance', 'YITRA']:
+                    # Balance (try multiple locations)
+                    for tag in ['SALDO', 'Saldo', 'Balance', 'YITRA', 'Yitra', 'Schum']:
                         val = acct.findtext(f".//{tag}")
                         if val:
                             account['balance'] = self._parse_number(val)
                             break
                     
                     # Severance balance
-                    for tag in ['KFIFA-PITZUIM', 'PITZUIM', 'SeveranceBalance']:
+                    for tag in ['KFIFA-PITZUIM', 'PITZUIM', 'SeveranceBalance', 'Pitzuim']:
                         val = acct.findtext(f".//{tag}")
                         if val:
                             account['severance_balance'] = self._parse_number(val)
                             break
                     
-                    # Employer info
-                    employer_name = acct.findtext(".//SHEM-MAASIK")
-                    employer_id = acct.findtext(".//KOD-MAASIK")
+                    # Employer info within account
+                    employer_name = acct.findtext(".//SHEM-MAASIK") or acct.findtext(".//ShemMaasik")
+                    employer_id = acct.findtext(".//KOD-MAASIK") or acct.findtext(".//KodMaasik")
                     if employer_name or employer_id:
                         account['employer'] = {
                             'id': employer_id.strip() if employer_id else '',
@@ -437,30 +518,32 @@ class PensionDataAgent:
                     
                     accounts.append(account)
         
-        # Also check for direct account elements
+        # Also check for direct account elements (not nested under provider)
         for acct in root.findall(".//HeshbonOPolisa"):
-            # Check if already processed (under provider)
-            policy_num = acct.findtext("MISPAR-POLISA-O-HESHBON") or acct.findtext("MISPAR-POLISA")
+            policy_num = (acct.findtext("MISPAR-POLISA-O-HESHBON") or 
+                         acct.findtext("MISPAR-POLISA") or 
+                         acct.findtext("MisparPolisa"))
+            
             if policy_num and not any(a.get('policy_number') == policy_num.strip() for a in accounts):
                 account = {
                     'provider': '',
                     'product_type': '',
                     'product_name': '',
                     'policy_number': policy_num.strip(),
-                    'status': acct.findtext("STATUS-POLISA-O-CHESHBON") or '',
-                    'balance': self._parse_number(acct.findtext(".//SALDO") or "0"),
-                    'severance_balance': self._parse_number(acct.findtext(".//KFIFA-PITZUIM") or "0"),
+                    'status': acct.findtext("STATUS-POLISA-O-CHESHBON") or acct.findtext("Status") or '',
+                    'balance': self._parse_number(acct.findtext(".//SALDO") or acct.findtext(".//Saldo") or "0"),
+                    'severance_balance': self._parse_number(acct.findtext(".//KFIFA-PITZUIM") or acct.findtext(".//Pitzuim") or "0"),
                 }
                 accounts.append(account)
         
         return accounts
     
     def _parse_contributions(self, root) -> List[Dict[str, Any]]:
-        """Parse contribution records."""
+        """Parse contribution records from XML."""
         contributions = []
         
         # Try different contribution element names
-        contrib_tags = ['PirteiHafrasha', 'Hafrasha', 'Contribution', 'NetuneiHafrasha']
+        contrib_tags = ['PirteiHafrasha', 'Hafrasha', 'Contribution', 'NetuneiHafrasha', 'ReshimatHafrashot']
         
         for tag in contrib_tags:
             for contrib in root.findall(f".//{tag}"):
@@ -474,32 +557,33 @@ class PensionDataAgent:
                 }
                 
                 # Employee ID
-                for id_tag in ['MISPAR-ZIHUI-LAKOACH', 'MISPARZEHUT']:
+                for id_tag in ['MISPAR-ZIHUI-LAKOACH', 'MISPARZEHUT', 'MisparZehut']:
                     val = contrib.findtext(id_tag)
                     if val:
                         record['employee_id'] = val.strip()
                         break
                 
                 # Name
-                record['name'] = contrib.findtext('SHEM-LAKOACH') or ''
+                record['name'] = (contrib.findtext('SHEM-LAKOACH') or 
+                                 contrib.findtext('ShemLakoach') or '')
                 
                 # Period (month)
-                for period_tag in ['CHODESH-DIO', 'CHODESH', 'Period']:
+                for period_tag in ['CHODESH-DIO', 'CHODESH', 'Period', 'ChodeshDio', 'Tkufa']:
                     val = contrib.findtext(period_tag)
                     if val:
                         record['period'] = val.strip()
                         break
                 
                 # Contribution amounts
-                emp_val = contrib.findtext('HAFRASHA-OVED')
+                emp_val = contrib.findtext('HAFRASHA-OVED') or contrib.findtext('HafrashaOved')
                 if emp_val:
                     record['employee_contribution'] = self._parse_number(emp_val)
                 
-                empr_val = contrib.findtext('HAFRASHA-MAASIK')
+                empr_val = contrib.findtext('HAFRASHA-MAASIK') or contrib.findtext('HafrashaMaasik')
                 if empr_val:
                     record['employer_contribution'] = self._parse_number(empr_val)
                 
-                sev_val = contrib.findtext('HAFRASHA-PITZUIM')
+                sev_val = contrib.findtext('HAFRASHA-PITZUIM') or contrib.findtext('HafrashaPitzuim')
                 if sev_val:
                     record['severance_contribution'] = self._parse_number(sev_val)
                 
@@ -509,67 +593,71 @@ class PensionDataAgent:
         return contributions
     
     def _parse_severance(self, root, interface_code: int, accounts: List[Dict]) -> List[Dict[str, Any]]:
-        """Parse severance (פיצויים) details."""
+        """Parse severance (פיצויים) details from XML."""
         severance_list = []
         
-        # For severance interface (17)
+        # For severance interface (type 17), look for dedicated elements
         if interface_code == 17:
             for emp in root.findall(".//NetuneiPitzuim"):
                 record = {
-                    'employee_id': emp.findtext("MISPAR-ZIHUI-LAKOACH") or '',
-                    'total_severance': self._parse_number(emp.findtext("KSF-PITZUIM-TZVUR") or "0"),
+                    'employee_id': emp.findtext("MISPAR-ZIHUI-LAKOACH") or emp.findtext("MisparZihui") or '',
+                    'total_severance': self._parse_number(emp.findtext("KSF-PITZUIM-TZVUR") or emp.findtext("SachPitzuim") or "0"),
                     'section14': None,
                 }
                 
-                # Section 14 flag
-                sec14_val = emp.findtext("ARTICLE14") or emp.findtext("article14") or emp.findtext("SI14")
+                # Section 14 flag (סעיף 14)
+                sec14_val = (emp.findtext("ARTICLE14") or 
+                            emp.findtext("article14") or 
+                            emp.findtext("SI14") or
+                            emp.findtext("Seif14"))
                 if sec14_val:
-                    record['section14'] = sec14_val.strip() == "1"
+                    # Common conventions: "1" = yes, "2" or "0" = no
+                    record['section14'] = sec14_val.strip() in ["1", "כן", "true", "True"]
                 
                 severance_list.append(record)
         
-        # Also extract from accounts
+        # Also extract severance from accounts
         for acct in accounts:
             if acct.get('severance_balance', 0) > 0:
                 sev_entry = {
                     'policy_number': acct.get('policy_number', ''),
                     'severance_balance': acct.get('severance_balance', 0),
-                    'employer': acct.get('employer', {}).get('name', ''),
+                    'employer': acct.get('employer', {}).get('name', '') if isinstance(acct.get('employer'), dict) else '',
                     'section14': None,
                 }
                 
-                # Check for Section 14 flag in the document
-                sec14_node = root.find(".//SI14")
+                # Check for Section 14 flag anywhere in document
+                sec14_node = root.find(".//SI14") or root.find(".//ARTICLE14") or root.find(".//Seif14")
                 if sec14_node is not None and sec14_node.text:
-                    sev_entry['section14'] = sec14_node.text.strip() == "1"
+                    sev_entry['section14'] = sec14_node.text.strip() in ["1", "כן", "true", "True"]
                 
                 severance_list.append(sev_entry)
         
         return severance_list
     
-    def _extract_employers(self, accounts: List[Dict], header: Dict) -> List[Dict[str, str]]:
-        """Extract unique employers from accounts."""
+    def _extract_employers(self, accounts: List[Dict], header: Dict, interface_code: int) -> List[Dict[str, str]]:
+        """Extract unique employers from accounts and header."""
         employers = []
         seen = set()
         
+        # Extract from accounts
         for acct in accounts:
-            if 'employer' in acct:
+            if 'employer' in acct and isinstance(acct['employer'], dict):
                 emp = acct['employer']
-                emp_id = emp.get('id', '')
-                emp_name = emp.get('name', '')
+                emp_id = emp.get('id', '') or emp.get('kod', '') or emp.get('code', '')
+                emp_name = emp.get('name', '') or emp.get('shem', '')
                 key = (emp_id, emp_name)
                 if key not in seen and (emp_id or emp_name):
                     seen.add(key)
                     employers.append({'id': emp_id, 'name': emp_name})
         
-        # Add sender as employer if not already present
-        if header.get('sender_name'):
-            key = (header.get('sender_id', ''), header['sender_name'])
+        # For severance interface, sender is often the employer
+        if interface_code == 17 and header.get('sender_name'):
+            emp_id = header.get('sender_id', '')
+            emp_name = header['sender_name']
+            key = (emp_id, emp_name)
             if key not in seen:
-                employers.append({
-                    'id': header.get('sender_id', ''),
-                    'name': header['sender_name']
-                })
+                employers.append({'id': emp_id, 'name': emp_name})
         
         return employers
     
@@ -581,29 +669,39 @@ class PensionDataAgent:
         return self.PRODUCT_TYPES.get(hebrew_type, hebrew_type)
     
     def _parse_number(self, value: str) -> float:
-        """Parse a numeric string to float."""
+        """Parse a numeric string to float, handling common formats."""
         if not value:
             return 0.0
         try:
-            # Remove commas, spaces, and currency symbols
-            cleaned = value.replace(',', '').replace(' ', '').replace('₪', '').replace('$', '')
+            # Remove commas, spaces, currency symbols
+            cleaned = value.replace(',', '').replace(' ', '').replace('₪', '').replace('$', '').replace('€', '')
+            # Handle Hebrew thousands separator
+            cleaned = cleaned.replace("'", '')
             return float(cleaned)
         except ValueError:
             return 0.0
     
     def enrich_data(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Enrich parsed data with derived metrics and summary.
+        Enrich parsed data with derived metrics and summary information.
+        
+        Calculates:
+        - Total balance across all accounts
+        - Total severance
+        - Contribution trend (increasing/stable/decreasing)
+        - Missing contribution months
+        - Section 14 status
+        - Provider/account statistics
         
         Args:
-            data: Parsed data dictionary
+            data: Parsed data dictionary from parse_xml()
             
         Returns:
-            Enriched data with summary section
+            Enriched data with 'summary' section added
         """
         summary = {}
         
-        # Total balance
+        # Total balance across all accounts
         total_balance = sum(acct.get('balance', 0) for acct in data.get('accounts', []))
         summary['total_balance'] = round(total_balance, 2)
         summary['total_balance_formatted'] = f"₪{total_balance:,.2f}"
@@ -613,17 +711,19 @@ class PensionDataAgent:
         summary['total_severance'] = round(total_severance, 2)
         summary['total_severance_formatted'] = f"₪{total_severance:,.2f}"
         
-        # Account count
+        # Account and provider counts
         summary['account_count'] = len(data.get('accounts', []))
-        
-        # Provider count
         providers = set(acct.get('provider', '') for acct in data.get('accounts', []) if acct.get('provider'))
         summary['provider_count'] = len(providers)
         summary['providers'] = list(providers)
         
-        # Contribution trend
+        # Contribution trend analysis
         contributions = data.get('contributions', [])
+        summary['contribution_trend'] = None
+        summary['contribution_trend_he'] = 'לא זמין'
+        
         if contributions:
+            # Sort by period for trend analysis
             try:
                 contributions.sort(key=lambda x: x.get('period', ''))
             except:
@@ -633,6 +733,7 @@ class PensionDataAgent:
                 first = contributions[0]
                 last = contributions[-1]
                 
+                # Calculate total contributions for first and last periods
                 sum_first = (first.get('employee_contribution', 0) + 
                            first.get('employer_contribution', 0) + 
                            first.get('severance_contribution', 0))
@@ -649,10 +750,8 @@ class PensionDataAgent:
                 else:
                     summary['contribution_trend'] = 'stable'
                     summary['contribution_trend_he'] = 'יציב'
-            else:
-                summary['contribution_trend'] = 'insufficient_data'
         
-        # Total contributions
+        # Total contributions by type
         total_emp = sum(c.get('employee_contribution', 0) for c in contributions)
         total_empr = sum(c.get('employer_contribution', 0) for c in contributions)
         total_sev = sum(c.get('severance_contribution', 0) for c in contributions)
@@ -660,29 +759,27 @@ class PensionDataAgent:
         summary['total_employer_contributions'] = round(total_empr, 2)
         summary['total_severance_contributions'] = round(total_sev, 2)
         
-        # Missing months detection
+        # Missing contribution months detection
         if contributions:
             periods = {c.get('period') for c in contributions if c.get('period')}
             try:
                 sorted_periods = sorted(periods)
                 if len(sorted_periods) >= 2:
-                    # Try to detect missing months (assuming YYYY-MM format)
-                    # This is a simplified check
                     summary['contribution_periods'] = sorted_periods
                     summary['first_period'] = sorted_periods[0]
                     summary['last_period'] = sorted_periods[-1]
+                    
+                    # Detect missing months (assuming YYYY-MM format)
+                    missing_periods = self._find_missing_months(sorted_periods)
+                    summary['missing_contribution_months'] = missing_periods
             except:
-                pass
+                summary['missing_contribution_months'] = []
+        else:
+            summary['missing_contribution_months'] = []
         
-        # Section 14 status
-        section14_any = any(
-            s.get('section14') is True 
-            for s in data.get('severance', [])
-        )
-        section14_explicit_false = any(
-            s.get('section14') is False 
-            for s in data.get('severance', [])
-        )
+        # Section 14 (סעיף 14) status
+        section14_any = any(s.get('section14') is True for s in data.get('severance', []))
+        section14_explicit_false = any(s.get('section14') is False for s in data.get('severance', []))
         
         summary['section14_any'] = section14_any
         summary['section14_all'] = section14_any and not section14_explicit_false
@@ -691,16 +788,46 @@ class PensionDataAgent:
         data['summary'] = summary
         return data
     
+    def _find_missing_months(self, sorted_periods: List[str]) -> List[str]:
+        """Find missing months in a sorted list of YYYY-MM periods."""
+        missing = []
+        if len(sorted_periods) < 2:
+            return missing
+        
+        try:
+            from datetime import datetime
+            fmt = "%Y-%m"
+            
+            start = datetime.strptime(sorted_periods[0], fmt)
+            end = datetime.strptime(sorted_periods[-1], fmt)
+            
+            current = start
+            expected = []
+            while current <= end:
+                expected.append(current.strftime(fmt))
+                # Increment month
+                if current.month == 12:
+                    current = datetime(current.year + 1, 1, 1)
+                else:
+                    current = datetime(current.year, current.month + 1, 1)
+            
+            periods_set = set(sorted_periods)
+            missing = [p for p in expected if p not in periods_set]
+        except Exception as e:
+            print(f"[PENSION] Error detecting missing months: {e}")
+        
+        return missing
+    
     def generate_report_text(self, data: Dict[str, Any], language: str = 'hebrew') -> str:
         """
-        Generate a human-readable report from the parsed data.
+        Generate a human-readable report from the parsed and enriched data.
         
         Args:
-            data: Enriched data dictionary
+            data: Enriched data dictionary (from enrich_data())
             language: 'hebrew' or 'english'
             
         Returns:
-            Formatted report text
+            Formatted report text string
         """
         summary = data.get('summary', {})
         header = data.get('header', {})
@@ -731,7 +858,7 @@ class PensionDataAgent:
                     "",
                 ])
             
-            # Summary
+            # Financial summary
             report_lines.extend([
                 "💰 סיכום כספי:",
                 f"  • סה״כ יתרה: {summary.get('total_balance_formatted', '₪0')}",
@@ -741,7 +868,7 @@ class PensionDataAgent:
                 "",
             ])
             
-            # Accounts
+            # Account details
             if accounts:
                 report_lines.append("📁 פירוט חשבונות:")
                 for i, acct in enumerate(accounts[:10], 1):
@@ -753,13 +880,15 @@ class PensionDataAgent:
                     if acct.get('severance_balance', 0) > 0:
                         report_lines.append(f"     • פיצויים: ₪{acct.get('severance_balance', 0):,.2f}")
                     if acct.get('employer'):
-                        report_lines.append(f"     • מעסיק: {acct['employer'].get('name', '')}")
+                        emp = acct['employer']
+                        if isinstance(emp, dict):
+                            report_lines.append(f"     • מעסיק: {emp.get('name', '')}")
                 
                 if len(accounts) > 10:
                     report_lines.append(f"\n  ... ועוד {len(accounts) - 10} חשבונות")
                 report_lines.append("")
             
-            # Section 14
+            # Section 14 status
             report_lines.extend([
                 "📌 סעיף 14:",
                 f"  • סטטוס: {summary.get('section14_status', 'לא ידוע')}",
@@ -773,6 +902,16 @@ class PensionDataAgent:
                     f"  • מגמה: {summary.get('contribution_trend_he', summary.get('contribution_trend'))}",
                     f"  • סה״כ הפקדות עובד: ₪{summary.get('total_employee_contributions', 0):,.2f}",
                     f"  • סה״כ הפקדות מעסיק: ₪{summary.get('total_employer_contributions', 0):,.2f}",
+                    "",
+                ])
+            
+            # Missing months warning
+            missing = summary.get('missing_contribution_months', [])
+            if missing:
+                report_lines.extend([
+                    "⚠️ אזהרה - חודשים חסרים:",
+                    f"  • נמצאו {len(missing)} חודשים ללא הפקדות",
+                    f"  • חודשים: {', '.join(missing[:5])}{'...' if len(missing) > 5 else ''}",
                     "",
                 ])
         
@@ -809,24 +948,156 @@ class PensionDataAgent:
                 f"  • Covered: {'Yes' if summary.get('section14_any') else 'No'}",
                 "",
             ])
+            
+            # Contribution trend
+            if summary.get('contribution_trend'):
+                report_lines.extend([
+                    "📈 Contribution Trend:",
+                    f"  • Trend: {summary.get('contribution_trend', 'N/A').capitalize()}",
+                    f"  • Total Employee Contributions: ₪{summary.get('total_employee_contributions', 0):,.2f}",
+                    f"  • Total Employer Contributions: ₪{summary.get('total_employer_contributions', 0):,.2f}",
+                    "",
+                ])
+            
+            # Missing months warning
+            missing = summary.get('missing_contribution_months', [])
+            if missing:
+                report_lines.extend([
+                    "⚠️ Warning - Missing Months:",
+                    f"  • Found {len(missing)} months without contributions",
+                    f"  • Months: {', '.join(missing[:5])}{'...' if len(missing) > 5 else ''}",
+                    "",
+                ])
         
         return '\n'.join(report_lines)
     
+    def generate_report(self, data: Dict[str, Any]) -> str:
+        """
+        Generate an AI-powered report using an LLM service.
+        Currently provides a structured mock implementation.
+        
+        Args:
+            data: Enriched data dictionary
+            
+        Returns:
+            Generated report text
+        """
+        # Prepare a concise prompt from the data
+        client_info = data.get('client', [])
+        client_name = client_info[0].get('name', 'the client') if client_info else 'the client'
+        
+        summary = data.get('summary', {})
+        total_balance = summary.get('total_balance', 0)
+        trend = summary.get('contribution_trend', 'N/A')
+        sec14 = summary.get('section14_any', False)
+        num_accounts = summary.get('account_count', 0)
+        num_providers = summary.get('provider_count', 0)
+        
+        # Construct the LLM prompt
+        prompt = (
+            f"Client Name: {client_name}\n"
+            f"Total Pension Balance: {total_balance:,.2f} NIS\n"
+            f"Number of Accounts: {num_accounts} (across {num_providers} providers)\n"
+            f"Contribution Trend: {trend or 'N/A'}\n"
+            f"Section 14 Eligibility: {'Yes' if sec14 else 'No'}\n"
+            f"Provide a summary analysis of the client's pension status, including account balances, "
+            f"recent contribution trends, and severance pay (Section 14) rights. "
+            f"The explanation should be clear and helpful to a layperson."
+        )
+        
+        # Call LLM service (mock implementation)
+        report_text = self._call_llm_service(prompt, data)
+        return report_text
+    
+    def _call_llm_service(self, prompt: str, data: Dict[str, Any]) -> str:
+        """
+        Call external LLM API for intelligent report generation.
+        Currently returns a structured mock response.
+        
+        In production, this would call OpenAI, Claude, or another LLM service.
+        """
+        summary = data.get('summary', {})
+        accounts = data.get('accounts', [])
+        sec14 = summary.get('section14_any', False)
+        
+        # Generate structured analysis
+        report_parts = [
+            "📊 Pension Analysis Report",
+            "=" * 35,
+            "",
+            prompt,
+            "",
+            "🔍 AI Analysis Summary:",
+            "─" * 35,
+        ]
+        
+        # Balance analysis
+        total = summary.get('total_balance', 0)
+        if total > 500000:
+            report_parts.append("• Substantial pension savings accumulated - well positioned for retirement.")
+        elif total > 100000:
+            report_parts.append("• Moderate pension savings - consider increasing contributions if possible.")
+        else:
+            report_parts.append("• Pension savings are below recommended levels - urgent review recommended.")
+        
+        # Provider diversity
+        providers = summary.get('providers', [])
+        if len(providers) > 3:
+            report_parts.append("• Multiple providers detected - consider consolidation for easier management.")
+        elif len(providers) == 1:
+            report_parts.append("• Single provider setup - simple but consider diversification.")
+        
+        # Section 14 analysis
+        if sec14:
+            report_parts.append("• Section 14 coverage confirmed - severance contributions are fully secured.")
+        else:
+            report_parts.append("• No Section 14 coverage detected - severance entitlements may require employer approval.")
+        
+        # Contribution trend
+        trend = summary.get('contribution_trend')
+        if trend == 'increasing':
+            report_parts.append("• Contribution trend is positive - maintaining good savings momentum.")
+        elif trend == 'decreasing':
+            report_parts.append("• ⚠️ Declining contribution trend detected - review with employer.")
+        
+        # Missing months
+        missing = summary.get('missing_contribution_months', [])
+        if missing:
+            report_parts.append(f"• ⚠️ {len(missing)} months with missing contributions detected - verify with employer.")
+        
+        report_parts.append("")
+        report_parts.append("💡 Recommendations:")
+        report_parts.append("1. Review account statements annually")
+        report_parts.append("2. Consider professional pension advisory")
+        report_parts.append("3. Verify beneficiary designations are current")
+        
+        return '\n'.join(report_parts)
+    
     def _mask_id(self, id_number: str) -> str:
-        """Mask ID number for privacy."""
+        """Mask ID number for privacy protection."""
         if not id_number or len(id_number) < 5:
             return id_number or '***'
         return id_number[:2] + '*' * (len(id_number) - 4) + id_number[-2:]
     
     def process_xml_content(self, xml_content: bytes) -> Dict[str, Any]:
         """
-        Main entry point to process XML content.
+        Main entry point to process XML content from memory.
+        
+        Pipeline:
+        1. Detect interface type
+        2. Validate against schema (optional)
+        3. Parse XML to structured data
+        4. Enrich with derived metrics
+        5. Generate report text
         
         Args:
             xml_content: Raw XML bytes
             
         Returns:
-            Dictionary with 'data' and 'report' keys
+            Dictionary with:
+            - 'data': Enriched structured data
+            - 'report': Generated report text
+            - 'language': Report language used
         """
         # Detect interface type
         interface_code = self.detect_interface_type(xml_content)
@@ -840,8 +1111,8 @@ class PensionDataAgent:
         # Enrich
         data = self.enrich_data(data)
         
-        # Determine language
-        language = 'hebrew'  # Default to Hebrew for Israeli pension data
+        # Determine language (Hebrew by default for Israeli pension data)
+        language = 'hebrew'
         
         # Generate report
         report = self.generate_report_text(data, language)
@@ -860,19 +1131,29 @@ class PensionDataAgent:
             file_path: Path to XML file
             
         Returns:
-            Dictionary with 'data' and 'report' keys
+            Dictionary with 'data', 'report', and 'language' keys
+            
+        Raises:
+            ValueError: If file cannot be read or parsed
         """
-        with open(file_path, 'rb') as f:
-            xml_content = f.read()
+        try:
+            with open(file_path, 'rb') as f:
+                xml_content = f.read()
+        except Exception as e:
+            raise ValueError(f"Failed to read file: {e}")
         
         return self.process_xml_content(xml_content)
     
     def to_csv_format(self, data: Dict[str, Any]) -> Tuple[List[str], List[Dict[str, Any]]]:
         """
-        Convert parsed pension data to CSV-like format for AI analysis.
+        Convert parsed pension data to CSV-like format for AI analysis integration.
+        
+        This format is compatible with the AIRiskReportsService analysis pipeline.
         
         Returns:
-            Tuple of (columns, rows)
+            Tuple of (columns, rows) where:
+            - columns: List of column names (Hebrew)
+            - rows: List of dictionaries representing rows
         """
         columns = [
             'מספר פוליסה', 'יצרן', 'סוג מוצר', 'שם מוצר', 
@@ -881,6 +1162,9 @@ class PensionDataAgent:
         
         rows = []
         for acct in data.get('accounts', []):
+            employer = acct.get('employer', {})
+            employer_name = employer.get('name', '') if isinstance(employer, dict) else ''
+            
             rows.append({
                 'מספר פוליסה': acct.get('policy_number', ''),
                 'יצרן': acct.get('provider', ''),
@@ -889,7 +1173,7 @@ class PensionDataAgent:
                 'סטטוס': acct.get('status', ''),
                 'יתרה': acct.get('balance', 0),
                 'פיצויים': acct.get('severance_balance', 0),
-                'מעסיק': acct.get('employer', {}).get('name', '') if acct.get('employer') else ''
+                'מעסיק': employer_name
             })
         
         # Add summary row
@@ -908,12 +1192,12 @@ class PensionDataAgent:
         return columns, rows
 
 
-# Singleton instance
+# Singleton instance for global access
 _pension_agent = None
 
 
 def get_pension_agent() -> PensionDataAgent:
-    """Get or create PensionDataAgent singleton."""
+    """Get or create PensionDataAgent singleton instance."""
     global _pension_agent
     if _pension_agent is None:
         _pension_agent = PensionDataAgent()
@@ -922,7 +1206,9 @@ def get_pension_agent() -> PensionDataAgent:
 
 def is_pension_xml(content: bytes) -> bool:
     """
-    Check if content appears to be a pension/insurance XML file.
+    Quick check if content appears to be a pension/insurance XML file.
+    
+    Looks for specific Mislaka interface markers in the XML.
     
     Args:
         content: File content bytes
@@ -935,8 +1221,8 @@ def is_pension_xml(content: bytes) -> bool:
         if not content.strip().startswith(b'<?xml') and not content.strip().startswith(b'<'):
             return False
         
-        # Look for pension-specific elements
-        content_str = content.decode('utf-8', errors='replace')[:5000]  # Check first 5KB
+        # Look for pension-specific elements in first 5KB
+        content_str = content.decode('utf-8', errors='replace')[:5000]
         
         pension_markers = [
             'SUG-MIMSHAK',
@@ -946,7 +1232,11 @@ def is_pension_xml(content: bytes) -> bool:
             'MISPAR-POLISA',
             'SHEM-YATZRAN',
             'HAFRASHA-OVED',
+            'HAFRASHA-MAASIK',
             'PITZUIM',
+            'NetuneiPitzuim',
+            'YeshutLakoach',
+            'Mutzar',
         ]
         
         return any(marker in content_str for marker in pension_markers)

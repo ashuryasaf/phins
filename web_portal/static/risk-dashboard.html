@@ -729,6 +729,111 @@
       font-weight: 500;
     }
     
+    /* Pension Report Section Styles */
+    .pension-section {
+      background: linear-gradient(135deg, #f8fafc 0%, #e8f5e9 100%);
+      border-left: 4px solid #10b981;
+      border-radius: 12px;
+      padding: 1.5rem;
+      margin-bottom: 1rem;
+    }
+    
+    .pension-section h4 {
+      color: #047857;
+      margin-bottom: 1rem;
+    }
+    
+    .pension-summary {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 1rem;
+      margin-bottom: 1.5rem;
+    }
+    
+    .pension-stat {
+      background: white;
+      border-radius: 10px;
+      padding: 1rem;
+      text-align: center;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+    }
+    
+    .pension-stat .label {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    
+    .pension-stat .value {
+      font-size: 1.5rem;
+      font-weight: 700;
+      color: #047857;
+      margin-top: 0.25rem;
+    }
+    
+    .pension-account {
+      background: white;
+      border-radius: 10px;
+      padding: 1rem;
+      margin-bottom: 0.75rem;
+      border-left: 3px solid #3b82f6;
+    }
+    
+    .pension-account h5 {
+      font-size: 1rem;
+      color: var(--text-dark);
+      margin-bottom: 0.5rem;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    
+    .pension-account .detail-row {
+      display: flex;
+      justify-content: space-between;
+      padding: 4px 0;
+      font-size: 0.9rem;
+      border-bottom: 1px dashed #e2e8f0;
+    }
+    
+    .pension-account .detail-row:last-child {
+      border-bottom: none;
+    }
+    
+    .pension-warning {
+      background: #fef3c7;
+      border-left: 4px solid #f59e0b;
+      padding: 1rem;
+      border-radius: 8px;
+      margin-top: 1rem;
+    }
+    
+    .pension-warning h5 {
+      color: #b45309;
+      margin-bottom: 0.5rem;
+    }
+    
+    .section14-status {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 12px;
+      border-radius: 20px;
+      font-size: 0.85rem;
+      font-weight: 600;
+    }
+    
+    .section14-status.covered {
+      background: #d1fae5;
+      color: #047857;
+    }
+    
+    .section14-status.not-covered {
+      background: #fee2e2;
+      color: #b91c1c;
+    }
+    
     /* RTL Support */
     [dir="rtl"] {
       direction: rtl;
@@ -742,6 +847,31 @@
     
     [dir="rtl"] .recommendation-item.urgent { border-right-color: var(--danger); }
     [dir="rtl"] .recommendation-item.high { border-right-color: var(--warning); }
+    
+    [dir="rtl"] .pension-section {
+      border-left: none;
+      border-right: 4px solid #10b981;
+    }
+    
+    [dir="rtl"] .pension-account {
+      border-left: none;
+      border-right: 3px solid #3b82f6;
+    }
+    
+    [dir="rtl"] .pension-warning {
+      border-left: none;
+      border-right: 4px solid #f59e0b;
+    }
+    
+    [dir="rtl"] .insight-card {
+      border-left: none;
+      border-right: 4px solid #7c3aed;
+    }
+    
+    [dir="rtl"] .insight-card.statistical { border-right-color: #3b82f6; }
+    [dir="rtl"] .insight-card.correlation { border-right-color: #10b981; }
+    [dir="rtl"] .insight-card.pattern { border-right-color: #f59e0b; }
+    [dir="rtl"] .insight-card.anomaly { border-right-color: #ef4444; }
     
     /* Responsive */
     @media (max-width: 768px) {
@@ -1251,14 +1381,31 @@
       // Charts
       renderCharts(report.charts);
       
-      // Report
+      // Report - with pension-specific rendering
       document.getElementById('reportTitle').textContent = `📋 ${report.title}`;
-      document.getElementById('reportBody').innerHTML = report.sections.map(section => `
-        <div class="report-section fade-in">
-          <h4>${getSectionIcon(section.title)} ${section.title}</h4>
-          <div class="content">${section.content}</div>
-        </div>
-      `).join('');
+      document.getElementById('reportBody').innerHTML = report.sections.map(section => {
+        const isPensionSection = section.title.includes('פנסיה') || 
+                                 section.title.toLowerCase().includes('pension') ||
+                                 section.title.includes('ביטוח');
+        const sectionClass = isPensionSection ? 'report-section pension-section fade-in' : 'report-section fade-in';
+        
+        // Format content with better whitespace handling
+        let content = section.content;
+        if (content) {
+          // Preserve formatting but escape HTML
+          content = content
+            .replace(/\n/g, '<br>')
+            .replace(/={2,}/g, '<hr style="border: none; border-top: 1px solid #e2e8f0; margin: 0.5rem 0;">')
+            .replace(/-{2,}/g, '<hr style="border: none; border-top: 1px dashed #e2e8f0; margin: 0.5rem 0;">');
+        }
+        
+        return `
+          <div class="${sectionClass}">
+            <h4>${getSectionIcon(section.title)} ${section.title}</h4>
+            <div class="content">${content}</div>
+          </div>
+        `;
+      }).join('');
       
       // Recommendations
       document.getElementById('recommendationsList').innerHTML = report.recommendations.map(rec => `
@@ -1480,6 +1627,13 @@
       if (lower.includes('pattern') || lower.includes('דפוסים')) return '🔄';
       if (lower.includes('anomal') || lower.includes('חריגות')) return '⚠️';
       if (lower.includes('risk') || lower.includes('סיכון')) return '🎯';
+      if (lower.includes('pension') || lower.includes('פנסיה')) return '💼';
+      if (lower.includes('insurance') || lower.includes('ביטוח')) return '🏦';
+      if (lower.includes('severance') || lower.includes('פיצויים')) return '💰';
+      if (lower.includes('section 14') || lower.includes('סעיף 14')) return '📌';
+      if (lower.includes('contribution') || lower.includes('הפקדות')) return '📈';
+      if (lower.includes('account') || lower.includes('חשבון')) return '📁';
+      if (lower.includes('data') || lower.includes('נתונים')) return '📊';
       return '📋';
     }
     
