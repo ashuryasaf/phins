@@ -617,8 +617,9 @@
       white-space: pre-line;
     }
     
-    /* Enhanced Pension Report Styles */
-    .report-section.pension-section {
+    /* Enhanced Mislaka Pension Report Styles */
+    .report-section.pension-section,
+    .report-section.mislaka-report {
       background: linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%);
       border-radius: 12px;
       padding: 1.5rem;
@@ -626,20 +627,414 @@
       margin-bottom: 1.5rem;
     }
     
-    .report-section.pension-section h3 {
+    .report-section.pension-section h3,
+    .report-section.mislaka-report h3 {
       color: #047857;
     }
     
-    .report-section .content pre {
+    .report-section .content {
+      direction: rtl;
+      text-align: right;
+      font-family: 'Segoe UI', system-ui, sans-serif;
+    }
+    
+    .report-section .content pre,
+    .mislaka-report-content {
       background: #f8fafc;
-      border-radius: 8px;
-      padding: 1rem;
+      border-radius: 12px;
+      padding: 1.5rem;
       overflow-x: auto;
-      font-family: 'Courier New', monospace;
-      font-size: 0.9rem;
+      font-family: 'Courier New', Consolas, monospace;
+      font-size: 0.85rem;
+      border: 1px solid #e2e8f0;
+      line-height: 1.6;
+      white-space: pre-wrap;
+      word-wrap: break-word;
+      direction: rtl;
+      text-align: right;
+    }
+    
+    /* Mislaka Report Header (main title box) */
+    .mislaka-main-header {
+      background: linear-gradient(135deg, #1e40af 0%, #3b82f6 100%);
+      color: white;
+      padding: 1.5rem 2rem;
+      border-radius: 16px;
+      text-align: center;
+      margin-bottom: 1.5rem;
+      box-shadow: 0 6px 20px rgba(30, 64, 175, 0.35);
+    }
+    
+    .mislaka-main-header h2 {
+      font-size: 1.4rem;
+      margin-bottom: 0.5rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+    }
+    
+    .mislaka-main-header .subtitle {
+      opacity: 0.9;
+      font-size: 0.95rem;
+    }
+    
+    /* Mislaka Section Headers */
+    .mislaka-section-box {
+      background: linear-gradient(135deg, #f1f5f9 0%, #e2e8f0 100%);
+      border-right: 4px solid #3b82f6;
+      padding: 0.75rem 1.25rem;
+      margin: 1.5rem 0 1rem 0;
+      border-radius: 8px 0 0 8px;
+      font-weight: 600;
+      color: #1e40af;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    
+    /* Client Info Card */
+    .mislaka-client-card {
+      background: white;
+      border-radius: 12px;
+      padding: 1.25rem;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+      margin: 1rem 0;
+    }
+    
+    .mislaka-client-card .field {
+      display: flex;
+      justify-content: space-between;
+      padding: 0.5rem 0;
+      border-bottom: 1px dashed #e2e8f0;
+    }
+    
+    .mislaka-client-card .field:last-child {
+      border-bottom: none;
+    }
+    
+    .mislaka-client-card .label {
+      font-weight: 500;
+      color: #64748b;
+    }
+    
+    .mislaka-client-card .value {
+      font-weight: 600;
+      color: #1e293b;
+    }
+    
+    /* Financial Summary Box */
+    .mislaka-summary-box {
+      background: white;
+      border-radius: 12px;
+      padding: 1.25rem;
+      margin: 1rem 0;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.06);
       border: 1px solid #e2e8f0;
     }
     
+    .mislaka-summary-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 0.6rem 0;
+      border-bottom: 1px solid #f1f5f9;
+    }
+    
+    .mislaka-summary-row:last-child {
+      border-bottom: none;
+    }
+    
+    .mislaka-summary-row.total {
+      background: #f0f9ff;
+      padding: 0.8rem;
+      margin: 0.5rem -1.25rem;
+      border-radius: 0;
+      font-weight: 700;
+      font-size: 1.1rem;
+    }
+    
+    .mislaka-summary-row .label {
+      color: #64748b;
+    }
+    
+    .mislaka-summary-row .value {
+      font-weight: 600;
+      color: #0f172a;
+    }
+    
+    .mislaka-summary-row .value.currency {
+      color: #059669;
+      font-size: 1.1rem;
+    }
+    
+    /* Health Score Visual */
+    .mislaka-health-score {
+      background: white;
+      border-radius: 16px;
+      padding: 1.5rem;
+      text-align: center;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+      margin: 1rem 0;
+    }
+    
+    .mislaka-health-score .score-display {
+      font-size: 3rem;
+      font-weight: 800;
+      background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    
+    .mislaka-health-score.excellent .score-display { 
+      background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+      -webkit-background-clip: text;
+      background-clip: text;
+    }
+    .mislaka-health-score.good .score-display { 
+      background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+      -webkit-background-clip: text;
+      background-clip: text;
+    }
+    .mislaka-health-score.fair .score-display { 
+      background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+      -webkit-background-clip: text;
+      background-clip: text;
+    }
+    .mislaka-health-score.poor .score-display { 
+      background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+      -webkit-background-clip: text;
+      background-clip: text;
+    }
+    
+    .mislaka-health-score .rating-label {
+      font-size: 1.1rem;
+      font-weight: 600;
+      margin-top: 0.25rem;
+    }
+    
+    .mislaka-score-bar {
+      width: 100%;
+      height: 12px;
+      background: #e2e8f0;
+      border-radius: 6px;
+      overflow: hidden;
+      margin: 1rem 0;
+    }
+    
+    .mislaka-score-bar .fill {
+      height: 100%;
+      background: linear-gradient(90deg, #ef4444 0%, #f59e0b 40%, #10b981 100%);
+      border-radius: 6px;
+      transition: width 0.5s ease-out;
+    }
+    
+    .mislaka-score-breakdown {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+      gap: 1rem;
+      margin-top: 1rem;
+    }
+    
+    .mislaka-score-item {
+      text-align: center;
+      padding: 0.75rem;
+      background: #f8fafc;
+      border-radius: 8px;
+    }
+    
+    .mislaka-score-item .label {
+      font-size: 0.8rem;
+      color: #64748b;
+      margin-bottom: 0.25rem;
+    }
+    
+    .mislaka-score-item .score {
+      font-size: 1.25rem;
+      font-weight: 700;
+      color: #1e293b;
+    }
+    
+    /* Account Cards */
+    .mislaka-account-card {
+      background: white;
+      border-radius: 12px;
+      padding: 1.25rem;
+      margin: 1rem 0;
+      border-right: 4px solid #3b82f6;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+    }
+    
+    .mislaka-account-card h4 {
+      color: #1e40af;
+      margin-bottom: 1rem;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 1rem;
+    }
+    
+    .mislaka-account-card .account-details {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: 0.75rem;
+    }
+    
+    .mislaka-account-card .detail-item {
+      background: #f8fafc;
+      padding: 0.5rem 0.75rem;
+      border-radius: 6px;
+    }
+    
+    .mislaka-account-card .detail-item .label {
+      font-size: 0.75rem;
+      color: #64748b;
+    }
+    
+    .mislaka-account-card .detail-item .value {
+      font-weight: 600;
+      color: #1e293b;
+    }
+    
+    /* Section 14 Badge */
+    .mislaka-section14-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 20px;
+      border-radius: 25px;
+      font-weight: 600;
+      font-size: 0.95rem;
+    }
+    
+    .mislaka-section14-badge.covered {
+      background: linear-gradient(135deg, #d1fae5 0%, #a7f3d0 100%);
+      color: #047857;
+      border: 2px solid #10b981;
+    }
+    
+    .mislaka-section14-badge.not-covered {
+      background: linear-gradient(135deg, #fee2e2 0%, #fecaca 100%);
+      color: #b91c1c;
+      border: 2px solid #ef4444;
+    }
+    
+    /* AI Recommendations */
+    .mislaka-recommendation {
+      background: white;
+      border-radius: 12px;
+      padding: 1rem 1.25rem;
+      margin: 0.75rem 0;
+      display: flex;
+      gap: 15px;
+      align-items: flex-start;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.05);
+      border-right: 4px solid #f59e0b;
+    }
+    
+    .mislaka-recommendation.high { border-right-color: #ef4444; }
+    .mislaka-recommendation.medium { border-right-color: #f59e0b; }
+    .mislaka-recommendation.low { border-right-color: #10b981; }
+    
+    .mislaka-recommendation .priority-icon {
+      font-size: 1.5rem;
+      flex-shrink: 0;
+    }
+    
+    .mislaka-recommendation h5 {
+      color: #1e293b;
+      margin-bottom: 0.25rem;
+      font-size: 0.95rem;
+    }
+    
+    .mislaka-recommendation p {
+      color: #64748b;
+      font-size: 0.85rem;
+      line-height: 1.5;
+    }
+    
+    /* Contribution Analysis */
+    .mislaka-contribution-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 1rem;
+      margin: 1rem 0;
+    }
+    
+    .mislaka-contrib-card {
+      background: white;
+      border-radius: 10px;
+      padding: 1rem;
+      text-align: center;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.05);
+    }
+    
+    .mislaka-contrib-card .label {
+      font-size: 0.8rem;
+      color: #64748b;
+      margin-bottom: 0.25rem;
+    }
+    
+    .mislaka-contrib-card .value {
+      font-size: 1.25rem;
+      font-weight: 700;
+      color: #059669;
+    }
+    
+    /* Provider List */
+    .mislaka-provider-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      margin: 1rem 0;
+    }
+    
+    .mislaka-provider-tag {
+      background: #e0f2fe;
+      color: #0369a1;
+      padding: 0.5rem 1rem;
+      border-radius: 20px;
+      font-size: 0.9rem;
+      font-weight: 500;
+    }
+    
+    /* Alerts */
+    .mislaka-alert {
+      padding: 1rem 1.25rem;
+      border-radius: 10px;
+      margin: 1rem 0;
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+    }
+    
+    .mislaka-alert.warning {
+      background: #fef3c7;
+      border-right: 4px solid #f59e0b;
+    }
+    
+    .mislaka-alert.success {
+      background: #d1fae5;
+      border-right: 4px solid #10b981;
+    }
+    
+    .mislaka-alert.danger {
+      background: #fee2e2;
+      border-right: 4px solid #ef4444;
+    }
+    
+    .mislaka-alert.info {
+      background: #e0f2fe;
+      border-right: 4px solid #0ea5e9;
+    }
+    
+    .mislaka-alert .icon {
+      font-size: 1.25rem;
+      flex-shrink: 0;
+    }
+    
+    /* Legacy pension styling for backward compatibility */
     .pension-score-card {
       display: inline-flex;
       align-items: center;
@@ -794,12 +1189,14 @@
     }
     
     /* RTL support for pension sections */
-    [dir="rtl"] .report-section.pension-section {
+    [dir="rtl"] .report-section.pension-section,
+    [dir="rtl"] .report-section.mislaka-report {
       border-left: none;
       border-right: 4px solid #10b981;
     }
     
-    [dir="rtl"] .pension-alert {
+    [dir="rtl"] .pension-alert,
+    [dir="rtl"] .mislaka-alert {
       border-left: none;
       border-right: 4px solid #f59e0b;
     }
@@ -812,9 +1209,17 @@
       border-right-color: #10b981;
     }
     
-    [dir="rtl"] .pension-account-card {
+    [dir="rtl"] .pension-account-card,
+    [dir="rtl"] .mislaka-account-card {
       border-left: none;
       border-right: 3px solid #3b82f6;
+    }
+    
+    [dir="rtl"] .pension-section-header,
+    [dir="rtl"] .mislaka-section-box {
+      border-left: none;
+      border-right: 4px solid #3b82f6;
+      border-radius: 0 8px 8px 0;
     }
     
     /* Recommendations */
@@ -1834,43 +2239,127 @@
       // Report Title
       document.getElementById('reportTitle').textContent = `📋 ${report.title || 'Analysis Report'}`;
       
-      // Report Sections - with pension-specific rendering
+      // Report Sections - with enhanced Mislaka/pension-specific rendering
       const reportBody = document.getElementById('reportBody');
       reportBody.innerHTML = (report.sections || []).map(section => {
         const title = section.title || '';
+        const isMislakaSection = title.includes('מסלקה') || 
+                                 title.toLowerCase().includes('mislaka');
         const isPensionSection = title.includes('פנסיה') || 
                                  title.toLowerCase().includes('pension') ||
                                  title.includes('ביטוח') ||
                                  title.toLowerCase().includes('insurance');
         
-        const sectionClass = isPensionSection 
+        const sectionClass = isMislakaSection 
+          ? 'report-section mislaka-report fade-in'
+          : isPensionSection 
           ? 'report-section pension-section fade-in' 
           : 'report-section fade-in';
         
         // Format content with better whitespace and structure handling
         let content = section.content || '';
         if (content) {
-          // Format box borders
-          content = content
-            .replace(/╔═+╗/g, '<div class="pension-header-box">')
-            .replace(/╚═+╝/g, '</div>')
-            .replace(/┌─+┐/g, '<div class="pension-section-header">')
-            .replace(/└─+┘/g, '</div>')
-            .replace(/║\s*(.*?)\s*║/g, '<div class="pension-header-text">$1</div>')
-            .replace(/│\s*(.*?)\s*│/g, '<div class="pension-header-text">$1</div>')
-            .replace(/═+/g, '<hr class="section-divider">')
-            .replace(/─+/g, '<hr class="section-divider-light">')
-            .replace(/\n/g, '<br>');
+          content = formatMislakaReport(content);
         }
         
         return `
-          <div class="${sectionClass}">
+          <div class="${sectionClass}" dir="rtl">
             <h3>${getSectionIcon(title)} ${title}</h3>
             <div class="content">${content}</div>
             ${section.data_table ? renderDataTable(section.data_table) : ''}
           </div>
         `;
       }).join('');
+    }
+    
+    function formatMislakaReport(content) {
+      if (!content) return '';
+      
+      // Check if content looks like a Mislaka report (has Hebrew + box characters)
+      const isMislakaReport = content.includes('╔') || content.includes('┌') || 
+                              content.includes('מסלקה') || content.includes('פנסיה') ||
+                              content.includes('סה״כ נכסים');
+      
+      if (isMislakaReport) {
+        // Parse the structured Mislaka report
+        let formatted = content;
+        
+        // Main header box (╔═══╗ ... ╚═══╝)
+        formatted = formatted.replace(/╔[═]+╗\n?([\s\S]*?)╚[═]+╝/g, (match, inner) => {
+          const lines = inner.split('\n')
+            .map(line => line.replace(/║\s*/g, '').replace(/\s*║/g, '').trim())
+            .filter(line => line.length > 0);
+          return `<div class="mislaka-main-header">
+            <h2>${lines[0] || 'דו״ח מסלקה'}</h2>
+            ${lines.slice(1).map(l => `<div class="subtitle">${l}</div>`).join('')}
+          </div>`;
+        });
+        
+        // Section boxes (┌───┐ ... └───┘)
+        formatted = formatted.replace(/┌[─]+┐\n?([^└]*?)└[─]+┘/g, (match, inner) => {
+          const text = inner.replace(/│\s*/g, '').replace(/\s*│/g, '').trim();
+          return `<div class="mislaka-section-box">${text}</div>`;
+        });
+        
+        // Inner boxes (┌─── ... ─── with account info)
+        formatted = formatted.replace(/┌─── (.*?) ───+/g, '<div class="mislaka-account-card"><h4>$1</h4>');
+        formatted = formatted.replace(/└─+/g, '</div>');
+        
+        // Score bars [█████░░░░░]
+        formatted = formatted.replace(/\[([█░]+)\]\s*(\d+)\/100\s*\(([^)]+)\)/g, (match, bar, score, rating) => {
+          const percent = parseInt(score);
+          const ratingClass = percent >= 80 ? 'excellent' : percent >= 60 ? 'good' : percent >= 40 ? 'fair' : 'poor';
+          return `<div class="mislaka-health-score ${ratingClass}">
+            <div class="score-display">${score}</div>
+            <div class="rating-label">${rating}</div>
+            <div class="mislaka-score-bar"><div class="fill" style="width: ${percent}%"></div></div>
+          </div>`;
+        });
+        
+        // Section 14 status badges
+        formatted = formatted.replace(/✅ סטטוס: מכוסה תחת סעיף 14/g, 
+          '<span class="mislaka-section14-badge covered">✅ מכוסה תחת סעיף 14</span>');
+        formatted = formatted.replace(/⚠️ סטטוס: לא מכוסה תחת סעיף 14/g, 
+          '<span class="mislaka-section14-badge not-covered">⚠️ לא מכוסה תחת סעיף 14</span>');
+        
+        // Currency values - make them stand out
+        formatted = formatted.replace(/(₪[\d,]+(?:\.\d{2})?)/g, '<strong style="color: #059669;">$1</strong>');
+        
+        // Priority icons for recommendations
+        formatted = formatted.replace(/🔴 המלצה (\d+): ([^\n]+)\n\s+([^\n]+)/g, 
+          '<div class="mislaka-recommendation high"><span class="priority-icon">🔴</span><div><h5>המלצה $1: $2</h5><p>$3</p></div></div>');
+        formatted = formatted.replace(/🟡 המלצה (\d+): ([^\n]+)\n\s+([^\n]+)/g, 
+          '<div class="mislaka-recommendation medium"><span class="priority-icon">🟡</span><div><h5>המלצה $1: $2</h5><p>$3</p></div></div>');
+        formatted = formatted.replace(/🟢 המלצה (\d+): ([^\n]+)\n\s+([^\n]+)/g, 
+          '<div class="mislaka-recommendation low"><span class="priority-icon">🟢</span><div><h5>המלצה $1: $2</h5><p>$3</p></div></div>');
+        
+        // Clean up remaining box characters
+        formatted = formatted.replace(/[║│]/g, '');
+        formatted = formatted.replace(/═+/g, '<hr class="section-divider">');
+        formatted = formatted.replace(/─+/g, '<hr class="section-divider-light">');
+        
+        // Convert newlines to breaks
+        formatted = formatted.replace(/\n/g, '<br>');
+        
+        // Clean up excessive breaks
+        formatted = formatted.replace(/(<br>\s*)+/g, '<br>');
+        formatted = formatted.replace(/<br>\s*<\/div>/g, '</div>');
+        formatted = formatted.replace(/<div([^>]*)><br>/g, '<div$1>');
+        
+        return formatted;
+      }
+      
+      // Standard content formatting
+      return content
+        .replace(/╔═+╗/g, '<div class="pension-header-box">')
+        .replace(/╚═+╝/g, '</div>')
+        .replace(/┌─+┐/g, '<div class="pension-section-header">')
+        .replace(/└─+┘/g, '</div>')
+        .replace(/║\s*(.*?)\s*║/g, '<div class="pension-header-text">$1</div>')
+        .replace(/│\s*(.*?)\s*│/g, '<div class="pension-header-text">$1</div>')
+        .replace(/═+/g, '<hr class="section-divider">')
+        .replace(/─+/g, '<hr class="section-divider-light">')
+        .replace(/\n/g, '<br>');
       
       // Recommendations
       const recList = document.getElementById('recommendationsList');
@@ -2169,6 +2658,9 @@
     
     function getSectionIcon(title) {
       const lower = (title || '').toLowerCase();
+      // Mislaka-specific icons
+      if (lower.includes('מסלקה') || lower.includes('mislaka')) return '🏛️';
+      if (lower.includes('דו״ח מסלקת') || lower.includes('clearinghouse')) return '📊';
       // Pension-specific icons
       if (lower.includes('pension') || lower.includes('פנסיה')) return '💼';
       if (lower.includes('severance') || lower.includes('פיצויים')) return '💰';
@@ -2176,12 +2668,19 @@
       if (lower.includes('contribution') || lower.includes('הפקדות')) return '📈';
       if (lower.includes('account') || lower.includes('חשבון') || lower.includes('פוליס')) return '📁';
       if (lower.includes('insurance') || lower.includes('ביטוח')) return '🏦';
-      if (lower.includes('client') || lower.includes('לקוח')) return '👤';
+      if (lower.includes('client') || lower.includes('לקוח') || lower.includes('פרטי')) return '👤';
       if (lower.includes('recommendation') || lower.includes('המלצ')) return '💡';
       if (lower.includes('financial') || lower.includes('כספי')) return '💵';
       if (lower.includes('ai') || lower.includes('בינה')) return '🤖';
+      if (lower.includes('health') || lower.includes('בריאות')) return '🎯';
+      if (lower.includes('provider') || lower.includes('יצרן')) return '🏢';
+      if (lower.includes('holdings') || lower.includes('אחזקות')) return '📦';
+      if (lower.includes('gemel') || lower.includes('גמל')) return '🏧';
+      if (lower.includes('keren') || lower.includes('קרן')) return '🏛️';
+      if (lower.includes('managers') || lower.includes('מנהלים')) return '👔';
+      if (lower.includes('fee') || lower.includes('ניהול') || lower.includes('עמלה')) return '💳';
       // General icons
-      if (lower.includes('summary') || lower.includes('תקציר')) return '📝';
+      if (lower.includes('summary') || lower.includes('תקציר') || lower.includes('סיכום')) return '📝';
       if (lower.includes('profile') || lower.includes('פרופיל')) return '📊';
       if (lower.includes('statistic') || lower.includes('סטטיסטי')) return '📈';
       if (lower.includes('correlation') || lower.includes('מתאמים')) return '🔗';

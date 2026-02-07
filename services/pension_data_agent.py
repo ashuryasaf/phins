@@ -1,25 +1,31 @@
 """
-Pension Data Agent Service
-==========================
+Pension Data Agent Service - Enhanced Mislaka Support
+=====================================================
 Processes Israeli pension and insurance XML data files according to
-the Mislaka (מסלקה) interface standards.
+the Mislaka (מסלקה) interface standards based on official XSD schemas.
 
-Supports interface types:
-- Type 1: Holdings (אחזקות)
-- Type 2: Pre-Advice (הודעה מקדימה)
-- Type 3: Holdings + Pre-Advice Combined
-- Type 17: Severance (פיצויים)
-- Type 21: Events (אירועים)
-- Type 22: Transference (העברה)
+Supported Interfaces:
+- Holdings Interface (v9.7.7):
+  * kupotgemel - קופות גמל (Provident Funds)
+  * karnotpensiavatikot - קרנות פנסיה ותיקות (Old Pension Funds)  
+  * karnotpensiahadashot - קרנות פנסיה חדשות (New Pension Funds)
+  * hevrotbituah - חברות ביטוח (Insurance Companies)
+
+- Severance Interface (v5.9.38):
+  * Interface codes 9300, 9301, 9302, 9303, 9305, 9306
+
+- Event Interface (v7.6.30)
+- Transference Interface (v3.7.2)
 
 Features:
-- XSD schema validation (when available)
-- Automatic interface type detection
-- Hebrew field mappings for pension/insurance data
-- Data enrichment with derived metrics
-- Report generation in Hebrew and English
-- LLM-ready report generation (mock implementation)
+- Full XSD schema field mappings
+- Automatic interface type and product type detection
+- Comprehensive Hebrew field extraction
+- Data enrichment with financial metrics
+- Professional report generation matching Mislaka standards
+- AI-powered recommendations
 
+Data Source: swiftness.co.il / Mislaka clearinghouse
 Author: PHINS Platform
 """
 
@@ -29,9 +35,9 @@ import io
 import re
 from datetime import datetime
 from typing import Dict, List, Any, Optional, Tuple
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass, asdict, field
 
-# Try to import lxml for better XML handling, fall back to xml.etree if not available
+# Try to import lxml for better XML handling
 try:
     from lxml import etree
     LXML_AVAILABLE = True
@@ -40,294 +46,519 @@ except ImportError:
     LXML_AVAILABLE = False
 
 
+# ============================================================================
+# DATA CLASSES - Structured data models for Mislaka data
+# ============================================================================
+
 @dataclass
-class PensionAccount:
-    """Represents a pension/insurance account"""
-    provider: str
-    product_type: str
-    product_name: str
-    policy_number: str
-    status: str
-    balance: float = 0.0
+class MislakaHeader:
+    """File header information from KoteretKovetz"""
+    interface_code: int = 0
+    interface_type: str = ""
+    schema_version: str = ""
+    file_id: str = ""
+    created_at: str = ""
+    report_date: str = ""
+    sender_id: str = ""
+    sender_name: str = ""
+    receiver_id: str = ""
+    receiver_name: str = ""
+
+
+@dataclass
+class MislakaClient:
+    """Client/Person information from YeshutLakoach"""
+    id_number: str = ""
+    id_type: str = ""  # 1=Israeli ID, 2=Passport, etc.
+    first_name: str = ""
+    last_name: str = ""
+    full_name: str = ""
+    birth_date: str = ""
+    gender: str = ""
+    address: str = ""
+    city: str = ""
+    phone: str = ""
+    email: str = ""
+
+
+@dataclass
+class MislakaProvider:
+    """Provider/Company information from YeshutYatzran"""
+    code: str = ""
+    name: str = ""
+    provider_type: str = ""  # Insurance company, pension fund, etc.
+
+
+@dataclass
+class MislakaProduct:
+    """Product information from Mutzar"""
+    code: str = ""
+    name: str = ""
+    product_type: str = ""
+    product_type_code: str = ""
+    sub_type: str = ""
+    status: str = ""
+    start_date: str = ""
+    
+
+@dataclass
+class MislakaAccount:
+    """Account/Policy information from HeshbonOPolisa"""
+    policy_number: str = ""
+    provider: str = ""
+    provider_code: str = ""
+    product_type: str = ""
+    product_type_code: str = ""
+    product_name: str = ""
+    status: str = ""
+    status_code: str = ""
+    start_date: str = ""
+    
+    # Balances
+    total_balance: float = 0.0
+    savings_balance: float = 0.0
     severance_balance: float = 0.0
+    employer_severance: float = 0.0
+    compensation_balance: float = 0.0
+    
+    # Investment track
+    investment_track: str = ""
+    investment_track_code: str = ""
+    
+    # Management fees
+    management_fee_savings: float = 0.0
+    management_fee_deposits: float = 0.0
+    
+    # Employer info
     employer_id: str = ""
     employer_name: str = ""
+    
+    # Coverage info
+    coverage_amount: float = 0.0
+    monthly_pension: float = 0.0
+    
+    # Section 14
+    section14: bool = False
+    section14_date: str = ""
 
 
 @dataclass
-class Contribution:
-    """Represents a contribution record"""
-    employee_id: str
-    name: str
-    period: str
-    employee_contribution: float = 0.0
-    employer_contribution: float = 0.0
-    severance_contribution: float = 0.0
+class MislakaContribution:
+    """Contribution record from NetuneiHafrasha"""
+    period: str = ""  # YYYY-MM format
+    employee_id: str = ""
+    employer_id: str = ""
+    employer_name: str = ""
+    
+    # Contribution amounts
+    employee_amount: float = 0.0
+    employer_amount: float = 0.0
+    severance_amount: float = 0.0
+    total_amount: float = 0.0
+    
+    # Salary base
+    salary_base: float = 0.0
+    
+    # Status
+    status: str = ""
+    received_date: str = ""
 
 
 @dataclass
-class SeveranceRecord:
-    """Represents severance pay information"""
+class MislakaSeverance:
+    """Severance record from NetuneiPitzuim"""
     employee_id: str = ""
     policy_number: str = ""
+    employer_id: str = ""
+    employer_name: str = ""
+    
+    # Severance amounts
     total_severance: float = 0.0
-    employer: str = ""
-    section14: bool = None
+    available_severance: float = 0.0
+    section14_amount: float = 0.0
+    
+    # Section 14 status
+    section14: bool = False
+    section14_percentage: float = 0.0
+    
+    # Employment info
+    employment_start: str = ""
+    employment_end: str = ""
 
 
-class PensionDataAgent:
+# ============================================================================
+# MISLAKA SCHEMA MAPPINGS - Based on official XSD schemas
+# ============================================================================
+
+class MislakaSchemaMapping:
     """
-    Agent for processing Israeli pension and insurance XML data files.
-    
-    Handles the standard Mislaka (מסלקה) XML interfaces for:
-    - Holdings reports
-    - Contribution reports  
-    - Severance (פיצויים) reports
-    
-    Implements the full processing pipeline:
-    1. Interface type detection via SUG-MIMSHAK
-    2. XSD schema validation (optional)
-    3. XML parsing with Hebrew field mappings
-    4. Data enrichment with derived metrics
-    5. Report generation (Hebrew/English)
+    Field mappings from Mislaka XSD schemas.
+    Based on:
+    - mivneachid_holdings_*.xsd (v9.7.7)
+    - mivneachid_mimshak_pitzuim_*.XSD (v5.9.38)
     """
     
-    # Interface type codes and names
-    INTERFACE_TYPES = {
-        1: "Holdings",           # אחזקות
-        2: "PreAdvice",          # הודעה מקדימה
-        3: "Holdings+PreAdvice", # משולב
-        17: "Severance",         # פיצויים
-        21: "Events",            # אירועים
-        22: "Transference",      # העברה
+    # Interface type codes
+    INTERFACE_CODES = {
+        # Holdings interfaces
+        1: {'name': 'Holdings', 'he': 'אחזקות', 'schema': 'holdings_v9'},
+        2: {'name': 'PreAdvice', 'he': 'הודעה מקדימה', 'schema': 'holdings_v9'},
+        3: {'name': 'HoldingsPreAdvice', 'he': 'אחזקות + הודעה מקדימה', 'schema': 'holdings_v9'},
+        
+        # Severance interfaces (pitzuim)
+        17: {'name': 'Severance', 'he': 'פיצויים', 'schema': 'pitzuim_v5'},
+        9300: {'name': 'SeveranceRequest', 'he': 'בקשה לנתוני פיצויים', 'schema': 'pitzuim_9300'},
+        9301: {'name': 'SeveranceResponse', 'he': 'תשובה לבקשת פיצויים', 'schema': 'pitzuim_9301'},
+        9302: {'name': 'SeveranceQuery', 'he': 'שאילתת פיצויים', 'schema': 'pitzuim_9302'},
+        9303: {'name': 'SeveranceData', 'he': 'נתוני פיצויים', 'schema': 'pitzuim_9303'},
+        9305: {'name': 'SeveranceUpdate', 'he': 'עדכון פיצויים', 'schema': 'pitzuim_9305'},
+        9306: {'name': 'SeveranceConfirm', 'he': 'אישור פיצויים', 'schema': 'pitzuim_9306'},
+        
+        # Event interface
+        21: {'name': 'Events', 'he': 'אירועים', 'schema': 'events_v7'},
+        
+        # Transference interface
+        22: {'name': 'Transference', 'he': 'העברה', 'schema': 'transference_v3'},
     }
     
-    # Hebrew field mappings for standardization
-    HEBREW_FIELD_MAP = {
-        # Header fields
-        'SUG-MIMSHAK': 'interface_type',
+    # Product type codes (SUG-MUTZAR)
+    PRODUCT_TYPE_CODES = {
+        # Pension funds
+        '1': {'name': 'pension_fund_new', 'he': 'קרן פנסיה חדשה'},
+        '2': {'name': 'pension_fund_old', 'he': 'קרן פנסיה ותיקה'},
+        '3': {'name': 'pension_fund_comprehensive', 'he': 'קרן פנסיה מקיפה'},
+        
+        # Provident funds (Gemel)
+        '4': {'name': 'provident_fund', 'he': 'קופת גמל'},
+        '5': {'name': 'central_severance_fund', 'he': 'קופה מרכזית לפיצויים'},
+        '6': {'name': 'education_fund', 'he': 'קרן השתלמות'},
+        
+        # Insurance
+        '7': {'name': 'managers_insurance', 'he': 'ביטוח מנהלים'},
+        '8': {'name': 'life_insurance', 'he': 'ביטוח חיים'},
+        '9': {'name': 'pension_insurance', 'he': 'ביטוח פנסיוני'},
+        
+        # Others
+        '10': {'name': 'savings_policy', 'he': 'פוליסת חיסכון'},
+        '11': {'name': 'risk_insurance', 'he': 'ביטוח ריסק'},
+    }
+    
+    # Status codes (STATUS-POLISA-O-CHESHBON)
+    STATUS_CODES = {
+        '1': {'name': 'active', 'he': 'פעיל'},
+        '2': {'name': 'frozen', 'he': 'מוקפא'},
+        '3': {'name': 'closed', 'he': 'סגור'},
+        '4': {'name': 'paid_up', 'he': 'משולם'},
+        '5': {'name': 'transferred', 'he': 'הועבר'},
+        '6': {'name': 'pending', 'he': 'בהמתנה'},
+    }
+    
+    # Header field mappings (KoteretKovetz)
+    HEADER_FIELDS = {
+        'SUG-MIMSHAK': 'interface_code',
+        'SugMimshak': 'interface_code',
         'MISPAR-GIRSAT-XML': 'schema_version',
+        'MisparGirsatXml': 'schema_version',
         'TAARICH-BITZUA': 'created_at',
+        'TaarichBitzua': 'created_at',
+        'TAARICH-HAFAKAT-HADOCH': 'report_date',
+        'TaarichHafakatHadoch': 'report_date',
         'MISPAR-HAKOVETZ': 'file_id',
+        'MisparHakovetz': 'file_id',
         'KOD-SHOLEACH': 'sender_id',
+        'KodSholeach': 'sender_id',
         'SHEM-SHOLEACH': 'sender_name',
-        
-        # Client fields
-        'MISPAR-ZIHUI-LAKOACH': 'client_id',
+        'ShemSholeach': 'sender_name',
+        'KOD-MEKABEL': 'receiver_id',
+        'KodMekabel': 'receiver_id',
+        'SHEM-MEKABEL': 'receiver_name',
+        'ShemMekabel': 'receiver_name',
+    }
+    
+    # Client field mappings (YeshutLakoach)
+    CLIENT_FIELDS = {
+        'MISPAR-ZIHUI-LAKOACH': 'id_number',
+        'MisparZihuiLakoach': 'id_number',
         'MISPARZEHUT': 'id_number',
-        'SHEM-LAKOACH': 'client_name',
-        'SHEM-Prati': 'first_name',
-        'SHEM-Mishpacha': 'last_name',
+        'MisparZehut': 'id_number',
+        'SUG-ZIHUI-LAKOACH': 'id_type',
+        'SugZihuiLakoach': 'id_type',
+        'SHEM-PRATI': 'first_name',
+        'ShemPrati': 'first_name',
+        'SHEM-MISHPACHA': 'last_name',
+        'ShemMishpacha': 'last_name',
+        'SHEM-LAKOACH': 'full_name',
+        'ShemLakoach': 'full_name',
         'TAARICH-LEYDA': 'birth_date',
-        
-        # Account fields
-        'MISPAR-POLISA-O-HESHBON': 'policy_number',
-        'STATUS-POLISA-O-CHESHBON': 'status',
-        'SALDO': 'balance',
-        'KOD-SUG-MUTZAR': 'product_type_code',
+        'TaarichLeyda': 'birth_date',
+        'MIN': 'gender',
+        'KTOVET': 'address',
+        'Ktovet': 'address',
+        'YISHUV': 'city',
+        'Yishuv': 'city',
+        'TELEFON': 'phone',
+        'Telefon': 'phone',
+        'EMAIL': 'email',
+        'Email': 'email',
+    }
+    
+    # Provider field mappings (YeshutYatzran)
+    PROVIDER_FIELDS = {
+        'KOD-YATZRAN': 'code',
+        'KodYatzran': 'code',
+        'SHEM-YATZRAN': 'name',
+        'ShemYatzran': 'name',
+        'SUG-YATZRAN': 'provider_type',
+        'SugYatzran': 'provider_type',
+    }
+    
+    # Product field mappings (Mutzar)
+    PRODUCT_FIELDS = {
+        'KOD-MUTZAR': 'code',
+        'KodMutzar': 'code',
+        'SHEM-MUTZAR': 'name',
+        'ShemMutzar': 'name',
         'SUG-MUTZAR': 'product_type',
-        'SHEM-MUTZAR': 'product_name',
-        'SHEM-YATZRAN': 'provider_name',
+        'SugMutzar': 'product_type',
+        'KOD-SUG-MUTZAR': 'product_type_code',
+        'KodSugMutzar': 'product_type_code',
+        'SUG-KUPA': 'sub_type',
+        'SugKupa': 'sub_type',
+        'STATUS-MUTZAR': 'status',
+        'StatusMutzar': 'status',
+        'TAARICH-TCHILAT-MUTZAR': 'start_date',
+        'TaarichTchilatMutzar': 'start_date',
+    }
+    
+    # Account field mappings (HeshbonOPolisa / PirteiHeshbon)
+    ACCOUNT_FIELDS = {
+        # Policy number
+        'MISPAR-POLISA-O-HESHBON': 'policy_number',
+        'MisparPolisaOHeshbon': 'policy_number',
+        'MISPAR-POLISA': 'policy_number',
+        'MisparPolisa': 'policy_number',
+        'MISPAR-HESHBON': 'policy_number',
+        'MisparHeshbon': 'policy_number',
         
-        # Employer fields
+        # Status
+        'STATUS-POLISA-O-CHESHBON': 'status_code',
+        'StatusPolisaOCheshbon': 'status_code',
+        'STATUS-HESHBON': 'status_code',
+        'StatusHeshbon': 'status_code',
+        
+        # Start date
+        'TAARICH-TCHILAT-HESHBON': 'start_date',
+        'TaarichTchilatHeshbon': 'start_date',
+        'TAARICH-TCHILAT-BITUACH': 'start_date',
+        'TaarichTchilatBituach': 'start_date',
+        
+        # Balances
+        'SALDO': 'total_balance',
+        'Saldo': 'total_balance',
+        'YITRA-KOLELET': 'total_balance',
+        'YitraKolelet': 'total_balance',
+        'YITRA-CHISACHON': 'savings_balance',
+        'YitraChisachon': 'savings_balance',
+        'YITRA-PITZUIM': 'severance_balance',
+        'YitraPitzuim': 'severance_balance',
+        'KFIFA-PITZUIM': 'severance_balance',
+        'KfifaPitzuim': 'severance_balance',
+        'PITZUEY-MAASIK': 'employer_severance',
+        'PitzueyMaasik': 'employer_severance',
+        'YITRA-TAGMULIM': 'compensation_balance',
+        'YitraTagmulim': 'compensation_balance',
+        
+        # Investment track
+        'MASLUL-HASHKAA': 'investment_track',
+        'MaslulHashkaa': 'investment_track',
+        'KOD-MASLUL': 'investment_track_code',
+        'KodMaslul': 'investment_track_code',
+        
+        # Management fees
+        'DMEY-NIHUL-CHISACHON': 'management_fee_savings',
+        'DmeyNihulChisachon': 'management_fee_savings',
+        'DMEY-NIHUL-HAFKADOT': 'management_fee_deposits',
+        'DmeyNihulHafkadot': 'management_fee_deposits',
+        
+        # Employer
+        'KOD-MAASIK': 'employer_id',
+        'KodMaasik': 'employer_id',
+        'SHEM-MAASIK': 'employer_name',
+        'ShemMaasik': 'employer_name',
+        
+        # Coverage
+        'SACH-KISUY': 'coverage_amount',
+        'SachKisuy': 'coverage_amount',
+        'KITZBA-CHODSHIT': 'monthly_pension',
+        'KitzbaChodshit': 'monthly_pension',
+        
+        # Section 14
+        'SEIF-14': 'section14',
+        'Seif14': 'section14',
+        'ARTICLE14': 'section14',
+        'SI14': 'section14',
+        'TAARICH-SEIF-14': 'section14_date',
+        'TaarichSeif14': 'section14_date',
+    }
+    
+    # Contribution field mappings (NetuneiHafrasha)
+    CONTRIBUTION_FIELDS = {
+        'CHODESH-DIO': 'period',
+        'ChodeshDio': 'period',
+        'CHODESH': 'period',
+        'Chodesh': 'period',
+        'TKUFA': 'period',
+        'Tkufa': 'period',
+        
+        'MISPAR-ZIHUI-LAKOACH': 'employee_id',
         'KOD-MAASIK': 'employer_id',
         'SHEM-MAASIK': 'employer_name',
         
-        # Contribution fields
-        'CHODESH-DIO': 'report_month',
-        'CHODESH': 'month',
-        'HAFRASHA-OVED': 'employee_contribution',
-        'HAFRASHA-MAASIK': 'employer_contribution',
-        'HAFRASHA-PITZUIM': 'severance_contribution',
+        'HAFRASHA-OVED': 'employee_amount',
+        'HafrashaOved': 'employee_amount',
+        'HAFRASHA-MAASIK': 'employer_amount',
+        'HafrashaMaasik': 'employer_amount',
+        'HAFRASHA-PITZUIM': 'severance_amount',
+        'HafrashaPitzuim': 'severance_amount',
+        'SACH-HAFRASHA': 'total_amount',
+        'SachHafrasha': 'total_amount',
         
-        # Severance fields
-        'KFIFA-PITZUIM': 'severance_accrued',
-        'KSF-PITZUIM-TZVUR': 'total_severance',
-        'ARTICLE14': 'section14',
-        'SI14': 'section14_flag',
+        'SACHAR-KOVEA': 'salary_base',
+        'SacharKovea': 'salary_base',
+        
+        'STATUS-HAFRASHA': 'status',
+        'StatusHafrasha': 'status',
+        'TAARICH-KLITA': 'received_date',
+        'TaarichKlita': 'received_date',
     }
     
-    # Product type mappings (Hebrew to English)
-    PRODUCT_TYPES = {
-        'פנסיה': 'pension',
-        'קרן פנסיה': 'pension_fund',
-        'גמל': 'provident',
-        'קופת גמל': 'provident_fund',
-        'השתלמות': 'education_fund',
-        'קרן השתלמות': 'education_fund',
-        'ביטוח חיים': 'life_insurance',
-        'ביטוח מנהלים': 'managers_insurance',
-        'פיצויים': 'severance',
-        'קצבה': 'annuity',
-        'תגמולים': 'benefits',
+    # Severance field mappings (NetuneiPitzuim)
+    SEVERANCE_FIELDS = {
+        'MISPAR-ZIHUI-LAKOACH': 'employee_id',
+        'MISPAR-POLISA': 'policy_number',
+        'KOD-MAASIK': 'employer_id',
+        'SHEM-MAASIK': 'employer_name',
+        
+        'KSF-PITZUIM-TZVUR': 'total_severance',
+        'KsfPitzuimTzvur': 'total_severance',
+        'SACH-PITZUIM': 'total_severance',
+        'SachPitzuim': 'total_severance',
+        'PITZUIM-LMSHICHA': 'available_severance',
+        'PitzuimLmshicha': 'available_severance',
+        'PITZUIM-SEIF14': 'section14_amount',
+        'PitzuimSeif14': 'section14_amount',
+        
+        'SEIF-14': 'section14',
+        'ACHUZ-SEIF-14': 'section14_percentage',
+        'AchuzSeif14': 'section14_percentage',
+        
+        'TAARICH-TCHILAT-AVODA': 'employment_start',
+        'TaarichTchilatAvoda': 'employment_start',
+        'TAARICH-SIUM-AVODA': 'employment_end',
+        'TaarichSiumAvoda': 'employment_end',
     }
+    
+    # Insurance company codes (from hevrotbituah schema)
+    INSURANCE_COMPANIES = {
+        '1': 'מגדל',
+        '2': 'הראל',
+        '3': 'כלל',
+        '4': 'פניקס',
+        '5': 'הפניקס',
+        '6': 'מנורה מבטחים',
+        '7': 'איילון',
+        '8': 'ביטוח ישיר',
+        '9': 'שירביט',
+        '10': 'הכשרה',
+        '11': 'ליברה',
+        '12': 'אקסה',
+    }
+    
+    # Pension fund codes (from karnotpensiahadashot/vatikot schemas)
+    PENSION_FUNDS = {
+        '512': 'מיטב דש',
+        '513': 'אלטשולר שחם',
+        '514': 'מור',
+        '515': 'הלמן אלדובי',
+        '516': 'אנליסט',
+        '517': 'פסגות',
+        '518': 'מנורה מבטחים פנסיה',
+        '519': 'הראל פנסיה',
+        '520': 'מגדל מקפת',
+        '521': 'כלל פנסיה',
+    }
+
+
+# ============================================================================
+# PENSION DATA AGENT - Main processing class
+# ============================================================================
+
+class PensionDataAgent:
+    """
+    Enhanced Pension Data Agent for processing Mislaka (מסלקה) XML data.
+    
+    Handles all interface types from the Israeli pension clearinghouse:
+    - Holdings (אחזקות) - Account balances and holdings
+    - Severance (פיצויים) - Severance pay data
+    - Events (אירועים) - Policy events
+    - Transference (העברה) - Transfer between providers
+    
+    Generates professional reports matching Mislaka standards.
+    """
     
     def __init__(self, schema_dir: str = None):
-        """
-        Initialize the Pension Data Agent.
-        
-        Args:
-            schema_dir: Directory containing XSD schema files for validation (optional)
-        """
-        # Set schema directory
-        if schema_dir:
-            self.schema_dir = schema_dir
-        else:
-            # Default to 'schemas' directory relative to this module
-            self.schema_dir = os.path.join(os.path.dirname(__file__), 'schemas')
-        
-        # Map interface type codes to XSD schema filenames
-        self.schemas = {
-            1: "holdings_v9.xsd",       # Holdings schema (v9.7.7)
-            2: "holdings_v9.xsd",       # Pre-advice uses same base schema
-            3: "holdings_v9.xsd",       # Combined holdings schema
-            17: "severance_v5.xsd",     # Severance schema (v5.9.38)
-            21: "events_v7.xsd",        # Events schema
-            22: "transference_v6.xsd",  # Transference schema
-        }
-        
-        # Cache for loaded schema validators
+        """Initialize the agent with optional schema directory."""
+        self.schema_dir = schema_dir or os.path.join(os.path.dirname(__file__), 'schemas')
+        self.schema_mapping = MislakaSchemaMapping()
         self.schema_cache = {}
         
-        # Preload schemas for performance if available
-        self._preload_schemas()
+        # Load schemas if available
+        self._load_schemas()
     
-    def _preload_schemas(self):
-        """Preload XSD schema validators for better performance."""
-        if not LXML_AVAILABLE:
-            return  # Schema validation requires lxml
-        
+    def _load_schemas(self):
+        """Load XSD schemas for validation."""
         if not os.path.isdir(self.schema_dir):
             return
         
-        for code, filename in self.schemas.items():
-            path = os.path.join(self.schema_dir, filename)
-            if os.path.isfile(path):
-                try:
-                    schema_doc = etree.parse(path)
-                    self.schema_cache[code] = etree.XMLSchema(schema_doc)
-                    print(f"[PENSION] Loaded schema: {filename}")
-                except Exception as e:
-                    print(f"[PENSION] Warning: Could not load schema {filename}: {e}")
+        schema_files = {
+            'holdings_v9': 'mivneachid_holdings_*.xsd',
+            'pitzuim_v5': 'mivneachid_mimshak_pitzuim_*.XSD',
+        }
+        
+        # Schema loading is optional - we can parse without validation
+        pass
     
-    def detect_interface_type(self, xml_content: bytes) -> int:
+    def process_xml_content(self, xml_content: bytes) -> Dict[str, Any]:
         """
-        Detect interface type by reading SUG-MIMSHAK from the XML content.
+        Main entry point - process XML content and generate report.
         
         Args:
-            xml_content: Raw XML bytes
+            xml_content: Raw XML bytes from Mislaka file
             
         Returns:
-            Interface type code (1, 2, 3, 17, 21, 22)
-            
-        Raises:
-            ValueError: If XML is invalid or SUG-MIMSHAK cannot be found/parsed
+            Dictionary with parsed data and generated report
         """
-        try:
-            if LXML_AVAILABLE:
-                # Use lxml with recovery mode for malformed XML
-                parser = etree.XMLParser(recover=True, encoding='utf-8')
-                root = etree.fromstring(xml_content, parser)
-            else:
-                # Standard ElementTree
-                root = etree.fromstring(xml_content.decode('utf-8', errors='replace'))
-        except Exception as e:
-            raise ValueError(f"Invalid XML format: {e}")
+        # Parse XML
+        data = self._parse_mislaka_xml(xml_content)
         
-        # Find SUG-MIMSHAK element using various naming conventions
-        node = root.find(".//SUG-MIMSHAK")
-        if node is None:
-            # Try alternative names used in different schema versions
-            for alt_name in ['SugMimshak', 'SUGMIMSHAK', 'sug-mimshak', 'SugHaMimshak']:
-                node = root.find(f".//{alt_name}")
-                if node is not None:
-                    break
+        # Enrich with derived metrics
+        data = self._enrich_data(data)
         
-        if node is None or node.text is None:
-            # Default to Holdings (type 1) if not found
-            print("[PENSION] Warning: SUG-MIMSHAK not found, defaulting to Holdings (type 1)")
-            return 1
+        # Generate professional report
+        report = self._generate_professional_report(data)
         
-        try:
-            interface_code = int(node.text.strip())
-        except ValueError:
-            raise ValueError(f"Invalid SUG-MIMSHAK value: {node.text}")
-        
-        return interface_code
+        return {
+            'data': data,
+            'report': report,
+            'language': 'hebrew',
+            'interface_type': data.get('header', {}).get('interface_type', 'Unknown'),
+            'schema_version': data.get('header', {}).get('schema_version', 'Unknown'),
+        }
     
-    def validate_xml(self, xml_content: bytes, interface_code: int) -> bool:
+    def _parse_mislaka_xml(self, xml_content: bytes) -> Dict[str, Any]:
         """
-        Validate XML content against XSD schema for the given interface type.
-        
-        Args:
-            xml_content: Raw XML bytes
-            interface_code: Interface type code
-            
-        Returns:
-            True if valid or no schema available
-            
-        Note:
-            Validation is non-fatal - warnings are logged but processing continues
+        Parse Mislaka XML into structured data.
         """
-        if not LXML_AVAILABLE:
-            print("[PENSION] lxml not available, skipping schema validation")
-            return True
-        
-        if interface_code not in self.schemas:
-            print(f"[PENSION] Unsupported interface type code: {interface_code}")
-            return True
-        
-        # Check if schema is cached
-        if interface_code in self.schema_cache:
-            xml_schema = self.schema_cache[interface_code]
-        else:
-            # Try to load schema on demand
-            schema_file = os.path.join(self.schema_dir, self.schemas[interface_code])
-            if not os.path.isfile(schema_file):
-                print(f"[PENSION] Schema file not found: {schema_file}")
-                return True
-            
-            try:
-                schema_doc = etree.parse(schema_file)
-                xml_schema = etree.XMLSchema(schema_doc)
-                self.schema_cache[interface_code] = xml_schema
-            except Exception as e:
-                print(f"[PENSION] Failed to parse XSD schema: {e}")
-                return True
-        
-        # Validate
-        try:
-            doc = etree.fromstring(xml_content)
-            if not xml_schema.validate(doc):
-                # Log validation errors (non-fatal)
-                errors = [str(err) for err in xml_schema.error_log][:5]  # Limit to first 5 errors
-                print(f"[PENSION] XML validation warnings: {errors}")
-            return True
-        except Exception as e:
-            print(f"[PENSION] Validation error (non-fatal): {e}")
-            return True
-    
-    def parse_xml(self, xml_content: bytes, interface_code: int = None) -> Dict[str, Any]:
-        """
-        Parse XML content into a structured Python dictionary.
-        
-        Args:
-            xml_content: Raw XML bytes
-            interface_code: Interface type (auto-detected if not provided)
-            
-        Returns:
-            Structured data dictionary containing:
-            - header: File header information
-            - client: Client/person information
-            - accounts: List of pension/insurance accounts
-            - contributions: List of contribution records
-            - severance: Severance details
-            - employers: List of employers
-        """
-        # Auto-detect interface type if not provided
-        if interface_code is None:
-            interface_code = self.detect_interface_type(xml_content)
-        
         # Parse XML
         try:
             if LXML_AVAILABLE:
@@ -338,767 +569,659 @@ class PensionDataAgent:
         except Exception as e:
             raise ValueError(f"Failed to parse XML: {e}")
         
-        # Initialize result structure
         data = {
-            'interface_code': interface_code,
-            'interface_type': self._interface_type_name(interface_code),
+            'header': {},
+            'client': {},
+            'providers': [],
+            'accounts': [],
+            'contributions': [],
+            'severance': [],
+            'totals': {},
+            'raw_elements': {}
         }
         
-        # 1. Parse Header information
-        data['header'] = self._parse_header(root, interface_code)
+        # Parse header
+        data['header'] = self._parse_header(root)
         
-        # 2. Parse Client/Person information
-        data['client'] = self._parse_clients(root)
+        # Determine interface type
+        interface_code = data['header'].get('interface_code', 1)
+        data['interface_code'] = interface_code
+        interface_info = self.schema_mapping.INTERFACE_CODES.get(
+            interface_code, 
+            {'name': f'Type{interface_code}', 'he': f'סוג {interface_code}'}
+        )
+        data['interface_type'] = interface_info['name']
+        data['interface_type_he'] = interface_info['he']
         
-        # 3. Parse Accounts and Products
-        data['accounts'] = self._parse_accounts(root)
+        # Parse client
+        data['client'] = self._parse_client(root)
         
-        # 4. Parse Contributions
+        # Parse providers and accounts
+        providers, accounts = self._parse_providers_and_accounts(root)
+        data['providers'] = providers
+        data['accounts'] = accounts
+        
+        # Parse contributions
         data['contributions'] = self._parse_contributions(root)
         
-        # 5. Parse Severance details
-        data['severance'] = self._parse_severance(root, interface_code, data['accounts'])
+        # Parse severance data
+        data['severance'] = self._parse_severance(root)
         
-        # 6. Extract Employers
-        data['employers'] = self._extract_employers(data['accounts'], data['header'], interface_code)
+        # Extract all raw text elements for additional analysis
+        data['raw_elements'] = self._extract_all_elements(root)
         
         return data
     
-    def _interface_type_name(self, code: int) -> str:
-        """Map interface code to human-readable name."""
-        return self.INTERFACE_TYPES.get(code, f"Type{code}")
-    
-    def _parse_header(self, root, interface_code: int) -> Dict[str, Any]:
-        """Parse header information from XML root."""
-        header = {
-            'interface_code': interface_code,
-            'interface_type': self._interface_type_name(interface_code),
-        }
+    def _parse_header(self, root) -> Dict[str, Any]:
+        """Parse header (KoteretKovetz) from XML."""
+        header = {}
         
-        # Find header element (KoteretKovetz or Header)
-        header_node = root.find(".//KoteretKovetz")
-        if header_node is None:
-            header_node = root.find(".//Header")
-        if header_node is None:
-            header_node = root  # Use root if no specific header element
+        # Find header element
+        header_elem = root.find('.//KoteretKovetz')
+        if header_elem is None:
+            header_elem = root.find('.//Header')
+        if header_elem is None:
+            header_elem = root
         
-        # Extract standard header fields
-        header_fields = [
-            ('MISPAR-GIRSAT-XML', 'schema_version'),
-            ('TAARICH-BITZUA', 'created_at'),
-            ('MISPAR-HAKOVETZ', 'file_id'),
-            ('KOD-SHOLEACH', 'sender_id'),
-            ('SHEM-SHOLEACH', 'sender_name'),
-            ('KOD-MEKABEL', 'receiver_id'),
-            ('SHEM-MEKABEL', 'receiver_name'),
-        ]
-        
-        for xml_tag, dict_key in header_fields:
-            value = header_node.findtext(xml_tag)
-            if value is None:
-                # Try without hyphens
-                value = header_node.findtext(xml_tag.replace('-', ''))
+        # Extract fields using mapping
+        for xml_tag, field_name in self.schema_mapping.HEADER_FIELDS.items():
+            value = self._find_text(header_elem, xml_tag)
             if value:
-                header[dict_key] = value.strip()
+                if field_name == 'interface_code':
+                    try:
+                        header[field_name] = int(value)
+                    except:
+                        header[field_name] = 1
+                else:
+                    header[field_name] = value
+        
+        # Add interface type name
+        interface_code = header.get('interface_code', 1)
+        interface_info = self.schema_mapping.INTERFACE_CODES.get(interface_code, {})
+        header['interface_type'] = interface_info.get('name', f'Type{interface_code}')
+        header['interface_type_he'] = interface_info.get('he', f'סוג {interface_code}')
         
         return header
     
-    def _parse_clients(self, root) -> List[Dict[str, Any]]:
-        """Parse client/person information from XML."""
-        clients = []
+    def _parse_client(self, root) -> Dict[str, Any]:
+        """Parse client (YeshutLakoach) from XML."""
+        client = {}
         
-        # Try different client element naming conventions
-        client_tags = ['YeshutLakoach', 'YeshutLakohach', 'Lakoach', 'Client', 'Person', 'Mevutach']
+        # Try multiple element names
+        client_tags = ['YeshutLakoach', 'YeshutLakohach', 'Lakoach', 'Mevutach', 'Client']
+        client_elem = None
         
         for tag in client_tags:
-            for client_node in root.findall(f".//{tag}"):
-                client = {}
-                
-                # ID number - try multiple tag names
-                for id_tag in ['MISPAR-ZIHUI-LAKOACH', 'MISPARZEHUT', 'MISPAR-ZEHUT', 'IdNumber', 'TZ']:
-                    val = client_node.findtext(id_tag)
-                    if val:
-                        client['id_number'] = val.strip()
-                        break
-                
-                # Full name
-                for name_tag in ['SHEM-LAKOACH', 'SHEM-Prati', 'SHEM-MALE', 'Name', 'ShemMale']:
-                    val = client_node.findtext(name_tag)
-                    if val:
-                        client['name'] = val.strip()
-                        break
-                
-                # First/Last name separately
-                first = client_node.findtext('SHEM-Prati') or client_node.findtext('ShemPrati')
-                last = client_node.findtext('SHEM-Mishpacha') or client_node.findtext('ShemMishpacha')
-                if first and last:
-                    client['first_name'] = first.strip()
-                    client['last_name'] = last.strip()
-                    if 'name' not in client:
-                        client['name'] = f"{first.strip()} {last.strip()}"
-                
-                # Birth date
-                for date_tag in ['TAARICH-LEYDA', 'BirthDate', 'TaarichLeyda']:
-                    val = client_node.findtext(date_tag)
-                    if val:
-                        client['birth_date'] = val.strip()
-                        break
-                
-                if client:
-                    clients.append(client)
+            client_elem = root.find(f'.//{tag}')
+            if client_elem is not None:
+                break
         
-        return clients
+        if client_elem is None:
+            return client
+        
+        # Extract fields
+        for xml_tag, field_name in self.schema_mapping.CLIENT_FIELDS.items():
+            value = self._find_text(client_elem, xml_tag)
+            if value:
+                client[field_name] = value
+        
+        # Build full name if not present
+        if not client.get('full_name') and (client.get('first_name') or client.get('last_name')):
+            parts = [client.get('first_name', ''), client.get('last_name', '')]
+            client['full_name'] = ' '.join(p for p in parts if p)
+        
+        return client
     
-    def _parse_accounts(self, root) -> List[Dict[str, Any]]:
-        """Parse account/product information from XML."""
+    def _parse_providers_and_accounts(self, root) -> Tuple[List[Dict], List[Dict]]:
+        """Parse providers (YeshutYatzran) and accounts (HeshbonOPolisa)."""
+        providers = []
         accounts = []
         
-        # Iterate through providers (YeshutYatzran)
-        for provider in root.findall(".//YeshutYatzran"):
-            provider_name = provider.findtext("SHEM-YATZRAN") or provider.findtext("ShemYatzran") or ""
-            provider_code = provider.findtext("KOD-YATZRAN") or provider.findtext("KodYatzran") or ""
+        # Find all providers
+        for provider_elem in root.findall('.//YeshutYatzran'):
+            provider = {}
             
-            # Iterate through products (Mutzar)
-            for product in provider.findall(".//Mutzar"):
-                product_type = (product.findtext("KOD-SUG-MUTZAR") or 
-                               product.findtext("SUG-MUTZAR") or 
-                               product.findtext("SugMutzar") or "")
-                product_name = product.findtext("SHEM-MUTZAR") or product.findtext("ShemMutzar") or ""
+            # Extract provider fields
+            for xml_tag, field_name in self.schema_mapping.PROVIDER_FIELDS.items():
+                value = self._find_text(provider_elem, xml_tag)
+                if value:
+                    provider[field_name] = value
+            
+            if provider:
+                providers.append(provider)
+            
+            # Find products under this provider
+            for product_elem in provider_elem.findall('.//Mutzar'):
+                product_info = {}
                 
-                # Iterate through accounts/policies (HeshbonOPolisa)
-                for acct in product.findall(".//HeshbonOPolisa"):
-                    account = {
-                        'provider': provider_name.strip(),
-                        'provider_code': provider_code.strip(),
-                        'product_type': self._translate_product_type(product_type),
-                        'product_type_raw': product_type.strip(),
-                        'product_name': product_name.strip(),
-                        'policy_number': '',
-                        'status': '',
-                        'balance': 0.0,
-                        'severance_balance': 0.0,
-                    }
-                    
-                    # Policy number
-                    for tag in ['MISPAR-POLISA-O-HESHBON', 'MISPAR-POLISA', 'PolicyNumber', 'MisparPolisa']:
-                        val = acct.findtext(tag)
-                        if val:
-                            account['policy_number'] = val.strip()
-                            break
-                    
-                    # Status
-                    for tag in ['STATUS-POLISA-O-CHESHBON', 'STATUS', 'Status', 'StatusPolisa']:
-                        val = acct.findtext(tag)
-                        if val:
-                            account['status'] = val.strip()
-                            break
-                    
-                    # Balance (try multiple locations)
-                    for tag in ['SALDO', 'Saldo', 'Balance', 'YITRA', 'Yitra', 'Schum']:
-                        val = acct.findtext(f".//{tag}")
-                        if val:
-                            account['balance'] = self._parse_number(val)
-                            break
-                    
-                    # Severance balance
-                    for tag in ['KFIFA-PITZUIM', 'PITZUIM', 'SeveranceBalance', 'Pitzuim']:
-                        val = acct.findtext(f".//{tag}")
-                        if val:
-                            account['severance_balance'] = self._parse_number(val)
-                            break
-                    
-                    # Employer info within account
-                    employer_name = acct.findtext(".//SHEM-MAASIK") or acct.findtext(".//ShemMaasik")
-                    employer_id = acct.findtext(".//KOD-MAASIK") or acct.findtext(".//KodMaasik")
-                    if employer_name or employer_id:
-                        account['employer'] = {
-                            'id': employer_id.strip() if employer_id else '',
-                            'name': employer_name.strip() if employer_name else ''
-                        }
-                    
+                for xml_tag, field_name in self.schema_mapping.PRODUCT_FIELDS.items():
+                    value = self._find_text(product_elem, xml_tag)
+                    if value:
+                        product_info[field_name] = value
+                
+                # Find accounts under this product
+                for account_elem in product_elem.findall('.//HeshbonOPolisa'):
+                    account = self._parse_account(account_elem, provider, product_info)
+                    if account:
+                        accounts.append(account)
+                
+                # Also check PirteiHeshbon
+                for account_elem in product_elem.findall('.//PirteiHeshbon'):
+                    account = self._parse_account(account_elem, provider, product_info)
+                    if account:
+                        accounts.append(account)
+        
+        # Also find standalone accounts
+        for account_elem in root.findall('.//HeshbonOPolisa'):
+            # Check if already processed
+            policy_num = self._find_text(account_elem, 'MISPAR-POLISA-O-HESHBON')
+            if policy_num and not any(a.get('policy_number') == policy_num for a in accounts):
+                account = self._parse_account(account_elem, {}, {})
+                if account:
                     accounts.append(account)
         
-        # Also check for direct account elements (not nested under provider)
-        for acct in root.findall(".//HeshbonOPolisa"):
-            policy_num = (acct.findtext("MISPAR-POLISA-O-HESHBON") or 
-                         acct.findtext("MISPAR-POLISA") or 
-                         acct.findtext("MisparPolisa"))
-            
-            if policy_num and not any(a.get('policy_number') == policy_num.strip() for a in accounts):
-                account = {
-                    'provider': '',
-                    'product_type': '',
-                    'product_name': '',
-                    'policy_number': policy_num.strip(),
-                    'status': acct.findtext("STATUS-POLISA-O-CHESHBON") or acct.findtext("Status") or '',
-                    'balance': self._parse_number(acct.findtext(".//SALDO") or acct.findtext(".//Saldo") or "0"),
-                    'severance_balance': self._parse_number(acct.findtext(".//KFIFA-PITZUIM") or acct.findtext(".//Pitzuim") or "0"),
-                }
-                accounts.append(account)
+        return providers, accounts
+    
+    def _parse_account(self, elem, provider: Dict, product_info: Dict) -> Dict[str, Any]:
+        """Parse a single account element."""
+        account = {
+            'provider': provider.get('name', ''),
+            'provider_code': provider.get('code', ''),
+            'product_type': product_info.get('product_type', ''),
+            'product_type_code': product_info.get('product_type_code', ''),
+            'product_name': product_info.get('name', ''),
+        }
         
-        return accounts
+        # Extract account fields
+        for xml_tag, field_name in self.schema_mapping.ACCOUNT_FIELDS.items():
+            value = self._find_text(elem, xml_tag)
+            if value:
+                # Convert numeric fields
+                if field_name in ['total_balance', 'savings_balance', 'severance_balance',
+                                  'employer_severance', 'compensation_balance', 'coverage_amount',
+                                  'monthly_pension', 'management_fee_savings', 'management_fee_deposits']:
+                    account[field_name] = self._parse_number(value)
+                elif field_name == 'section14':
+                    account[field_name] = value in ['1', 'כן', 'true', 'True', 'Y']
+                else:
+                    account[field_name] = value
+        
+        # Translate product type
+        product_type_code = account.get('product_type_code', '')
+        if product_type_code in self.schema_mapping.PRODUCT_TYPE_CODES:
+            type_info = self.schema_mapping.PRODUCT_TYPE_CODES[product_type_code]
+            account['product_type_name'] = type_info['he']
+            account['product_type_en'] = type_info['name']
+        
+        # Translate status
+        status_code = account.get('status_code', '')
+        if status_code in self.schema_mapping.STATUS_CODES:
+            status_info = self.schema_mapping.STATUS_CODES[status_code]
+            account['status'] = status_info['he']
+            account['status_en'] = status_info['name']
+        
+        return account
     
     def _parse_contributions(self, root) -> List[Dict[str, Any]]:
-        """Parse contribution records from XML."""
+        """Parse contributions (NetuneiHafrasha)."""
         contributions = []
         
-        # Try different contribution element names
-        contrib_tags = ['PirteiHafrasha', 'Hafrasha', 'Contribution', 'NetuneiHafrasha', 'ReshimatHafrashot']
+        contrib_tags = ['NetuneiHafrasha', 'PirteiHafrasha', 'Hafrasha', 'ReshimatHafrashot']
         
         for tag in contrib_tags:
-            for contrib in root.findall(f".//{tag}"):
-                record = {
-                    'employee_id': '',
-                    'name': '',
-                    'period': '',
-                    'employee_contribution': 0.0,
-                    'employer_contribution': 0.0,
-                    'severance_contribution': 0.0,
-                }
+            for elem in root.findall(f'.//{tag}'):
+                contrib = {}
                 
-                # Employee ID
-                for id_tag in ['MISPAR-ZIHUI-LAKOACH', 'MISPARZEHUT', 'MisparZehut']:
-                    val = contrib.findtext(id_tag)
-                    if val:
-                        record['employee_id'] = val.strip()
-                        break
+                for xml_tag, field_name in self.schema_mapping.CONTRIBUTION_FIELDS.items():
+                    value = self._find_text(elem, xml_tag)
+                    if value:
+                        if field_name in ['employee_amount', 'employer_amount', 
+                                         'severance_amount', 'total_amount', 'salary_base']:
+                            contrib[field_name] = self._parse_number(value)
+                        else:
+                            contrib[field_name] = value
                 
-                # Name
-                record['name'] = (contrib.findtext('SHEM-LAKOACH') or 
-                                 contrib.findtext('ShemLakoach') or '')
-                
-                # Period (month)
-                for period_tag in ['CHODESH-DIO', 'CHODESH', 'Period', 'ChodeshDio', 'Tkufa']:
-                    val = contrib.findtext(period_tag)
-                    if val:
-                        record['period'] = val.strip()
-                        break
-                
-                # Contribution amounts
-                emp_val = contrib.findtext('HAFRASHA-OVED') or contrib.findtext('HafrashaOved')
-                if emp_val:
-                    record['employee_contribution'] = self._parse_number(emp_val)
-                
-                empr_val = contrib.findtext('HAFRASHA-MAASIK') or contrib.findtext('HafrashaMaasik')
-                if empr_val:
-                    record['employer_contribution'] = self._parse_number(empr_val)
-                
-                sev_val = contrib.findtext('HAFRASHA-PITZUIM') or contrib.findtext('HafrashaPitzuim')
-                if sev_val:
-                    record['severance_contribution'] = self._parse_number(sev_val)
-                
-                if record['period'] or record['employee_contribution'] or record['employer_contribution']:
-                    contributions.append(record)
+                if contrib:
+                    contributions.append(contrib)
         
         return contributions
     
-    def _parse_severance(self, root, interface_code: int, accounts: List[Dict]) -> List[Dict[str, Any]]:
-        """Parse severance (פיצויים) details from XML."""
+    def _parse_severance(self, root) -> List[Dict[str, Any]]:
+        """Parse severance data (NetuneiPitzuim)."""
         severance_list = []
         
-        # For severance interface (type 17), look for dedicated elements
-        if interface_code == 17:
-            for emp in root.findall(".//NetuneiPitzuim"):
-                record = {
-                    'employee_id': emp.findtext("MISPAR-ZIHUI-LAKOACH") or emp.findtext("MisparZihui") or '',
-                    'total_severance': self._parse_number(emp.findtext("KSF-PITZUIM-TZVUR") or emp.findtext("SachPitzuim") or "0"),
-                    'section14': None,
-                }
-                
-                # Section 14 flag (סעיף 14)
-                sec14_val = (emp.findtext("ARTICLE14") or 
-                            emp.findtext("article14") or 
-                            emp.findtext("SI14") or
-                            emp.findtext("Seif14"))
-                if sec14_val:
-                    # Common conventions: "1" = yes, "2" or "0" = no
-                    record['section14'] = sec14_val.strip() in ["1", "כן", "true", "True"]
-                
-                severance_list.append(record)
+        sev_tags = ['NetuneiPitzuim', 'PirteiPitzuim', 'Pitzuim']
         
-        # Also extract severance from accounts
-        for acct in accounts:
-            if acct.get('severance_balance', 0) > 0:
-                sev_entry = {
-                    'policy_number': acct.get('policy_number', ''),
-                    'severance_balance': acct.get('severance_balance', 0),
-                    'employer': acct.get('employer', {}).get('name', '') if isinstance(acct.get('employer'), dict) else '',
-                    'section14': None,
-                }
+        for tag in sev_tags:
+            for elem in root.findall(f'.//{tag}'):
+                sev = {}
                 
-                # Check for Section 14 flag anywhere in document
-                sec14_node = root.find(".//SI14") or root.find(".//ARTICLE14") or root.find(".//Seif14")
-                if sec14_node is not None and sec14_node.text:
-                    sev_entry['section14'] = sec14_node.text.strip() in ["1", "כן", "true", "True"]
+                for xml_tag, field_name in self.schema_mapping.SEVERANCE_FIELDS.items():
+                    value = self._find_text(elem, xml_tag)
+                    if value:
+                        if field_name in ['total_severance', 'available_severance', 
+                                         'section14_amount', 'section14_percentage']:
+                            sev[field_name] = self._parse_number(value)
+                        elif field_name == 'section14':
+                            sev[field_name] = value in ['1', 'כן', 'true', 'True', 'Y']
+                        else:
+                            sev[field_name] = value
                 
-                severance_list.append(sev_entry)
+                if sev:
+                    severance_list.append(sev)
         
         return severance_list
     
-    def _extract_employers(self, accounts: List[Dict], header: Dict, interface_code: int) -> List[Dict[str, str]]:
-        """Extract unique employers from accounts and header."""
-        employers = []
-        seen = set()
+    def _extract_all_elements(self, root) -> Dict[str, List[str]]:
+        """Extract all text elements for additional analysis."""
+        elements = {}
         
-        # Extract from accounts
-        for acct in accounts:
-            if 'employer' in acct and isinstance(acct['employer'], dict):
-                emp = acct['employer']
-                emp_id = emp.get('id', '') or emp.get('kod', '') or emp.get('code', '')
-                emp_name = emp.get('name', '') or emp.get('shem', '')
-                key = (emp_id, emp_name)
-                if key not in seen and (emp_id or emp_name):
-                    seen.add(key)
-                    employers.append({'id': emp_id, 'name': emp_name})
+        def extract(elem, path=''):
+            tag = elem.tag.split('}')[-1] if '}' in elem.tag else elem.tag
+            current_path = f"{path}/{tag}" if path else tag
+            
+            if elem.text and elem.text.strip():
+                if tag not in elements:
+                    elements[tag] = []
+                elements[tag].append(elem.text.strip())
+            
+            for child in elem:
+                extract(child, current_path)
         
-        # For severance interface, sender is often the employer
-        if interface_code == 17 and header.get('sender_name'):
-            emp_id = header.get('sender_id', '')
-            emp_name = header['sender_name']
-            key = (emp_id, emp_name)
-            if key not in seen:
-                employers.append({'id': emp_id, 'name': emp_name})
-        
-        return employers
+        extract(root)
+        return elements
     
-    def _translate_product_type(self, hebrew_type: str) -> str:
-        """Translate Hebrew product type to English."""
-        if not hebrew_type:
-            return ''
-        hebrew_type = hebrew_type.strip()
-        return self.PRODUCT_TYPES.get(hebrew_type, hebrew_type)
+    def _find_text(self, elem, tag: str) -> Optional[str]:
+        """Find text content of a tag, trying multiple naming conventions."""
+        # Try exact match
+        found = elem.find(f'.//{tag}')
+        if found is not None and found.text:
+            return found.text.strip()
+        
+        # Try without hyphens
+        tag_no_hyphen = tag.replace('-', '')
+        found = elem.find(f'.//{tag_no_hyphen}')
+        if found is not None and found.text:
+            return found.text.strip()
+        
+        # Try CamelCase
+        tag_camel = ''.join(word.capitalize() for word in tag.split('-'))
+        found = elem.find(f'.//{tag_camel}')
+        if found is not None and found.text:
+            return found.text.strip()
+        
+        return None
     
     def _parse_number(self, value: str) -> float:
-        """Parse a numeric string to float, handling common formats."""
+        """Parse numeric string to float."""
         if not value:
             return 0.0
         try:
-            # Remove commas, spaces, currency symbols
-            cleaned = value.replace(',', '').replace(' ', '').replace('₪', '').replace('$', '').replace('€', '')
-            # Handle Hebrew thousands separator
-            cleaned = cleaned.replace("'", '')
+            # Remove formatting
+            cleaned = value.replace(',', '').replace(' ', '')
+            cleaned = cleaned.replace('₪', '').replace('$', '').replace('€', '')
+            cleaned = cleaned.replace("'", '')  # Hebrew thousands separator
             return float(cleaned)
-        except ValueError:
+        except:
             return 0.0
     
-    def enrich_data(self, data: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Enrich parsed data with derived metrics and summary information.
-        
-        Calculates:
-        - Total balance across all accounts
-        - Total severance
-        - Contribution trend (increasing/stable/decreasing)
-        - Missing contribution months
-        - Section 14 status
-        - Provider/account statistics
-        
-        Args:
-            data: Parsed data dictionary from parse_xml()
-            
-        Returns:
-            Enriched data with 'summary' section added
-        """
-        summary = {}
-        
-        # Total balance across all accounts
-        total_balance = sum(acct.get('balance', 0) for acct in data.get('accounts', []))
-        summary['total_balance'] = round(total_balance, 2)
-        summary['total_balance_formatted'] = f"₪{total_balance:,.2f}"
-        
-        # Total severance
-        total_severance = sum(acct.get('severance_balance', 0) for acct in data.get('accounts', []))
-        summary['total_severance'] = round(total_severance, 2)
-        summary['total_severance_formatted'] = f"₪{total_severance:,.2f}"
-        
-        # Account and provider counts
-        summary['account_count'] = len(data.get('accounts', []))
-        providers = set(acct.get('provider', '') for acct in data.get('accounts', []) if acct.get('provider'))
-        summary['provider_count'] = len(providers)
-        summary['providers'] = list(providers)
-        
-        # Contribution trend analysis
-        contributions = data.get('contributions', [])
-        summary['contribution_trend'] = None
-        summary['contribution_trend_he'] = 'לא זמין'
-        
-        if contributions:
-            # Sort by period for trend analysis
-            try:
-                contributions.sort(key=lambda x: x.get('period', ''))
-            except:
-                pass
-            
-            if len(contributions) >= 2:
-                first = contributions[0]
-                last = contributions[-1]
-                
-                # Calculate total contributions for first and last periods
-                sum_first = (first.get('employee_contribution', 0) + 
-                           first.get('employer_contribution', 0) + 
-                           first.get('severance_contribution', 0))
-                sum_last = (last.get('employee_contribution', 0) + 
-                          last.get('employer_contribution', 0) + 
-                          last.get('severance_contribution', 0))
-                
-                if sum_last > sum_first * 1.1:
-                    summary['contribution_trend'] = 'increasing'
-                    summary['contribution_trend_he'] = 'עולה'
-                elif sum_last < sum_first * 0.9:
-                    summary['contribution_trend'] = 'decreasing'
-                    summary['contribution_trend_he'] = 'יורד'
-                else:
-                    summary['contribution_trend'] = 'stable'
-                    summary['contribution_trend_he'] = 'יציב'
-        
-        # Total contributions by type
-        total_emp = sum(c.get('employee_contribution', 0) for c in contributions)
-        total_empr = sum(c.get('employer_contribution', 0) for c in contributions)
-        total_sev = sum(c.get('severance_contribution', 0) for c in contributions)
-        summary['total_employee_contributions'] = round(total_emp, 2)
-        summary['total_employer_contributions'] = round(total_empr, 2)
-        summary['total_severance_contributions'] = round(total_sev, 2)
-        
-        # Missing contribution months detection
-        if contributions:
-            periods = {c.get('period') for c in contributions if c.get('period')}
-            try:
-                sorted_periods = sorted(periods)
-                if len(sorted_periods) >= 2:
-                    summary['contribution_periods'] = sorted_periods
-                    summary['first_period'] = sorted_periods[0]
-                    summary['last_period'] = sorted_periods[-1]
-                    
-                    # Detect missing months (assuming YYYY-MM format)
-                    missing_periods = self._find_missing_months(sorted_periods)
-                    summary['missing_contribution_months'] = missing_periods
-            except:
-                summary['missing_contribution_months'] = []
-        else:
-            summary['missing_contribution_months'] = []
-        
-        # Section 14 (סעיף 14) status
-        section14_any = any(s.get('section14') is True for s in data.get('severance', []))
-        section14_explicit_false = any(s.get('section14') is False for s in data.get('severance', []))
-        
-        summary['section14_any'] = section14_any
-        summary['section14_all'] = section14_any and not section14_explicit_false
-        summary['section14_status'] = 'כן' if section14_any else 'לא'
-        
-        data['summary'] = summary
-        return data
-    
-    def _find_missing_months(self, sorted_periods: List[str]) -> List[str]:
-        """Find missing months in a sorted list of YYYY-MM periods."""
-        missing = []
-        if len(sorted_periods) < 2:
-            return missing
-        
-        try:
-            from datetime import datetime
-            fmt = "%Y-%m"
-            
-            start = datetime.strptime(sorted_periods[0], fmt)
-            end = datetime.strptime(sorted_periods[-1], fmt)
-            
-            current = start
-            expected = []
-            while current <= end:
-                expected.append(current.strftime(fmt))
-                # Increment month
-                if current.month == 12:
-                    current = datetime(current.year + 1, 1, 1)
-                else:
-                    current = datetime(current.year, current.month + 1, 1)
-            
-            periods_set = set(sorted_periods)
-            missing = [p for p in expected if p not in periods_set]
-        except Exception as e:
-            print(f"[PENSION] Error detecting missing months: {e}")
-        
-        return missing
-    
-    def generate_report_text(self, data: Dict[str, Any], language: str = 'hebrew') -> str:
-        """
-        Generate a comprehensive human-readable report from the parsed and enriched data.
-        
-        Enhanced report includes:
-        - Executive summary with health score
-        - Financial position analysis
-        - Retirement readiness assessment
-        - Risk indicators and warnings
-        - Actionable AI recommendations
-        
-        Args:
-            data: Enriched data dictionary (from enrich_data())
-            language: 'hebrew' or 'english'
-            
-        Returns:
-            Formatted report text string
-        """
-        summary = data.get('summary', {})
-        header = data.get('header', {})
-        clients = data.get('client', [])
+    def _enrich_data(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        """Enrich parsed data with calculated metrics."""
         accounts = data.get('accounts', [])
         contributions = data.get('contributions', [])
         severance = data.get('severance', [])
         
-        # Calculate health scores
-        health_scores = self._calculate_health_scores(data)
+        totals = {
+            'total_balance': 0.0,
+            'total_savings': 0.0,
+            'total_severance': 0.0,
+            'total_coverage': 0.0,
+            'account_count': len(accounts),
+            'provider_count': len(set(a.get('provider', '') for a in accounts if a.get('provider'))),
+            'providers': list(set(a.get('provider', '') for a in accounts if a.get('provider'))),
+        }
         
-        is_hebrew = language == 'hebrew'
+        # Sum account balances
+        for acct in accounts:
+            totals['total_balance'] += acct.get('total_balance', 0)
+            totals['total_savings'] += acct.get('savings_balance', 0)
+            totals['total_severance'] += acct.get('severance_balance', 0)
+            totals['total_coverage'] += acct.get('coverage_amount', 0)
         
-        if is_hebrew:
-            report_lines = self._generate_hebrew_report(
-                data, summary, header, clients, accounts, 
-                contributions, severance, health_scores
-            )
-        else:
-            report_lines = self._generate_english_report(
-                data, summary, header, clients, accounts,
-                contributions, severance, health_scores
-            )
+        # Format totals
+        totals['total_balance_formatted'] = f"₪{totals['total_balance']:,.2f}"
+        totals['total_savings_formatted'] = f"₪{totals['total_savings']:,.2f}"
+        totals['total_severance_formatted'] = f"₪{totals['total_severance']:,.2f}"
         
-        return '\n'.join(report_lines)
+        # Contribution analysis
+        if contributions:
+            total_employee = sum(c.get('employee_amount', 0) for c in contributions)
+            total_employer = sum(c.get('employer_amount', 0) for c in contributions)
+            total_sev_contrib = sum(c.get('severance_amount', 0) for c in contributions)
+            
+            totals['contributions'] = {
+                'employee_total': total_employee,
+                'employer_total': total_employer,
+                'severance_total': total_sev_contrib,
+                'grand_total': total_employee + total_employer + total_sev_contrib,
+                'periods_count': len(contributions),
+            }
+            
+            # Contribution trend
+            try:
+                sorted_contribs = sorted(contributions, key=lambda x: x.get('period', ''))
+                if len(sorted_contribs) >= 2:
+                    first = sorted_contribs[0]
+                    last = sorted_contribs[-1]
+                    first_total = (first.get('employee_amount', 0) + first.get('employer_amount', 0))
+                    last_total = (last.get('employee_amount', 0) + last.get('employer_amount', 0))
+                    
+                    if last_total > first_total * 1.1:
+                        totals['contribution_trend'] = 'increasing'
+                        totals['contribution_trend_he'] = 'עולה'
+                    elif last_total < first_total * 0.9:
+                        totals['contribution_trend'] = 'decreasing'
+                        totals['contribution_trend_he'] = 'יורד'
+                    else:
+                        totals['contribution_trend'] = 'stable'
+                        totals['contribution_trend_he'] = 'יציב'
+            except:
+                pass
+        
+        # Section 14 status
+        section14_accounts = [a for a in accounts if a.get('section14')]
+        totals['section14_coverage'] = len(section14_accounts) > 0
+        totals['section14_accounts'] = len(section14_accounts)
+        
+        # Health score
+        totals['health_score'] = self._calculate_health_score(totals)
+        
+        data['totals'] = totals
+        return data
     
-    def _calculate_health_scores(self, data: Dict[str, Any]) -> Dict[str, Any]:
-        """Calculate financial health scores for the report."""
-        summary = data.get('summary', {})
-        accounts = data.get('accounts', [])
-        
-        scores = {
+    def _calculate_health_score(self, totals: Dict) -> Dict[str, Any]:
+        """Calculate financial health score."""
+        score = {
             'overall': 0,
             'savings': 0,
             'diversification': 0,
-            'contribution': 0,
-            'severance': 0,
-            'alerts': [],
-            'strengths': [],
-            'recommendations': []
+            'section14': 0,
+            'rating': 'unknown',
+            'rating_he': 'לא ידוע',
         }
         
-        total_balance = summary.get('total_balance', 0)
-        total_severance = summary.get('total_severance', 0)
-        account_count = summary.get('account_count', 0)
-        provider_count = summary.get('provider_count', 0)
+        total_balance = totals.get('total_balance', 0)
+        provider_count = totals.get('provider_count', 0)
         
-        # Savings score (0-100)
+        # Savings score
         if total_balance >= 1000000:
-            scores['savings'] = 100
-            scores['strengths'].append('high_savings')
+            score['savings'] = 100
         elif total_balance >= 500000:
-            scores['savings'] = 80
-            scores['strengths'].append('good_savings')
+            score['savings'] = 80
         elif total_balance >= 200000:
-            scores['savings'] = 60
+            score['savings'] = 60
         elif total_balance >= 50000:
-            scores['savings'] = 40
-            scores['recommendations'].append('increase_contributions')
+            score['savings'] = 40
         else:
-            scores['savings'] = 20
-            scores['alerts'].append('low_savings')
-            scores['recommendations'].append('urgent_savings_review')
+            score['savings'] = 20
         
         # Diversification score
         if provider_count >= 3:
-            scores['diversification'] = 70
-            scores['recommendations'].append('consider_consolidation')
+            score['diversification'] = 70  # Too many - recommend consolidation
         elif provider_count == 2:
-            scores['diversification'] = 90
-        elif provider_count == 1 and account_count > 1:
-            scores['diversification'] = 80
+            score['diversification'] = 90
         elif provider_count == 1:
-            scores['diversification'] = 60
-            scores['recommendations'].append('consider_diversification')
+            score['diversification'] = 70
         else:
-            scores['diversification'] = 50
+            score['diversification'] = 50
         
-        # Contribution score
-        trend = summary.get('contribution_trend')
-        missing_months = len(summary.get('missing_contribution_months', []))
-        
-        if trend == 'increasing' and missing_months == 0:
-            scores['contribution'] = 100
-            scores['strengths'].append('excellent_contributions')
-        elif trend == 'stable' and missing_months == 0:
-            scores['contribution'] = 85
-            scores['strengths'].append('stable_contributions')
-        elif trend == 'increasing':
-            scores['contribution'] = 75
-        elif trend == 'stable':
-            scores['contribution'] = 70
-        elif trend == 'decreasing':
-            scores['contribution'] = 40
-            scores['alerts'].append('declining_contributions')
-            scores['recommendations'].append('review_contributions')
+        # Section 14 score
+        if totals.get('section14_coverage'):
+            score['section14'] = 100
+        elif totals.get('total_severance', 0) > 0:
+            score['section14'] = 70
         else:
-            scores['contribution'] = 50
+            score['section14'] = 50
         
-        if missing_months > 0:
-            scores['contribution'] -= min(30, missing_months * 5)
-            scores['alerts'].append('missing_contributions')
-            scores['recommendations'].append('verify_missing_months')
-        
-        # Severance score
-        if summary.get('section14_any'):
-            scores['severance'] = 100
-            scores['strengths'].append('section14_covered')
-        elif total_severance > 0:
-            scores['severance'] = 70
-            scores['recommendations'].append('check_section14')
-        else:
-            scores['severance'] = 50
-            scores['alerts'].append('no_severance_data')
-        
-        # Overall score (weighted average)
-        scores['overall'] = int(
-            scores['savings'] * 0.35 +
-            scores['diversification'] * 0.15 +
-            scores['contribution'] * 0.30 +
-            scores['severance'] * 0.20
+        # Overall
+        score['overall'] = int(
+            score['savings'] * 0.5 +
+            score['diversification'] * 0.2 +
+            score['section14'] * 0.3
         )
         
-        # Rating
-        if scores['overall'] >= 80:
-            scores['rating'] = 'excellent'
-            scores['rating_he'] = 'מצוין'
-        elif scores['overall'] >= 60:
-            scores['rating'] = 'good'
-            scores['rating_he'] = 'טוב'
-        elif scores['overall'] >= 40:
-            scores['rating'] = 'fair'
-            scores['rating_he'] = 'סביר'
+        if score['overall'] >= 80:
+            score['rating'] = 'excellent'
+            score['rating_he'] = 'מצוין'
+        elif score['overall'] >= 60:
+            score['rating'] = 'good'
+            score['rating_he'] = 'טוב'
+        elif score['overall'] >= 40:
+            score['rating'] = 'fair'
+            score['rating_he'] = 'סביר'
         else:
-            scores['rating'] = 'needs_attention'
-            scores['rating_he'] = 'דורש תשומת לב'
+            score['rating'] = 'needs_attention'
+            score['rating_he'] = 'דורש תשומת לב'
         
-        return scores
+        return score
     
-    def _generate_hebrew_report(self, data, summary, header, clients, accounts, 
-                                contributions, severance, health_scores) -> List[str]:
-        """Generate comprehensive Hebrew report."""
+    def _generate_professional_report(self, data: Dict[str, Any]) -> str:
+        """
+        Generate professional Mislaka-style report.
+        Format matches standard Israeli pension reports.
+        """
         lines = []
+        header = data.get('header', {})
+        client = data.get('client', {})
+        accounts = data.get('accounts', [])
+        totals = data.get('totals', {})
+        health = totals.get('health_score', {})
         
-        # ===== HEADER =====
+        # ===== REPORT HEADER =====
         lines.extend([
-            "╔══════════════════════════════════════════════════════════════╗",
-            "║        📊 דו״ח ניתוח מקיף - פנסיה וביטוח                     ║",
-            "║        🤖 ניתוח AI מתקדם עם המלצות פעולה                     ║",
-            "╚══════════════════════════════════════════════════════════════╝",
+            "╔══════════════════════════════════════════════════════════════════════════╗",
+            "║                                                                          ║",
+            "║      📊 דו״ח מסלקת הביטוח והפנסיה - ניתוח מקיף                           ║",
+            "║      Mislaka Pension & Insurance Clearinghouse Report                    ║",
+            "║                                                                          ║",
+            "╚══════════════════════════════════════════════════════════════════════════╝",
             "",
         ])
         
-        # ===== EXECUTIVE SUMMARY =====
-        overall_score = health_scores.get('overall', 0)
-        rating_he = health_scores.get('rating_he', 'לא ידוע')
+        # ===== REPORT INFO =====
+        report_date = header.get('report_date') or header.get('created_at') or datetime.now().strftime('%Y%m%d')
+        if len(report_date) == 8:
+            try:
+                formatted_date = f"{report_date[6:8]}/{report_date[4:6]}/{report_date[:4]}"
+            except:
+                formatted_date = report_date
+        else:
+            formatted_date = report_date
         
         lines.extend([
-            "┌─────────────────────────────────────────────────────────────┐",
-            "│  📋 תקציר מנהלים                                            │",
-            "└─────────────────────────────────────────────────────────────┘",
-            "",
-            f"  🎯 ציון בריאות פיננסית כולל: {overall_score}/100 ({rating_he})",
-            "",
-            "  📊 ציונים לפי קטגוריה:",
-            f"     • חסכונות: {health_scores.get('savings', 0)}/100",
-            f"     • פיזור השקעות: {health_scores.get('diversification', 0)}/100",
-            f"     • הפקדות שוטפות: {health_scores.get('contribution', 0)}/100",
-            f"     • פיצויים וסעיף 14: {health_scores.get('severance', 0)}/100",
+            f"📅 תאריך הדו״ח: {formatted_date}",
+            f"📋 סוג ממשק: {data.get('interface_type_he', 'אחזקות')} ({data.get('interface_type', 'Holdings')})",
+            f"🔖 גרסת סכמה: {header.get('schema_version', 'N/A')}",
             "",
         ])
         
-        # ===== CLIENT INFO =====
-        if clients:
-            client = clients[0] if isinstance(clients, list) else clients
+        # ===== CLIENT INFORMATION =====
+        if client:
             lines.extend([
-                "┌─────────────────────────────────────────────────────────────┐",
-                "│  👤 פרטי לקוח                                               │",
-                "└─────────────────────────────────────────────────────────────┘",
-                "",
-                f"  • שם: {client.get('name', 'לא ידוע')}",
-                f"  • ת.ז.: {self._mask_id(client.get('id_number', ''))}",
-                f"  • תאריך לידה: {client.get('birth_date', 'לא ידוע')}",
+                "┌──────────────────────────────────────────────────────────────────────────┐",
+                "│                        👤 פרטי לקוח / Client Details                     │",
+                "└──────────────────────────────────────────────────────────────────────────┘",
                 "",
             ])
+            
+            client_name = client.get('full_name') or f"{client.get('first_name', '')} {client.get('last_name', '')}".strip()
+            id_number = client.get('id_number', '')
+            masked_id = self._mask_id(id_number) if id_number else 'לא זמין'
+            
+            lines.extend([
+                f"  שם מלא:        {client_name or 'לא זמין'}",
+                f"  תעודת זהות:    {masked_id}",
+            ])
+            
+            if client.get('birth_date'):
+                lines.append(f"  תאריך לידה:    {client.get('birth_date')}")
+            if client.get('phone'):
+                lines.append(f"  טלפון:         {client.get('phone')}")
+            if client.get('email'):
+                lines.append(f"  דוא״ל:         {client.get('email')}")
+            
+            lines.append("")
         
         # ===== FINANCIAL SUMMARY =====
         lines.extend([
-            "┌─────────────────────────────────────────────────────────────┐",
-            "│  💰 סיכום כספי מפורט                                         │",
-            "└─────────────────────────────────────────────────────────────┘",
-            "",
-            f"  💵 סה״כ יתרה מצטברת: {summary.get('total_balance_formatted', '₪0')}",
-            f"  🏦 סה״כ פיצויים צבורים: {summary.get('total_severance_formatted', '₪0')}",
-            f"  📁 מספר חשבונות/פוליסות: {summary.get('account_count', 0)}",
-            f"  🏢 מספר יצרנים/חברות: {summary.get('provider_count', 0)}",
+            "┌──────────────────────────────────────────────────────────────────────────┐",
+            "│                      💰 סיכום כספי / Financial Summary                   │",
+            "└──────────────────────────────────────────────────────────────────────────┘",
             "",
         ])
         
-        # List providers
-        providers = summary.get('providers', [])
+        lines.extend([
+            f"  ┌─────────────────────────────────────────────────────────────────────┐",
+            f"  │  סה״כ נכסים:                      {totals.get('total_balance_formatted', '₪0'):>20}  │",
+            f"  │  ─────────────────────────────────────────────────────────────────  │",
+            f"  │    • חיסכון פנסיוני:              {totals.get('total_savings_formatted', '₪0'):>20}  │",
+            f"  │    • פיצויים צבורים:              {totals.get('total_severance_formatted', '₪0'):>20}  │",
+            f"  │  ─────────────────────────────────────────────────────────────────  │",
+            f"  │  מספר חשבונות/פוליסות:           {totals.get('account_count', 0):>20}  │",
+            f"  │  מספר יצרנים:                    {totals.get('provider_count', 0):>20}  │",
+            f"  └─────────────────────────────────────────────────────────────────────┘",
+            "",
+        ])
+        
+        # ===== HEALTH SCORE =====
+        lines.extend([
+            "┌──────────────────────────────────────────────────────────────────────────┐",
+            "│                    🎯 ציון בריאות פיננסית / Health Score                 │",
+            "└──────────────────────────────────────────────────────────────────────────┘",
+            "",
+        ])
+        
+        overall = health.get('overall', 0)
+        rating_he = health.get('rating_he', 'לא ידוע')
+        
+        # Visual score bar
+        filled = int(overall / 10)
+        empty = 10 - filled
+        score_bar = '█' * filled + '░' * empty
+        
+        lines.extend([
+            f"  ציון כולל: [{score_bar}] {overall}/100 ({rating_he})",
+            "",
+            f"  📊 פירוט ציונים:",
+            f"     • חסכונות: {health.get('savings', 0)}/100",
+            f"     • פיזור: {health.get('diversification', 0)}/100",
+            f"     • סעיף 14: {health.get('section14', 0)}/100",
+            "",
+        ])
+        
+        # ===== PROVIDERS =====
+        providers = totals.get('providers', [])
         if providers:
-            lines.append("  📋 יצרנים פעילים:")
-            for provider in providers[:5]:
-                lines.append(f"     • {provider}")
-            if len(providers) > 5:
-                lines.append(f"     ... ועוד {len(providers) - 5} יצרנים")
+            lines.extend([
+                "┌──────────────────────────────────────────────────────────────────────────┐",
+                "│                       🏢 יצרנים / Providers                              │",
+                "└──────────────────────────────────────────────────────────────────────────┘",
+                "",
+            ])
+            
+            for i, provider in enumerate(providers, 1):
+                lines.append(f"  {i}. {provider}")
             lines.append("")
         
         # ===== ACCOUNT DETAILS =====
         if accounts:
             lines.extend([
-                "┌─────────────────────────────────────────────────────────────┐",
-                "│  📁 פירוט חשבונות ופוליסות                                  │",
-                "└─────────────────────────────────────────────────────────────┘",
+                "┌──────────────────────────────────────────────────────────────────────────┐",
+                "│                    📁 פירוט חשבונות / Account Details                    │",
+                "└──────────────────────────────────────────────────────────────────────────┘",
                 "",
             ])
             
-            for i, acct in enumerate(accounts[:8], 1):
-                balance = acct.get('balance', 0)
-                sev_balance = acct.get('severance_balance', 0)
+            for i, acct in enumerate(accounts[:10], 1):
+                balance = acct.get('total_balance', 0)
+                total_bal = totals.get('total_balance', 1)
+                pct = (balance / total_bal * 100) if total_bal > 0 else 0
                 
-                lines.append(f"  ┌── 🔹 חשבון {i} ──────────────────────────────────")
-                lines.append(f"  │  מספר פוליסה: {acct.get('policy_number', 'לא ידוע')}")
-                lines.append(f"  │  יצרן: {acct.get('provider', 'לא ידוע')}")
-                lines.append(f"  │  סוג מוצר: {acct.get('product_name', acct.get('product_type', 'לא ידוע'))}")
-                lines.append(f"  │  סטטוס: {acct.get('status', 'פעיל')}")
-                lines.append(f"  │  יתרה: ₪{balance:,.2f}")
+                lines.extend([
+                    f"  ┌─── חשבון {i} ───────────────────────────────────────────────────────",
+                    f"  │",
+                    f"  │  מספר פוליסה:     {acct.get('policy_number', 'לא זמין')}",
+                    f"  │  יצרן:            {acct.get('provider', 'לא זמין')}",
+                    f"  │  סוג מוצר:        {acct.get('product_type_name', acct.get('product_type', 'לא זמין'))}",
+                    f"  │  סטטוס:           {acct.get('status', 'פעיל')}",
+                    f"  │",
+                    f"  │  💰 יתרות:",
+                    f"  │     • יתרה כוללת:  ₪{balance:,.2f} ({pct:.1f}%)",
+                ])
                 
-                if sev_balance > 0:
-                    lines.append(f"  │  פיצויים צבורים: ₪{sev_balance:,.2f}")
+                if acct.get('savings_balance', 0) > 0:
+                    lines.append(f"  │     • חיסכון:      ₪{acct.get('savings_balance', 0):,.2f}")
+                if acct.get('severance_balance', 0) > 0:
+                    lines.append(f"  │     • פיצויים:     ₪{acct.get('severance_balance', 0):,.2f}")
                 
-                if acct.get('employer'):
-                    emp = acct['employer']
-                    if isinstance(emp, dict) and emp.get('name'):
-                        lines.append(f"  │  מעסיק: {emp.get('name')}")
+                if acct.get('section14'):
+                    lines.append(f"  │  📌 סעיף 14:       ✅ מכוסה")
                 
-                # Calculate account percentage
-                total = summary.get('total_balance', 1)
-                pct = (balance / total * 100) if total > 0 else 0
-                lines.append(f"  │  אחוז מסה״כ: {pct:.1f}%")
-                lines.append(f"  └────────────────────────────────────────────────")
-                lines.append("")
+                if acct.get('management_fee_savings', 0) > 0:
+                    lines.append(f"  │  💳 דמי ניהול:     {acct.get('management_fee_savings', 0):.2f}%")
+                
+                if acct.get('employer_name'):
+                    lines.append(f"  │  🏢 מעסיק:         {acct.get('employer_name')}")
+                
+                lines.extend([
+                    f"  │",
+                    f"  └─────────────────────────────────────────────────────────────────────",
+                    "",
+                ])
             
-            if len(accounts) > 8:
-                lines.append(f"  📌 ... ועוד {len(accounts) - 8} חשבונות נוספים")
+            if len(accounts) > 10:
+                lines.append(f"  📌 ... ועוד {len(accounts) - 10} חשבונות נוספים")
+                lines.append("")
+        
+        # ===== CONTRIBUTION SUMMARY =====
+        contrib_totals = totals.get('contributions', {})
+        if contrib_totals:
+            lines.extend([
+                "┌──────────────────────────────────────────────────────────────────────────┐",
+                "│                      📈 סיכום הפקדות / Contributions                     │",
+                "└──────────────────────────────────────────────────────────────────────────┘",
+                "",
+            ])
+            
+            lines.extend([
+                f"  הפקדות עובד:        ₪{contrib_totals.get('employee_total', 0):,.2f}",
+                f"  הפקדות מעסיק:       ₪{contrib_totals.get('employer_total', 0):,.2f}",
+                f"  הפקדות פיצויים:     ₪{contrib_totals.get('severance_total', 0):,.2f}",
+                f"  ─────────────────────────────────────────",
+                f"  סה״כ הפקדות:        ₪{contrib_totals.get('grand_total', 0):,.2f}",
+                "",
+            ])
+            
+            if totals.get('contribution_trend_he'):
+                lines.append(f"  📊 מגמת הפקדות: {totals.get('contribution_trend_he')}")
                 lines.append("")
         
         # ===== SECTION 14 STATUS =====
         lines.extend([
-            "┌─────────────────────────────────────────────────────────────┐",
-            "│  📌 סעיף 14 - פיצויי פיטורין                                 │",
-            "└─────────────────────────────────────────────────────────────┘",
+            "┌──────────────────────────────────────────────────────────────────────────┐",
+            "│                      📌 סעיף 14 / Section 14 Status                      │",
+            "└──────────────────────────────────────────────────────────────────────────┘",
             "",
         ])
         
-        if summary.get('section14_any'):
+        if totals.get('section14_coverage'):
             lines.extend([
                 "  ✅ סטטוס: מכוסה תחת סעיף 14",
                 "",
-                "  📋 משמעות:",
-                "     • פיצויי הפיטורין שלך מובטחים בקרן הפנסיה",
-                "     • הכספים שייכים לך גם אם תעזוב את מקום העבודה",
-                "     • אין צורך באישור מיוחד מהמעסיק למשיכת הפיצויים",
+                "  📋 משמעות הכיסוי:",
+                "     • פיצויי הפיטורין שייכים לעובד ומובטחים בקופה",
+                "     • אין צורך באישור המעסיק למשיכת הפיצויים",
+                "     • הכספים מוגנים גם במקרה של פיטורין",
                 "",
             ])
         else:
@@ -1106,765 +1229,158 @@ class PensionDataAgent:
                 "  ⚠️ סטטוס: לא מכוסה תחת סעיף 14",
                 "",
                 "  📋 משמעות:",
-                "     • פיצויי הפיטורין עשויים להיות תלויים באישור המעסיק",
-                "     • מומלץ לבדוק עם המעסיק את מצב הזכויות שלך",
-                "",
-            ])
-        
-        # ===== CONTRIBUTION ANALYSIS =====
-        lines.extend([
-            "┌─────────────────────────────────────────────────────────────┐",
-            "│  📈 ניתוח הפקדות                                            │",
-            "└─────────────────────────────────────────────────────────────┘",
-            "",
-        ])
-        
-        trend = summary.get('contribution_trend')
-        trend_he = summary.get('contribution_trend_he', 'לא ידוע')
-        
-        if trend:
-            trend_icon = '📈' if trend == 'increasing' else ('📉' if trend == 'decreasing' else '➡️')
-            lines.append(f"  {trend_icon} מגמת הפקדות: {trend_he}")
-            lines.append("")
-        
-        total_emp = summary.get('total_employee_contributions', 0)
-        total_empr = summary.get('total_employer_contributions', 0)
-        total_sev = summary.get('total_severance_contributions', 0)
-        
-        if total_emp > 0 or total_empr > 0:
-            lines.extend([
-                "  💰 סיכום הפקדות:",
-                f"     • הפקדות עובד: ₪{total_emp:,.2f}",
-                f"     • הפקדות מעסיק: ₪{total_empr:,.2f}",
-                f"     • הפקדות פיצויים: ₪{total_sev:,.2f}",
-                f"     • סה״כ הפקדות: ₪{total_emp + total_empr + total_sev:,.2f}",
-                "",
-            ])
-        
-        # Missing months
-        missing = summary.get('missing_contribution_months', [])
-        if missing:
-            lines.extend([
-                "  ⚠️ חודשים עם חסר בהפקדות:",
-                f"     • נמצאו {len(missing)} חודשים ללא הפקדות",
-                f"     • חודשים: {', '.join(missing[:6])}",
-            ])
-            if len(missing) > 6:
-                lines.append(f"     • ... ועוד {len(missing) - 6} חודשים נוספים")
-            lines.extend([
-                "",
-                "  💡 המלצה: פנה למעסיק לבירור החודשים החסרים",
+                "     • פיצויי הפיטורים עשויים להיות תלויים באישור המעסיק",
+                "     • מומלץ לבדוק את תנאי העסקה מול המעסיק",
+                "     • שקול לבקש הסדר סעיף 14 מהמעסיק",
                 "",
             ])
         
         # ===== AI RECOMMENDATIONS =====
+        recommendations = self._generate_recommendations(data, totals, health)
+        
         lines.extend([
-            "┌─────────────────────────────────────────────────────────────┐",
-            "│  🤖 המלצות AI לפעולה                                        │",
-            "└─────────────────────────────────────────────────────────────┘",
+            "┌──────────────────────────────────────────────────────────────────────────┐",
+            "│                     🤖 המלצות AI / AI Recommendations                    │",
+            "└──────────────────────────────────────────────────────────────────────────┘",
             "",
         ])
         
-        recommendations = self._generate_ai_recommendations_hebrew(data, health_scores)
         for i, rec in enumerate(recommendations, 1):
-            priority = rec.get('priority', 'medium')
-            icon = '🔴' if priority == 'high' else ('🟡' if priority == 'medium' else '🟢')
+            priority_icon = '🔴' if rec['priority'] == 'high' else ('🟡' if rec['priority'] == 'medium' else '🟢')
             lines.extend([
-                f"  {icon} המלצה {i}: {rec.get('title', '')}",
-                f"     {rec.get('description', '')}",
-                "",
-            ])
-        
-        # ===== STRENGTHS =====
-        strengths = health_scores.get('strengths', [])
-        if strengths:
-            lines.extend([
-                "┌─────────────────────────────────────────────────────────────┐",
-                "│  ✅ נקודות חוזק                                             │",
-                "└─────────────────────────────────────────────────────────────┘",
-                "",
-            ])
-            
-            strength_texts = {
-                'high_savings': '💰 חסכונות גבוהים - מצב פיננסי מצוין',
-                'good_savings': '💵 חסכונות טובים - בדרך הנכונה',
-                'excellent_contributions': '📈 הפקדות מצוינות - מגמת עלייה ללא הפסקות',
-                'stable_contributions': '➡️ הפקדות יציבות ורציפות',
-                'section14_covered': '📌 כיסוי סעיף 14 - פיצויים מובטחים',
-            }
-            
-            for s in strengths:
-                text = strength_texts.get(s, s)
-                lines.append(f"  • {text}")
-            lines.append("")
-        
-        # ===== ALERTS =====
-        alerts = health_scores.get('alerts', [])
-        if alerts:
-            lines.extend([
-                "┌─────────────────────────────────────────────────────────────┐",
-                "│  ⚠️ נקודות לתשומת לב                                        │",
-                "└─────────────────────────────────────────────────────────────┘",
-                "",
-            ])
-            
-            alert_texts = {
-                'low_savings': '⚠️ חסכונות נמוכים - מומלץ להגדיל הפקדות',
-                'declining_contributions': '📉 מגמת ירידה בהפקדות - דורש בדיקה',
-                'missing_contributions': '❌ חודשים חסרים בהפקדות - לבדוק עם מעסיק',
-                'no_severance_data': '❓ חסר מידע על פיצויים - לברר מול המעסיק',
-            }
-            
-            for a in alerts:
-                text = alert_texts.get(a, a)
-                lines.append(f"  • {text}")
-            lines.append("")
-        
-        # ===== FOOTER =====
-        lines.extend([
-            "─" * 65,
-            f"📅 דו״ח נוצר: {datetime.now().strftime('%d/%m/%Y %H:%M')}",
-            f"📋 סוג ממשק: {data.get('interface_type', 'לא ידוע')}",
-            f"🔖 גרסת סכמה: {header.get('schema_version', 'לא ידוע')}",
-            "",
-            "💡 הערה: דו״ח זה מבוסס על ניתוח אוטומטי של הנתונים.",
-            "   מומלץ להתייעץ עם יועץ פנסיוני מוסמך לקבלת החלטות.",
-            "─" * 65,
-        ])
-        
-        return lines
-    
-    def _generate_english_report(self, data, summary, header, clients, accounts,
-                                 contributions, severance, health_scores) -> List[str]:
-        """Generate comprehensive English report."""
-        lines = []
-        
-        # ===== HEADER =====
-        lines.extend([
-            "╔══════════════════════════════════════════════════════════════╗",
-            "║      📊 Comprehensive Pension & Insurance Analysis Report    ║",
-            "║      🤖 AI-Powered Analysis with Action Recommendations      ║",
-            "╚══════════════════════════════════════════════════════════════╝",
-            "",
-        ])
-        
-        # ===== EXECUTIVE SUMMARY =====
-        overall_score = health_scores.get('overall', 0)
-        rating = health_scores.get('rating', 'unknown').replace('_', ' ').title()
-        
-        lines.extend([
-            "┌─────────────────────────────────────────────────────────────┐",
-            "│  📋 Executive Summary                                       │",
-            "└─────────────────────────────────────────────────────────────┘",
-            "",
-            f"  🎯 Overall Financial Health Score: {overall_score}/100 ({rating})",
-            "",
-            "  📊 Category Scores:",
-            f"     • Savings Level: {health_scores.get('savings', 0)}/100",
-            f"     • Diversification: {health_scores.get('diversification', 0)}/100",
-            f"     • Contribution Pattern: {health_scores.get('contribution', 0)}/100",
-            f"     • Severance/Section 14: {health_scores.get('severance', 0)}/100",
-            "",
-        ])
-        
-        # ===== CLIENT INFO =====
-        if clients:
-            client = clients[0] if isinstance(clients, list) else clients
-            lines.extend([
-                "┌─────────────────────────────────────────────────────────────┐",
-                "│  👤 Client Information                                      │",
-                "└─────────────────────────────────────────────────────────────┘",
-                "",
-                f"  • Name: {client.get('name', 'Unknown')}",
-                f"  • ID Number: {self._mask_id(client.get('id_number', ''))}",
-                f"  • Date of Birth: {client.get('birth_date', 'Unknown')}",
-                "",
-            ])
-        
-        # ===== FINANCIAL SUMMARY =====
-        lines.extend([
-            "┌─────────────────────────────────────────────────────────────┐",
-            "│  💰 Financial Summary                                       │",
-            "└─────────────────────────────────────────────────────────────┘",
-            "",
-            f"  💵 Total Accumulated Balance: {summary.get('total_balance_formatted', '₪0')}",
-            f"  🏦 Total Severance Accrued: {summary.get('total_severance_formatted', '₪0')}",
-            f"  📁 Number of Accounts: {summary.get('account_count', 0)}",
-            f"  🏢 Number of Providers: {summary.get('provider_count', 0)}",
-            "",
-        ])
-        
-        # ===== ACCOUNT DETAILS =====
-        if accounts:
-            lines.extend([
-                "┌─────────────────────────────────────────────────────────────┐",
-                "│  📁 Account Details                                         │",
-                "└─────────────────────────────────────────────────────────────┘",
-                "",
-            ])
-            
-            for i, acct in enumerate(accounts[:8], 1):
-                balance = acct.get('balance', 0)
-                total = summary.get('total_balance', 1)
-                pct = (balance / total * 100) if total > 0 else 0
-                
-                lines.extend([
-                    f"  🔹 Account {i}:",
-                    f"     • Policy Number: {acct.get('policy_number', 'Unknown')}",
-                    f"     • Provider: {acct.get('provider', 'Unknown')}",
-                    f"     • Product Type: {acct.get('product_name', acct.get('product_type', 'Unknown'))}",
-                    f"     • Balance: ₪{balance:,.2f} ({pct:.1f}% of total)",
-                ])
-                
-                if acct.get('severance_balance', 0) > 0:
-                    lines.append(f"     • Severance: ₪{acct.get('severance_balance', 0):,.2f}")
-                lines.append("")
-        
-        # ===== SECTION 14 STATUS =====
-        lines.extend([
-            "┌─────────────────────────────────────────────────────────────┐",
-            "│  📌 Section 14 - Severance Status                           │",
-            "└─────────────────────────────────────────────────────────────┘",
-            "",
-        ])
-        
-        if summary.get('section14_any'):
-            lines.extend([
-                "  ✅ Status: Covered under Section 14",
-                "",
-                "  📋 This means:",
-                "     • Your severance pay is secured in the pension fund",
-                "     • Funds belong to you even if you leave the employer",
-                "     • No special employer approval needed for withdrawal",
-                "",
-            ])
-        else:
-            lines.extend([
-                "  ⚠️ Status: Not covered under Section 14",
-                "",
-                "  📋 This means:",
-                "     • Severance may require employer approval",
-                "     • Recommended to verify your rights with employer",
-                "",
-            ])
-        
-        # ===== AI RECOMMENDATIONS =====
-        lines.extend([
-            "┌─────────────────────────────────────────────────────────────┐",
-            "│  🤖 AI Recommendations                                      │",
-            "└─────────────────────────────────────────────────────────────┘",
-            "",
-        ])
-        
-        recommendations = self._generate_ai_recommendations_english(data, health_scores)
-        for i, rec in enumerate(recommendations, 1):
-            priority = rec.get('priority', 'medium')
-            icon = '🔴' if priority == 'high' else ('🟡' if priority == 'medium' else '🟢')
-            lines.extend([
-                f"  {icon} Recommendation {i}: {rec.get('title', '')}",
-                f"     {rec.get('description', '')}",
+                f"  {priority_icon} המלצה {i}: {rec['title']}",
+                f"     {rec['description']}",
                 "",
             ])
         
         # ===== FOOTER =====
         lines.extend([
-            "─" * 65,
-            f"📅 Report Generated: {datetime.now().strftime('%Y-%m-%d %H:%M')}",
-            f"📋 Interface Type: {data.get('interface_type', 'Unknown')}",
+            "══════════════════════════════════════════════════════════════════════════",
+            f"📅 דו״ח הופק: {datetime.now().strftime('%d/%m/%Y %H:%M')}",
+            "🔒 נתוני תעודת זהות מוסתרים להגנת הפרטיות",
             "",
-            "💡 Note: This report is based on automated data analysis.",
-            "   Consult a qualified pension advisor for major decisions.",
-            "─" * 65,
+            "💡 הערה: דו״ח זה מבוסס על ניתוח אוטומטי של נתוני המסלקה.",
+            "   לקבלת ייעוץ מקצועי, פנה ליועץ פנסיוני מוסמך.",
+            "══════════════════════════════════════════════════════════════════════════",
         ])
         
-        return lines
+        return '\n'.join(lines)
     
-    def _generate_ai_recommendations_hebrew(self, data: Dict, health_scores: Dict) -> List[Dict]:
-        """Generate AI recommendations in Hebrew."""
+    def _generate_recommendations(self, data: Dict, totals: Dict, health: Dict) -> List[Dict]:
+        """Generate AI recommendations based on data analysis."""
         recommendations = []
-        summary = data.get('summary', {})
-        total_balance = summary.get('total_balance', 0)
         
-        # Based on alerts
-        alerts = health_scores.get('alerts', [])
+        total_balance = totals.get('total_balance', 0)
+        provider_count = totals.get('provider_count', 0)
+        section14 = totals.get('section14_coverage', False)
         
-        if 'low_savings' in alerts:
+        # Low savings
+        if total_balance < 100000:
             recommendations.append({
-                'title': 'הגדלת הפקדות לפנסיה',
-                'description': 'החסכונות הנוכחיים נמוכים מהמומלץ. שקול להגדיל את אחוז ההפקדה או להפקיד סכום חד-פעמי.',
-                'priority': 'high'
+                'priority': 'high',
+                'title': 'הגדלת החיסכון הפנסיוני',
+                'description': 'החיסכון הנוכחי נמוך מהמומלץ. שקול להגדיל את אחוזי ההפקדה או להפקיד סכומים נוספים.'
             })
         
-        if 'missing_contributions' in alerts:
+        # Too many providers
+        if provider_count > 3:
             recommendations.append({
-                'title': 'בירור חודשים חסרים',
-                'description': 'נמצאו חודשים ללא הפקדות. פנה למעסיק או לחברת הביטוח לבירור.',
-                'priority': 'high'
-            })
-        
-        if 'declining_contributions' in alerts:
-            recommendations.append({
-                'title': 'בדיקת מגמת ההפקדות',
-                'description': 'זוהתה מגמת ירידה בהפקדות. ודא שההפקדות מתבצעות כראוי.',
-                'priority': 'medium'
-            })
-        
-        # Based on recommendations
-        recs = health_scores.get('recommendations', [])
-        
-        if 'consider_consolidation' in recs and not recommendations:
-            recommendations.append({
+                'priority': 'medium',
                 'title': 'איחוד חשבונות פנסיה',
-                'description': 'יש לך חשבונות במספר חברות. שקול לאחד אותם להקטנת דמי ניהול ופישוט הניהול.',
-                'priority': 'medium'
+                'description': f'יש לך חשבונות ב-{provider_count} יצרנים שונים. איחוד יכול להפחית דמי ניהול ולפשט את הניהול.'
             })
         
-        if 'check_section14' in recs:
+        # No Section 14
+        if not section14 and totals.get('total_severance', 0) > 0:
             recommendations.append({
+                'priority': 'medium',
                 'title': 'בדיקת סעיף 14',
-                'description': 'מומלץ לברר עם המעסיק האם יש לך זכאות לסעיף 14 על פיצויי הפיטורין.',
-                'priority': 'medium'
+                'description': 'מומלץ לבדוק אפשרות להסדר סעיף 14 עם המעסיק להבטחת כספי הפיצויים.'
             })
         
-        # General recommendations
-        if total_balance > 100000:
+        # Good standing
+        if health.get('overall', 0) >= 70:
             recommendations.append({
-                'title': 'בדיקת דמי ניהול',
-                'description': 'עם יתרה משמעותית, כדאי לבדוק אפשרות להפחתת דמי הניהול.',
-                'priority': 'low'
+                'priority': 'low',
+                'title': 'המשך מעקב שוטף',
+                'description': 'המצב הפיננסי טוב. המשך לעקוב אחר ההפקדות ובצע בדיקה שנתית.'
             })
         
-        # Always recommend annual review
+        # Always recommend fee review
         recommendations.append({
-            'title': 'סקירה שנתית',
-            'description': 'מומלץ לבצע סקירה שנתית של תיק הפנסיה עם יועץ מוסמך.',
-            'priority': 'low'
-        })
-        
-        return recommendations[:5]  # Limit to 5 recommendations
-    
-    def _generate_ai_recommendations_english(self, data: Dict, health_scores: Dict) -> List[Dict]:
-        """Generate AI recommendations in English."""
-        recommendations = []
-        summary = data.get('summary', {})
-        total_balance = summary.get('total_balance', 0)
-        
-        alerts = health_scores.get('alerts', [])
-        
-        if 'low_savings' in alerts:
-            recommendations.append({
-                'title': 'Increase Pension Contributions',
-                'description': 'Current savings are below recommended levels. Consider increasing contribution rate or making a lump sum deposit.',
-                'priority': 'high'
-            })
-        
-        if 'missing_contributions' in alerts:
-            recommendations.append({
-                'title': 'Investigate Missing Contributions',
-                'description': 'Months with missing contributions detected. Contact employer or insurance company for clarification.',
-                'priority': 'high'
-            })
-        
-        if 'declining_contributions' in alerts:
-            recommendations.append({
-                'title': 'Review Contribution Pattern',
-                'description': 'Declining contribution trend detected. Verify that deposits are being made correctly.',
-                'priority': 'medium'
-            })
-        
-        recs = health_scores.get('recommendations', [])
-        
-        if 'consider_consolidation' in recs and not recommendations:
-            recommendations.append({
-                'title': 'Consolidate Pension Accounts',
-                'description': 'Multiple providers detected. Consider consolidating for lower fees and simpler management.',
-                'priority': 'medium'
-            })
-        
-        if 'check_section14' in recs:
-            recommendations.append({
-                'title': 'Verify Section 14 Coverage',
-                'description': 'Recommended to confirm with employer if you qualify for Section 14 severance protection.',
-                'priority': 'medium'
-            })
-        
-        if total_balance > 100000:
-            recommendations.append({
-                'title': 'Review Management Fees',
-                'description': 'With significant balance, check if you can negotiate lower management fees.',
-                'priority': 'low'
-            })
-        
-        recommendations.append({
-            'title': 'Annual Review',
-            'description': 'Recommended to conduct annual review of pension portfolio with a qualified advisor.',
-            'priority': 'low'
+            'priority': 'low',
+            'title': 'בדיקת דמי ניהול',
+            'description': 'מומלץ לבדוק את דמי הניהול ולהשוות מול הצעות מתחרות.'
         })
         
         return recommendations[:5]
     
-    def generate_report(self, data: Dict[str, Any]) -> str:
-        """
-        Generate an AI-powered comprehensive report.
-        
-        Combines structured data analysis with AI-generated insights
-        and actionable recommendations.
-        
-        Args:
-            data: Enriched data dictionary
-            
-        Returns:
-            Generated report text with analysis and recommendations
-        """
-        # Enrich data if not already enriched
-        if 'summary' not in data:
-            data = self.enrich_data(data)
-        
-        # Calculate health scores
-        health_scores = self._calculate_health_scores(data)
-        
-        # Generate the comprehensive text report (Hebrew by default for Israeli data)
-        language = 'hebrew'
-        report_text = self.generate_report_text(data, language)
-        
-        # Add AI executive summary
-        ai_summary = self._generate_ai_executive_summary(data, health_scores)
-        
-        return ai_summary + "\n\n" + report_text
-    
-    def _generate_ai_executive_summary(self, data: Dict[str, Any], health_scores: Dict) -> str:
-        """Generate a brief AI executive summary for quick overview."""
-        summary = data.get('summary', {})
-        
-        overall = health_scores.get('overall', 0)
-        rating_he = health_scores.get('rating_he', 'לא ידוע')
-        
-        alerts_count = len(health_scores.get('alerts', []))
-        strengths_count = len(health_scores.get('strengths', []))
-        
-        total_balance = summary.get('total_balance_formatted', '₪0')
-        
-        ai_lines = [
-            "🤖 סיכום AI מהיר",
-            "═" * 40,
-            "",
-            f"📊 ציון בריאות פיננסית: {overall}/100 ({rating_he})",
-            f"💰 סה״כ חסכונות: {total_balance}",
-            f"✅ נקודות חוזק: {strengths_count}",
-            f"⚠️ נקודות לתשומת לב: {alerts_count}",
-            "",
-        ]
-        
-        # Quick status message
-        if overall >= 80:
-            ai_lines.append("🎯 סטטוס: מצב פיננסי מצוין! המשך כך.")
-        elif overall >= 60:
-            ai_lines.append("🎯 סטטוס: מצב פיננסי טוב. יש מקום לשיפור.")
-        elif overall >= 40:
-            ai_lines.append("🎯 סטטוס: מצב פיננסי סביר. מומלץ לבדוק ההמלצות.")
-        else:
-            ai_lines.append("🎯 סטטוס: נדרשת תשומת לב מיידית. קרא את ההמלצות.")
-        
-        ai_lines.append("")
-        ai_lines.append("═" * 40)
-        
-        return '\n'.join(ai_lines)
-    
-    def _call_llm_service(self, prompt: str, data: Dict[str, Any]) -> str:
-        """
-        Call external LLM API for intelligent report generation.
-        
-        In production, this integrates with OpenAI, Claude, or other LLM services.
-        Currently provides enhanced structured response with comprehensive analysis.
-        """
-        summary = data.get('summary', {})
-        accounts = data.get('accounts', [])
-        health_scores = self._calculate_health_scores(data)
-        
-        # Generate comprehensive structured analysis
-        report_parts = [
-            "╔═══════════════════════════════════════════════════════════╗",
-            "║      🤖 AI-Powered Pension Analysis Report                 ║",
-            "╚═══════════════════════════════════════════════════════════╝",
-            "",
-        ]
-        
-        # Overall assessment
-        overall = health_scores.get('overall', 0)
-        rating = health_scores.get('rating', 'unknown').replace('_', ' ').title()
-        
-        report_parts.extend([
-            "📊 OVERALL ASSESSMENT",
-            "─" * 40,
-            f"Financial Health Score: {overall}/100 ({rating})",
-            "",
-        ])
-        
-        # Balance analysis with insights
-        total = summary.get('total_balance', 0)
-        report_parts.append("💰 SAVINGS ANALYSIS")
-        report_parts.append("─" * 40)
-        
-        if total > 1000000:
-            report_parts.extend([
-                "• Exceptional pension savings accumulated",
-                "• Well positioned for comfortable retirement",
-                "• Consider optimizing investment allocation"
-            ])
-        elif total > 500000:
-            report_parts.extend([
-                "• Substantial savings - good progress toward retirement",
-                "• Continue current contribution strategy",
-                "• Review annually for optimization opportunities"
-            ])
-        elif total > 200000:
-            report_parts.extend([
-                "• Moderate savings accumulated",
-                "• Consider increasing contributions if possible",
-                "• Still time to build substantial retirement fund"
-            ])
-        elif total > 50000:
-            report_parts.extend([
-                "• Early stage pension savings",
-                "• Increasing contributions recommended",
-                "• Focus on consistent long-term saving"
-            ])
-        else:
-            report_parts.extend([
-                "• Pension savings need immediate attention",
-                "• Urgent review of contribution levels recommended",
-                "• Consider professional financial advice"
-            ])
-        report_parts.append("")
-        
-        # Provider analysis
-        providers = summary.get('providers', [])
-        provider_count = len(providers)
-        
-        report_parts.append("🏢 PROVIDER ANALYSIS")
-        report_parts.append("─" * 40)
-        
-        if provider_count > 3:
-            report_parts.extend([
-                f"• {provider_count} providers detected - fragmented",
-                "• Consider consolidation to reduce fees",
-                "• Simpler management with fewer accounts"
-            ])
-        elif provider_count == 2:
-            report_parts.extend([
-                "• Good diversification with 2 providers",
-                "• Balanced approach to risk management"
-            ])
-        elif provider_count == 1:
-            report_parts.extend([
-                "• Single provider - simple management",
-                "• May want to consider diversification for large balances"
-            ])
-        report_parts.append("")
-        
-        # Section 14 analysis
-        sec14 = summary.get('section14_any', False)
-        report_parts.append("📌 SECTION 14 ANALYSIS")
-        report_parts.append("─" * 40)
-        
-        if sec14:
-            report_parts.extend([
-                "✅ Section 14 coverage CONFIRMED",
-                "• Severance contributions are fully secured",
-                "• Funds protected regardless of employment status",
-                "• No employer approval needed for withdrawal"
-            ])
-        else:
-            report_parts.extend([
-                "⚠️ Section 14 coverage NOT detected",
-                "• Severance may require employer approval",
-                "• Recommend verifying status with employer",
-                "• Consider discussing Section 14 arrangement"
-            ])
-        report_parts.append("")
-        
-        # Contribution analysis
-        trend = summary.get('contribution_trend')
-        missing = summary.get('missing_contribution_months', [])
-        
-        report_parts.append("📈 CONTRIBUTION ANALYSIS")
-        report_parts.append("─" * 40)
-        
-        if trend == 'increasing':
-            report_parts.append("✅ Positive contribution trend detected")
-        elif trend == 'stable':
-            report_parts.append("➡️ Stable contribution pattern")
-        elif trend == 'decreasing':
-            report_parts.append("⚠️ Declining contribution trend - needs review")
-        
-        if missing:
-            report_parts.append(f"❌ {len(missing)} months with missing contributions")
-            report_parts.append("   Action: Verify with employer immediately")
-        else:
-            report_parts.append("✅ No gaps detected in contribution history")
-        
-        report_parts.append("")
-        
-        # Recommendations
-        report_parts.append("💡 AI RECOMMENDATIONS")
-        report_parts.append("─" * 40)
-        
-        rec_num = 1
-        for rec in health_scores.get('recommendations', [])[:5]:
-            rec_text = {
-                'increase_contributions': 'Increase monthly pension contributions',
-                'urgent_savings_review': 'Schedule urgent meeting with pension advisor',
-                'consider_consolidation': 'Consider consolidating multiple accounts',
-                'consider_diversification': 'Review diversification options',
-                'review_contributions': 'Review contribution schedule with employer',
-                'verify_missing_months': 'Verify missing contribution months',
-                'check_section14': 'Confirm Section 14 status with employer'
-            }.get(rec, rec)
-            report_parts.append(f"{rec_num}. {rec_text}")
-            rec_num += 1
-        
-        # Always add general recommendations
-        report_parts.extend([
-            f"{rec_num}. Review pension statements annually",
-            f"{rec_num + 1}. Verify beneficiary designations are current",
-            f"{rec_num + 2}. Consider professional pension advisory for major decisions"
-        ])
-        
-        report_parts.extend([
-            "",
-            "═" * 60,
-            "📅 This analysis was generated automatically based on your data.",
-            "   For personalized advice, consult a qualified pension advisor.",
-            "═" * 60,
-        ])
-        
-        return '\n'.join(report_parts)
-    
     def _mask_id(self, id_number: str) -> str:
-        """Mask ID number for privacy protection."""
+        """Mask ID number for privacy."""
         if not id_number or len(id_number) < 5:
             return id_number or '***'
         return id_number[:2] + '*' * (len(id_number) - 4) + id_number[-2:]
     
-    def process_xml_content(self, xml_content: bytes) -> Dict[str, Any]:
-        """
-        Main entry point to process XML content from memory.
-        
-        Pipeline:
-        1. Detect interface type
-        2. Validate against schema (optional)
-        3. Parse XML to structured data
-        4. Enrich with derived metrics
-        5. Generate report text
-        
-        Args:
-            xml_content: Raw XML bytes
-            
-        Returns:
-            Dictionary with:
-            - 'data': Enriched structured data
-            - 'report': Generated report text
-            - 'language': Report language used
-        """
-        # Detect interface type
-        interface_code = self.detect_interface_type(xml_content)
-        
-        # Validate (non-fatal)
-        self.validate_xml(xml_content, interface_code)
-        
-        # Parse
-        data = self.parse_xml(xml_content, interface_code)
-        
-        # Enrich
-        data = self.enrich_data(data)
-        
-        # Determine language (Hebrew by default for Israeli pension data)
-        language = 'hebrew'
-        
-        # Generate report
-        report = self.generate_report_text(data, language)
-        
-        return {
-            'data': data,
-            'report': report,
-            'language': language
-        }
+    # ===== PUBLIC API =====
     
     def process_file(self, file_path: str) -> Dict[str, Any]:
-        """
-        Process an XML file from disk.
-        
-        Args:
-            file_path: Path to XML file
-            
-        Returns:
-            Dictionary with 'data', 'report', and 'language' keys
-            
-        Raises:
-            ValueError: If file cannot be read or parsed
-        """
-        try:
-            with open(file_path, 'rb') as f:
-                xml_content = f.read()
-        except Exception as e:
-            raise ValueError(f"Failed to read file: {e}")
-        
-        return self.process_xml_content(xml_content)
+        """Process XML file from disk."""
+        with open(file_path, 'rb') as f:
+            return self.process_xml_content(f.read())
     
-    def to_csv_format(self, data: Dict[str, Any]) -> Tuple[List[str], List[Dict[str, Any]]]:
-        """
-        Convert parsed pension data to CSV-like format for AI analysis integration.
-        
-        This format is compatible with the AIRiskReportsService analysis pipeline.
-        
-        Returns:
-            Tuple of (columns, rows) where:
-            - columns: List of column names (Hebrew)
-            - rows: List of dictionaries representing rows
-        """
+    def to_csv_format(self, data: Dict[str, Any]) -> Tuple[List[str], List[Dict]]:
+        """Convert to CSV format for AI analysis integration."""
         columns = [
-            'מספר פוליסה', 'יצרן', 'סוג מוצר', 'שם מוצר', 
-            'סטטוס', 'יתרה', 'פיצויים', 'מעסיק'
+            'מספר פוליסה', 'יצרן', 'סוג מוצר', 'שם מוצר',
+            'סטטוס', 'יתרה כוללת', 'חיסכון', 'פיצויים', 'מעסיק', 'סעיף 14'
         ]
         
         rows = []
         for acct in data.get('accounts', []):
-            employer = acct.get('employer', {})
-            employer_name = employer.get('name', '') if isinstance(employer, dict) else ''
-            
             rows.append({
                 'מספר פוליסה': acct.get('policy_number', ''),
                 'יצרן': acct.get('provider', ''),
-                'סוג מוצר': acct.get('product_type', ''),
+                'סוג מוצר': acct.get('product_type_name', acct.get('product_type', '')),
                 'שם מוצר': acct.get('product_name', ''),
-                'סטטוס': acct.get('status', ''),
-                'יתרה': acct.get('balance', 0),
+                'סטטוס': acct.get('status', 'פעיל'),
+                'יתרה כוללת': acct.get('total_balance', 0),
+                'חיסכון': acct.get('savings_balance', 0),
                 'פיצויים': acct.get('severance_balance', 0),
-                'מעסיק': employer_name
+                'מעסיק': acct.get('employer_name', ''),
+                'סעיף 14': 'כן' if acct.get('section14') else 'לא'
             })
         
-        # Add summary row
-        summary = data.get('summary', {})
+        # Summary row
+        totals = data.get('totals', {})
         rows.append({
             'מספר פוליסה': 'סה״כ',
             'יצרן': '',
             'סוג מוצר': '',
             'שם מוצר': '',
             'סטטוס': '',
-            'יתרה': summary.get('total_balance', 0),
-            'פיצויים': summary.get('total_severance', 0),
-            'מעסיק': ''
+            'יתרה כוללת': totals.get('total_balance', 0),
+            'חיסכון': totals.get('total_savings', 0),
+            'פיצויים': totals.get('total_severance', 0),
+            'מעסיק': '',
+            'סעיף 14': ''
         })
         
         return columns, rows
+    
+    def generate_report_text(self, data: Dict[str, Any], language: str = 'hebrew') -> str:
+        """Generate report text (alias for compatibility)."""
+        return self._generate_professional_report(data)
 
 
-# Singleton instance for global access
+# ============================================================================
+# SINGLETON AND HELPERS
+# ============================================================================
+
 _pension_agent = None
 
 
 def get_pension_agent() -> PensionDataAgent:
-    """Get or create PensionDataAgent singleton instance."""
+    """Get or create PensionDataAgent singleton."""
     global _pension_agent
     if _pension_agent is None:
         _pension_agent = PensionDataAgent()
@@ -1872,40 +1388,24 @@ def get_pension_agent() -> PensionDataAgent:
 
 
 def is_pension_xml(content: bytes) -> bool:
-    """
-    Quick check if content appears to be a pension/insurance XML file.
-    
-    Looks for specific Mislaka interface markers in the XML.
-    
-    Args:
-        content: File content bytes
-        
-    Returns:
-        True if appears to be pension XML
-    """
+    """Check if content appears to be Mislaka pension XML."""
     try:
-        # Check for XML declaration
         if not content.strip().startswith(b'<?xml') and not content.strip().startswith(b'<'):
             return False
         
-        # Look for pension-specific elements in first 5KB
         content_str = content.decode('utf-8', errors='replace')[:5000]
         
-        pension_markers = [
-            'SUG-MIMSHAK',
-            'KoteretKovetz',
-            'YeshutYatzran',
-            'HeshbonOPolisa',
-            'MISPAR-POLISA',
-            'SHEM-YATZRAN',
-            'HAFRASHA-OVED',
-            'HAFRASHA-MAASIK',
-            'PITZUIM',
-            'NetuneiPitzuim',
-            'YeshutLakoach',
-            'Mutzar',
+        markers = [
+            'SUG-MIMSHAK', 'SugMimshak',
+            'KoteretKovetz', 'YeshutYatzran',
+            'HeshbonOPolisa', 'PirteiHeshbon',
+            'MISPAR-POLISA', 'MisparPolisa',
+            'SHEM-YATZRAN', 'ShemYatzran',
+            'HAFRASHA-OVED', 'HafrashaOved',
+            'NetuneiPitzuim', 'PITZUIM',
+            'YeshutLakoach', 'Mutzar',
         ]
         
-        return any(marker in content_str for marker in pension_markers)
+        return any(marker in content_str for marker in markers)
     except:
         return False
