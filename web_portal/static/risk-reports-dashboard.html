@@ -2303,6 +2303,112 @@
       
       container.innerHTML = html;
     }
+
+    function renderFinancialStats(summary) {
+      const toNumber = (val) => {
+        if (val === null || val === undefined) return 0;
+        if (typeof val === 'number') return val;
+        const cleaned = String(val).replace(/[,₪"]/g, '').trim();
+        const parsed = Number(cleaned);
+        return Number.isFinite(parsed) ? parsed : 0;
+      };
+      const client = summary.client || {};
+      const totals = summary.totals || {};
+      const policies = summary.policies || [];
+      const section14 = summary.section14;
+
+      const clientName = client.full_name || client.client_name || 'לא זמין';
+      const idNumber = client.id_number || 'לא זמין';
+      const totalSavings = toNumber(totals.total_savings || totals.total_balance || 0);
+      const totalCoverage = toNumber(totals.total_coverage || 0);
+      const totalPremium = toNumber(totals.total_monthly_premium || 0);
+      const policyCount = totals.policy_count || policies.length || 0;
+
+      document.getElementById('statsGrid').innerHTML = `
+        <div class="stat-card fade-in" style="grid-column: span 2; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white;">
+          <h5 style="color: white;">👤 פרטי לקוח</h5>
+          <div class="value" style="font-size: 1.5rem; color: white;">${clientName}</div>
+          <small style="color: rgba(255,255,255,0.9);">ת.ז: ${idNumber}</small>
+        </div>
+        <div class="stat-card fade-in" style="background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%); color: white;">
+          <h5 style="color: white;">💰 סה״כ חסכונות</h5>
+          <div class="value" style="font-size: 1.8rem; color: white;">₪${totalSavings.toLocaleString('he-IL')}</div>
+          <small style="color: rgba(255,255,255,0.9);">צבירה כוללת</small>
+        </div>
+        ${totalCoverage > 0 ? `
+        <div class="stat-card fade-in">
+          <h5>🛡️ סכומי כיסוי</h5>
+          <div class="value" style="font-size: 1.3rem;">₪${totalCoverage.toLocaleString('he-IL')}</div>
+          <small>כיסוי ביטוחי כולל</small>
+        </div>
+        ` : ''}
+        ${totalPremium > 0 ? `
+        <div class="stat-card fade-in">
+          <h5>💳 פרמיה חודשית</h5>
+          <div class="value" style="font-size: 1.3rem;">₪${totalPremium.toLocaleString('he-IL')}</div>
+          <small>סה״כ פרמיות</small>
+        </div>
+        ` : ''}
+        <div class="stat-card fade-in">
+          <h5>📊 מספר פוליסות</h5>
+          <div class="value" style="font-size: 2rem;">${policyCount}</div>
+          <small>פוליסות/תוכניות</small>
+        </div>
+        <div class="stat-card fade-in" style="background: #f8fafc;">
+          <h5>📌 סעיף 14</h5>
+          <div class="value" style="font-size: 1.1rem;">${section14 === true ? '✅ מכוסה' : section14 === false ? '⚠️ לא מכוסה' : '—'}</div>
+          <small>מיסוי ופיצויים</small>
+        </div>
+      `;
+    }
+
+    function renderFinancialInsights(summary) {
+      const container = document.getElementById('insightsGrid');
+      const policies = summary.policies || [];
+      const projection = summary.savings_projection || {};
+      const toNumber = (val) => {
+        if (val === null || val === undefined) return 0;
+        if (typeof val === 'number') return val;
+        const cleaned = String(val).replace(/[,₪"]/g, '').trim();
+        const parsed = Number(cleaned);
+        return Number.isFinite(parsed) ? parsed : 0;
+      };
+      let html = '';
+
+      if (projection.with_contributions || projection.without_contributions) {
+        html += `
+          <div class="insight-card fade-in">
+            <h5>📈 תחזית חיסכון לטווח ארוך</h5>
+            <div class="insight-detail" style="direction: rtl; text-align: right;">
+              ${projection.with_contributions ? `<div class="stat-detail"><span class="label">עם הפקדות</span><span class="val">${projection.with_contributions}</span></div>` : ''}
+              ${projection.without_contributions ? `<div class="stat-detail"><span class="label">ללא הפקדות</span><span class="val">${projection.without_contributions}</span></div>` : ''}
+            </div>
+            <span class="insight-badge">תחזית</span>
+          </div>
+        `;
+      }
+
+      policies.slice(0, 6).forEach((policy, idx) => {
+        html += `
+          <div class="insight-card fade-in" style="background: #f8fafc;">
+            <h5 style="color: #1e40af;">📄 פוליסה ${idx + 1}</h5>
+            <div class="insight-detail" style="direction: rtl; text-align: right;">
+              ${policy.provider ? `<div class="stat-detail"><span class="label">חברה</span><span class="val">${policy.provider}</span></div>` : ''}
+              ${policy.policy_number ? `<div class="stat-detail"><span class="label">מספר פוליסה</span><span class="val">${policy.policy_number}</span></div>` : ''}
+              ${policy.product_type ? `<div class="stat-detail"><span class="label">סוג מוצר</span><span class="val">${policy.product_type}</span></div>` : ''}
+              ${toNumber(policy.total_balance) > 0 ? `<div class="stat-detail"><span class="label">צבירה</span><span class="val">₪${toNumber(policy.total_balance).toLocaleString('he-IL')}</span></div>` : ''}
+              ${toNumber(policy.coverage_amount) > 0 ? `<div class="stat-detail"><span class="label">כיסוי</span><span class="val">₪${toNumber(policy.coverage_amount).toLocaleString('he-IL')}</span></div>` : ''}
+            </div>
+            <span class="insight-badge">${policy.provider || 'פוליסה'}</span>
+          </div>
+        `;
+      });
+
+      if (!html) {
+        html = '<p style="color: var(--text-muted);">אין תובנות פיננסיות זמינות.</p>';
+      }
+      container.innerHTML = html;
+    }
     
     function renderStandardStats(analysis) {
       // Standard statistical analysis (non-pension data)
@@ -2381,9 +2487,10 @@
     function displayResults(analysis, report) {
       // Check if this is pension/Mislaka data
       const isPensionData = report.metadata?.is_pension_data || 
-                           report.metadata?.pension_data ||
-                           report.language === 'hebrew';
+                           report.metadata?.pension_data;
+      const isFinancialReport = report.metadata?.report_focus === 'financial';
       const pensionData = report.metadata?.pension_data;
+      const financialSummary = report.metadata?.financial_summary;
       
       // Update the insights panel header based on data type
       const insightsHeader = document.querySelector('.insights-header');
@@ -2398,6 +2505,16 @@
         }
         renderPensionStats(pensionData);
         renderPensionInsights(pensionData);
+      } else if (isFinancialReport && financialSummary) {
+        // FINANCIAL REPORT MODE: Show financial/insurance summary
+        if (insightsHeader) {
+          insightsHeader.innerHTML = `
+            <h3>💼 דו״ח פיננסי וביטוחי</h3>
+            <p style="margin-top: 0.5rem; opacity: 0.9; font-size: 0.9rem;">סיכום פיננסי, כיסויים, סטטוס חיסכון וסעיף 14</p>
+          `;
+        }
+        renderFinancialStats(financialSummary);
+        renderFinancialInsights(financialSummary);
       } else {
         // REGULAR MODE: Show standard analysis
         if (insightsHeader) {

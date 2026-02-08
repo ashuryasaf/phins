@@ -2498,6 +2498,8 @@ class AIRiskReportsService:
         doc_data = None
         pension_data = None
         pension_report = None
+        financial_summary = None
+        report_focus = "standard"
         if analysis.document_id in self.documents:
             doc = self.documents[analysis.document_id]
             doc_data = doc.get('parsed_data', {})
@@ -2506,11 +2508,27 @@ class AIRiskReportsService:
                 pension_data = doc_data.get('pension_data')
                 pension_report = doc_data.get('pension_report')
         
+        if pension_data:
+            report_focus = "pension"
+        elif doc_data and self._is_financial_report(analysis, doc_data):
+            report_focus = "financial"
+            financial_summary = self._build_financial_summary(doc_data)
+        
         # Generate sections based on data type (now with original data and pension data)
-        sections = self._generate_sections(analysis, lang, doc_data, pension_data, pension_report)
+        sections = self._generate_sections(
+            analysis,
+            lang,
+            doc_data,
+            pension_data,
+            pension_report,
+            financial_summary,
+            report_focus
+        )
         
         # Generate charts - pass pension_data for specialized pension charts
         charts = self._generate_charts(analysis, pension_data)
+        if report_focus == "financial" and not pension_data:
+            charts = []
         
         # Generate recommendations
         recommendations = self._generate_recommendations(analysis, lang)
@@ -2554,6 +2572,8 @@ class AIRiskReportsService:
                 # Include raw pension data for frontend display
                 'pension_data': pension_data if pension_data else None,
                 'is_pension_data': pension_data is not None or pension_report is not None,
+                'report_focus': report_focus,
+                'financial_summary': financial_summary
             }
         )
         
@@ -2567,17 +2587,21 @@ class AIRiskReportsService:
     def _generate_sections(self, analysis: AnalysisResult, lang: str, 
                           doc_data: Dict[str, Any] = None,
                           pension_data: Dict[str, Any] = None,
-                          pension_report: str = None) -> List[ReportSection]:
+                          pension_report: str = None,
+                          financial_summary: Dict[str, Any] = None,
+                          report_focus: str = "standard") -> List[ReportSection]:
         """Generate comprehensive report sections with AI/BI insights and actual data content"""
         sections = []
         is_hebrew = lang == 'hebrew'
+        is_financial = report_focus in ["financial", "pension"]
         
-        # 1. Executive Summary
-        sections.append(ReportSection(
-            title='תקציר מנהלים' if is_hebrew else 'Executive Summary',
-            content=analysis.summary,
-            order=1
-        ))
+        # 1. Executive Summary (optional for financial reports)
+        if not is_financial:
+            sections.append(ReportSection(
+                title='תקציר מנהלים' if is_hebrew else 'Executive Summary',
+                content=analysis.summary,
+                order=1
+            ))
         
         # 2. PENSION DATA SECTION - Display pension report from PensionDataAgent
         if pension_data or pension_report:
@@ -2588,9 +2612,19 @@ class AIRiskReportsService:
                     content=pension_section,
                     order=2
                 ))
+
+        # 2b. Financial report section (non-pension)
+        if is_financial and not pension_data and financial_summary:
+            financial_section = self._generate_financial_report_section(financial_summary, is_hebrew)
+            if financial_section:
+                sections.append(ReportSection(
+                    title='דו״ח פיננסי וביטוחי' if is_hebrew else 'Financial & Insurance Report',
+                    content=financial_section,
+                    order=2
+                ))
         
         # 3. ACTUAL DATA CONTENT SECTION - Show extracted data from the files
-        if doc_data:
+        if doc_data and not is_financial:
             data_content_section = self._generate_data_content_section(doc_data, analysis, is_hebrew)
             if data_content_section:
                 sections.append(ReportSection(
@@ -2600,23 +2634,25 @@ class AIRiskReportsService:
                 ))
         
         # 3. Hebrew Insurance Details (if extracted)
-        hebrew_factors = [f for f in analysis.extracted_factors if f.category == 'hebrew_insurance']
-        if hebrew_factors:
-            hebrew_content = self._generate_hebrew_insurance_section(hebrew_factors, is_hebrew)
-            sections.append(ReportSection(
-                title='פרטי פוליסת ביטוח' if is_hebrew else 'Insurance Policy Details',
-                content=hebrew_content,
-                order=3
-            ))
+        if not is_financial:
+            hebrew_factors = [f for f in analysis.extracted_factors if f.category == 'hebrew_insurance']
+            if hebrew_factors:
+                hebrew_content = self._generate_hebrew_insurance_section(hebrew_factors, is_hebrew)
+                sections.append(ReportSection(
+                    title='פרטי פוליסת ביטוח' if is_hebrew else 'Insurance Policy Details',
+                    content=hebrew_content,
+                    order=3
+                ))
         
         # 4. Data Profile Overview
-        total_records = analysis.key_metrics.get('total_records', 0)
-        numeric_cols = analysis.key_metrics.get('numeric_columns', 0)
-        cat_cols = analysis.key_metrics.get('categorical_columns', 0)
-        completeness = analysis.key_metrics.get('data_completeness', 100)
-        
-        if is_hebrew:
-            profile_content = f"""📊 פרופיל הנתונים:
+        if not is_financial:
+            total_records = analysis.key_metrics.get('total_records', 0)
+            numeric_cols = analysis.key_metrics.get('numeric_columns', 0)
+            cat_cols = analysis.key_metrics.get('categorical_columns', 0)
+            completeness = analysis.key_metrics.get('data_completeness', 100)
+            
+            if is_hebrew:
+                profile_content = f"""📊 פרופיל הנתונים:
 
 • סה"כ רשומות: {total_records}
 • שדות מספריים: {numeric_cols}
@@ -2625,8 +2661,8 @@ class AIRiskReportsService:
 • סוג נתונים: {analysis.data_classification.value}
 • שפה: {analysis.language_name}
 • רמת ביטחון: {analysis.confidence:.0%}"""
-        else:
-            profile_content = f"""📊 Data Profile:
+            else:
+                profile_content = f"""📊 Data Profile:
 
 • Total Records: {total_records}
 • Numeric Fields: {numeric_cols}
@@ -2635,17 +2671,17 @@ class AIRiskReportsService:
 • Data Type: {analysis.data_classification.value}
 • Language: {analysis.language_name}
 • Confidence Level: {analysis.confidence:.0%}"""
-        
-        sections.append(ReportSection(
-            title='פרופיל נתונים' if is_hebrew else 'Data Profile',
-            content=profile_content,
-            order=2
-        ))
+            
+            sections.append(ReportSection(
+                title='פרופיל נתונים' if is_hebrew else 'Data Profile',
+                content=profile_content,
+                order=2
+            ))
         
         # 3. Statistical Analysis (BI Metrics)
         # SKIP for pension data - the pension report already shows meaningful data clearly
         # Statistical analysis of IDs/policy numbers is meaningless
-        if not pension_report and not pension_data:  # Only show statistical analysis for non-pension data
+        if (not pension_report and not pension_data) and not is_financial:
             stat_factors = [f for f in analysis.extracted_factors if f.category == 'statistical']
             if stat_factors:
                 if is_hebrew:
@@ -2679,7 +2715,7 @@ class AIRiskReportsService:
         
         # 4. Correlation Insights
         top_corr = analysis.key_metrics.get('top_correlation')
-        if top_corr:
+        if top_corr and not is_financial:
             if is_hebrew:
                 corr_content = f"""🔗 מתאמים שזוהו:
 
@@ -2702,7 +2738,7 @@ class AIRiskReportsService:
             ))
         
         # 5. Patterns & Trends
-        if analysis.patterns_found:
+        if analysis.patterns_found and not is_financial:
             if is_hebrew:
                 patterns_lines = ['🔍 דפוסים ומגמות שזוהו:\n']
                 for i, p in enumerate(analysis.patterns_found, 1):
@@ -2723,7 +2759,7 @@ class AIRiskReportsService:
             ))
         
         # 6. Anomalies & Warnings
-        if analysis.anomalies:
+        if analysis.anomalies and not is_financial:
             if is_hebrew:
                 anomaly_lines = ['⚠️ חריגות ואזהרות:\n']
                 severity_map = {'critical': '🔴 קריטי', 'high': '🟠 גבוה', 'medium': '🟡 בינוני', 'low': '🟢 נמוך'}
@@ -2749,6 +2785,14 @@ class AIRiskReportsService:
         
         # 7. Risk Assessment
         risk_score = analysis.risk_score
+        if is_financial:
+            # Optional AI assessment for financial reports
+            sections.append(ReportSection(
+                title='הערכת AI (אופציונלי)' if is_hebrew else 'AI Assessment (Optional)',
+                content=analysis.summary,
+                order=7
+            ))
+            return sections
         if risk_score < 30:
             risk_level = 'נמוך' if is_hebrew else 'Low'
             risk_color = '🟢'
@@ -3272,6 +3316,278 @@ Factors Affecting Score:
                 content_lines.append(f"📈 Average Importance: {avg_importance:.0%}")
         
         return '\n'.join(content_lines)
+
+    def _is_financial_report(self, analysis: AnalysisResult, doc_data: Dict[str, Any]) -> bool:
+        """Determine if report should use financial/insurance layout."""
+        if analysis.data_classification in [DataType.INSURANCE, DataType.SAVINGS, DataType.INVESTMENT]:
+            return True
+        return self._is_key_value_dataset(doc_data)
+
+    def _is_key_value_dataset(self, doc_data: Dict[str, Any]) -> bool:
+        """Detect property/value style datasets."""
+        columns = [str(c).strip().lower() for c in doc_data.get('columns', [])]
+        if not columns:
+            return False
+        property_cols = {'property', 'field', 'label', 'name', 'parameter', 'שדה', 'פרמטר', 'תיאור', 'מאפיין', 'שם'}
+        value_cols = {'value', 'amount', 'data', 'ערך', 'נתון', 'סכום', 'תוכן'}
+        if any(col in property_cols for col in columns) and any(col in value_cols for col in columns):
+            return True
+        # Heuristic: common in PDF extraction
+        if 'property' in columns and 'value' in columns:
+            return True
+        return False
+
+    def _build_financial_summary(self, doc_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Build financial/insurance summary from raw rows."""
+        rows = doc_data.get('rows', [])
+        columns = doc_data.get('columns', [])
+
+        summary = {
+            'client': {},
+            'policies': [],
+            'totals': {},
+            'section14': None,
+            'savings_projection': {},
+            'source_columns': columns,
+        }
+
+        if not rows:
+            return summary
+
+        # Key-value extraction (property/value datasets)
+        kv_map: Dict[str, List[Any]] = {}
+        prop_col = None
+        val_col = None
+        cat_col = None
+        for col in columns:
+            col_lower = str(col).strip().lower()
+            if col_lower in ['property', 'field', 'label', 'name', 'שדה', 'פרמטר', 'תיאור', 'מאפיין']:
+                prop_col = col
+            elif col_lower in ['value', 'amount', 'data', 'ערך', 'נתון', 'סכום', 'תוכן']:
+                val_col = col
+            elif col_lower in ['category', 'קטגוריה', 'סוג']:
+                cat_col = col
+
+        if prop_col and val_col:
+            for row in rows:
+                prop = str(row.get(prop_col, '')).strip()
+                val = row.get(val_col, '')
+                if not prop:
+                    continue
+                kv_map.setdefault(prop, []).append(val)
+            summary['kv_map'] = kv_map
+
+        def _safe_float(val: Any, default: float = 0.0) -> float:
+            try:
+                if val is None:
+                    return default
+                if isinstance(val, (int, float)):
+                    return float(val)
+                return float(str(val).replace(',', '').replace('₪', '').replace('ש\"ח', '').strip())
+            except (ValueError, TypeError):
+                return default
+
+        def _first_value(patterns: List[str]) -> Optional[Any]:
+            for key, values in kv_map.items():
+                key_lower = key.lower()
+                if any(p in key_lower for p in patterns):
+                    return values[0] if values else None
+            return None
+
+        # Client info from key-values
+        client_name = _first_value(['שם לקוח', 'שם המבוטח', 'שם העמית', 'שם מלא', 'מבוטח', 'שם'])
+        client_id = _first_value(['ת.ז', 'תעודת זהות', 'מספר זהות', 'id number', 'id'])
+        birth_date = _first_value(['תאריך לידה', 'birth'])
+        summary['client'] = {
+            'full_name': client_name or '',
+            'id_number': client_id or '',
+            'birth_date': birth_date or ''
+        }
+
+        # Section 14 detection
+        section14_val = _first_value(['סעיף 14', 'סעיף14', 'section 14'])
+        if section14_val is not None:
+            section14_str = str(section14_val).strip().lower()
+            summary['section14'] = section14_str in ['כן', 'yes', 'true', '1', 'covered', 'v', '✓']
+
+        # Savings projection hints
+        proj_with = _first_value(['חיסכון צפוי', 'קצבה צפויה', 'חיסכון צפוי לגיל פרישה'])
+        proj_without = _first_value(['ללא פרמיות', 'בלי הפקדות'])
+        if proj_with or proj_without:
+            summary['savings_projection'] = {
+                'with_contributions': proj_with,
+                'without_contributions': proj_without
+            }
+
+        # Tabular policy extraction
+        column_synonyms = {
+            'policy_number': ['policy_number', 'מספר פוליסה', 'מס פוליסה', 'מספר חשבון', 'מס חשבון'],
+            'provider': ['provider', 'חברה', 'שם חברה', 'יצרן', 'שם יצרן'],
+            'product_type': ['product_type', 'סוג מוצר', 'שם מוצר', 'תוכנית', 'שם תוכנית'],
+            'status': ['status', 'סטטוס', 'מצב'],
+            'total_balance': ['total_balance', 'יתרה כוללת', 'צבירה', 'סך צבירה', 'ערך צבירה', 'סך הכל חיסכון', 'חיסכון'],
+            'savings_balance': ['savings_balance', 'תגמולים', 'יתרת תגמולים'],
+            'severance_balance': ['severance_balance', 'פיצויים', 'יתרת פיצויים'],
+            'coverage_amount': ['coverage_amount', 'סכום כיסוי', 'כיסוי', 'ביטוח חיים'],
+            'disability_coverage': ['disability_coverage', 'אובדן כושר', 'אכ\"ע', 'כיסוי נכות'],
+            'monthly_premium': ['monthly_premium', 'פרמיה חודשית', 'פרמיה', 'דמי ביטוח'],
+            'management_fee_savings': ['management_fee_savings', 'דמי ניהול מצבירה'],
+            'management_fee_deposits': ['management_fee_deposits', 'דמי ניהול מהפקדות'],
+            'investment_track': ['investment_track', 'מסלול השקעה'],
+            'employer_name': ['employer_name', 'מעסיק', 'שם מעסיק'],
+            'start_date': ['start_date', 'תאריך תחילה', 'תאריך הצטרפות']
+        }
+
+        col_map: Dict[str, str] = {}
+        for field, synonyms in column_synonyms.items():
+            for col in columns:
+                col_lower = str(col).lower()
+                if any(s in col_lower for s in synonyms):
+                    col_map[field] = col
+                    break
+
+        policies = []
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            policy = {}
+            for field, col in col_map.items():
+                policy[field] = row.get(col)
+            if any(policy.get(k) for k in ['policy_number', 'provider', 'product_type', 'total_balance']):
+                policies.append(policy)
+        summary['policies'] = policies
+
+        # Totals from policies
+        total_balance = sum(_safe_float(p.get('total_balance')) for p in policies)
+        total_savings = sum(_safe_float(p.get('savings_balance')) for p in policies) or total_balance
+        total_severance = sum(_safe_float(p.get('severance_balance')) for p in policies)
+        total_coverage = sum(_safe_float(p.get('coverage_amount')) for p in policies)
+        total_monthly_premium = sum(_safe_float(p.get('monthly_premium')) for p in policies)
+
+        summary['totals'] = {
+            'total_balance': total_balance,
+            'total_balance_formatted': f"₪{total_balance:,.0f}",
+            'total_savings': total_savings,
+            'total_savings_formatted': f"₪{total_savings:,.0f}",
+            'total_severance': total_severance,
+            'total_severance_formatted': f"₪{total_severance:,.0f}",
+            'total_coverage': total_coverage,
+            'total_monthly_premium': total_monthly_premium,
+            'policy_count': len(policies)
+        }
+
+        return summary
+
+    def _generate_financial_report_section(self, summary: Dict[str, Any], is_hebrew: bool) -> str:
+        """Generate financial/insurance report section from summary data."""
+        lines = []
+        client = summary.get('client', {})
+        totals = summary.get('totals', {})
+        policies = summary.get('policies', [])
+        section14 = summary.get('section14')
+        projection = summary.get('savings_projection', {})
+
+        def _safe_float(val: Any, default: float = 0.0) -> float:
+            try:
+                if val is None:
+                    return default
+                if isinstance(val, (int, float)):
+                    return float(val)
+                return float(str(val).replace(',', '').replace('₪', '').replace('ש\"ח', '').strip())
+            except (ValueError, TypeError):
+                return default
+
+        if is_hebrew:
+            lines.append("💰 סיכום פיננסי וביטוחי")
+            lines.append("=" * 40)
+            if client.get('full_name'):
+                lines.append(f"• שם לקוח: {client.get('full_name')}")
+            if client.get('id_number'):
+                lines.append(f"• ת.ז: {client.get('id_number')}")
+            if totals:
+                lines.append(f"• סה״כ חסכונות: {totals.get('total_savings_formatted', '₪0')}")
+                lines.append(f"• סה״כ יתרה: {totals.get('total_balance_formatted', '₪0')}")
+                lines.append(f"• סה״כ פיצויים: {totals.get('total_severance_formatted', '₪0')}")
+                if totals.get('total_coverage'):
+                    lines.append(f"• סה״כ סכומי כיסוי: ₪{totals.get('total_coverage', 0):,.0f}")
+                if totals.get('total_monthly_premium'):
+                    lines.append(f"• סה״כ פרמיה חודשית: ₪{totals.get('total_monthly_premium', 0):,.0f}")
+                lines.append(f"• מספר פוליסות: {totals.get('policy_count', len(policies))}")
+            lines.append("")
+
+            if projection:
+                lines.append("📈 תחזית חיסכון לטווח ארוך")
+                lines.append("-" * 40)
+                if projection.get('with_contributions'):
+                    lines.append(f"• חיסכון צפוי (עם הפקדות): {projection.get('with_contributions')}")
+                if projection.get('without_contributions'):
+                    lines.append(f"• חיסכון צפוי (ללא הפקדות): {projection.get('without_contributions')}")
+                lines.append("")
+
+            lines.append("📌 סעיף 14 (מיסוי/פיצויים)")
+            if section14 is True:
+                lines.append("• סטטוס: ✅ מכוסה תחת סעיף 14")
+            elif section14 is False:
+                lines.append("• סטטוס: ⚠️ לא מכוסה תחת סעיף 14")
+            else:
+                lines.append("• סטטוס: לא ידוע")
+            lines.append("")
+
+            lines.append("📄 פירוט לפי פוליסה")
+            lines.append("-" * 40)
+            if not policies:
+                lines.append("לא נמצאו פוליסות מפורטות בקובץ.")
+            for i, policy in enumerate(policies, 1):
+                lines.append(f"┌─── פוליסה {i} ─────────────────────────────")
+                if policy.get('provider'):
+                    lines.append(f"│ שם חברה: {policy.get('provider')}")
+                if policy.get('policy_number'):
+                    lines.append(f"│ מספר פוליסה: {policy.get('policy_number')}")
+                if policy.get('product_type'):
+                    lines.append(f"│ סוג מוצר/תוכנית: {policy.get('product_type')}")
+                if policy.get('status'):
+                    lines.append(f"│ סטטוס: {policy.get('status')}")
+                if policy.get('start_date'):
+                    lines.append(f"│ תאריך תחילה: {policy.get('start_date')}")
+                if _safe_float(policy.get('total_balance')) > 0:
+                    lines.append(f"│ סכום צבירה: ₪{_safe_float(policy.get('total_balance')):,.0f}")
+                if _safe_float(policy.get('savings_balance')) > 0:
+                    lines.append(f"│ חיסכון: ₪{_safe_float(policy.get('savings_balance')):,.0f}")
+                if _safe_float(policy.get('severance_balance')) > 0:
+                    lines.append(f"│ פיצויים: ₪{_safe_float(policy.get('severance_balance')):,.0f}")
+                if _safe_float(policy.get('coverage_amount')) > 0:
+                    lines.append(f"│ סכום כיסוי: ₪{_safe_float(policy.get('coverage_amount')):,.0f}")
+                if _safe_float(policy.get('disability_coverage')) > 0:
+                    lines.append(f"│ כיסוי אכ\"ע: ₪{_safe_float(policy.get('disability_coverage')):,.0f}/חודש")
+                if _safe_float(policy.get('monthly_premium')) > 0:
+                    lines.append(f"│ פרמיה חודשית: ₪{_safe_float(policy.get('monthly_premium')):,.0f}")
+                if policy.get('management_fee_savings'):
+                    lines.append(f"│ דמי ניהול מצבירה: {policy.get('management_fee_savings')}")
+                if policy.get('management_fee_deposits'):
+                    lines.append(f"│ דמי ניהול מהפקדות: {policy.get('management_fee_deposits')}")
+                if policy.get('investment_track'):
+                    lines.append(f"│ מסלול השקעה: {policy.get('investment_track')}")
+                if policy.get('employer_name'):
+                    lines.append(f"│ מעסיק: {policy.get('employer_name')}")
+                lines.append("└──────────────────────────────────────────")
+        else:
+            lines.append("Financial & Insurance Summary")
+            lines.append("=" * 40)
+            if client.get('full_name'):
+                lines.append(f"• Client: {client.get('full_name')}")
+            if client.get('id_number'):
+                lines.append(f"• ID: {client.get('id_number')}")
+            if totals:
+                lines.append(f"• Total Savings: {totals.get('total_savings_formatted', '₪0')}")
+                lines.append(f"• Total Balance: {totals.get('total_balance_formatted', '₪0')}")
+                lines.append(f"• Total Severance: {totals.get('total_severance_formatted', '₪0')}")
+                if totals.get('total_coverage'):
+                    lines.append(f"• Total Coverage: ₪{totals.get('total_coverage', 0):,.0f}")
+                if totals.get('total_monthly_premium'):
+                    lines.append(f"• Total Monthly Premium: ₪{totals.get('total_monthly_premium', 0):,.0f}")
+                lines.append(f"• Policy Count: {totals.get('policy_count', len(policies))}")
+
+        return "\n".join(lines)
     
     def _generate_charts(self, analysis: AnalysisResult, pension_data: Dict = None) -> List[ChartConfig]:
         """
