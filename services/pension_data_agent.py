@@ -1215,263 +1215,284 @@ class PensionDataAgent:
     
     def _generate_professional_report(self, data: Dict[str, Any]) -> str:
         """
-        Generate professional Mislaka-style report.
-        Format matches standard Israeli pension reports like the PDF example.
+        Generate professional data-focused Hebrew pension statement.
+        Shows actual Mislaka data clearly: name, ID, policies, savings, fees, status.
+        Format similar to professional pension portals (sms2010.co.il style).
         """
         lines = []
         header = data.get('header', {})
         client = data.get('client', {})
         accounts = data.get('accounts', [])
         totals = data.get('totals', {})
-        health = totals.get('health_score', {})
         contributions = data.get('contributions', [])
         severance = data.get('severance', [])
         
-        # ===== REPORT HEADER =====
-        lines.extend([
-            "╔══════════════════════════════════════════════════════════════════════════╗",
-            "║                                                                          ║",
-            "║      📊 דו״ח מסלקת הביטוח והפנסיה - ניתוח מקיף                           ║",
-            "║      Mislaka Pension & Insurance Clearinghouse Report                    ║",
-            "║                                                                          ║",
-            "╚══════════════════════════════════════════════════════════════════════════╝",
-            "",
-        ])
-        
-        # ===== REPORT INFO =====
+        # Format report date
         report_date = header.get('report_date') or header.get('created_at') or datetime.now().strftime('%Y%m%d')
-        if len(str(report_date)) == 8:
+        if len(str(report_date)) >= 8:
             try:
                 formatted_date = f"{str(report_date)[6:8]}/{str(report_date)[4:6]}/{str(report_date)[:4]}"
             except:
-                formatted_date = str(report_date)
+                formatted_date = datetime.now().strftime('%d/%m/%Y')
         else:
-            formatted_date = str(report_date)
+            formatted_date = datetime.now().strftime('%d/%m/%Y')
         
+        # Get client info
+        client_name = client.get('full_name') or f"{client.get('first_name', '')} {client.get('last_name', '')}".strip() or 'לא זמין'
+        id_number = client.get('id_number', '') or 'לא זמין'
+        birth_date = client.get('birth_date', '')
+        
+        # Calculate age if birth date available
+        age_str = ''
+        if birth_date and len(str(birth_date)) >= 8:
+            try:
+                birth_year = int(str(birth_date)[:4])
+                current_year = datetime.now().year
+                age = current_year - birth_year
+                age_str = f", גיל {age}"
+            except:
+                pass
+        
+        # ===== REPORT HEADER =====
         lines.extend([
-            f"📅 תאריך הדו״ח: {formatted_date}",
-            f"📋 סוג ממשק: {data.get('interface_type_he', 'אחזקות')} ({data.get('interface_type', 'Holdings')})",
-            f"🔖 גרסת סכמה: {header.get('schema_version', 'N/A')}",
+            "══════════════════════════════════════════════════════════════════════",
+            "                    דו״ח נתוני פנסיה וביטוח                           ",
+            "                    מסלקת הביטוח והפנסיה                              ",
+            "══════════════════════════════════════════════════════════════════════",
+            "",
+            f"📅 נכון לתאריך: {formatted_date}",
             "",
         ])
         
-        # ===== CLIENT INFORMATION =====
-        if client:
-            client_name = client.get('full_name') or f"{client.get('first_name', '')} {client.get('last_name', '')}".strip()
-            id_number = client.get('id_number', '')
-            masked_id = self._mask_id(id_number) if id_number else 'לא זמין'
-            
-            lines.extend([
-                "┌──────────────────────────────────────────────────────────────────────────┐",
-                "│                        👤 פרטי לקוח / Client Details                     │",
-                "└──────────────────────────────────────────────────────────────────────────┘",
-                "",
-                f"  שם מלא:        {client_name or 'לא זמין'}",
-                f"  תעודת זהות:    {masked_id}",
-            ])
-            
-            if client.get('id_type_name'):
-                lines.append(f"  סוג זיהוי:     {client.get('id_type_name')}")
-            if client.get('birth_date'):
-                lines.append(f"  תאריך לידה:    {client.get('birth_date')}")
-            if client.get('phone'):
-                lines.append(f"  טלפון:         {client.get('phone')}")
-            if client.get('email'):
-                lines.append(f"  דוא״ל:         {client.get('email')}")
-            
-            lines.append("")
+        # ===== CLIENT SUMMARY LINE (like sms2010 style) =====
+        total_balance = totals.get('total_balance', 0)
+        account_count = totals.get('account_count', 0)
         
-        # ===== FINANCIAL SUMMARY =====
         lines.extend([
-            "┌──────────────────────────────────────────────────────────────────────────┐",
-            "│                      💰 סיכום כספי / Financial Summary                   │",
-            "└──────────────────────────────────────────────────────────────────────────┘",
+            "══════════════════════════════════════════════════════════════════════",
+            "                         פרטי המבוטח                                  ",
+            "══════════════════════════════════════════════════════════════════════",
             "",
-            f"  ┌─────────────────────────────────────────────────────────────────────┐",
-            f"  │  סה״כ נכסים:                      {totals.get('total_balance_formatted', '₪0'):>20}  │",
-            f"  │  ─────────────────────────────────────────────────────────────────  │",
-            f"  │    • חיסכון פנסיוני:              {totals.get('total_savings_formatted', '₪0'):>20}  │",
-            f"  │    • פיצויים צבורים:              {totals.get('total_severance_formatted', '₪0'):>20}  │",
-            f"  │  ─────────────────────────────────────────────────────────────────  │",
-            f"  │  מספר חשבונות/פוליסות:           {totals.get('account_count', 0):>20}  │",
-            f"  │  מספר יצרנים:                    {totals.get('provider_count', 0):>20}  │",
-            f"  └─────────────────────────────────────────────────────────────────────┘",
-            "",
+            f"  👤 שם:              {client_name}",
+            f"  🪪 ת.ז:             {id_number}{age_str}",
         ])
         
-        # ===== HEALTH SCORE =====
-        if health:
-            overall = health.get('overall', 0)
-            rating_he = health.get('rating_he', 'לא ידוע')
-            
-            filled = int(overall / 10)
-            empty = 10 - filled
-            score_bar = '█' * filled + '░' * empty
-            
-            lines.extend([
-                "┌──────────────────────────────────────────────────────────────────────────┐",
-                "│                    🎯 ציון בריאות פיננסית / Health Score                 │",
-                "└──────────────────────────────────────────────────────────────────────────┘",
-                "",
-                f"  ציון כולל: [{score_bar}] {overall}/100 ({rating_he})",
-                "",
-                f"  📊 פירוט ציונים:",
-                f"     • חסכונות: {health.get('savings', 0)}/100",
-                f"     • פיזור: {health.get('diversification', 0)}/100",
-                f"     • סעיף 14: {health.get('section14', 0)}/100",
-                "",
-            ])
+        if birth_date:
+            if len(str(birth_date)) >= 8:
+                try:
+                    bd_formatted = f"{str(birth_date)[6:8]}/{str(birth_date)[4:6]}/{str(birth_date)[:4]}"
+                    lines.append(f"  🎂 תאריך לידה:      {bd_formatted}")
+                except:
+                    lines.append(f"  🎂 תאריך לידה:      {birth_date}")
         
-        # ===== PROVIDERS =====
-        providers = totals.get('providers', [])
-        if providers:
-            lines.extend([
-                "┌──────────────────────────────────────────────────────────────────────────┐",
-                "│                       🏢 יצרנים / Providers                              │",
-                "└──────────────────────────────────────────────────────────────────────────┘",
-                "",
-            ])
-            for i, provider in enumerate(providers, 1):
-                lines.append(f"  {i}. {provider}")
-            lines.append("")
+        if client.get('phone'):
+            lines.append(f"  📱 טלפון:           {client.get('phone')}")
+        if client.get('email'):
+            lines.append(f"  📧 דוא״ל:           {client.get('email')}")
         
-        # ===== ACCOUNT DETAILS =====
+        lines.append("")
+        
+        # ===== TOTAL SUMMARY =====
+        lines.extend([
+            "══════════════════════════════════════════════════════════════════════",
+            "                       סיכום כולל                                     ",
+            "══════════════════════════════════════════════════════════════════════",
+            "",
+            f"  💰 סה״כ צבירה:                    ₪{total_balance:,.0f}",
+            f"  📊 מספר מוצרים:                   {account_count}",
+        ])
+        
+        if totals.get('total_severance', 0) > 0:
+            lines.append(f"  💼 סה״כ פיצויים:                  ₪{totals.get('total_severance', 0):,.0f}")
+        
+        if totals.get('total_coverage', 0) > 0:
+            lines.append(f"  🛡️ סה״כ כיסויים ביטוחיים:        ₪{totals.get('total_coverage', 0):,.0f}")
+        
+        lines.append("")
+        
+        # ===== DETAILED POLICY LIST =====
         if accounts:
             lines.extend([
-                "┌──────────────────────────────────────────────────────────────────────────┐",
-                "│                    📁 פירוט חשבונות / Account Details                    │",
-                "└──────────────────────────────────────────────────────────────────────────┘",
+                "══════════════════════════════════════════════════════════════════════",
+                "                      פירוט מוצרים                                    ",
+                "══════════════════════════════════════════════════════════════════════",
                 "",
             ])
             
-            for i, acct in enumerate(accounts[:10], 1):
+            for i, acct in enumerate(accounts, 1):
                 balance = float(acct.get('total_balance', 0) or 0)
-                total_bal = totals.get('total_balance', 1) or 1
-                pct = (balance / total_bal * 100) if total_bal > 0 else 0
+                savings = float(acct.get('savings_balance', 0) or 0)
+                severance_bal = float(acct.get('severance_balance', 0) or 0)
+                mgmt_fee = float(acct.get('management_fee_savings', 0) or 0)
+                mgmt_fee_deposits = float(acct.get('management_fee_deposits', 0) or 0)
                 
-                product_type = acct.get('product_type_name', acct.get('product_type', 'לא זמין'))
+                provider = acct.get('provider', 'לא זמין')
+                policy_num = acct.get('policy_number', 'לא זמין')
+                product_type = acct.get('product_type_name', acct.get('product_type', ''))
+                status = acct.get('status', 'פעיל')
+                status_en = acct.get('status_en', 'active')
                 
-                lines.extend([
-                    f"  ┌─── חשבון {i} ───────────────────────────────────────────────────────",
-                    f"  │",
-                    f"  │  מספר פוליסה:     {acct.get('policy_number', 'לא זמין')}",
-                    f"  │  יצרן:            {acct.get('provider', 'לא זמין')}",
-                    f"  │  סוג מוצר:        {product_type}",
-                    f"  │  סטטוס:           {acct.get('status', 'פעיל')}",
-                    f"  │",
-                    f"  │  💰 יתרות:",
-                    f"  │     • יתרה כוללת:  ₪{balance:,.2f} ({pct:.1f}%)",
-                ])
+                # Determine liquidity status
+                liquidity = 'נזיל' if status_en in ['active', 'Active'] else 'מוקפא'
+                if status == 'מוקפא' or status_en == 'frozen':
+                    liquidity = 'מוקפא'
                 
-                if float(acct.get('savings_balance', 0) or 0) > 0:
-                    lines.append(f"  │     • חיסכון:      ₪{float(acct.get('savings_balance', 0)):,.2f}")
-                if float(acct.get('severance_balance', 0) or 0) > 0:
-                    lines.append(f"  │     • פיצויים:     ₪{float(acct.get('severance_balance', 0)):,.2f}")
+                # Section 14 status
+                section14_text = '✅ כן' if acct.get('section14') else '❌ לא'
                 
-                if acct.get('section14'):
-                    lines.append(f"  │  📌 סעיף 14:       ✅ מכוסה")
+                lines.append(f"  ┌─────────────────────────────────────────────────────────────────")
+                lines.append(f"  │  📋 מוצר {i}: {product_type}")
+                lines.append(f"  ├─────────────────────────────────────────────────────────────────")
+                lines.append(f"  │  🏢 יצרן:           {provider}")
+                lines.append(f"  │  🔢 מספר פוליסה:   {policy_num}")
+                lines.append(f"  │  📌 סטטוס:         {status} ({liquidity})")
+                lines.append(f"  │")
+                lines.append(f"  │  💰 צבירה כוללת:   ₪{balance:,.0f}")
                 
-                if float(acct.get('management_fee_savings', 0) or 0) > 0:
-                    lines.append(f"  │  💳 דמי ניהול:     {float(acct.get('management_fee_savings', 0)):.2f}%")
+                if savings > 0 and savings != balance:
+                    lines.append(f"  │     • תגמולים:     ₪{savings:,.0f}")
+                if severance_bal > 0:
+                    lines.append(f"  │     • פיצויים:     ₪{severance_bal:,.0f}")
                 
+                if mgmt_fee > 0 or mgmt_fee_deposits > 0:
+                    lines.append(f"  │")
+                    lines.append(f"  │  💳 דמי ניהול:")
+                    if mgmt_fee > 0:
+                        lines.append(f"  │     • מצבירה:      {mgmt_fee:.2f}%")
+                    if mgmt_fee_deposits > 0:
+                        lines.append(f"  │     • מהפקדות:     {mgmt_fee_deposits:.2f}%")
+                
+                lines.append(f"  │")
+                lines.append(f"  │  📌 סעיף 14:       {section14_text}")
+                
+                # Employer info
                 if acct.get('employer_name'):
-                    lines.append(f"  │  🏢 מעסיק:         {acct.get('employer_name')}")
+                    lines.append(f"  │  🏭 מעסיק:         {acct.get('employer_name')}")
                 
                 # Insurance coverage
-                if float(acct.get('death_coverage', 0) or 0) > 0:
-                    lines.append(f"  │  🛡️ כיסוי מוות:    ₪{float(acct.get('death_coverage', 0)):,.0f}")
-                if float(acct.get('disability_coverage', 0) or 0) > 0:
-                    lines.append(f"  │  🛡️ כיסוי נכות:    ₪{float(acct.get('disability_coverage', 0)):,.0f}")
+                death_coverage = float(acct.get('death_coverage', 0) or 0)
+                disability_coverage = float(acct.get('disability_coverage', 0) or 0)
                 
+                if death_coverage > 0 or disability_coverage > 0:
+                    lines.append(f"  │")
+                    lines.append(f"  │  🛡️ כיסויים ביטוחיים:")
+                    if death_coverage > 0:
+                        lines.append(f"  │     • ביטוח חיים:  ₪{death_coverage:,.0f}")
+                    if disability_coverage > 0:
+                        lines.append(f"  │     • אובדן כושר:  ₪{disability_coverage:,.0f}/חודש")
+                
+                # Start date if available
+                if acct.get('start_date'):
+                    start_date = acct.get('start_date')
+                    if len(str(start_date)) >= 8:
+                        try:
+                            sd_formatted = f"{str(start_date)[6:8]}/{str(start_date)[4:6]}/{str(start_date)[:4]}"
+                            lines.append(f"  │  📅 תחילת ביטוח:   {sd_formatted}")
+                        except:
+                            pass
+                
+                lines.append(f"  └─────────────────────────────────────────────────────────────────")
+                lines.append("")
+        
+        # ===== CONTRIBUTIONS SUMMARY =====
+        contrib_totals = totals.get('contributions', {})
+        if contrib_totals and contrib_totals.get('grand_total', 0) > 0:
+            lines.extend([
+                "══════════════════════════════════════════════════════════════════════",
+                "                      הפקדות אחרונות                                  ",
+                "══════════════════════════════════════════════════════════════════════",
+                "",
+                f"  📥 הפקדות עובד:                   ₪{contrib_totals.get('employee_total', 0):,.0f}",
+                f"  📤 הפקדות מעסיק:                  ₪{contrib_totals.get('employer_total', 0):,.0f}",
+            ])
+            if contrib_totals.get('severance_total', 0) > 0:
+                lines.append(f"  💼 הפקדות לפיצויים:               ₪{contrib_totals.get('severance_total', 0):,.0f}")
+            lines.append(f"  ─────────────────────────────────────────────────────────────")
+            lines.append(f"  📊 סה״כ הפקדות:                   ₪{contrib_totals.get('grand_total', 0):,.0f}")
+            lines.append("")
+        
+        # ===== SEVERANCE & TAX INFO =====
+        if totals.get('total_severance', 0) > 0 or totals.get('section14_coverage'):
+            lines.extend([
+                "══════════════════════════════════════════════════════════════════════",
+                "                    פיצויים ומיסוי                                    ",
+                "══════════════════════════════════════════════════════════════════════",
+                "",
+            ])
+            
+            if totals.get('total_severance', 0) > 0:
+                lines.append(f"  💼 סה״כ פיצויים צבורים:           ₪{totals.get('total_severance', 0):,.0f}")
+            
+            if totals.get('section14_coverage'):
                 lines.extend([
-                    f"  │",
-                    f"  └─────────────────────────────────────────────────────────────────────",
-                    "",
+                    f"  📌 סעיף 14:                       ✅ פעיל",
+                    f"",
+                    f"  📋 משמעות סעיף 14:",
+                    f"     • פיצויי הפיטורין שייכים לעובד במלואם",
+                    f"     • לא נדרש אישור מעסיק למשיכה",
+                    f"     • הכספים מוגנים גם בהתפטרות",
+                ])
+            else:
+                lines.extend([
+                    f"  📌 סעיף 14:                       ❌ לא פעיל",
+                    f"",
+                    f"  ⚠️ שים לב:",
+                    f"     • פיצויים עשויים להיות תלויים באישור מעסיק",
                 ])
             
-            if len(accounts) > 10:
-                lines.append(f"  📌 ... ועוד {len(accounts) - 10} חשבונות נוספים")
-                lines.append("")
-        
-        # ===== CONTRIBUTION SUMMARY =====
-        contrib_totals = totals.get('contributions', {})
-        if contrib_totals:
+            # Tax info
             lines.extend([
-                "┌──────────────────────────────────────────────────────────────────────────┐",
-                "│                      📈 סיכום הפקדות / Contributions                     │",
-                "└──────────────────────────────────────────────────────────────────────────┘",
-                "",
-                f"  הפקדות עובד:        ₪{contrib_totals.get('employee_total', 0):,.2f}",
-                f"  הפקדות מעסיק:       ₪{contrib_totals.get('employer_total', 0):,.2f}",
-                f"  הפקדות פיצויים:     ₪{contrib_totals.get('severance_total', 0):,.2f}",
-                f"  ─────────────────────────────────────────",
-                f"  סה״כ הפקדות:        ₪{contrib_totals.get('grand_total', 0):,.2f}",
-                "",
+                f"",
+                f"  💰 מידע מיסויי:",
+                f"     • משיכת כספי פיצויים עד תקרה פטורה ממס",
+                f"     • תקרת פטור: כ-12,640 ש״ח לכל שנת עבודה",
+                f"     • מעל התקרה - מס שולי לפי מדרגות",
             ])
+            lines.append("")
+        
+        # ===== SUMMARY BOX =====
+        lines.extend([
+            "══════════════════════════════════════════════════════════════════════",
+            "                         סיכום                                        ",
+            "══════════════════════════════════════════════════════════════════════",
+            "",
+            f"  {client_name}, ת.ז {id_number}",
+            "",
+        ])
+        
+        # Generate summary sentences for each account
+        for acct in accounts[:5]:
+            provider = acct.get('provider', '')
+            product = acct.get('product_type_name', acct.get('product_type', ''))
+            balance = float(acct.get('total_balance', 0) or 0)
+            mgmt_fee = float(acct.get('management_fee_savings', 0) or 0)
+            status = acct.get('status', 'פעיל')
+            status_en = acct.get('status_en', 'active')
+            liquidity = 'נזיל' if status_en in ['active', 'Active'] else 'מוקפא'
             
-            if totals.get('contribution_trend_he'):
-                lines.append(f"  📊 מגמת הפקדות: {totals.get('contribution_trend_he')}")
-                lines.append("")
+            summary_line = f"  • {product} ב{provider}"
+            if balance > 0:
+                summary_line += f" עם ₪{balance:,.0f} צבירה"
+            if mgmt_fee > 0:
+                summary_line += f", {mgmt_fee:.2f}% דמי ניהול"
+            summary_line += f", סטטוס {liquidity}"
+            
+            lines.append(summary_line)
         
-        # ===== SECTION 14 STATUS =====
-        lines.extend([
-            "┌──────────────────────────────────────────────────────────────────────────┐",
-            "│                      📌 סעיף 14 / Section 14 Status                      │",
-            "└──────────────────────────────────────────────────────────────────────────┘",
-            "",
-        ])
+        if len(accounts) > 5:
+            lines.append(f"  • ועוד {len(accounts) - 5} מוצרים נוספים...")
         
-        if totals.get('section14_coverage'):
-            lines.extend([
-                "  ✅ סטטוס: מכוסה תחת סעיף 14",
-                "",
-                "  📋 משמעות הכיסוי:",
-                "     • פיצויי הפיטורין שייכים לעובד ומובטחים בקופה",
-                "     • אין צורך באישור המעסיק למשיכת הפיצויים",
-                "     • הכספים מוגנים גם במקרה של פיטורין",
-                "     • המעסיק אינו יכול לדרוש החזר של כספי הפיצויים",
-                "",
-            ])
-        else:
-            lines.extend([
-                "  ⚠️ סטטוס: לא מכוסה תחת סעיף 14",
-                "",
-                "  📋 משמעות:",
-                "     • פיצויי הפיטורים עשויים להיות תלויים באישור המעסיק",
-                "     • בהתפטרות, המעסיק עשוי לדרוש החזר כספים",
-                "     • מומלץ לבדוק את תנאי העסקה מול המעסיק",
-                "     • שקול לבקש הסדר סעיף 14 מהמעסיק",
-                "",
-            ])
-        
-        # ===== AI RECOMMENDATIONS =====
-        recommendations = self._generate_recommendations(data, totals, health)
-        
-        lines.extend([
-            "┌──────────────────────────────────────────────────────────────────────────┐",
-            "│                     🤖 המלצות AI / AI Recommendations                    │",
-            "└──────────────────────────────────────────────────────────────────────────┘",
-            "",
-        ])
-        
-        for i, rec in enumerate(recommendations, 1):
-            priority_icon = '🔴' if rec['priority'] == 'high' else ('🟡' if rec['priority'] == 'medium' else '🟢')
-            lines.extend([
-                f"  {priority_icon} המלצה {i}: {rec['title']}",
-                f"     {rec['description']}",
-                "",
-            ])
+        lines.append("")
+        lines.append(f"  💰 סה״כ צבירה בכל המוצרים: ₪{total_balance:,.0f}")
+        lines.append("")
         
         # ===== FOOTER =====
         lines.extend([
-            "══════════════════════════════════════════════════════════════════════════",
-            f"📅 דו״ח הופק: {datetime.now().strftime('%d/%m/%Y %H:%M')}",
-            "🔒 נתוני תעודת זהות מוסתרים להגנת הפרטיות",
-            "📊 מקור: מסלקת הביטוח והפנסיה (swiftness.co.il)",
-            "",
-            "💡 הערה: דו״ח זה מבוסס על ניתוח אוטומטי של נתוני המסלקה.",
-            "   לקבלת ייעוץ מקצועי, פנה ליועץ פנסיוני מוסמך.",
-            "══════════════════════════════════════════════════════════════════════════",
+            "══════════════════════════════════════════════════════════════════════",
+            f"  📅 דו״ח הופק: {datetime.now().strftime('%d/%m/%Y %H:%M')}",
+            f"  📊 מקור נתונים: מסלקת הביטוח והפנסיה",
+            f"  🔗 PHINS - פלטפורמת ניהול פנסיה וביטוח",
+            "══════════════════════════════════════════════════════════════════════",
         ])
         
         return '\n'.join(lines)
