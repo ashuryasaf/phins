@@ -519,12 +519,12 @@ class AIRiskReportsService:
                 # Parse as CSV (XLS files should be converted to CSV format)
                 encoding = self._detect_encoding(file_content)
                 text_content = file_content.decode(encoding, errors='replace')
-                parsed = self._parse_csv(text_content)
+                parsed = self._parse_csv(text_content, filename)
             else:
                 # Try to parse as CSV
                 encoding = self._detect_encoding(file_content)
                 text_content = file_content.decode(encoding, errors='replace')
-                parsed = self._parse_csv(text_content)
+                parsed = self._parse_csv(text_content, filename)
             
             result['encoding'] = encoding
             result['parsed_data'] = parsed
@@ -564,7 +564,7 @@ class AIRiskReportsService:
         
         return 'utf-8'
     
-    def _parse_csv(self, text_content: str) -> Dict[str, Any]:
+    def _parse_csv(self, text_content: str, filename: str = "") -> Dict[str, Any]:
         """Parse CSV content"""
         # Try different delimiters
         for delimiter in [',', ';', '\t', '|']:
@@ -573,10 +573,12 @@ class AIRiskReportsService:
                 rows = list(reader)
                 if rows and len(rows[0]) > 1:
                     columns = list(rows[0].keys()) if rows else []
+                    pension_data = self._detect_mislaka_excel_data(columns, rows, filename) if columns else None
                     return {
                         'columns': columns,
                         'rows': rows,
-                        'delimiter': delimiter
+                        'delimiter': delimiter,
+                        'pension_data': pension_data
                     }
             except Exception:
                 continue
@@ -589,9 +591,10 @@ class AIRiskReportsService:
             for line in lines[1:]:
                 values = line.split(',')
                 rows.append(dict(zip(columns, values)))
-            return {'columns': columns, 'rows': rows, 'delimiter': ','}
+            pension_data = self._detect_mislaka_excel_data(columns, rows, filename) if columns else None
+            return {'columns': columns, 'rows': rows, 'delimiter': ',', 'pension_data': pension_data}
         
-        return {'columns': [], 'rows': [], 'delimiter': ','}
+        return {'columns': [], 'rows': [], 'delimiter': ',', 'pension_data': None}
     
     def _parse_excel(self, content: bytes, filename: str, ext: str) -> Dict[str, Any]:
         """
@@ -733,10 +736,21 @@ class AIRiskReportsService:
             'סך צבירה': 'total_balance',
             'צבירה': 'total_balance',
             'סה"כ צבירה': 'total_balance',
+            'ערך צבירה': 'total_balance',
             'יתרת תגמולים': 'savings_balance',
             'תגמולים': 'savings_balance',
             'יתרת פיצויים': 'severance_balance',
             'פיצויים': 'severance_balance',
+
+            # Coverage / premium fields (Mislaka API CSV)
+            'סכום כיסוי': 'coverage_amount',
+            'כיסוי': 'coverage_amount',
+            'פרמיה חודשית': 'monthly_premium',
+            'פרמיה': 'monthly_premium',
+
+            # Investment / beneficiaries
+            'מסלול השקעה': 'investment_track',
+            'מוטבים': 'beneficiaries',
             
             # Fee fields
             'דמי ניהול': 'management_fee',
@@ -748,6 +762,9 @@ class AIRiskReportsService:
             'סטטוס': 'status',
             'מצב': 'status',
             'סטטוס פוליסה': 'status',
+
+            # Dates
+            'תאריך תחילה': 'start_date',
             
             # Section 14
             'סעיף 14': 'section14',
@@ -792,8 +809,11 @@ class AIRiskReportsService:
                     
                     # Convert value
                     if value is not None and value != '':
-                        if mapped_name in ['total_balance', 'savings_balance', 'severance_balance', 
-                                          'management_fee', 'management_fee_savings', 'management_fee_deposits']:
+                        if mapped_name in [
+                            'total_balance', 'savings_balance', 'severance_balance',
+                            'management_fee', 'management_fee_savings', 'management_fee_deposits',
+                            'coverage_amount', 'monthly_premium'
+                        ]:
                             try:
                                 account[mapped_name] = float(str(value).replace(',', '').replace('₪', '').strip())
                             except:
@@ -802,10 +822,18 @@ class AIRiskReportsService:
                             account[mapped_name] = str(value).lower() in ['כן', 'yes', '1', 'true', 'v', '✓']
                         elif mapped_name in ['client_name', 'first_name', 'last_name', 'id_number', 'birth_date']:
                             client_info[mapped_name] = str(value).strip()
+                        elif mapped_name == 'beneficiaries':
+                            account[mapped_name] = [v.strip() for v in str(value).split(',') if v.strip()]
                         else:
                             account[mapped_name] = str(value).strip()
             
-            if account.get('provider') or account.get('policy_number') or account.get('total_balance'):
+            if (
+                account.get('provider')
+                or account.get('policy_number')
+                or account.get('total_balance')
+                or account.get('coverage_amount')
+                or account.get('monthly_premium')
+            ):
                 accounts.append(account)
         
         # Build full name if we have parts
@@ -820,7 +848,12 @@ class AIRiskReportsService:
         
         # Calculate totals
         total_balance = sum(a.get('total_balance', 0) for a in accounts)
+        total_savings = sum(a.get('savings_balance', 0) for a in accounts)
+        if total_savings == 0:
+            total_savings = total_balance
         total_severance = sum(a.get('severance_balance', 0) for a in accounts)
+        total_coverage = sum(a.get('coverage_amount', 0) for a in accounts)
+        total_monthly_premium = sum(a.get('monthly_premium', 0) for a in accounts)
         
         return {
             'client': client_info,
@@ -828,8 +861,12 @@ class AIRiskReportsService:
             'totals': {
                 'total_balance': total_balance,
                 'total_balance_formatted': f"₪{total_balance:,.0f}",
+                'total_savings': total_savings,
+                'total_savings_formatted': f"₪{total_savings:,.0f}",
                 'total_severance': total_severance,
                 'total_severance_formatted': f"₪{total_severance:,.0f}",
+                'total_coverage': total_coverage,
+                'total_monthly_premium': total_monthly_premium,
                 'account_count': len(accounts),
                 'provider_count': len(set(a.get('provider', '') for a in accounts if a.get('provider'))),
                 'providers': list(set(a.get('provider', '') for a in accounts if a.get('provider'))),
@@ -862,7 +899,7 @@ class AIRiskReportsService:
                 if ext == 'csv':
                     encoding = self._detect_encoding(file_content)
                     text_content = file_content.decode(encoding, errors='replace')
-                    parsed = self._parse_csv(text_content)
+                    parsed = self._parse_csv(text_content, name)
                 elif ext == 'xml':
                     # Check if it's a pension/insurance XML file
                     parsed = self._parse_pension_xml(file_content, name)
@@ -2608,7 +2645,7 @@ class AIRiskReportsService:
         # 3. Statistical Analysis (BI Metrics)
         # SKIP for pension data - the pension report already shows meaningful data clearly
         # Statistical analysis of IDs/policy numbers is meaningless
-        if not pension_report:  # Only show statistical analysis for non-pension data
+        if not pension_report and not pension_data:  # Only show statistical analysis for non-pension data
             stat_factors = [f for f in analysis.extracted_factors if f.category == 'statistical']
             if stat_factors:
                 if is_hebrew:
@@ -2931,6 +2968,10 @@ Factors Affecting Score:
                 content_lines.append(f"• סה״כ יתרה בחשבונות: {totals.get('total_balance_formatted', '₪0')}")
                 content_lines.append(f"• סה״כ חסכונות: {totals.get('total_savings_formatted', '₪0')}")
                 content_lines.append(f"• סה״כ פיצויים צבורים: {totals.get('total_severance_formatted', '₪0')}")
+                if totals.get('total_coverage'):
+                    content_lines.append(f"• סה״כ סכומי כיסוי: ₪{totals.get('total_coverage', 0):,.0f}")
+                if totals.get('total_monthly_premium'):
+                    content_lines.append(f"• סה״כ פרמיה חודשית: ₪{totals.get('total_monthly_premium', 0):,.0f}")
                 content_lines.append(f"• מספר חשבונות/פוליסות: {totals.get('account_count', 0)}")
                 content_lines.append(f"• מספר יצרנים/חברות: {totals.get('provider_count', 0)}")
                 
@@ -3057,6 +3098,10 @@ Factors Affecting Score:
                 content_lines.append(f"• Total Account Balance: {totals.get('total_balance_formatted', '₪0')}")
                 content_lines.append(f"• Total Savings: {totals.get('total_savings_formatted', '₪0')}")
                 content_lines.append(f"• Total Severance Accrued: {totals.get('total_severance_formatted', '₪0')}")
+                if totals.get('total_coverage'):
+                    content_lines.append(f"• Total Coverage Amounts: ₪{totals.get('total_coverage', 0):,.0f}")
+                if totals.get('total_monthly_premium'):
+                    content_lines.append(f"• Total Monthly Premium: ₪{totals.get('total_monthly_premium', 0):,.0f}")
                 content_lines.append(f"• Number of Accounts/Policies: {totals.get('account_count', 0)}")
                 content_lines.append(f"• Number of Providers: {totals.get('provider_count', 0)}")
                 
