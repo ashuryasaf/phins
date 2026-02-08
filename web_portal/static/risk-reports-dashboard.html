@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>PHINS - AI Risk & Reports Analysis</title>
+  <title>PHINS - Swiftness Risk Intelligence</title>
   <link rel="stylesheet" href="/styles.css">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <style>
@@ -97,6 +97,142 @@
     .page-title p {
       color: var(--text-muted);
       font-size: 1.1rem;
+    }
+
+    /* Research Hub */
+    .research-section {
+      background: white;
+      border-radius: 16px;
+      padding: 2rem;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+      margin-bottom: 2rem;
+      border: 1px solid #e2e8f0;
+    }
+
+    .research-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 1rem;
+      padding-bottom: 1rem;
+      border-bottom: 2px solid #e2e8f0;
+      margin-bottom: 1.5rem;
+    }
+
+    .research-header h3 {
+      color: var(--primary);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 1.3rem;
+    }
+
+    .research-badge {
+      background: linear-gradient(135deg, #0ea5e9 0%, #2563eb 100%);
+      color: white;
+      padding: 6px 14px;
+      border-radius: 20px;
+      font-size: 0.85rem;
+      font-weight: 600;
+    }
+
+    .research-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 1.5rem;
+    }
+
+    .research-card {
+      background: #f8fafc;
+      border-radius: 14px;
+      padding: 1.5rem;
+      border: 1px solid #e2e8f0;
+    }
+
+    .research-card h4 {
+      color: var(--text-dark);
+      margin-bottom: 0.75rem;
+      font-size: 1rem;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .affiliations-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 0.75rem;
+      margin-top: 0.75rem;
+    }
+
+    .affiliation-item {
+      background: white;
+      border-radius: 10px;
+      padding: 0.75rem;
+      border-left: 4px solid var(--primary);
+      box-shadow: 0 2px 6px rgba(0,0,0,0.05);
+    }
+
+    .affiliation-item .label {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      margin-bottom: 0.25rem;
+    }
+
+    .affiliation-item .value {
+      font-weight: 600;
+      color: var(--text-dark);
+      font-size: 0.95rem;
+    }
+
+    .tag-grid {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+    }
+
+    .tag {
+      background: #e0f2fe;
+      color: #0369a1;
+      padding: 0.35rem 0.6rem;
+      border-radius: 999px;
+      font-size: 0.75rem;
+      font-weight: 600;
+    }
+
+    .status-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 12px;
+      border-radius: 999px;
+      font-size: 0.8rem;
+      font-weight: 600;
+      margin-bottom: 0.75rem;
+    }
+
+    .status-pill.ready { background: #d1fae5; color: #047857; }
+    .status-pill.pending { background: #fef3c7; color: #92400e; }
+    .status-pill.error { background: #fee2e2; color: #b91c1c; }
+
+    .swiftness-actions {
+      display: flex;
+      gap: 0.75rem;
+      flex-wrap: wrap;
+      margin-top: 0.75rem;
+    }
+
+    .research-footer {
+      margin-top: 1.5rem;
+      padding-top: 1rem;
+      border-top: 1px dashed #e2e8f0;
+      color: var(--text-muted);
+      font-size: 0.9rem;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 1rem;
+      align-items: center;
     }
     
     /* Upload Section */
@@ -1621,7 +1757,7 @@
   <header class="header">
     <h1>
       <span style="font-size: 1.8rem;">📊</span>
-      PHINS AI Risk & Reports Analysis
+      PHINS Swiftness Risk Intelligence
     </h1>
     <nav class="header-nav">
       <a href="/dashboard.html">← Dashboard</a>
@@ -1633,9 +1769,47 @@
   <main class="container">
     <!-- Page Title -->
     <div class="page-title fade-in">
-      <h2>📈 AI-Powered Reports & Analysis</h2>
-      <p>Upload your documents for intelligent analysis with advanced BI and AI reasoning</p>
+      <h2>📈 Risk Intelligence & Advanced Reports</h2>
+      <p>Generate Mislaka-ready assessments, Swiftness Safe imports, and AI-driven insights</p>
     </div>
+
+    <!-- Research Hub -->
+    <section class="research-section fade-in" id="researchSection">
+      <div class="research-header">
+        <h3>🧭 Swiftness + Mislaka Research Hub</h3>
+        <span class="research-badge">Affiliations • Standards • Safe Link</span>
+      </div>
+      <div class="research-grid">
+        <div class="research-card">
+          <h4>🔗 Affiliation Map</h4>
+          <p id="affiliationsSummary" style="color: var(--text-muted); font-size: 0.9rem;">
+            Loading entity, product, and ID affiliations...
+          </p>
+          <div class="affiliations-grid" id="affiliationsGrid"></div>
+        </div>
+        <div class="research-card">
+          <h4>🧬 Interface & Compliance</h4>
+          <div class="tag-grid" id="interfaceTags"></div>
+          <div class="affiliations-grid" id="interfaceStats" style="margin-top: 1rem;"></div>
+        </div>
+        <div class="research-card">
+          <h4>🛡️ Swiftness Safe Gateway</h4>
+          <div class="status-pill pending" id="swiftnessStatusPill">Checking connection...</div>
+          <div id="swiftnessStatusMessage" style="color: var(--text-muted); font-size: 0.9rem;">
+            Validating secure channel configuration
+          </div>
+          <div class="swiftness-actions">
+            <button class="btn btn-secondary" onclick="refreshSwiftnessStatus()">🔄 Refresh</button>
+            <button class="btn btn-primary" id="swiftnessConnectBtn" onclick="openSwiftnessSafe()">🔐 Open Safe</button>
+          </div>
+        </div>
+      </div>
+      <div class="research-footer">
+        <span>Source: Mislaka schema mappings (Holdings, Severance, Events, Transference)</span>
+        <span>Entities: Providers • Clearinghouse • Agents • Savers • Employers</span>
+        <span>Data integrity is enforced with row-level ownership</span>
+      </div>
+    </section>
     
     <!-- Upload Section -->
     <section class="upload-section fade-in">
@@ -1659,10 +1833,11 @@
           <span class="format-badge">📄 CSV</span>
           <span class="format-badge">📊 XLS/XLSX</span>
           <span class="format-badge">📦 ZIP</span>
+          <span class="format-badge">🧾 XML</span>
           <span class="format-badge">🖼️ PNG/JPG</span>
           <span class="format-badge">📕 PDF</span>
         </div>
-        <input type="file" id="fileInput" class="file-input" accept=".csv,.xls,.xlsx,.zip,.png,.jpg,.jpeg,.pdf" multiple>
+        <input type="file" id="fileInput" class="file-input" accept=".csv,.xls,.xlsx,.zip,.xml,.png,.jpg,.jpeg,.pdf" multiple>
       </div>
       
       <div class="file-list" id="fileList"></div>
@@ -1689,6 +1864,7 @@
             <option value="insurance">Insurance Analysis</option>
             <option value="investment">Investment Portfolio</option>
             <option value="risk">Risk Assessment</option>
+            <option value="pension">Pension / Mislaka</option>
             <option value="savings">Savings Analysis</option>
             <option value="comprehensive">Comprehensive Review</option>
           </select>
@@ -1712,7 +1888,7 @@
     <section class="mislaka-section fade-in" id="mislakaSection">
       <div class="mislaka-header">
         <h3>🏦 מסלקת הביטוח והפנסיה (Mislaka API)</h3>
-        <p>Import insurance and pension data directly from Israel's national clearinghouse</p>
+        <p>Import insurance and pension data directly via Swiftness Safe clearinghouse access</p>
       </div>
       <div class="mislaka-body">
         <div class="mislaka-form">
@@ -1805,9 +1981,14 @@
     <section class="history-section fade-in" id="historySection">
       <div class="history-header">
         <h3>📚 Your Report History</h3>
-        <button class="btn btn-white" onclick="loadReportHistory()" style="padding: 6px 12px; font-size: 0.85rem;">
-          🔄 Refresh
-        </button>
+        <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+          <button class="btn btn-white" onclick="revokeTodayReports()" style="padding: 6px 12px; font-size: 0.85rem;">
+            🧹 Revoke Today
+          </button>
+          <button class="btn btn-white" onclick="loadReportHistory()" style="padding: 6px 12px; font-size: 0.85rem;">
+            🔄 Refresh
+          </button>
+        </div>
       </div>
       <div class="history-body">
         <div class="history-grid" id="historyGrid">
@@ -1826,6 +2007,7 @@
     let currentReport = null;
     let charts = {};
     let reportHistory = [];
+    let swiftnessSafeBaseUrl = null;
     
     // DOM Elements
     const uploadZone = document.getElementById('uploadZone');
@@ -1839,6 +2021,8 @@
     // Load report history on page load
     document.addEventListener('DOMContentLoaded', () => {
       loadReportHistory();
+      loadAffiliations();
+      refreshSwiftnessStatus();
     });
     
     async function loadReportHistory() {
@@ -1900,6 +2084,155 @@
           </div>
         `;
       }
+    }
+
+    async function revokeTodayReports() {
+      const confirmMessage = 'This will revoke all reports generated today for your account.\n\nProceed?';
+      if (!confirm(confirmMessage)) {
+        return;
+      }
+
+      try {
+        const response = await fetch('/api/reports/revoke-today', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${localStorage.getItem('phins_token') || ''}`
+          },
+          body: JSON.stringify({ scope: 'self' })
+        });
+
+        const result = await response.json();
+        if (!response.ok) {
+          throw new Error(result.error || 'Revoke failed');
+        }
+
+        // Reset UI state
+        currentReport = null;
+        currentAnalysis = null;
+        uploadedFiles = [];
+        renderFileList();
+        analyzeBtn.disabled = true;
+        resultsSection.classList.remove('active');
+
+        alert(`Revoked today: ${result.reports_removed} report(s), ${result.analyses_removed} analyses, ${result.documents_removed} documents.`);
+        loadReportHistory();
+      } catch (error) {
+        console.error('Revoke error:', error);
+        alert(`Failed to revoke today’s reports: ${error.message}`);
+      }
+    }
+
+    async function loadAffiliations() {
+      const summary = document.getElementById('affiliationsSummary');
+      const grid = document.getElementById('affiliationsGrid');
+      const interfaceTags = document.getElementById('interfaceTags');
+      const interfaceStats = document.getElementById('interfaceStats');
+
+      if (!summary || !grid || !interfaceTags || !interfaceStats) {
+        return;
+      }
+
+      try {
+        const response = await fetch('/api/mislaka/affiliations');
+        if (!response.ok) {
+          throw new Error('Affiliations unavailable');
+        }
+        const data = await response.json();
+
+        const entityCount = Object.keys(data.entity_types || {}).length;
+        const productCount = Object.keys(data.product_types || {}).length;
+        const statusCount = Object.keys(data.status_codes || {}).length;
+        const idCount = Object.keys(data.id_types || {}).length;
+        const interfaceCount = Object.keys(data.interface_codes || {}).length;
+        const environmentCount = Object.keys(data.environment_codes || {}).length;
+        const interfaceList = Object.values(data.interface_codes || {});
+        const schemaCount = new Set(interfaceList.map(item => item.schema).filter(Boolean)).size;
+
+        summary.textContent = `Entities: ${entityCount} • Products: ${productCount} • Status: ${statusCount} • IDs: ${idCount}`;
+
+        grid.innerHTML = `
+          <div class="affiliation-item">
+            <div class="label">Entity Types</div>
+            <div class="value">${entityCount}</div>
+          </div>
+          <div class="affiliation-item">
+            <div class="label">Product Types</div>
+            <div class="value">${productCount}</div>
+          </div>
+          <div class="affiliation-item">
+            <div class="label">Status Codes</div>
+            <div class="value">${statusCount}</div>
+          </div>
+          <div class="affiliation-item">
+            <div class="label">ID Types</div>
+            <div class="value">${idCount}</div>
+          </div>
+        `;
+
+        interfaceTags.innerHTML = interfaceList
+          .slice(0, 8)
+          .map(item => `<span class="tag">${item.he || item.name}</span>`)
+          .join('') || '<span style="color: var(--text-muted);">No interface data</span>';
+
+        interfaceStats.innerHTML = `
+          <div class="affiliation-item">
+            <div class="label">Interfaces</div>
+            <div class="value">${interfaceCount}</div>
+          </div>
+          <div class="affiliation-item">
+            <div class="label">Schemas</div>
+            <div class="value">${schemaCount || 0}</div>
+          </div>
+          <div class="affiliation-item">
+            <div class="label">Environments</div>
+            <div class="value">${environmentCount}</div>
+          </div>
+          <div class="affiliation-item">
+            <div class="label">Source</div>
+            <div class="value">Mislaka Specs</div>
+          </div>
+        `;
+      } catch (error) {
+        summary.textContent = 'Affiliations data could not be loaded.';
+        grid.innerHTML = '';
+        interfaceTags.innerHTML = '<span style="color: var(--text-muted);">Check API availability</span>';
+        interfaceStats.innerHTML = '';
+      }
+    }
+
+    async function refreshSwiftnessStatus() {
+      const pill = document.getElementById('swiftnessStatusPill');
+      const message = document.getElementById('swiftnessStatusMessage');
+      const connectBtn = document.getElementById('swiftnessConnectBtn');
+
+      if (!pill || !message || !connectBtn) {
+        return;
+      }
+
+      try {
+        const response = await fetch('/api/swiftness-safe/status');
+        const data = await response.json();
+        swiftnessSafeBaseUrl = data.base_url || 'https://www.swiftness.co.il';
+
+        pill.className = `status-pill ${data.configured ? 'ready' : 'pending'}`;
+        pill.textContent = data.configured ? '✅ Safe Ready' : '⚠️ Safe Not Configured';
+        message.textContent = data.message || 'Swiftness Safe status unavailable';
+        connectBtn.disabled = !data.configured;
+      } catch (error) {
+        pill.className = 'status-pill error';
+        pill.textContent = '❌ Safe Error';
+        message.textContent = 'Unable to reach Swiftness Safe status endpoint';
+        connectBtn.disabled = true;
+      }
+    }
+
+    function openSwiftnessSafe() {
+      if (!swiftnessSafeBaseUrl) {
+        alert('Swiftness Safe base URL not available yet.');
+        return;
+      }
+      window.open(swiftnessSafeBaseUrl, '_blank', 'noopener');
     }
     
     function formatDate(dateStr) {
@@ -2005,7 +2338,7 @@
       const ext = filename.split('.').pop().toLowerCase();
       const icons = {
         'csv': '📄', 'xls': '📊', 'xlsx': '📊',
-        'zip': '📦', 'png': '🖼️', 'jpg': '🖼️', 
+        'zip': '📦', 'xml': '🧾', 'png': '🖼️', 'jpg': '🖼️', 
         'jpeg': '🖼️', 'pdf': '📕'
       };
       return icons[ext] || '📁';

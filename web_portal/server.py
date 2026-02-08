@@ -7829,6 +7829,50 @@ For claims or questions, please contact:
                 self._set_json_headers(500)
                 self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
                 return
+
+        # GET /api/mislaka/affiliations - Mislaka schema-based affiliations map
+        if path == '/api/mislaka/affiliations':
+            try:
+                from services.pension_data_agent import MislakaSchemaMapping
+
+                self._set_json_headers(200)
+                self.wfile.write(json.dumps({
+                    'interface_codes': MislakaSchemaMapping.INTERFACE_CODES,
+                    'product_types': MislakaSchemaMapping.PRODUCT_TYPE_CODES,
+                    'entity_types': MislakaSchemaMapping.ENTITY_TYPE_CODES,
+                    'status_codes': MislakaSchemaMapping.STATUS_CODES,
+                    'id_types': MislakaSchemaMapping.ID_TYPE_CODES,
+                    'environment_codes': MislakaSchemaMapping.ENVIRONMENT_CODES
+                }, ensure_ascii=False).encode('utf-8'))
+                return
+            except Exception as e:
+                print(f"Error in /api/mislaka/affiliations: {e}")
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+                return
+
+        # GET /api/swiftness-safe/status - Swiftness Safe integration status
+        if path == '/api/swiftness-safe/status':
+            try:
+                base_url = os.environ.get('SWIFTNESS_SAFE_BASE_URL', 'https://www.swiftness.co.il')
+                client_id = os.environ.get('SWIFTNESS_SAFE_CLIENT_ID', '')
+                client_secret = os.environ.get('SWIFTNESS_SAFE_CLIENT_SECRET', '')
+                configured = bool(client_id and client_secret)
+
+                self._set_json_headers(200)
+                self.wfile.write(json.dumps({
+                    'configured': configured,
+                    'base_url': base_url,
+                    'status': 'ready' if configured else 'not_configured',
+                    'message': 'Swiftness Safe credentials are configured' if configured
+                    else 'Configure SWIFTNESS_SAFE_CLIENT_ID and SWIFTNESS_SAFE_CLIENT_SECRET'
+                }, ensure_ascii=False).encode('utf-8'))
+                return
+            except Exception as e:
+                print(f"Error in /api/swiftness-safe/status: {e}")
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+                return
         
         # Customers Endpoint
         if path == '/api/customers':
@@ -15227,6 +15271,52 @@ For claims or questions, please contact:
             except Exception as e:
                 import traceback
                 print(f"Error in /api/reports/generate: {e}")
+                traceback.print_exc()
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+                return
+
+        # POST /api/reports/revoke-today - Revoke today's reports for user
+        if path == '/api/reports/revoke-today':
+            auth_header = self.headers.get('Authorization', '')
+            token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+            session = validate_session(token) if token else None
+
+            if not session:
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Authentication required'}).encode('utf-8'))
+                return
+
+            length = int(self.headers.get('Content-Length', 0))
+            body = self.rfile.read(length).decode('utf-8') if length else '{}'
+
+            try:
+                data = json.loads(body) if body else {}
+                scope = data.get('scope', 'self')
+
+                from services.ai_risk_reports_service import get_ai_reports_service
+                service = get_ai_reports_service()
+
+                user_id = session.get('customer_id') or session.get('username')
+                user_role = session.get('role', 'customer')
+
+                result = service.revoke_reports_for_date(
+                    user_id=user_id,
+                    user_role=user_role,
+                    target_date=datetime.now().date(),
+                    scope=scope
+                )
+
+                self._set_json_headers(200)
+                self.wfile.write(json.dumps(result).encode('utf-8'))
+                return
+            except json.JSONDecodeError:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'Invalid JSON'}).encode('utf-8'))
+                return
+            except Exception as e:
+                import traceback
+                print(f"Error in /api/reports/revoke-today: {e}")
                 traceback.print_exc()
                 self._set_json_headers(500)
                 self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))

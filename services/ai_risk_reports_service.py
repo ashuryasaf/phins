@@ -22,7 +22,7 @@ import os
 import re
 import hashlib
 import zipfile
-from datetime import datetime
+from datetime import datetime, date
 from typing import Dict, List, Any, Optional, Tuple
 from enum import Enum
 from dataclasses import dataclass, field, asdict
@@ -515,6 +515,10 @@ class AIRiskReportsService:
                 # Handle PDF files
                 parsed = self._parse_pdf(file_content, filename)
                 encoding = 'binary'
+            elif file_type_lower == 'xml':
+                # Handle Mislaka / pension XML files
+                parsed = self._parse_pension_xml(file_content, filename)
+                encoding = 'utf-8'
             elif file_type_lower in ['csv', 'xls', 'xlsx']:
                 # Parse as CSV (XLS files should be converted to CSV format)
                 encoding = self._detect_encoding(file_content)
@@ -3564,6 +3568,91 @@ Factors Affecting Score:
         # Sort by generated_at descending
         results.sort(key=lambda x: x.get('generated_at', ''), reverse=True)
         return results
+
+    def revoke_reports_for_date(self, user_id: str, user_role: str, target_date: date,
+                                scope: str = "self") -> Dict[str, Any]:
+        """
+        Revoke (delete) reports generated on a specific date.
+        Also removes orphaned analyses/documents when possible.
+
+        Args:
+            user_id: The requesting user ID
+            user_role: The requesting user role
+            target_date: Date to revoke (date object)
+            scope: "self" (default) or "all" (admin only)
+
+        Returns:
+            Summary dict with counts of removed items.
+        """
+        is_admin = user_role in ['admin', 'actuary', 'underwriter', 'analyst']
+        allow_all = is_admin and scope == "all"
+
+        reports_to_remove = []
+        analyses_to_check = set()
+        documents_to_check = set()
+
+        for report_id, report in list(self.reports.items()):
+            report_dt = self._parse_report_datetime(report.generated_at)
+            if not report_dt or report_dt.date() != target_date:
+                continue
+
+            analysis = self.analyses.get(report.analysis_id)
+            if not analysis:
+                continue
+
+            doc = self.documents.get(analysis.document_id)
+            if not doc:
+                continue
+
+            if not allow_all and doc.get('owner_id') != user_id:
+                continue
+
+            reports_to_remove.append(report_id)
+            analyses_to_check.add(report.analysis_id)
+            documents_to_check.add(analysis.document_id)
+
+        # Remove reports
+        for report_id in reports_to_remove:
+            self.reports.pop(report_id, None)
+
+        # Remove analyses not referenced by any remaining report
+        analyses_removed = 0
+        for analysis_id in analyses_to_check:
+            if not any(r.analysis_id == analysis_id for r in self.reports.values()):
+                self.analyses.pop(analysis_id, None)
+                analyses_removed += 1
+
+        # Remove documents not referenced by any remaining analysis
+        documents_removed = 0
+        for document_id in documents_to_check:
+            if not any(a.document_id == document_id for a in self.analyses.values()):
+                self.documents.pop(document_id, None)
+                documents_removed += 1
+
+        # Persist changes
+        self.save_data()
+
+        return {
+            'success': True,
+            'target_date': target_date.isoformat(),
+            'reports_removed': len(reports_to_remove),
+            'analyses_removed': analyses_removed,
+            'documents_removed': documents_removed
+        }
+
+    def _parse_report_datetime(self, date_str: str) -> Optional[datetime]:
+        """Parse report datetime from stored string values."""
+        if not date_str:
+            return None
+        try:
+            if date_str.endswith('Z'):
+                return datetime.fromisoformat(date_str.replace('Z', '+00:00'))
+            return datetime.fromisoformat(date_str)
+        except ValueError:
+            try:
+                return datetime.strptime(date_str, '%Y-%m-%d')
+            except ValueError:
+                return None
     
     def authorize_access(self, resource_type: str, resource_id: str, 
                         user_id: str, user_role: str) -> Tuple[bool, Optional[str]]:
