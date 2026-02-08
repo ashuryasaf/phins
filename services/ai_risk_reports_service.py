@@ -2880,8 +2880,22 @@ Factors Affecting Score:
         """
         content_lines = []
         
-        # If we have the pre-generated Mislaka pension report, include it
-        if pension_report:
+        def _safe_float(val: Any, default: float = 0.0) -> float:
+            try:
+                if val is None:
+                    return default
+                if isinstance(val, (int, float)):
+                    return float(val)
+                return float(str(val).replace(',', '').replace('₪', '').strip())
+            except (ValueError, TypeError):
+                return default
+
+        def _fmt_ils(val: Any) -> str:
+            amount = _safe_float(val, 0.0)
+            return f"₪{amount:,.0f}"
+
+        # Include the pre-generated Mislaka report only when structured data is missing
+        if pension_report and not pension_data:
             content_lines.append(pension_report)
             content_lines.append("")
             content_lines.append("─" * 50)
@@ -2925,6 +2939,65 @@ Factors Affecting Score:
                 if providers:
                     content_lines.append(f"• יצרנים: {', '.join(providers)}")
                 content_lines.append("")
+
+                # Policy-level details (aligned to Mislaka report needs)
+                if accounts:
+                    client_name = clients.get('full_name') or f"{clients.get('first_name', '')} {clients.get('last_name', '')}".strip()
+                    client_id = clients.get('id_number', '')
+                    content_lines.append("📄 פירוט לפי פוליסה:")
+                    content_lines.append("=" * 40)
+                    for i, acct in enumerate(accounts, 1):
+                        provider = acct.get('provider', 'לא ידוע')
+                        policy_number = acct.get('policy_number', 'לא ידוע')
+                        product_type = acct.get('product_type_name') or acct.get('product_name') or acct.get('product_type', 'לא ידוע')
+                        status = acct.get('status', 'לא ידוע')
+                        start_date = acct.get('start_date', '') or acct.get('policy_start_date', '')
+                        investment_track = acct.get('investment_track', '')
+                        balance = acct.get('total_balance', 0)
+                        savings_balance = acct.get('savings_balance', balance)
+                        severance_balance = acct.get('severance_balance', 0)
+                        coverage_amount = acct.get('coverage_amount', acct.get('death_coverage', 0))
+                        disability_cover = acct.get('disability_coverage', 0)
+                        monthly_premium = acct.get('monthly_premium', acct.get('premium_monthly', 0))
+                        mgmt_fee_savings = acct.get('management_fee_savings', 0)
+                        mgmt_fee_deposits = acct.get('management_fee_deposits', 0)
+                        employer_name = acct.get('employer_name', '')
+                        beneficiaries = acct.get('beneficiaries', [])
+
+                        content_lines.append(f"┌─── פוליסה {i} ───────────────────────────────────────────────")
+                        if client_name:
+                            content_lines.append(f"│ שם לקוח: {client_name}")
+                        if client_id:
+                            content_lines.append(f"│ ת.ז: {client_id}")
+                        content_lines.append(f"│ שם חברה: {provider}")
+                        content_lines.append(f"│ מספר פוליסה: {policy_number}")
+                        content_lines.append(f"│ סוג מוצר/תוכנית: {product_type}")
+                        content_lines.append(f"│ סטטוס: {status}")
+                        if start_date:
+                            content_lines.append(f"│ תאריך תחילה: {start_date}")
+                        if employer_name:
+                            content_lines.append(f"│ מעסיק: {employer_name}")
+                        content_lines.append(f"│ סכום צבירה/חיסכון: {_fmt_ils(balance)}")
+                        if _safe_float(savings_balance) > 0 and _safe_float(savings_balance) != _safe_float(balance):
+                            content_lines.append(f"│ חיסכון (תגמולים): {_fmt_ils(savings_balance)}")
+                        if _safe_float(severance_balance) > 0:
+                            content_lines.append(f"│ פיצויים: {_fmt_ils(severance_balance)}")
+                        if _safe_float(coverage_amount) > 0:
+                            content_lines.append(f"│ סכום כיסוי (חיים): {_fmt_ils(coverage_amount)}")
+                        if _safe_float(disability_cover) > 0:
+                            content_lines.append(f"│ כיסוי אובדן כושר עבודה: {_fmt_ils(disability_cover)}/חודש")
+                        if _safe_float(monthly_premium) > 0:
+                            content_lines.append(f"│ פרמיה חודשית: {_fmt_ils(monthly_premium)}")
+                        if _safe_float(mgmt_fee_savings) > 0:
+                            content_lines.append(f"│ דמי ניהול מצבירה: {mgmt_fee_savings:.2f}%")
+                        if _safe_float(mgmt_fee_deposits) > 0:
+                            content_lines.append(f"│ דמי ניהול מהפקדות: {mgmt_fee_deposits:.2f}%")
+                        if investment_track:
+                            content_lines.append(f"│ מסלול השקעה: {investment_track}")
+                        if beneficiaries:
+                            content_lines.append(f"│ מוטבים: {', '.join([b for b in beneficiaries if b])}")
+                        content_lines.append("└──────────────────────────────────────────────────────────────")
+                    content_lines.append("")
                 
                 # Section 14 status
                 content_lines.append("📌 סעיף 14 (פיצויים):")
@@ -2965,37 +3038,7 @@ Factors Affecting Score:
                     content_lines.append(f"• חודשים: {', '.join(missing[:6])}{'...' if len(missing) > 6 else ''}")
                     content_lines.append("")
                 
-                # Account details
-                if accounts:
-                    content_lines.append("📁 פירוט חשבונות:")
-                    content_lines.append("-" * 40)
-                    total_balance = totals.get('total_balance', 1)
-                    for i, acct in enumerate(accounts[:10], 1):
-                        balance = acct.get('total_balance', acct.get('balance', 0))
-                        pct = (balance / total_balance * 100) if total_balance > 0 else 0
-                        content_lines.append(f"\n🔹 חשבון {i}:")
-                        content_lines.append(f"   • מספר פוליסה: {acct.get('policy_number', 'לא ידוע')}")
-                        if acct.get('provider'):
-                            content_lines.append(f"   • יצרן: {acct.get('provider')}")
-                        if acct.get('product_type_name') or acct.get('product_name') or acct.get('product_type'):
-                            content_lines.append(f"   • סוג מוצר: {acct.get('product_type_name', acct.get('product_name', acct.get('product_type', 'לא ידוע')))}")
-                        if acct.get('status'):
-                            content_lines.append(f"   • סטטוס: {acct.get('status')}")
-                        content_lines.append(f"   • יתרה: ₪{balance:,.2f} ({pct:.1f}% מהכולל)")
-                        if acct.get('savings_balance', 0) > 0:
-                            content_lines.append(f"   • חיסכון: ₪{acct.get('savings_balance', 0):,.2f}")
-                        if acct.get('severance_balance', 0) > 0:
-                            content_lines.append(f"   • פיצויים: ₪{acct.get('severance_balance', 0):,.2f}")
-                        if acct.get('section14'):
-                            content_lines.append(f"   • סעיף 14: ✅ מכוסה")
-                        if acct.get('management_fee_savings', 0) > 0:
-                            content_lines.append(f"   • דמי ניהול: {acct.get('management_fee_savings', 0):.2f}%")
-                        if acct.get('employer_name'):
-                            content_lines.append(f"   • מעסיק: {acct.get('employer_name')}")
-                    
-                    if len(accounts) > 10:
-                        content_lines.append(f"\n   ... ועוד {len(accounts) - 10} חשבונות")
-                    content_lines.append("")
+                # Account details section replaced by policy-level format above
             
             else:
                 # English version
