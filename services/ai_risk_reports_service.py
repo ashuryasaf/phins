@@ -2513,7 +2513,10 @@ class AIRiskReportsService:
                 'document_id': analysis.document_id,
                 'risk_score': analysis.risk_score,
                 'confidence': analysis.confidence,
-                'processing_time_ms': analysis.processing_time_ms
+                'processing_time_ms': analysis.processing_time_ms,
+                # Include raw pension data for frontend display
+                'pension_data': pension_data if pension_data else None,
+                'is_pension_data': pension_data is not None or pension_report is not None,
             }
         )
         

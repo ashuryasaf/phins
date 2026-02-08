@@ -2160,8 +2160,149 @@
       });
     }
     
-    function displayResults(analysis, report) {
-      // Extract metrics
+    // ==========================================================================
+    // PENSION DATA DISPLAY FUNCTIONS
+    // Show actual raw data from Mislaka files, not statistical analysis
+    // ==========================================================================
+    
+    function renderPensionStats(pensionData) {
+      // Extract real data from pension files
+      const client = pensionData.client || {};
+      const accounts = pensionData.accounts || [];
+      const totals = pensionData.totals || {};
+      
+      const clientName = client.full_name || client.client_name || 'לא זמין';
+      const idNumber = client.id_number || 'לא זמין';
+      const totalBalance = totals.total_balance || accounts.reduce((sum, a) => sum + (parseFloat(a.total_balance) || 0), 0);
+      const totalSeverance = totals.total_severance || accounts.reduce((sum, a) => sum + (parseFloat(a.severance_balance) || 0), 0);
+      const accountCount = accounts.length;
+      const providers = [...new Set(accounts.map(a => a.provider).filter(p => p))];
+      
+      // Calculate total insurance coverage
+      const totalDeathCoverage = accounts.reduce((sum, a) => sum + (parseFloat(a.death_coverage) || 0), 0);
+      const totalDisabilityCoverage = accounts.reduce((sum, a) => sum + (parseFloat(a.disability_coverage) || 0), 0);
+      
+      document.getElementById('statsGrid').innerHTML = `
+        <div class="stat-card fade-in" style="grid-column: span 2; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white;">
+          <h5 style="color: white;">👤 פרטי לקוח</h5>
+          <div class="value" style="font-size: 1.5rem; color: white;">${clientName}</div>
+          <small style="color: rgba(255,255,255,0.9);">ת.ז: ${idNumber}</small>
+        </div>
+        <div class="stat-card fade-in" style="background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%); color: white;">
+          <h5 style="color: white;">💰 סה״כ צבירה</h5>
+          <div class="value" style="font-size: 1.8rem; color: white;">₪${totalBalance.toLocaleString('he-IL')}</div>
+          <small style="color: rgba(255,255,255,0.9);">כל הפוליסות</small>
+        </div>
+        <div class="stat-card fade-in" style="background: linear-gradient(135deg, #ee0979 0%, #ff6a00 100%); color: white;">
+          <h5 style="color: white;">💼 פיצויים</h5>
+          <div class="value" style="font-size: 1.8rem; color: white;">₪${totalSeverance.toLocaleString('he-IL')}</div>
+          <small style="color: rgba(255,255,255,0.9);">סה״כ פיצויים צבורים</small>
+        </div>
+        <div class="stat-card fade-in">
+          <h5>📊 מספר פוליסות</h5>
+          <div class="value" style="font-size: 2rem;">${accountCount}</div>
+          <small>${providers.length} יצרנים</small>
+        </div>
+        <div class="stat-card fade-in">
+          <h5>🏢 יצרנים</h5>
+          <div class="value" style="font-size: 1rem;">${providers.slice(0, 3).join(', ')}</div>
+          <small>${providers.length > 3 ? `ועוד ${providers.length - 3}...` : ''}</small>
+        </div>
+        ${totalDeathCoverage > 0 ? `
+        <div class="stat-card fade-in">
+          <h5>🛡️ ביטוח חיים</h5>
+          <div class="value" style="font-size: 1.3rem;">₪${totalDeathCoverage.toLocaleString('he-IL')}</div>
+          <small>סכום כיסוי מוות</small>
+        </div>
+        ` : ''}
+        ${totalDisabilityCoverage > 0 ? `
+        <div class="stat-card fade-in">
+          <h5>🏥 אובדן כושר</h5>
+          <div class="value" style="font-size: 1.3rem;">₪${totalDisabilityCoverage.toLocaleString('he-IL')}</div>
+          <small>פיצוי חודשי</small>
+        </div>
+        ` : ''}
+        <div class="stat-card fade-in" style="background: #f0f9ff; border: 2px solid #0ea5e9;">
+          <h5>📋 מקור נתונים</h5>
+          <div class="value" style="font-size: 1rem; color: #0369a1;">מסלקת הביטוח והפנסיה</div>
+          <small>נתונים אמיתיים מהקובץ</small>
+        </div>
+      `;
+    }
+    
+    function renderPensionInsights(pensionData) {
+      const container = document.getElementById('insightsGrid');
+      const accounts = pensionData.accounts || [];
+      const client = pensionData.client || {};
+      
+      let html = '';
+      
+      // Client info card
+      html += `
+        <div class="insight-card fade-in" style="background: linear-gradient(135deg, #667eea15 0%, #764ba215 100%); border: 2px solid #667eea;">
+          <h5>👤 פרטי המבוטח</h5>
+          <div class="insight-detail" style="direction: rtl; text-align: right;">
+            <div class="stat-detail"><span class="label">שם מלא</span><span class="val">${client.full_name || client.client_name || 'לא זמין'}</span></div>
+            <div class="stat-detail"><span class="label">ת.ז</span><span class="val">${client.id_number || 'לא זמין'}</span></div>
+            ${client.birth_date ? `<div class="stat-detail"><span class="label">תאריך לידה</span><span class="val">${client.birth_date}</span></div>` : ''}
+            ${client.phone ? `<div class="stat-detail"><span class="label">טלפון</span><span class="val">${client.phone}</span></div>` : ''}
+          </div>
+          <span class="insight-badge" style="background: #667eea; color: white;">נתוני לקוח</span>
+        </div>
+      `;
+      
+      // Each policy as a card
+      accounts.forEach((acct, idx) => {
+        const balance = parseFloat(acct.total_balance) || 0;
+        const severance = parseFloat(acct.severance_balance) || 0;
+        const savings = parseFloat(acct.savings_balance) || 0;
+        const mgmtFee = parseFloat(acct.management_fee_savings) || 0;
+        const mgmtFeeDeposits = parseFloat(acct.management_fee_deposits) || 0;
+        const deathCoverage = parseFloat(acct.death_coverage) || 0;
+        const disabilityCoverage = parseFloat(acct.disability_coverage) || 0;
+        
+        html += `
+          <div class="insight-card fade-in" style="background: #f8fafc; border: 1px solid #e2e8f0;">
+            <h5 style="color: #1e40af;">📋 פוליסה ${idx + 1}: ${acct.provider || 'לא ידוע'}</h5>
+            <div class="insight-detail" style="direction: rtl; text-align: right;">
+              <div class="stat-detail"><span class="label">מספר פוליסה</span><span class="val" style="font-family: monospace;">${acct.policy_number || '-'}</span></div>
+              <div class="stat-detail"><span class="label">סוג מוצר</span><span class="val">${acct.product_type_name || acct.product_type || '-'}</span></div>
+              <div class="stat-detail"><span class="label">סטטוס</span><span class="val">${acct.status || 'פעיל'}</span></div>
+              ${balance > 0 ? `<div class="stat-detail"><span class="label">צבירה כוללת</span><span class="val" style="color: #059669; font-weight: bold;">₪${balance.toLocaleString('he-IL')}</span></div>` : ''}
+              ${savings > 0 && savings !== balance ? `<div class="stat-detail"><span class="label">תגמולים</span><span class="val">₪${savings.toLocaleString('he-IL')}</span></div>` : ''}
+              ${severance > 0 ? `<div class="stat-detail"><span class="label">פיצויים</span><span class="val">₪${severance.toLocaleString('he-IL')}</span></div>` : ''}
+              ${mgmtFee > 0 ? `<div class="stat-detail"><span class="label">דמי ניהול מצבירה</span><span class="val">${mgmtFee.toFixed(2)}%</span></div>` : ''}
+              ${mgmtFeeDeposits > 0 ? `<div class="stat-detail"><span class="label">דמי ניהול מהפקדות</span><span class="val">${mgmtFeeDeposits.toFixed(2)}%</span></div>` : ''}
+              ${deathCoverage > 0 ? `<div class="stat-detail"><span class="label">ביטוח חיים</span><span class="val">₪${deathCoverage.toLocaleString('he-IL')}</span></div>` : ''}
+              ${disabilityCoverage > 0 ? `<div class="stat-detail"><span class="label">אובדן כושר</span><span class="val">₪${disabilityCoverage.toLocaleString('he-IL')}/חודש</span></div>` : ''}
+              ${acct.employer_name ? `<div class="stat-detail"><span class="label">מעסיק</span><span class="val">${acct.employer_name}</span></div>` : ''}
+              ${acct.section14 !== undefined ? `<div class="stat-detail"><span class="label">סעיף 14</span><span class="val">${acct.section14 ? '✅ כן' : '❌ לא'}</span></div>` : ''}
+            </div>
+            <span class="insight-badge">${acct.provider || 'פוליסה'}</span>
+          </div>
+        `;
+      });
+      
+      // Summary totals card
+      const totals = pensionData.totals || {};
+      html += `
+        <div class="insight-card fade-in" style="background: linear-gradient(135deg, #11998e15 0%, #38ef7d15 100%); border: 2px solid #11998e;">
+          <h5 style="color: #065f46;">📊 סיכום כולל</h5>
+          <div class="insight-detail" style="direction: rtl; text-align: right;">
+            <div class="stat-detail"><span class="label">סה״כ צבירה</span><span class="val" style="font-size: 1.2rem; color: #059669; font-weight: bold;">₪${(totals.total_balance || 0).toLocaleString('he-IL')}</span></div>
+            <div class="stat-detail"><span class="label">סה״כ פיצויים</span><span class="val">₪${(totals.total_severance || 0).toLocaleString('he-IL')}</span></div>
+            <div class="stat-detail"><span class="label">מספר פוליסות</span><span class="val">${totals.account_count || accounts.length}</span></div>
+            <div class="stat-detail"><span class="label">מספר יצרנים</span><span class="val">${totals.provider_count || totals.providers?.length || '-'}</span></div>
+          </div>
+          <span class="insight-badge" style="background: #11998e; color: white;">סיכום</span>
+        </div>
+      `;
+      
+      container.innerHTML = html;
+    }
+    
+    function renderStandardStats(analysis) {
+      // Standard statistical analysis (non-pension data)
       const riskScore = analysis.risk_score || 50;
       const riskLevel = riskScore < 30 ? 'low' : (riskScore < 60 ? 'medium' : 'high');
       const riskColor = riskScore < 30 ? 'var(--success)' : (riskScore < 60 ? 'var(--warning)' : 'var(--danger)');
@@ -2176,7 +2317,6 @@
       const patternCount = analysis.patterns_found?.length || 0;
       const anomalyCount = analysis.anomalies?.length || 0;
       
-      // Stats Grid - Enhanced with BI metrics
       document.getElementById('statsGrid').innerHTML = `
         <div class="stat-card risk-${riskLevel} fade-in">
           <h5>Risk Assessment</h5>
@@ -2229,9 +2369,43 @@
           <small>Insights identified</small>
         </div>
       `;
+    }
+    
+    // ==========================================================================
+    // END PENSION DATA DISPLAY FUNCTIONS
+    // ==========================================================================
+    
+    function displayResults(analysis, report) {
+      // Check if this is pension/Mislaka data
+      const isPensionData = report.metadata?.is_pension_data || 
+                           report.metadata?.pension_data ||
+                           report.language === 'hebrew';
+      const pensionData = report.metadata?.pension_data;
       
-      // AI Insights Panel
-      renderInsights(analysis, metrics);
+      // Update the insights panel header based on data type
+      const insightsHeader = document.querySelector('.insights-header');
+      
+      if (isPensionData && pensionData) {
+        // PENSION DATA MODE: Show raw pension data, not statistical analysis
+        if (insightsHeader) {
+          insightsHeader.innerHTML = `
+            <h3>📋 נתוני מסלקה - פירוט פוליסות</h3>
+            <p style="margin-top: 0.5rem; opacity: 0.9; font-size: 0.9rem;">נתונים אמיתיים מקובץ המסלקה: ת.ז, מספרי פוליסה, יתרות, כיסויים</p>
+          `;
+        }
+        renderPensionStats(pensionData);
+        renderPensionInsights(pensionData);
+      } else {
+        // REGULAR MODE: Show standard analysis
+        if (insightsHeader) {
+          insightsHeader.innerHTML = `
+            <h3>🧠 AI Inductive Analysis</h3>
+            <p style="margin-top: 0.5rem; opacity: 0.9; font-size: 0.9rem;">Advanced pattern recognition and statistical insights from your data</p>
+          `;
+        }
+        renderStandardStats(analysis);
+        renderInsights(analysis, analysis.key_metrics || {});
+      }
       
       // Charts
       renderCharts(report.charts || []);
