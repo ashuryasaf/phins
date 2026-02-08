@@ -663,7 +663,7 @@ class PensionDataAgent:
     
     def process_zip_content(self, zip_content: bytes) -> Dict[str, Any]:
         """
-        Process a ZIP file containing multiple Mislaka XML files.
+        Process a ZIP file containing Mislaka XML and Excel files.
         
         Args:
             zip_content: Raw ZIP file bytes
@@ -676,18 +676,32 @@ class PensionDataAgent:
         try:
             with zipfile.ZipFile(io.BytesIO(zip_content), 'r') as zf:
                 for filename in zf.namelist():
-                    # Skip non-XML files and hidden files
-                    if not filename.lower().endswith('.xml'):
-                        continue
+                    # Skip hidden files
                     if filename.startswith('__') or filename.startswith('.'):
                         continue
+                    
+                    name_lower = filename.lower()
+                    ext = name_lower.split('.')[-1] if '.' in name_lower else ''
                     
                     logger.info(f"Processing file: {filename}")
                     
                     try:
-                        xml_bytes = zf.read(filename)
-                        file_data = self._parse_mislaka_xml(xml_bytes)
-                        profile.merge_data(file_data)
+                        file_bytes = zf.read(filename)
+                        
+                        if ext == 'xml':
+                            # Process XML file
+                            file_data = self._parse_mislaka_xml(file_bytes)
+                            profile.merge_data(file_data)
+                        elif ext in ['xls', 'xlsx']:
+                            # Process Excel file
+                            file_data = self._parse_mislaka_excel(file_bytes, filename, ext)
+                            if file_data:
+                                profile.merge_data(file_data)
+                        elif ext == 'csv':
+                            # Process CSV file
+                            file_data = self._parse_mislaka_csv(file_bytes, filename)
+                            if file_data:
+                                profile.merge_data(file_data)
                     except Exception as e:
                         logger.error(f"Error processing {filename}: {e}")
                         profile.anomalies.append(f"Failed to parse {filename}: {str(e)}")
@@ -781,6 +795,393 @@ class PensionDataAgent:
         data['raw_elements'] = self._extract_all_elements(root)
         
         return data
+    
+    def _parse_mislaka_excel(self, content: bytes, filename: str, ext: str) -> Optional[Dict[str, Any]]:
+        """
+        Parse Mislaka Excel files (.xls and .xlsx) into structured data.
+        
+        Args:
+            content: Raw Excel file bytes
+            filename: Original filename
+            ext: File extension ('xls' or 'xlsx')
+            
+        Returns:
+            Dictionary with parsed data or None if parsing fails
+        """
+        try:
+            rows = []
+            columns = []
+            
+            if ext == 'xlsx':
+                # Use openpyxl for .xlsx files
+                try:
+                    import openpyxl
+                    from openpyxl import load_workbook
+                    
+                    wb = load_workbook(filename=io.BytesIO(content), data_only=True)
+                    
+                    for sheet_name in wb.sheetnames:
+                        sheet = wb[sheet_name]
+                        sheet_rows = list(sheet.iter_rows(values_only=True))
+                        
+                        if not sheet_rows:
+                            continue
+                        
+                        # First row as headers
+                        header_row = sheet_rows[0] if sheet_rows else []
+                        sheet_columns = [str(h).strip() if h else f'עמודה_{i}' for i, h in enumerate(header_row)]
+                        
+                        # Add columns that don't exist yet
+                        for col in sheet_columns:
+                            if col and col not in columns:
+                                columns.append(col)
+                        
+                        # Process data rows
+                        for row in sheet_rows[1:]:
+                            if row and any(cell is not None for cell in row):
+                                row_dict = {}
+                                for i, cell in enumerate(row):
+                                    if i < len(sheet_columns):
+                                        col_name = sheet_columns[i]
+                                        row_dict[col_name] = cell if cell is not None else ''
+                                rows.append(row_dict)
+                    
+                    wb.close()
+                    
+                except ImportError:
+                    logger.warning("openpyxl not available for xlsx parsing")
+                    return None
+                    
+            elif ext == 'xls':
+                # Use xlrd for older .xls files
+                try:
+                    import xlrd
+                    
+                    wb = xlrd.open_workbook(file_contents=content)
+                    
+                    for sheet_idx in range(wb.nsheets):
+                        sheet = wb.sheet_by_index(sheet_idx)
+                        
+                        if sheet.nrows == 0:
+                            continue
+                        
+                        # First row as headers
+                        header_row = sheet.row_values(0) if sheet.nrows > 0 else []
+                        sheet_columns = [str(h).strip() if h else f'עמודה_{i}' for i, h in enumerate(header_row)]
+                        
+                        # Add columns that don't exist yet
+                        for col in sheet_columns:
+                            if col and col not in columns:
+                                columns.append(col)
+                        
+                        # Process data rows
+                        for row_idx in range(1, sheet.nrows):
+                            row = sheet.row_values(row_idx)
+                            if row and any(cell for cell in row):
+                                row_dict = {}
+                                for i, cell in enumerate(row):
+                                    if i < len(sheet_columns):
+                                        col_name = sheet_columns[i]
+                                        row_dict[col_name] = cell if cell else ''
+                                rows.append(row_dict)
+                    
+                except ImportError:
+                    logger.warning("xlrd not available for xls parsing")
+                    return None
+            
+            if not rows and not columns:
+                return None
+            
+            # Map Excel columns to pension data structure
+            return self._map_excel_to_pension_data(columns, rows, filename)
+            
+        except Exception as e:
+            logger.error(f"Error parsing Excel file {filename}: {e}")
+            return None
+    
+    def _parse_mislaka_csv(self, content: bytes, filename: str) -> Optional[Dict[str, Any]]:
+        """
+        Parse Mislaka CSV files into structured data.
+        
+        Args:
+            content: Raw CSV file bytes
+            filename: Original filename
+            
+        Returns:
+            Dictionary with parsed data or None if parsing fails
+        """
+        try:
+            # Try to decode with various encodings
+            text_content = None
+            for encoding in ['utf-8', 'windows-1255', 'iso-8859-8', 'cp1255']:
+                try:
+                    text_content = content.decode(encoding)
+                    break
+                except:
+                    continue
+            
+            if not text_content:
+                text_content = content.decode('utf-8', errors='replace')
+            
+            rows = []
+            columns = []
+            
+            lines = text_content.strip().split('\n')
+            if not lines:
+                return None
+            
+            # Detect delimiter
+            first_line = lines[0]
+            delimiter = ','
+            for delim in [',', '\t', ';', '|']:
+                if delim in first_line:
+                    delimiter = delim
+                    break
+            
+            # Parse header
+            columns = [col.strip().strip('"') for col in first_line.split(delimiter)]
+            
+            # Parse data rows
+            for line in lines[1:]:
+                if not line.strip():
+                    continue
+                values = [v.strip().strip('"') for v in line.split(delimiter)]
+                if values and any(v for v in values):
+                    row_dict = {}
+                    for i, val in enumerate(values):
+                        if i < len(columns):
+                            row_dict[columns[i]] = val
+                    rows.append(row_dict)
+            
+            if not rows:
+                return None
+            
+            # Map CSV columns to pension data structure
+            return self._map_excel_to_pension_data(columns, rows, filename)
+            
+        except Exception as e:
+            logger.error(f"Error parsing CSV file {filename}: {e}")
+            return None
+    
+    def _map_excel_to_pension_data(self, columns: List[str], rows: List[Dict], filename: str) -> Dict[str, Any]:
+        """
+        Map Excel/CSV column data to Mislaka pension data structure.
+        
+        Args:
+            columns: List of column names
+            rows: List of row dictionaries
+            filename: Source filename
+            
+        Returns:
+            Dictionary in standard Mislaka pension data format
+        """
+        # Hebrew column name mappings
+        column_mappings = {
+            # Client fields
+            'שם': 'full_name',
+            'שם מלא': 'full_name', 
+            'שם פרטי': 'first_name',
+            'שם משפחה': 'last_name',
+            'תעודת זהות': 'id_number',
+            'ת.ז': 'id_number',
+            'ת"ז': 'id_number',
+            'מספר זהות': 'id_number',
+            'מספר ת.ז': 'id_number',
+            'תאריך לידה': 'birth_date',
+            'טלפון': 'phone',
+            'נייד': 'mobile',
+            'דוא"ל': 'email',
+            'אימייל': 'email',
+            'כתובת': 'address',
+            
+            # Provider/Product fields
+            'יצרן': 'provider',
+            'שם יצרן': 'provider',
+            'חברה': 'provider',
+            'שם חברה': 'provider',
+            'גוף מוסדי': 'provider',
+            'מוצר': 'product_name',
+            'שם מוצר': 'product_name',
+            'סוג מוצר': 'product_type',
+            'סוג קופה': 'product_type',
+            'סוג תוכנית': 'product_type',
+            
+            # Policy fields
+            'מספר פוליסה': 'policy_number',
+            'מס פוליסה': 'policy_number',
+            "מס' פוליסה": 'policy_number',
+            'מספר חשבון': 'policy_number',
+            'מס חשבון': 'policy_number',
+            
+            # Balance fields
+            'יתרה': 'total_balance',
+            'יתרה כוללת': 'total_balance',
+            'סך צבירה': 'total_balance',
+            'צבירה': 'total_balance',
+            'סה"כ צבירה': 'total_balance',
+            'סכום צבירה': 'total_balance',
+            'יתרת תגמולים': 'savings_balance',
+            'תגמולים': 'savings_balance',
+            'חיסכון': 'savings_balance',
+            'יתרת פיצויים': 'severance_balance',
+            'פיצויים': 'severance_balance',
+            'סכום פיצויים': 'severance_balance',
+            
+            # Fee fields
+            'דמי ניהול': 'management_fee',
+            'דמי ניהול מצבירה': 'management_fee_savings',
+            'ד"נ מצבירה': 'management_fee_savings',
+            'דמי ניהול מהפקדות': 'management_fee_deposits',
+            'ד"נ מהפקדות': 'management_fee_deposits',
+            'עמלה': 'management_fee',
+            
+            # Status fields
+            'סטטוס': 'status',
+            'מצב': 'status',
+            'סטטוס פוליסה': 'status',
+            'מצב חשבון': 'status',
+            
+            # Section 14
+            'סעיף 14': 'section14',
+            'סעיף14': 'section14',
+            
+            # Employer
+            'מעסיק': 'employer_name',
+            'שם מעסיק': 'employer_name',
+            
+            # Insurance coverage
+            'ביטוח חיים': 'death_coverage',
+            'כיסוי מוות': 'death_coverage',
+            'אובדן כושר': 'disability_coverage',
+            'כיסוי נכות': 'disability_coverage',
+            
+            # Dates
+            'תאריך תחילה': 'start_date',
+            'תחילת ביטוח': 'start_date',
+            'תאריך הצטרפות': 'start_date',
+        }
+        
+        # Check if this looks like pension data
+        pension_indicators = ['יצרן', 'פוליסה', 'צבירה', 'יתרה', 'תגמולים', 'פיצויים', 
+                              'קופה', 'פנסיה', 'ביטוח', 'גמל', 'חיסכון', 'קרן']
+        columns_lower = [str(c).lower() for c in columns]
+        
+        is_pension_data = any(
+            any(indicator in col for indicator in pension_indicators) 
+            for col in columns_lower
+        )
+        
+        if not is_pension_data:
+            logger.info(f"File {filename} does not appear to contain pension data")
+            return None
+        
+        # Map columns to standardized names
+        # Prioritize exact matches over substring matches to avoid confusion
+        # (e.g., "צבירה" should not match "דמי ניהול מצבירה")
+        mapped_columns = {}
+        for col in columns:
+            col_str = str(col).strip()
+            
+            # First try exact match
+            if col_str in column_mappings:
+                mapped_columns[col] = column_mappings[col_str]
+                continue
+            
+            # Then try substring match, but prefer longer matches first
+            # Sort potential matches by length (longest first)
+            matches = []
+            for hebrew_name, english_name in column_mappings.items():
+                if hebrew_name in col_str:
+                    matches.append((len(hebrew_name), hebrew_name, english_name))
+            
+            if matches:
+                # Sort by length descending, take the longest match
+                matches.sort(key=lambda x: x[0], reverse=True)
+                mapped_columns[col] = matches[0][2]
+        
+        # Extract client and account data
+        client_info = {}
+        accounts = []
+        employers = []
+        
+        for row in rows:
+            account = {
+                'source': 'excel',
+                'source_file': filename
+            }
+            
+            for original_col, value in row.items():
+                if value is None or str(value).strip() == '':
+                    continue
+                    
+                if original_col in mapped_columns:
+                    mapped_name = mapped_columns[original_col]
+                    value_str = str(value).strip()
+                    
+                    # Convert value based on field type
+                    if mapped_name in ['total_balance', 'savings_balance', 'severance_balance', 
+                                      'management_fee', 'management_fee_savings', 'management_fee_deposits',
+                                      'death_coverage', 'disability_coverage']:
+                        try:
+                            # Clean numeric value
+                            clean_val = value_str.replace(',', '').replace('₪', '').replace('ש"ח', '').strip()
+                            account[mapped_name] = float(clean_val)
+                        except:
+                            account[mapped_name] = 0
+                    elif mapped_name == 'section14':
+                        account[mapped_name] = value_str.lower() in ['כן', 'yes', '1', 'true', 'v', '✓', 'y']
+                    elif mapped_name in ['full_name', 'first_name', 'last_name', 'id_number', 
+                                        'birth_date', 'phone', 'mobile', 'email', 'address']:
+                        # Client info
+                        if not client_info.get(mapped_name):
+                            client_info[mapped_name] = value_str
+                    elif mapped_name == 'employer_name':
+                        if value_str and value_str not in employers:
+                            employers.append(value_str)
+                        account[mapped_name] = value_str
+                    else:
+                        account[mapped_name] = value_str
+            
+            # Only add if we have some account data
+            if account.get('provider') or account.get('policy_number') or account.get('total_balance'):
+                accounts.append(account)
+        
+        # Build full name if we have parts
+        if client_info.get('first_name') or client_info.get('last_name'):
+            parts = [client_info.get('first_name', ''), client_info.get('last_name', '')]
+            client_info['full_name'] = ' '.join(p for p in parts if p)
+        
+        # Translate product types
+        for account in accounts:
+            if account.get('product_type'):
+                pt = account['product_type']
+                for code, info in self.schema_mapping.PRODUCT_TYPE_CODES.items():
+                    if pt in [info['he'], info['en'], code]:
+                        account['product_type_name'] = info['he']
+                        account['product_type_en'] = info['en']
+                        break
+            
+            # Set default status if not present
+            if not account.get('status'):
+                account['status'] = 'פעיל'
+                account['status_en'] = 'Active'
+        
+        return {
+            'header': {
+                'source': 'Excel/CSV',
+                'filename': filename,
+                'interface_type': 'Excel Import',
+                'interface_type_he': 'יבוא מאקסל',
+            },
+            'client': client_info,
+            'providers': [],  # Will be derived from accounts
+            'accounts': accounts,
+            'contributions': [],
+            'severance': [],
+            'employers': [{'name': e} for e in employers],
+            'interface_type': 'Excel',
+            'interface_type_he': 'יבוא מאקסל',
+        }
     
     def _parse_header(self, root) -> Dict[str, Any]:
         """Parse header (KoteretKovetz) from XML."""
