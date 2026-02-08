@@ -1479,19 +1479,75 @@ class AIRiskReportsService:
                                   data_type: DataType, profiles: Dict[str, Dict]) -> List[Factor]:
         """
         Extract key factors using advanced statistical analysis.
+        IMPORTANT: Excludes ID/policy numbers from statistical analysis - 
+        these are for display only, not for statistical calculations.
         """
         factors = []
         
-        # Add statistical factors for each numeric column
+        # Columns to EXCLUDE from statistical analysis (IDs, policy numbers, etc.)
+        # These should only be used for display/identification, not statistics
+        exclude_patterns = [
+            'id', 'מספר', 'תז', 'ת.ז', 'ת"ז', 'זהות', 'פוליסה', 'חשבון', 
+            'policy', 'account', 'number', 'num', 'code', 'קוד', 'מזהה',
+            'phone', 'טלפון', 'נייד', 'zip', 'מיקוד', 'index', 'row'
+        ]
+        
+        # Columns that ARE meaningful for statistical analysis (financial data)
+        meaningful_patterns = [
+            'balance', 'יתרה', 'צבירה', 'תגמולים', 'פיצויים', 'חיסכון',
+            'premium', 'פרמיה', 'הפקדה', 'תשלום',
+            'coverage', 'כיסוי', 'ביטוח', 'סכום',
+            'fee', 'דמי', 'עמלה', 'ניהול',
+            'return', 'תשואה', 'רווח', 'הפסד',
+            'salary', 'שכר', 'משכורת',
+            'amount', 'סכום', 'ערך', 'שווי'
+        ]
+        
+        def should_exclude_column(col_name: str) -> bool:
+            """Check if column should be excluded from statistical analysis."""
+            col_lower = str(col_name).lower()
+            
+            # Check if it's an identifier/number column
+            for pattern in exclude_patterns:
+                if pattern in col_lower:
+                    return True
+            
+            return False
+        
+        def is_meaningful_financial_column(col_name: str, semantic_type: str) -> bool:
+            """Check if column is meaningful for financial analysis."""
+            col_lower = str(col_name).lower()
+            
+            # Currency and percentage are always meaningful
+            if semantic_type in ['currency', 'percentage']:
+                return True
+            
+            # Check for financial keywords
+            for pattern in meaningful_patterns:
+                if pattern in col_lower:
+                    return True
+            
+            return False
+        
+        # Add statistical factors ONLY for meaningful numeric columns
         for col, profile in profiles.items():
             if profile['numeric'] and profile['stats']:
+                # Skip ID/policy number columns - CRITICAL
+                if should_exclude_column(col):
+                    continue
+                
+                # Only analyze columns that are meaningful for financial analysis
+                semantic_type = profile.get('semantic_type', '')
+                if not is_meaningful_financial_column(col, semantic_type):
+                    continue
+                
                 stats = profile['stats']
                 
                 # Determine importance based on variance and semantic type
                 importance = 0.5
-                if profile.get('semantic_type') == 'currency':
+                if semantic_type == 'currency':
                     importance = 0.9
-                elif profile.get('semantic_type') == 'percentage':
+                elif semantic_type == 'percentage':
                     importance = 0.8
                 elif stats.get('std_dev', 0) > stats.get('mean', 1) * 0.5:
                     importance = 0.7  # High variability is important
@@ -2416,8 +2472,8 @@ class AIRiskReportsService:
         # Generate sections based on data type (now with original data and pension data)
         sections = self._generate_sections(analysis, lang, doc_data, pension_data, pension_report)
         
-        # Generate charts
-        charts = self._generate_charts(analysis)
+        # Generate charts - pass pension_data for specialized pension charts
+        charts = self._generate_charts(analysis, pension_data)
         
         # Generate recommendations
         recommendations = self._generate_recommendations(analysis, lang)
@@ -2547,36 +2603,39 @@ class AIRiskReportsService:
         ))
         
         # 3. Statistical Analysis (BI Metrics)
-        stat_factors = [f for f in analysis.extracted_factors if f.category == 'statistical']
-        if stat_factors:
-            if is_hebrew:
-                stats_lines = ['📈 ניתוח סטטיסטי מפורט:\n']
-                for f in stat_factors[:8]:
-                    if isinstance(f.value, dict):
-                        stats_lines.append(f"🔹 {f.name}:")
-                        stats_lines.append(f"   • ממוצע: {f.value.get('mean', 'N/A')}")
-                        stats_lines.append(f"   • חציון: {f.value.get('median', 'N/A')}")
-                        stats_lines.append(f"   • טווח: {f.value.get('range', 'N/A')}")
-                        stats_lines.append(f"   • סטיית תקן: {f.value.get('std_dev', 'N/A')}")
-                        stats_lines.append(f"   • התפלגות: {f.value.get('distribution', 'N/A')}")
-                        stats_lines.append("")
-            else:
-                stats_lines = ['📈 Detailed Statistical Analysis:\n']
-                for f in stat_factors[:8]:
-                    if isinstance(f.value, dict):
-                        stats_lines.append(f"🔹 {f.name}:")
-                        stats_lines.append(f"   • Mean: {f.value.get('mean', 'N/A')}")
-                        stats_lines.append(f"   • Median: {f.value.get('median', 'N/A')}")
-                        stats_lines.append(f"   • Range: {f.value.get('range', 'N/A')}")
-                        stats_lines.append(f"   • Std Dev: {f.value.get('std_dev', 'N/A')}")
-                        stats_lines.append(f"   • Distribution: {f.value.get('distribution', 'N/A')}")
-                        stats_lines.append("")
-            
-            sections.append(ReportSection(
-                title='ניתוח סטטיסטי' if is_hebrew else 'Statistical Analysis',
-                content='\n'.join(stats_lines),
-                order=3
-            ))
+        # SKIP for pension data - the pension report already shows meaningful data clearly
+        # Statistical analysis of IDs/policy numbers is meaningless
+        if not pension_report:  # Only show statistical analysis for non-pension data
+            stat_factors = [f for f in analysis.extracted_factors if f.category == 'statistical']
+            if stat_factors:
+                if is_hebrew:
+                    stats_lines = ['📈 ניתוח סטטיסטי מפורט:\n']
+                    for f in stat_factors[:8]:
+                        if isinstance(f.value, dict):
+                            stats_lines.append(f"🔹 {f.name}:")
+                            stats_lines.append(f"   • ממוצע: {f.value.get('mean', 'N/A')}")
+                            stats_lines.append(f"   • חציון: {f.value.get('median', 'N/A')}")
+                            stats_lines.append(f"   • טווח: {f.value.get('range', 'N/A')}")
+                            stats_lines.append(f"   • סטיית תקן: {f.value.get('std_dev', 'N/A')}")
+                            stats_lines.append(f"   • התפלגות: {f.value.get('distribution', 'N/A')}")
+                            stats_lines.append("")
+                else:
+                    stats_lines = ['📈 Detailed Statistical Analysis:\n']
+                    for f in stat_factors[:8]:
+                        if isinstance(f.value, dict):
+                            stats_lines.append(f"🔹 {f.name}:")
+                            stats_lines.append(f"   • Mean: {f.value.get('mean', 'N/A')}")
+                            stats_lines.append(f"   • Median: {f.value.get('median', 'N/A')}")
+                            stats_lines.append(f"   • Range: {f.value.get('range', 'N/A')}")
+                            stats_lines.append(f"   • Std Dev: {f.value.get('std_dev', 'N/A')}")
+                            stats_lines.append(f"   • Distribution: {f.value.get('distribution', 'N/A')}")
+                            stats_lines.append("")
+                
+                sections.append(ReportSection(
+                    title='ניתוח סטטיסטי' if is_hebrew else 'Statistical Analysis',
+                    content='\n'.join(stats_lines),
+                    order=3
+                ))
         
         # 4. Correlation Insights
         top_corr = analysis.key_metrics.get('top_correlation')
@@ -3123,11 +3182,23 @@ Factors Affecting Score:
         
         return '\n'.join(content_lines)
     
-    def _generate_charts(self, analysis: AnalysisResult) -> List[ChartConfig]:
-        """Generate chart configurations"""
+    def _generate_charts(self, analysis: AnalysisResult, pension_data: Dict = None) -> List[ChartConfig]:
+        """
+        Generate chart configurations.
+        
+        For pension data, generates meaningful financial charts:
+        - Cumulative savings by provider
+        - Savings vs Severance breakdown
+        - Insurance coverage breakdown
+        """
         charts = []
         
-        # Risk Score Gauge
+        # Check if we have pension data for specialized charts
+        if pension_data:
+            charts.extend(self._generate_pension_charts(pension_data, analysis.language_code))
+            return charts  # Return only pension charts for pension data
+        
+        # Risk Score Gauge (for non-pension data)
         charts.append(ChartConfig(
             type=ChartType.GAUGE,
             title='Risk Score',
@@ -3140,46 +3211,178 @@ Factors Affecting Score:
             options={'colors': ['#4caf50', '#ffeb3b', '#ff9800', '#f44336']}
         ))
         
-        # Factors Importance Bar Chart
-        if analysis.extracted_factors:
+        # Factors Importance Bar Chart - only for meaningful factors
+        meaningful_factors = [f for f in analysis.extracted_factors[:8] 
+                            if f.category in ['domain', 'currency', 'financial']]
+        if meaningful_factors:
             charts.append(ChartConfig(
                 type=ChartType.BAR,
                 title='Factors Importance',
                 data={
-                    'labels': [f.name for f in analysis.extracted_factors[:8]],
-                    'values': [f.importance * 100 for f in analysis.extracted_factors[:8]]
+                    'labels': [f.name for f in meaningful_factors],
+                    'values': [f.importance * 100 for f in meaningful_factors]
                 },
                 options={'horizontal': True}
             ))
         
-        # Data Distribution Pie Chart
+        # Data Distribution Pie Chart - only meaningful totals
         if analysis.key_metrics:
-            numeric_metrics = {k: v for k, v in analysis.key_metrics.items() 
-                             if isinstance(v, (int, float)) and k.endswith('_total')}
-            if numeric_metrics:
+            # Filter to only financial totals, not counts
+            financial_metrics = {k: v for k, v in analysis.key_metrics.items() 
+                               if isinstance(v, (int, float)) and 
+                               (k.endswith('_total') or 'balance' in k.lower() or 
+                                'savings' in k.lower() or 'coverage' in k.lower()) and
+                               v > 0}
+            if financial_metrics:
                 charts.append(ChartConfig(
                     type=ChartType.PIE,
                     title='Data Distribution',
                     data={
-                        'labels': list(numeric_metrics.keys())[:6],
-                        'values': list(numeric_metrics.values())[:6]
+                        'labels': list(financial_metrics.keys())[:6],
+                        'values': list(financial_metrics.values())[:6]
                     }
                 ))
         
-        # Anomalies by Severity
-        if analysis.anomalies:
-            severity_counts = {}
-            for a in analysis.anomalies:
-                severity_counts[a.severity.value] = severity_counts.get(a.severity.value, 0) + 1
-            
+        return charts
+    
+    def _generate_pension_charts(self, pension_data: Dict, lang_code: str) -> List[ChartConfig]:
+        """
+        Generate specialized charts for pension/Mislaka data.
+        
+        Creates meaningful visualizations:
+        1. Cumulative savings by provider (bar chart)
+        2. Savings vs Severance breakdown (doughnut)
+        3. Insurance coverage breakdown (pie chart)
+        """
+        charts = []
+        is_hebrew = lang_code == 'hebrew'
+        
+        totals = pension_data.get('totals', {})
+        accounts = pension_data.get('accounts', [])
+        
+        # 1. Cumulative Savings by Provider (Bar Chart)
+        provider_totals = {}
+        for acct in accounts:
+            provider = acct.get('provider', 'לא ידוע' if is_hebrew else 'Unknown')
+            balance = acct.get('total_balance', 0) or acct.get('savings_balance', 0) or 0
+            if provider and balance > 0:
+                provider_totals[provider] = provider_totals.get(provider, 0) + balance
+        
+        if provider_totals:
+            charts.append(ChartConfig(
+                type=ChartType.BAR,
+                title='צבירה לפי יצרן' if is_hebrew else 'Savings by Provider',
+                data={
+                    'labels': list(provider_totals.keys()),
+                    'values': list(provider_totals.values())
+                },
+                options={
+                    'horizontal': False,
+                    'colors': ['#2196F3', '#4CAF50', '#FF9800', '#9C27B0', '#00BCD4'],
+                    'currency': True,
+                    'currency_symbol': '₪'
+                }
+            ))
+        
+        # 2. Savings vs Severance Breakdown (Doughnut Chart)
+        total_savings = totals.get('total_savings_balance', 0)
+        total_severance = totals.get('total_severance_balance', 0)
+        
+        if not total_savings and not total_severance:
+            # Calculate from accounts
+            total_savings = sum(a.get('savings_balance', 0) or 0 for a in accounts)
+            total_severance = sum(a.get('severance_balance', 0) or 0 for a in accounts)
+        
+        if total_savings > 0 or total_severance > 0:
+            labels = ['תגמולים', 'פיצויים'] if is_hebrew else ['Savings', 'Severance']
             charts.append(ChartConfig(
                 type=ChartType.DOUGHNUT,
-                title='Anomalies by Severity',
+                title='תגמולים מול פיצויים' if is_hebrew else 'Savings vs Severance',
                 data={
-                    'labels': list(severity_counts.keys()),
-                    'values': list(severity_counts.values())
+                    'labels': labels,
+                    'values': [total_savings, total_severance]
                 },
-                options={'colors': ['#4caf50', '#ffeb3b', '#ff9800', '#f44336']}
+                options={
+                    'colors': ['#4CAF50', '#FF9800'],
+                    'currency': True,
+                    'currency_symbol': '₪'
+                }
+            ))
+        
+        # 3. Insurance Coverage Breakdown (Pie Chart)
+        coverage_totals = {}
+        for acct in accounts:
+            death_coverage = acct.get('death_coverage', 0) or 0
+            disability_coverage = acct.get('disability_coverage', 0) or 0
+            
+            if death_coverage > 0:
+                label = 'ביטוח חיים' if is_hebrew else 'Life Insurance'
+                coverage_totals[label] = coverage_totals.get(label, 0) + death_coverage
+            if disability_coverage > 0:
+                label = 'אובדן כושר' if is_hebrew else 'Disability'
+                coverage_totals[label] = coverage_totals.get(label, 0) + disability_coverage
+        
+        if coverage_totals:
+            charts.append(ChartConfig(
+                type=ChartType.PIE,
+                title='כיסויים ביטוחיים' if is_hebrew else 'Insurance Coverage',
+                data={
+                    'labels': list(coverage_totals.keys()),
+                    'values': list(coverage_totals.values())
+                },
+                options={
+                    'colors': ['#E91E63', '#3F51B5'],
+                    'currency': True,
+                    'currency_symbol': '₪'
+                }
+            ))
+        
+        # 4. Product Type Distribution (Pie Chart)
+        product_balances = {}
+        for acct in accounts:
+            product_type = acct.get('product_type_name', '') or acct.get('product_type', '')
+            if not product_type:
+                product_type = 'לא מוגדר' if is_hebrew else 'Undefined'
+            balance = acct.get('total_balance', 0) or acct.get('savings_balance', 0) or 0
+            if balance > 0:
+                product_balances[product_type] = product_balances.get(product_type, 0) + balance
+        
+        if product_balances and len(product_balances) > 1:
+            charts.append(ChartConfig(
+                type=ChartType.PIE,
+                title='צבירה לפי סוג מוצר' if is_hebrew else 'Savings by Product Type',
+                data={
+                    'labels': list(product_balances.keys()),
+                    'values': list(product_balances.values())
+                },
+                options={
+                    'colors': ['#009688', '#795548', '#607D8B', '#FF5722', '#673AB7'],
+                    'currency': True,
+                    'currency_symbol': '₪'
+                }
+            ))
+        
+        # 5. Total Summary Gauge (if we have total balance)
+        total_balance = totals.get('total_balance', 0)
+        if not total_balance:
+            total_balance = sum(a.get('total_balance', 0) or 0 for a in accounts)
+        
+        if total_balance > 0:
+            charts.append(ChartConfig(
+                type=ChartType.GAUGE,
+                title='סה״כ חיסכון' if is_hebrew else 'Total Savings',
+                data={
+                    'value': total_balance,
+                    'display_value': f'₪{total_balance:,.0f}',
+                    'min': 0,
+                    'max': total_balance * 1.2,  # 20% headroom
+                    'thresholds': [total_balance * 0.25, total_balance * 0.5, total_balance * 0.75]
+                },
+                options={
+                    'colors': ['#ffeb3b', '#8BC34A', '#4CAF50', '#2196F3'],
+                    'currency': True,
+                    'currency_symbol': '₪'
+                }
             ))
         
         return charts
