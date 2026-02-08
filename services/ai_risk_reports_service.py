@@ -2786,10 +2786,11 @@ class AIRiskReportsService:
         # 7. Risk Assessment
         risk_score = analysis.risk_score
         if is_financial:
-            # Optional AI assessment for financial reports
+            # Optional AI assessment for financial reports (non-statistical)
+            assessment = self._generate_financial_assessment(financial_summary or {}, is_hebrew)
             sections.append(ReportSection(
                 title='הערכת AI (אופציונלי)' if is_hebrew else 'AI Assessment (Optional)',
-                content=analysis.summary,
+                content=assessment,
                 order=7
             ))
             return sections
@@ -3394,6 +3395,14 @@ Factors Affecting Score:
                     return values[0] if values else None
             return None
 
+        def _values_for(patterns: List[str]) -> List[Any]:
+            matches: List[Any] = []
+            for key, values in kv_map.items():
+                key_lower = key.lower()
+                if any(p in key_lower for p in patterns):
+                    matches.extend(values)
+            return matches
+
         # Client info from key-values
         client_name = _first_value(['שם לקוח', 'שם המבוטח', 'שם העמית', 'שם מלא', 'מבוטח', 'שם'])
         client_id = _first_value(['ת.ז', 'תעודת זהות', 'מספר זהות', 'id number', 'id'])
@@ -3418,6 +3427,19 @@ Factors Affecting Score:
                 'with_contributions': proj_with,
                 'without_contributions': proj_without
             }
+
+        # Coverage summary from key-value data
+        life_cover = _first_value(['ביטוח חיים', 'כיסוי למקרה מוות', 'כיסוי מוות', 'סכום כיסוי', 'סכום ביטוח'])
+        disability_cover = _first_value(['אובדן כושר', 'אכ"ע', 'נכות', 'כיסוי נכות', 'פיצוי חודשי'])
+        monthly_pension = _first_value(['קצבה חודשית', 'קצבה צפויה'])
+        total_savings_kv = _first_value(['סך הכל חיסכון', 'סה"כ חיסכון', 'סך חיסכון', 'צבירה כוללת'])
+
+        summary['insurance_coverages'] = {
+            'life_coverage': life_cover,
+            'disability_coverage': disability_cover,
+            'monthly_pension': monthly_pension,
+            'total_savings_kv': total_savings_kv
+        }
 
         # Tabular policy extraction
         column_synonyms = {
@@ -3464,6 +3486,11 @@ Factors Affecting Score:
         total_coverage = sum(_safe_float(p.get('coverage_amount')) for p in policies)
         total_monthly_premium = sum(_safe_float(p.get('monthly_premium')) for p in policies)
 
+        # Fallback totals from key-value data when policy table is missing
+        if total_balance == 0 and coverages.get('total_savings_kv'):
+            total_balance = _safe_float(coverages.get('total_savings_kv'))
+            total_savings = total_balance
+
         summary['totals'] = {
             'total_balance': total_balance,
             'total_balance_formatted': f"₪{total_balance:,.0f}",
@@ -3486,6 +3513,7 @@ Factors Affecting Score:
         policies = summary.get('policies', [])
         section14 = summary.get('section14')
         projection = summary.get('savings_projection', {})
+        coverages = summary.get('insurance_coverages', {})
 
         def _safe_float(val: Any, default: float = 0.0) -> float:
             try:
@@ -3522,6 +3550,17 @@ Factors Affecting Score:
                     lines.append(f"• חיסכון צפוי (עם הפקדות): {projection.get('with_contributions')}")
                 if projection.get('without_contributions'):
                     lines.append(f"• חיסכון צפוי (ללא הפקדות): {projection.get('without_contributions')}")
+                lines.append("")
+
+            if any(coverages.get(k) for k in ['life_coverage', 'disability_coverage', 'monthly_pension']):
+                lines.append("🛡️ כיסויים ביטוחיים")
+                lines.append("-" * 40)
+                if coverages.get('life_coverage'):
+                    lines.append(f"• ביטוח חיים: {coverages.get('life_coverage')}")
+                if coverages.get('disability_coverage'):
+                    lines.append(f"• אובדן כושר עבודה: {coverages.get('disability_coverage')}")
+                if coverages.get('monthly_pension'):
+                    lines.append(f"• קצבה חודשית צפויה: {coverages.get('monthly_pension')}")
                 lines.append("")
 
             lines.append("📌 סעיף 14 (מיסוי/פיצויים)")
@@ -3587,6 +3626,72 @@ Factors Affecting Score:
                     lines.append(f"• Total Monthly Premium: ₪{totals.get('total_monthly_premium', 0):,.0f}")
                 lines.append(f"• Policy Count: {totals.get('policy_count', len(policies))}")
 
+            if any(coverages.get(k) for k in ['life_coverage', 'disability_coverage', 'monthly_pension']):
+                lines.append("")
+                lines.append("Insurance Coverages")
+                lines.append("-" * 40)
+                if coverages.get('life_coverage'):
+                    lines.append(f"• Life Coverage: {coverages.get('life_coverage')}")
+                if coverages.get('disability_coverage'):
+                    lines.append(f"• Disability Coverage: {coverages.get('disability_coverage')}")
+                if coverages.get('monthly_pension'):
+                    lines.append(f"• Expected Monthly Pension: {coverages.get('monthly_pension')}")
+
+        return "\n".join(lines)
+
+    def _generate_financial_assessment(self, summary: Dict[str, Any], is_hebrew: bool) -> str:
+        """Generate a concise, non-statistical AI assessment for financial reports."""
+        totals = summary.get('totals', {})
+        policies = summary.get('policies', [])
+        section14 = summary.get('section14')
+        projection = summary.get('savings_projection', {})
+        coverages = summary.get('insurance_coverages', {})
+
+        if is_hebrew:
+            lines = [
+                "הערכת מצב פיננסי וביטוחי (ללא סטטיסטיקה):",
+                ""
+            ]
+            if totals:
+                lines.append(f"• היקף פוליסות: {totals.get('policy_count', len(policies))}")
+                lines.append(f"• חיסכון כולל: {totals.get('total_savings_formatted', '₪0')}")
+                if totals.get('total_coverage'):
+                    lines.append(f"• כיסוי ביטוחי כולל: ₪{totals.get('total_coverage', 0):,.0f}")
+                if totals.get('total_monthly_premium'):
+                    lines.append(f"• פרמיה חודשית כוללת: ₪{totals.get('total_monthly_premium', 0):,.0f}")
+            if section14 is True:
+                lines.append("• סעיף 14: מכוסה (פיצויים מוגנים)")
+            elif section14 is False:
+                lines.append("• סעיף 14: לא מכוסה – מומלץ לבדוק עם המעסיק")
+            if projection.get('with_contributions'):
+                lines.append(f"• חיסכון צפוי לגיל פרישה: {projection.get('with_contributions')}")
+            if coverages.get('life_coverage'):
+                lines.append(f"• ביטוח חיים: {coverages.get('life_coverage')}")
+            if coverages.get('disability_coverage'):
+                lines.append(f"• אובדן כושר עבודה: {coverages.get('disability_coverage')}")
+            return "\n".join(lines)
+
+        lines = [
+            "Financial & Insurance Assessment (non-statistical):",
+            ""
+        ]
+        if totals:
+            lines.append(f"• Policies: {totals.get('policy_count', len(policies))}")
+            lines.append(f"• Total savings: {totals.get('total_savings_formatted', '₪0')}")
+            if totals.get('total_coverage'):
+                lines.append(f"• Total coverage: ₪{totals.get('total_coverage', 0):,.0f}")
+            if totals.get('total_monthly_premium'):
+                lines.append(f"• Total monthly premium: ₪{totals.get('total_monthly_premium', 0):,.0f}")
+        if section14 is True:
+            lines.append("• Section 14: covered (severance protected)")
+        elif section14 is False:
+            lines.append("• Section 14: not covered – verify with employer")
+        if projection.get('with_contributions'):
+            lines.append(f"• Retirement savings projection: {projection.get('with_contributions')}")
+        if coverages.get('life_coverage'):
+            lines.append(f"• Life coverage: {coverages.get('life_coverage')}")
+        if coverages.get('disability_coverage'):
+            lines.append(f"• Disability coverage: {coverages.get('disability_coverage')}")
         return "\n".join(lines)
     
     def _generate_charts(self, analysis: AnalysisResult, pension_data: Dict = None) -> List[ChartConfig]:
