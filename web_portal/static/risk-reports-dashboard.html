@@ -1734,6 +1734,9 @@
           <button class="btn-mislaka" id="mislakaImportBtn" onclick="importFromMislaka()">
             📥 Import & Analyze
           </button>
+          <button class="btn-mislaka" id="mislakaDownloadBtn" onclick="downloadMislakaReport()" style="background: linear-gradient(135deg, #1e40af 0%, #2563eb 100%);">
+            📄 Download Report
+          </button>
         </div>
         
         <div class="mislaka-status" id="mislakaStatus">
@@ -2997,6 +3000,76 @@
         statusMsg.textContent = `❌ ${error.message}`;
       } finally {
         importBtn.disabled = false;
+      }
+    }
+
+    async function downloadMislakaReport() {
+      const idNumber = document.getElementById('mislakaIdNumber').value.trim();
+      const productType = document.getElementById('mislakaProductType').value;
+      const statusDiv = document.getElementById('mislakaStatus');
+      const statusMsg = document.getElementById('mislakaStatusMessage');
+      const downloadBtn = document.getElementById('mislakaDownloadBtn');
+
+      if (!idNumber || !/^[0-9]{9}$/.test(idNumber)) {
+        statusDiv.className = 'mislaka-status active error';
+        statusMsg.textContent = '❌ Please enter a valid 9-digit ID number';
+        return;
+      }
+
+      downloadBtn.disabled = true;
+      statusDiv.className = 'mislaka-status active loading';
+      statusMsg.textContent = '📄 Generating Mislaka report...';
+
+      try {
+        const response = await fetch('/api/mislaka/report', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${localStorage.getItem('phins_token') || ''}`
+          },
+          body: JSON.stringify({
+            id_number: idNumber,
+            product_type: productType,
+            format: 'pdf'
+          })
+        });
+
+        if (!response.ok) {
+          let errorText = 'Report generation failed';
+          try {
+            const data = await response.json();
+            errorText = data.error || data.message || errorText;
+          } catch (e) {
+            const fallback = await response.text();
+            if (fallback) {
+              errorText = fallback;
+            }
+          }
+          throw new Error(errorText);
+        }
+
+        const blob = await response.blob();
+        const contentDisposition = response.headers.get('Content-Disposition') || '';
+        const match = contentDisposition.match(/filename="([^"]+)"/);
+        const filename = match ? match[1] : `mislaka_report_${idNumber.slice(-4)}.pdf`;
+
+        const url = window.URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        window.URL.revokeObjectURL(url);
+
+        statusDiv.className = 'mislaka-status active success';
+        statusMsg.textContent = '✅ Report downloaded successfully';
+      } catch (error) {
+        console.error('Mislaka report download error:', error);
+        statusDiv.className = 'mislaka-status active error';
+        statusMsg.textContent = `❌ ${error.message}`;
+      } finally {
+        downloadBtn.disabled = false;
       }
     }
     
