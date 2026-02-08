@@ -3578,6 +3578,12 @@ class PortalHandler(BaseHTTPRequestHandler):
             "object-src 'none'"
         )
         self.end_headers()
+
+    def _get_session(self) -> Optional[Dict[str, Any]]:
+        """Extract and validate bearer token session."""
+        auth_header = self.headers.get('Authorization', '')
+        token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+        return validate_session(token) if token else None
     
     def _generate_text_policy_document(self, policy: Dict, customer: Dict, underwriting: Dict, bills: list, claims: list) -> None:
         """Fallback text document generation when PDF library not available"""
@@ -15367,6 +15373,109 @@ For claims or questions, please contact:
             except Exception as e:
                 import traceback
                 print(f"Error in /api/mislaka/summary: {e}")
+                traceback.print_exc()
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+                return
+
+        # POST /api/mislaka/report - Generate downloadable Mislaka report (PDF)
+        if path == '/api/mislaka/report':
+            try:
+                session = self._get_session()
+                if not session or 'user_id' not in session:
+                    self._set_json_headers(401)
+                    self.wfile.write(json.dumps({'error': 'Authentication required'}).encode('utf-8'))
+                    return
+
+                length = int(self.headers.get('Content-Length', 0))
+                body = self.rfile.read(length).decode('utf-8') if length else '{}'
+                data = json.loads(body)
+
+                id_number = data.get('id_number', '')
+                product_type = data.get('product_type', 'all')
+
+                if not id_number:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'ID number required'}).encode('utf-8'))
+                    return
+
+                if not id_number.isdigit() or len(id_number) != 9:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'Invalid ID number format (must be 9 digits)'}).encode('utf-8'))
+                    return
+
+                from services.mislaka_api_service import get_mislaka_service, MislakaProductType
+                from services.mislaka_report_generator import (
+                    build_mislaka_report_text,
+                    render_mislaka_report_pdf,
+                )
+
+                mislaka = get_mislaka_service()
+                if not mislaka.is_configured():
+                    self._set_json_headers(503)
+                    self.wfile.write(json.dumps({
+                        'error': 'Mislaka API not configured',
+                        'message': 'Please configure MISLAKA_API_KEY and MISLAKA_API_SECRET'
+                    }).encode('utf-8'))
+                    return
+
+                ptype_map = {
+                    'all': MislakaProductType.ALL,
+                    'pension': MislakaProductType.PENSION,
+                    'provident': MislakaProductType.PROVIDENT,
+                    'life_insurance': MislakaProductType.LIFE_INSURANCE,
+                    'health_insurance': MislakaProductType.HEALTH_INSURANCE,
+                    'education_fund': MislakaProductType.EDUCATION_FUND,
+                }
+                ptype = ptype_map.get(product_type, MislakaProductType.ALL)
+
+                result = mislaka.get_person_policies(id_number, ptype)
+                if result.status.value != 'success' or not result.policies:
+                    self._set_json_headers(404)
+                    self.wfile.write(json.dumps({
+                        'error': 'No policies found',
+                        'message': result.error_message or 'No policies returned from Mislaka'
+                    }).encode('utf-8'))
+                    return
+
+                report_text, metadata, _ = build_mislaka_report_text(result)
+
+                filename = f'mislaka_report_{id_number[-4:]}.pdf'
+                try:
+                    pdf_bytes = render_mislaka_report_pdf(report_text, metadata, title="Mislaka Report")
+                    self.send_response(200)
+                    self.send_header('Content-Type', 'application/pdf')
+                    self.send_header('Content-Disposition', f'attachment; filename="{filename}"')
+                    self.send_header('Content-Length', str(len(pdf_bytes)))
+                    self.end_headers()
+                    self.wfile.write(pdf_bytes)
+                except ImportError as ie:
+                    print(f"PDF generation error (missing library): {ie}")
+                    integrity_block = "\n".join([
+                        "",
+                        "=== Data Integrity ===",
+                        f"Request ID: {metadata.get('request_id', 'N/A')}",
+                        f"Generated: {metadata.get('report_generated_at', '')}",
+                        f"Checksum (SHA-256): {metadata.get('data_hash', '')}",
+                    ])
+                    text_bytes = f"{report_text}{integrity_block}".encode('utf-8')
+                    text_filename = filename.replace('.pdf', '.txt')
+                    self.send_response(200)
+                    self.send_header('Content-Type', 'text/plain; charset=utf-8')
+                    self.send_header('Content-Disposition', f'attachment; filename="{text_filename}"')
+                    self.send_header('Content-Length', str(len(text_bytes)))
+                    self.end_headers()
+                    self.wfile.write(text_bytes)
+
+                return
+
+            except json.JSONDecodeError:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'Invalid JSON'}).encode('utf-8'))
+                return
+            except Exception as e:
+                import traceback
+                print(f"Error in /api/mislaka/report: {e}")
                 traceback.print_exc()
                 self._set_json_headers(500)
                 self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
