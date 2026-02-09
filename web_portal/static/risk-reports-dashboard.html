@@ -1918,12 +1918,13 @@
       </div>
     </section>
 
-    <!-- Swiftness Resources & Downloads -->
+    <!-- Swiftness Resources & Downloads (collapsed by default) -->
     <section class="research-section fade-in" id="swiftnessResourcesSection" style="border-top: 3px solid #0ea5e9;">
-      <div class="research-header">
-        <h3>📥 Swiftness Data Resources & Downloads</h3>
+      <div class="research-header" onclick="var b=document.getElementById('swiftnessResBody');var a=document.getElementById('swiftnessResArrow');if(b.style.display==='none'){b.style.display='block';a.textContent='▼';}else{b.style.display='none';a.textContent='▶';}" style="cursor:pointer;">
+        <h3>📥 Swiftness Data Resources & Downloads <span id="swiftnessResArrow" style="font-size:0.8rem;">▶</span></h3>
         <span class="research-badge" style="background: linear-gradient(135deg, #059669 0%, #10b981 100%);">Files • Links • Schemas</span>
       </div>
+      <div id="swiftnessResBody" style="display:none;">
 
       <!-- Quick Links -->
       <div style="display: flex; gap: 1rem; flex-wrap: wrap; margin-bottom: 1.5rem;" id="swiftnessQuickLinks">
@@ -1985,6 +1986,7 @@
         <span id="resourceStatInterfaces"></span>
         <span id="resourceStatFileTypes"></span>
       </div>
+      </div><!-- close swiftnessResBody -->
     </section>
     
     <!-- Upload Section -->
@@ -2110,13 +2112,13 @@
         <!-- Populated dynamically -->
       </div>
       
-      <!-- AI Insights Panel -->
+      <!-- AI Insights Panel (collapsed by default) -->
       <div class="insights-panel" id="insightsPanel">
-        <div class="insights-header">
-          <h3>🧠 AI Inductive Analysis</h3>
-          <p style="margin-top: 0.5rem; opacity: 0.9; font-size: 0.9rem;">Advanced pattern recognition and statistical insights from your data</p>
+        <div class="insights-header" onclick="var b=document.getElementById('insightsBody');var a=document.getElementById('insightsArrow');if(b.style.display==='none'){b.style.display='block';a.textContent='▼';}else{b.style.display='none';a.textContent='▶';}" style="cursor:pointer;">
+          <h3>🧠 AI Inductive Analysis <span id="insightsArrow" style="font-size:0.8rem;">▶</span></h3>
+          <p style="margin-top: 0.5rem; opacity: 0.9; font-size: 0.9rem;">Click to expand</p>
         </div>
-        <div class="insights-body">
+        <div class="insights-body" id="insightsBody" style="display:none;">
           <div class="insights-grid" id="insightsGrid">
             <!-- Populated dynamically -->
           </div>
@@ -2128,26 +2130,26 @@
         <!-- Populated dynamically -->
       </div>
       
-      <!-- Report Panel -->
+      <!-- Report Panel (collapsed by default) -->
       <div class="report-panel" id="reportPanel">
-        <div class="report-header">
-          <h2 id="reportTitle">📋 Analysis Report</h2>
+        <div class="report-header" onclick="var b=document.getElementById('reportBody');var a=document.getElementById('reportArrow');if(b.style.display==='none'){b.style.display='block';a.textContent='▼';}else{b.style.display='none';a.textContent='▶';}" style="cursor:pointer;">
+          <h2 id="reportTitle">📋 Analysis Report <span id="reportArrow" style="font-size:0.8rem;font-weight:400;">▶</span></h2>
           <div class="report-actions">
-            <button class="btn btn-white" onclick="exportReport('pdf')">📥 Export PDF</button>
-            <button class="btn btn-white" onclick="exportReport('excel')">📊 Export Excel</button>
+            <button class="btn btn-white" onclick="event.stopPropagation();exportReport('pdf')">📥 Export PDF</button>
+            <button class="btn btn-white" onclick="event.stopPropagation();exportReport('excel')">📊 Export Excel</button>
           </div>
         </div>
-        <div class="report-body" id="reportBody">
+        <div class="report-body" id="reportBody" style="display:none;">
           <!-- Report sections populated dynamically -->
         </div>
       </div>
       
-      <!-- Recommendations Panel -->
+      <!-- Recommendations Panel (collapsed by default) -->
       <div class="recommendations-panel" id="recommendationsPanel">
-        <div class="recommendations-header">
-          <h2>💡 AI Recommendations</h2>
+        <div class="recommendations-header" onclick="var b=document.getElementById('recommendationsList');var a=document.getElementById('recsArrow');if(b.style.display==='none'){b.style.display='block';a.textContent='▼';}else{b.style.display='none';a.textContent='▶';}" style="cursor:pointer;">
+          <h2>💡 AI Recommendations <span id="recsArrow" style="font-size:0.8rem;font-weight:400;">▶</span></h2>
         </div>
-        <div class="recommendations-list" id="recommendationsList">
+        <div class="recommendations-list" id="recommendationsList" style="display:none;">
           <!-- Recommendations populated dynamically -->
         </div>
       </div>
@@ -3386,11 +3388,9 @@
 
       if (insightsHeader) {
         insightsHeader.innerHTML = `
-          <h3 onclick="var b=document.getElementById('insightsGrid');if(b.style.display==='none'){b.style.display='';this.querySelector('span').textContent='▼';}else{b.style.display='none';this.querySelector('span').textContent='▶';}" style="cursor:pointer;">🧭 Swiftness Affiliation Intelligence <span style="font-size:0.8rem;">▶</span></h3>
-          <p style="margin-top: 0.5rem; opacity: 0.9; font-size: 0.9rem;">Click to expand &bull; Combined affiliations + uploaded documents + Swiftness resources</p>
+          <h3>🧭 Swiftness Affiliation Intelligence <span id="insightsArrow" style="font-size:0.8rem;">▶</span></h3>
+          <p style="margin-top: 0.5rem; opacity: 0.9; font-size: 0.9rem;">Click header to expand</p>
         `;
-        // Collapse by default
-        setTimeout(() => { const ig = document.getElementById('insightsGrid'); if (ig) ig.style.display = 'none'; }, 50);
       }
 
       const interfaceTags = summary.interfaceNames.slice(0, 10)
