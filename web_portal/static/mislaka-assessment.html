@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PHINS - Mislaka Assessment Dashboard</title>
+  <link rel="stylesheet" href="/styles.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <style>
+    :root { --primary:#0d47a1; --primary-light:#1976d2; --accent:#ff6b35; --success:#10b981; --warning:#f59e0b; --danger:#ef4444; --bg:#f5f7fa; --text:#1a1a2e; --muted:#64748b; --purple:#7c3aed; }
+    * { box-sizing:border-box; margin:0; padding:0; }
+    body { font-family:'Segoe UI',system-ui,sans-serif; background:var(--bg); min-height:100vh; color:var(--text); direction:rtl; }
+
+    .header { background:linear-gradient(135deg,#0f172a 0%,#1e40af 100%); padding:1rem 2rem; color:white; display:flex; justify-content:space-between; align-items:center; box-shadow:0 4px 20px rgba(0,0,0,0.2); position:sticky; top:0; z-index:100; }
+    .header h1 { font-size:1.3rem; display:flex; align-items:center; gap:10px; }
+    .header-nav { display:flex; gap:8px; flex-wrap:wrap; }
+    .header-nav a { color:white; text-decoration:none; padding:7px 14px; border-radius:8px; background:rgba(255,255,255,0.1); font-size:0.85rem; transition:0.2s; }
+    .header-nav a:hover { background:rgba(255,255,255,0.2); }
+
+    .container { max-width:1400px; margin:0 auto; padding:1.5rem; }
+    .page-title { text-align:center; margin-bottom:1.5rem; }
+    .page-title h2 { font-size:1.8rem; color:var(--primary); margin-bottom:0.3rem; }
+    .page-title p { color:var(--muted); font-size:1rem; }
+
+    .card { background:white; border-radius:14px; padding:1.5rem; box-shadow:0 2px 12px rgba(0,0,0,0.06); margin-bottom:1.5rem; border:1px solid #e2e8f0; }
+    .card-header { display:flex; justify-content:space-between; align-items:center; padding-bottom:1rem; border-bottom:2px solid #e2e8f0; margin-bottom:1rem; flex-wrap:wrap; gap:0.5rem; }
+    .card-header h3 { color:var(--primary); font-size:1.2rem; display:flex; align-items:center; gap:8px; }
+
+    .badge { padding:4px 12px; border-radius:20px; font-size:0.78rem; font-weight:600; display:inline-flex; align-items:center; gap:4px; }
+    .badge-blue { background:#dbeafe; color:#1d4ed8; }
+    .badge-green { background:#d1fae5; color:#047857; }
+    .badge-amber { background:#fef3c7; color:#92400e; }
+    .badge-purple { background:#ede9fe; color:#6d28d9; }
+
+    /* A-Z Reference Grid */
+    .az-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(300px,1fr)); gap:1rem; }
+    .az-card { background:#f8fafc; border-radius:12px; padding:1rem 1.25rem; border:1px solid #e2e8f0; border-right:4px solid var(--primary); transition:0.2s; cursor:default; }
+    .az-card:hover { border-right-color:var(--accent); box-shadow:0 4px 12px rgba(0,0,0,0.08); transform:translateY(-1px); }
+    .az-card .az-title { font-weight:700; font-size:0.95rem; margin-bottom:0.25rem; }
+    .az-card .az-title-en { font-size:0.8rem; color:var(--muted); }
+    .az-card .az-desc { font-size:0.82rem; color:var(--muted); margin:0.5rem 0; line-height:1.5; }
+    .az-card .az-fields { display:flex; flex-wrap:wrap; gap:0.3rem; }
+    .az-card .az-field { background:#e0f2fe; color:#0369a1; padding:2px 8px; border-radius:20px; font-size:0.7rem; }
+    .az-card .az-meta { display:flex; gap:0.5rem; margin-top:0.5rem; flex-wrap:wrap; }
+
+    /* Upload Zone */
+    .upload-zone { border:3px dashed #cbd5e1; border-radius:16px; padding:2.5rem; text-align:center; cursor:pointer; transition:0.3s; background:linear-gradient(135deg,#f8fafc,#f1f5f9); }
+    .upload-zone:hover,.upload-zone.dragover { border-color:var(--primary); background:linear-gradient(135deg,#e3f2fd,#bbdefb); }
+    .upload-zone h4 { font-size:1.1rem; margin-bottom:0.3rem; }
+    .upload-zone p { color:var(--muted); font-size:0.9rem; }
+    .formats { display:flex; justify-content:center; gap:0.5rem; margin-top:1rem; flex-wrap:wrap; }
+    .fmt { background:var(--primary); color:white; padding:4px 12px; border-radius:20px; font-size:0.8rem; }
+
+    /* Assessment Results */
+    .result-section { background:#f8fafc; border-radius:12px; padding:1.25rem; margin-bottom:1rem; border:1px solid #e2e8f0; }
+    .result-section h4 { color:var(--primary); margin-bottom:0.75rem; font-size:1rem; display:flex; align-items:center; gap:8px; }
+    .result-row { display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px dashed #e2e8f0; font-size:0.88rem; }
+    .result-row:last-child { border-bottom:none; }
+    .result-row .label { color:var(--muted); }
+    .result-row .value { font-weight:600; color:var(--text); max-width:60%; text-align:left; word-break:break-all; }
+    .result-row .value a { color:#0369a1; text-decoration:none; }
+    .result-row .value a:hover { text-decoration:underline; }
+
+    /* Confidence meter */
+    .confidence-bar { height:10px; background:#e2e8f0; border-radius:5px; overflow:hidden; margin:0.5rem 0; }
+    .confidence-fill { height:100%; border-radius:5px; transition:width 0.5s; }
+
+    /* Reg links */
+    .reg-links { display:flex; flex-wrap:wrap; gap:0.5rem; margin-top:1rem; }
+    .reg-link { padding:8px 16px; border-radius:10px; font-size:0.85rem; text-decoration:none; color:white; font-weight:500; transition:0.2s; }
+    .reg-link:hover { transform:translateY(-2px); box-shadow:0 4px 12px rgba(0,0,0,0.15); }
+    .reg-schema { background:linear-gradient(135deg,#2563eb,#1d4ed8); }
+    .reg-files { background:linear-gradient(135deg,#059669,#047857); }
+    .reg-regulator { background:linear-gradient(135deg,#7c3aed,#6d28d9); }
+    .reg-portal { background:linear-gradient(135deg,#475569,#334155); }
+
+    .btn { padding:10px 20px; border-radius:10px; border:none; cursor:pointer; font-weight:600; font-size:0.95rem; transition:0.2s; display:inline-flex; align-items:center; gap:6px; }
+    .btn-primary { background:linear-gradient(135deg,var(--accent),#e55a2b); color:white; }
+    .btn-primary:hover:not(:disabled) { transform:translateY(-2px); box-shadow:0 4px 12px rgba(255,107,53,0.3); }
+    .btn-primary:disabled { opacity:0.5; cursor:not-allowed; }
+    .btn-outline { background:transparent; border:2px solid var(--primary); color:var(--primary); }
+
+    .search-box { width:100%; padding:12px 16px; border:2px solid #e2e8f0; border-radius:10px; font-size:1rem; transition:0.2s; }
+    .search-box:focus { outline:none; border-color:var(--primary); }
+
+    @media (max-width:768px) { .header { flex-direction:column; gap:0.5rem; } .container { padding:1rem; } .az-grid { grid-template-columns:1fr; } }
+  </style>
+</head>
+<body>
+  <header class="header">
+    <h1>🏛️ PHINS Mislaka Assessment</h1>
+    <nav class="header-nav">
+      <a href="/dashboard.html">Dashboard</a>
+      <a href="/risk-reports-dashboard.html">📊 Risk Reports</a>
+      <a href="/risk-dashboard.html">🎯 Assessment</a>
+    </nav>
+  </header>
+
+  <main class="container">
+    <div class="page-title">
+      <h2>🏛️ Mislaka Assessment Dashboard</h2>
+      <p>A-Z Clearinghouse Reference • File Decoder • AI Report Generation</p>
+    </div>
+
+    <!-- Regulatory Links -->
+    <div class="reg-links" style="justify-content:center;margin-bottom:1.5rem;" id="regLinks">
+      <a href="https://www.swiftness.co.il/כללי-מערכת/" target="_blank" class="reg-link reg-schema">📐 כללי מערכת</a>
+      <a href="https://www.swiftness.co.il/savers/קבצים-עדכניים-לעבודה-מול-המסלקה/" target="_blank" class="reg-link reg-files">📂 קבצים לעבודה מול המסלקה</a>
+      <a href="https://harb.cma.gov.il/" target="_blank" class="reg-link reg-regulator">🏦 רשות שוק ההון (CMA)</a>
+      <a href="https://www.swiftness.co.il" target="_blank" class="reg-link reg-portal">🌐 Swiftness</a>
+    </div>
+
+    <!-- Upload & Decode -->
+    <div class="card" id="uploadCard">
+      <div class="card-header">
+        <h3>📤 Upload & Decode Mislaka File</h3>
+        <div style="display:flex;gap:0.5rem;flex-wrap:wrap;">
+          <span class="badge badge-blue">AI Decoder</span>
+          <span class="badge badge-green">Schema Matching</span>
+        </div>
+      </div>
+      <div class="upload-zone" id="uploadZone" onclick="document.getElementById('fileInput').click()">
+        <div style="font-size:3rem;margin-bottom:0.5rem;">📤</div>
+        <h4>Drop a Mislaka file or click to upload</h4>
+        <p>The AI will decode the file structure against Mislaka XSD schemas, match fields, and generate an assessment report</p>
+        <div class="formats" id="formatBadges"></div>
+        <input type="file" id="fileInput" style="display:none;" accept=".xml,.xlsx,.xls,.csv,.zip,.pdf,.json">
+      </div>
+      <div id="uploadStatus" style="display:none;margin-top:1rem;padding:1rem;border-radius:10px;text-align:center;"></div>
+    </div>
+
+    <!-- Assessment Results -->
+    <div id="assessmentResults" style="display:none;">
+      <div class="card">
+        <div class="card-header">
+          <h3>📋 Assessment Report</h3>
+          <div>
+            <button class="btn btn-primary" onclick="printAssessment()">📥 Download PDF</button>
+          </div>
+        </div>
+        <div id="assessmentBody"></div>
+      </div>
+    </div>
+
+    <!-- A-Z Reference -->
+    <div class="card">
+      <div class="card-header">
+        <h3>📚 A-Z Mislaka Reference</h3>
+        <span class="badge badge-purple" id="azCount">Loading...</span>
+      </div>
+      <input type="text" class="search-box" id="azSearch" placeholder="🔍 Search by Hebrew, English, or field name..." oninput="filterAZ()" style="margin-bottom:1rem;">
+      <div class="az-grid" id="azGrid">
+        <div style="text-align:center;color:var(--muted);padding:2rem;grid-column:1/-1;">Loading A-Z reference...</div>
+      </div>
+    </div>
+  </main>
+
+  <script>
+    let azData = null;
+
+    document.addEventListener('DOMContentLoaded', () => { loadAZ(); });
+
+    // Upload handlers
+    const uploadZone = document.getElementById('uploadZone');
+    const fileInput = document.getElementById('fileInput');
+    uploadZone.addEventListener('dragover', e => { e.preventDefault(); uploadZone.classList.add('dragover'); });
+    uploadZone.addEventListener('dragleave', () => uploadZone.classList.remove('dragover'));
+    uploadZone.addEventListener('drop', e => { e.preventDefault(); uploadZone.classList.remove('dragover'); if (e.dataTransfer.files.length) processFile(e.dataTransfer.files[0]); });
+    fileInput.addEventListener('change', e => { if (e.target.files.length) processFile(e.target.files[0]); });
+
+    async function processFile(file) {
+      const status = document.getElementById('uploadStatus');
+      status.style.display = 'block';
+      status.style.background = '#e0f2fe';
+      status.style.color = '#0369a1';
+      status.innerHTML = `🔄 Decoding <strong>${file.name}</strong> (${(file.size/1024).toFixed(1)} KB)...`;
+
+      try {
+        const b64 = await readAsBase64(file);
+        const ext = file.name.split('.').pop().toLowerCase();
+        const resp = await fetch('/api/mislaka-assessment/decode', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ filename: file.name, file_type: ext, content: b64 })
+        });
+        if (!resp.ok) throw new Error((await resp.json()).error || 'Decode failed');
+        const result = await resp.json();
+
+        status.style.background = '#d1fae5';
+        status.style.color = '#047857';
+        status.innerHTML = `✅ Decoded <strong>${file.name}</strong> — ${result.decoded.field_count} fields matched, confidence ${(result.decoded.confidence*100).toFixed(0)}%`;
+
+        renderAssessment(result);
+      } catch (e) {
+        status.style.background = '#fee2e2';
+        status.style.color = '#b91c1c';
+        status.innerHTML = `❌ Error: ${e.message}`;
+      }
+    }
+
+    function readAsBase64(file) {
+      return new Promise((resolve, reject) => {
+        const r = new FileReader();
+        r.onload = () => resolve(r.result.split(',')[1]);
+        r.onerror = reject;
+        r.readAsDataURL(file);
+      });
+    }
+
+    function renderAssessment(result) {
+      const container = document.getElementById('assessmentResults');
+      const body = document.getElementById('assessmentBody');
+      container.style.display = 'block';
+
+      const report = result.report;
+      const decoded = result.decoded;
+      let html = '';
+
+      // Confidence bar
+      const conf = decoded.confidence || 0;
+      const confColor = conf >= 0.7 ? '#10b981' : conf >= 0.4 ? '#f59e0b' : '#ef4444';
+      html += `<div style="margin-bottom:1.25rem;">
+        <div style="display:flex;justify-content:space-between;font-size:0.85rem;margin-bottom:0.25rem;">
+          <span>Schema Match Confidence</span><strong style="color:${confColor};">${(conf*100).toFixed(0)}%</strong>
+        </div>
+        <div class="confidence-bar"><div class="confidence-fill" style="width:${conf*100}%;background:${confColor};"></div></div>
+      </div>`;
+
+      // Report sections
+      (report.sections || []).forEach(sec => {
+        html += `<div class="result-section">
+          <h4>${sec.title_he} (${sec.title})</h4>
+          ${(sec.items || []).map(item => {
+            let val = item.value;
+            if (val && val.startsWith('http')) val = `<a href="${val}" target="_blank">${val}</a>`;
+            return `<div class="result-row"><span class="label">${item.label}</span><span class="value">${val}</span></div>`;
+          }).join('')}
+        </div>`;
+      });
+
+      body.innerHTML = html;
+      container.scrollIntoView({ behavior: 'smooth' });
+    }
+
+    function printAssessment() {
+      const body = document.getElementById('assessmentBody');
+      if (!body) return;
+      const win = window.open('', '_blank');
+      win.document.write(`<!DOCTYPE html><html lang="he" dir="rtl"><head><meta charset="UTF-8"><title>Mislaka Assessment Report</title>
+        <style>body{font-family:'Segoe UI',system-ui,sans-serif;direction:rtl;padding:2rem;color:#1a1a2e;}
+        h2{color:#1e40af;border-bottom:2px solid #3b82f6;padding-bottom:0.5rem;}
+        h4{color:#1e40af;margin:1rem 0 0.5rem;}
+        .result-row{display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px dashed #e2e8f0;font-size:0.88rem;}
+        .result-row .label{color:#64748b;}.result-row .value{font-weight:600;}
+        .result-section{margin-bottom:1rem;padding:1rem;background:#f8fafc;border-radius:8px;}
+        .footer{margin-top:2rem;padding-top:1rem;border-top:1px solid #e2e8f0;font-size:0.8rem;color:#64748b;text-align:center;}
+        @media print{@page{margin:1.5cm;}}</style></head><body>
+        <h2>🏛️ Mislaka Assessment Report</h2>
+        ${body.innerHTML}
+        <div class="footer">PHINS Mislaka Assessment • Sources: swiftness.co.il, harb.cma.gov.il • ${new Date().toLocaleString()}</div>
+        <script>setTimeout(()=>window.print(),300)<\/script>
+      </body></html>`);
+      win.document.close();
+    }
+
+    // A-Z Reference
+    async function loadAZ() {
+      try {
+        const resp = await fetch('/api/mislaka-assessment/az');
+        if (!resp.ok) throw new Error('Failed');
+        azData = await resp.json();
+        renderAZ(azData);
+        renderFormats(azData.supported_formats || {});
+      } catch (e) {
+        document.getElementById('azGrid').innerHTML = `<div style="text-align:center;color:var(--muted);padding:2rem;grid-column:1/-1;">Failed to load. <button onclick="loadAZ()" style="color:var(--primary);background:none;border:none;cursor:pointer;text-decoration:underline;">Retry</button></div>`;
+      }
+    }
+
+    function renderFormats(formats) {
+      const el = document.getElementById('formatBadges');
+      if (!el) return;
+      el.innerHTML = Object.entries(formats).map(([ext, info]) => `<span class="fmt">${info.icon} ${ext.toUpperCase()}</span>`).join('');
+    }
+
+    function renderAZ(data) {
+      const grid = document.getElementById('azGrid');
+      const countEl = document.getElementById('azCount');
+      const entries = data.entries || {};
+      const keys = Object.keys(entries).sort();
+      countEl.textContent = `${keys.length} entries`;
+
+      grid.innerHTML = keys.map(key => {
+        const e = entries[key];
+        return `<div class="az-card" data-search="${e.he} ${e.en} ${(e.fields||[]).join(' ')} ${e.desc}">
+          <div class="az-title">${e.he}</div>
+          <div class="az-title-en">${e.en}${e.code !== null && e.code !== undefined ? ' (code: '+e.code+')' : ''}</div>
+          <div class="az-desc">${e.desc}</div>
+          <div class="az-fields">${(e.fields||[]).map(f=>'<span class="az-field">'+f+'</span>').join('')}</div>
+          <div class="az-meta">
+            ${e.schema ? '<span class="badge badge-blue">'+e.schema+'</span>' : ''}
+            ${e.version ? '<span class="badge badge-green">v'+e.version+'</span>' : ''}
+            ${e.source ? '<a href="'+e.source+'" target="_blank" style="font-size:0.7rem;color:#0369a1;text-decoration:none;">🔗 source</a>' : ''}
+          </div>
+        </div>`;
+      }).join('');
+    }
+
+    function filterAZ() {
+      const q = document.getElementById('azSearch').value.toLowerCase();
+      document.querySelectorAll('.az-card').forEach(card => {
+        const text = (card.getAttribute('data-search') || '').toLowerCase();
+        card.style.display = (!q || text.includes(q)) ? '' : 'none';
+      });
+    }
+  </script>
+</body>
+</html>

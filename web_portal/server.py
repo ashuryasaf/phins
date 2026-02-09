@@ -7928,6 +7928,20 @@ For claims or questions, please contact:
                 self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
                 return
 
+        # GET /api/mislaka-assessment/az - Full A-Z knowledge base
+        if path == '/api/mislaka-assessment/az':
+            try:
+                from services.mislaka_assessment_service import get_mislaka_assessment_service
+                svc = get_mislaka_assessment_service()
+                self._set_json_headers(200)
+                self.wfile.write(json.dumps(svc.get_az_reference(), ensure_ascii=False).encode('utf-8'))
+                return
+            except Exception as e:
+                print(f"Error in /api/mislaka-assessment/az: {e}")
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+                return
+
         # Customers Endpoint
         if path == '/api/customers':
             requested_customer_id = qs.get('id', [None])[0]
@@ -14504,6 +14518,36 @@ For claims or questions, please contact:
         if path == '/api/submit-quote':
             self.handle_quote_submission()
             return
+
+        # POST /api/mislaka-assessment/decode - Decode uploaded file against Mislaka schema
+        if path == '/api/mislaka-assessment/decode':
+            try:
+                body = self.rfile.read(content_length)
+                data = json.loads(body) if body else {}
+                filename = data.get('filename', 'unknown')
+                file_type = data.get('file_type', 'unknown')
+                content_b64 = data.get('content', '')
+
+                import base64
+                raw = base64.b64decode(content_b64) if content_b64 else b''
+                preview = raw[:4000].decode('utf-8', errors='replace')
+
+                from services.mislaka_assessment_service import get_mislaka_assessment_service
+                svc = get_mislaka_assessment_service()
+                decoded = svc.decode_file_structure(filename, preview, file_type)
+                report = svc.generate_assessment_report(decoded, filename)
+
+                self._set_json_headers(200)
+                self.wfile.write(json.dumps({
+                    'decoded': decoded,
+                    'report': report,
+                }, ensure_ascii=False).encode('utf-8'))
+                return
+            except Exception as e:
+                print(f"Error in /api/mislaka-assessment/decode: {e}")
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+                return
         
         # =====================================================================
         # API EXTENSIONS - Community Foundations & OTP Security (POST)
