@@ -519,6 +519,74 @@ REPORT_MODEL_SECTIONS = [
     },
 ]
 
+# =============================================================================
+# SAMPLE DATA for each report section
+# Based on the attached Mislaka PDF (כפיר כהן, 12/2022) and Swiftness schema
+# =============================================================================
+
+REPORT_SAMPLE_DATA = {
+    "portfolio_summary": [
+        {"total_savings": 214697, "total_deposits": 4679, "capital_amount": 0, "pension_amount": 214697, "severance_amount": 103297}
+    ],
+    "policy_status": [
+        {"policy_number": "6962791015", "company_name": "הפניקס", "plan_name": "מנהלים ושכירים", "member_id": "6962791015", "seniority_date": "2018-02-01", "status": "פעיל", "employment_type": "שכיר", "balance": 214697},
+        {"policy_number": "1490297080", "company_name": "הפניקס", "plan_name": "ריסק יסודי בפרמיה משתנה", "member_id": "1490297080", "seniority_date": "2019-10-06", "status": "פעיל", "employment_type": "פרט", "balance": 0},
+        {"policy_number": "8096252013", "company_name": "הפניקס", "plan_name": "ריסק יסודי בפרמיה משתנה משתתף", "member_id": "8096252013", "seniority_date": "2014-08-01", "status": "פעיל", "employment_type": "פרט", "balance": 0},
+        {"policy_number": "13272595", "company_name": "איילון", "plan_name": "ביטוח חיים", "member_id": "13272595", "seniority_date": "2022-07-28", "status": "פעיל", "employment_type": "פרט", "balance": 0},
+    ],
+    "plan_details": [
+        {"plan_name": "מנהלים ושכירים", "plan_number": "6962791015", "seniority_date": "2018-02-01", "retirement_age": 67, "current_savings": 214697, "projected_savings": 1427973, "projected_pension": 7101, "severance": 103297, "employer_contributions": 57928, "employee_contributions": 53472, "management_fee_savings": 0.50, "management_fee_deposits": 3.00, "pension_coefficient": 201.09},
+    ],
+    "balance_breakdown": [
+        {"balance_capital": 0, "balance_pension_paying": 214697, "balance_pension_non_paying": 0, "projected_total_retirement": 1427973, "projected_monthly_pension": 7101}
+    ],
+    "insurance_coverage": [
+        {"coverage_type": "כיסוי למקרה מוות", "coverage_name": "מנהלים ושכירים ביטוח יסודי", "coverage_amount": 1077601, "monthly_cost": 187, "coverage_start": "2018-02-01", "coverage_end": "2044-02-01", "medical_surcharge": 25.0, "discount": 0},
+        {"coverage_type": "אובדן כושר עבודה", "coverage_name": "פיצוי ושחרור בפרמיה משתנה", "coverage_amount": 15000, "monthly_cost": 533, "coverage_start": "2018-03-01", "coverage_end": "2044-03-01", "medical_surcharge": 50.0, "discount": 0},
+        {"coverage_type": "כיסוי למקרה מוות", "coverage_name": "ריסק יסודי בפרמיה משתנה", "coverage_amount": 531323, "monthly_cost": 70, "coverage_start": "2019-10-01", "coverage_end": "2051-10-01", "medical_surcharge": 0, "discount": 0},
+        {"coverage_type": "כיסוי למקרה מוות", "coverage_name": "ריסק יסודי בפרמיה משתנה משתתף", "coverage_amount": 1068913, "monthly_cost": 95, "coverage_start": "2014-08-01", "coverage_end": "2052-08-01", "medical_surcharge": 0, "discount": 50.0},
+        {"coverage_type": "אובדן כושר עבודה", "coverage_name": "כיסוי פיצוי ושחרור בפרמיה משתנה משתתף", "coverage_amount": 5345, "monthly_cost": 153, "coverage_start": "2014-08-01", "coverage_end": "2044-08-01", "medical_surcharge": 0, "discount": 0},
+        {"coverage_type": "כיסוי למקרה מוות", "coverage_name": "ביטוח חיים - איילון", "coverage_amount": 2091908, "monthly_cost": 139, "coverage_start": "2022-07-01", "coverage_end": "2062-07-01", "medical_surcharge": 0, "discount": 40.0},
+    ],
+    "premium_development": [
+        {"period_start": "03/2022", "period_end": "02/2023", "expected_premium": 549, "coverage_amount_projected": 15000, "discount_rate": 0},
+        {"period_start": "03/2023", "period_end": "02/2024", "expected_premium": 580, "coverage_amount_projected": 15000, "discount_rate": 0},
+        {"period_start": "03/2024", "period_end": "02/2025", "expected_premium": 632, "coverage_amount_projected": 15000, "discount_rate": 0},
+        {"period_start": "03/2025", "period_end": "02/2026", "expected_premium": 693, "coverage_amount_projected": 15000, "discount_rate": 0},
+        {"period_start": "03/2026", "period_end": "02/2027", "expected_premium": 751, "coverage_amount_projected": 15000, "discount_rate": 0},
+        {"period_start": "03/2027", "period_end": "02/2028", "expected_premium": 891, "coverage_amount_projected": 15000, "discount_rate": 0},
+        {"period_start": "07/2022", "period_end": "06/2023", "expected_premium": 139, "coverage_amount_projected": 2091908, "discount_rate": 40},
+        {"period_start": "07/2023", "period_end": "06/2024", "expected_premium": 167, "coverage_amount_projected": 2091908, "discount_rate": 35},
+        {"period_start": "07/2024", "period_end": "06/2025", "expected_premium": 200, "coverage_amount_projected": 2091908, "discount_rate": 30},
+    ],
+    "beneficiaries": [
+        {"beneficiary_name": "שרון כהן", "beneficiary_id": "034113233", "relationship": "בן/בת הזוג", "share_percent": 100, "beneficiary_type": "מוטב למקרה מוות"},
+        {"beneficiary_name": "כפיר כהן", "beneficiary_id": "033731399", "relationship": "אחר", "share_percent": 100, "beneficiary_type": "מוטב למקרה חיים"},
+        {"beneficiary_name": "מרכנתיל דיסקונט למשכ", "beneficiary_id": "", "relationship": "אחר", "share_percent": 100, "beneficiary_type": "מוטב למקרה מוות (איילון)"},
+    ],
+    "investment_tracks": [
+        {"track_name": "הפניקס - מסלול השקעה למבוטחים בני 50 ומטה", "track_specialization": "תלוי גיל", "track_balance": 214697, "return_12m": -4.90, "return_24m": 8.64, "return_36m": 5.65, "return_60m": 5.56, "std_dev_36m": 2.94, "sharpe_ratio": 0.58, "equity_exposure": 52.64}
+    ],
+    "deposits_contributions": [
+        {"month": "אוקטובר 2021", "salary": 20000, "severance_deposit": 1666, "employee_deposit": 1200, "employer_deposit": 1300, "total_deposit": 4166},
+        {"month": "נובמבר 2021", "salary": 20000, "severance_deposit": 1666, "employee_deposit": 1200, "employer_deposit": 1300, "total_deposit": 4166},
+        {"month": "דצמבר 2021", "salary": 20000, "severance_deposit": 1666, "employee_deposit": 1200, "employer_deposit": 1300, "total_deposit": 4166},
+        {"month": "ינואר 2022", "salary": 20000, "severance_deposit": 1666, "employee_deposit": 1200, "employer_deposit": 1300, "total_deposit": 4166},
+        {"month": "פברואר 2022", "salary": 20000, "severance_deposit": 1666, "employee_deposit": 1200, "employer_deposit": 1300, "total_deposit": 4166},
+        {"month": "מרץ 2022", "salary": 20000, "severance_deposit": 1666, "employee_deposit": 1200, "employer_deposit": 1300, "total_deposit": 4166},
+    ],
+    "employer_info": [
+        {"employer_name": "סאן פוד טרייד 2016 בע\"מ", "employer_id": "0010705192", "tax_file": "515542330", "section14": False, "unconditional_rights": False},
+    ],
+    "operational_ids": [
+        {"mislaka_number": "36A5C968-44BE-4175-9CEB-A99894426A74", "uniform_code": "520023185000000000000000000000", "execution_date": "2022-11-30"},
+        {"mislaka_number": "36A5C968-44BE-4175-9CEB-A99894426A74", "uniform_code": "520030677000000000000000000000", "execution_date": "2022-11-30"},
+    ],
+    "additional_data": [
+        {"power_of_attorney": "ג'י 4 יו / כהן מרדכי יצח (תאגיד סוכן, מינוי 22/11/2021)", "liens": "קיים שיעבוד (איילון 13272595)", "seizures": "לא קיים", "loans": 0, "claims": "לא קיימות"},
+    ],
+}
+
 # Service index for company ratings
 SERVICE_INDEX_DATA = {
     "הפניקס": {"life_insurance": 86, "disability": 78, "overall": 82},
@@ -587,12 +655,14 @@ class SwiftnessDataService:
     def get_report_model(self) -> Dict[str, Any]:
         """
         Returns the enhanced report model definition with:
-          - sections: Ordered report sections with field definitions
+          - sections: Ordered report sections with field definitions and sample data
+          - sample_data: Realistic sample records for each section (from the attached PDF)
           - service_index: Company service ratings
           - metadata: Model info
         """
         return {
             "sections": REPORT_MODEL_SECTIONS,
+            "sample_data": REPORT_SAMPLE_DATA,
             "service_index": SERVICE_INDEX_DATA,
             "metadata": {
                 "total_sections": len(REPORT_MODEL_SECTIONS),

@@ -2464,105 +2464,149 @@
       if (!container || !model) return;
 
       const sections = model.sections || [];
+      const sampleData = model.sample_data || {};
       const meta = model.metadata || {};
       const serviceIndex = model.service_index || {};
+      const sectionIcons = {'piggy-bank':'🐖','file-text':'📄','list':'📋','bar-chart':'📊','shield':'🛡️','trending-up':'📈','users':'👥','pie-chart':'🥧','credit-card':'💳','briefcase':'💼','database':'🗄️','info':'ℹ️'};
+
+      function fmtVal(val, type) {
+        if (val === null || val === undefined || val === '') return '<span style="color:#94a3b8;">—</span>';
+        if (type === 'currency') return '<strong style="color:#059669;">₪' + Number(val).toLocaleString('he-IL') + '</strong>';
+        if (type === 'percentage') return val + '%';
+        if (type === 'boolean') return val ? '✅ כן' : '❌ לא';
+        if (type === 'status') {
+          const colors = {'פעיל':'#059669','active':'#059669','סגור':'#dc2626','closed':'#dc2626','מוקפא':'#d97706'};
+          return '<span style="padding:2px 8px;border-radius:10px;font-size:0.8rem;font-weight:600;background:'+(colors[val]||'#6366f1')+'22;color:'+(colors[val]||'#6366f1')+';">'+val+'</span>';
+        }
+        return val;
+      }
 
       let html = `
-        <div style="background: linear-gradient(135deg, #1e40af 0%, #3b82f6 100%); color: white; border-radius: 14px; padding: 1.5rem; margin-bottom: 1.5rem; text-align: center;">
-          <h3 style="font-size: 1.3rem; margin-bottom: 0.5rem;">📊 Mislaka Portfolio Analysis Report Model</h3>
-          <p style="opacity: 0.9; font-size: 0.9rem;">${meta.based_on || 'Professional Insurance Portfolio Analysis Format'}</p>
-          <div style="display: flex; justify-content: center; gap: 1.5rem; margin-top: 1rem; flex-wrap: wrap;">
-            <span style="font-size: 0.85rem;"><strong>${sections.length}</strong> Sections</span>
-            <span style="font-size: 0.85rem;"><strong>v${meta.model_version || '2.0'}</strong> Model</span>
-            <span style="font-size: 0.85rem;">Source: <strong>${meta.source || 'swiftness.co.il'}</strong></span>
+        <div style="background:linear-gradient(135deg,#1e40af 0%,#3b82f6 100%);color:white;border-radius:14px;padding:1.5rem;margin-bottom:1.5rem;text-align:center;">
+          <h3 style="font-size:1.3rem;margin-bottom:0.5rem;">📊 Mislaka Portfolio Analysis Report Model (Nituach Tik)</h3>
+          <p style="opacity:0.9;font-size:0.9rem;">Click each section to expand its full field detail report with sample data from Swiftness / Mislaka</p>
+          <div style="display:flex;justify-content:center;gap:1.5rem;margin-top:1rem;flex-wrap:wrap;">
+            <span style="font-size:0.85rem;"><strong>${sections.length}</strong> Sections</span>
+            <span style="font-size:0.85rem;"><strong>v${meta.model_version||'2.0'}</strong></span>
+            <span style="font-size:0.85rem;">Source: <strong><a href="https://www.swiftness.co.il" target="_blank" style="color:white;text-decoration:underline;">swiftness.co.il</a></strong></span>
           </div>
         </div>
       `;
 
-      // Data Integrity Rules
+      // Integrity Rules
       const rules = meta.data_integrity_rules || [];
       if (rules.length) {
-        html += `
-          <div style="background: #f0fdf4; border-radius: 12px; padding: 1rem 1.25rem; margin-bottom: 1rem; border: 1px solid #a7f3d0;">
-            <h4 style="color: #047857; font-size: 0.95rem; margin-bottom: 0.5rem;">🛡️ Data Integrity Rules</h4>
-            <div style="display: flex; flex-wrap: wrap; gap: 0.5rem;">
-              ${rules.map(r => `<span class="integrity-badge pass">✓ ${r}</span>`).join('')}
-            </div>
-          </div>
-        `;
+        html += '<div style="background:#f0fdf4;border-radius:12px;padding:1rem 1.25rem;margin-bottom:1rem;border:1px solid #a7f3d0;"><h4 style="color:#047857;font-size:0.95rem;margin-bottom:0.5rem;">🛡️ Data Integrity Rules</h4><div style="display:flex;flex-wrap:wrap;gap:0.5rem;">'+rules.map(r=>'<span class="integrity-badge pass">✓ '+r+'</span>').join('')+'</div></div>';
       }
 
-      // Report sections
+      // Each section as expandable detail card
       sections.forEach(sec => {
         const fields = sec.data_fields || [];
         const charts = sec.charts || [];
+        const key = sec.key;
+        const rows = sampleData[key] || [];
+        const icon = sectionIcons[sec.icon] || '📋';
+        const panelId = 'rms-panel-' + sec.order;
+
         html += `
-          <div class="report-model-section">
-            <div class="rms-header">
+          <div class="report-model-section" style="cursor:pointer;transition:all 0.2s;" onclick="toggleRmsPanel('${panelId}')">
+            <div class="rms-header" style="margin-bottom:0;">
               <span class="rms-order">${sec.order}</span>
-              <div>
-                <span class="rms-title">${sec.title_he}</span>
-                <span class="rms-title-en"> ${sec.title_en}</span>
+              <div style="flex:1;">
+                <span class="rms-title">${icon} ${sec.title_he}</span>
+                <span class="rms-title-en">${sec.title_en}</span>
               </div>
+              <span style="font-size:0.8rem;color:var(--text-muted);">${fields.length} fields &bull; ${rows.length} record${rows.length!==1?'s':''}</span>
+              <span id="${panelId}-arrow" style="font-size:1.2rem;transition:transform 0.3s;">▶</span>
             </div>
-            <div class="rms-desc">${sec.description || ''}</div>
-            <div class="rms-fields">
-              ${fields.map(f => `
-                <span class="rms-field">
-                  ${f.label_he || f.field}
-                  <span class="field-type">${f.type || 'text'}</span>
-                </span>
-              `).join('')}
-            </div>
-            ${charts.length ? `
-              <div class="rms-charts">
-                ${charts.map(c => `<span class="rms-chart-badge">📈 ${c.type}: ${c.title}</span>`).join('')}
-              </div>
-            ` : ''}
+            <div class="rms-desc" style="margin-top:0.25rem;">${sec.description||''}</div>
+          </div>
+          <div id="${panelId}" style="display:none;background:white;border:1px solid #e2e8f0;border-top:none;border-radius:0 0 12px 12px;margin-top:-0.75rem;margin-bottom:0.75rem;padding:1.25rem;animation:fadeIn 0.3s;">
+        `;
+
+        // Field schema table
+        html += `
+          <h5 style="color:var(--primary);margin-bottom:0.75rem;font-size:0.95rem;">📐 Field Schema</h5>
+          <div style="overflow-x:auto;">
+          <table class="data-table" style="font-size:0.85rem;">
+            <thead><tr>
+              <th style="min-width:40px;">#</th>
+              <th>Field ID</th>
+              <th>שם (Hebrew)</th>
+              <th>Name (English)</th>
+              <th>Type</th>
+            </tr></thead><tbody>
+            ${fields.map((f,i) => `<tr>
+              <td>${i+1}</td>
+              <td><code style="background:#f1f5f9;padding:2px 6px;border-radius:4px;font-size:0.8rem;">${f.field}</code></td>
+              <td style="font-weight:500;">${f.label_he}</td>
+              <td>${f.label_en}</td>
+              <td><span style="background:${f.type==='currency'?'#d1fae5':f.type==='percentage'?'#fef3c7':f.type==='date'?'#e0f2fe':'#f1f5f9'};color:${f.type==='currency'?'#047857':f.type==='percentage'?'#92400e':f.type==='date'?'#0369a1':'#475569'};padding:2px 8px;border-radius:10px;font-size:0.75rem;font-weight:500;">${f.type}${f.currency?' ('+f.currency+')':''}</span></td>
+            </tr>`).join('')}
+            </tbody>
+          </table>
           </div>
         `;
+
+        // Sample data table
+        if (rows.length) {
+          html += `
+            <h5 style="color:#059669;margin:1.25rem 0 0.75rem;font-size:0.95rem;">📊 Sample Data (Mislaka source)</h5>
+            <div style="overflow-x:auto;">
+            <table class="data-table" style="font-size:0.82rem;direction:rtl;text-align:right;">
+              <thead><tr>
+                ${fields.map(f => '<th style="white-space:nowrap;">'+f.label_he+'</th>').join('')}
+              </tr></thead><tbody>
+              ${rows.map(row => '<tr>'+fields.map(f => '<td>'+fmtVal(row[f.field], f.type)+'</td>').join('')+'</tr>').join('')}
+              </tbody>
+            </table>
+            </div>
+          `;
+        }
+
+        // Charts info
+        if (charts.length) {
+          html += '<div style="margin-top:1rem;display:flex;gap:0.5rem;flex-wrap:wrap;">'+charts.map(c=>'<span class="rms-chart-badge">📈 '+c.type+': '+c.title+'</span>').join('')+'</div>';
+        }
+
+        // Swiftness link
+        html += `
+          <div style="margin-top:1rem;padding-top:0.75rem;border-top:1px dashed #e2e8f0;display:flex;gap:1rem;flex-wrap:wrap;align-items:center;">
+            <a href="https://www.swiftness.co.il/כללי-מערכת/" target="_blank" rel="noopener" style="font-size:0.8rem;color:#0369a1;text-decoration:none;">📐 Swiftness Schema Reference</a>
+            <a href="https://www.swiftness.co.il/savers/קבצים-עדכניים-לעבודה-מול-המסלקה/" target="_blank" rel="noopener" style="font-size:0.8rem;color:#0369a1;text-decoration:none;">📂 Mislaka Work Files</a>
+            <span style="font-size:0.75rem;color:var(--text-muted);">Section key: <code>${key}</code></span>
+          </div>
+        `;
+
+        html += '</div>'; // close panel
       });
 
       // Service Index
       const companies = Object.keys(serviceIndex);
       if (companies.length) {
-        html += `
-          <div style="background: white; border-radius: 12px; padding: 1.25rem; margin-top: 1rem; border: 1px solid #e2e8f0;">
-            <h4 style="color: var(--primary); font-size: 1rem; margin-bottom: 0.75rem;">🏢 Service Index Ratings</h4>
-            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 0.75rem;">
-              ${companies.map(company => {
-                const ratings = serviceIndex[company];
-                return `
-                  <div style="background: #f8fafc; padding: 0.75rem; border-radius: 8px; border: 1px solid #e2e8f0;">
-                    <div style="font-weight: 600; margin-bottom: 0.5rem; font-size: 0.9rem;">${company}</div>
-                    ${Object.entries(ratings).map(([k, v]) => `
-                      <div style="display: flex; justify-content: space-between; font-size: 0.8rem; padding: 2px 0; border-bottom: 1px dashed #e2e8f0;">
-                        <span style="color: var(--text-muted);">${k.replace(/_/g, ' ')}</span>
-                        <span style="font-weight: 600; color: ${v >= 80 ? '#059669' : v >= 70 ? '#d97706' : '#dc2626'};">${v}</span>
-                      </div>
-                    `).join('')}
-                  </div>
-                `;
-              }).join('')}
-            </div>
-          </div>
-        `;
+        html += '<div style="background:white;border-radius:12px;padding:1.25rem;margin-top:1rem;border:1px solid #e2e8f0;"><h4 style="color:var(--primary);font-size:1rem;margin-bottom:0.75rem;">🏢 Service Index Ratings</h4><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:0.75rem;">'+companies.map(c=>{const r=serviceIndex[c];return '<div style="background:#f8fafc;padding:0.75rem;border-radius:8px;border:1px solid #e2e8f0;"><div style="font-weight:600;margin-bottom:0.5rem;font-size:0.9rem;">'+c+'</div>'+Object.entries(r).map(([k,v])=>'<div style="display:flex;justify-content:space-between;font-size:0.8rem;padding:2px 0;border-bottom:1px dashed #e2e8f0;"><span style="color:var(--text-muted);">'+k.replace(/_/g,' ')+'</span><span style="font-weight:600;color:'+(v>=80?'#059669':v>=70?'#d97706':'#dc2626')+';">'+v+'</span></div>').join('')+'</div>';}).join('')+'</div></div>';
       }
 
       // Features
       const features = meta.features || [];
       if (features.length) {
-        html += `
-          <div style="background: #f0f9ff; border-radius: 12px; padding: 1rem 1.25rem; margin-top: 1rem; border: 1px solid #bae6fd;">
-            <h4 style="color: #0369a1; font-size: 0.95rem; margin-bottom: 0.5rem;">✨ Report Features</h4>
-            <div style="columns: 2; column-gap: 1.5rem;">
-              ${features.map(f => `<div style="font-size: 0.85rem; color: var(--text-dark); padding: 2px 0; break-inside: avoid;">✓ ${f}</div>`).join('')}
-            </div>
-          </div>
-        `;
+        html += '<div style="background:#f0f9ff;border-radius:12px;padding:1rem 1.25rem;margin-top:1rem;border:1px solid #bae6fd;"><h4 style="color:#0369a1;font-size:0.95rem;margin-bottom:0.5rem;">✨ Report Features</h4><div style="columns:2;column-gap:1.5rem;">'+features.map(f=>'<div style="font-size:0.85rem;color:var(--text-dark);padding:2px 0;break-inside:avoid;">✓ '+f+'</div>').join('')+'</div></div>';
       }
 
       container.innerHTML = html;
+    }
+
+    function toggleRmsPanel(panelId) {
+      const panel = document.getElementById(panelId);
+      const arrow = document.getElementById(panelId + '-arrow');
+      if (!panel) return;
+      if (panel.style.display === 'none') {
+        panel.style.display = 'block';
+        if (arrow) arrow.style.transform = 'rotate(90deg)';
+      } else {
+        panel.style.display = 'none';
+        if (arrow) arrow.style.transform = 'rotate(0deg)';
+      }
     }
 
     function showResourceTab(tab) {
