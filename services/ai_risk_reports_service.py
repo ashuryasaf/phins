@@ -22,7 +22,7 @@ import os
 import re
 import hashlib
 import zipfile
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Dict, List, Any, Optional, Tuple
 from enum import Enum
 from dataclasses import dataclass, field, asdict
@@ -3322,6 +3322,8 @@ Factors Affecting Score:
         """Determine if report should use financial/insurance layout."""
         if analysis.data_classification in [DataType.INSURANCE, DataType.SAVINGS, DataType.INVESTMENT]:
             return True
+        if self._has_financial_columns(doc_data):
+            return True
         return self._is_key_value_dataset(doc_data)
 
     def _is_key_value_dataset(self, doc_data: Dict[str, Any]) -> bool:
@@ -3337,6 +3339,22 @@ Factors Affecting Score:
         if 'property' in columns and 'value' in columns:
             return True
         return False
+
+    def _has_financial_columns(self, doc_data: Dict[str, Any]) -> bool:
+        """Detect financial/pension columns in tabular data."""
+        columns = [str(c).strip().lower() for c in doc_data.get('columns', [])]
+        if not columns:
+            return False
+        patterns = [
+            'policy', 'polisa', 'פוליסה', 'מספר פוליסה', 'חשבון',
+            'balance', 'יתרה', 'צבירה', 'חיסכון', 'תגמולים', 'פיצויים',
+            'premium', 'פרמיה', 'הפקדה',
+            'coverage', 'כיסוי', 'ביטוח', 'סכום כיסוי',
+            'fee', 'דמי ניהול', 'ניהול',
+            'section 14', 'סעיף 14',
+            'pension', 'פנסיה', 'קופה', 'גמל'
+        ]
+        return any(any(p in col for p in patterns) for col in columns)
 
     def _build_financial_summary(self, doc_data: Dict[str, Any]) -> Dict[str, Any]:
         """Build financial/insurance summary from raw rows."""
@@ -4073,6 +4091,79 @@ Factors Affecting Score:
         # Sort by generated_at descending
         results.sort(key=lambda x: x.get('generated_at', ''), reverse=True)
         return results
+
+    def purge_today_sessions(self, timezone_offset_minutes: int = 0) -> Dict[str, int]:
+        """
+        Purge documents, analyses, and reports generated today (UTC by default).
+        Returns counts of purged items.
+        """
+        target_date = (datetime.utcnow() + timedelta(minutes=timezone_offset_minutes)).date()
+
+        def _date_from_iso(val: str) -> Optional[datetime.date]:
+            if not val:
+                return None
+            try:
+                cleaned = val.replace('Z', '+00:00')
+                return datetime.fromisoformat(cleaned).date()
+            except Exception:
+                return None
+
+        def _date_from_id(identifier: str) -> Optional[datetime.date]:
+            match = re.search(r'-(\d{8})', identifier)
+            if not match:
+                return None
+            try:
+                return datetime.strptime(match.group(1), '%Y%m%d').date()
+            except Exception:
+                return None
+
+        docs_to_delete = set()
+        for doc_id, doc in self.documents.items():
+            created = _date_from_iso(doc.get('created_at', ''))
+            if created == target_date:
+                docs_to_delete.add(doc_id)
+
+        analyses_to_delete = set()
+        for analysis_id, analysis in self.analyses.items():
+            if analysis.document_id in docs_to_delete:
+                analyses_to_delete.add(analysis_id)
+                continue
+            analysis_date = _date_from_id(analysis_id)
+            if analysis_date == target_date:
+                analyses_to_delete.add(analysis_id)
+
+        reports_to_delete = set()
+        for report_id, report in self.reports.items():
+            generated_date = _date_from_iso(report.generated_at)
+            if generated_date == target_date:
+                reports_to_delete.add(report_id)
+                analyses_to_delete.add(report.analysis_id)
+                continue
+            report_date = _date_from_id(report_id)
+            if report_date == target_date:
+                reports_to_delete.add(report_id)
+                analyses_to_delete.add(report.analysis_id)
+
+        # Delete reports
+        for report_id in reports_to_delete:
+            self.reports.pop(report_id, None)
+
+        # Delete analyses
+        for analysis_id in analyses_to_delete:
+            self.analyses.pop(analysis_id, None)
+
+        # Delete documents
+        for doc_id in docs_to_delete:
+            self.documents.pop(doc_id, None)
+
+        if reports_to_delete or analyses_to_delete or docs_to_delete:
+            self.save_data()
+
+        return {
+            'reports': len(reports_to_delete),
+            'analyses': len(analyses_to_delete),
+            'documents': len(docs_to_delete)
+        }
     
     def authorize_access(self, resource_type: str, resource_id: str, 
                         user_id: str, user_role: str) -> Tuple[bool, Optional[str]]:

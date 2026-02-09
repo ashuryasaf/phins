@@ -1313,6 +1313,60 @@
       overflow: hidden;
       margin-bottom: 2rem;
     }
+
+    /* Swiftness + Mislaka Research Hub */
+    .swiftness-hub {
+      background: white;
+      border-radius: 16px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+      overflow: hidden;
+      margin-bottom: 2rem;
+    }
+
+    .swiftness-header {
+      background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+      color: white;
+      padding: 1.5rem 2rem;
+    }
+
+    .swiftness-header h3 {
+      font-size: 1.2rem;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 0.5rem;
+    }
+
+    .swiftness-header p {
+      font-size: 0.9rem;
+      opacity: 0.9;
+    }
+
+    .swiftness-body {
+      padding: 2rem;
+    }
+
+    .swiftness-actions {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-top: 1rem;
+    }
+
+    .swiftness-status {
+      margin-top: 1rem;
+      padding: 1rem;
+      border-radius: 8px;
+      display: none;
+    }
+
+    .swiftness-status.active {
+      display: block;
+    }
+
+    .swiftness-status.success { background: #d1fae5; color: #047857; }
+    .swiftness-status.error { background: #fee2e2; color: #b91c1c; }
+    .swiftness-status.info { background: #e0f2fe; color: #0369a1; }
     
     .mislaka-header {
       background: linear-gradient(135deg, #059669 0%, #047857 100%);
@@ -1705,6 +1759,32 @@
           <div class="progress-fill" id="progressFill"></div>
         </div>
         <p id="processingMessage">Parsing and learning from uploaded files...</p>
+      </div>
+    </section>
+
+    <!-- Swiftness + Mislaka Research Hub -->
+    <section class="swiftness-hub fade-in" id="swiftnessHub">
+      <div class="swiftness-header">
+        <h3>🧭 Swiftness + Mislaka Research Hub</h3>
+        <p>רכז מסמכי מסלקה, מפרטי עבודה ותקני אבטחה כדי לבנות דו״חות מתקדמים וחיבור בטוח</p>
+      </div>
+      <div class="swiftness-body">
+        <div>
+          <strong>יעד:</strong> דשבורד סיכונים חדש המבוסס על מסמכי מסלקה/Swiftness בלבד,
+          עם דו״חות פיננסיים‑ביטוחיים (חיסכון ארוך טווח, כיסויים, סעיף 14) וחיבור Swiftness Safe.
+        </div>
+        <div style="margin-top: 0.75rem; color: var(--text-muted);">
+          העלו כאן מסמכים רשמיים (PDF/CSV/XLSX) כדי שנוכל לנתח, למפות שדות ולהפיק דו״חות חדשים.
+        </div>
+        <div class="swiftness-actions">
+          <button class="btn btn-primary" onclick="scrollToUpload()">
+            📁 Upload Documents for Analysis
+          </button>
+          <button class="btn btn-secondary" onclick="purgeTodayReports()">
+            🧹 Revoke Today's Reports
+          </button>
+        </div>
+        <div class="swiftness-status" id="swiftnessStatus"></div>
       </div>
     </section>
     
@@ -2161,6 +2241,61 @@
         reader.onerror = reject;
         reader.readAsDataURL(file);
       });
+    }
+
+    function scrollToUpload() {
+      const uploadSection = document.querySelector('.upload-section');
+      if (uploadSection) {
+        uploadSection.scrollIntoView({ behavior: 'smooth' });
+      }
+      // Open file selector for convenience
+      setTimeout(() => {
+        const input = document.getElementById('fileInput');
+        if (input) {
+          input.click();
+        }
+      }, 300);
+    }
+
+    async function purgeTodayReports() {
+      const statusBox = document.getElementById('swiftnessStatus');
+      if (statusBox) {
+        statusBox.className = 'swiftness-status active info';
+        statusBox.textContent = '⏳ Revoking today’s reports...';
+      }
+
+      try {
+        const tzOffset = -new Date().getTimezoneOffset();
+        const response = await fetch('/api/reports/purge-today', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${localStorage.getItem('phins_token') || ''}`
+          },
+          body: JSON.stringify({
+            timezone_offset_minutes: tzOffset
+          })
+        });
+
+        if (!response.ok) {
+          const data = await response.json().catch(() => ({}));
+          throw new Error(data.error || 'Purge failed');
+        }
+
+        const data = await response.json();
+        if (statusBox) {
+          statusBox.className = 'swiftness-status active success';
+          const purged = data.purged || {};
+          statusBox.textContent = `✅ Purged reports: ${purged.reports || 0}, analyses: ${purged.analyses || 0}, documents: ${purged.documents || 0}`;
+        }
+
+        loadReportHistory();
+      } catch (error) {
+        if (statusBox) {
+          statusBox.className = 'swiftness-status active error';
+          statusBox.textContent = `❌ ${error.message}`;
+        }
+      }
     }
     
     // ==========================================================================

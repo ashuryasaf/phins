@@ -15231,6 +15231,46 @@ For claims or questions, please contact:
                 self._set_json_headers(500)
                 self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
                 return
+
+        # POST /api/reports/purge-today - Purge today's reports/analyses/documents (admin only)
+        if path == '/api/reports/purge-today':
+            try:
+                auth_header = self.headers.get('Authorization', '')
+                token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+                session = validate_session(token) if token else None
+
+                if not session or session.get('role') != 'admin':
+                    self._set_json_headers(403)
+                    self.wfile.write(json.dumps({'error': 'Admin access required'}).encode('utf-8'))
+                    return
+
+                length = int(self.headers.get('Content-Length', 0))
+                body = self.rfile.read(length).decode('utf-8') if length else '{}'
+                try:
+                    data = json.loads(body)
+                except json.JSONDecodeError:
+                    data = {}
+
+                tz_offset = int(data.get('timezone_offset_minutes', 0) or 0)
+
+                from services.ai_risk_reports_service import get_ai_reports_service
+                service = get_ai_reports_service()
+                result = service.purge_today_sessions(timezone_offset_minutes=tz_offset)
+
+                self._set_json_headers(200)
+                self.wfile.write(json.dumps({
+                    'success': True,
+                    'purged': result,
+                    'timezone_offset_minutes': tz_offset
+                }).encode('utf-8'))
+                return
+            except Exception as e:
+                import traceback
+                print(f"Error in /api/reports/purge-today: {e}")
+                traceback.print_exc()
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+                return
         
         # =====================================================================
         # MISLAKA API INTEGRATION ENDPOINTS
