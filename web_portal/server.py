@@ -7904,6 +7904,30 @@ For claims or questions, please contact:
                 self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
                 return
 
+        # GET /api/swiftness/section-report?key=... - Generate individual section report
+        if path == '/api/swiftness/section-report':
+            try:
+                section_key = qs.get('key', [None])[0]
+                if not section_key:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'Missing ?key= parameter'}).encode('utf-8'))
+                    return
+                from services.swiftness_data_service import get_swiftness_data_service
+                svc = get_swiftness_data_service()
+                report = svc.generate_section_report(section_key)
+                if report is None:
+                    self._set_json_headers(404)
+                    self.wfile.write(json.dumps({'error': f'Section key "{section_key}" not found', 'valid_keys': svc.list_section_keys()}).encode('utf-8'))
+                    return
+                self._set_json_headers(200)
+                self.wfile.write(json.dumps(report, ensure_ascii=False).encode('utf-8'))
+                return
+            except Exception as e:
+                print(f"Error in /api/swiftness/section-report: {e}")
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+                return
+
         # Customers Endpoint
         if path == '/api/customers':
             requested_customer_id = qs.get('id', [None])[0]

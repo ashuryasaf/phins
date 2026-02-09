@@ -765,6 +765,162 @@ class SwiftnessDataService:
             "checked_at": datetime.utcnow().isoformat(),
         }
 
+    # -----------------------------------------------------------------
+    # Section report generation
+    # -----------------------------------------------------------------
+    def generate_section_report(self, section_key: str) -> Optional[Dict[str, Any]]:
+        """
+        Generate a full standalone report for a single section.
+        Returns the section definition, sample data, chart configs ready
+        for Chart.js, and formatted summary statistics.
+        """
+        sec = None
+        for s in REPORT_MODEL_SECTIONS:
+            if s["key"] == section_key:
+                sec = s
+                break
+        if sec is None:
+            return None
+
+        rows = REPORT_SAMPLE_DATA.get(section_key, [])
+        fields = sec.get("data_fields", [])
+
+        # Build computed stats per numeric field
+        stats = {}
+        for f in fields:
+            if f["type"] in ("currency", "number", "percentage"):
+                vals = [r.get(f["field"]) for r in rows if r.get(f["field"]) is not None]
+                nums = []
+                for v in vals:
+                    try:
+                        nums.append(float(v))
+                    except (ValueError, TypeError):
+                        pass
+                if nums:
+                    stats[f["field"]] = {
+                        "count": len(nums),
+                        "sum": round(sum(nums), 2),
+                        "min": round(min(nums), 2),
+                        "max": round(max(nums), 2),
+                        "avg": round(sum(nums) / len(nums), 2),
+                    }
+
+        # Build chart configs ready for Chart.js rendering
+        chart_configs = []
+        for ch in sec.get("charts", []):
+            ch_fields = ch.get("fields", [])
+            chart_type = ch.get("type", "bar")
+            title = ch.get("title", "")
+
+            if chart_type in ("doughnut", "pie"):
+                labels = []
+                values = []
+                for cf in ch_fields:
+                    fdef = next((fd for fd in fields if fd["field"] == cf), None)
+                    label = fdef["label_he"] if fdef else cf
+                    total = sum(
+                        float(r.get(cf, 0) or 0) for r in rows
+                    )
+                    if total:
+                        labels.append(label)
+                        values.append(round(total, 2))
+                chart_configs.append({
+                    "type": chart_type,
+                    "title": title,
+                    "data": {"labels": labels, "values": values},
+                })
+            elif chart_type == "bar":
+                labels = []
+                values = []
+                for cf in ch_fields:
+                    fdef = next((fd for fd in fields if fd["field"] == cf), None)
+                    label = fdef["label_he"] if fdef else cf
+                    total = sum(float(r.get(cf, 0) or 0) for r in rows)
+                    labels.append(label)
+                    values.append(round(total, 2))
+                if not labels:
+                    # Fallback: use first field values as categories
+                    cat_field = fields[0]["field"] if fields else None
+                    val_field = ch_fields[0] if ch_fields else None
+                    if cat_field and val_field:
+                        for r in rows:
+                            labels.append(str(r.get(cat_field, "")))
+                            values.append(float(r.get(val_field, 0) or 0))
+                chart_configs.append({
+                    "type": "bar",
+                    "title": title,
+                    "data": {"labels": labels, "values": values},
+                })
+            elif chart_type == "line":
+                labels = []
+                datasets = {}
+                for cf in ch_fields:
+                    datasets[cf] = []
+                # Use row index or a date-like field for labels
+                date_field = next(
+                    (fd["field"] for fd in fields if fd["type"] == "date" or "period" in fd["field"] or "month" in fd["field"]),
+                    None,
+                )
+                for idx, r in enumerate(rows):
+                    lbl = str(r.get(date_field, idx + 1)) if date_field else str(idx + 1)
+                    labels.append(lbl)
+                    for cf in ch_fields:
+                        datasets.setdefault(cf, []).append(float(r.get(cf, 0) or 0))
+                for cf in ch_fields:
+                    fdef = next((fd for fd in fields if fd["field"] == cf), None)
+                    chart_configs.append({
+                        "type": "line",
+                        "title": f"{title} - {fdef['label_he'] if fdef else cf}",
+                        "data": {"labels": labels, "values": datasets.get(cf, [])},
+                    })
+
+        # If no explicit charts defined, auto-generate sensible ones
+        if not chart_configs and rows:
+            currency_fields = [f for f in fields if f["type"] == "currency"]
+            if currency_fields and len(rows) == 1:
+                labels = [f["label_he"] for f in currency_fields]
+                values = [float(rows[0].get(f["field"], 0) or 0) for f in currency_fields]
+                non_zero = [(l, v) for l, v in zip(labels, values) if v]
+                if non_zero:
+                    chart_configs.append({
+                        "type": "doughnut",
+                        "title": sec["title_he"],
+                        "data": {
+                            "labels": [x[0] for x in non_zero],
+                            "values": [x[1] for x in non_zero],
+                        },
+                    })
+            elif currency_fields and len(rows) > 1:
+                cat_field = next(
+                    (f["field"] for f in fields if f["type"] in ("text", "date")),
+                    fields[0]["field"],
+                )
+                val_field = currency_fields[0]["field"]
+                chart_configs.append({
+                    "type": "bar",
+                    "title": sec["title_he"],
+                    "data": {
+                        "labels": [str(r.get(cat_field, "")) for r in rows],
+                        "values": [float(r.get(val_field, 0) or 0) for r in rows],
+                    },
+                })
+
+        return {
+            "section": sec,
+            "rows": rows,
+            "row_count": len(rows),
+            "field_count": len(fields),
+            "stats": stats,
+            "charts": chart_configs,
+            "service_index": SERVICE_INDEX_DATA,
+            "swiftness_links": SWIFTNESS_LINKS,
+            "generated_at": datetime.utcnow().isoformat(),
+        }
+
+    def list_section_keys(self) -> List[str]:
+        """Return ordered list of all section keys."""
+        return [s["key"] for s in REPORT_MODEL_SECTIONS]
+
 
 # Singleton
 _service_instance = None

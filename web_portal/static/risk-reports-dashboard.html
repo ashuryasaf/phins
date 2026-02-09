@@ -2175,7 +2175,23 @@
       </div>
     </section>
   </main>
-  
+
+  <!-- Section Report Modal -->
+  <div id="sectionReportModal" style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.6);overflow-y:auto;">
+    <div style="max-width:1100px;margin:2rem auto;background:white;border-radius:16px;box-shadow:0 20px 60px rgba(0,0,0,0.3);overflow:hidden;min-height:80vh;" id="sectionReportInner">
+      <div id="sectionReportHeader" style="background:linear-gradient(135deg,#1e40af 0%,#3b82f6 100%);color:white;padding:1.25rem 2rem;display:flex;justify-content:space-between;align-items:center;">
+        <h2 id="sectionReportTitle" style="font-size:1.3rem;margin:0;">Loading...</h2>
+        <div style="display:flex;gap:8px;">
+          <button onclick="printSectionReport()" style="background:rgba(255,255,255,0.2);color:white;border:none;padding:8px 14px;border-radius:8px;cursor:pointer;font-size:0.85rem;">🖨️ Print</button>
+          <button onclick="closeSectionReport()" style="background:rgba(255,255,255,0.2);color:white;border:none;padding:8px 14px;border-radius:8px;cursor:pointer;font-size:0.85rem;">✕ Close</button>
+        </div>
+      </div>
+      <div id="sectionReportBody" style="padding:2rem;">
+        <div style="text-align:center;padding:3rem;color:#64748b;">Loading report...</div>
+      </div>
+    </div>
+  </div>
+
   <script>
     // State
     let uploadedFiles = [];
@@ -2569,12 +2585,15 @@
           html += '<div style="margin-top:1rem;display:flex;gap:0.5rem;flex-wrap:wrap;">'+charts.map(c=>'<span class="rms-chart-badge">📈 '+c.type+': '+c.title+'</span>').join('')+'</div>';
         }
 
-        // Swiftness link
+        // Swiftness link + Generate Report button
         html += `
           <div style="margin-top:1rem;padding-top:0.75rem;border-top:1px dashed #e2e8f0;display:flex;gap:1rem;flex-wrap:wrap;align-items:center;">
-            <a href="https://www.swiftness.co.il/כללי-מערכת/" target="_blank" rel="noopener" style="font-size:0.8rem;color:#0369a1;text-decoration:none;">📐 Swiftness Schema Reference</a>
-            <a href="https://www.swiftness.co.il/savers/קבצים-עדכניים-לעבודה-מול-המסלקה/" target="_blank" rel="noopener" style="font-size:0.8rem;color:#0369a1;text-decoration:none;">📂 Mislaka Work Files</a>
-            <span style="font-size:0.75rem;color:var(--text-muted);">Section key: <code>${key}</code></span>
+            <button class="btn btn-primary" onclick="openSectionReport('${key}')" style="padding:8px 18px;font-size:0.85rem;">
+              📄 Generate Report
+            </button>
+            <a href="https://www.swiftness.co.il/כללי-מערכת/" target="_blank" rel="noopener" style="font-size:0.8rem;color:#0369a1;text-decoration:none;">📐 Schema Ref</a>
+            <a href="https://www.swiftness.co.il/savers/קבצים-עדכניים-לעבודה-מול-המסלקה/" target="_blank" rel="noopener" style="font-size:0.8rem;color:#0369a1;text-decoration:none;">📂 Work Files</a>
+            <span style="font-size:0.75rem;color:var(--text-muted);">key: <code>${key}</code></span>
           </div>
         `;
 
@@ -4297,6 +4316,192 @@
     document.addEventListener('DOMContentLoaded', () => {
       checkMislakaStatus();
     });
+
+    // =========================================================================
+    // SECTION REPORT GENERATOR
+    // Opens a modal with a full report for a single Nituach Tik section
+    // =========================================================================
+    let sectionReportCharts = {};
+
+    function closeSectionReport() {
+      document.getElementById('sectionReportModal').style.display = 'none';
+      document.body.style.overflow = '';
+      Object.values(sectionReportCharts).forEach(c => { try { c.destroy(); } catch(e){} });
+      sectionReportCharts = {};
+    }
+
+    function printSectionReport() {
+      const content = document.getElementById('sectionReportInner').innerHTML;
+      const win = window.open('', '_blank');
+      win.document.write('<html><head><title>Section Report</title><style>body{font-family:Segoe UI,system-ui,sans-serif;direction:rtl;padding:2rem;}table{width:100%;border-collapse:collapse;margin:1rem 0;}th,td{padding:8px 12px;border:1px solid #ddd;text-align:right;font-size:0.85rem;}th{background:#f1f5f9;font-weight:600;}.sr-stat{display:inline-block;background:#f8fafc;border-radius:8px;padding:0.5rem 1rem;margin:0.25rem;text-align:center;border:1px solid #e2e8f0;}.sr-stat .v{font-size:1.3rem;font-weight:700;color:#059669;}.sr-stat .l{font-size:0.75rem;color:#64748b;}canvas{max-width:400px;max-height:300px;}@media print{button{display:none!important;}}</style></head><body>');
+      win.document.write(content);
+      win.document.write('</body></html>');
+      win.document.close();
+      win.print();
+    }
+
+    async function openSectionReport(sectionKey) {
+      const modal = document.getElementById('sectionReportModal');
+      const titleEl = document.getElementById('sectionReportTitle');
+      const bodyEl = document.getElementById('sectionReportBody');
+      modal.style.display = 'block';
+      document.body.style.overflow = 'hidden';
+      titleEl.textContent = 'Loading...';
+      bodyEl.innerHTML = '<div style="text-align:center;padding:3rem;color:#64748b;">Generating report...</div>';
+
+      try {
+        const resp = await fetch(`/api/swiftness/section-report?key=${encodeURIComponent(sectionKey)}`);
+        if (!resp.ok) throw new Error((await resp.json()).error || 'Failed');
+        const rpt = await resp.json();
+        renderSectionReport(rpt, titleEl, bodyEl);
+      } catch (e) {
+        bodyEl.innerHTML = `<div style="text-align:center;padding:3rem;color:#dc2626;">Error: ${e.message}</div>`;
+      }
+    }
+
+    function renderSectionReport(rpt, titleEl, bodyEl) {
+      const sec = rpt.section;
+      const rows = rpt.rows || [];
+      const fields = sec.data_fields || [];
+      const stats = rpt.stats || {};
+      const chartConfigs = rpt.charts || [];
+      const links = rpt.swiftness_links || [];
+      const sectionIcons = {'piggy-bank':'🐖','file-text':'📄','list':'📋','bar-chart':'📊','shield':'🛡️','trending-up':'📈','users':'👥','pie-chart':'🥧','credit-card':'💳','briefcase':'💼','database':'🗄️','info':'ℹ️'};
+      const icon = sectionIcons[sec.icon] || '📋';
+
+      titleEl.textContent = `${icon} ${sec.title_he} — ${sec.title_en}`;
+
+      function fv(val, type) {
+        if (val === null || val === undefined || val === '') return '—';
+        if (type === 'currency') return '₪' + Number(val).toLocaleString('he-IL');
+        if (type === 'percentage') return val + '%';
+        if (type === 'boolean') return val ? '✅ כן' : '❌ לא';
+        if (type === 'status') return val;
+        return String(val);
+      }
+
+      let html = '';
+
+      // Report header info
+      html += `<div style="display:flex;gap:1rem;flex-wrap:wrap;margin-bottom:1.5rem;align-items:center;">
+        <span style="background:#e0f2fe;color:#0369a1;padding:4px 12px;border-radius:20px;font-size:0.8rem;font-weight:600;">Section ${sec.order} of 12</span>
+        <span style="background:#d1fae5;color:#047857;padding:4px 12px;border-radius:20px;font-size:0.8rem;font-weight:600;">${fields.length} Fields</span>
+        <span style="background:#fef3c7;color:#92400e;padding:4px 12px;border-radius:20px;font-size:0.8rem;font-weight:600;">${rows.length} Record${rows.length!==1?'s':''}</span>
+        <span style="font-size:0.8rem;color:#64748b;">Generated: ${new Date(rpt.generated_at).toLocaleString()}</span>
+      </div>`;
+
+      html += `<p style="color:#475569;font-size:0.95rem;margin-bottom:1.5rem;">${sec.description}</p>`;
+
+      // Stats summary cards (for numeric fields)
+      const statKeys = Object.keys(stats);
+      if (statKeys.length) {
+        html += '<h3 style="color:#1e40af;font-size:1.1rem;margin-bottom:0.75rem;">📊 Summary Statistics</h3><div style="display:flex;flex-wrap:wrap;gap:0.5rem;margin-bottom:1.5rem;">';
+        statKeys.forEach(sk => {
+          const s = stats[sk];
+          const fd = fields.find(f => f.field === sk);
+          const label = fd ? fd.label_he : sk;
+          const isCur = fd && fd.type === 'currency';
+          html += `<div class="sr-stat"><div class="l">${label}</div>`;
+          if (s.count > 1) {
+            html += `<div class="v">${isCur ? '₪' : ''}${s.sum.toLocaleString('he-IL')}</div><div class="l">sum &bull; avg ${isCur ? '₪' : ''}${s.avg.toLocaleString('he-IL')}</div>`;
+          } else {
+            html += `<div class="v">${isCur ? '₪' : ''}${s.sum.toLocaleString('he-IL')}</div>`;
+          }
+          html += '</div>';
+        });
+        html += '</div>';
+      }
+
+      // Charts
+      if (chartConfigs.length) {
+        html += '<h3 style="color:#1e40af;font-size:1.1rem;margin-bottom:0.75rem;">📈 Charts</h3>';
+        html += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:1.5rem;margin-bottom:1.5rem;">';
+        chartConfigs.forEach((ch, ci) => {
+          const cid = 'sr-chart-' + ci;
+          html += `<div style="background:#f8fafc;border-radius:12px;padding:1rem;border:1px solid #e2e8f0;"><h4 style="text-align:center;font-size:0.9rem;color:#475569;margin-bottom:0.5rem;">${ch.title}</h4><div style="position:relative;height:260px;"><canvas id="${cid}"></canvas></div></div>`;
+        });
+        html += '</div>';
+      }
+
+      // Data table
+      html += '<h3 style="color:#1e40af;font-size:1.1rem;margin-bottom:0.75rem;">📋 Data Records</h3>';
+      html += '<div style="overflow-x:auto;border:1px solid #e2e8f0;border-radius:12px;"><table style="width:100%;border-collapse:collapse;font-size:0.82rem;direction:rtl;text-align:right;">';
+      html += '<thead><tr style="background:#f1f5f9;">';
+      fields.forEach(f => {
+        html += `<th style="padding:10px 12px;border-bottom:2px solid #e2e8f0;font-weight:600;white-space:nowrap;color:#1e293b;">${f.label_he}<br><span style="font-weight:400;color:#64748b;font-size:0.75rem;">${f.label_en}</span></th>`;
+      });
+      html += '</tr></thead><tbody>';
+      rows.forEach((row, ri) => {
+        html += `<tr style="background:${ri%2?'#f8fafc':'white'};">`;
+        fields.forEach(f => {
+          const val = row[f.field];
+          let display = fv(val, f.type);
+          if (f.type === 'currency' && val) display = '<strong style="color:#059669;">' + display + '</strong>';
+          html += `<td style="padding:8px 12px;border-bottom:1px solid #f1f5f9;">${display}</td>`;
+        });
+        html += '</tr>';
+      });
+      html += '</tbody></table></div>';
+
+      // Field schema
+      html += '<h3 style="color:#1e40af;font-size:1.1rem;margin:1.5rem 0 0.75rem;">📐 Field Schema</h3>';
+      html += '<div style="overflow-x:auto;border:1px solid #e2e8f0;border-radius:12px;"><table style="width:100%;border-collapse:collapse;font-size:0.82rem;">';
+      html += '<thead><tr style="background:#f1f5f9;"><th style="padding:8px 12px;">#</th><th>Field ID</th><th>Hebrew</th><th>English</th><th>Type</th></tr></thead><tbody>';
+      fields.forEach((f, i) => {
+        const tc = f.type==='currency'?'#047857':f.type==='percentage'?'#92400e':f.type==='date'?'#0369a1':'#475569';
+        const bg = f.type==='currency'?'#d1fae5':f.type==='percentage'?'#fef3c7':f.type==='date'?'#e0f2fe':'#f1f5f9';
+        html += `<tr><td style="padding:6px 12px;">${i+1}</td><td><code style="background:#f1f5f9;padding:2px 6px;border-radius:4px;">${f.field}</code></td><td style="font-weight:500;">${f.label_he}</td><td>${f.label_en}</td><td><span style="background:${bg};color:${tc};padding:2px 8px;border-radius:10px;font-size:0.75rem;">${f.type}</span></td></tr>`;
+      });
+      html += '</tbody></table></div>';
+
+      // Swiftness links footer
+      html += '<div style="margin-top:1.5rem;padding-top:1rem;border-top:2px solid #e2e8f0;display:flex;gap:1rem;flex-wrap:wrap;align-items:center;">';
+      links.forEach(lk => {
+        html += `<a href="${lk.url}" target="_blank" rel="noopener" style="font-size:0.82rem;color:#0369a1;text-decoration:none;background:#e0f2fe;padding:6px 12px;border-radius:8px;">🔗 ${lk.label_he}</a>`;
+      });
+      html += `<span style="font-size:0.75rem;color:#94a3b8;margin-left:auto;">Source: swiftness.co.il &bull; Key: ${sec.key}</span>`;
+      html += '</div>';
+
+      bodyEl.innerHTML = html;
+
+      // Render charts after DOM is ready
+      if (chartConfigs.length && typeof Chart !== 'undefined') {
+        setTimeout(() => {
+          const colors = ['#2563eb','#059669','#d97706','#dc2626','#7c3aed','#0ea5e9','#f97316','#14b8a6','#6366f1','#ec4899'];
+          chartConfigs.forEach((ch, ci) => {
+            const canvas = document.getElementById('sr-chart-' + ci);
+            if (!canvas) return;
+            const ctx = canvas.getContext('2d');
+            if (!ctx) return;
+            try {
+              const cType = ch.type === 'doughnut' ? 'doughnut' : (ch.type === 'pie' ? 'pie' : (ch.type === 'line' ? 'line' : 'bar'));
+              sectionReportCharts['sr-chart-' + ci] = new Chart(ctx, {
+                type: cType,
+                data: {
+                  labels: ch.data.labels || [],
+                  datasets: [{
+                    label: ch.title,
+                    data: ch.data.values || [],
+                    backgroundColor: colors.slice(0, (ch.data.values||[]).length),
+                    borderWidth: 2,
+                    borderColor: cType === 'line' ? '#2563eb' : '#fff',
+                    fill: cType === 'line' ? false : undefined,
+                    tension: 0.3
+                  }]
+                },
+                options: {
+                  responsive: true,
+                  maintainAspectRatio: false,
+                  plugins: {
+                    legend: { position: cType === 'bar' || cType === 'line' ? 'top' : 'bottom', labels: { font: { size: 11 } } }
+                  }
+                }
+              });
+            } catch(e) { console.warn('Chart error:', e); }
+          });
+        }, 100);
+      }
+    }
   </script>
 </body>
 </html>
