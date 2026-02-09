@@ -519,16 +519,41 @@ class AIRiskReportsService:
                 # Handle Mislaka / pension XML files
                 parsed = self._parse_pension_xml(file_content, filename)
                 encoding = 'utf-8'
-            elif file_type_lower in ['csv', 'xls', 'xlsx']:
-                # Parse as CSV (XLS files should be converted to CSV format)
+            elif file_type_lower in ['xls', 'xlsx']:
+                # Handle Excel files properly using openpyxl / xlrd
+                parsed = self._parse_excel(file_content, filename, file_type_lower)
+                encoding = 'binary'
+                # If _parse_excel returned empty (libraries missing), detect and warn
+                if not parsed.get('rows') and not parsed.get('columns'):
+                    print(f"[AI_REPORTS] Excel parse returned no data for {filename}. "
+                          "Ensure openpyxl (xlsx) or xlrd (xls) is installed.")
+            elif file_type_lower == 'csv':
+                # Parse CSV text files
                 encoding = self._detect_encoding(file_content)
                 text_content = file_content.decode(encoding, errors='replace')
                 parsed = self._parse_csv(text_content)
             else:
-                # Try to parse as CSV
-                encoding = self._detect_encoding(file_content)
-                text_content = file_content.decode(encoding, errors='replace')
-                parsed = self._parse_csv(text_content)
+                # Unknown type - detect if binary before trying CSV
+                if self._is_binary_content(file_content):
+                    # Binary file: try Excel first, then fall back to metadata-only
+                    parsed = self._parse_excel(file_content, filename, 'xlsx')
+                    encoding = 'binary'
+                    if not parsed.get('rows'):
+                        parsed = {
+                            'columns': ['filename', 'size_bytes', 'type', 'note'],
+                            'rows': [{
+                                'filename': filename,
+                                'size_bytes': len(file_content),
+                                'type': file_type,
+                                'note': 'Binary file - use specific format for full parsing'
+                            }],
+                            'file_type': 'binary'
+                        }
+                else:
+                    # Try to parse as CSV text
+                    encoding = self._detect_encoding(file_content)
+                    text_content = file_content.decode(encoding, errors='replace')
+                    parsed = self._parse_csv(text_content)
             
             result['encoding'] = encoding
             result['parsed_data'] = parsed
@@ -568,6 +593,33 @@ class AIRiskReportsService:
         
         return 'utf-8'
     
+    @staticmethod
+    def _is_binary_content(content: bytes) -> bool:
+        """
+        Detect whether file content is binary (not parseable as plain text).
+        Checks for common binary file signatures and control character density.
+        """
+        if not content:
+            return False
+        # Check known binary file signatures
+        binary_signatures = [
+            b'PK',           # ZIP / OOXML (xlsx, docx, etc.)
+            b'\xd0\xcf\x11', # OLE2 (xls, doc, etc.)
+            b'\x89PNG',      # PNG
+            b'\xff\xd8\xff', # JPEG
+            b'GIF8',         # GIF
+            b'%PDF',         # PDF
+            b'RIFF',         # RIFF (webp, wav, etc.)
+        ]
+        header = content[:8]
+        for sig in binary_signatures:
+            if header.startswith(sig):
+                return True
+        # Check for high density of non-text bytes in first 512 bytes
+        sample = content[:512]
+        non_text = sum(1 for b in sample if b < 0x09 or (0x0E <= b < 0x20 and b != 0x1B))
+        return (non_text / max(len(sample), 1)) > 0.10
+    
     def _parse_csv(self, text_content: str) -> Dict[str, Any]:
         """Parse CSV content"""
         # Try different delimiters
@@ -601,10 +653,16 @@ class AIRiskReportsService:
         """
         Parse Excel files (.xls and .xlsx) from Mislaka data.
         Extracts pension and insurance data from Excel format.
+        
+        IMPORTANT: XLSX files are ZIP-based OOXML archives. They MUST be parsed
+        with openpyxl (xlsx) or xlrd (xls) - never as plain text/CSV, which
+        would produce garbled PK!... binary output.
         """
         rows = []
         columns = []
         pension_data = None
+        sheet_names = []
+        parse_method = None
         
         try:
             if ext == 'xlsx':
@@ -614,6 +672,8 @@ class AIRiskReportsService:
                     from openpyxl import load_workbook
                     
                     wb = load_workbook(filename=io.BytesIO(content), data_only=True)
+                    sheet_names = wb.sheetnames
+                    parse_method = 'openpyxl'
                     
                     for sheet_name in wb.sheetnames:
                         sheet = wb[sheet_name]
@@ -624,7 +684,7 @@ class AIRiskReportsService:
                         
                         # First row as headers
                         header_row = sheet_rows[0] if sheet_rows else []
-                        sheet_columns = [str(h) if h else f'עמודה_{i}' for i, h in enumerate(header_row)]
+                        sheet_columns = [str(h).strip() if h else f'col_{i}' for i, h in enumerate(header_row)]
                         
                         # Add columns that don't exist yet
                         for col in sheet_columns:
@@ -638,13 +698,24 @@ class AIRiskReportsService:
                                 for i, cell in enumerate(row):
                                     if i < len(sheet_columns):
                                         col_name = sheet_columns[i]
-                                        row_dict[col_name] = cell if cell is not None else ''
+                                        # Convert dates, numbers etc. to string representation
+                                        if cell is None:
+                                            row_dict[col_name] = ''
+                                        elif hasattr(cell, 'isoformat'):
+                                            row_dict[col_name] = cell.isoformat()
+                                        else:
+                                            row_dict[col_name] = cell
                                 rows.append(row_dict)
                     
                     wb.close()
+                    print(f"[AI_REPORTS] Successfully parsed XLSX '{filename}': "
+                          f"{len(sheet_names)} sheets, {len(columns)} columns, {len(rows)} rows")
                     
                 except ImportError:
-                    print("[AI_REPORTS] openpyxl not available for xlsx parsing")
+                    print("[AI_REPORTS] WARNING: openpyxl not installed. "
+                          "Cannot parse XLSX files. Install with: pip install openpyxl")
+                except Exception as e:
+                    print(f"[AI_REPORTS] openpyxl error parsing '{filename}': {e}")
                     
             elif ext == 'xls':
                 # Use xlrd for older .xls files
@@ -652,16 +723,18 @@ class AIRiskReportsService:
                     import xlrd
                     
                     wb = xlrd.open_workbook(file_contents=content)
+                    parse_method = 'xlrd'
                     
                     for sheet_idx in range(wb.nsheets):
                         sheet = wb.sheet_by_index(sheet_idx)
+                        sheet_names.append(sheet.name)
                         
                         if sheet.nrows == 0:
                             continue
                         
                         # First row as headers
                         header_row = sheet.row_values(0) if sheet.nrows > 0 else []
-                        sheet_columns = [str(h) if h else f'עמודה_{i}' for i, h in enumerate(header_row)]
+                        sheet_columns = [str(h).strip() if h else f'col_{i}' for i, h in enumerate(header_row)]
                         
                         # Add columns that don't exist yet
                         for col in sheet_columns:
@@ -679,8 +752,14 @@ class AIRiskReportsService:
                                         row_dict[col_name] = cell if cell else ''
                                 rows.append(row_dict)
                     
+                    print(f"[AI_REPORTS] Successfully parsed XLS '{filename}': "
+                          f"{len(sheet_names)} sheets, {len(columns)} columns, {len(rows)} rows")
+                    
                 except ImportError:
-                    print("[AI_REPORTS] xlrd not available for xls parsing")
+                    print("[AI_REPORTS] WARNING: xlrd not installed. "
+                          "Cannot parse XLS files. Install with: pip install xlrd")
+                except Exception as e:
+                    print(f"[AI_REPORTS] xlrd error parsing '{filename}': {e}")
             
             # Try to detect if this is Mislaka pension data
             if rows and columns:
@@ -694,7 +773,9 @@ class AIRiskReportsService:
             'rows': rows,
             'pension_data': pension_data,
             'file_type': 'excel',
-            'original_filename': filename
+            'original_filename': filename,
+            'sheet_names': sheet_names,
+            'parse_method': parse_method or 'none'
         }
     
     def _detect_mislaka_excel_data(self, columns: List[str], rows: List[Dict], filename: str) -> Optional[Dict[str, Any]]:
@@ -2776,7 +2857,102 @@ Factors Affecting Score:
             order=8
         ))
         
+        # 9. Swiftness Data Resources & References
+        swiftness_section = self._generate_swiftness_resources_section(is_hebrew)
+        if swiftness_section:
+            sections.append(ReportSection(
+                title='משאבי נתונים - Swiftness' if is_hebrew else 'Swiftness Data Resources',
+                content=swiftness_section,
+                order=9
+            ))
+        
         return sections
+    
+    def _generate_swiftness_resources_section(self, is_hebrew: bool) -> str:
+        """Generate a report section with Swiftness affiliated links and resources."""
+        try:
+            from services.swiftness_data_service import get_swiftness_data_service
+            svc = get_swiftness_data_service()
+            catalog = svc.get_resource_catalog()
+            model = svc.get_report_model()
+        except Exception:
+            return ''
+        
+        lines = []
+        meta = catalog.get('metadata', {})
+        
+        if is_hebrew:
+            lines.append('📥 משאבי נתונים מ-Swiftness לעבודה מול המסלקה:\n')
+            lines.append(f'סה"כ משאבים: {meta.get("total_resources", 0)}')
+            lines.append(f'ממשקים: {", ".join(meta.get("interfaces", []))}')
+            lines.append(f'סוגי קבצים: {", ".join(t.upper() for t in meta.get("file_types", []))}')
+            lines.append('')
+            lines.append('🔗 קישורים ישירים:')
+            for link in catalog.get('quick_links', []):
+                lines.append(f'  • {link.get("label_he", link["label"])}: {link["url"]}')
+            lines.append('')
+            lines.append('📋 כללי מערכת (סכימות וטבלאות קודים):')
+            for res in catalog.get('system_general', [])[:6]:
+                lines.append(f'  • {res["name"]} ({res.get("file_type", "").upper()}'
+                             f'{" v" + res["version"] if res.get("version") else ""})')
+            lines.append('')
+            lines.append('📂 קבצים עדכניים לעבודה מול המסלקה:')
+            for res in catalog.get('mislaka_work_files', [])[:6]:
+                lines.append(f'  • {res["name"]} ({res.get("file_type", "").upper()})')
+            
+            # Report model summary
+            model_meta = model.get('metadata', {})
+            sections_count = len(model.get('sections', []))
+            lines.append('')
+            lines.append(f'📊 מודל דוח מקיף: {sections_count} חלקים')
+            for sec in model.get('sections', []):
+                fields_count = len(sec.get('data_fields', []))
+                lines.append(f'  {sec["order"]}. {sec["title_he"]} ({fields_count} שדות)')
+            
+            # Data integrity
+            rules = model_meta.get('data_integrity_rules', [])
+            if rules:
+                lines.append('')
+                lines.append('🛡️ כללי שלמות נתונים:')
+                for rule in rules:
+                    lines.append(f'  ✓ {rule}')
+        else:
+            lines.append('📥 Swiftness Data Resources for Mislaka Integration:\n')
+            lines.append(f'Total Resources: {meta.get("total_resources", 0)}')
+            lines.append(f'Interfaces: {", ".join(meta.get("interfaces", []))}')
+            lines.append(f'File Types: {", ".join(t.upper() for t in meta.get("file_types", []))}')
+            lines.append('')
+            lines.append('🔗 Direct Links:')
+            for link in catalog.get('quick_links', []):
+                lines.append(f'  • {link["label"]}: {link["url"]}')
+            lines.append('')
+            lines.append('📋 System General (Schemas & Code Tables):')
+            for res in catalog.get('system_general', [])[:6]:
+                lines.append(f'  • {res.get("name_en", res["name"])} ({res.get("file_type", "").upper()}'
+                             f'{" v" + res["version"] if res.get("version") else ""})')
+            lines.append('')
+            lines.append('📂 Latest Mislaka Work Files:')
+            for res in catalog.get('mislaka_work_files', [])[:6]:
+                lines.append(f'  • {res.get("name_en", res["name"])} ({res.get("file_type", "").upper()})')
+            
+            # Report model summary
+            model_meta = model.get('metadata', {})
+            sections_count = len(model.get('sections', []))
+            lines.append('')
+            lines.append(f'📊 Comprehensive Report Model: {sections_count} sections')
+            for sec in model.get('sections', []):
+                fields_count = len(sec.get('data_fields', []))
+                lines.append(f'  {sec["order"]}. {sec["title_en"]} ({fields_count} fields)')
+            
+            # Data integrity
+            rules = model_meta.get('data_integrity_rules', [])
+            if rules:
+                lines.append('')
+                lines.append('🛡️ Data Integrity Rules:')
+                for rule in rules:
+                    lines.append(f'  ✓ {rule}')
+        
+        return '\n'.join(lines)
     
     def _generate_data_content_section(self, doc_data: Dict[str, Any], 
                                         analysis: AnalysisResult, is_hebrew: bool) -> str:
