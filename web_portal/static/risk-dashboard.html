@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>PHINS - Risk Assessment Dashboard</title>
+  <title>PHINS - Har HaBituach & Mislaka Assessment</title>
   <link rel="stylesheet" href="/styles.css">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <style>
@@ -910,12 +910,13 @@
   <!-- Header -->
   <header class="header">
     <h1>
-      <span style="font-size: 1.8rem;">🎯</span>
-      PHINS Risk Assessment Dashboard
+      <span style="font-size: 1.8rem;">🏛️</span>
+      Har HaBituach & Mislaka Assessment
     </h1>
     <nav class="header-nav">
       <a href="/dashboard.html">← Dashboard</a>
       <a href="/risk-reports-dashboard.html">📊 Reports</a>
+      <a href="/mislaka-assessment.html">📚 A-Z Reference</a>
       <a href="/admin.html">Admin</a>
     </nav>
   </header>
@@ -923,16 +924,40 @@
   <main class="container">
     <!-- Page Title -->
     <div class="page-title fade-in">
-      <h2>🔍 AI-Powered Risk Assessment</h2>
-      <p>Upload your documents for intelligent analysis and personalized recommendations</p>
+      <h2>🏛️ Har HaBituach & Mislaka Assessment</h2>
+      <p>Upload Mislaka files for AI-powered decoding, schema matching, and regulatory assessment</p>
+    </div>
+
+    <!-- Regulatory Quick Links -->
+    <div style="display:flex;gap:0.75rem;flex-wrap:wrap;justify-content:center;margin-bottom:1.5rem;" class="fade-in">
+      <a href="https://www.swiftness.co.il/כללי-מערכת/" target="_blank" rel="noopener" style="padding:8px 16px;border-radius:10px;font-size:0.85rem;text-decoration:none;color:white;font-weight:500;background:linear-gradient(135deg,#2563eb,#1d4ed8);">📐 כללי מערכת (Swiftness)</a>
+      <a href="https://www.swiftness.co.il/savers/קבצים-עדכניים-לעבודה-מול-המסלקה/" target="_blank" rel="noopener" style="padding:8px 16px;border-radius:10px;font-size:0.85rem;text-decoration:none;color:white;font-weight:500;background:linear-gradient(135deg,#059669,#047857);">📂 קבצים לעבודה מול המסלקה</a>
+      <a href="https://harb.cma.gov.il/" target="_blank" rel="noopener" style="padding:8px 16px;border-radius:10px;font-size:0.85rem;text-decoration:none;color:white;font-weight:500;background:linear-gradient(135deg,#7c3aed,#6d28d9);">🏦 הר הביטוח / CMA</a>
+      <a href="https://www.swiftness.co.il/savers/" target="_blank" rel="noopener" style="padding:8px 16px;border-radius:10px;font-size:0.85rem;text-decoration:none;color:white;font-weight:500;background:linear-gradient(135deg,#475569,#334155);">🌐 Swiftness Portal</a>
+    </div>
+
+    <!-- Mislaka Schema Decoder Card (quick decode without full analysis) -->
+    <div style="background:white;border-radius:14px;padding:1.5rem;box-shadow:0 2px 12px rgba(0,0,0,0.06);margin-bottom:1.5rem;border:1px solid #e2e8f0;" class="fade-in">
+      <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:1rem;border-bottom:2px solid #e2e8f0;margin-bottom:1rem;flex-wrap:wrap;gap:0.5rem;">
+        <h3 style="color:var(--primary);font-size:1.15rem;display:flex;align-items:center;gap:8px;">🔍 Quick Mislaka Schema Decoder</h3>
+        <span style="background:#dbeafe;color:#1d4ed8;padding:4px 12px;border-radius:20px;font-size:0.78rem;font-weight:600;">Instant Field Matching</span>
+      </div>
+      <div id="quickDecodeZone" onclick="document.getElementById('quickFileInput').click()" style="border:2px dashed #cbd5e1;border-radius:12px;padding:1.5rem;text-align:center;cursor:pointer;transition:0.2s;background:#f8fafc;" onmouseover="this.style.borderColor='#2563eb';this.style.background='#eff6ff';" onmouseout="this.style.borderColor='#cbd5e1';this.style.background='#f8fafc';">
+        <div style="font-size:2rem;margin-bottom:0.3rem;">📤</div>
+        <p style="font-weight:600;margin-bottom:0.2rem;">Drop any Mislaka file to decode its structure</p>
+        <p style="color:var(--text-muted);font-size:0.85rem;">Matches fields against 150+ Mislaka XSD schema definitions • XML, XLSX, CSV, ZIP, PDF, JSON</p>
+        <input type="file" id="quickFileInput" style="display:none;" accept=".xml,.xlsx,.xls,.csv,.zip,.pdf,.json">
+      </div>
+      <div id="quickDecodeStatus" style="display:none;margin-top:1rem;padding:1rem;border-radius:10px;text-align:center;"></div>
+      <div id="quickDecodeResult" style="display:none;margin-top:1rem;"></div>
     </div>
     
-    <!-- Assessment Upload Card -->
+    <!-- Full Assessment Upload Card -->
     <div class="assessment-card fade-in">
       <div class="assessment-header">
-        <h3>📁 Upload Documents for Assessment</h3>
+        <h3>📁 Upload for Full Har HaBituach / Mislaka Assessment</h3>
         <span style="background: rgba(255,255,255,0.2); padding: 6px 14px; border-radius: 20px; font-size: 0.85rem;">
-          AI + BI Analysis
+          AI + Schema + Regulatory
         </span>
       </div>
       
@@ -940,19 +965,20 @@
         <!-- Upload Zone -->
         <div class="upload-zone" id="uploadZone" onclick="document.getElementById('fileInput').click()">
           <div class="upload-icon">📤</div>
-          <h4>Drop files here or click to upload</h4>
-          <p>Upload your insurance, investment, or risk documents for AI analysis</p>
+          <h4>Drop Mislaka / insurance files for full assessment</h4>
+          <p>AI decodes structure per Swiftness XSD schemas, validates against CMA rules, generates report</p>
           <p style="font-size: 0.9rem; color: var(--text-muted);">
-            <strong>Auto-detects:</strong> Language (Hebrew, English, etc.) • Data type • Risk factors
+            <strong>Auto-detects:</strong> Interface type • Hebrew/English • Holdings/Severance/Events • Risk factors
           </p>
           <div class="file-types">
+            <span class="file-type-badge">🧾 XML</span>
+            <span class="file-type-badge">📊 XLSX/XLS</span>
             <span class="file-type-badge">📄 CSV</span>
-            <span class="file-type-badge">📊 XLS/XLSX</span>
             <span class="file-type-badge">📦 ZIP</span>
-            <span class="file-type-badge">🖼️ PNG/JPG</span>
             <span class="file-type-badge">📕 PDF</span>
+            <span class="file-type-badge">🔧 JSON</span>
           </div>
-          <input type="file" id="fileInput" class="file-input" accept=".csv,.xls,.xlsx,.zip,.png,.jpg,.jpeg,.pdf" multiple>
+          <input type="file" id="fileInput" class="file-input" accept=".xml,.csv,.xls,.xlsx,.zip,.png,.jpg,.jpeg,.pdf,.json" multiple>
         </div>
         
         <!-- File List -->
@@ -977,11 +1003,12 @@
             <label for="assessmentType">📋 Assessment Type:</label>
             <select id="assessmentType">
               <option value="auto">Auto-detect</option>
-              <option value="insurance">Insurance Analysis</option>
+              <option value="pension">Pension / Mislaka (קרן פנסיה)</option>
+              <option value="insurance">Life Insurance (ביטוח חיים)</option>
               <option value="investment">Investment Portfolio</option>
               <option value="risk">Risk Assessment</option>
-              <option value="savings">Savings Analysis</option>
-              <option value="comprehensive">Comprehensive Review</option>
+              <option value="savings">Savings / Provident (קופת גמל)</option>
+              <option value="comprehensive">Comprehensive (Har HaBituach)</option>
             </select>
           </div>
           
@@ -1642,7 +1669,90 @@
     }
     
     function exportReport(format) {
-      alert(`Export to ${format.toUpperCase()} - Coming soon!\n\nThis will generate a downloadable ${format.toUpperCase()} file with the complete assessment report.`);
+      const body = document.getElementById('reportBody');
+      if (!body || !body.innerHTML.trim()) {
+        alert('No report to export yet. Run an assessment first.');
+        return;
+      }
+      const title = document.getElementById('reportTitle')?.textContent || 'Assessment Report';
+      const win = window.open('', '_blank');
+      win.document.write(`<!DOCTYPE html><html lang="he" dir="rtl"><head><meta charset="UTF-8"><title>${title}</title>
+        <style>body{font-family:'Segoe UI',system-ui,sans-serif;direction:rtl;padding:2rem;color:#1a1a2e;}
+        h2{color:#1e40af;border-bottom:2px solid #3b82f6;padding-bottom:0.5rem;}h4{color:#1e40af;margin:1rem 0 0.5rem;}
+        .content{line-height:1.8;white-space:pre-line;}
+        .footer{margin-top:2rem;padding-top:1rem;border-top:1px solid #e2e8f0;font-size:0.8rem;color:#64748b;text-align:center;}
+        @media print{@page{margin:1.5cm;}}</style></head><body>
+        <h2>${title}</h2>${body.innerHTML}
+        <div class="footer">PHINS Har HaBituach & Mislaka Assessment • Sources: swiftness.co.il, harb.cma.gov.il • ${new Date().toLocaleString()}</div>
+        <script>setTimeout(()=>window.print(),300)<\/script></body></html>`);
+      win.document.close();
+    }
+
+    // =========================================================================
+    // QUICK MISLAKA SCHEMA DECODER
+    // =========================================================================
+    const quickFileInput = document.getElementById('quickFileInput');
+    const quickDecodeZone = document.getElementById('quickDecodeZone');
+    if (quickDecodeZone) {
+      quickDecodeZone.addEventListener('dragover', e => { e.preventDefault(); quickDecodeZone.style.borderColor='#2563eb'; quickDecodeZone.style.background='#eff6ff'; });
+      quickDecodeZone.addEventListener('dragleave', () => { quickDecodeZone.style.borderColor='#cbd5e1'; quickDecodeZone.style.background='#f8fafc'; });
+      quickDecodeZone.addEventListener('drop', e => { e.preventDefault(); quickDecodeZone.style.borderColor='#cbd5e1'; quickDecodeZone.style.background='#f8fafc'; if (e.dataTransfer.files.length) quickDecode(e.dataTransfer.files[0]); });
+    }
+    if (quickFileInput) quickFileInput.addEventListener('change', e => { if (e.target.files.length) quickDecode(e.target.files[0]); });
+
+    async function quickDecode(file) {
+      const status = document.getElementById('quickDecodeStatus');
+      const result = document.getElementById('quickDecodeResult');
+      status.style.display = 'block';
+      status.style.background = '#e0f2fe'; status.style.color = '#0369a1';
+      status.innerHTML = '🔄 Decoding <strong>' + file.name + '</strong> (' + (file.size/1024).toFixed(1) + ' KB)...';
+      result.style.display = 'none';
+      try {
+        const b64 = await readFileAsBase64(file);
+        const ext = file.name.split('.').pop().toLowerCase();
+        const resp = await fetch('/api/mislaka-assessment/decode', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ filename: file.name, file_type: ext, content: b64 })
+        });
+        if (!resp.ok) throw new Error((await resp.json()).error || 'Decode failed');
+        const data = await resp.json();
+        const decoded = data.decoded;
+        const report = data.report;
+        const conf = decoded.confidence || 0;
+        const confColor = conf >= 0.7 ? '#10b981' : conf >= 0.4 ? '#f59e0b' : '#ef4444';
+        status.style.background = '#d1fae5'; status.style.color = '#047857';
+        status.innerHTML = '✅ <strong>' + file.name + '</strong> — ' + decoded.field_count + ' fields matched, confidence ' + (conf*100).toFixed(0) + '%';
+
+        let html = '<div style="margin-bottom:0.75rem;"><div style="display:flex;justify-content:space-between;font-size:0.85rem;margin-bottom:0.25rem;"><span>Schema Match Confidence</span><strong style="color:'+confColor+';">'+(conf*100).toFixed(0)+'%</strong></div><div style="height:8px;background:#e2e8f0;border-radius:4px;overflow:hidden;"><div style="height:100%;width:'+(conf*100)+'%;background:'+confColor+';border-radius:4px;"></div></div></div>';
+
+        (report.sections || []).forEach(sec => {
+          html += '<div style="background:#f8fafc;border-radius:10px;padding:1rem;margin-bottom:0.75rem;border:1px solid #e2e8f0;"><h4 style="color:#1e40af;font-size:0.95rem;margin-bottom:0.5rem;">' + sec.title_he + ' (' + sec.title + ')</h4>';
+          (sec.items || []).forEach(item => {
+            let val = item.value;
+            if (val && String(val).startsWith('http')) val = '<a href="'+val+'" target="_blank" style="color:#0369a1;">'+val+'</a>';
+            html += '<div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px dashed #e2e8f0;font-size:0.85rem;"><span style="color:#64748b;">'+item.label+'</span><span style="font-weight:600;max-width:55%;text-align:left;word-break:break-all;">'+val+'</span></div>';
+          });
+          html += '</div>';
+        });
+
+        html += '<div style="display:flex;gap:0.5rem;flex-wrap:wrap;margin-top:0.5rem;"><button onclick="printQuickDecode()" style="padding:7px 14px;border-radius:8px;border:none;cursor:pointer;font-size:0.82rem;font-weight:600;background:linear-gradient(135deg,#ff6b35,#e55a2b);color:white;">📥 Download PDF</button><a href="/mislaka-assessment.html" style="padding:7px 14px;border-radius:8px;font-size:0.82rem;text-decoration:none;color:#0369a1;background:#e0f2fe;font-weight:500;">📚 Full A-Z Reference</a></div>';
+
+        result.innerHTML = html;
+        result.style.display = 'block';
+      } catch (e) {
+        status.style.background = '#fee2e2'; status.style.color = '#b91c1c';
+        status.innerHTML = '❌ Error: ' + e.message;
+      }
+    }
+
+    function printQuickDecode() {
+      const el = document.getElementById('quickDecodeResult');
+      if (!el) return;
+      const win = window.open('', '_blank');
+      win.document.write('<!DOCTYPE html><html lang="he" dir="rtl"><head><meta charset="UTF-8"><title>Mislaka Schema Decode Report</title><style>body{font-family:Segoe UI,system-ui,sans-serif;direction:rtl;padding:2rem;color:#1a1a2e;}h2{color:#1e40af;}h4{color:#1e40af;margin:1rem 0 0.5rem;}.footer{margin-top:2rem;padding-top:1rem;border-top:1px solid #e2e8f0;font-size:0.8rem;color:#64748b;text-align:center;}@media print{button{display:none!important;}@page{margin:1.5cm;}}</style></head><body><h2>🏛️ Mislaka Schema Decode Report</h2>'+el.innerHTML+'<div class="footer">PHINS Har HaBituach & Mislaka Assessment • '+new Date().toLocaleString()+'</div></body></html>');
+      win.document.close();
+      setTimeout(() => win.print(), 300);
     }
   </script>
 </body>
