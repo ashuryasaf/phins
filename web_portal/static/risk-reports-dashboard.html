@@ -159,6 +159,36 @@
       gap: 8px;
     }
 
+    .research-upload {
+      background: white;
+      border-radius: 12px;
+      padding: 1rem;
+      border: 2px dashed #cbd5e1;
+      text-align: center;
+      transition: all 0.2s;
+      cursor: pointer;
+    }
+
+    .research-upload:hover,
+    .research-upload.dragover {
+      border-color: var(--primary);
+      background: #eef2ff;
+    }
+
+    .research-upload .hint {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      margin-top: 0.5rem;
+    }
+
+    .research-upload .badge-row {
+      display: flex;
+      justify-content: center;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+      margin-top: 0.75rem;
+    }
+
     .affiliations-grid {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
@@ -1803,6 +1833,25 @@
             <button class="btn btn-primary" id="swiftnessConnectBtn" onclick="openSwiftnessSafe()">🔐 Open Safe</button>
           </div>
         </div>
+        <div class="research-card">
+          <h4>📤 Upload Swiftness / Mislaka Files</h4>
+          <div class="research-upload" id="researchUploadZone">
+            <div style="font-size: 2rem;">🧾</div>
+            <div style="font-weight: 600; margin-top: 0.5rem;">Drop files here or click</div>
+            <div class="hint">Evidence packs, XML, ZIP, PDF, XLS, CSV</div>
+            <div class="badge-row">
+              <span class="format-badge">ZIP</span>
+              <span class="format-badge">XML</span>
+              <span class="format-badge">PDF</span>
+              <span class="format-badge">XLSX</span>
+              <span class="format-badge">CSV</span>
+            </div>
+          </div>
+          <input type="file" id="researchFileInput" class="file-input" accept=".csv,.xls,.xlsx,.zip,.xml,.png,.jpg,.jpeg,.pdf" multiple>
+          <p style="margin-top: 0.75rem; font-size: 0.85rem; color: var(--text-muted);">
+            Files are processed with the same data integrity controls as the main uploader.
+          </p>
+        </div>
       </div>
       <div class="research-footer">
         <span>Source: Mislaka schema mappings (Holdings, Severance, Events, Transference)</span>
@@ -2017,6 +2066,8 @@
     const processingStatus = document.getElementById('processingStatus');
     const resultsSection = document.getElementById('resultsSection');
     const outputLanguage = document.getElementById('outputLanguage');
+    const researchUploadZone = document.getElementById('researchUploadZone');
+    const researchFileInput = document.getElementById('researchFileInput');
     
     // Load report history on page load
     document.addEventListener('DOMContentLoaded', () => {
@@ -2305,6 +2356,31 @@
     fileInput.addEventListener('change', (e) => {
       handleFiles(e.target.files);
     });
+
+    if (researchUploadZone && researchFileInput) {
+      researchUploadZone.addEventListener('click', () => {
+        researchFileInput.click();
+      });
+
+      researchUploadZone.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        researchUploadZone.classList.add('dragover');
+      });
+
+      researchUploadZone.addEventListener('dragleave', () => {
+        researchUploadZone.classList.remove('dragover');
+      });
+
+      researchUploadZone.addEventListener('drop', (e) => {
+        e.preventDefault();
+        researchUploadZone.classList.remove('dragover');
+        handleFiles(e.dataTransfer.files);
+      });
+
+      researchFileInput.addEventListener('change', (e) => {
+        handleFiles(e.target.files);
+      });
+    }
     
     function handleFiles(files) {
       for (const file of files) {
