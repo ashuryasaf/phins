@@ -2845,6 +2845,28 @@
       return `₪${num.toLocaleString(locale)}`;
     }
 
+    function formatDateShort(value) {
+      const raw = (value || '').toString().trim();
+      if (!raw) return '—';
+      if (/^\d{8}$/.test(raw)) {
+        return `${raw.slice(6, 8)}/${raw.slice(4, 6)}/${raw.slice(0, 4)}`;
+      }
+      if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+        return `${raw.slice(8, 10)}/${raw.slice(5, 7)}/${raw.slice(0, 4)}`;
+      }
+      if (/^\d{2}\/\d{2}\/\d{4}$/.test(raw)) {
+        return raw;
+      }
+      return raw;
+    }
+
+    function sumAccountField(accounts, field) {
+      return (accounts || []).reduce((sum, acct) => {
+        const val = Number(acct?.[field] || 0);
+        return Number.isFinite(val) ? sum + val : sum;
+      }, 0);
+    }
+
     function buildPensionPreview(pensionData) {
       if (!pensionData) {
         return {
@@ -2872,15 +2894,28 @@
       const client = pensionData.client || {};
       const accounts = pensionData.accounts || [];
       const totals = pensionData.totals || pensionData.summary || {};
+      const contributions = totals.contributions || {};
       const maxRows = 12;
       const rows = accounts.slice(0, maxRows);
+      const totalBalance = totals.total_balance || sumAccountField(accounts, 'total_balance');
       const totalSavings = totals.total_savings_formatted
         ? totals.total_savings_formatted
-        : formatCurrency(totals.total_savings);
+        : formatCurrency(totals.total_savings || totalBalance);
+      const totalSeverance = totals.total_severance_formatted
+        ? totals.total_severance_formatted
+        : formatCurrency(totals.total_severance);
+      const totalDeposits = Number.isFinite(Number(contributions.grand_total))
+        ? formatCurrency(contributions.grand_total)
+        : '—';
+      const totalDeathCoverage = sumAccountField(accounts, 'death_coverage');
+      const totalDisabilityCoverage = sumAccountField(accounts, 'disability_coverage');
       const accountCount = totals.account_count || accounts.length;
       const coverageCount = accounts.filter(acct => Number(acct.death_coverage || 0) > 0 || Number(acct.disability_coverage || 0) > 0).length;
       const nameLabel = client.full_name || client.client_name || 'לא זמין';
       const idLabel = client.id_number || 'לא זמין';
+      const savingsPolicies = accounts.filter(acct => Number(acct.total_balance || 0) > 0);
+      const riskPolicies = accounts.filter(acct => Number(acct.total_balance || 0) === 0 && (Number(acct.death_coverage || 0) > 0 || Number(acct.disability_coverage || 0) > 0));
+      const maxPolicyRows = 20;
 
       const insightHtml = `
         <div class="insight-card fade-in">
@@ -2924,7 +2959,180 @@
         ? `<p style="margin-top: 0.5rem; color: var(--text-muted);">מציג ${maxRows} מתוך ${accounts.length} פוליסות.</p>`
         : '';
 
-      const sectionHtml = `
+      const summarySectionHtml = `
+        <div class="report-section fade-in" dir="rtl">
+          <h3>💰 כמה חסכתי עד היום?</h3>
+          <div class="content">
+            <div class="affiliations-grid">
+              <div class="affiliation-item">
+                <div class="label">סה״כ צבירה</div>
+                <div class="value">${formatCurrency(totalBalance)}</div>
+              </div>
+              <div class="affiliation-item">
+                <div class="label">מהן ההפקדות שלי?</div>
+                <div class="value">${totalDeposits}</div>
+              </div>
+              <div class="affiliation-item">
+                <div class="label">מה סך הפיצויים שמגיע לי?</div>
+                <div class="value">${totalSeverance}</div>
+              </div>
+              <div class="affiliation-item">
+                <div class="label">כיסוי ביטוח חיים</div>
+                <div class="value">${formatCurrency(totalDeathCoverage)}</div>
+              </div>
+              <div class="affiliation-item">
+                <div class="label">כיסוי אובדן כושר</div>
+                <div class="value">${formatCurrency(totalDisabilityCoverage)}</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+
+      const savingsStatusRows = savingsPolicies.slice(0, maxPolicyRows).map((acct, idx) => `
+        <tr>
+          <td>${idx + 1}</td>
+          <td>${acct.provider || '-'}</td>
+          <td>${acct.product_type_name || acct.product_type || '-'}</td>
+          <td style="font-family: monospace;">${acct.policy_number || '-'}</td>
+          <td>${formatDateShort(acct.start_date)}</td>
+          <td>${acct.status || 'פעיל'}</td>
+          <td>${formatCurrency(acct.total_balance)}</td>
+        </tr>
+      `).join('');
+
+      const riskStatusRows = riskPolicies.slice(0, maxPolicyRows).map((acct, idx) => `
+        <tr>
+          <td>${idx + 1}</td>
+          <td>${acct.provider || '-'}</td>
+          <td>${acct.product_type_name || acct.product_type || '-'}</td>
+          <td style="font-family: monospace;">${acct.policy_number || '-'}</td>
+          <td>${acct.status || 'פעיל'}</td>
+        </tr>
+      `).join('');
+
+      const statusSectionHtml = `
+        <div class="report-section fade-in" dir="rtl">
+          <h3>📊 סטטוס פוליסות</h3>
+          <div class="content">
+            <h4 style="margin: 1rem 0 0.5rem;">פוליסות ביטוח חיים משולבות חיסכון</h4>
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>שם חברה</th>
+                  <th>שם תוכנית</th>
+                  <th>מספר פוליסה</th>
+                  <th>וותק</th>
+                  <th>סטטוס</th>
+                  <th>יתרה</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${savingsStatusRows || '<tr><td colspan="7">אין נתונים להצגה</td></tr>'}
+              </tbody>
+            </table>
+            ${savingsPolicies.length > maxPolicyRows ? `<p style="color: var(--text-muted); margin-top: 0.5rem;">מציג ${maxPolicyRows} מתוך ${savingsPolicies.length} פוליסות חיסכון.</p>` : ''}
+            <h4 style="margin: 1.5rem 0 0.5rem;">פוליסות סיכון טהור (ריסק מוות / אכ״ע)</h4>
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>שם חברה</th>
+                  <th>שם תוכנית</th>
+                  <th>מספר פוליסה</th>
+                  <th>סטטוס</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${riskStatusRows || '<tr><td colspan="5">אין נתונים להצגה</td></tr>'}
+              </tbody>
+            </table>
+            ${riskPolicies.length > maxPolicyRows ? `<p style="color: var(--text-muted); margin-top: 0.5rem;">מציג ${maxPolicyRows} מתוך ${riskPolicies.length} פוליסות סיכון.</p>` : ''}
+          </div>
+        </div>
+      `;
+
+      const programRows = accounts.slice(0, maxPolicyRows).map((acct, idx) => {
+        const coverageLabel = (Number(acct.death_coverage || 0) > 0 || Number(acct.disability_coverage || 0) > 0)
+          ? `${formatCurrency(acct.death_coverage)} • ${formatCurrency(acct.disability_coverage)}/חודש`
+          : '—';
+        return `
+          <tr>
+            <td>${idx + 1}</td>
+            <td>${acct.provider || '-'}</td>
+            <td>${acct.product_type_name || acct.product_type || '-'}</td>
+            <td style="font-family: monospace;">${acct.policy_number || '-'}</td>
+            <td>${acct.status || 'פעיל'}</td>
+            <td>${formatCurrency(acct.savings_balance)}</td>
+            <td>${formatCurrency(acct.severance_balance)}</td>
+            <td>${coverageLabel}</td>
+          </tr>
+        `;
+      }).join('');
+
+      const programsSectionHtml = `
+        <div class="report-section fade-in" dir="rtl">
+          <h3>📋 רשימת תוכניות</h3>
+          <div class="content">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>שם חברה</th>
+                  <th>שם תוכנית</th>
+                  <th>מספר פוליסה</th>
+                  <th>סטטוס</th>
+                  <th>חיסכון</th>
+                  <th>פיצויים</th>
+                  <th>כיסוי ביטוחי</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${programRows || '<tr><td colspan="8">אין נתונים להצגה</td></tr>'}
+              </tbody>
+            </table>
+            ${accounts.length > maxPolicyRows ? `<p style="color: var(--text-muted); margin-top: 0.5rem;">מציג ${maxPolicyRows} מתוך ${accounts.length} תוכניות.</p>` : ''}
+          </div>
+        </div>
+      `;
+
+      const coverageRows = accounts
+        .filter(acct => Number(acct.death_coverage || 0) > 0 || Number(acct.disability_coverage || 0) > 0)
+        .slice(0, maxPolicyRows)
+        .map((acct, idx) => `
+          <tr>
+            <td>${idx + 1}</td>
+            <td>${acct.provider || '-'}</td>
+            <td style="font-family: monospace;">${acct.policy_number || '-'}</td>
+            <td>${formatCurrency(acct.death_coverage)}</td>
+            <td>${formatCurrency(acct.disability_coverage)}</td>
+          </tr>
+        `).join('');
+
+      const coverageSectionHtml = `
+        <div class="report-section fade-in" dir="rtl">
+          <h3>🛡️ הביטוחים וההגנות שלך</h3>
+          <div class="content">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>שם חברה</th>
+                  <th>מספר פוליסה</th>
+                  <th>כיסוי למקרה מוות</th>
+                  <th>כיסוי אובדן כושר (חודשי)</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${coverageRows || '<tr><td colspan="5">אין נתוני כיסויים להצגה</td></tr>'}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      `;
+
+      const downloadSectionHtml = `
         <div class="report-section fade-in" dir="rtl">
           <h3>📥 נתוני מסלקה שהורדו</h3>
           <div class="content">
@@ -2954,7 +3162,13 @@
       return {
         hasData: true,
         insightHtml,
-        sectionHtml
+        sectionHtml: `
+          ${summarySectionHtml}
+          ${statusSectionHtml}
+          ${programsSectionHtml}
+          ${coverageSectionHtml}
+          ${downloadSectionHtml}
+        `
       };
     }
 
@@ -3069,6 +3283,11 @@
       const affiliationNotice = summary.totalCount
         ? ''
         : '<p style="color: var(--warning);">Affiliation data was not returned for this run. Verify Swiftness connectivity.</p>';
+      const safeUrl = swiftnessSafeBaseUrl || '';
+      const safeLinkHtml = safeUrl
+        ? `<a href="${safeUrl}" target="_blank" rel="noopener">${safeUrl}</a>`
+        : 'Not configured';
+      const affiliationLinkHtml = `<a href="/api/mislaka/affiliations" target="_blank" rel="noopener">/api/mislaka/affiliations</a>`;
 
       statsGrid.innerHTML = `
         <div class="stat-card fade-in" style="grid-column: span 3; background: linear-gradient(135deg, #2563eb 0%, #0ea5e9 100%); color: white;">
@@ -3198,11 +3417,21 @@
           </div>
         </div>
         <div class="report-section fade-in">
-          <h3>📁 Uploaded Document Context</h3>
+          <h3>🔗 Swiftness Affiliated Links & Sources</h3>
           <div class="content">
+            <p><strong>Swiftness Safe:</strong> ${safeLinkHtml}</p>
+            <p><strong>Affiliation Map:</strong> ${affiliationLinkHtml}</p>
             <p><strong>Analysis Type:</strong> ${analysisTypeLabel || 'Auto-detect'}</p>
             <p><strong>Report Language:</strong> ${languageLabel}</p>
+            <p style="margin-top: 0.75rem;">Files downloaded, analyzed, and linked to Swiftness affiliations at generate time:</p>
             ${fileListHtml}
+          </div>
+        </div>
+        <div class="report-section fade-in">
+          <h3>📁 Uploaded Document Context</h3>
+          <div class="content">
+            <p>All uploaded documents were ingested, analyzed, and reconciled against Swiftness affiliations.</p>
+            <p><strong>File Types:</strong> ${fileTypeLabel}</p>
           </div>
         </div>
         ${pensionPreview.sectionHtml}
