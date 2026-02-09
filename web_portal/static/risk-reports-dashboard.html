@@ -2008,6 +2008,8 @@
     let charts = {};
     let reportHistory = [];
     let swiftnessSafeBaseUrl = null;
+    let swiftnessAffiliations = null;
+    let swiftnessAffiliationsUpdatedAt = null;
     
     // DOM Elements
     const uploadZone = document.getElementById('uploadZone');
@@ -2017,6 +2019,7 @@
     const processingStatus = document.getElementById('processingStatus');
     const resultsSection = document.getElementById('resultsSection');
     const outputLanguage = document.getElementById('outputLanguage');
+    const analysisTypeSelect = document.getElementById('analysisType');
     
     // Load report history on page load
     document.addEventListener('DOMContentLoaded', () => {
@@ -2048,6 +2051,8 @@
         }
         
         const data = await response.json();
+        swiftnessAffiliations = data;
+        swiftnessAffiliationsUpdatedAt = new Date();
         reportHistory = data.reports || [];
         
         if (reportHistory.length === 0) {
@@ -2193,11 +2198,15 @@
             <div class="value">Mislaka Specs</div>
           </div>
         `;
+        return data;
       } catch (error) {
+        swiftnessAffiliations = null;
+        swiftnessAffiliationsUpdatedAt = null;
         summary.textContent = 'Affiliations data could not be loaded.';
         grid.innerHTML = '';
         interfaceTags.innerHTML = '<span style="color: var(--text-muted);">Check API availability</span>';
         interfaceStats.innerHTML = '';
+        return null;
       }
     }
 
@@ -2349,6 +2358,18 @@
       if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
       return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
     }
+
+    function getFileSummaries(files) {
+      return (files || []).map(file => {
+        const extension = file.name.includes('.') ? file.name.split('.').pop().toLowerCase() : '';
+        return {
+          name: file.name,
+          size: file.size,
+          sizeLabel: formatFileSize(file.size),
+          extension: extension || 'file'
+        };
+      });
+    }
     
     function removeFile(index) {
       uploadedFiles.splice(index, 1);
@@ -2447,9 +2468,22 @@
         
         currentReport = await reportResponse.json();
         currentAnalysis = lastAnalysis;
+
+        // Combine Swiftness affiliations with uploaded files for output
+        processingMessage.textContent = 'Aligning Swiftness affiliations...';
+        const filesSnapshot = getFileSummaries(uploadedFiles);
+        const analysisTypeLabel = analysisTypeSelect
+          ? (analysisTypeSelect.options[analysisTypeSelect.selectedIndex]?.text || 'Auto-detect')
+          : 'Auto-detect';
+        const affiliationSnapshot = await loadAffiliations();
         
         // Display results
-        displayResults(currentAnalysis, currentReport);
+        displayResults(currentAnalysis, currentReport, {
+          affiliationOverride: true,
+          affiliations: affiliationSnapshot,
+          files: filesSnapshot,
+          analysisTypeLabel: analysisTypeLabel
+        });
         
         // Hide processing, show results
         processingStatus.classList.remove('active');
@@ -2710,8 +2744,370 @@
     // ==========================================================================
     // END PENSION DATA DISPLAY FUNCTIONS
     // ==========================================================================
-    
-    function displayResults(analysis, report) {
+
+    function summarizeAffiliations(affiliations) {
+      const entityTypes = affiliations?.entity_types || {};
+      const productTypes = affiliations?.product_types || {};
+      const statusCodes = affiliations?.status_codes || {};
+      const idTypes = affiliations?.id_types || {};
+      const interfaceCodes = affiliations?.interface_codes || {};
+      const environmentCodes = affiliations?.environment_codes || {};
+      const interfaceList = Object.values(interfaceCodes || {});
+      const schemaCounts = interfaceList.reduce((acc, item) => {
+        const schemaKey = (item.schema || 'Unknown').toString().trim() || 'Unknown';
+        acc[schemaKey] = (acc[schemaKey] || 0) + 1;
+        return acc;
+      }, {});
+      const interfaceNames = interfaceList
+        .map(item => item.he || item.name)
+        .filter(Boolean);
+
+      const entityCount = Object.keys(entityTypes || {}).length;
+      const productCount = Object.keys(productTypes || {}).length;
+      const statusCount = Object.keys(statusCodes || {}).length;
+      const idCount = Object.keys(idTypes || {}).length;
+      const interfaceCount = Object.keys(interfaceCodes || {}).length;
+      const environmentCount = Object.keys(environmentCodes || {}).length;
+
+      return {
+        entityCount,
+        productCount,
+        statusCount,
+        idCount,
+        interfaceCount,
+        environmentCount,
+        interfaceNames,
+        schemaCounts,
+        totalCount: entityCount + productCount + statusCount + idCount + interfaceCount + environmentCount
+      };
+    }
+
+    function getSwiftnessStatusSnapshot() {
+      const pill = document.getElementById('swiftnessStatusPill');
+      const message = document.getElementById('swiftnessStatusMessage');
+      return {
+        status: pill?.textContent || 'Status unavailable',
+        message: message?.textContent || ''
+      };
+    }
+
+    function buildAffiliationCharts(summary) {
+      const charts = [];
+      const coverageLabels = ['Entities', 'Products', 'Statuses', 'IDs', 'Interfaces', 'Environments'];
+      const coverageValues = [
+        summary.entityCount,
+        summary.productCount,
+        summary.statusCount,
+        summary.idCount,
+        summary.interfaceCount,
+        summary.environmentCount
+      ];
+
+      charts.push({
+        type: 'bar',
+        title: 'Swiftness Affiliation Coverage',
+        data: {
+          labels: coverageLabels,
+          values: coverageValues
+        },
+        options: {
+          colors: ['#2563eb', '#0ea5e9', '#10b981', '#f59e0b', '#7c3aed', '#ef4444']
+        }
+      });
+
+      const schemaLabels = Object.keys(summary.schemaCounts || {});
+      const schemaValues = Object.values(summary.schemaCounts || {});
+      if (schemaLabels.length > 0) {
+        charts.push({
+          type: 'doughnut',
+          title: 'Interface Schema Mix',
+          data: {
+            labels: schemaLabels,
+            values: schemaValues
+          },
+          options: {
+            colors: ['#14b8a6', '#6366f1', '#f97316', '#22c55e', '#eab308', '#ec4899']
+          }
+        });
+      }
+
+      return charts;
+    }
+
+    function renderAffiliationRecommendations(summary, fileSummary, analysisTypeLabel, safeSnapshot) {
+      const recList = document.getElementById('recommendationsList');
+      if (!recList) return;
+
+      const recommendations = [];
+      const safeReady = safeSnapshot.status.toLowerCase().includes('ready');
+
+      if (!summary.totalCount) {
+        recommendations.push({
+          priority: 'high',
+          title: 'Affiliation mappings unavailable',
+          description: 'Swiftness affiliation data could not be retrieved for this run.',
+          action_items: [
+            'Verify /api/mislaka/affiliations availability',
+            'Confirm Swiftness Safe credentials are configured',
+            'Retry analysis once connectivity is restored'
+          ],
+          expected_impact: 'Restores authoritative affiliation output.'
+        });
+      }
+
+      if (!fileSummary.length) {
+        recommendations.push({
+          priority: 'high',
+          title: 'Attach documents to bind affiliations',
+          description: 'No uploaded documents were detected, so affiliations cannot be aligned to document evidence.',
+          action_items: [
+            'Upload pension or insurance documents',
+            'Re-run Analyze & Generate',
+            'Validate file integrity before submission'
+          ],
+          expected_impact: 'Links Swiftness affiliation map to concrete payloads.'
+        });
+      } else {
+        recommendations.push({
+          priority: 'medium',
+          title: 'Validate schema alignment',
+          description: `Ensure ${analysisTypeLabel} documents align with Swiftness affiliation mappings.`,
+          action_items: [
+            'Match entity IDs and product codes to Mislaka schema',
+            'Confirm status transitions map cleanly to affiliation statuses',
+            'Audit any unmapped fields for drift'
+          ],
+          expected_impact: 'Prevents misaligned affiliations and downstream reconciliation gaps.'
+        });
+      }
+
+      if (!safeReady) {
+        recommendations.push({
+          priority: 'medium',
+          title: 'Verify Swiftness Safe connectivity',
+          description: safeSnapshot.message || 'Swiftness Safe is not fully configured.',
+          action_items: [
+            'Set SWIFTNESS_SAFE_CLIENT_ID and SWIFTNESS_SAFE_CLIENT_SECRET',
+            'Re-check Swiftness Safe status',
+            'Open the Safe gateway to confirm access'
+          ],
+          expected_impact: 'Secures direct Mislaka clearinghouse imports.'
+        });
+      }
+
+      if (recommendations.length === 0) {
+        recList.innerHTML = '<p style="color: var(--text-muted);">No recommendations. Affiliation coverage is complete.</p>';
+        return;
+      }
+
+      recList.innerHTML = recommendations.map(rec => `
+        <div class="recommendation-item ${rec.priority} fade-in">
+          <h4>
+            <span class="priority-badge priority-${rec.priority}">${rec.priority}</span>
+            ${rec.title}
+          </h4>
+          <p>${rec.description}</p>
+          <ul class="action-items">
+            ${(rec.action_items || []).map(item => `<li>${item}</li>`).join('')}
+          </ul>
+          <div class="expected-impact">
+            <strong>Expected Impact:</strong> ${rec.expected_impact}
+          </div>
+        </div>
+      `).join('');
+    }
+
+    function renderAffiliationOutput({ affiliations, files, analysisTypeLabel }) {
+      const statsGrid = document.getElementById('statsGrid');
+      const insightsHeader = document.querySelector('.insights-header');
+      const insightsGrid = document.getElementById('insightsGrid');
+      const reportTitle = document.getElementById('reportTitle');
+      const reportBody = document.getElementById('reportBody');
+
+      if (!statsGrid || !insightsGrid || !reportTitle || !reportBody) {
+        return;
+      }
+
+      const summary = summarizeAffiliations(affiliations);
+      const fileSummary = files || [];
+      const safeSnapshot = getSwiftnessStatusSnapshot();
+      const updatedAtLabel = swiftnessAffiliationsUpdatedAt
+        ? swiftnessAffiliationsUpdatedAt.toLocaleString()
+        : 'Not available';
+      const fileTypes = [...new Set(fileSummary.map(file => file.extension).filter(Boolean))];
+      const fileTypeLabel = fileTypes.length ? fileTypes.map(type => type.toUpperCase()).join(', ') : '—';
+      const languageLabel = outputLanguage
+        ? (outputLanguage.options[outputLanguage.selectedIndex]?.text || outputLanguage.value)
+        : 'Auto-detect';
+      const titleSuffix = fileSummary.length ? ` (${fileSummary.length} file${fileSummary.length === 1 ? '' : 's'})` : '';
+      const affiliationNotice = summary.totalCount
+        ? ''
+        : '<p style="color: var(--warning);">Affiliation data was not returned for this run. Verify Swiftness connectivity.</p>';
+
+      statsGrid.innerHTML = `
+        <div class="stat-card fade-in" style="grid-column: span 3; background: linear-gradient(135deg, #2563eb 0%, #0ea5e9 100%); color: white;">
+          <h5 style="color: white;">🧭 Swiftness Affiliation Output</h5>
+          <div class="value" style="font-size: 1.6rem; color: white;">${analysisTypeLabel || 'Auto-detect'}</div>
+          <small style="color: rgba(255,255,255,0.9);">Files: ${fileSummary.length} • Interfaces: ${summary.interfaceCount} • Language: ${languageLabel}</small>
+        </div>
+        <div class="stat-card fade-in">
+          <h5>📁 Files</h5>
+          <div class="value">${fileSummary.length}</div>
+          <small>${fileTypeLabel}</small>
+        </div>
+        <div class="stat-card fade-in">
+          <h5>🏷️ Entity Types</h5>
+          <div class="value">${summary.entityCount}</div>
+          <small>Affiliation map</small>
+        </div>
+        <div class="stat-card fade-in">
+          <h5>🧾 Product Types</h5>
+          <div class="value">${summary.productCount}</div>
+          <small>Mislaka schemas</small>
+        </div>
+        <div class="stat-card fade-in">
+          <h5>📌 Status Codes</h5>
+          <div class="value">${summary.statusCount}</div>
+          <small>Lifecycle coverage</small>
+        </div>
+        <div class="stat-card fade-in">
+          <h5>🆔 ID Types</h5>
+          <div class="value">${summary.idCount}</div>
+          <small>Identity mapping</small>
+        </div>
+        <div class="stat-card fade-in">
+          <h5>🧬 Interfaces</h5>
+          <div class="value">${summary.interfaceCount}</div>
+          <small>Integration endpoints</small>
+        </div>
+        <div class="stat-card fade-in">
+          <h5>🌐 Environments</h5>
+          <div class="value">${summary.environmentCount}</div>
+          <small>Deployment targets</small>
+        </div>
+      `;
+
+      if (insightsHeader) {
+        insightsHeader.innerHTML = `
+          <h3>🧭 Swiftness Affiliation Intelligence</h3>
+          <p style="margin-top: 0.5rem; opacity: 0.9; font-size: 0.9rem;">Combined affiliations + uploaded documents at analysis time</p>
+        `;
+      }
+
+      const interfaceTags = summary.interfaceNames.slice(0, 10)
+        .map(name => `<span class="tag">${name}</span>`)
+        .join('') || '<span style="color: var(--text-muted);">No interface tags available</span>';
+      const topSchemas = Object.entries(summary.schemaCounts || {})
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 4);
+
+      insightsGrid.innerHTML = `
+        <div class="insight-card fade-in">
+          <h5>🔗 Coverage Snapshot</h5>
+          <div class="insight-detail">
+            <div class="stat-detail"><span class="label">Entities</span><span class="val">${summary.entityCount}</span></div>
+            <div class="stat-detail"><span class="label">Products</span><span class="val">${summary.productCount}</span></div>
+            <div class="stat-detail"><span class="label">Statuses</span><span class="val">${summary.statusCount}</span></div>
+            <div class="stat-detail"><span class="label">IDs</span><span class="val">${summary.idCount}</span></div>
+          </div>
+          <span class="insight-badge">Affiliation Map</span>
+        </div>
+        <div class="insight-card fade-in">
+          <h5>🧬 Interface Tags</h5>
+          <div class="insight-value">${interfaceTags}</div>
+          <span class="insight-badge">Top Interfaces</span>
+        </div>
+        <div class="insight-card fade-in">
+          <h5>🧩 Schema Distribution</h5>
+          <div class="insight-detail">
+            ${topSchemas.length ? topSchemas.map(([schema, count]) => `
+              <div class="stat-detail"><span class="label">${schema}</span><span class="val">${count}</span></div>
+            `).join('') : '<div class="stat-detail"><span class="label">Schemas</span><span class="val">—</span></div>'}
+          </div>
+          <span class="insight-badge">Interfaces</span>
+        </div>
+        <div class="insight-card fade-in">
+          <h5>📁 Upload Alignment</h5>
+          <div class="insight-detail">
+            <div class="stat-detail"><span class="label">Files</span><span class="val">${fileSummary.length}</span></div>
+            <div class="stat-detail"><span class="label">Types</span><span class="val">${fileTypeLabel}</span></div>
+            <div class="stat-detail"><span class="label">Analysis Type</span><span class="val">${analysisTypeLabel || 'Auto-detect'}</span></div>
+          </div>
+          <span class="insight-badge">Upload Sync</span>
+        </div>
+      `;
+
+      const fileListHtml = fileSummary.length
+        ? `<ul>${fileSummary.map(file => `
+            <li><strong>${file.name}</strong> (${file.sizeLabel}${file.extension ? ` • ${file.extension.toUpperCase()}` : ''})</li>
+          `).join('')}</ul>`
+        : '<p>No uploaded files were included in this run.</p>';
+
+      const schemaGridHtml = Object.entries(summary.schemaCounts || {}).length
+        ? `<div class="affiliations-grid">
+            ${Object.entries(summary.schemaCounts).map(([schema, count]) => `
+              <div class="affiliation-item">
+                <div class="label">${schema}</div>
+                <div class="value">${count}</div>
+              </div>
+            `).join('')}
+          </div>`
+        : '<p style="color: var(--text-muted);">Schema coverage unavailable.</p>';
+
+      reportTitle.textContent = `🧭 Swiftness Affiliation Report${titleSuffix}`;
+      reportBody.innerHTML = `
+        <div class="report-section fade-in">
+          <h3>🧭 Affiliation Snapshot</h3>
+          <div class="content">
+            <p>Generated from Swiftness + Mislaka Research Hub affiliations.</p>
+            ${affiliationNotice}
+            <p><strong>Snapshot Timestamp:</strong> ${updatedAtLabel}</p>
+            <div class="affiliations-grid">
+              <div class="affiliation-item"><div class="label">Entity Types</div><div class="value">${summary.entityCount}</div></div>
+              <div class="affiliation-item"><div class="label">Product Types</div><div class="value">${summary.productCount}</div></div>
+              <div class="affiliation-item"><div class="label">Status Codes</div><div class="value">${summary.statusCount}</div></div>
+              <div class="affiliation-item"><div class="label">ID Types</div><div class="value">${summary.idCount}</div></div>
+            </div>
+          </div>
+        </div>
+        <div class="report-section fade-in">
+          <h3>📁 Uploaded Document Context</h3>
+          <div class="content">
+            <p><strong>Analysis Type:</strong> ${analysisTypeLabel || 'Auto-detect'}</p>
+            <p><strong>Report Language:</strong> ${languageLabel}</p>
+            ${fileListHtml}
+          </div>
+        </div>
+        <div class="report-section fade-in">
+          <h3>🧬 Interface & Schema Coverage</h3>
+          <div class="content">
+            <div class="tag-grid" style="margin-bottom: 1rem;">${interfaceTags}</div>
+            ${schemaGridHtml}
+          </div>
+        </div>
+        <div class="report-section fade-in">
+          <h3>🛡️ Swiftness Safe Integrity</h3>
+          <div class="content">
+            <p><strong>Safe Status:</strong> ${safeSnapshot.status}</p>
+            <p>${safeSnapshot.message || 'Swiftness Safe status snapshot captured.'}</p>
+            <p>Data integrity is enforced with row-level ownership and schema-controlled affiliations.</p>
+          </div>
+        </div>
+      `;
+
+      renderCharts(buildAffiliationCharts(summary));
+      renderAffiliationRecommendations(summary, fileSummary, analysisTypeLabel || 'Auto-detect', safeSnapshot);
+    }
+
+    function displayResults(analysis, report, options = {}) {
+      if (options.affiliationOverride) {
+        renderAffiliationOutput({
+          affiliations: options.affiliations,
+          files: options.files,
+          analysisTypeLabel: options.analysisTypeLabel
+        });
+        return;
+      }
       // Check if this is pension/Mislaka data
       const isPensionData = report.metadata?.is_pension_data || 
                            report.metadata?.pension_data ||
