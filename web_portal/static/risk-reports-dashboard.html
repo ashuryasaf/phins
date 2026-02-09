@@ -860,6 +860,62 @@
       white-space: pre-line;
     }
     
+    /* Collapsible Section Styles */
+    .report-section.collapsible h3 {
+      cursor: pointer;
+      user-select: none;
+      position: relative;
+      padding-right: 30px;
+      transition: color 0.2s;
+    }
+    
+    .report-section.collapsible h3:hover {
+      color: var(--primary-light);
+    }
+    
+    .report-section.collapsible h3::after {
+      content: '▼';
+      position: absolute;
+      right: 0;
+      font-size: 0.8rem;
+      transition: transform 0.3s;
+    }
+    
+    .report-section.collapsible.collapsed h3::after {
+      transform: rotate(-90deg);
+    }
+    
+    .report-section.collapsible .content {
+      max-height: 2000px;
+      overflow: hidden;
+      transition: max-height 0.3s ease-out, opacity 0.3s;
+      opacity: 1;
+    }
+    
+    .report-section.collapsible.collapsed .content {
+      max-height: 0;
+      opacity: 0;
+      margin-bottom: 0;
+      padding-top: 0;
+      padding-bottom: 0;
+    }
+    
+    .report-section.collapsible.collapsed {
+      padding-bottom: 1rem;
+      margin-bottom: 1rem;
+    }
+    
+    /* Minitab Card Hover Effects */
+    .minitab-card:hover {
+      border-color: var(--primary) !important;
+      transform: translateY(-2px);
+      box-shadow: 0 8px 20px rgba(13, 71, 161, 0.15);
+    }
+    
+    .minitab-card:active {
+      transform: translateY(0);
+    }
+    
     /* Enhanced Mislaka Pension Report Styles */
     .report-section.pension-section,
     .report-section.mislaka-report {
@@ -3467,14 +3523,45 @@
           `).join('')
         : '<p style="color: var(--text-muted);">Swiftness links not available.</p>';
 
-      // Build report model summary for report body
+      // Build report model summary for report body with interactive minitabs
       const reportModelSummary = swiftnessReportModel
-        ? `<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 0.5rem; margin-top: 0.75rem;">
-            ${swiftnessReportModel.sections.map(sec => `
-              <div style="background: #f8fafc; border-radius: 8px; padding: 0.5rem 0.75rem; border-left: 3px solid var(--primary); font-size: 0.85rem;">
-                <strong>${sec.order}.</strong> ${sec.title_he} <span style="color: var(--text-muted);">(${sec.data_fields ? sec.data_fields.length : 0} fields)</span>
+        ? `<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 0.75rem; margin-top: 0.75rem;">
+            ${swiftnessReportModel.sections.map((sec, idx) => `
+              <div class="minitab-card" style="background: white; border-radius: 10px; padding: 0.75rem; border: 2px solid #e2e8f0; transition: all 0.2s; cursor: pointer; position: relative;" 
+                   onclick="generateMinitabReport(${idx}, '${sec.title_he.replace(/'/g, "\\'")}', '${sec.title.replace(/'/g, "\\'")}')">
+                <div style="display: flex; align-items: start; gap: 8px; margin-bottom: 0.5rem;">
+                  <div style="background: var(--primary); color: white; width: 32px; height: 32px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 0.9rem; flex-shrink: 0;">
+                    ${sec.order}
+                  </div>
+                  <div style="flex: 1;">
+                    <div style="font-weight: 600; color: var(--text-dark); font-size: 0.9rem; line-height: 1.3;">
+                      ${sec.title_he}
+                    </div>
+                    <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 2px;">
+                      ${sec.title}
+                    </div>
+                  </div>
+                </div>
+                <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.5rem;">
+                  <span style="background: #e0f2fe; color: #0369a1; padding: 3px 8px; border-radius: 12px; font-size: 0.7rem; font-weight: 600;">
+                    ${sec.data_fields ? sec.data_fields.length : 0} fields
+                  </span>
+                  <span style="color: var(--primary); font-size: 0.75rem; font-weight: 600; display: flex; align-items: center; gap: 4px;">
+                    📊 Generate Report
+                  </span>
+                </div>
+                ${sec.charts && sec.charts.length > 0 ? `
+                  <div style="margin-top: 0.5rem; display: flex; gap: 0.25rem; flex-wrap: wrap;">
+                    ${sec.charts.map(chart => `<span style="background: #fef3c7; color: #92400e; padding: 2px 6px; border-radius: 8px; font-size: 0.65rem;">📈 ${chart}</span>`).join('')}
+                  </div>
+                ` : ''}
               </div>
             `).join('')}
+          </div>
+          <div style="margin-top: 1rem; padding: 1rem; background: #f0fdf4; border-radius: 8px; border-left: 3px solid #10b981;">
+            <p style="margin: 0; font-size: 0.85rem; color: #047857;">
+              💡 <strong>Interactive Minitabs:</strong> Click any section card above to generate a specific report for that section based on its affiliated source data.
+            </p>
           </div>`
         : '';
 
@@ -3541,6 +3628,27 @@
           </div>
         </div>
       `;
+
+      // Make specific sections collapsible with default minimized state
+      setTimeout(() => {
+        const sections = reportBody.querySelectorAll('.report-section');
+        sections.forEach(section => {
+          const heading = section.querySelector('h3');
+          if (!heading) return;
+          
+          const headingText = heading.textContent;
+          
+          // Check if this is one of the sections that should be collapsible and default minimized
+          const shouldBeMinimized = 
+            headingText.includes('📁 Uploaded Document Context') ||
+            headingText.includes('🧬 Interface & Schema Coverage') ||
+            headingText.includes('📥 Swiftness Data Resources') ||
+            headingText.includes('🧭 Swiftness Affiliation Report') ||
+            headingText.includes('🧭 Swiftness Affiliation Intelligence');
+          
+          makeCollapsible(section, shouldBeMinimized);
+        });
+      }, 100);
 
       renderCharts(buildAffiliationCharts(summary));
       renderAffiliationRecommendations(summary, fileSummary, analysisTypeLabel || 'Auto-detect', safeSnapshot);
@@ -4064,8 +4172,323 @@
       return str.charAt(0).toUpperCase() + str.slice(1);
     }
     
-    function exportReport(format) {
-      alert(`Export to ${format.toUpperCase()} - Coming soon!\n\nThis will generate a downloadable ${format.toUpperCase()} file with the complete report.`);
+    // Generate specific report for a minitab section
+    async function generateMinitabReport(sectionIndex, titleHe, titleEn) {
+      // Prevent default behavior
+      event?.stopPropagation();
+      
+      // Get the section data
+      const section = swiftnessReportModel?.sections?.[sectionIndex];
+      if (!section) {
+        alert('Section data not available');
+        return;
+      }
+      
+      // Show loading state
+      const statusDiv = document.createElement('div');
+      statusDiv.style.cssText = 'position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; padding: 2rem; border-radius: 12px; box-shadow: 0 8px 32px rgba(0,0,0,0.2); z-index: 10000; text-align: center;';
+      statusDiv.innerHTML = `
+        <div style="font-size: 2rem; margin-bottom: 1rem;">📊</div>
+        <div style="font-size: 1.1rem; font-weight: 600; color: var(--primary); margin-bottom: 0.5rem;">Generating Report...</div>
+        <div style="color: var(--text-muted); font-size: 0.9rem;">${titleHe}</div>
+      `;
+      document.body.appendChild(statusDiv);
+      
+      // Simulate report generation (in a real implementation, this would call an API)
+      setTimeout(() => {
+        document.body.removeChild(statusDiv);
+        
+        // Create a modal to show the generated report
+        const modal = document.createElement('div');
+        modal.style.cssText = 'position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 9999; display: flex; align-items: center; justify-content: center; padding: 2rem;';
+        
+        const fieldsHtml = section.data_fields 
+          ? section.data_fields.map(field => `
+              <div style="background: #f8fafc; padding: 0.75rem; border-radius: 8px; border-left: 3px solid var(--primary);">
+                <div style="font-weight: 600; color: var(--text-dark); margin-bottom: 0.25rem;">${field.field_he || field.field}</div>
+                <div style="font-size: 0.8rem; color: var(--text-muted);">${field.field} • <span style="background: #e0f2fe; color: #0369a1; padding: 2px 6px; border-radius: 4px; font-size: 0.7rem;">${field.type || 'text'}</span></div>
+              </div>
+            `).join('')
+          : '<p style="color: var(--text-muted);">No field data available</p>';
+        
+        const chartsHtml = section.charts && section.charts.length > 0
+          ? `<div style="margin-top: 1rem;">
+              <h4 style="color: var(--primary); font-size: 1rem; margin-bottom: 0.5rem;">📈 Recommended Charts</h4>
+              <div style="display: flex; flex-wrap: wrap; gap: 0.5rem;">
+                ${section.charts.map(chart => `<span style="background: #fef3c7; color: #92400e; padding: 6px 12px; border-radius: 20px; font-size: 0.85rem; font-weight: 600;">${chart}</span>`).join('')}
+              </div>
+            </div>`
+          : '';
+        
+        modal.innerHTML = `
+          <div style="background: white; border-radius: 16px; max-width: 800px; width: 100%; max-height: 90vh; overflow-y: auto; box-shadow: 0 20px 60px rgba(0,0,0,0.3);">
+            <div style="padding: 2rem; border-bottom: 2px solid #e2e8f0;">
+              <div style="display: flex; justify-content: space-between; align-items: start;">
+                <div>
+                  <div style="background: var(--primary); color: white; width: 40px; height: 40px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 1.2rem; margin-bottom: 1rem;">
+                    ${section.order}
+                  </div>
+                  <h2 style="color: var(--primary); font-size: 1.5rem; margin-bottom: 0.5rem;">${titleHe}</h2>
+                  <p style="color: var(--text-muted); font-size: 0.9rem;">${titleEn}</p>
+                </div>
+                <button onclick="this.closest('.modal-overlay').remove()" style="background: #fee2e2; color: #b91c1c; border: none; width: 32px; height: 32px; border-radius: 8px; cursor: pointer; font-size: 1.2rem; display: flex; align-items: center; justify-content: center;">×</button>
+              </div>
+            </div>
+            <div style="padding: 2rem;">
+              <div style="background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%); padding: 1rem; border-radius: 12px; margin-bottom: 1.5rem; border-left: 4px solid #2563eb;">
+                <p style="margin: 0; color: #1e40af; font-weight: 600;">📊 Section ${section.order} - Detailed Report</p>
+                <p style="margin: 0.5rem 0 0 0; color: #64748b; font-size: 0.85rem;">Generated from Swiftness Mislaka standards with ${section.data_fields?.length || 0} data fields</p>
+              </div>
+              
+              <h3 style="color: var(--primary); font-size: 1.1rem; margin-bottom: 1rem;">📋 Data Fields</h3>
+              <div style="display: grid; gap: 0.75rem; margin-bottom: 1.5rem;">
+                ${fieldsHtml}
+              </div>
+              
+              ${chartsHtml}
+              
+              <div style="margin-top: 1.5rem; padding: 1rem; background: #f0fdf4; border-radius: 8px; border-left: 3px solid #10b981;">
+                <p style="margin: 0; font-size: 0.85rem; color: #047857;">
+                  ✅ <strong>Data Source:</strong> This report is generated from ${section.data_fields?.length || 0} affiliated data fields following Mislaka portfolio analysis standards.
+                </p>
+              </div>
+              
+              <div style="margin-top: 1.5rem; display: flex; gap: 1rem; justify-content: flex-end;">
+                <button onclick="exportMinitabToPDF(${sectionIndex})" class="btn btn-primary" style="padding: 10px 20px; background: linear-gradient(135deg, var(--primary) 0%, var(--primary-light) 100%); color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: 600;">
+                  📥 Download PDF
+                </button>
+                <button onclick="this.closest('.modal-overlay').remove()" class="btn btn-secondary" style="padding: 10px 20px; background: #e2e8f0; color: var(--text-dark); border: none; border-radius: 8px; cursor: pointer; font-weight: 600;">
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        `;
+        modal.className = 'modal-overlay';
+        document.body.appendChild(modal);
+        
+        // Close on background click
+        modal.addEventListener('click', (e) => {
+          if (e.target === modal) {
+            modal.remove();
+          }
+        });
+      }, 800);
+    }
+    
+    // Export minitab report to PDF
+    function exportMinitabToPDF(sectionIndex) {
+      const section = swiftnessReportModel?.sections?.[sectionIndex];
+      if (!section) return;
+      
+      // Load jsPDF library dynamically if not already loaded
+      if (typeof window.jspdf === 'undefined') {
+        const script = document.createElement('script');
+        script.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
+        script.onload = () => generateMinitabPDF(section);
+        document.head.appendChild(script);
+      } else {
+        generateMinitabPDF(section);
+      }
+    }
+    
+    function generateMinitabPDF(section) {
+      const { jsPDF } = window.jspdf;
+      const doc = new jsPDF();
+      
+      let yPosition = 20;
+      const lineHeight = 7;
+      const pageHeight = doc.internal.pageSize.height;
+      const margin = 20;
+      const maxWidth = doc.internal.pageSize.width - 2 * margin;
+      
+      function checkAddPage() {
+        if (yPosition > pageHeight - 30) {
+          doc.addPage();
+          yPosition = 20;
+        }
+      }
+      
+      // Title
+      doc.setFontSize(18);
+      doc.setFont(undefined, 'bold');
+      doc.text(`Section ${section.order}: ${section.title}`, margin, yPosition);
+      yPosition += lineHeight * 1.5;
+      
+      // Hebrew title
+      doc.setFontSize(14);
+      doc.text(section.title_he, margin, yPosition);
+      yPosition += lineHeight * 2;
+      
+      // Timestamp
+      doc.setFontSize(10);
+      doc.setFont(undefined, 'normal');
+      doc.setTextColor(100);
+      doc.text(`Generated: ${new Date().toLocaleString()}`, margin, yPosition);
+      yPosition += lineHeight * 2;
+      doc.setTextColor(0);
+      
+      // Data Fields
+      if (section.data_fields && section.data_fields.length > 0) {
+        doc.setFontSize(14);
+        doc.setFont(undefined, 'bold');
+        doc.text('Data Fields:', margin, yPosition);
+        yPosition += lineHeight * 1.5;
+        
+        doc.setFontSize(10);
+        doc.setFont(undefined, 'normal');
+        section.data_fields.forEach((field, idx) => {
+          checkAddPage();
+          const fieldText = `${idx + 1}. ${field.field_he || field.field} (${field.type || 'text'})`;
+          doc.text(fieldText, margin + 5, yPosition);
+          yPosition += lineHeight;
+        });
+        yPosition += lineHeight;
+      }
+      
+      // Charts
+      if (section.charts && section.charts.length > 0) {
+        checkAddPage();
+        doc.setFontSize(14);
+        doc.setFont(undefined, 'bold');
+        doc.text('Recommended Charts:', margin, yPosition);
+        yPosition += lineHeight * 1.5;
+        
+        doc.setFontSize(10);
+        doc.setFont(undefined, 'normal');
+        section.charts.forEach((chart, idx) => {
+          checkAddPage();
+          doc.text(`${idx + 1}. ${chart}`, margin + 5, yPosition);
+          yPosition += lineHeight;
+        });
+      }
+      
+      // Save
+      const filename = `phins_minitab_section${section.order}_${new Date().getTime()}.pdf`;
+      doc.save(filename);
+      
+      // Show success message
+      const successMsg = document.createElement('div');
+      successMsg.style.cssText = 'position: fixed; top: 20px; right: 20px; background: #10b981; color: white; padding: 1rem 1.5rem; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.2); z-index: 10001; font-weight: 600;';
+      successMsg.textContent = '✓ PDF Downloaded Successfully';
+      document.body.appendChild(successMsg);
+      setTimeout(() => successMsg.remove(), 3000);
+    }
+    
+    // Toggle section collapse/expand
+    function toggleSection(element) {
+      element.classList.toggle('collapsed');
+    }
+    
+    // Make section collapsible
+    function makeCollapsible(sectionElement, defaultCollapsed = false) {
+      if (!sectionElement) return;
+      
+      sectionElement.classList.add('collapsible');
+      if (defaultCollapsed) {
+        sectionElement.classList.add('collapsed');
+      }
+      
+      const heading = sectionElement.querySelector('h3');
+      if (heading) {
+        heading.addEventListener('click', () => toggleSection(sectionElement));
+      }
+    }
+    
+    // Export report to PDF (excludes minimized/closed sections)
+    async function exportReport(format) {
+      if (format !== 'pdf') {
+        alert(`Export to ${format.toUpperCase()} - Coming soon!\n\nThis will generate a downloadable ${format.toUpperCase()} file with the complete report.`);
+        return;
+      }
+      
+      // Load jsPDF library dynamically if not already loaded
+      if (typeof window.jspdf === 'undefined') {
+        const script = document.createElement('script');
+        script.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
+        script.onload = () => generatePDF();
+        document.head.appendChild(script);
+      } else {
+        generatePDF();
+      }
+    }
+    
+    function generatePDF() {
+      const { jsPDF } = window.jspdf;
+      const doc = new jsPDF();
+      
+      let yPosition = 20;
+      const lineHeight = 7;
+      const pageHeight = doc.internal.pageSize.height;
+      const margin = 20;
+      const maxWidth = doc.internal.pageSize.width - 2 * margin;
+      
+      // Helper function to add page if needed
+      function checkAddPage() {
+        if (yPosition > pageHeight - 30) {
+          doc.addPage();
+          yPosition = 20;
+        }
+      }
+      
+      // Add title
+      doc.setFontSize(18);
+      doc.setFont(undefined, 'bold');
+      const title = document.getElementById('reportTitle').textContent || 'Risk Analysis Report';
+      doc.text(title, margin, yPosition);
+      yPosition += lineHeight * 2;
+      
+      // Add timestamp
+      doc.setFontSize(10);
+      doc.setFont(undefined, 'normal');
+      doc.setTextColor(100);
+      doc.text(`Generated: ${new Date().toLocaleString()}`, margin, yPosition);
+      yPosition += lineHeight * 2;
+      doc.setTextColor(0);
+      
+      // Process each report section (skip collapsed ones)
+      const sections = document.querySelectorAll('.report-section');
+      sections.forEach((section, index) => {
+        // Skip collapsed sections
+        if (section.classList.contains('collapsed')) {
+          return;
+        }
+        
+        checkAddPage();
+        
+        // Section heading
+        const heading = section.querySelector('h3');
+        if (heading) {
+          doc.setFontSize(14);
+          doc.setFont(undefined, 'bold');
+          const headingText = heading.textContent.trim();
+          doc.text(headingText, margin, yPosition);
+          yPosition += lineHeight * 1.5;
+        }
+        
+        // Section content
+        const content = section.querySelector('.content');
+        if (content) {
+          doc.setFontSize(10);
+          doc.setFont(undefined, 'normal');
+          
+          // Get text content (simplified - removes HTML)
+          const textContent = content.innerText || content.textContent || '';
+          const lines = doc.splitTextToSize(textContent.substring(0, 2000), maxWidth); // Limit length
+          
+          lines.forEach(line => {
+            checkAddPage();
+            doc.text(line, margin, yPosition);
+            yPosition += lineHeight;
+          });
+        }
+        
+        yPosition += lineHeight;
+      });
+      
+      // Save the PDF
+      const filename = `phins_risk_report_${new Date().getTime()}.pdf`;
+      doc.save(filename);
     }
     
     // =========================================================================
