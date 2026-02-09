@@ -2834,6 +2834,130 @@
       return charts;
     }
 
+    function formatCurrency(value, locale = 'he-IL') {
+      if (value === null || value === undefined || value === '') {
+        return '—';
+      }
+      const num = Number(value);
+      if (!Number.isFinite(num)) {
+        return '—';
+      }
+      return `₪${num.toLocaleString(locale)}`;
+    }
+
+    function buildPensionPreview(pensionData) {
+      if (!pensionData) {
+        return {
+          hasData: false,
+          insightHtml: `
+            <div class="insight-card fade-in">
+              <h5>📥 נתוני מסלקה שהורדו</h5>
+              <div class="insight-detail" style="direction: rtl; text-align: right;">
+                <div class="stat-detail"><span class="label">סטטוס</span><span class="val">לא נמצאו נתוני מסלקה</span></div>
+              </div>
+              <span class="insight-badge">Mislaka Download</span>
+            </div>
+          `,
+          sectionHtml: `
+            <div class="report-section fade-in" dir="rtl">
+              <h3>📥 נתוני מסלקה שהורדו</h3>
+              <div class="content">
+                <p>לא נמצאו נתוני מסלקה בקבצים שהועלו. העלו קובץ מסלקה כדי להציג מספר פוליסה, ת.ז, חיסכון וכיסוי ביטוחי.</p>
+              </div>
+            </div>
+          `
+        };
+      }
+
+      const client = pensionData.client || {};
+      const accounts = pensionData.accounts || [];
+      const totals = pensionData.totals || pensionData.summary || {};
+      const maxRows = 12;
+      const rows = accounts.slice(0, maxRows);
+      const totalSavings = totals.total_savings_formatted
+        ? totals.total_savings_formatted
+        : formatCurrency(totals.total_savings);
+      const accountCount = totals.account_count || accounts.length;
+      const coverageCount = accounts.filter(acct => Number(acct.death_coverage || 0) > 0 || Number(acct.disability_coverage || 0) > 0).length;
+      const nameLabel = client.full_name || client.client_name || 'לא זמין';
+      const idLabel = client.id_number || 'לא זמין';
+
+      const insightHtml = `
+        <div class="insight-card fade-in">
+          <h5>📥 נתוני מסלקה שהורדו</h5>
+          <div class="insight-detail" style="direction: rtl; text-align: right;">
+            <div class="stat-detail"><span class="label">שם מלא</span><span class="val">${nameLabel}</span></div>
+            <div class="stat-detail"><span class="label">ת.ז</span><span class="val">${idLabel}</span></div>
+            <div class="stat-detail"><span class="label">מספר פוליסות</span><span class="val">${accountCount}</span></div>
+            <div class="stat-detail"><span class="label">חיסכון</span><span class="val">${totalSavings}</span></div>
+            <div class="stat-detail"><span class="label">כיסוי ביטוחי</span><span class="val">${coverageCount} פוליסות</span></div>
+          </div>
+          <span class="insight-badge">Mislaka Download</span>
+        </div>
+      `;
+
+      const rowsHtml = rows.map(acct => {
+        const policyNumber = acct.policy_number || '-';
+        const provider = acct.provider || acct.product_type_name || acct.product_type || '-';
+        const savings = formatCurrency(acct.savings_balance);
+        const totalBalance = formatCurrency(acct.total_balance);
+        const severance = formatCurrency(acct.severance_balance);
+        const deathCoverage = formatCurrency(acct.death_coverage);
+        const disabilityCoverage = formatCurrency(acct.disability_coverage);
+        const coverageLabel = (deathCoverage !== '—' || disabilityCoverage !== '—')
+          ? `${deathCoverage}${disabilityCoverage !== '—' ? ` • ${disabilityCoverage}/חודש` : ''}`
+          : '—';
+
+        return `
+          <tr>
+            <td style="font-family: monospace;">${policyNumber}</td>
+            <td>${provider}</td>
+            <td>${savings}</td>
+            <td>${totalBalance}</td>
+            <td>${severance}</td>
+            <td>${coverageLabel}</td>
+          </tr>
+        `;
+      }).join('');
+
+      const rowNotice = accounts.length > maxRows
+        ? `<p style="margin-top: 0.5rem; color: var(--text-muted);">מציג ${maxRows} מתוך ${accounts.length} פוליסות.</p>`
+        : '';
+
+      const sectionHtml = `
+        <div class="report-section fade-in" dir="rtl">
+          <h3>📥 נתוני מסלקה שהורדו</h3>
+          <div class="content">
+            <p><strong>שם מלא:</strong> ${nameLabel}</p>
+            <p><strong>ת.ז:</strong> ${idLabel}</p>
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>מספר פוליסה</th>
+                  <th>שם מוצר / יצרן</th>
+                  <th>חיסכון</th>
+                  <th>צבירה כוללת</th>
+                  <th>פיצויים</th>
+                  <th>כיסוי ביטוחי</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${rowsHtml || '<tr><td colspan="6">אין נתונים להצגה</td></tr>'}
+              </tbody>
+            </table>
+            ${rowNotice}
+            <p style="margin-top: 0.75rem; color: var(--text-muted);">הנתונים מוצגים כפי שנקלטו מהמסמכים שהועלו.</p>
+          </div>
+        </div>
+      `;
+
+      return {
+        hasData: true,
+        insightHtml,
+        sectionHtml
+      };
+    }
+
     function renderAffiliationRecommendations(summary, fileSummary, analysisTypeLabel, safeSnapshot) {
       const recList = document.getElementById('recommendationsList');
       if (!recList) return;
@@ -2917,7 +3041,7 @@
       `).join('');
     }
 
-    function renderAffiliationOutput({ affiliations, files, analysisTypeLabel }) {
+    function renderAffiliationOutput({ affiliations, files, analysisTypeLabel, report }) {
       const statsGrid = document.getElementById('statsGrid');
       const insightsHeader = document.querySelector('.insights-header');
       const insightsGrid = document.getElementById('insightsGrid');
@@ -2930,6 +3054,8 @@
 
       const summary = summarizeAffiliations(affiliations);
       const fileSummary = files || [];
+      const pensionData = report?.metadata?.pension_data || null;
+      const pensionPreview = buildPensionPreview(pensionData);
       const safeSnapshot = getSwiftnessStatusSnapshot();
       const updatedAtLabel = swiftnessAffiliationsUpdatedAt
         ? swiftnessAffiliationsUpdatedAt.toLocaleString()
@@ -3035,6 +3161,7 @@
           </div>
           <span class="insight-badge">Upload Sync</span>
         </div>
+        ${pensionPreview.insightHtml}
       `;
 
       const fileListHtml = fileSummary.length
@@ -3078,6 +3205,7 @@
             ${fileListHtml}
           </div>
         </div>
+        ${pensionPreview.sectionHtml}
         <div class="report-section fade-in">
           <h3>🧬 Interface & Schema Coverage</h3>
           <div class="content">
@@ -3104,7 +3232,8 @@
         renderAffiliationOutput({
           affiliations: options.affiliations,
           files: options.files,
-          analysisTypeLabel: options.analysisTypeLabel
+          analysisTypeLabel: options.analysisTypeLabel,
+          report: report
         });
         return;
       }
