@@ -2515,64 +2515,39 @@
         html += '<div style="background:#f0fdf4;border-radius:12px;padding:1rem 1.25rem;margin-bottom:1rem;border:1px solid #a7f3d0;"><h4 style="color:#047857;font-size:0.95rem;margin-bottom:0.5rem;">🛡️ Data Integrity Rules</h4><div style="display:flex;flex-wrap:wrap;gap:0.5rem;">'+rules.map(r=>'<span class="integrity-badge pass">✓ '+r+'</span>').join('')+'</div></div>';
       }
 
-      // Each section as a card with always-visible Generate Report button
+      // Each minitab is a clickable link that generates its report on click
       sections.forEach(sec => {
         const fields = sec.data_fields || [];
         const charts = sec.charts || [];
         const key = sec.key;
         const rows = sampleData[key] || [];
         const icon = sectionIcons[sec.icon] || '📋';
-        const panelId = 'rms-panel-' + sec.order;
-
-        // --- Card with header row: number, title, meta, BUTTON, expand arrow ---
-        html += `
-          <div class="report-model-section" style="transition:all 0.2s;padding-bottom:0.75rem;">
-            <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
-              <span class="rms-order">${sec.order}</span>
-              <div style="flex:1;min-width:180px;">
-                <span class="rms-title">${icon} ${sec.title_he}</span>
-                <span class="rms-title-en">${sec.title_en}</span>
-              </div>
-              <span style="font-size:0.8rem;color:var(--text-muted);white-space:nowrap;">${fields.length} fields &bull; ${rows.length} rec</span>
-              <button class="btn btn-primary" onclick="event.stopPropagation();openSectionReport('${key}')" style="padding:7px 16px;font-size:0.82rem;white-space:nowrap;">
-                📄 Generate Report
-              </button>
-              <span onclick="toggleRmsPanel('${panelId}')" style="cursor:pointer;font-size:1.1rem;padding:4px 8px;border-radius:6px;background:#f1f5f9;transition:transform 0.3s;user-select:none;" id="${panelId}-arrow" title="Expand details">▶</span>
-            </div>
-            <div class="rms-desc" style="margin-top:0.35rem;margin-bottom:0;">${sec.description||''}</div>
-          </div>
-          <div id="${panelId}" style="display:none;background:white;border:1px solid #e2e8f0;border-top:none;border-radius:0 0 12px 12px;margin-top:-0.75rem;margin-bottom:0.75rem;padding:1.25rem;animation:fadeIn 0.3s;">
-        `;
-
-        // Field schema table inside expandable panel
-        html += `<h5 style="color:var(--primary);margin-bottom:0.75rem;font-size:0.95rem;">📐 Field Schema</h5>
-          <div style="overflow-x:auto;"><table class="data-table" style="font-size:0.85rem;">
-            <thead><tr><th>#</th><th>Field ID</th><th>שם (Hebrew)</th><th>Name (English)</th><th>Type</th></tr></thead><tbody>
-            ${fields.map((f,i) => `<tr><td>${i+1}</td><td><code style="background:#f1f5f9;padding:2px 6px;border-radius:4px;font-size:0.8rem;">${f.field}</code></td><td style="font-weight:500;">${f.label_he}</td><td>${f.label_en}</td><td><span style="background:${f.type==='currency'?'#d1fae5':f.type==='percentage'?'#fef3c7':f.type==='date'?'#e0f2fe':'#f1f5f9'};color:${f.type==='currency'?'#047857':f.type==='percentage'?'#92400e':f.type==='date'?'#0369a1':'#475569'};padding:2px 8px;border-radius:10px;font-size:0.75rem;font-weight:500;">${f.type}${f.currency?' ('+f.currency+')':''}</span></td></tr>`).join('')}
-          </tbody></table></div>`;
-
-        // Sample data table inside expandable panel
+        const chartCount = charts.length;
+        // Show first currency/key value as preview
+        let preview = '';
         if (rows.length) {
-          html += `<h5 style="color:#059669;margin:1.25rem 0 0.75rem;font-size:0.95rem;">📊 Sample Data (Mislaka source)</h5>
-            <div style="overflow-x:auto;"><table class="data-table" style="font-size:0.82rem;direction:rtl;text-align:right;">
-              <thead><tr>${fields.map(f => '<th style="white-space:nowrap;">'+f.label_he+'</th>').join('')}</tr></thead><tbody>
-              ${rows.map(row => '<tr>'+fields.map(f => '<td>'+fmtVal(row[f.field], f.type)+'</td>').join('')+'</tr>').join('')}
-            </tbody></table></div>`;
+          const curF = fields.find(f => f.type === 'currency');
+          if (curF && rows[0][curF.field]) {
+            preview = '₪' + Number(rows[0][curF.field]).toLocaleString('he-IL');
+          }
         }
 
-        // Chart badges
-        if (charts.length) {
-          html += '<div style="margin-top:1rem;display:flex;gap:0.5rem;flex-wrap:wrap;">'+charts.map(c=>'<span class="rms-chart-badge">📈 '+c.type+': '+c.title+'</span>').join('')+'</div>';
-        }
-
-        // Footer with links inside panel
-        html += `<div style="margin-top:1rem;padding-top:0.75rem;border-top:1px dashed #e2e8f0;display:flex;gap:1rem;flex-wrap:wrap;align-items:center;">
-            <button class="btn btn-primary" onclick="openSectionReport('${key}')" style="padding:7px 16px;font-size:0.82rem;">📄 Generate Full Report</button>
-            <a href="https://www.swiftness.co.il/כללי-מערכת/" target="_blank" rel="noopener" style="font-size:0.8rem;color:#0369a1;text-decoration:none;">📐 Schema Ref</a>
-            <a href="https://www.swiftness.co.il/savers/קבצים-עדכניים-לעבודה-מול-המסלקה/" target="_blank" rel="noopener" style="font-size:0.8rem;color:#0369a1;text-decoration:none;">📂 Work Files</a>
-          </div>`;
-
-        html += '</div>'; // close panel
+        html += `
+          <div onclick="openSectionReport('${key}')" style="background:white;border-radius:12px;padding:1rem 1.25rem;margin-bottom:0.6rem;border:1px solid #e2e8f0;border-left:4px solid var(--primary);cursor:pointer;transition:all 0.15s;display:flex;align-items:center;gap:12px;flex-wrap:wrap;" onmouseover="this.style.borderLeftColor='#ff6b35';this.style.boxShadow='0 4px 16px rgba(0,0,0,0.1)';this.style.transform='translateY(-2px)';" onmouseout="this.style.borderLeftColor='var(--primary)';this.style.boxShadow='none';this.style.transform='none';">
+            <span style="background:var(--primary);color:white;width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:0.85rem;font-weight:700;flex-shrink:0;">${sec.order}</span>
+            <div style="flex:1;min-width:160px;">
+              <div style="font-weight:600;font-size:0.95rem;color:var(--text-dark);">${icon} ${sec.title_he}</div>
+              <div style="font-size:0.8rem;color:var(--text-muted);">${sec.title_en}</div>
+            </div>
+            <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;">
+              <span style="background:#e0f2fe;color:#0369a1;padding:3px 10px;border-radius:20px;font-size:0.75rem;font-weight:500;">${fields.length} fields</span>
+              <span style="background:#d1fae5;color:#047857;padding:3px 10px;border-radius:20px;font-size:0.75rem;font-weight:500;">${rows.length} rec</span>
+              ${chartCount ? '<span style="background:#fef3c7;color:#92400e;padding:3px 10px;border-radius:20px;font-size:0.75rem;font-weight:500;">'+chartCount+' chart'+(chartCount>1?'s':'')+'</span>' : ''}
+              ${preview ? '<span style="background:#f0fdf4;color:#059669;padding:3px 10px;border-radius:20px;font-size:0.8rem;font-weight:700;">'+preview+'</span>' : ''}
+            </div>
+            <span style="font-size:1.2rem;color:var(--primary);flex-shrink:0;">→</span>
+          </div>
+        `;
       });
 
       // Service Index
@@ -2590,18 +2565,7 @@
       container.innerHTML = html;
     }
 
-    function toggleRmsPanel(panelId) {
-      const panel = document.getElementById(panelId);
-      const arrow = document.getElementById(panelId + '-arrow');
-      if (!panel) return;
-      if (panel.style.display === 'none') {
-        panel.style.display = 'block';
-        if (arrow) arrow.style.transform = 'rotate(90deg)';
-      } else {
-        panel.style.display = 'none';
-        if (arrow) arrow.style.transform = 'rotate(0deg)';
-      }
-    }
+    // toggleRmsPanel removed - minitabs now directly open reports on click
 
     function showResourceTab(tab) {
       // Hide all tabs
