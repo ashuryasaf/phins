@@ -7873,7 +7873,37 @@ For claims or questions, please contact:
                 self._set_json_headers(500)
                 self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
                 return
-        
+
+        # GET /api/swiftness/resources - Swiftness data files, links and resource catalog
+        if path == '/api/swiftness/resources':
+            try:
+                from services.swiftness_data_service import get_swiftness_data_service
+                svc = get_swiftness_data_service()
+                catalog = svc.get_resource_catalog()
+                self._set_json_headers(200)
+                self.wfile.write(json.dumps(catalog, ensure_ascii=False).encode('utf-8'))
+                return
+            except Exception as e:
+                print(f"Error in /api/swiftness/resources: {e}")
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+                return
+
+        # GET /api/swiftness/report-model - Enhanced report model for portfolio analysis
+        if path == '/api/swiftness/report-model':
+            try:
+                from services.swiftness_data_service import get_swiftness_data_service
+                svc = get_swiftness_data_service()
+                model = svc.get_report_model()
+                self._set_json_headers(200)
+                self.wfile.write(json.dumps(model, ensure_ascii=False).encode('utf-8'))
+                return
+            except Exception as e:
+                print(f"Error in /api/swiftness/report-model: {e}")
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+                return
+
         # Customers Endpoint
         if path == '/api/customers':
             requested_customer_id = qs.get('id', [None])[0]
