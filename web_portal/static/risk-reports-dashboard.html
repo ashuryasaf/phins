@@ -2544,6 +2544,67 @@
       }
       container.innerHTML = html;
     }
+
+    function renderPreviewStats(preview) {
+      const columns = preview?.columns || [];
+      const rows = preview?.rows || [];
+      document.getElementById('statsGrid').innerHTML = `
+        <div class="stat-card fade-in">
+          <h5>📄 Raw Records</h5>
+          <div class="value">${preview?.row_count || rows.length || 0}</div>
+          <small>מספר רשומות</small>
+        </div>
+        <div class="stat-card fade-in">
+          <h5>🧾 Fields</h5>
+          <div class="value">${columns.length}</div>
+          <small>שדות שנמצאו</small>
+        </div>
+        <div class="stat-card fade-in">
+          <h5>🧩 Preview Rows</h5>
+          <div class="value">${rows.length}</div>
+          <small>דוגמה להצגה</small>
+        </div>
+      `;
+    }
+
+    function renderPreviewInsights(preview) {
+      const container = document.getElementById('insightsGrid');
+      const columns = preview?.columns || [];
+      const rows = preview?.rows || [];
+
+      if (!rows.length) {
+        container.innerHTML = '<p style="color: var(--text-muted);">No raw data available.</p>';
+        return;
+      }
+
+      const showColumns = columns.slice(0, 6);
+      const table = `
+        <table class="data-table">
+          <thead>
+            <tr>
+              ${showColumns.map(c => `<th>${c}</th>`).join('')}
+            </tr>
+          </thead>
+          <tbody>
+            ${rows.slice(0, 8).map(row => `
+              <tr>
+                ${showColumns.map(c => `<td>${row[c] ?? ''}</td>`).join('')}
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      `;
+
+      container.innerHTML = `
+        <div class="insight-card fade-in">
+          <h5>📋 Data-as-is Preview</h5>
+          <div class="insight-detail" style="direction: rtl; text-align: right;">
+            ${table}
+          </div>
+          <span class="insight-badge">Raw Data</span>
+        </div>
+      `;
+    }
     
     function renderStandardStats(analysis) {
       // Standard statistical analysis (non-pension data)
@@ -2626,6 +2687,7 @@
       const isFinancialReport = report.metadata?.report_focus === 'financial';
       const pensionData = report.metadata?.pension_data;
       const financialSummary = report.metadata?.financial_summary;
+      const dataPreview = report.metadata?.data_preview;
       
       // Update the insights panel header based on data type
       const insightsHeader = document.querySelector('.insights-header');
@@ -2640,16 +2702,21 @@
         }
         renderPensionStats(pensionData);
         renderPensionInsights(pensionData);
-      } else if (isFinancialReport && financialSummary) {
-        // FINANCIAL REPORT MODE: Show financial/insurance summary
+      } else if ((isFinancialReport && financialSummary) || dataPreview) {
+        // DATA-AS-IS MODE: Show financial/insurance summary or raw preview
         if (insightsHeader) {
           insightsHeader.innerHTML = `
-            <h3>💼 דו״ח פיננסי וביטוחי</h3>
-            <p style="margin-top: 0.5rem; opacity: 0.9; font-size: 0.9rem;">סיכום פיננסי, כיסויים, סטטוס חיסכון וסעיף 14</p>
+            <h3>🧠 AI Inductive Analysis</h3>
+            <p style="margin-top: 0.5rem; opacity: 0.9; font-size: 0.9rem;">Data‑as‑is view: savings, policies, covers, totals (no statistics)</p>
           `;
         }
-        renderFinancialStats(financialSummary);
-        renderFinancialInsights(financialSummary);
+        if (financialSummary) {
+          renderFinancialStats(financialSummary);
+          renderFinancialInsights(financialSummary);
+        } else {
+          renderPreviewStats(dataPreview);
+          renderPreviewInsights(dataPreview);
+        }
       } else {
         // REGULAR MODE: Show standard analysis
         if (insightsHeader) {

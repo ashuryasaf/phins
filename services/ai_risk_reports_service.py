@@ -2554,6 +2554,8 @@ class AIRiskReportsService:
         lang_titles = titles.get(lang, titles['english'])
         title = lang_titles.get(analysis.data_classification.value, lang_titles['default'])
         
+        data_preview = self._build_data_preview(doc_data) if doc_data else None
+
         report = GeneratedReport(
             id=report_id,
             analysis_id=analysis_id,
@@ -2573,7 +2575,8 @@ class AIRiskReportsService:
                 'pension_data': pension_data if pension_data else None,
                 'is_pension_data': pension_data is not None or pension_report is not None,
                 'report_focus': report_focus,
-                'financial_summary': financial_summary
+                'financial_summary': financial_summary,
+                'data_preview': data_preview
             }
         )
         
@@ -3461,16 +3464,16 @@ Factors Affecting Score:
 
         # Tabular policy extraction
         column_synonyms = {
-            'policy_number': ['policy_number', 'מספר פוליסה', 'מס פוליסה', 'מספר חשבון', 'מס חשבון'],
-            'provider': ['provider', 'חברה', 'שם חברה', 'יצרן', 'שם יצרן'],
-            'product_type': ['product_type', 'סוג מוצר', 'שם מוצר', 'תוכנית', 'שם תוכנית'],
+            'policy_number': ['policy_number', 'policy number', 'מספר פוליסה', 'מס פוליסה', 'מספר חשבון', 'מס חשבון'],
+            'provider': ['provider', 'company', 'חברה', 'שם חברה', 'יצרן', 'שם יצרן'],
+            'product_type': ['product_type', 'product', 'plan', 'סוג מוצר', 'שם מוצר', 'תוכנית', 'שם תוכנית'],
             'status': ['status', 'סטטוס', 'מצב'],
-            'total_balance': ['total_balance', 'יתרה כוללת', 'צבירה', 'סך צבירה', 'ערך צבירה', 'סך הכל חיסכון', 'חיסכון'],
-            'savings_balance': ['savings_balance', 'תגמולים', 'יתרת תגמולים'],
-            'severance_balance': ['severance_balance', 'פיצויים', 'יתרת פיצויים'],
-            'coverage_amount': ['coverage_amount', 'סכום כיסוי', 'כיסוי', 'ביטוח חיים'],
-            'disability_coverage': ['disability_coverage', 'אובדן כושר', 'אכ\"ע', 'כיסוי נכות'],
-            'monthly_premium': ['monthly_premium', 'פרמיה חודשית', 'פרמיה', 'דמי ביטוח'],
+            'total_balance': ['total_balance', 'total savings', 'total balance', 'balance', 'יתרה כוללת', 'צבירה', 'סך צבירה', 'ערך צבירה', 'סך הכל חיסכון', 'חיסכון'],
+            'savings_balance': ['savings_balance', 'tagmulim', 'תגמולים', 'יתרת תגמולים'],
+            'severance_balance': ['severance_balance', 'severance', 'פיצויים', 'יתרת פיצויים'],
+            'coverage_amount': ['coverage_amount', 'sum assured', 'coverage', 'insured sum', 'סכום כיסוי', 'כיסוי', 'ביטוח חיים'],
+            'disability_coverage': ['disability_coverage', 'disability', 'occupational', 'אובדן כושר', 'אכ\"ע', 'כיסוי נכות'],
+            'monthly_premium': ['monthly_premium', 'premium', 'monthly premium', 'פרמיה חודשית', 'פרמיה', 'דמי ביטוח'],
             'management_fee_savings': ['management_fee_savings', 'דמי ניהול מצבירה'],
             'management_fee_deposits': ['management_fee_deposits', 'דמי ניהול מהפקדות'],
             'investment_track': ['investment_track', 'מסלול השקעה'],
@@ -3711,6 +3714,17 @@ Factors Affecting Score:
         if coverages.get('disability_coverage'):
             lines.append(f"• Disability coverage: {coverages.get('disability_coverage')}")
         return "\n".join(lines)
+
+    def _build_data_preview(self, doc_data: Dict[str, Any], max_rows: int = 25) -> Dict[str, Any]:
+        """Build a lightweight preview of raw data for UI display."""
+        columns = doc_data.get('columns', []) or []
+        rows = doc_data.get('rows', []) or []
+        preview_rows = rows[:max_rows]
+        return {
+            'columns': columns,
+            'rows': preview_rows,
+            'row_count': len(rows)
+        }
     
     def _generate_charts(self, analysis: AnalysisResult, pension_data: Dict = None) -> List[ChartConfig]:
         """
