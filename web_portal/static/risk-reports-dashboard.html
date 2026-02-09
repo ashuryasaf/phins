@@ -2179,11 +2179,12 @@
   <!-- Section Report Modal -->
   <div id="sectionReportModal" style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.6);overflow-y:auto;">
     <div style="max-width:1100px;margin:2rem auto;background:white;border-radius:16px;box-shadow:0 20px 60px rgba(0,0,0,0.3);overflow:hidden;min-height:80vh;" id="sectionReportInner">
-      <div id="sectionReportHeader" style="background:linear-gradient(135deg,#1e40af 0%,#3b82f6 100%);color:white;padding:1.25rem 2rem;display:flex;justify-content:space-between;align-items:center;">
+      <div id="sectionReportHeader" style="background:linear-gradient(135deg,#1e40af 0%,#3b82f6 100%);color:white;padding:1.25rem 2rem;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
         <h2 id="sectionReportTitle" style="font-size:1.3rem;margin:0;">Loading...</h2>
-        <div style="display:flex;gap:8px;">
-          <button onclick="printSectionReport()" style="background:rgba(255,255,255,0.2);color:white;border:none;padding:8px 14px;border-radius:8px;cursor:pointer;font-size:0.85rem;">🖨️ Print</button>
-          <button onclick="closeSectionReport()" style="background:rgba(255,255,255,0.2);color:white;border:none;padding:8px 14px;border-radius:8px;cursor:pointer;font-size:0.85rem;">✕ Close</button>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <button onclick="downloadSectionPDF()" style="background:rgba(255,255,255,0.25);color:white;border:none;padding:8px 16px;border-radius:8px;cursor:pointer;font-size:0.85rem;font-weight:600;">📥 Download PDF</button>
+          <button onclick="printSectionReport()" style="background:rgba(255,255,255,0.15);color:white;border:none;padding:8px 14px;border-radius:8px;cursor:pointer;font-size:0.85rem;">🖨️ Print</button>
+          <button onclick="closeSectionReport()" style="background:rgba(255,255,255,0.15);color:white;border:none;padding:8px 14px;border-radius:8px;cursor:pointer;font-size:0.85rem;">✕ Close</button>
         </div>
       </div>
       <div id="sectionReportBody" style="padding:2rem;">
@@ -3385,9 +3386,11 @@
 
       if (insightsHeader) {
         insightsHeader.innerHTML = `
-          <h3>🧭 Swiftness Affiliation Intelligence</h3>
-          <p style="margin-top: 0.5rem; opacity: 0.9; font-size: 0.9rem;">Combined affiliations + uploaded documents + Swiftness resources at analysis time</p>
+          <h3 onclick="var b=document.getElementById('insightsGrid');if(b.style.display==='none'){b.style.display='';this.querySelector('span').textContent='▼';}else{b.style.display='none';this.querySelector('span').textContent='▶';}" style="cursor:pointer;">🧭 Swiftness Affiliation Intelligence <span style="font-size:0.8rem;">▶</span></h3>
+          <p style="margin-top: 0.5rem; opacity: 0.9; font-size: 0.9rem;">Click to expand &bull; Combined affiliations + uploaded documents + Swiftness resources</p>
         `;
+        // Collapse by default
+        setTimeout(() => { const ig = document.getElementById('insightsGrid'); if (ig) ig.style.display = 'none'; }, 50);
       }
 
       const interfaceTags = summary.interfaceNames.slice(0, 10)
@@ -3488,10 +3491,21 @@
         : '';
 
       reportTitle.textContent = `🧭 Swiftness Affiliation Report${titleSuffix}`;
-      reportBody.innerHTML = `
-        <div class="report-section fade-in">
-          <h3>🧭 Affiliation Snapshot</h3>
-          <div class="content">
+
+      function collapsibleSection(id, title, body, defaultOpen) {
+        const display = defaultOpen ? 'block' : 'none';
+        const arrow = defaultOpen ? '▼' : '▶';
+        return `<div class="report-section fade-in" style="padding:0;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;margin-bottom:1rem;">
+          <div onclick="var b=document.getElementById('${id}');var a=document.getElementById('${id}-a');if(b.style.display==='none'){b.style.display='block';a.textContent='▼';}else{b.style.display='none';a.textContent='▶';}" style="cursor:pointer;padding:1rem 1.25rem;display:flex;align-items:center;gap:8px;background:#f8fafc;">
+            <span id="${id}-a" style="font-size:0.9rem;">${arrow}</span>
+            <h3 style="margin:0;font-size:1rem;">${title}</h3>
+          </div>
+          <div id="${id}" style="display:${display};padding:1rem 1.25rem;">${body}</div>
+        </div>`;
+      }
+
+      reportBody.innerHTML =
+        collapsibleSection('rpt-affil', '🧭 Affiliation Snapshot', `
             <p>Generated from Swiftness + Mislaka Research Hub affiliations.</p>
             ${affiliationNotice}
             <p><strong>Snapshot Timestamp:</strong> ${updatedAtLabel}</p>
@@ -3500,49 +3514,31 @@
               <div class="affiliation-item"><div class="label">Product Types</div><div class="value">${summary.productCount}</div></div>
               <div class="affiliation-item"><div class="label">Status Codes</div><div class="value">${summary.statusCount}</div></div>
               <div class="affiliation-item"><div class="label">ID Types</div><div class="value">${summary.idCount}</div></div>
-            </div>
-          </div>
-        </div>
-        <div class="report-section fade-in">
-          <h3>📁 Uploaded Document Context</h3>
-          <div class="content">
+            </div>`, false) +
+
+        collapsibleSection('rpt-docs', '📁 Uploaded Document Context', `
             <p><strong>Analysis Type:</strong> ${analysisTypeLabel || 'Auto-detect'}</p>
             <p><strong>Report Language:</strong> ${languageLabel}</p>
-            ${fileListHtml}
-          </div>
-        </div>
-        <div class="report-section fade-in">
-          <h3>🧬 Interface & Schema Coverage</h3>
-          <div class="content">
+            ${fileListHtml}`, false) +
+
+        collapsibleSection('rpt-schema', '🧬 Interface & Schema Coverage', `
             <div class="tag-grid" style="margin-bottom: 1rem;">${interfaceTags}</div>
-            ${schemaGridHtml}
-          </div>
-        </div>
-        <div class="report-section fade-in" style="background: linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%); border-left: 4px solid #10b981; border-radius: 12px; padding: 1.5rem;">
-          <h3 style="color: #047857;">📥 Swiftness Data Resources</h3>
-          <div class="content">
+            ${schemaGridHtml}`, false) +
+
+        collapsibleSection('rpt-swiftres', '📥 Swiftness Data Resources', `
             <p><strong>Source:</strong> <a href="https://www.swiftness.co.il" target="_blank" rel="noopener">swiftness.co.il</a></p>
             <p><strong>Total Resources:</strong> ${totalResources} files and schemas</p>
-            <div style="margin: 0.75rem 0;">${swiftnessLinksHtml}</div>
-          </div>
-        </div>
-        <div class="report-section fade-in" style="background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%); border-left: 4px solid #2563eb; border-radius: 12px; padding: 1.5rem;">
-          <h3 style="color: #1e40af;">📊 Report Model Structure (Nituach Tik)</h3>
-          <div class="content">
+            <div style="margin: 0.75rem 0;">${swiftnessLinksHtml}</div>`, false) +
+
+        collapsibleSection('rpt-model', '📊 Report Model Structure (Nituach Tik)', `
             <p>Professional portfolio analysis report based on Mislaka standards with <strong>${swiftnessReportModel ? swiftnessReportModel.sections.length : 0} sections</strong>.</p>
-            ${reportModelSummary}
-          </div>
-        </div>
-        <div class="report-section fade-in">
-          <h3>🛡️ Data Integrity & Swiftness Safe</h3>
-          <div class="content">
+            ${reportModelSummary}`, true) +
+
+        collapsibleSection('rpt-integrity', '🛡️ Data Integrity & Swiftness Safe', `
             <p><strong>Safe Status:</strong> ${safeSnapshot.status}</p>
             <p>${safeSnapshot.message || 'Swiftness Safe status snapshot captured.'}</p>
             <p>Data integrity is enforced with row-level ownership and schema-controlled affiliations.</p>
-            ${integrityHtml}
-          </div>
-        </div>
-      `;
+            ${integrityHtml}`, false);
 
       renderCharts(buildAffiliationCharts(summary));
       renderAffiliationRecommendations(summary, fileSummary, analysisTypeLabel || 'Auto-detect', safeSnapshot);
@@ -4269,17 +4265,62 @@
       sectionReportCharts = {};
     }
 
+    let currentSectionReportKey = null;
+
+    function getSectionReportCSS() {
+      return `body{font-family:'Segoe UI',system-ui,sans-serif;direction:rtl;padding:2rem;color:#1a1a2e;line-height:1.6;}
+      h2{color:#1e40af;border-bottom:2px solid #3b82f6;padding-bottom:0.5rem;}
+      h3{color:#1e40af;margin-top:1.5rem;}
+      table{width:100%;border-collapse:collapse;margin:1rem 0;page-break-inside:avoid;}
+      th,td{padding:8px 12px;border:1px solid #d1d5db;text-align:right;font-size:0.85rem;}
+      th{background:#f1f5f9;font-weight:600;color:#1e293b;}
+      tr:nth-child(even){background:#f8fafc;}
+      .sr-stat{display:inline-block;background:#f8fafc;border-radius:8px;padding:0.5rem 1rem;margin:0.25rem;text-align:center;border:1px solid #e2e8f0;}
+      .sr-stat .v{font-size:1.3rem;font-weight:700;color:#059669;}.sr-stat .l{font-size:0.75rem;color:#64748b;}
+      canvas{max-width:400px;max-height:300px;}
+      .footer{margin-top:2rem;padding-top:1rem;border-top:1px solid #e2e8f0;font-size:0.8rem;color:#64748b;text-align:center;}
+      @media print{button,.no-print{display:none!important;}@page{margin:1.5cm;}}`;
+    }
+
+    function buildSectionReportHTML() {
+      const inner = document.getElementById('sectionReportInner');
+      if (!inner) return '';
+      const title = document.getElementById('sectionReportTitle')?.textContent || 'Section Report';
+      const body = document.getElementById('sectionReportBody')?.innerHTML || '';
+      return `<!DOCTYPE html><html lang="he" dir="rtl"><head><meta charset="UTF-8"><title>${title}</title><style>${getSectionReportCSS()}</style></head><body>
+        <h2>${title}</h2>${body}
+        <div class="footer">Generated by PHINS Risk Intelligence &bull; Source: swiftness.co.il &bull; ${new Date().toLocaleString()}</div>
+      </body></html>`;
+    }
+
     function printSectionReport() {
-      const content = document.getElementById('sectionReportInner').innerHTML;
+      const html = buildSectionReportHTML();
       const win = window.open('', '_blank');
-      win.document.write('<html><head><title>Section Report</title><style>body{font-family:Segoe UI,system-ui,sans-serif;direction:rtl;padding:2rem;}table{width:100%;border-collapse:collapse;margin:1rem 0;}th,td{padding:8px 12px;border:1px solid #ddd;text-align:right;font-size:0.85rem;}th{background:#f1f5f9;font-weight:600;}.sr-stat{display:inline-block;background:#f8fafc;border-radius:8px;padding:0.5rem 1rem;margin:0.25rem;text-align:center;border:1px solid #e2e8f0;}.sr-stat .v{font-size:1.3rem;font-weight:700;color:#059669;}.sr-stat .l{font-size:0.75rem;color:#64748b;}canvas{max-width:400px;max-height:300px;}@media print{button{display:none!important;}}</style></head><body>');
-      win.document.write(content);
-      win.document.write('</body></html>');
+      win.document.write(html);
       win.document.close();
-      win.print();
+      setTimeout(() => win.print(), 300);
+    }
+
+    function downloadSectionPDF() {
+      const html = buildSectionReportHTML();
+      const win = window.open('', '_blank');
+      win.document.write(html);
+      win.document.close();
+      const fileName = `PHINS_Report_${currentSectionReportKey || 'section'}_${new Date().toISOString().slice(0,10)}.pdf`;
+      // Use browser print-to-PDF dialog
+      setTimeout(() => {
+        // Add instruction banner at top
+        const banner = win.document.createElement('div');
+        banner.className = 'no-print';
+        banner.style.cssText = 'background:#eff6ff;border:2px solid #3b82f6;border-radius:12px;padding:1rem 1.5rem;margin-bottom:1.5rem;text-align:center;font-size:0.95rem;color:#1e40af;';
+        banner.innerHTML = `<strong>📥 To save as PDF:</strong> In the Print dialog, select <strong>"Save as PDF"</strong> as the destination, then click Save.<br>Suggested filename: <code>${fileName}</code>`;
+        win.document.body.insertBefore(banner, win.document.body.firstChild);
+        win.print();
+      }, 300);
     }
 
     async function openSectionReport(sectionKey) {
+      currentSectionReportKey = sectionKey;
       const modal = document.getElementById('sectionReportModal');
       const titleEl = document.getElementById('sectionReportTitle');
       const bodyEl = document.getElementById('sectionReportBody');
