@@ -3378,7 +3378,7 @@ Factors Affecting Score:
         
         # Check if we have pension data for specialized charts
         if pension_data:
-            charts.extend(self._generate_pension_charts(pension_data, analysis.language_code))
+            charts.extend(self._generate_pension_charts(pension_data, analysis.language))
             return charts  # Return only pension charts for pension data
         
         # Risk Score Gauge (for non-pension data)
