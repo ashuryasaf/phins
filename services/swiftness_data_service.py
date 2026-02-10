@@ -612,6 +612,171 @@ class SwiftnessDataService:
     def __init__(self):
         self._base_url = os.environ.get('SWIFTNESS_SAFE_BASE_URL', SWIFTNESS_BASE_URL)
         self._initialized_at = datetime.utcnow().isoformat()
+        self._allocated_data: Dict[str, List[Dict]] = {}
+        self._allocation_source: Optional[str] = None
+        self._allocation_time: Optional[str] = None
+
+    # -----------------------------------------------------------------
+    # Upload data allocation into the 12 report model sections
+    # -----------------------------------------------------------------
+    def allocate_upload_data(self, parsed_data: Dict[str, Any], filename: str = "") -> Dict[str, Any]:
+        """
+        Takes parsed file data (columns + rows, or pension_data) and allocates
+        values into the 12 report model sections.  Returns the allocation map.
+        """
+        allocated: Dict[str, List[Dict]] = {}
+        pension = parsed_data.get("pension_data")
+        columns = parsed_data.get("columns", [])
+        rows = parsed_data.get("rows", [])
+        cols_lower = [str(c).lower() for c in columns]
+
+        if pension:
+            allocated = self._allocate_pension(pension)
+        elif rows and columns:
+            allocated = self._allocate_tabular(columns, cols_lower, rows)
+
+        # Fall back to sample for any section that has no data
+        for sec in REPORT_MODEL_SECTIONS:
+            key = sec["key"]
+            if key not in allocated or not allocated[key]:
+                allocated[key] = REPORT_SAMPLE_DATA.get(key, [])
+
+        self._allocated_data = allocated
+        self._allocation_source = filename
+        self._allocation_time = datetime.utcnow().isoformat()
+        return {
+            "allocated": {k: len(v) for k, v in allocated.items()},
+            "source": filename,
+            "allocated_at": self._allocation_time,
+        }
+
+    def _allocate_pension(self, pd: Dict) -> Dict[str, List[Dict]]:
+        """Map pension_data dict into report model sections."""
+        a: Dict[str, List[Dict]] = {}
+        client = pd.get("client", {}) if isinstance(pd.get("client"), dict) else (pd.get("client", [{}])[0] if pd.get("client") else {})
+        accounts = pd.get("accounts", [])
+        totals = pd.get("totals", {})
+        header = pd.get("header", {})
+
+        sf = lambda v: float(v) if v is not None else 0
+
+        # 1 Portfolio summary
+        total_bal = sf(totals.get("total_balance")) or sum(sf(ac.get("total_balance")) for ac in accounts)
+        total_sev = sf(totals.get("total_severance")) or sum(sf(ac.get("severance_balance")) for ac in accounts)
+        total_sav = total_bal - total_sev
+        a["portfolio_summary"] = [{"total_savings": total_bal, "total_deposits": sum(sf(ac.get("monthly_deposit")) for ac in accounts), "capital_amount": 0, "pension_amount": total_sav, "severance_amount": total_sev}]
+
+        # 2 Policy status
+        a["policy_status"] = [
+            {"policy_number": ac.get("policy_number",""), "company_name": ac.get("provider",""), "plan_name": ac.get("product_type_name", ac.get("product_type","")), "member_id": ac.get("policy_number",""), "seniority_date": ac.get("start_date",""), "status": ac.get("status","פעיל"), "employment_type": ac.get("employment_type",""), "balance": sf(ac.get("total_balance"))}
+            for ac in accounts
+        ] if accounts else []
+
+        # 3 Plan details
+        a["plan_details"] = [
+            {"plan_name": ac.get("product_type_name", ac.get("product_type","")), "plan_number": ac.get("policy_number",""), "seniority_date": ac.get("start_date",""), "retirement_age": 67, "current_savings": sf(ac.get("total_balance")), "projected_savings": sf(ac.get("projected_balance")), "projected_pension": sf(ac.get("projected_pension")), "severance": sf(ac.get("severance_balance")), "employer_contributions": sf(ac.get("employer_contribution")), "employee_contributions": sf(ac.get("employee_contribution")), "management_fee_savings": sf(ac.get("management_fee_savings")), "management_fee_deposits": sf(ac.get("management_fee_deposits")), "pension_coefficient": sf(ac.get("pension_coefficient"))}
+            for ac in accounts if sf(ac.get("total_balance"))
+        ]
+
+        # 4 Balance breakdown
+        a["balance_breakdown"] = [{"balance_capital": 0, "balance_pension_paying": total_sav, "balance_pension_non_paying": 0, "projected_total_retirement": sum(sf(ac.get("projected_balance")) for ac in accounts), "projected_monthly_pension": sum(sf(ac.get("projected_pension")) for ac in accounts)}]
+
+        # 5 Insurance coverage
+        covs = []
+        for ac in accounts:
+            dc = sf(ac.get("death_coverage"))
+            if dc:
+                covs.append({"coverage_type": "כיסוי למקרה מוות", "coverage_name": ac.get("product_type_name",""), "coverage_amount": dc, "monthly_cost": sf(ac.get("death_premium")), "coverage_start": ac.get("start_date",""), "coverage_end": "", "medical_surcharge": 0, "discount": 0})
+            dis = sf(ac.get("disability_coverage"))
+            if dis:
+                covs.append({"coverage_type": "אובדן כושר עבודה", "coverage_name": ac.get("product_type_name",""), "coverage_amount": dis, "monthly_cost": sf(ac.get("disability_premium")), "coverage_start": ac.get("start_date",""), "coverage_end": "", "medical_surcharge": 0, "discount": 0})
+        a["insurance_coverage"] = covs
+
+        # 6 Premium development (from accounts if available)
+        a["premium_development"] = []
+
+        # 7 Beneficiaries
+        bens = []
+        for ac in accounts:
+            for b in ac.get("beneficiaries", []):
+                if isinstance(b, dict):
+                    bens.append({"beneficiary_name": b.get("name",""), "beneficiary_id": b.get("id",""), "relationship": b.get("relationship",""), "share_percent": sf(b.get("share",100)), "beneficiary_type": b.get("type","")})
+                elif isinstance(b, str):
+                    bens.append({"beneficiary_name": b, "beneficiary_id": "", "relationship": "", "share_percent": 100, "beneficiary_type": ""})
+        a["beneficiaries"] = bens
+
+        # 8 Investment tracks
+        tracks = []
+        for ac in accounts:
+            track = ac.get("investment_track") or ac.get("investment_track_name")
+            if track:
+                tracks.append({"track_name": str(track), "track_specialization": "", "track_balance": sf(ac.get("total_balance")), "return_12m": 0, "return_24m": 0, "return_36m": 0, "return_60m": 0, "std_dev_36m": 0, "sharpe_ratio": 0, "equity_exposure": 0})
+        a["investment_tracks"] = tracks
+
+        # 9 Deposits
+        a["deposits_contributions"] = []
+
+        # 10 Employer info
+        employers = []
+        seen = set()
+        for ac in accounts:
+            en = ac.get("employer_name","")
+            if en and en not in seen:
+                seen.add(en)
+                employers.append({"employer_name": en, "employer_id": ac.get("employer_id",""), "tax_file": "", "section14": bool(ac.get("section14")), "unconditional_rights": False})
+        a["employer_info"] = employers
+
+        # 11 Operational IDs
+        ops = []
+        for ac in accounts:
+            mid = ac.get("mislaka_id") or header.get("file_id","")
+            if mid:
+                ops.append({"mislaka_number": mid, "uniform_code": ac.get("uniform_code",""), "execution_date": header.get("created_at","")})
+        a["operational_ids"] = ops if ops else []
+
+        # 12 Additional
+        a["additional_data"] = [{"power_of_attorney": "", "liens": "", "seizures": "", "loans": 0, "claims": ""}]
+
+        return a
+
+    def _allocate_tabular(self, columns: List[str], cols_lower: List[str], rows: List[Dict]) -> Dict[str, List[Dict]]:
+        """Allocate tabular (CSV/Excel) data into report sections by column name matching."""
+        a: Dict[str, List[Dict]] = {}
+
+        # Map column names to section fields using fuzzy matching
+        col_map = {}
+        field_keywords = {
+            "policy_status": {"policy": "policy_number", "פוליס": "policy_number", "חברה": "company_name", "company": "company_name", "תוכנית": "plan_name", "plan": "plan_name", "סטטוס": "status", "status": "status", "יתרה": "balance", "balance": "balance"},
+            "portfolio_summary": {"חיסכון": "total_savings", "saving": "total_savings", "הפקד": "total_deposits", "deposit": "total_deposits", "פיצוי": "severance_amount", "severance": "severance_amount"},
+            "insurance_coverage": {"כיסוי": "coverage_amount", "cover": "coverage_amount", "פרמי": "monthly_cost", "premium": "monthly_cost"},
+            "deposits_contributions": {"שכר": "salary", "salary": "salary", "הפרש": "total_deposit", "contrib": "total_deposit"},
+        }
+
+        for sec_key, keywords in field_keywords.items():
+            sec_rows = []
+            for row in rows:
+                mapped = {}
+                for col_name, val in row.items():
+                    cl = str(col_name).lower()
+                    for kw, field in keywords.items():
+                        if kw in cl:
+                            mapped[field] = val
+                            break
+                if mapped:
+                    sec_rows.append(mapped)
+            if sec_rows:
+                a[sec_key] = sec_rows
+
+        return a
+
+    def get_allocated_data(self) -> Dict[str, Any]:
+        """Return current allocation state."""
+        return {
+            "has_data": bool(self._allocated_data),
+            "source": self._allocation_source,
+            "allocated_at": self._allocation_time,
+            "sections": {k: len(v) for k, v in self._allocated_data.items()} if self._allocated_data else {},
+        }
 
     def get_resource_catalog(self) -> Dict[str, Any]:
         """
@@ -771,8 +936,7 @@ class SwiftnessDataService:
     def generate_section_report(self, section_key: str) -> Optional[Dict[str, Any]]:
         """
         Generate a full standalone report for a single section.
-        Returns the section definition, sample data, chart configs ready
-        for Chart.js, and formatted summary statistics.
+        Uses allocated upload data when available, falls back to sample data.
         """
         sec = None
         for s in REPORT_MODEL_SECTIONS:
@@ -782,7 +946,13 @@ class SwiftnessDataService:
         if sec is None:
             return None
 
-        rows = REPORT_SAMPLE_DATA.get(section_key, [])
+        # Use allocated data from last upload if available, else sample
+        if self._allocated_data and section_key in self._allocated_data and self._allocated_data[section_key]:
+            rows = self._allocated_data[section_key]
+            data_source = "upload"
+        else:
+            rows = REPORT_SAMPLE_DATA.get(section_key, [])
+            data_source = "sample"
         fields = sec.get("data_fields", [])
 
         # Build computed stats per numeric field
@@ -914,6 +1084,8 @@ class SwiftnessDataService:
             "charts": chart_configs,
             "service_index": SERVICE_INDEX_DATA,
             "swiftness_links": SWIFTNESS_LINKS,
+            "data_source": data_source,
+            "allocation_source": self._allocation_source,
             "generated_at": datetime.utcnow().isoformat(),
         }
 

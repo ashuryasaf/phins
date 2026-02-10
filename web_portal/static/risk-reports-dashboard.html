@@ -2822,6 +2822,19 @@
         currentReport = await reportResponse.json();
         currentAnalysis = lastAnalysis;
 
+        // Allocate uploaded data into 12 report model sections
+        processingMessage.textContent = 'Allocating data to report model...';
+        try {
+          const lastDocId = currentReport.metadata?.document_id;
+          if (lastDocId) {
+            await fetch('/api/swiftness/allocate', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${localStorage.getItem('phins_token') || ''}` },
+              body: JSON.stringify({ document_id: lastDocId, filename: uploadedFiles.length ? uploadedFiles[0].name : '' })
+            });
+          }
+        } catch (allocErr) { console.warn('Allocation warning:', allocErr); }
+
         // Combine Swiftness affiliations with uploaded files for output
         processingMessage.textContent = 'Aligning Swiftness affiliations...';
         const filesSnapshot = getFileSummaries(uploadedFiles);
@@ -4325,10 +4338,15 @@
 
       let html = '';
 
-      // Report header info
-      html += `<div style="display:flex;gap:1rem;flex-wrap:wrap;margin-bottom:1.5rem;align-items:center;">
+      // Report header info with data source indicator
+      const isUpload = rpt.data_source === 'upload';
+      const srcLabel = isUpload ? '📤 Uploaded Data' + (rpt.allocation_source ? ': ' + rpt.allocation_source : '') : '📋 Sample Data';
+      const srcBg = isUpload ? '#d1fae5' : '#fef3c7';
+      const srcFg = isUpload ? '#047857' : '#92400e';
+      html += `<div style="display:flex;gap:0.75rem;flex-wrap:wrap;margin-bottom:1.5rem;align-items:center;">
+        <span style="background:${srcBg};color:${srcFg};padding:4px 12px;border-radius:20px;font-size:0.8rem;font-weight:600;">${srcLabel}</span>
         <span style="background:#e0f2fe;color:#0369a1;padding:4px 12px;border-radius:20px;font-size:0.8rem;font-weight:600;">Section ${sec.order} of 12</span>
-        <span style="background:#d1fae5;color:#047857;padding:4px 12px;border-radius:20px;font-size:0.8rem;font-weight:600;">${fields.length} Fields</span>
+        <span style="background:#ede9fe;color:#6d28d9;padding:4px 12px;border-radius:20px;font-size:0.8rem;font-weight:600;">${fields.length} Fields</span>
         <span style="background:#fef3c7;color:#92400e;padding:4px 12px;border-radius:20px;font-size:0.8rem;font-weight:600;">${rows.length} Record${rows.length!==1?'s':''}</span>
         <span style="font-size:0.8rem;color:#64748b;">Generated: ${new Date(rpt.generated_at).toLocaleString()}</span>
       </div>`;

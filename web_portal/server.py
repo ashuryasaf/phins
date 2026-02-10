@@ -14519,6 +14519,40 @@ For claims or questions, please contact:
             self.handle_quote_submission()
             return
 
+        # POST /api/swiftness/allocate - Allocate uploaded data into 12 report model sections
+        if path == '/api/swiftness/allocate':
+            try:
+                body = self.rfile.read(content_length)
+                data = json.loads(body) if body else {}
+                doc_id = data.get('document_id')
+                filename = data.get('filename', '')
+
+                # Get parsed data from the AI reports service
+                from services.ai_risk_reports_service import get_ai_reports_service
+                from services.swiftness_data_service import get_swiftness_data_service
+                ai_svc = get_ai_reports_service()
+                sw_svc = get_swiftness_data_service()
+
+                parsed_data = None
+                if doc_id and doc_id in ai_svc.documents:
+                    parsed_data = ai_svc.documents[doc_id].get('parsed_data', {})
+                    filename = filename or ai_svc.documents[doc_id].get('filename', '')
+
+                if not parsed_data:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'No parsed data found for document_id'}).encode('utf-8'))
+                    return
+
+                result = sw_svc.allocate_upload_data(parsed_data, filename)
+                self._set_json_headers(200)
+                self.wfile.write(json.dumps(result, ensure_ascii=False).encode('utf-8'))
+                return
+            except Exception as e:
+                print(f"Error in /api/swiftness/allocate: {e}")
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+                return
+
         # POST /api/mislaka-assessment/decode - Decode uploaded file against Mislaka schema
         if path == '/api/mislaka-assessment/decode':
             try:
