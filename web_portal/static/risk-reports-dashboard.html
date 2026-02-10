@@ -2391,25 +2391,31 @@
     let swiftnessReportModel = null;
 
     async function loadSwiftnessResources() {
+      // Load resources catalog (for collapsed Swiftness section)
       try {
-        const [resResponse, modelResponse] = await Promise.all([
-          fetch('/api/swiftness/resources'),
-          fetch('/api/swiftness/report-model')
-        ]);
-
+        const resResponse = await fetch('/api/swiftness/resources');
         if (resResponse.ok) {
           swiftnessResources = await resResponse.json();
           renderResourceCatalog(swiftnessResources);
         }
+      } catch (e) {
+        console.warn('Swiftness resources load error:', e);
+      }
 
+      // Load report model SEPARATELY (critical - powers the 12 minitabs)
+      try {
+        const modelResponse = await fetch('/api/swiftness/report-model');
         if (modelResponse.ok) {
           swiftnessReportModel = await modelResponse.json();
           renderReportModel(swiftnessReportModel);
+          console.log('Report model loaded:', swiftnessReportModel.sections?.length, 'sections');
+        } else {
+          throw new Error('API returned ' + modelResponse.status);
         }
       } catch (e) {
-        console.error('Error loading Swiftness resources:', e);
-        const el = document.getElementById('systemGeneralGrid');
-        if (el) el.innerHTML = '<div style="text-align: center; color: var(--text-muted); padding: 1.5rem; grid-column: 1/-1;">Failed to load resources. <button onclick="loadSwiftnessResources()" style="color: var(--primary); background: none; border: none; cursor: pointer; text-decoration: underline;">Retry</button></div>';
+        console.error('Report model load error:', e);
+        const mc = document.getElementById('reportModelContainer');
+        if (mc) mc.innerHTML = '<div style="text-align:center;padding:2rem;color:var(--danger);"><p>Failed to load report model. <button onclick="loadSwiftnessResources()" style="color:var(--primary);background:none;border:none;cursor:pointer;text-decoration:underline;font-weight:600;">Retry</button></p><p style="font-size:0.8rem;color:var(--text-muted);margin-top:0.5rem;">Error: ' + e.message + '</p></div>';
       }
     }
 
@@ -4300,22 +4306,42 @@
       const modal = document.getElementById('sectionReportModal');
       const titleEl = document.getElementById('sectionReportTitle');
       const bodyEl = document.getElementById('sectionReportBody');
+      if (!modal || !titleEl || !bodyEl) {
+        console.error('Section report modal elements not found');
+        alert('Report modal not found. Please refresh the page.');
+        return;
+      }
       modal.style.display = 'block';
       document.body.style.overflow = 'hidden';
-      titleEl.textContent = 'Loading...';
-      bodyEl.innerHTML = '<div style="text-align:center;padding:3rem;color:#64748b;">Generating report...</div>';
+      titleEl.textContent = 'Generating report...';
+      bodyEl.innerHTML = '<div style="text-align:center;padding:3rem;color:#64748b;"><div style="font-size:2rem;margin-bottom:0.5rem;">🔄</div>Generating report for section: ' + sectionKey + '</div>';
 
       try {
-        const resp = await fetch(`/api/swiftness/section-report?key=${encodeURIComponent(sectionKey)}`);
-        if (!resp.ok) throw new Error((await resp.json()).error || 'Failed');
-        const rpt = await resp.json();
+        console.log('Fetching section report for:', sectionKey);
+        const resp = await fetch('/api/swiftness/section-report?key=' + encodeURIComponent(sectionKey));
+        const text = await resp.text();
+        console.log('Response status:', resp.status, 'length:', text.length);
+        
+        if (!resp.ok) {
+          let errMsg = 'Server returned ' + resp.status;
+          try { errMsg = JSON.parse(text).error || errMsg; } catch(pe) {}
+          throw new Error(errMsg);
+        }
+        
+        const rpt = JSON.parse(text);
+        console.log('Report data:', rpt.section?.title_he, rpt.row_count, 'rows', rpt.data_source);
         renderSectionReport(rpt, titleEl, bodyEl);
       } catch (e) {
-        bodyEl.innerHTML = `<div style="text-align:center;padding:3rem;color:#dc2626;">Error: ${e.message}</div>`;
+        console.error('Section report error:', e);
+        bodyEl.innerHTML = '<div style="text-align:center;padding:3rem;"><div style="color:#dc2626;font-size:1.1rem;margin-bottom:1rem;">Error generating report</div><p style="color:#64748b;">' + e.message + '</p><button onclick="openSectionReport(\'' + sectionKey + '\')" style="margin-top:1rem;padding:8px 16px;border-radius:8px;border:none;cursor:pointer;background:#2563eb;color:white;font-weight:600;">🔄 Retry</button></div>';
       }
     }
 
     function renderSectionReport(rpt, titleEl, bodyEl) {
+      if (!rpt || !rpt.section) {
+        bodyEl.innerHTML = '<div style="text-align:center;padding:3rem;color:#dc2626;">Invalid report data received.</div>';
+        return;
+      }
       const sec = rpt.section;
       const rows = rpt.rows || [];
       const fields = sec.data_fields || [];
