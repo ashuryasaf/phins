@@ -3067,6 +3067,19 @@ Factors Affecting Score:
             content_lines.append("─" * 50)
             content_lines.append("")
         
+        # Safe float conversion for format strings - prevents
+        # "Unknown format code 'f' for object of type 'str'" crashes
+        def _sf(val, default=0.0):
+            if val is None:
+                return default
+            try:
+                return float(val)
+            except (ValueError, TypeError):
+                try:
+                    return float(str(val).replace(',', '').replace('₪', '').replace('$', '').strip())
+                except:
+                    return default
+
         # If we have structured pension data, add detailed breakdown
         if pension_data:
             # Support both 'totals' (new) and 'summary' (legacy) keys
@@ -3122,10 +3135,10 @@ Factors Affecting Score:
                 if contrib_totals:
                     content_lines.append("📈 סיכום הפקדות:")
                     content_lines.append("=" * 40)
-                    content_lines.append(f"• הפקדות עובד: ₪{contrib_totals.get('employee_total', 0):,.2f}")
-                    content_lines.append(f"• הפקדות מעסיק: ₪{contrib_totals.get('employer_total', 0):,.2f}")
-                    content_lines.append(f"• הפקדות פיצויים: ₪{contrib_totals.get('severance_total', 0):,.2f}")
-                    content_lines.append(f"• סה״כ הפקדות: ₪{contrib_totals.get('grand_total', 0):,.2f}")
+                    content_lines.append(f"• הפקדות עובד: ₪{_sf(contrib_totals.get('employee_total', 0)):,.2f}")
+                    content_lines.append(f"• הפקדות מעסיק: ₪{_sf(contrib_totals.get('employer_total', 0)):,.2f}")
+                    content_lines.append(f"• הפקדות פיצויים: ₪{_sf(contrib_totals.get('severance_total', 0)):,.2f}")
+                    content_lines.append(f"• סה״כ הפקדות: ₪{_sf(contrib_totals.get('grand_total', 0)):,.2f}")
                     content_lines.append(f"• תקופות: {contrib_totals.get('periods_count', 0)}")
                     content_lines.append("")
                 
@@ -3149,9 +3162,9 @@ Factors Affecting Score:
                 if accounts:
                     content_lines.append("📁 פירוט חשבונות:")
                     content_lines.append("-" * 40)
-                    total_balance = totals.get('total_balance', 1)
+                    total_balance = _sf(totals.get('total_balance', 1), 1)
                     for i, acct in enumerate(accounts[:10], 1):
-                        balance = acct.get('total_balance', acct.get('balance', 0))
+                        balance = _sf(acct.get('total_balance', acct.get('balance', 0)))
                         pct = (balance / total_balance * 100) if total_balance > 0 else 0
                         content_lines.append(f"\n🔹 חשבון {i}:")
                         content_lines.append(f"   • מספר פוליסה: {acct.get('policy_number', 'לא ידוע')}")
@@ -3162,14 +3175,17 @@ Factors Affecting Score:
                         if acct.get('status'):
                             content_lines.append(f"   • סטטוס: {acct.get('status')}")
                         content_lines.append(f"   • יתרה: ₪{balance:,.2f} ({pct:.1f}% מהכולל)")
-                        if acct.get('savings_balance', 0) > 0:
-                            content_lines.append(f"   • חיסכון: ₪{acct.get('savings_balance', 0):,.2f}")
-                        if acct.get('severance_balance', 0) > 0:
-                            content_lines.append(f"   • פיצויים: ₪{acct.get('severance_balance', 0):,.2f}")
+                        sav = _sf(acct.get('savings_balance', 0))
+                        if sav > 0:
+                            content_lines.append(f"   • חיסכון: ₪{sav:,.2f}")
+                        sev = _sf(acct.get('severance_balance', 0))
+                        if sev > 0:
+                            content_lines.append(f"   • פיצויים: ₪{sev:,.2f}")
                         if acct.get('section14'):
                             content_lines.append(f"   • סעיף 14: ✅ מכוסה")
-                        if acct.get('management_fee_savings', 0) > 0:
-                            content_lines.append(f"   • דמי ניהול: {acct.get('management_fee_savings', 0):.2f}%")
+                        mf = _sf(acct.get('management_fee_savings', 0))
+                        if mf > 0:
+                            content_lines.append(f"   • דמי ניהול: {mf:.2f}%")
                         if acct.get('employer_name'):
                             content_lines.append(f"   • מעסיק: {acct.get('employer_name')}")
                     
@@ -3217,10 +3233,10 @@ Factors Affecting Score:
                 if contrib_totals:
                     content_lines.append("📈 Contribution Summary:")
                     content_lines.append("=" * 40)
-                    content_lines.append(f"• Employee Contributions: ₪{contrib_totals.get('employee_total', 0):,.2f}")
-                    content_lines.append(f"• Employer Contributions: ₪{contrib_totals.get('employer_total', 0):,.2f}")
-                    content_lines.append(f"• Severance Contributions: ₪{contrib_totals.get('severance_total', 0):,.2f}")
-                    content_lines.append(f"• Total Contributions: ₪{contrib_totals.get('grand_total', 0):,.2f}")
+                    content_lines.append(f"• Employee Contributions: ₪{_sf(contrib_totals.get('employee_total', 0)):,.2f}")
+                    content_lines.append(f"• Employer Contributions: ₪{_sf(contrib_totals.get('employer_total', 0)):,.2f}")
+                    content_lines.append(f"• Severance Contributions: ₪{_sf(contrib_totals.get('severance_total', 0)):,.2f}")
+                    content_lines.append(f"• Total Contributions: ₪{_sf(contrib_totals.get('grand_total', 0)):,.2f}")
                     content_lines.append(f"• Periods: {contrib_totals.get('periods_count', 0)}")
                     content_lines.append("")
                 
@@ -3243,9 +3259,9 @@ Factors Affecting Score:
                 if accounts:
                     content_lines.append("📁 Account Details:")
                     content_lines.append("-" * 40)
-                    total_balance = totals.get('total_balance', 1)
+                    total_balance = _sf(totals.get('total_balance', 1), 1)
                     for i, acct in enumerate(accounts[:10], 1):
-                        balance = acct.get('total_balance', acct.get('balance', 0))
+                        balance = _sf(acct.get('total_balance', acct.get('balance', 0)))
                         pct = (balance / total_balance * 100) if total_balance > 0 else 0
                         content_lines.append(f"\n🔹 Account {i}:")
                         content_lines.append(f"   • Policy Number: {acct.get('policy_number', 'Unknown')}")
@@ -3256,9 +3272,10 @@ Factors Affecting Score:
                             content_lines.append(f"   • Product: {acct.get('product_name', acct.get('product_type', 'Unknown'))}")
                         if acct.get('status'):
                             content_lines.append(f"   • Status: {acct.get('status')}")
-                        content_lines.append(f"   • Balance: ₪{acct.get('balance', 0):,.2f}")
-                        if acct.get('severance_balance', 0) > 0:
-                            content_lines.append(f"   • Severance: ₪{acct.get('severance_balance', 0):,.2f}")
+                        content_lines.append(f"   • Balance: ₪{balance:,.2f}")
+                        sev_en = _sf(acct.get('severance_balance', 0))
+                        if sev_en > 0:
+                            content_lines.append(f"   • Severance: ₪{sev_en:,.2f}")
                         if acct.get('employer'):
                             emp = acct['employer']
                             if isinstance(emp, dict):
@@ -3431,12 +3448,12 @@ Factors Affecting Score:
     def _generate_pension_charts(self, pension_data: Dict, lang_code: str) -> List[ChartConfig]:
         """
         Generate specialized charts for pension/Mislaka data.
-        
-        Creates meaningful visualizations:
-        1. Cumulative savings by provider (bar chart)
-        2. Savings vs Severance breakdown (doughnut)
-        3. Insurance coverage breakdown (pie chart)
         """
+        def _csf(v):
+            """Safe float conversion for chart data."""
+            try: return float(v) if v else 0.0
+            except: return 0.0
+        
         charts = []
         is_hebrew = lang_code == 'hebrew'
         
@@ -3447,7 +3464,7 @@ Factors Affecting Score:
         provider_totals = {}
         for acct in accounts:
             provider = acct.get('provider', 'לא ידוע' if is_hebrew else 'Unknown')
-            balance = acct.get('total_balance', 0) or acct.get('savings_balance', 0) or 0
+            balance = _csf(acct.get('total_balance', 0)) or _csf(acct.get('savings_balance', 0))
             if provider and balance > 0:
                 provider_totals[provider] = provider_totals.get(provider, 0) + balance
         
@@ -3468,13 +3485,12 @@ Factors Affecting Score:
             ))
         
         # 2. Savings vs Severance Breakdown (Doughnut Chart)
-        total_savings = totals.get('total_savings_balance', 0)
-        total_severance = totals.get('total_severance_balance', 0)
+        total_savings = _csf(totals.get('total_savings_balance', 0))
+        total_severance = _csf(totals.get('total_severance_balance', 0))
         
         if not total_savings and not total_severance:
-            # Calculate from accounts
-            total_savings = sum(a.get('savings_balance', 0) or 0 for a in accounts)
-            total_severance = sum(a.get('severance_balance', 0) or 0 for a in accounts)
+            total_savings = sum(_csf(a.get('savings_balance', 0)) for a in accounts)
+            total_severance = sum(_csf(a.get('severance_balance', 0)) for a in accounts)
         
         if total_savings > 0 or total_severance > 0:
             labels = ['תגמולים', 'פיצויים'] if is_hebrew else ['Savings', 'Severance']
@@ -3495,8 +3511,8 @@ Factors Affecting Score:
         # 3. Insurance Coverage Breakdown (Pie Chart)
         coverage_totals = {}
         for acct in accounts:
-            death_coverage = acct.get('death_coverage', 0) or 0
-            disability_coverage = acct.get('disability_coverage', 0) or 0
+            death_coverage = _csf(acct.get('death_coverage', 0))
+            disability_coverage = _csf(acct.get('disability_coverage', 0))
             
             if death_coverage > 0:
                 label = 'ביטוח חיים' if is_hebrew else 'Life Insurance'
@@ -3526,7 +3542,7 @@ Factors Affecting Score:
             product_type = acct.get('product_type_name', '') or acct.get('product_type', '')
             if not product_type:
                 product_type = 'לא מוגדר' if is_hebrew else 'Undefined'
-            balance = acct.get('total_balance', 0) or acct.get('savings_balance', 0) or 0
+            balance = _csf(acct.get('total_balance', 0)) or _csf(acct.get('savings_balance', 0))
             if balance > 0:
                 product_balances[product_type] = product_balances.get(product_type, 0) + balance
         
@@ -3546,9 +3562,12 @@ Factors Affecting Score:
             ))
         
         # 5. Total Summary Gauge (if we have total balance)
-        total_balance = totals.get('total_balance', 0)
+        def _csf(v):
+            try: return float(v) if v else 0.0
+            except: return 0.0
+        total_balance = _csf(totals.get('total_balance', 0))
         if not total_balance:
-            total_balance = sum(a.get('total_balance', 0) or 0 for a in accounts)
+            total_balance = sum(_csf(a.get('total_balance', 0)) for a in accounts)
         
         if total_balance > 0:
             charts.append(ChartConfig(
