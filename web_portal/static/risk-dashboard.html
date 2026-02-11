@@ -1268,7 +1268,11 @@
           })
         });
         
-        currentReport = await reportResponse.json();
+        const reportData = await reportResponse.json();
+        if (reportData.error) {
+          throw new Error('Report generation failed: ' + reportData.error);
+        }
+        currentReport = reportData;
         currentAnalysis = allAnalyses[0];
         
         // Display results
@@ -1400,7 +1404,7 @@
       if (topCorrelation) {
         summaryParts.push(`\n\n🔗 Key Correlation: ${topCorrelation.fields} (strength: ${topCorrelation.strength})`);
       }
-      document.getElementById('riskSummary').innerHTML = summaryParts.join('').replace(/\n/g, '<br>');
+      document.getElementById('riskSummary').innerHTML = (summaryParts.join('') || '').replace(/\n/g, '<br>');
       
       // AI Insights Panel
       renderInsights(analysis, metrics);
@@ -1409,17 +1413,17 @@
       renderCharts(report.charts);
       
       // Report - with pension-specific rendering
-      document.getElementById('reportTitle').textContent = `📋 ${report.title}`;
-      document.getElementById('reportBody').innerHTML = report.sections.map(section => {
-        const isPensionSection = section.title.includes('פנסיה') || 
-                                 section.title.toLowerCase().includes('pension') ||
-                                 section.title.includes('ביטוח');
+      document.getElementById('reportTitle').textContent = `📋 ${report.title || 'Assessment Report'}`;
+      document.getElementById('reportBody').innerHTML = (report.sections || []).map(section => {
+        const title = section.title || '';
+        const isPensionSection = title.includes('פנסיה') || 
+                                 title.toLowerCase().includes('pension') ||
+                                 title.includes('ביטוח');
         const sectionClass = isPensionSection ? 'report-section pension-section fade-in' : 'report-section fade-in';
         
         // Format content with better whitespace handling
-        let content = section.content;
+        let content = section.content || '';
         if (content) {
-          // Preserve formatting but escape HTML
           content = content
             .replace(/\n/g, '<br>')
             .replace(/={2,}/g, '<hr style="border: none; border-top: 1px solid #e2e8f0; margin: 0.5rem 0;">')
@@ -1428,14 +1432,14 @@
         
         return `
           <div class="${sectionClass}">
-            <h4>${getSectionIcon(section.title)} ${section.title}</h4>
+            <h4>${getSectionIcon(title)} ${title}</h4>
             <div class="content">${content}</div>
           </div>
         `;
       }).join('');
       
       // Recommendations
-      document.getElementById('recommendationsList').innerHTML = report.recommendations.map(rec => `
+      document.getElementById('recommendationsList').innerHTML = (report.recommendations || []).map(rec => `
         <div class="recommendation-item ${rec.priority} fade-in">
           <h5>
             <span class="priority-badge priority-${rec.priority}">${rec.priority}</span>
@@ -1443,7 +1447,7 @@
           </h5>
           <p>${rec.description}</p>
           <ul class="action-items">
-            ${rec.action_items.map(item => `<li>${item}</li>`).join('')}
+            ${(rec.action_items || []).map(item => `<li>${item}</li>`).join('')}
           </ul>
           <div class="expected-impact">
             <strong>Expected Impact:</strong> ${rec.expected_impact}

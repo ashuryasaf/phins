@@ -2825,7 +2825,14 @@
           })
         });
         
-        currentReport = await reportResponse.json();
+        const reportData = await reportResponse.json();
+        
+        // Check if report generation failed
+        if (reportData.error) {
+          throw new Error('Report generation failed: ' + reportData.error);
+        }
+        
+        currentReport = reportData;
         currentAnalysis = lastAnalysis;
 
         // Allocate uploaded data into 12 report model sections
@@ -2852,7 +2859,7 @@
         // Display results
         displayResults(currentAnalysis, currentReport, {
           affiliationOverride: true,
-          affiliations: affiliationSnapshot,
+          affiliations: affiliationSnapshot || {},
           files: filesSnapshot,
           analysisTypeLabel: analysisTypeLabel
         });
