@@ -2850,19 +2850,29 @@
 
         // Combine Swiftness affiliations with uploaded files for output
         processingMessage.textContent = 'Aligning Swiftness affiliations...';
-        const filesSnapshot = getFileSummaries(uploadedFiles);
-        const analysisTypeLabel = analysisTypeSelect
-          ? (analysisTypeSelect.options[analysisTypeSelect.selectedIndex]?.text || 'Auto-detect')
-          : 'Auto-detect';
-        const affiliationSnapshot = await loadAffiliations();
+        let filesSnapshot, analysisTypeLabel, affiliationSnapshot;
+        try { filesSnapshot = getFileSummaries(uploadedFiles); } catch(e) { console.error('getFileSummaries error:', e); filesSnapshot = []; }
+        try { analysisTypeLabel = analysisTypeSelect ? (analysisTypeSelect.options[analysisTypeSelect.selectedIndex]?.text || 'Auto-detect') : 'Auto-detect'; } catch(e) { analysisTypeLabel = 'Auto-detect'; }
+        try { affiliationSnapshot = await loadAffiliations(); } catch(e) { console.error('loadAffiliations error:', e); affiliationSnapshot = {}; }
         
-        // Display results
-        displayResults(currentAnalysis, currentReport, {
-          affiliationOverride: true,
-          affiliations: affiliationSnapshot || {},
-          files: filesSnapshot,
-          analysisTypeLabel: analysisTypeLabel
-        });
+        // Display results - wrapped in try/catch for debugging
+        try {
+          displayResults(currentAnalysis, currentReport, {
+            affiliationOverride: true,
+            affiliations: affiliationSnapshot || {},
+            files: filesSnapshot || [],
+            analysisTypeLabel: analysisTypeLabel || 'Auto-detect'
+          });
+        } catch (displayErr) {
+          console.error('displayResults error:', displayErr);
+          // Fall back to simple display
+          resultsSection.classList.add('active');
+          const rb = document.getElementById('reportBody');
+          if (rb) {
+            rb.style.display = 'block';
+            rb.innerHTML = '<div style="padding:2rem;"><h3>Report Generated</h3><p>Report was generated but display encountered an error. Your data has been processed.</p><p style="color:#dc2626;">Debug: ' + displayErr.message + '</p></div>';
+          }
+        }
         
         // Hide processing, show results
         processingStatus.classList.remove('active');
@@ -2870,11 +2880,13 @@
         resultsSection.classList.add('active');
         
         // Set RTL if Hebrew
-        if (currentReport.language === 'hebrew') {
-          document.body.setAttribute('dir', 'rtl');
-        } else {
-          document.body.removeAttribute('dir');
-        }
+        try {
+          if (currentReport && currentReport.language === 'hebrew') {
+            document.body.setAttribute('dir', 'rtl');
+          } else {
+            document.body.removeAttribute('dir');
+          }
+        } catch(e) { /* ignore RTL error */ }
         
         // Scroll to results
         resultsSection.scrollIntoView({ behavior: 'smooth' });
@@ -3304,10 +3316,17 @@
       const reportBody = document.getElementById('reportBody');
 
       if (!statsGrid || !insightsGrid || !reportTitle || !reportBody) {
+        console.warn('renderAffiliationOutput: missing DOM elements');
         return;
       }
 
-      const summary = summarizeAffiliations(affiliations);
+      let summary;
+      try {
+        summary = summarizeAffiliations(affiliations || {});
+      } catch(e) {
+        console.error('summarizeAffiliations error:', e);
+        summary = {entityCount:0,productCount:0,statusCount:0,idCount:0,interfaceCount:0,environmentCount:0,interfaceNames:[],schemaCounts:{},totalCount:0};
+      }
       const fileSummary = files || [];
       const safeSnapshot = getSwiftnessStatusSnapshot();
       const updatedAtLabel = swiftnessAffiliationsUpdatedAt
@@ -3529,8 +3548,8 @@
             <p>Data integrity is enforced with row-level ownership and schema-controlled affiliations.</p>
             ${integrityHtml}`, false);
 
-      renderCharts(buildAffiliationCharts(summary));
-      renderAffiliationRecommendations(summary, fileSummary, analysisTypeLabel || 'Auto-detect', safeSnapshot);
+      try { renderCharts(buildAffiliationCharts(summary)); } catch(e) { console.error('renderCharts error:', e); }
+      try { renderAffiliationRecommendations(summary, fileSummary || [], analysisTypeLabel || 'Auto-detect', safeSnapshot); } catch(e) { console.error('renderAffiliationRecommendations error:', e); }
     }
 
     function displayResults(analysis, report, options = {}) {
