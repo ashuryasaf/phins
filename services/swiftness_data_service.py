@@ -26,6 +26,7 @@ Author: PHINS Platform
 
 import os
 import json
+import copy
 from datetime import datetime
 from typing import Dict, List, Any, Optional
 
@@ -584,6 +585,42 @@ class SwiftnessDataService:
             }
         }
 
+    def _build_report_model_sections(self) -> List[Dict[str, Any]]:
+        """
+        Build normalized report model sections.
+
+        Ensures compatibility across clients by always exposing:
+          - title_he
+          - title_en
+          - title (alias to title_en)
+
+        Also returns deep-copied section objects to protect the reference model
+        from accidental runtime mutation.
+        """
+        normalized_sections: List[Dict[str, Any]] = []
+
+        for section in REPORT_MODEL_SECTIONS:
+            normalized = copy.deepcopy(section)
+
+            title_he = normalized.get("title_he")
+            title_en = normalized.get("title_en")
+            fallback_title = normalized.get("title")
+            key_name = normalized.get("key", "section")
+
+            if not title_en:
+                title_en = fallback_title or title_he or str(key_name).replace('_', ' ').title()
+            if not title_he:
+                title_he = fallback_title or title_en
+
+            normalized["title_he"] = str(title_he)
+            normalized["title_en"] = str(title_en)
+            normalized["title"] = str(normalized.get("title") or title_en)
+
+            normalized_sections.append(normalized)
+
+        normalized_sections.sort(key=lambda s: s.get("order", 0))
+        return normalized_sections
+
     def get_report_model(self) -> Dict[str, Any]:
         """
         Returns the enhanced report model definition with:
@@ -591,11 +628,13 @@ class SwiftnessDataService:
           - service_index: Company service ratings
           - metadata: Model info
         """
+        sections = self._build_report_model_sections()
+
         return {
-            "sections": REPORT_MODEL_SECTIONS,
+            "sections": sections,
             "service_index": SERVICE_INDEX_DATA,
             "metadata": {
-                "total_sections": len(REPORT_MODEL_SECTIONS),
+                "total_sections": len(sections),
                 "model_version": "2.0",
                 "based_on": "Mislaka Nituach Tik (Portfolio Analysis) format",
                 "source": "swiftness.co.il",
