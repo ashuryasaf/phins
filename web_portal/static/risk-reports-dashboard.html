@@ -2855,7 +2855,24 @@
         try { analysisTypeLabel = analysisTypeSelect ? (analysisTypeSelect.options[analysisTypeSelect.selectedIndex]?.text || 'Auto-detect') : 'Auto-detect'; } catch(e) { analysisTypeLabel = 'Auto-detect'; }
         try { affiliationSnapshot = await loadAffiliations(); } catch(e) { console.error('loadAffiliations error:', e); affiliationSnapshot = {}; }
         
-        // Display results - wrapped in try/catch for debugging
+        // Display results - show report sections directly
+        resultsSection.classList.add('active');
+        
+        // Render report body directly from currentReport sections
+        const reportBody = document.getElementById('reportBody');
+        const reportTitle = document.getElementById('reportTitle');
+        if (reportBody) reportBody.style.display = 'block';
+        if (reportTitle) reportTitle.textContent = '📋 ' + (currentReport.title || 'Analysis Report');
+        
+        if (reportBody && currentReport.sections) {
+          reportBody.innerHTML = currentReport.sections.map(function(section) {
+            var title = (section.title || '');
+            var content = (section.content || '').replace(/\n/g, '<br>');
+            return '<div class="report-section fade-in" dir="rtl"><h3>' + title + '</h3><div class="content">' + content + '</div></div>';
+          }).join('');
+        }
+        
+        // Try to show stats and charts too
         try {
           displayResults(currentAnalysis, currentReport, {
             affiliationOverride: true,
@@ -2864,14 +2881,7 @@
             analysisTypeLabel: analysisTypeLabel || 'Auto-detect'
           });
         } catch (displayErr) {
-          console.error('displayResults error:', displayErr);
-          // Fall back to simple display
-          resultsSection.classList.add('active');
-          const rb = document.getElementById('reportBody');
-          if (rb) {
-            rb.style.display = 'block';
-            rb.innerHTML = '<div style="padding:2rem;"><h3>Report Generated</h3><p>Report was generated but display encountered an error. Your data has been processed.</p><p style="color:#dc2626;">Debug: ' + displayErr.message + '</p></div>';
-          }
+          console.error('displayResults enrichment error:', displayErr);
         }
         
         // Hide processing, show results
