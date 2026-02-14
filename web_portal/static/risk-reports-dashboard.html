@@ -4310,7 +4310,12 @@
         const resolvedColumns = preferredColumns.length
           ? preferredColumns
           : [...new Set(rows.flatMap(row => Object.keys(row || {})))];
-        const cappedRows = rows.slice(0, 120);
+        const requestedLimit = (!Array.isArray(data) && Number.isFinite(Number(data.max_rows)))
+          ? Number(data.max_rows)
+          : 0;
+        const showAll = !Array.isArray(data) && data.show_all === true;
+        const effectiveLimit = (showAll || requestedLimit <= 0) ? rows.length : Math.min(requestedLimit, rows.length);
+        const displayedRows = rows.slice(0, effectiveLimit);
 
         return `
           <table class="data-table">
@@ -4320,15 +4325,15 @@
               </tr>
             </thead>
             <tbody>
-              ${cappedRows.map(row => `
+              ${displayedRows.map(row => `
                 <tr>
                   ${resolvedColumns.map(col => `<td>${formatTableCell(row?.[col], col)}</td>`).join('')}
                 </tr>
               `).join('')}
             </tbody>
           </table>
-          ${rows.length > cappedRows.length
-            ? `<p style="color: var(--text-muted); margin-top: 0.5rem;">Showing ${cappedRows.length} of ${rows.length} rows.</p>`
+          ${rows.length > displayedRows.length
+            ? `<p style="color: var(--text-muted); margin-top: 0.5rem;">Showing ${displayedRows.length} of ${rows.length} rows.</p>`
             : ''}
         `;
       }

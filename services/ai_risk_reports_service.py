@@ -675,6 +675,193 @@ class AIRiskReportsService:
             + self._safe_numeric(account.get('investment_balance'))
             + self._safe_numeric(account.get('severance_balance'))
         )
+
+    def _extract_policy_cumulative_metrics(
+        self,
+        rows: List[Dict[str, Any]],
+        columns: Optional[List[str]] = None
+    ) -> List[Dict[str, Any]]:
+        """
+        Build per-policy savings/investment/balance aggregates from tabular rows.
+        Returns ordered rows with cumulative totals for report tables/charts.
+        """
+        if not rows:
+            return []
+
+        available_columns = list(columns or [])
+        if not available_columns:
+            available_columns = list({k for row in rows for k in (row or {}).keys()})
+
+        normalized_map = {col: str(col or '').strip().lower() for col in available_columns}
+
+        policy_keywords = ['policy_number', 'policy number', 'policy no', 'policy', 'מספר פוליסה', 'מס פוליסה', 'מספר חשבון', 'account number', 'account no']
+        savings_keywords = ['savings', 'saving', 'חיסכון', 'תגמולים']
+        investment_keywords = ['investment', 'investments', 'השקעה', 'השקעות']
+        severance_keywords = ['severance', 'פיצויים']
+        balance_keywords = ['balance', 'יתרה', 'צבירה']
+
+        def has_any_keyword(text: str, keywords: List[str]) -> bool:
+            return any(keyword in text for keyword in keywords)
+
+        def policy_column_score(normalized: str) -> int:
+            if normalized in ['policy_number', 'מספר פוליסה', 'account_number', 'מספר חשבון']:
+                return 5
+            if any(term in normalized for term in ['policy_number', 'מספר פוליסה', 'account number', 'מספר חשבון']):
+                return 4
+            if 'policy' in normalized and 'type' not in normalized and 'status' not in normalized:
+                return 3
+            if 'account' in normalized and 'type' not in normalized:
+                return 2
+            if has_any_keyword(normalized, policy_keywords):
+                return 1
+            return 0
+
+        policy_column = None
+        best_policy_score = 0
+        for col, normalized in normalized_map.items():
+            score = policy_column_score(normalized)
+            if score > best_policy_score:
+                policy_column = col
+                best_policy_score = score
+        if not policy_column:
+            return []
+
+        savings_columns = [col for col, normalized in normalized_map.items() if has_any_keyword(normalized, savings_keywords)]
+        investment_columns = [col for col, normalized in normalized_map.items() if has_any_keyword(normalized, investment_keywords)]
+        severance_columns = [col for col, normalized in normalized_map.items() if has_any_keyword(normalized, severance_keywords)]
+        classified = set(savings_columns + investment_columns + severance_columns)
+        balance_columns = [
+            col for col, normalized in normalized_map.items()
+            if col not in classified and has_any_keyword(normalized, balance_keywords)
+        ]
+
+        if not (savings_columns or investment_columns or severance_columns or balance_columns):
+            return []
+
+        policy_totals: Dict[str, Dict[str, Any]] = {}
+
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            policy_value = self._normalize_policy_number(row.get(policy_column, ''))
+            if not policy_value:
+                continue
+
+            if policy_value not in policy_totals:
+                policy_totals[policy_value] = {
+                    'policy_number': policy_value,
+                    'savings_total': 0.0,
+                    'investments_total': 0.0,
+                    'severance_total': 0.0,
+                    'balance_total': 0.0,
+                    'records_count': 0,
+                }
+
+            bucket = policy_totals[policy_value]
+            bucket['records_count'] += 1
+            bucket['savings_total'] += sum(self._safe_numeric(row.get(col)) for col in savings_columns)
+            bucket['investments_total'] += sum(self._safe_numeric(row.get(col)) for col in investment_columns)
+            bucket['severance_total'] += sum(self._safe_numeric(row.get(col)) for col in severance_columns)
+            bucket['balance_total'] += sum(self._safe_numeric(row.get(col)) for col in balance_columns)
+
+        if not policy_totals:
+            return []
+
+        cumulative_total = 0.0
+        results: List[Dict[str, Any]] = []
+        for policy, bucket in policy_totals.items():
+            derived_total = bucket['savings_total'] + bucket['investments_total'] + bucket['severance_total']
+            policy_total = bucket['balance_total'] if bucket['balance_total'] > 0 else derived_total
+            cumulative_total += policy_total
+            results.append({
+                'policy_number': policy,
+                'savings_total': bucket['savings_total'],
+                'investments_total': bucket['investments_total'],
+                'severance_total': bucket['severance_total'],
+                'balance_total': bucket['balance_total'],
+                'policy_total': policy_total,
+                'cumulative_total': cumulative_total,
+                'records_count': bucket['records_count'],
+            })
+
+        return results
+
+    def _build_policy_cumulative_section_from_rows(
+        self,
+        rows: List[Dict[str, Any]],
+        columns: Optional[List[str]],
+        is_hebrew: bool
+    ) -> Optional[ReportSection]:
+        """Build an affiliated per-policy cumulative section from generic uploaded rows."""
+        policy_metrics = self._extract_policy_cumulative_metrics(rows, columns)
+        if not policy_metrics:
+            return None
+
+        table_rows = []
+        for metric in policy_metrics:
+            table_rows.append({
+                'מספר פוליסה' if is_hebrew else 'Policy Number': metric['policy_number'],
+                'סכום חסכונות' if is_hebrew else 'Savings Sum': metric['savings_total'],
+                'סכום השקעות' if is_hebrew else 'Investments Sum': metric['investments_total'],
+                'סכום פיצויים' if is_hebrew else 'Severance Sum': metric['severance_total'],
+                'סכום יתרות' if is_hebrew else 'Balance Sum': metric['balance_total'],
+                'יתרה מחושבת לפוליסה' if is_hebrew else 'Computed Policy Total': metric['policy_total'],
+                'יתרה מצטברת' if is_hebrew else 'Cumulative Total': metric['cumulative_total'],
+                'מספר רשומות' if is_hebrew else 'Records': metric['records_count'],
+            })
+
+        return ReportSection(
+            title='חישוב מצטבר חיסכון/השקעה לפי פוליסה' if is_hebrew else 'Per-Policy Savings/Investment Cumulative Totals',
+            content='סיכום מפורט על בסיס כל הרשומות שהועלו.' if is_hebrew
+            else 'Detailed cumulative totals based on all uploaded records.',
+            data_table={
+                'columns': list(table_rows[0].keys()),
+                'rows': table_rows,
+                'show_all': True
+            },
+            order=6
+        )
+
+    def _build_uploaded_data_table_section(self, doc_data: Dict[str, Any], is_hebrew: bool) -> Optional[ReportSection]:
+        """Build full uploaded data table section (all rows, no sampling)."""
+        if not doc_data:
+            return None
+
+        rows = doc_data.get('rows', []) or []
+        if not rows:
+            return None
+
+        preferred_columns = doc_data.get('columns', []) or []
+        if preferred_columns:
+            resolved_columns = list(preferred_columns)
+        else:
+            resolved_columns = list({k for row in rows for k in (row or {}).keys()})
+
+        policy_like_columns = {
+            col for col in resolved_columns
+            if any(term in str(col).lower() for term in ['policy', 'מספר פוליסה', 'account number', 'מספר חשבון'])
+        }
+        normalized_rows = []
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            normalized_row = dict(row)
+            for col in policy_like_columns:
+                if col in normalized_row:
+                    normalized_row[col] = self._normalize_policy_number(normalized_row.get(col))
+            normalized_rows.append(normalized_row)
+
+        return ReportSection(
+            title='טבלת נתונים מלאה (כל הרשומות)' if is_hebrew else 'Full Uploaded Data Table (All Records)',
+            content='מציג את כל הנתונים שהתקבלו מהקבצים שהועלו.' if is_hebrew
+            else 'Displays all records parsed from uploaded files.',
+            data_table={
+                'columns': resolved_columns,
+                'rows': normalized_rows,
+                'show_all': True
+            },
+            order=8
+        )
     
     def _parse_csv(self, text_content: str) -> Dict[str, Any]:
         """Parse CSV content"""
@@ -2628,7 +2815,7 @@ class AIRiskReportsService:
         sections = self._generate_sections(analysis, lang, doc_data, pension_data, pension_report)
         
         # Generate charts - pass pension_data for specialized pension charts
-        charts = self._generate_charts(analysis, pension_data)
+        charts = self._generate_charts(analysis, pension_data, doc_data)
         
         # Generate recommendations
         recommendations = self._generate_recommendations(analysis, lang)
@@ -2718,6 +2905,16 @@ class AIRiskReportsService:
                     content=data_content_section,
                     order=3
                 ))
+            full_data_section = self._build_uploaded_data_table_section(doc_data, is_hebrew)
+            if full_data_section:
+                sections.append(full_data_section)
+            policy_cumulative_section = self._build_policy_cumulative_section_from_rows(
+                doc_data.get('rows', []) or [],
+                doc_data.get('columns', []) or [],
+                is_hebrew
+            )
+            if policy_cumulative_section:
+                sections.append(policy_cumulative_section)
         
         # 3. Hebrew Insurance Details (if extracted)
         hebrew_factors = [f for f in analysis.extracted_factors if f.category == 'hebrew_insurance']
@@ -2976,7 +3173,7 @@ Factors Affecting Score:
         if accounts:
             status_rows = []
             cumulative_balance = 0.0
-            for acct in accounts[:80]:
+            for acct in accounts:
                 policy_number = self._normalize_policy_number(acct.get('policy_number', ''))
                 policy_balance = self._calculate_policy_balance(acct)
                 cumulative_balance += policy_balance
@@ -2997,13 +3194,14 @@ Factors Affecting Score:
                 content='מבט טבלאי על פוליסות לפי שיוכי מסלקה.' if is_hebrew else 'Table view of policies by Mislaka affiliation mappings.',
                 data_table={
                     'columns': list(status_rows[0].keys()) if status_rows else [],
-                    'rows': status_rows
+                    'rows': status_rows,
+                    'show_all': True
                 },
                 order=3
             ))
 
             plan_rows = []
-            for acct in accounts[:80]:
+            for acct in accounts:
                 policy_balance = self._calculate_policy_balance(acct)
                 plan_rows.append({
                     'מספר פוליסה' if is_hebrew else 'Policy Number': self._normalize_policy_number(acct.get('policy_number', '')),
@@ -3023,14 +3221,15 @@ Factors Affecting Score:
                 content='פירוט תוכניות לפי מודל הדוח המסונף.' if is_hebrew else 'Detailed plan view aligned with the affiliated report model.',
                 data_table={
                     'columns': list(plan_rows[0].keys()) if plan_rows else [],
-                    'rows': plan_rows
+                    'rows': plan_rows,
+                    'show_all': True
                 },
                 order=4
             ))
 
         if contributions:
             contribution_rows = []
-            for contrib in contributions[:120]:
+            for contrib in contributions:
                 contribution_rows.append({
                     'תקופה' if is_hebrew else 'Period': contrib.get('period', ''),
                     'מעסיק' if is_hebrew else 'Employer': contrib.get('employer_name', ''),
@@ -3045,7 +3244,8 @@ Factors Affecting Score:
                 content='רצף הפקדות לפי תקופה לצורכי בקרה ותאימות.' if is_hebrew else 'Period-level contribution trail for control and reconciliation.',
                 data_table={
                     'columns': list(contribution_rows[0].keys()) if contribution_rows else [],
-                    'rows': contribution_rows
+                    'rows': contribution_rows,
+                    'show_all': True
                 },
                 order=5
             ))
@@ -3078,7 +3278,8 @@ Factors Affecting Score:
                     content='שיוך מעסיקים לחשבונות ולזכויות.' if is_hebrew else 'Employer affiliation to accounts and severance rights.',
                     data_table={
                         'columns': list(employer_values[0].keys()),
-                        'rows': employer_values[:80]
+                        'rows': employer_values,
+                        'show_all': True
                     },
                     order=6
                 ))
@@ -3122,7 +3323,8 @@ Factors Affecting Score:
                 content='תקציר כספי לצורך השוואה מול מודל הדוח המסונף.' if is_hebrew else 'Financial summary aligned with the affiliated report model.',
                 data_table={
                     'columns': list(totals_rows[0].keys()),
-                    'rows': totals_rows
+                    'rows': totals_rows,
+                    'show_all': True
                 },
                 order=7
             ))
@@ -3455,7 +3657,7 @@ Factors Affecting Score:
                 if missing:
                     content_lines.append("⚠️ אזהרה - חודשים חסרים:")
                     content_lines.append(f"• נמצאו {len(missing)} חודשים ללא הפקדות")
-                    content_lines.append(f"• חודשים: {', '.join(missing[:6])}{'...' if len(missing) > 6 else ''}")
+                    content_lines.append(f"• חודשים: {', '.join(missing)}")
                     content_lines.append("")
                 
                 # Account details
@@ -3464,7 +3666,7 @@ Factors Affecting Score:
                     content_lines.append("-" * 40)
                     total_balance = totals.get('total_balance', 0) or sum(self._calculate_policy_balance(a) for a in accounts)
                     cumulative_balance = 0.0
-                    for i, acct in enumerate(accounts[:10], 1):
+                    for i, acct in enumerate(accounts, 1):
                         balance = self._calculate_policy_balance(acct)
                         cumulative_balance += balance
                         pct = (balance / total_balance * 100) if total_balance > 0 else 0
@@ -3492,8 +3694,6 @@ Factors Affecting Score:
                         if acct.get('employer_name'):
                             content_lines.append(f"   • מעסיק: {acct.get('employer_name')}")
                     
-                    if len(accounts) > 10:
-                        content_lines.append(f"\n   ... ועוד {len(accounts) - 10} חשבונות")
                     content_lines.append("")
             
             else:
@@ -3555,7 +3755,7 @@ Factors Affecting Score:
                 if missing:
                     content_lines.append("⚠️ Warning - Missing Months:")
                     content_lines.append(f"• Found {len(missing)} months without contributions")
-                    content_lines.append(f"• Months: {', '.join(missing[:6])}{'...' if len(missing) > 6 else ''}")
+                    content_lines.append(f"• Months: {', '.join(missing)}")
                     content_lines.append("")
                 
                 # Account details
@@ -3564,7 +3764,7 @@ Factors Affecting Score:
                     content_lines.append("-" * 40)
                     total_balance = totals.get('total_balance', 0) or sum(self._calculate_policy_balance(a) for a in accounts)
                     cumulative_balance = 0.0
-                    for i, acct in enumerate(accounts[:10], 1):
+                    for i, acct in enumerate(accounts, 1):
                         balance = self._calculate_policy_balance(acct)
                         cumulative_balance += balance
                         pct = (balance / total_balance * 100) if total_balance > 0 else 0
@@ -3590,8 +3790,6 @@ Factors Affecting Score:
                             if isinstance(emp, dict):
                                 content_lines.append(f"   • Employer: {emp.get('name', '')}")
                     
-                    if len(accounts) > 10:
-                        content_lines.append(f"\n   ... and {len(accounts) - 10} more accounts")
                     content_lines.append("")
         
         return '\n'.join(content_lines) if content_lines else ""
@@ -3691,7 +3889,12 @@ Factors Affecting Score:
         
         return '\n'.join(content_lines)
     
-    def _generate_charts(self, analysis: AnalysisResult, pension_data: Dict = None) -> List[ChartConfig]:
+    def _generate_charts(
+        self,
+        analysis: AnalysisResult,
+        pension_data: Dict = None,
+        doc_data: Dict[str, Any] = None
+    ) -> List[ChartConfig]:
         """
         Generate chart configurations.
         
@@ -3702,10 +3905,14 @@ Factors Affecting Score:
         """
         charts = []
         
+        source_rows = (doc_data or {}).get('rows', []) if doc_data else []
+        source_columns = (doc_data or {}).get('columns', []) if doc_data else []
+
         # Check if we have pension data for specialized charts
         if pension_data:
             charts.extend(self._generate_pension_charts(pension_data, analysis.language))
-            return charts  # Return only pension charts for pension data
+            charts.extend(self._generate_policy_cumulative_charts_from_rows(source_rows, source_columns, analysis.language))
+            return charts  # Pension flow includes all relevant pension/policy charts
         
         # Risk Score Gauge (for non-pension data)
         charts.append(ChartConfig(
@@ -3751,7 +3958,95 @@ Factors Affecting Score:
                         'values': list(financial_metrics.values())[:6]
                     }
                 ))
+
+        # Add detailed policy savings/investment charts when fields exist.
+        charts.extend(self._generate_policy_cumulative_charts_from_rows(source_rows, source_columns, analysis.language))
         
+        return charts
+
+    def _generate_policy_cumulative_charts_from_rows(
+        self,
+        rows: List[Dict[str, Any]],
+        columns: Optional[List[str]],
+        lang_code: str
+    ) -> List[ChartConfig]:
+        """Generate policy-level cumulative charts from uploaded tabular rows."""
+        policy_metrics = self._extract_policy_cumulative_metrics(rows, columns)
+        if not policy_metrics:
+            return []
+
+        is_hebrew = lang_code == 'hebrew'
+        labels = [metric['policy_number'] for metric in policy_metrics]
+        savings_values = [metric['savings_total'] for metric in policy_metrics]
+        investments_values = [metric['investments_total'] for metric in policy_metrics]
+        policy_totals = [metric['policy_total'] for metric in policy_metrics]
+        cumulative_totals = [metric['cumulative_total'] for metric in policy_metrics]
+
+        charts: List[ChartConfig] = []
+
+        if any(value > 0 for value in policy_totals):
+            charts.append(ChartConfig(
+                type=ChartType.BAR,
+                title='יתרה לפוליסה (סיכום)' if is_hebrew else 'Policy Totals (Balance Summary)',
+                data={
+                    'labels': labels,
+                    'values': policy_totals,
+                },
+                options={
+                    'horizontal': False,
+                    'colors': ['#1d4ed8'],
+                    'currency': True,
+                    'currency_symbol': '₪',
+                }
+            ))
+
+        if any(value > 0 for value in cumulative_totals):
+            charts.append(ChartConfig(
+                type=ChartType.LINE,
+                title='יתרה מצטברת לפי פוליסה' if is_hebrew else 'Cumulative Balance by Policy',
+                data={
+                    'labels': labels,
+                    'values': cumulative_totals,
+                },
+                options={
+                    'colors': ['#0ea5e9'],
+                    'currency': True,
+                    'currency_symbol': '₪',
+                }
+            ))
+
+        if any(value > 0 for value in savings_values):
+            charts.append(ChartConfig(
+                type=ChartType.BAR,
+                title='חיסכון מצטבר לפי פוליסה' if is_hebrew else 'Savings Sum by Policy',
+                data={
+                    'labels': labels,
+                    'values': savings_values,
+                },
+                options={
+                    'horizontal': False,
+                    'colors': ['#16a34a'],
+                    'currency': True,
+                    'currency_symbol': '₪',
+                }
+            ))
+
+        if any(value > 0 for value in investments_values):
+            charts.append(ChartConfig(
+                type=ChartType.BAR,
+                title='השקעות מצטברות לפי פוליסה' if is_hebrew else 'Investments Sum by Policy',
+                data={
+                    'labels': labels,
+                    'values': investments_values,
+                },
+                options={
+                    'horizontal': False,
+                    'colors': ['#f59e0b'],
+                    'currency': True,
+                    'currency_symbol': '₪',
+                }
+            ))
+
         return charts
     
     def _generate_pension_charts(self, pension_data: Dict, lang_code: str) -> List[ChartConfig]:
@@ -3797,7 +4092,7 @@ Factors Affecting Score:
         cumulative_labels = []
         cumulative_values = []
         cumulative_balance = 0.0
-        for idx, acct in enumerate(accounts[:20], 1):
+        for idx, acct in enumerate(accounts, 1):
             balance = self._calculate_policy_balance(acct)
             if balance <= 0:
                 continue

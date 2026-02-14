@@ -326,9 +326,9 @@ class TestPensionAffiliatedReportGeneration(unittest.TestCase):
 
     def setUp(self):
         self.service = init_ai_reports_service()
-        csv_content = b"""policy_number,coverage_amount,premium
-POL-001,100000,500
-POL-002,150000,620"""
+        csv_content = b"""policy_number,coverage_amount,premium,savings_amount,investment_amount
+POL-001,100000,500,10000,5000
+POL-002,150000,620,3000,2000"""
         parse_result = self.service.parse_file('pension_seed.csv', csv_content, 'csv')
         self.doc_id = parse_result['document_id']
         self.analysis = self.service.analyze(self.doc_id)
@@ -436,6 +436,30 @@ POL-002,150000,620"""
         # Fallback balance = savings + investment + severance when total_balance is missing/zero.
         self.assertEqual(rows[1].get('יתרה'), 2500)
         self.assertEqual(rows[1].get('יתרה מצטברת'), 217197)
+
+    def test_uploaded_all_rows_table_and_policy_cumulative_section(self):
+        report = self.service.generate_report(self.analysis.id, language='hebrew')
+
+        full_data_section = next(
+            (section for section in report.sections if 'טבלת נתונים מלאה' in section.title),
+            None
+        )
+        self.assertIsNotNone(full_data_section)
+        full_rows = full_data_section.data_table.get('rows', [])
+        self.assertEqual(len(full_rows), 2)
+
+        cumulative_section = next(
+            (section for section in report.sections if 'חישוב מצטבר' in section.title),
+            None
+        )
+        self.assertIsNotNone(cumulative_section)
+        cumulative_rows = cumulative_section.data_table.get('rows', [])
+        self.assertEqual(len(cumulative_rows), 2)
+        self.assertEqual(cumulative_rows[0].get('סכום חסכונות'), 10000)
+        self.assertEqual(cumulative_rows[0].get('סכום השקעות'), 5000)
+        self.assertEqual(cumulative_rows[0].get('יתרה מחושבת לפוליסה'), 15000)
+        self.assertEqual(cumulative_rows[0].get('יתרה מצטברת'), 15000)
+        self.assertEqual(cumulative_rows[1].get('יתרה מצטברת'), 20000)
 
 
 class TestHebrewWorkflow(unittest.TestCase):
