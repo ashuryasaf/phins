@@ -464,6 +464,25 @@ POL-002,150000,620,3000,2000,Ayalon,Basic,Active,SunFood,2022-11"""
         self.assertEqual(cumulative_rows[0].get('יתרה מצטברת'), 15000)
         self.assertEqual(cumulative_rows[1].get('יתרה מצטברת'), 20000)
 
+    def test_metadata_affiliation_matrix_allocated_to_report(self):
+        report = self.service.generate_report(self.analysis.id, language='hebrew')
+        matrix = report.metadata.get('affiliation_matrix', {})
+
+        self.assertTrue(isinstance(matrix, dict))
+        self.assertTrue(isinstance(matrix.get('summary_rows', []), list))
+        self.assertGreaterEqual(len(matrix.get('summary_rows', [])), 6)
+        self.assertIn('policy_aggregate', matrix)
+
+        titles = [section.title for section in report.sections]
+        self.assertTrue(any('מטריצת שיוכי מטא-דאטה' in title for title in titles))
+
+        self.assertTrue(
+            any(
+                ('מטריצת שיוכים' in chart.title) or ('Affiliation Matrix' in chart.title)
+                for chart in report.charts
+            )
+        )
+
 
 class TestHebrewWorkflow(unittest.TestCase):
     """Test complete workflow with Hebrew data"""

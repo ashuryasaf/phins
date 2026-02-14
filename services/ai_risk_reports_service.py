@@ -3162,11 +3162,20 @@ class AIRiskReportsService:
                 pension_data = doc_data.get('pension_data')
                 pension_report = doc_data.get('pension_report')
         
+        affiliation_matrix = self._build_affiliation_matrix_metadata(doc_data, pension_data, analysis)
+
         # Generate sections based on data type (now with original data and pension data)
-        sections = self._generate_sections(analysis, lang, doc_data, pension_data, pension_report)
+        sections = self._generate_sections(
+            analysis,
+            lang,
+            doc_data,
+            pension_data,
+            pension_report,
+            affiliation_matrix
+        )
         
         # Generate charts - pass pension_data for specialized pension charts
-        charts = self._generate_charts(analysis, pension_data, doc_data)
+        charts = self._generate_charts(analysis, pension_data, doc_data, affiliation_matrix)
         
         # Generate recommendations
         recommendations = self._generate_recommendations(analysis, lang)
@@ -3224,6 +3233,7 @@ class AIRiskReportsService:
                 'pension_data': pension_data if pension_data else None,
                 'is_pension_data': pension_data is not None or pension_report is not None,
                 'affiliation_snapshot': self._build_affiliation_snapshot_metadata(),
+                'affiliation_matrix': affiliation_matrix,
                 'example_allocation_snapshot': allocation_snapshot,
             }
         )
@@ -3238,7 +3248,8 @@ class AIRiskReportsService:
     def _generate_sections(self, analysis: AnalysisResult, lang: str, 
                           doc_data: Dict[str, Any] = None,
                           pension_data: Dict[str, Any] = None,
-                          pension_report: str = None) -> List[ReportSection]:
+                          pension_report: str = None,
+                          affiliation_matrix: Dict[str, Any] = None) -> List[ReportSection]:
         """Generate comprehensive report sections with AI/BI insights and actual data content"""
         sections = []
         is_hebrew = lang == 'hebrew'
@@ -3496,6 +3507,10 @@ Factors Affecting Score:
         affiliation_section = self._build_affiliation_mapping_section(is_hebrew)
         if affiliation_section:
             sections.append(affiliation_section)
+
+        matrix_sections = self._build_affiliation_matrix_sections(affiliation_matrix, is_hebrew)
+        if matrix_sections:
+            sections.extend(matrix_sections)
         
         # 10. Swiftness Data Resources & References
         swiftness_section = self._generate_swiftness_resources_section(is_hebrew)
@@ -3524,6 +3539,322 @@ Factors Affecting Score:
             }
         except Exception:
             return {}
+
+    @staticmethod
+    def _normalize_affiliation_term(value: Any) -> str:
+        """Normalize text for affiliation matrix matching."""
+        if value is None:
+            return ''
+        text = str(value).strip().lower()
+        if not text:
+            return ''
+        text = (
+            text.replace('\u200f', '')
+            .replace('\u200e', '')
+            .replace('\u00a0', ' ')
+        )
+        text = re.sub(r'\s+', ' ', text)
+        return text
+
+    def _build_affiliation_matrix_metadata(
+        self,
+        doc_data: Optional[Dict[str, Any]],
+        pension_data: Optional[Dict[str, Any]],
+        analysis: Optional[AnalysisResult] = None
+    ) -> Dict[str, Any]:
+        """
+        Build a comprehensive metadata affiliation matrix from uploaded data.
+        Allocates relevant metadata into matrix groups with coverage and matches.
+        """
+        try:
+            from services.pension_data_agent import MislakaSchemaMapping
+        except Exception:
+            return {}
+
+        doc_data = doc_data or {}
+        rows = doc_data.get('rows', []) or []
+        columns = doc_data.get('columns', []) or []
+        files = doc_data.get('files', []) or []
+        pension_data = pension_data or {}
+
+        source_terms: List[str] = []
+        for col in columns:
+            normalized_col = self._normalize_affiliation_term(col)
+            if normalized_col:
+                source_terms.append(normalized_col)
+
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            for value in row.values():
+                normalized_val = self._normalize_affiliation_term(value)
+                if normalized_val:
+                    source_terms.append(normalized_val)
+
+        for acct in pension_data.get('accounts', []) or []:
+            if not isinstance(acct, dict):
+                continue
+            for value in acct.values():
+                normalized_val = self._normalize_affiliation_term(value)
+                if normalized_val:
+                    source_terms.append(normalized_val)
+
+        source_text = ' | '.join(source_terms)
+
+        matrix_groups = [
+            ('interface_codes', 'Interfaces', 'ממשקים', MislakaSchemaMapping.INTERFACE_CODES),
+            ('product_types', 'Product Types', 'סוגי מוצר', MislakaSchemaMapping.PRODUCT_TYPE_CODES),
+            ('entity_types', 'Entity Types', 'סוגי ישות', MislakaSchemaMapping.ENTITY_TYPE_CODES),
+            ('status_codes', 'Status Codes', 'סטטוסים', MislakaSchemaMapping.STATUS_CODES),
+            ('id_types', 'ID Types', 'סוגי זיהוי', MislakaSchemaMapping.ID_TYPE_CODES),
+            ('environment_codes', 'Environment Codes', 'סביבות', MislakaSchemaMapping.ENVIRONMENT_CODES),
+        ]
+
+        summary_rows: List[Dict[str, Any]] = []
+        detail_rows: List[Dict[str, Any]] = []
+
+        for group_key, group_en, group_he, mapping in matrix_groups:
+            available = len(mapping or {})
+            matched = 0
+            hit_count = 0
+
+            for code, info in (mapping or {}).items():
+                if isinstance(info, dict):
+                    label_terms = [
+                        str(code),
+                        info.get('he', ''),
+                        info.get('en', ''),
+                        info.get('name', ''),
+                        info.get('schema', ''),
+                    ]
+                    name_he = info.get('he', info.get('name', ''))
+                    name_en = info.get('en', info.get('name', ''))
+                    schema = info.get('schema', '')
+                else:
+                    label_terms = [str(code), str(info)]
+                    name_he = str(info)
+                    name_en = str(info)
+                    schema = ''
+
+                labels = []
+                for term in label_terms:
+                    normalized_term = self._normalize_affiliation_term(term)
+                    if normalized_term and normalized_term not in labels and len(normalized_term) >= 2:
+                        labels.append(normalized_term)
+
+                entry_hits = 0
+                for label in labels:
+                    if label in source_text:
+                        entry_hits += source_text.count(label)
+
+                if entry_hits > 0:
+                    matched += 1
+                    hit_count += entry_hits
+                    detail_rows.append({
+                        'group_key': group_key,
+                        'group_en': group_en,
+                        'group_he': group_he,
+                        'code': str(code),
+                        'name_he': name_he,
+                        'name_en': name_en,
+                        'schema': schema,
+                        'hits': entry_hits,
+                    })
+
+            coverage_pct = round((matched / max(available, 1)) * 100, 2)
+            summary_rows.append({
+                'group_key': group_key,
+                'group_en': group_en,
+                'group_he': group_he,
+                'available': available,
+                'matched': matched,
+                'unmatched': max(available - matched, 0),
+                'coverage_pct': coverage_pct,
+                'hit_count': hit_count,
+            })
+
+        policy_metrics = self._extract_policy_cumulative_metrics(rows, columns)
+        policy_total = sum(metric.get('policy_total', 0) for metric in policy_metrics)
+        policy_savings = sum(metric.get('savings_total', 0) for metric in policy_metrics)
+        policy_investments = sum(metric.get('investments_total', 0) for metric in policy_metrics)
+        policy_severance = sum(metric.get('severance_total', 0) for metric in policy_metrics)
+        cumulative_total = policy_metrics[-1].get('cumulative_total', 0) if policy_metrics else 0
+
+        source_context = {
+            'document_rows': len(rows),
+            'document_columns': len(columns),
+            'files_count': len(files),
+            'pension_accounts': len(pension_data.get('accounts', []) or []),
+            'pension_contributions': len(pension_data.get('contributions', []) or []),
+            'analysis_language': analysis.language if analysis else '',
+            'analysis_type': analysis.data_classification.value if analysis else '',
+        }
+
+        policy_aggregate = {
+            'policy_count': len(policy_metrics),
+            'policy_total': policy_total,
+            'savings_total': policy_savings,
+            'investments_total': policy_investments,
+            'severance_total': policy_severance,
+            'cumulative_total': cumulative_total,
+        }
+
+        return {
+            'matrix_version': '1.0',
+            'summary_rows': summary_rows,
+            'detail_rows': detail_rows,
+            'source_context': source_context,
+            'policy_aggregate': policy_aggregate,
+            'model': 'mislaka_affiliation_matrix',
+        }
+
+    def _build_affiliation_matrix_sections(
+        self,
+        affiliation_matrix: Optional[Dict[str, Any]],
+        is_hebrew: bool
+    ) -> List[ReportSection]:
+        """Build report sections for metadata affiliation matrix allocation."""
+        matrix = affiliation_matrix or {}
+        summary_rows = matrix.get('summary_rows', []) or []
+        detail_rows = matrix.get('detail_rows', []) or []
+        source_context = matrix.get('source_context', {}) or {}
+        policy_aggregate = matrix.get('policy_aggregate', {}) or {}
+
+        sections: List[ReportSection] = []
+        if not summary_rows:
+            return sections
+
+        summary_table_rows = []
+        for row in summary_rows:
+            summary_table_rows.append({
+                'קבוצת שיוך' if is_hebrew else 'Affiliation Group': row.get('group_he') if is_hebrew else row.get('group_en'),
+                'סה״כ ערכים' if is_hebrew else 'Total Values': row.get('available', 0),
+                'מותאם לנתונים' if is_hebrew else 'Matched': row.get('matched', 0),
+                'ללא התאמה' if is_hebrew else 'Unmatched': row.get('unmatched', 0),
+                'כיסוי %' if is_hebrew else 'Coverage %': row.get('coverage_pct', 0),
+                'פגיעות התאמה' if is_hebrew else 'Match Hits': row.get('hit_count', 0),
+            })
+
+        sections.append(ReportSection(
+            title='מטריצת שיוכי מטא-דאטה' if is_hebrew else 'Metadata Affiliation Matrix',
+            content='הקצאה מחדש של מטא-דאטה לדוח לפי מטריצת שיוכים מלאה.' if is_hebrew
+            else 'Re-affiliated metadata allocation by full affiliation matrix.',
+            data_table={
+                'columns': list(summary_table_rows[0].keys()),
+                'rows': summary_table_rows,
+                'show_all': True
+            },
+            order=9
+        ))
+
+        if detail_rows:
+            detail_table_rows = []
+            for row in detail_rows:
+                detail_table_rows.append({
+                    'קבוצה' if is_hebrew else 'Group': row.get('group_he') if is_hebrew else row.get('group_en'),
+                    'קוד' if is_hebrew else 'Code': row.get('code', ''),
+                    'שם' if is_hebrew else 'Name': row.get('name_he') if is_hebrew else row.get('name_en'),
+                    'סכמה' if is_hebrew else 'Schema': row.get('schema', ''),
+                    'פגיעות' if is_hebrew else 'Hits': row.get('hits', 0),
+                })
+
+            sections.append(ReportSection(
+                title='פירוט התאמות מטריצת שיוכים' if is_hebrew else 'Affiliation Matrix Match Details',
+                content='פירוט ערכי מטריצה שזוהו בנתונים שהועלו.' if is_hebrew
+                else 'Detailed matrix values identified in uploaded data.',
+                data_table={
+                    'columns': list(detail_table_rows[0].keys()),
+                    'rows': detail_table_rows,
+                    'show_all': True
+                },
+                order=9
+            ))
+
+        context_rows = [
+            {'מדד' if is_hebrew else 'Metric': 'מספר רשומות מקור' if is_hebrew else 'Source Rows', 'ערך' if is_hebrew else 'Value': source_context.get('document_rows', 0)},
+            {'מדד' if is_hebrew else 'Metric': 'מספר עמודות מקור' if is_hebrew else 'Source Columns', 'ערך' if is_hebrew else 'Value': source_context.get('document_columns', 0)},
+            {'מדד' if is_hebrew else 'Metric': 'מספר קבצים' if is_hebrew else 'Files', 'ערך' if is_hebrew else 'Value': source_context.get('files_count', 0)},
+            {'מדד' if is_hebrew else 'Metric': 'פוליסות מזוהות' if is_hebrew else 'Identified Policies', 'ערך' if is_hebrew else 'Value': policy_aggregate.get('policy_count', 0)},
+            {'מדד' if is_hebrew else 'Metric': 'סה״כ חיסכון מזוהה' if is_hebrew else 'Identified Savings Total', 'ערך' if is_hebrew else 'Value': policy_aggregate.get('savings_total', 0)},
+            {'מדד' if is_hebrew else 'Metric': 'סה״כ השקעות מזוהה' if is_hebrew else 'Identified Investments Total', 'ערך' if is_hebrew else 'Value': policy_aggregate.get('investments_total', 0)},
+            {'מדד' if is_hebrew else 'Metric': 'יתרה מצטברת מזוהה' if is_hebrew else 'Identified Cumulative Total', 'ערך' if is_hebrew else 'Value': policy_aggregate.get('cumulative_total', 0)},
+        ]
+
+        sections.append(ReportSection(
+            title='מדדי הקצאת מטא-דאטה ושיוך' if is_hebrew else 'Metadata Allocation and Affiliation Metrics',
+            content='מדדי מקור והקצאה לצורך בקרה ושלמות נתונים.' if is_hebrew
+            else 'Source and allocation metrics for integrity and control.',
+            data_table={
+                'columns': list(context_rows[0].keys()),
+                'rows': context_rows,
+                'show_all': True
+            },
+            order=9
+        ))
+
+        return sections
+
+    def _generate_affiliation_matrix_charts(
+        self,
+        affiliation_matrix: Optional[Dict[str, Any]],
+        lang_code: str
+    ) -> List[ChartConfig]:
+        """Generate charts from metadata affiliation matrix coverage."""
+        matrix = affiliation_matrix or {}
+        summary_rows = matrix.get('summary_rows', []) or []
+        if len(summary_rows) < 2:
+            return []
+
+        is_hebrew = lang_code == 'hebrew'
+        labels = [row.get('group_he') if is_hebrew else row.get('group_en') for row in summary_rows]
+        coverage_values = [row.get('coverage_pct', 0) for row in summary_rows]
+        match_values = [row.get('matched', 0) for row in summary_rows]
+
+        hit_rows = [row for row in summary_rows if row.get('hit_count', 0) > 0]
+        hit_labels = [row.get('group_he') if is_hebrew else row.get('group_en') for row in hit_rows]
+        hit_values = [row.get('hit_count', 0) for row in hit_rows]
+
+        charts: List[ChartConfig] = [
+            ChartConfig(
+                type=ChartType.BAR,
+                title='כיסוי מטריצת שיוכים (%)' if is_hebrew else 'Affiliation Matrix Coverage (%)',
+                data={
+                    'labels': labels,
+                    'values': coverage_values,
+                },
+                options={
+                    'horizontal': True,
+                    'colors': ['#0ea5e9', '#2563eb', '#16a34a', '#f59e0b', '#ef4444', '#8b5cf6'],
+                }
+            ),
+            ChartConfig(
+                type=ChartType.BAR,
+                title='ערכים מותאמים לפי קבוצת שיוך' if is_hebrew else 'Matched Values by Affiliation Group',
+                data={
+                    'labels': labels,
+                    'values': match_values,
+                },
+                options={
+                    'horizontal': False,
+                    'colors': ['#0891b2', '#1d4ed8', '#15803d', '#d97706', '#dc2626', '#7c3aed'],
+                }
+            )
+        ]
+
+        if hit_labels and hit_values:
+            charts.append(ChartConfig(
+                type=ChartType.PIE,
+                title='פיזור פגיעות שיוך לפי קבוצה' if is_hebrew else 'Affiliation Match Hits Distribution',
+                data={
+                    'labels': hit_labels,
+                    'values': hit_values,
+                },
+                options={
+                    'colors': ['#0ea5e9', '#2563eb', '#16a34a', '#f59e0b', '#ef4444', '#8b5cf6'],
+                }
+            ))
+
+        return charts
 
     def _build_pension_affiliated_sections(self, pension_data: Dict[str, Any], is_hebrew: bool) -> List[ReportSection]:
         """Build table-oriented sections aligned with the Nituach Tik report model."""
@@ -4267,7 +4598,8 @@ Factors Affecting Score:
         self,
         analysis: AnalysisResult,
         pension_data: Dict = None,
-        doc_data: Dict[str, Any] = None
+        doc_data: Dict[str, Any] = None,
+        affiliation_matrix: Dict[str, Any] = None
     ) -> List[ChartConfig]:
         """
         Generate chart configurations.
@@ -4287,6 +4619,7 @@ Factors Affecting Score:
             charts.extend(self._generate_pension_charts(pension_data, analysis.language))
             charts.extend(self._generate_policy_cumulative_charts_from_rows(source_rows, source_columns, analysis.language))
             charts.extend(self._generate_pdf_example_allocation_charts(source_rows, source_columns, analysis.language))
+            charts.extend(self._generate_affiliation_matrix_charts(affiliation_matrix, analysis.language))
             return charts  # Pension flow includes all relevant pension/policy charts
         
         # Risk Score Gauge (for non-pension data)
@@ -4337,6 +4670,7 @@ Factors Affecting Score:
         # Add detailed policy savings/investment charts when fields exist.
         charts.extend(self._generate_policy_cumulative_charts_from_rows(source_rows, source_columns, analysis.language))
         charts.extend(self._generate_pdf_example_allocation_charts(source_rows, source_columns, analysis.language))
+        charts.extend(self._generate_affiliation_matrix_charts(affiliation_matrix, analysis.language))
         
         return charts
 

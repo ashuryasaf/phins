@@ -3837,12 +3837,14 @@
         `;
       }).join('');
 
-      if (affiliationSummary) {
+      const hasMetadataMatrix = Boolean(report?.metadata?.affiliation_matrix);
+      if (affiliationSummary || hasMetadataMatrix) {
         appendAffiliationCompanionSection(reportBody, {
           summary: affiliationSummary,
           affiliations: options.affiliations,
           files: options.files || [],
-          analysisTypeLabel: options.analysisTypeLabel || 'Auto-detect'
+          analysisTypeLabel: options.analysisTypeLabel || 'Auto-detect',
+          reportMetadata: report.metadata || {}
         });
       }
 
@@ -3876,6 +3878,8 @@
       const summary = payload.summary || {};
       const files = payload.files || [];
       const analysisTypeLabel = payload.analysisTypeLabel || 'Auto-detect';
+      const reportMetadata = payload.reportMetadata || {};
+      const matrixMeta = reportMetadata.affiliation_matrix || {};
       const updatedAtLabel = swiftnessAffiliationsUpdatedAt
         ? swiftnessAffiliationsUpdatedAt.toLocaleString()
         : 'Not available';
@@ -3898,6 +3902,37 @@
         Fields: (section.data_fields || []).length,
         Charts: (section.charts || []).length
       }));
+
+      const matrixSummaryRows = (matrixMeta.summary_rows || []).map(row => ({
+        Group: row.group_en || row.group_he || row.group_key || 'Unknown',
+        Available: row.available || 0,
+        Matched: row.matched || 0,
+        Unmatched: row.unmatched || 0,
+        'Coverage %': row.coverage_pct || 0,
+        Hits: row.hit_count || 0
+      }));
+
+      const matrixDetailRows = (matrixMeta.detail_rows || []).map(row => ({
+        Group: row.group_en || row.group_he || '',
+        Code: row.code || '',
+        Name: row.name_en || row.name_he || '',
+        Schema: row.schema || '',
+        Hits: row.hits || 0
+      }));
+
+      const matrixContextRows = (() => {
+        const sourceContext = matrixMeta.source_context || {};
+        const policyAggregate = matrixMeta.policy_aggregate || {};
+        return [{
+          'Source Rows': sourceContext.document_rows || 0,
+          'Source Columns': sourceContext.document_columns || 0,
+          'Files': sourceContext.files_count || 0,
+          'Policies': policyAggregate.policy_count || 0,
+          'Savings Total': policyAggregate.savings_total || 0,
+          'Investments Total': policyAggregate.investments_total || 0,
+          'Cumulative Total': policyAggregate.cumulative_total || 0
+        }];
+      })();
 
       const integrityRules = (swiftnessReportModel?.metadata?.data_integrity_rules || [])
         .map(rule => `<span class="integrity-badge pass">✓ ${escapeHtml(rule)}</span>`)
@@ -3933,6 +3968,28 @@
           <h3>🧬 Interface Schema Coverage</h3>
           <div class="content">
             ${schemaRows.length ? renderDataTable({ columns: ['Schema', 'Count'], rows: schemaRows }) : '<p style="color: var(--text-muted);">No schema data available.</p>'}
+          </div>
+        </div>
+        <div class="report-section fade-in">
+          <h3>🧾 Reaffiliated Metadata Matrix</h3>
+          <div class="content">
+            ${matrixSummaryRows.length
+              ? renderDataTable({ columns: ['Group', 'Available', 'Matched', 'Unmatched', 'Coverage %', 'Hits'], rows: matrixSummaryRows, show_all: true })
+              : '<p style="color: var(--text-muted);">No metadata matrix summary available.</p>'}
+          </div>
+        </div>
+        <div class="report-section fade-in">
+          <h3>🧱 Metadata Matrix Match Details</h3>
+          <div class="content">
+            ${matrixDetailRows.length
+              ? renderDataTable({ columns: ['Group', 'Code', 'Name', 'Schema', 'Hits'], rows: matrixDetailRows, show_all: true })
+              : '<p style="color: var(--text-muted);">No metadata matrix match details available.</p>'}
+          </div>
+        </div>
+        <div class="report-section fade-in">
+          <h3>📐 Metadata Allocation Metrics</h3>
+          <div class="content">
+            ${renderDataTable({ columns: ['Source Rows', 'Source Columns', 'Files', 'Policies', 'Savings Total', 'Investments Total', 'Cumulative Total'], rows: matrixContextRows })}
           </div>
         </div>
         <div class="report-section fade-in">
