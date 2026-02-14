@@ -3013,6 +3013,35 @@
     // PENSION DATA DISPLAY FUNCTIONS
     // Show actual raw data from Mislaka files, not statistical analysis
     // ==========================================================================
+
+    function toNumericValue(value) {
+      if (value === null || value === undefined || value === '') return 0;
+      if (typeof value === 'number') return Number.isFinite(value) ? value : 0;
+      const cleaned = String(value).replace(/[,\s₪$€%]/g, '').trim();
+      const numeric = parseFloat(cleaned);
+      return Number.isFinite(numeric) ? numeric : 0;
+    }
+
+    function calculatePolicyBalance(account) {
+      const totalBalance = toNumericValue(account?.total_balance);
+      if (totalBalance > 0) return totalBalance;
+      const directBalance = toNumericValue(account?.balance);
+      if (directBalance > 0) return directBalance;
+      return (
+        toNumericValue(account?.savings_balance) +
+        toNumericValue(account?.investment_balance) +
+        toNumericValue(account?.severance_balance)
+      );
+    }
+
+    function sanitizePolicyNumber(value) {
+      if (value === null || value === undefined) return '';
+      return String(value)
+        .replace(/[\u200e\u200f\u00a0]/g, ' ')
+        .replace(/[\r\n\t]/g, '')
+        .replace(/[,\s]/g, '')
+        .trim();
+    }
     
     function renderPensionStats(pensionData) {
       // Extract real data from pension files
@@ -3022,14 +3051,14 @@
       
       const clientName = client.full_name || client.client_name || 'לא זמין';
       const idNumber = client.id_number || 'לא זמין';
-      const totalBalance = totals.total_balance || accounts.reduce((sum, a) => sum + (parseFloat(a.total_balance) || 0), 0);
-      const totalSeverance = totals.total_severance || accounts.reduce((sum, a) => sum + (parseFloat(a.severance_balance) || 0), 0);
+      const totalBalance = totals.total_balance || accounts.reduce((sum, a) => sum + calculatePolicyBalance(a), 0);
+      const totalSeverance = totals.total_severance || accounts.reduce((sum, a) => sum + toNumericValue(a.severance_balance), 0);
       const accountCount = accounts.length;
       const providers = [...new Set(accounts.map(a => a.provider).filter(p => p))];
       
       // Calculate total insurance coverage
-      const totalDeathCoverage = accounts.reduce((sum, a) => sum + (parseFloat(a.death_coverage) || 0), 0);
-      const totalDisabilityCoverage = accounts.reduce((sum, a) => sum + (parseFloat(a.disability_coverage) || 0), 0);
+      const totalDeathCoverage = accounts.reduce((sum, a) => sum + toNumericValue(a.death_coverage), 0);
+      const totalDisabilityCoverage = accounts.reduce((sum, a) => sum + toNumericValue(a.disability_coverage), 0);
       
       document.getElementById('statsGrid').innerHTML = `
         <div class="stat-card fade-in" style="grid-column: span 2; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white;">
@@ -3085,16 +3114,17 @@
       const client = pensionData.client || {};
       
       let html = '';
+      let cumulativeBalance = 0;
       
       // Client info card
       html += `
         <div class="insight-card fade-in" style="background: linear-gradient(135deg, #667eea15 0%, #764ba215 100%); border: 2px solid #667eea;">
           <h5>👤 פרטי המבוטח</h5>
           <div class="insight-detail" style="direction: rtl; text-align: right;">
-            <div class="stat-detail"><span class="label">שם מלא</span><span class="val">${client.full_name || client.client_name || 'לא זמין'}</span></div>
-            <div class="stat-detail"><span class="label">ת.ז</span><span class="val">${client.id_number || 'לא זמין'}</span></div>
-            ${client.birth_date ? `<div class="stat-detail"><span class="label">תאריך לידה</span><span class="val">${client.birth_date}</span></div>` : ''}
-            ${client.phone ? `<div class="stat-detail"><span class="label">טלפון</span><span class="val">${client.phone}</span></div>` : ''}
+            <div class="stat-detail"><span class="label">שם מלא</span><span class="val">${escapeHtml(client.full_name || client.client_name || 'לא זמין')}</span></div>
+            <div class="stat-detail"><span class="label">ת.ז</span><span class="val">${escapeHtml(client.id_number || 'לא זמין')}</span></div>
+            ${client.birth_date ? `<div class="stat-detail"><span class="label">תאריך לידה</span><span class="val">${escapeHtml(client.birth_date)}</span></div>` : ''}
+            ${client.phone ? `<div class="stat-detail"><span class="label">טלפון</span><span class="val">${escapeHtml(client.phone)}</span></div>` : ''}
           </div>
           <span class="insight-badge" style="background: #667eea; color: white;">נתוני לקוח</span>
         </div>
@@ -3102,44 +3132,54 @@
       
       // Each policy as a card
       accounts.forEach((acct, idx) => {
-        const balance = parseFloat(acct.total_balance) || 0;
-        const severance = parseFloat(acct.severance_balance) || 0;
-        const savings = parseFloat(acct.savings_balance) || 0;
-        const mgmtFee = parseFloat(acct.management_fee_savings) || 0;
-        const mgmtFeeDeposits = parseFloat(acct.management_fee_deposits) || 0;
-        const deathCoverage = parseFloat(acct.death_coverage) || 0;
-        const disabilityCoverage = parseFloat(acct.disability_coverage) || 0;
+        const policyBalance = calculatePolicyBalance(acct);
+        cumulativeBalance += policyBalance;
+        const severance = toNumericValue(acct.severance_balance);
+        const savings = toNumericValue(acct.savings_balance);
+        const investments = toNumericValue(acct.investment_balance);
+        const mgmtFee = toNumericValue(acct.management_fee_savings);
+        const mgmtFeeDeposits = toNumericValue(acct.management_fee_deposits);
+        const deathCoverage = toNumericValue(acct.death_coverage);
+        const disabilityCoverage = toNumericValue(acct.disability_coverage);
+        const policyNumber = sanitizePolicyNumber(acct.policy_number || acct.policy || '');
         
         html += `
           <div class="insight-card fade-in" style="background: #f8fafc; border: 1px solid #e2e8f0;">
-            <h5 style="color: #1e40af;">📋 פוליסה ${idx + 1}: ${acct.provider || 'לא ידוע'}</h5>
+            <h5 style="color: #1e40af;">📋 פוליסה ${idx + 1}: ${escapeHtml(acct.provider || 'לא ידוע')}</h5>
             <div class="insight-detail" style="direction: rtl; text-align: right;">
-              <div class="stat-detail"><span class="label">מספר פוליסה</span><span class="val" style="font-family: monospace;">${acct.policy_number || '-'}</span></div>
-              <div class="stat-detail"><span class="label">סוג מוצר</span><span class="val">${acct.product_type_name || acct.product_type || '-'}</span></div>
-              <div class="stat-detail"><span class="label">סטטוס</span><span class="val">${acct.status || 'פעיל'}</span></div>
-              ${balance > 0 ? `<div class="stat-detail"><span class="label">צבירה כוללת</span><span class="val" style="color: #059669; font-weight: bold;">₪${balance.toLocaleString('he-IL')}</span></div>` : ''}
-              ${savings > 0 && savings !== balance ? `<div class="stat-detail"><span class="label">תגמולים</span><span class="val">₪${savings.toLocaleString('he-IL')}</span></div>` : ''}
+              <div class="stat-detail"><span class="label">מספר פוליסה</span><span class="val" style="font-family: monospace; white-space: nowrap; word-break: keep-all;">${escapeHtml(policyNumber || '-')}</span></div>
+              <div class="stat-detail"><span class="label">סוג מוצר</span><span class="val">${escapeHtml(acct.product_type_name || acct.product_type || '-')}</span></div>
+              <div class="stat-detail"><span class="label">סטטוס</span><span class="val">${escapeHtml(acct.status || 'פעיל')}</span></div>
+              ${policyBalance > 0 ? `<div class="stat-detail"><span class="label">יתרה</span><span class="val" style="color: #059669; font-weight: bold;">₪${policyBalance.toLocaleString('he-IL')}</span></div>` : ''}
+              ${policyBalance > 0 ? `<div class="stat-detail"><span class="label">יתרה מצטברת</span><span class="val">₪${cumulativeBalance.toLocaleString('he-IL')}</span></div>` : ''}
+              ${savings > 0 && savings !== policyBalance ? `<div class="stat-detail"><span class="label">תגמולים</span><span class="val">₪${savings.toLocaleString('he-IL')}</span></div>` : ''}
+              ${investments > 0 ? `<div class="stat-detail"><span class="label">השקעות</span><span class="val">₪${investments.toLocaleString('he-IL')}</span></div>` : ''}
               ${severance > 0 ? `<div class="stat-detail"><span class="label">פיצויים</span><span class="val">₪${severance.toLocaleString('he-IL')}</span></div>` : ''}
               ${mgmtFee > 0 ? `<div class="stat-detail"><span class="label">דמי ניהול מצבירה</span><span class="val">${mgmtFee.toFixed(2)}%</span></div>` : ''}
               ${mgmtFeeDeposits > 0 ? `<div class="stat-detail"><span class="label">דמי ניהול מהפקדות</span><span class="val">${mgmtFeeDeposits.toFixed(2)}%</span></div>` : ''}
               ${deathCoverage > 0 ? `<div class="stat-detail"><span class="label">ביטוח חיים</span><span class="val">₪${deathCoverage.toLocaleString('he-IL')}</span></div>` : ''}
               ${disabilityCoverage > 0 ? `<div class="stat-detail"><span class="label">אובדן כושר</span><span class="val">₪${disabilityCoverage.toLocaleString('he-IL')}/חודש</span></div>` : ''}
-              ${acct.employer_name ? `<div class="stat-detail"><span class="label">מעסיק</span><span class="val">${acct.employer_name}</span></div>` : ''}
+              ${acct.employer_name ? `<div class="stat-detail"><span class="label">מעסיק</span><span class="val">${escapeHtml(acct.employer_name)}</span></div>` : ''}
               ${acct.section14 !== undefined ? `<div class="stat-detail"><span class="label">סעיף 14</span><span class="val">${acct.section14 ? '✅ כן' : '❌ לא'}</span></div>` : ''}
             </div>
-            <span class="insight-badge">${acct.provider || 'פוליסה'}</span>
+            <span class="insight-badge">${escapeHtml(acct.provider || 'פוליסה')}</span>
           </div>
         `;
       });
       
       // Summary totals card
       const totals = pensionData.totals || {};
+      const computedTotalBalance = accounts.reduce((sum, account) => sum + calculatePolicyBalance(account), 0);
+      const computedTotalSeverance = accounts.reduce((sum, account) => sum + toNumericValue(account.severance_balance), 0);
+      const summaryTotalBalance = totals.total_balance || computedTotalBalance;
+      const summaryTotalSeverance = totals.total_severance || computedTotalSeverance;
       html += `
         <div class="insight-card fade-in" style="background: linear-gradient(135deg, #11998e15 0%, #38ef7d15 100%); border: 2px solid #11998e;">
           <h5 style="color: #065f46;">📊 סיכום כולל</h5>
           <div class="insight-detail" style="direction: rtl; text-align: right;">
-            <div class="stat-detail"><span class="label">סה״כ צבירה</span><span class="val" style="font-size: 1.2rem; color: #059669; font-weight: bold;">₪${(totals.total_balance || 0).toLocaleString('he-IL')}</span></div>
-            <div class="stat-detail"><span class="label">סה״כ פיצויים</span><span class="val">₪${(totals.total_severance || 0).toLocaleString('he-IL')}</span></div>
+            <div class="stat-detail"><span class="label">סה״כ צבירה</span><span class="val" style="font-size: 1.2rem; color: #059669; font-weight: bold;">₪${summaryTotalBalance.toLocaleString('he-IL')}</span></div>
+            <div class="stat-detail"><span class="label">סה״כ פיצויים</span><span class="val">₪${summaryTotalSeverance.toLocaleString('he-IL')}</span></div>
+            <div class="stat-detail"><span class="label">יתרה מצטברת</span><span class="val">₪${summaryTotalBalance.toLocaleString('he-IL')}</span></div>
             <div class="stat-detail"><span class="label">מספר פוליסות</span><span class="val">${totals.account_count || accounts.length}</span></div>
             <div class="stat-detail"><span class="label">מספר יצרנים</span><span class="val">${totals.provider_count || totals.providers?.length || '-'}</span></div>
           </div>
@@ -4282,7 +4322,7 @@
             <tbody>
               ${cappedRows.map(row => `
                 <tr>
-                  ${resolvedColumns.map(col => `<td>${formatTableCell(row?.[col])}</td>`).join('')}
+                  ${resolvedColumns.map(col => `<td>${formatTableCell(row?.[col], col)}</td>`).join('')}
                 </tr>
               `).join('')}
             </tbody>
@@ -4312,7 +4352,7 @@
             ${keys.map(key => `
               <tr>
                 <td>${escapeHtml(formatMetricName(key))}</td>
-                <td>${formatTableCell(data[key])}</td>
+                <td>${formatTableCell(data[key], key)}</td>
               </tr>
             `).join('')}
           </tbody>
@@ -4329,9 +4369,26 @@
         .replace(/'/g, '&#39;');
     }
 
-    function formatTableCell(value) {
+    function isPolicyNumberColumn(columnName) {
+      const normalized = String(columnName || '').toLowerCase().trim();
+      return (
+        normalized.includes('policy number') ||
+        normalized.includes('מספר פוליסה') ||
+        normalized.includes('מס פוליסה') ||
+        normalized.includes('מספר חשבון') ||
+        normalized.includes('account number')
+      );
+    }
+
+    function formatTableCell(value, columnName = '') {
       if (value === null || value === undefined || value === '') {
         return '—';
+      }
+      if (isPolicyNumberColumn(columnName)) {
+        const normalizedPolicy = sanitizePolicyNumber(value);
+        return normalizedPolicy
+          ? `<span style="font-family: monospace; white-space: nowrap; word-break: keep-all;">${escapeHtml(normalizedPolicy)}</span>`
+          : '—';
       }
       if (typeof value === 'number') {
         return escapeHtml(value.toLocaleString(undefined, { maximumFractionDigits: 2 }));

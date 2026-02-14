@@ -619,6 +619,62 @@ class AIRiskReportsService:
         sample = content[:512]
         non_text = sum(1 for b in sample if b < 0x09 or (0x0E <= b < 0x20 and b != 0x1B))
         return (non_text / max(len(sample), 1)) > 0.10
+
+    @staticmethod
+    def _normalize_policy_number(policy_number: Any) -> str:
+        """Normalize policy/account identifiers for stable display (no commas/breaks)."""
+        if policy_number is None:
+            return ''
+        text = str(policy_number).strip()
+        if not text:
+            return ''
+        text = (
+            text.replace('\u200f', '')
+            .replace('\u200e', '')
+            .replace('\u00a0', ' ')
+        )
+        text = re.sub(r'[\r\n\t]+', '', text)
+        text = text.replace(' ', '').replace(',', '')
+        return text
+
+    @staticmethod
+    def _safe_numeric(value: Any) -> float:
+        """Safely convert formatted numeric values to float."""
+        if value is None or value == '':
+            return 0.0
+        if isinstance(value, (int, float)):
+            return float(value)
+        cleaned = (
+            str(value).strip()
+            .replace(',', '')
+            .replace('₪', '')
+            .replace('$', '')
+            .replace('€', '')
+            .replace('%', '')
+        )
+        if not cleaned:
+            return 0.0
+        try:
+            return float(cleaned)
+        except (ValueError, TypeError):
+            return 0.0
+
+    def _calculate_policy_balance(self, account: Dict[str, Any]) -> float:
+        """
+        Calculate per-policy balance with fallbacks.
+        Prefers explicit total_balance, then direct balance, then component sum.
+        """
+        total_balance = self._safe_numeric(account.get('total_balance'))
+        if total_balance > 0:
+            return total_balance
+        direct_balance = self._safe_numeric(account.get('balance'))
+        if direct_balance > 0:
+            return direct_balance
+        return (
+            self._safe_numeric(account.get('savings_balance'))
+            + self._safe_numeric(account.get('investment_balance'))
+            + self._safe_numeric(account.get('severance_balance'))
+        )
     
     def _parse_csv(self, text_content: str) -> Dict[str, Any]:
         """Parse CSV content"""
@@ -820,6 +876,9 @@ class AIRiskReportsService:
             'סה"כ צבירה': 'total_balance',
             'יתרת תגמולים': 'savings_balance',
             'תגמולים': 'savings_balance',
+            'יתרת השקעות': 'investment_balance',
+            'השקעות': 'investment_balance',
+            'יתרת השקעה': 'investment_balance',
             'יתרת פיצויים': 'severance_balance',
             'פיצויים': 'severance_balance',
             
@@ -878,11 +937,14 @@ class AIRiskReportsService:
                     # Convert value
                     if value is not None and value != '':
                         if mapped_name in ['total_balance', 'savings_balance', 'severance_balance', 
-                                          'management_fee', 'management_fee_savings', 'management_fee_deposits']:
+                                          'investment_balance', 'balance', 'management_fee',
+                                          'management_fee_savings', 'management_fee_deposits']:
                             try:
                                 account[mapped_name] = float(str(value).replace(',', '').replace('₪', '').strip())
                             except:
                                 account[mapped_name] = 0
+                        elif mapped_name == 'policy_number':
+                            account[mapped_name] = self._normalize_policy_number(value)
                         elif mapped_name == 'section14':
                             account[mapped_name] = str(value).lower() in ['כן', 'yes', '1', 'true', 'v', '✓']
                         elif mapped_name in ['client_name', 'first_name', 'last_name', 'id_number', 'birth_date']:
@@ -890,7 +952,7 @@ class AIRiskReportsService:
                         else:
                             account[mapped_name] = str(value).strip()
             
-            if account.get('provider') or account.get('policy_number') or account.get('total_balance'):
+            if account.get('provider') or account.get('policy_number') or self._calculate_policy_balance(account) > 0:
                 accounts.append(account)
         
         # Build full name if we have parts
@@ -904,8 +966,10 @@ class AIRiskReportsService:
             return None
         
         # Calculate totals
-        total_balance = sum(a.get('total_balance', 0) for a in accounts)
-        total_severance = sum(a.get('severance_balance', 0) for a in accounts)
+        total_balance = sum(self._calculate_policy_balance(a) for a in accounts)
+        total_savings = sum(self._safe_numeric(a.get('savings_balance')) for a in accounts)
+        total_investments = sum(self._safe_numeric(a.get('investment_balance')) for a in accounts)
+        total_severance = sum(self._safe_numeric(a.get('severance_balance')) for a in accounts)
         
         return {
             'client': client_info,
@@ -913,7 +977,13 @@ class AIRiskReportsService:
             'totals': {
                 'total_balance': total_balance,
                 'total_balance_formatted': f"₪{total_balance:,.0f}",
+                'total_savings': total_savings,
+                'total_savings_balance': total_savings,
+                'total_savings_formatted': f"₪{total_savings:,.0f}",
+                'total_investments': total_investments,
+                'total_investments_formatted': f"₪{total_investments:,.0f}",
                 'total_severance': total_severance,
+                'total_severance_balance': total_severance,
                 'total_severance_formatted': f"₪{total_severance:,.0f}",
                 'account_count': len(accounts),
                 'provider_count': len(set(a.get('provider', '') for a in accounts if a.get('provider'))),
@@ -2905,13 +2975,18 @@ Factors Affecting Score:
 
         if accounts:
             status_rows = []
+            cumulative_balance = 0.0
             for acct in accounts[:80]:
+                policy_number = self._normalize_policy_number(acct.get('policy_number', ''))
+                policy_balance = self._calculate_policy_balance(acct)
+                cumulative_balance += policy_balance
                 status_rows.append({
-                    'מספר פוליסה' if is_hebrew else 'Policy Number': acct.get('policy_number', ''),
+                    'מספר פוליסה' if is_hebrew else 'Policy Number': policy_number,
                     'יצרן' if is_hebrew else 'Provider': acct.get('provider', ''),
                     'סוג מוצר' if is_hebrew else 'Product Type': acct.get('product_type_name', acct.get('product_type', '')),
                     'סטטוס' if is_hebrew else 'Status': acct.get('status', acct.get('status_en', '')),
-                    'יתרה כוללת' if is_hebrew else 'Total Balance': acct.get('total_balance', 0),
+                    'יתרה' if is_hebrew else 'Balance': policy_balance,
+                    'יתרה מצטברת' if is_hebrew else 'Cumulative Balance': cumulative_balance,
                     'פיצויים' if is_hebrew else 'Severance': acct.get('severance_balance', 0),
                     'מעסיק' if is_hebrew else 'Employer': acct.get('employer_name', ''),
                     'סעיף 14' if is_hebrew else 'Section 14': ('כן' if acct.get('section14') else 'לא') if is_hebrew else ('Yes' if acct.get('section14') else 'No'),
@@ -2929,15 +3004,18 @@ Factors Affecting Score:
 
             plan_rows = []
             for acct in accounts[:80]:
+                policy_balance = self._calculate_policy_balance(acct)
                 plan_rows.append({
-                    'מספר פוליסה' if is_hebrew else 'Policy Number': acct.get('policy_number', ''),
+                    'מספר פוליסה' if is_hebrew else 'Policy Number': self._normalize_policy_number(acct.get('policy_number', '')),
                     'תאריך תחילה' if is_hebrew else 'Start Date': acct.get('start_date', ''),
                     'דמי ניהול מצבירה %' if is_hebrew else 'Mgmt Fee Savings %': acct.get('management_fee_savings', 0),
                     'דמי ניהול מהפקדה %' if is_hebrew else 'Mgmt Fee Deposits %': acct.get('management_fee_deposits', 0),
                     'כיסוי חיים' if is_hebrew else 'Life Coverage': acct.get('death_coverage', 0),
                     'כיסוי אכ"ע' if is_hebrew else 'Disability Coverage': acct.get('disability_coverage', 0),
                     'תגמולים' if is_hebrew else 'Savings': acct.get('savings_balance', 0),
+                    'השקעות' if is_hebrew else 'Investments': acct.get('investment_balance', 0),
                     'פיצויים' if is_hebrew else 'Severance': acct.get('severance_balance', 0),
+                    'יתרה' if is_hebrew else 'Balance': policy_balance,
                 })
 
             sections.append(ReportSection(
@@ -3006,15 +3084,34 @@ Factors Affecting Score:
                 ))
 
         if totals:
+            total_balance = totals.get('total_balance', 0)
+            if not total_balance:
+                total_balance = sum(self._calculate_policy_balance(a) for a in accounts)
+            total_savings = totals.get('total_savings', totals.get('total_savings_balance', 0))
+            if not total_savings:
+                total_savings = sum(self._safe_numeric(a.get('savings_balance')) for a in accounts)
+            total_investments = totals.get('total_investments', totals.get('total_investment_balance', 0))
+            if not total_investments:
+                total_investments = sum(self._safe_numeric(a.get('investment_balance')) for a in accounts)
+            total_severance = totals.get('total_severance', totals.get('total_severance_balance', 0))
+            if not total_severance:
+                total_severance = sum(self._safe_numeric(a.get('severance_balance')) for a in accounts)
+
             totals_rows = [{
                 'שדה' if is_hebrew else 'Metric': 'סה״כ צבירה' if is_hebrew else 'Total Balance',
-                'ערך' if is_hebrew else 'Value': totals.get('total_balance', 0)
+                'ערך' if is_hebrew else 'Value': total_balance
             }, {
                 'שדה' if is_hebrew else 'Metric': 'סה״כ חסכונות' if is_hebrew else 'Total Savings',
-                'ערך' if is_hebrew else 'Value': totals.get('total_savings', totals.get('total_savings_balance', 0))
+                'ערך' if is_hebrew else 'Value': total_savings
+            }, {
+                'שדה' if is_hebrew else 'Metric': 'סה״כ השקעות' if is_hebrew else 'Total Investments',
+                'ערך' if is_hebrew else 'Value': total_investments
             }, {
                 'שדה' if is_hebrew else 'Metric': 'סה״כ פיצויים' if is_hebrew else 'Total Severance',
-                'ערך' if is_hebrew else 'Value': totals.get('total_severance', totals.get('total_severance_balance', 0))
+                'ערך' if is_hebrew else 'Value': total_severance
+            }, {
+                'שדה' if is_hebrew else 'Metric': 'יתרה מצטברת (כל הפוליסות)' if is_hebrew else 'Cumulative Balance (All Policies)',
+                'ערך' if is_hebrew else 'Value': total_balance
             }, {
                 'שדה' if is_hebrew else 'Metric': 'מספר פוליסות' if is_hebrew else 'Policy Count',
                 'ערך' if is_hebrew else 'Value': totals.get('account_count', len(accounts))
@@ -3365,12 +3462,15 @@ Factors Affecting Score:
                 if accounts:
                     content_lines.append("📁 פירוט חשבונות:")
                     content_lines.append("-" * 40)
-                    total_balance = totals.get('total_balance', 1)
+                    total_balance = totals.get('total_balance', 0) or sum(self._calculate_policy_balance(a) for a in accounts)
+                    cumulative_balance = 0.0
                     for i, acct in enumerate(accounts[:10], 1):
-                        balance = acct.get('total_balance', acct.get('balance', 0))
+                        balance = self._calculate_policy_balance(acct)
+                        cumulative_balance += balance
                         pct = (balance / total_balance * 100) if total_balance > 0 else 0
+                        policy_number = self._normalize_policy_number(acct.get('policy_number', '')) or 'לא ידוע'
                         content_lines.append(f"\n🔹 חשבון {i}:")
-                        content_lines.append(f"   • מספר פוליסה: {acct.get('policy_number', 'לא ידוע')}")
+                        content_lines.append(f"   • מספר פוליסה: {policy_number}")
                         if acct.get('provider'):
                             content_lines.append(f"   • יצרן: {acct.get('provider')}")
                         if acct.get('product_type_name') or acct.get('product_name') or acct.get('product_type'):
@@ -3378,8 +3478,11 @@ Factors Affecting Score:
                         if acct.get('status'):
                             content_lines.append(f"   • סטטוס: {acct.get('status')}")
                         content_lines.append(f"   • יתרה: ₪{balance:,.2f} ({pct:.1f}% מהכולל)")
+                        content_lines.append(f"   • יתרה מצטברת: ₪{cumulative_balance:,.2f}")
                         if acct.get('savings_balance', 0) > 0:
                             content_lines.append(f"   • חיסכון: ₪{acct.get('savings_balance', 0):,.2f}")
+                        if acct.get('investment_balance', 0) > 0:
+                            content_lines.append(f"   • השקעות: ₪{acct.get('investment_balance', 0):,.2f}")
                         if acct.get('severance_balance', 0) > 0:
                             content_lines.append(f"   • פיצויים: ₪{acct.get('severance_balance', 0):,.2f}")
                         if acct.get('section14'):
@@ -3459,20 +3562,27 @@ Factors Affecting Score:
                 if accounts:
                     content_lines.append("📁 Account Details:")
                     content_lines.append("-" * 40)
-                    total_balance = totals.get('total_balance', 1)
+                    total_balance = totals.get('total_balance', 0) or sum(self._calculate_policy_balance(a) for a in accounts)
+                    cumulative_balance = 0.0
                     for i, acct in enumerate(accounts[:10], 1):
-                        balance = acct.get('total_balance', acct.get('balance', 0))
+                        balance = self._calculate_policy_balance(acct)
+                        cumulative_balance += balance
                         pct = (balance / total_balance * 100) if total_balance > 0 else 0
+                        policy_number = self._normalize_policy_number(acct.get('policy_number', '')) or 'Unknown'
                         content_lines.append(f"\n🔹 Account {i}:")
-                        content_lines.append(f"   • Policy Number: {acct.get('policy_number', 'Unknown')}")
+                        content_lines.append(f"   • Policy Number: {policy_number}")
                         content_lines.append(f"   • Balance: ₪{balance:,.2f} ({pct:.1f}% of total)")
+                        content_lines.append(f"   • Cumulative Balance: ₪{cumulative_balance:,.2f}")
                         if acct.get('provider'):
                             content_lines.append(f"   • Provider: {acct.get('provider')}")
                         if acct.get('product_name') or acct.get('product_type'):
                             content_lines.append(f"   • Product: {acct.get('product_name', acct.get('product_type', 'Unknown'))}")
                         if acct.get('status'):
                             content_lines.append(f"   • Status: {acct.get('status')}")
-                        content_lines.append(f"   • Balance: ₪{acct.get('balance', 0):,.2f}")
+                        if acct.get('savings_balance', 0) > 0:
+                            content_lines.append(f"   • Savings: ₪{acct.get('savings_balance', 0):,.2f}")
+                        if acct.get('investment_balance', 0) > 0:
+                            content_lines.append(f"   • Investments: ₪{acct.get('investment_balance', 0):,.2f}")
                         if acct.get('severance_balance', 0) > 0:
                             content_lines.append(f"   • Severance: ₪{acct.get('severance_balance', 0):,.2f}")
                         if acct.get('employer'):
@@ -3663,7 +3773,7 @@ Factors Affecting Score:
         provider_totals = {}
         for acct in accounts:
             provider = acct.get('provider', 'לא ידוע' if is_hebrew else 'Unknown')
-            balance = acct.get('total_balance', 0) or acct.get('savings_balance', 0) or 0
+            balance = self._calculate_policy_balance(acct)
             if provider and balance > 0:
                 provider_totals[provider] = provider_totals.get(provider, 0) + balance
         
@@ -3678,6 +3788,37 @@ Factors Affecting Score:
                 options={
                     'horizontal': False,
                     'colors': ['#2196F3', '#4CAF50', '#FF9800', '#9C27B0', '#00BCD4'],
+                    'currency': True,
+                    'currency_symbol': '₪'
+                }
+            ))
+
+        # 1b. Cumulative Balance by Policy (Bar Chart)
+        cumulative_labels = []
+        cumulative_values = []
+        cumulative_balance = 0.0
+        for idx, acct in enumerate(accounts[:20], 1):
+            balance = self._calculate_policy_balance(acct)
+            if balance <= 0:
+                continue
+            cumulative_balance += balance
+            policy_number = self._normalize_policy_number(acct.get('policy_number', ''))
+            if not policy_number:
+                policy_number = f"פוליסה {idx}" if is_hebrew else f"Policy {idx}"
+            cumulative_labels.append(policy_number)
+            cumulative_values.append(cumulative_balance)
+
+        if cumulative_labels and cumulative_values:
+            charts.append(ChartConfig(
+                type=ChartType.BAR,
+                title='יתרה מצטברת לפי פוליסה' if is_hebrew else 'Cumulative Balance by Policy',
+                data={
+                    'labels': cumulative_labels,
+                    'values': cumulative_values
+                },
+                options={
+                    'horizontal': False,
+                    'colors': ['#0ea5e9'],
                     'currency': True,
                     'currency_symbol': '₪'
                 }
@@ -3742,7 +3883,7 @@ Factors Affecting Score:
             product_type = acct.get('product_type_name', '') or acct.get('product_type', '')
             if not product_type:
                 product_type = 'לא מוגדר' if is_hebrew else 'Undefined'
-            balance = acct.get('total_balance', 0) or acct.get('savings_balance', 0) or 0
+            balance = self._calculate_policy_balance(acct)
             if balance > 0:
                 product_balances[product_type] = product_balances.get(product_type, 0) + balance
         
@@ -3764,7 +3905,7 @@ Factors Affecting Score:
         # 5. Total Summary Gauge (if we have total balance)
         total_balance = totals.get('total_balance', 0)
         if not total_balance:
-            total_balance = sum(a.get('total_balance', 0) or 0 for a in accounts)
+            total_balance = sum(self._calculate_policy_balance(a) for a in accounts)
         
         if total_balance > 0:
             charts.append(ChartConfig(

@@ -337,7 +337,7 @@ POL-002,150000,620"""
         self.service.documents[self.doc_id]['parsed_data']['pension_data'] = {
             'accounts': [
                 {
-                    'policy_number': '6962791015',
+                    'policy_number': '6,962,791,015',
                     'provider': 'הפניקס',
                     'product_type_name': 'מנהלים ושכירים',
                     'status': 'פעיל',
@@ -358,8 +358,9 @@ POL-002,150000,620"""
                     'product_type_name': 'ביטוח יסודי',
                     'status': 'פעיל',
                     'total_balance': 0,
-                    'savings_balance': 0,
-                    'severance_balance': 0,
+                    'savings_balance': 1200,
+                    'investment_balance': 800,
+                    'severance_balance': 500,
                     'death_coverage': 2091908,
                     'employer_name': 'סאן פוד טרייד 2016 בע"מ',
                     'section14': False,
@@ -377,9 +378,10 @@ POL-002,150000,620"""
                 }
             ],
             'totals': {
-                'total_balance': 214697,
-                'total_savings': 111400,
-                'total_severance': 103297,
+                'total_balance': 217197,
+                'total_savings': 112600,
+                'total_investments': 800,
+                'total_severance': 103797,
                 'account_count': 2,
                 'provider_count': 2,
                 'section14_coverage': True,
@@ -410,6 +412,25 @@ POL-002,150000,620"""
         report = self.service.generate_report(self.analysis.id, language='hebrew')
         self.assertGreater(len(report.charts), 0)
         self.assertTrue(any(chart.type in [ChartType.BAR, ChartType.PIE, ChartType.DOUGHNUT, ChartType.GAUGE] for chart in report.charts))
+        self.assertTrue(any('מצטברת' in chart.title for chart in report.charts))
+
+    def test_policy_balance_cumulative_and_policy_number_normalization(self):
+        report = self.service.generate_report(self.analysis.id, language='hebrew')
+        status_section = next(
+            (section for section in report.sections if 'סטטוס פוליסות' in section.title),
+            None
+        )
+        self.assertIsNotNone(status_section)
+        rows = status_section.data_table.get('rows', [])
+        self.assertGreaterEqual(len(rows), 2)
+
+        self.assertEqual(rows[0].get('מספר פוליסה'), '6962791015')
+        self.assertEqual(rows[0].get('יתרה'), 214697)
+        self.assertEqual(rows[0].get('יתרה מצטברת'), 214697)
+
+        # Fallback balance = savings + investment + severance when total_balance is missing/zero.
+        self.assertEqual(rows[1].get('יתרה'), 2500)
+        self.assertEqual(rows[1].get('יתרה מצטברת'), 217197)
 
 
 class TestHebrewWorkflow(unittest.TestCase):
