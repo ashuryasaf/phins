@@ -976,6 +976,243 @@ class AIRiskReportsService:
             },
             order=3
         )
+
+    def _normalize_policy_like_fields_in_row(self, row: Dict[str, Any]) -> Dict[str, Any]:
+        """Normalize policy/account-like identifiers in a row without mutating source."""
+        normalized = dict(row)
+        for key, value in row.items():
+            key_norm = str(key or '').lower()
+            if any(token in key_norm for token in ['policy', 'מספר פוליסה', 'מס פוליסה', 'מספר חשבון', 'account number']):
+                normalized[key] = self._normalize_policy_number(value)
+        return normalized
+
+    @staticmethod
+    def _get_pdf_example_allocation_model() -> List[Dict[str, Any]]:
+        """
+        Allocation model inspired by uploaded sample report:
+        כפיר כהן מסלקה 122022.pdf
+        """
+        return [
+            {
+                'key': 'policy_status',
+                'order': 4,
+                'title_he': 'סטטוס פוליסות (הקצאה לפי דוח לדוגמה)',
+                'title_en': 'Policy Status (Example-Driven Allocation)',
+                'keywords': ['סטטוס', 'status', 'מספר פוליסה', 'policy', 'וותק', 'seniority', 'מעמד']
+            },
+            {
+                'key': 'plan_details',
+                'order': 5,
+                'title_he': 'רשימת תוכניות ופרטי מוצר',
+                'title_en': 'Plan List & Product Details',
+                'keywords': ['תוכנית', 'plan', 'product', 'מוצר', 'גיל פרישה', 'retirement', 'דמי ניהול', 'management fee']
+            },
+            {
+                'key': 'balances_forecast',
+                'order': 6,
+                'title_he': 'יתרות, חיסכון ותחזיות עתידיות',
+                'title_en': 'Balances, Savings, and Future Forecast',
+                'keywords': ['יתרה', 'balance', 'צבירה', 'חיסכון', 'savings', 'קצבה', 'pension', 'forecast', 'צפוי', 'הון']
+            },
+            {
+                'key': 'coverage_protection',
+                'order': 7,
+                'title_he': 'כיסויים והגנות ביטוחיות',
+                'title_en': 'Insurance Coverage & Protections',
+                'keywords': ['כיסוי', 'coverage', 'מוות', 'death', 'אובדן כושר', 'disability', 'פרמיה', 'premium', 'insured']
+            },
+            {
+                'key': 'investment_assets',
+                'order': 8,
+                'title_he': 'מסלולי השקעה והרכב נכסים',
+                'title_en': 'Investment Tracks and Asset Allocation',
+                'keywords': ['השקעה', 'investment', 'מסלול', 'track', 'asset', 'נכסים', 'חשיפה', 'equity', 'שארפ', 'std']
+            },
+            {
+                'key': 'contributions_debts',
+                'order': 9,
+                'title_he': 'הפקדות, הפרשות, חוב ופיגורים',
+                'title_en': 'Deposits, Contributions, Debt & Arrears',
+                'keywords': ['הפקדה', 'contribution', 'הפרשה', 'salary', 'שכר', 'employee', 'employer', 'חוב', 'פיגור']
+            },
+            {
+                'key': 'beneficiaries',
+                'order': 10,
+                'title_he': 'מוטבים ושארים',
+                'title_en': 'Beneficiaries & Dependents',
+                'keywords': ['מוטב', 'beneficiary', 'זיקה', 'relation', 'אחוז', 'percentage', 'שם מוטב']
+            },
+            {
+                'key': 'employers_addresses',
+                'order': 11,
+                'title_he': 'פרטי מעסיקים וכתובות',
+                'title_en': 'Employers and Address Records',
+                'keywords': ['מעסיק', 'employer', 'כתובת', 'address', 'יישוב', 'city', 'רחוב', 'טלפון', 'email', 'מיקוד']
+            },
+            {
+                'key': 'operational_additional',
+                'order': 12,
+                'title_he': 'נתונים תפעוליים ונתונים נוספים',
+                'title_en': 'Operational and Additional Data',
+                'keywords': ['מיופה', 'proxy', 'שיעבוד', 'lien', 'עיקול', 'operational', 'מסלקה', 'קידוד', 'תביעה', 'claim', 'הלוואה', 'loan']
+            },
+        ]
+
+    def _categorize_rows_by_pdf_example(
+        self,
+        rows: List[Dict[str, Any]],
+        columns: Optional[List[str]] = None
+    ) -> Dict[str, Any]:
+        """Allocate rows to example-model categories using column+value signals."""
+        model = self._get_pdf_example_allocation_model()
+        category_rows: Dict[str, List[Dict[str, Any]]] = {item['key']: [] for item in model}
+        category_lookup = {item['key']: item for item in model}
+
+        if not rows:
+            return {
+                'model': model,
+                'category_rows': category_rows,
+                'summary': [],
+                'total_rows': 0,
+            }
+
+        all_columns = list(columns or [])
+        if not all_columns:
+            all_columns = list({k for row in rows for k in (row or {}).keys()})
+
+        normalized_column_map = {col: str(col or '').lower().strip() for col in all_columns}
+        policy_columns = [
+            col for col, col_norm in normalized_column_map.items()
+            if any(token in col_norm for token in ['policy', 'מספר פוליסה', 'מס פוליסה', 'מספר חשבון', 'account number'])
+        ]
+        if not policy_columns:
+            policy_columns = [all_columns[0]] if all_columns else []
+
+        category_columns: Dict[str, List[str]] = {}
+        for item in model:
+            matched_columns = []
+            for col, col_norm in normalized_column_map.items():
+                if any(keyword in col_norm for keyword in item.get('keywords', [])):
+                    matched_columns.append(col)
+            # Always keep policy identity as anchor columns.
+            for policy_col in policy_columns:
+                if policy_col not in matched_columns:
+                    matched_columns.insert(0, policy_col)
+            category_columns[item['key']] = matched_columns
+
+        for item in model:
+            key = item['key']
+            selected_columns = category_columns.get(key, [])
+            if not selected_columns:
+                continue
+
+            projected_rows: List[Dict[str, Any]] = []
+            for row in rows:
+                if not isinstance(row, dict):
+                    continue
+                normalized_row = self._normalize_policy_like_fields_in_row(row)
+                projected = {col: normalized_row.get(col, '') for col in selected_columns if col in normalized_row}
+                data_values = [str(projected.get(col, '')).strip() for col in selected_columns if col not in policy_columns]
+                has_data = any(value for value in data_values) if data_values else any(str(v).strip() for v in projected.values())
+                if has_data:
+                    projected_rows.append(projected)
+
+            if projected_rows:
+                category_rows[key] = projected_rows
+
+        total_rows = len([r for r in rows if isinstance(r, dict)])
+        allocated_rows = sum(len(v) for v in category_rows.values())
+        # Categories can overlap by design (same row can serve multiple report sections).
+        unallocated_rows = 0 if allocated_rows > 0 else total_rows
+
+        summary = []
+        for item in model:
+            key = item['key']
+            rows_count = len(category_rows.get(key, []))
+            if rows_count <= 0:
+                continue
+            summary.append({
+                'key': key,
+                'title_he': item['title_he'],
+                'title_en': item['title_en'],
+                'count': rows_count,
+                'percent': round((rows_count / max(total_rows, 1)) * 100, 2),
+                'columns': len(category_columns.get(key, [])),
+                'order': item.get('order', 99),
+            })
+
+        return {
+            'model': model,
+            'lookup': category_lookup,
+            'category_rows': category_rows,
+            'summary': summary,
+            'total_rows': total_rows,
+            'unallocated_rows': unallocated_rows,
+            'allocation_model': 'kfir_122022_pdf',
+        }
+
+    def _build_pdf_example_allocation_sections(self, doc_data: Dict[str, Any], is_hebrew: bool) -> List[ReportSection]:
+        """Build allocation sections inspired by the uploaded sample PDF structure."""
+        if not doc_data:
+            return []
+        rows = doc_data.get('rows', []) or []
+        columns = doc_data.get('columns', []) or []
+        if not rows:
+            return []
+
+        allocation = self._categorize_rows_by_pdf_example(rows, columns)
+        summary_rows = []
+        for entry in allocation.get('summary', []):
+            summary_rows.append({
+                'קטגוריה' if is_hebrew else 'Category': entry['title_he'] if is_hebrew else entry['title_en'],
+                'כמות רשומות' if is_hebrew else 'Records': entry['count'],
+                'שדות משויכים' if is_hebrew else 'Mapped Fields': entry.get('columns', 0),
+                'אחוז מסך הרשומות' if is_hebrew else 'Percent of Records': entry['percent'],
+            })
+
+        sections: List[ReportSection] = []
+        if summary_rows:
+            sections.append(ReportSection(
+                title='מפת הקצאת נתונים לפי דוח לדוגמה (12/2022)' if is_hebrew else 'Data Allocation Map by Example Report (12/2022)',
+                content='הקצאה לפי מבנה דוח כפיר כהן 12/2022 לצורך דוח סיכונים וחיסכון מפורט.' if is_hebrew
+                else 'Allocation by Kfir Cohen 12/2022 report structure for detailed savings/risk reporting.',
+                data_table={
+                    'columns': list(summary_rows[0].keys()),
+                    'rows': summary_rows,
+                    'show_all': True
+                },
+                order=4
+            ))
+
+        category_lookup = allocation.get('lookup', {})
+        for entry in sorted(allocation.get('summary', []), key=lambda item: item.get('order', 99)):
+            key = entry['key']
+            rows_for_category = allocation.get('category_rows', {}).get(key, [])
+            if not rows_for_category:
+                continue
+
+            base_columns = [col for col in columns if any(col in row for row in rows_for_category)]
+            additional_columns: List[str] = []
+            for row in rows_for_category:
+                for col in row.keys():
+                    if col not in base_columns and col not in additional_columns:
+                        additional_columns.append(col)
+            resolved_columns = base_columns + additional_columns
+            item = category_lookup.get(key, {})
+
+            sections.append(ReportSection(
+                title=f"{item.get('title_he') if is_hebrew else item.get('title_en')} ({len(rows_for_category)})",
+                content='רשומות שהוקצו אוטומטית לפי מודל הדוח לדוגמה.' if is_hebrew
+                else 'Rows auto-allocated according to the example report model.',
+                data_table={
+                    'columns': resolved_columns,
+                    'rows': rows_for_category,
+                    'show_all': True
+                },
+                order=item.get('order', 99)
+            ))
+
+        return sections
     
     def _parse_csv(self, text_content: str) -> Dict[str, Any]:
         """Parse CSV content"""
@@ -2954,6 +3191,19 @@ class AIRiskReportsService:
         
         lang_titles = titles.get(lang, titles['english'])
         title = lang_titles.get(analysis.data_classification.value, lang_titles['default'])
+
+        allocation_snapshot = {}
+        if doc_data:
+            allocation_info = self._categorize_rows_by_pdf_example(
+                doc_data.get('rows', []) or [],
+                doc_data.get('columns', []) or []
+            )
+            allocation_snapshot = {
+                'model': allocation_info.get('allocation_model', 'kfir_122022_pdf'),
+                'total_rows': allocation_info.get('total_rows', 0),
+                'unallocated_rows': allocation_info.get('unallocated_rows', 0),
+                'categories': len(allocation_info.get('summary', [])),
+            }
         
         report = GeneratedReport(
             id=report_id,
@@ -2974,6 +3224,7 @@ class AIRiskReportsService:
                 'pension_data': pension_data if pension_data else None,
                 'is_pension_data': pension_data is not None or pension_report is not None,
                 'affiliation_snapshot': self._build_affiliation_snapshot_metadata(),
+                'example_allocation_snapshot': allocation_snapshot,
             }
         )
         
@@ -3029,6 +3280,7 @@ class AIRiskReportsService:
             )
             if policy_cumulative_section:
                 sections.append(policy_cumulative_section)
+            sections.extend(self._build_pdf_example_allocation_sections(doc_data, is_hebrew))
         
         # 3. Hebrew Insurance Details (if extracted)
         hebrew_factors = [f for f in analysis.extracted_factors if f.category == 'hebrew_insurance']
@@ -4034,6 +4286,7 @@ Factors Affecting Score:
         if pension_data:
             charts.extend(self._generate_pension_charts(pension_data, analysis.language))
             charts.extend(self._generate_policy_cumulative_charts_from_rows(source_rows, source_columns, analysis.language))
+            charts.extend(self._generate_pdf_example_allocation_charts(source_rows, source_columns, analysis.language))
             return charts  # Pension flow includes all relevant pension/policy charts
         
         # Risk Score Gauge (for non-pension data)
@@ -4083,8 +4336,52 @@ Factors Affecting Score:
 
         # Add detailed policy savings/investment charts when fields exist.
         charts.extend(self._generate_policy_cumulative_charts_from_rows(source_rows, source_columns, analysis.language))
+        charts.extend(self._generate_pdf_example_allocation_charts(source_rows, source_columns, analysis.language))
         
         return charts
+
+    def _generate_pdf_example_allocation_charts(
+        self,
+        rows: List[Dict[str, Any]],
+        columns: Optional[List[str]],
+        lang_code: str
+    ) -> List[ChartConfig]:
+        """Generate charts for example-driven data allocation coverage."""
+        allocation = self._categorize_rows_by_pdf_example(rows, columns)
+        summary = allocation.get('summary', [])
+        if len(summary) < 2:
+            return []
+
+        is_hebrew = lang_code == 'hebrew'
+        labels = [entry['title_he'] if is_hebrew else entry['title_en'] for entry in summary]
+        counts = [entry['count'] for entry in summary]
+        percents = [entry['percent'] for entry in summary]
+
+        return [
+            ChartConfig(
+                type=ChartType.BAR,
+                title='התפלגות רשומות לפי קטגוריות דוח לדוגמה' if is_hebrew else 'Record Allocation by Example Report Categories',
+                data={
+                    'labels': labels,
+                    'values': counts,
+                },
+                options={
+                    'horizontal': True,
+                    'colors': ['#0ea5e9', '#2563eb', '#16a34a', '#f59e0b', '#ef4444', '#8b5cf6', '#14b8a6', '#f97316', '#64748b'],
+                }
+            ),
+            ChartConfig(
+                type=ChartType.PIE,
+                title='כיסוי הקצאת נתונים (%)' if is_hebrew else 'Allocation Coverage (%)',
+                data={
+                    'labels': labels,
+                    'values': percents,
+                },
+                options={
+                    'colors': ['#0ea5e9', '#2563eb', '#16a34a', '#f59e0b', '#ef4444', '#8b5cf6', '#14b8a6', '#f97316', '#64748b'],
+                }
+            ),
+        ]
 
     def _generate_policy_cumulative_charts_from_rows(
         self,
