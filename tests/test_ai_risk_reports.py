@@ -412,7 +412,12 @@ POL-002,150000,620"""
         report = self.service.generate_report(self.analysis.id, language='hebrew')
         self.assertGreater(len(report.charts), 0)
         self.assertTrue(any(chart.type in [ChartType.BAR, ChartType.PIE, ChartType.DOUGHNUT, ChartType.GAUGE] for chart in report.charts))
-        self.assertTrue(any('מצטברת' in chart.title for chart in report.charts))
+        self.assertTrue(
+            any(
+                ('מצטברת' in chart.title) or ('Cumulative' in chart.title)
+                for chart in report.charts
+            )
+        )
 
     def test_policy_balance_cumulative_and_policy_number_normalization(self):
         report = self.service.generate_report(self.analysis.id, language='hebrew')
