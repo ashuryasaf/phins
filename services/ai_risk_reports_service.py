@@ -2602,6 +2602,7 @@ class AIRiskReportsService:
                 # Include raw pension data for frontend display
                 'pension_data': pension_data if pension_data else None,
                 'is_pension_data': pension_data is not None or pension_report is not None,
+                'affiliation_snapshot': self._build_affiliation_snapshot_metadata(),
             }
         )
         
@@ -2636,6 +2637,7 @@ class AIRiskReportsService:
                     content=pension_section,
                     order=2
                 ))
+            sections.extend(self._build_pension_affiliated_sections(pension_data, is_hebrew))
         
         # 3. ACTUAL DATA CONTENT SECTION - Show extracted data from the files
         if doc_data:
@@ -2856,17 +2858,231 @@ Factors Affecting Score:
             data_table=analysis.key_metrics,
             order=8
         ))
+
+        # 9. Affiliation Snapshot (Mislaka schema codes)
+        affiliation_section = self._build_affiliation_mapping_section(is_hebrew)
+        if affiliation_section:
+            sections.append(affiliation_section)
         
-        # 9. Swiftness Data Resources & References
+        # 10. Swiftness Data Resources & References
         swiftness_section = self._generate_swiftness_resources_section(is_hebrew)
         if swiftness_section:
             sections.append(ReportSection(
                 title='משאבי נתונים - Swiftness' if is_hebrew else 'Swiftness Data Resources',
                 content=swiftness_section,
-                order=9
+                order=10
             ))
         
         return sections
+
+    def _build_affiliation_snapshot_metadata(self) -> Dict[str, Any]:
+        """Build compact affiliation metadata without mutating source mappings."""
+        try:
+            from services.pension_data_agent import MislakaSchemaMapping
+
+            return {
+                'interface_codes': len(MislakaSchemaMapping.INTERFACE_CODES),
+                'product_types': len(MislakaSchemaMapping.PRODUCT_TYPE_CODES),
+                'entity_types': len(MislakaSchemaMapping.ENTITY_TYPE_CODES),
+                'status_codes': len(MislakaSchemaMapping.STATUS_CODES),
+                'id_types': len(MislakaSchemaMapping.ID_TYPE_CODES),
+                'environment_codes': len(MislakaSchemaMapping.ENVIRONMENT_CODES),
+                'source': 'MislakaSchemaMapping'
+            }
+        except Exception:
+            return {}
+
+    def _build_pension_affiliated_sections(self, pension_data: Dict[str, Any], is_hebrew: bool) -> List[ReportSection]:
+        """Build table-oriented sections aligned with the Nituach Tik report model."""
+        sections: List[ReportSection] = []
+        if not pension_data:
+            return sections
+
+        accounts = pension_data.get('accounts', []) or []
+        contributions = pension_data.get('contributions', []) or []
+        totals = pension_data.get('totals', {}) or {}
+        employers = pension_data.get('employers', []) or []
+
+        if accounts:
+            status_rows = []
+            for acct in accounts[:80]:
+                status_rows.append({
+                    'מספר פוליסה' if is_hebrew else 'Policy Number': acct.get('policy_number', ''),
+                    'יצרן' if is_hebrew else 'Provider': acct.get('provider', ''),
+                    'סוג מוצר' if is_hebrew else 'Product Type': acct.get('product_type_name', acct.get('product_type', '')),
+                    'סטטוס' if is_hebrew else 'Status': acct.get('status', acct.get('status_en', '')),
+                    'יתרה כוללת' if is_hebrew else 'Total Balance': acct.get('total_balance', 0),
+                    'פיצויים' if is_hebrew else 'Severance': acct.get('severance_balance', 0),
+                    'מעסיק' if is_hebrew else 'Employer': acct.get('employer_name', ''),
+                    'סעיף 14' if is_hebrew else 'Section 14': ('כן' if acct.get('section14') else 'לא') if is_hebrew else ('Yes' if acct.get('section14') else 'No'),
+                })
+
+            sections.append(ReportSection(
+                title='סטטוס פוליסות (טבלת שיוכים)' if is_hebrew else 'Policy Status (Affiliation Table)',
+                content='מבט טבלאי על פוליסות לפי שיוכי מסלקה.' if is_hebrew else 'Table view of policies by Mislaka affiliation mappings.',
+                data_table={
+                    'columns': list(status_rows[0].keys()) if status_rows else [],
+                    'rows': status_rows
+                },
+                order=3
+            ))
+
+            plan_rows = []
+            for acct in accounts[:80]:
+                plan_rows.append({
+                    'מספר פוליסה' if is_hebrew else 'Policy Number': acct.get('policy_number', ''),
+                    'תאריך תחילה' if is_hebrew else 'Start Date': acct.get('start_date', ''),
+                    'דמי ניהול מצבירה %' if is_hebrew else 'Mgmt Fee Savings %': acct.get('management_fee_savings', 0),
+                    'דמי ניהול מהפקדה %' if is_hebrew else 'Mgmt Fee Deposits %': acct.get('management_fee_deposits', 0),
+                    'כיסוי חיים' if is_hebrew else 'Life Coverage': acct.get('death_coverage', 0),
+                    'כיסוי אכ"ע' if is_hebrew else 'Disability Coverage': acct.get('disability_coverage', 0),
+                    'תגמולים' if is_hebrew else 'Savings': acct.get('savings_balance', 0),
+                    'פיצויים' if is_hebrew else 'Severance': acct.get('severance_balance', 0),
+                })
+
+            sections.append(ReportSection(
+                title='רשימת תוכניות (פירוט טבלאי)' if is_hebrew else 'Plan Details (Tabular)',
+                content='פירוט תוכניות לפי מודל הדוח המסונף.' if is_hebrew else 'Detailed plan view aligned with the affiliated report model.',
+                data_table={
+                    'columns': list(plan_rows[0].keys()) if plan_rows else [],
+                    'rows': plan_rows
+                },
+                order=4
+            ))
+
+        if contributions:
+            contribution_rows = []
+            for contrib in contributions[:120]:
+                contribution_rows.append({
+                    'תקופה' if is_hebrew else 'Period': contrib.get('period', ''),
+                    'מעסיק' if is_hebrew else 'Employer': contrib.get('employer_name', ''),
+                    'הפקדת עובד' if is_hebrew else 'Employee Amount': contrib.get('employee_amount', 0),
+                    'הפקדת מעסיק' if is_hebrew else 'Employer Amount': contrib.get('employer_amount', 0),
+                    'פיצויים' if is_hebrew else 'Severance': contrib.get('severance_amount', 0),
+                    'סה״כ' if is_hebrew else 'Total': contrib.get('total_amount', 0),
+                })
+
+            sections.append(ReportSection(
+                title='פירוט הפקדות וחובות' if is_hebrew else 'Contribution Details',
+                content='רצף הפקדות לפי תקופה לצורכי בקרה ותאימות.' if is_hebrew else 'Period-level contribution trail for control and reconciliation.',
+                data_table={
+                    'columns': list(contribution_rows[0].keys()) if contribution_rows else [],
+                    'rows': contribution_rows
+                },
+                order=5
+            ))
+
+        if employers or accounts:
+            employer_values = []
+            seen = set()
+            for acct in accounts:
+                emp_name = (acct.get('employer_name') or '').strip()
+                if emp_name and emp_name not in seen:
+                    seen.add(emp_name)
+                    employer_values.append({
+                        'שם מעסיק' if is_hebrew else 'Employer Name': emp_name,
+                        'מספר מעסיק' if is_hebrew else 'Employer ID': acct.get('employer_id', ''),
+                        'סעיף 14' if is_hebrew else 'Section 14': ('כן' if acct.get('section14') else 'לא') if is_hebrew else ('Yes' if acct.get('section14') else 'No'),
+                    })
+            for emp in employers:
+                emp_name = (emp.get('name') or '').strip() if isinstance(emp, dict) else str(emp).strip()
+                if emp_name and emp_name not in seen:
+                    seen.add(emp_name)
+                    employer_values.append({
+                        'שם מעסיק' if is_hebrew else 'Employer Name': emp_name,
+                        'מספר מעסיק' if is_hebrew else 'Employer ID': emp.get('id', '') if isinstance(emp, dict) else '',
+                        'סעיף 14' if is_hebrew else 'Section 14': '',
+                    })
+
+            if employer_values:
+                sections.append(ReportSection(
+                    title='פרטי מעסיקים' if is_hebrew else 'Employer Information',
+                    content='שיוך מעסיקים לחשבונות ולזכויות.' if is_hebrew else 'Employer affiliation to accounts and severance rights.',
+                    data_table={
+                        'columns': list(employer_values[0].keys()),
+                        'rows': employer_values[:80]
+                    },
+                    order=6
+                ))
+
+        if totals:
+            totals_rows = [{
+                'שדה' if is_hebrew else 'Metric': 'סה״כ צבירה' if is_hebrew else 'Total Balance',
+                'ערך' if is_hebrew else 'Value': totals.get('total_balance', 0)
+            }, {
+                'שדה' if is_hebrew else 'Metric': 'סה״כ חסכונות' if is_hebrew else 'Total Savings',
+                'ערך' if is_hebrew else 'Value': totals.get('total_savings', totals.get('total_savings_balance', 0))
+            }, {
+                'שדה' if is_hebrew else 'Metric': 'סה״כ פיצויים' if is_hebrew else 'Total Severance',
+                'ערך' if is_hebrew else 'Value': totals.get('total_severance', totals.get('total_severance_balance', 0))
+            }, {
+                'שדה' if is_hebrew else 'Metric': 'מספר פוליסות' if is_hebrew else 'Policy Count',
+                'ערך' if is_hebrew else 'Value': totals.get('account_count', len(accounts))
+            }]
+
+            sections.append(ReportSection(
+                title='סיכום כספי (מודל דוח)' if is_hebrew else 'Financial Summary (Model-Aligned)',
+                content='תקציר כספי לצורך השוואה מול מודל הדוח המסונף.' if is_hebrew else 'Financial summary aligned with the affiliated report model.',
+                data_table={
+                    'columns': list(totals_rows[0].keys()),
+                    'rows': totals_rows
+                },
+                order=7
+            ))
+
+        return sections
+
+    def _build_affiliation_mapping_section(self, is_hebrew: bool) -> Optional[ReportSection]:
+        """Build a compact affiliations map section from authoritative schema constants."""
+        try:
+            from services.pension_data_agent import MislakaSchemaMapping
+        except Exception:
+            return None
+
+        rows: List[Dict[str, Any]] = []
+
+        for code, info in sorted(MislakaSchemaMapping.INTERFACE_CODES.items(), key=lambda item: int(item[0]))[:20]:
+            rows.append({
+                'קבוצה' if is_hebrew else 'Group': 'ממשק' if is_hebrew else 'Interface',
+                'קוד' if is_hebrew else 'Code': code,
+                'שם' if is_hebrew else 'Name': info.get('he', info.get('name', '')),
+                'שיוך' if is_hebrew else 'Affiliation': info.get('schema', info.get('name', ''))
+            })
+
+        for code, info in sorted(MislakaSchemaMapping.PRODUCT_TYPE_CODES.items(), key=lambda item: str(item[0]))[:20]:
+            rows.append({
+                'קבוצה' if is_hebrew else 'Group': 'מוצר' if is_hebrew else 'Product',
+                'קוד' if is_hebrew else 'Code': code,
+                'שם' if is_hebrew else 'Name': info.get('he', info.get('name', '')),
+                'שיוך' if is_hebrew else 'Affiliation': info.get('en', '')
+            })
+
+        for code, info in sorted(MislakaSchemaMapping.STATUS_CODES.items(), key=lambda item: str(item[0]))[:10]:
+            rows.append({
+                'קבוצה' if is_hebrew else 'Group': 'סטטוס' if is_hebrew else 'Status',
+                'קוד' if is_hebrew else 'Code': code,
+                'שם' if is_hebrew else 'Name': info.get('he', info.get('name', '')),
+                'שיוך' if is_hebrew else 'Affiliation': info.get('en', '')
+            })
+
+        for code, info in sorted(MislakaSchemaMapping.ID_TYPE_CODES.items(), key=lambda item: str(item[0]))[:10]:
+            rows.append({
+                'קבוצה' if is_hebrew else 'Group': 'זיהוי' if is_hebrew else 'ID Type',
+                'קוד' if is_hebrew else 'Code': code,
+                'שם' if is_hebrew else 'Name': info.get('he', ''),
+                'שיוך' if is_hebrew else 'Affiliation': info.get('en', '')
+            })
+
+        return ReportSection(
+            title='מפת שיוכים (Affiliations)' if is_hebrew else 'Affiliation Mapping Snapshot',
+            content='טבלת שיוכים לפי מסלקה: ממשקים, מוצרים, סטטוסים וסוגי זיהוי.' if is_hebrew
+            else 'Affiliation map by Mislaka schema: interfaces, products, statuses, and ID types.',
+            data_table={
+                'columns': list(rows[0].keys()) if rows else [],
+                'rows': rows
+            },
+            order=9
+        )
     
     def _generate_swiftness_resources_section(self, is_hebrew: bool) -> str:
         """Generate a report section with Swiftness affiliated links and resources."""
@@ -3378,7 +3594,7 @@ Factors Affecting Score:
         
         # Check if we have pension data for specialized charts
         if pension_data:
-            charts.extend(self._generate_pension_charts(pension_data, analysis.language_code))
+            charts.extend(self._generate_pension_charts(pension_data, analysis.language))
             return charts  # Return only pension charts for pension data
         
         # Risk Score Gauge (for non-pension data)
