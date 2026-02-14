@@ -321,6 +321,97 @@ POL-003,150000,600,0"""
         self.assertNotEqual(report_en.title, report_he.title)
 
 
+class TestPensionAffiliatedReportGeneration(unittest.TestCase):
+    """Regression tests for pension-affiliated table/chart generation"""
+
+    def setUp(self):
+        self.service = init_ai_reports_service()
+        csv_content = b"""policy_number,coverage_amount,premium
+POL-001,100000,500
+POL-002,150000,620"""
+        parse_result = self.service.parse_file('pension_seed.csv', csv_content, 'csv')
+        self.doc_id = parse_result['document_id']
+        self.analysis = self.service.analyze(self.doc_id)
+
+        # Inject pension-style parsed data to trigger Mislaka-affiliated path.
+        self.service.documents[self.doc_id]['parsed_data']['pension_data'] = {
+            'accounts': [
+                {
+                    'policy_number': '6962791015',
+                    'provider': 'הפניקס',
+                    'product_type_name': 'מנהלים ושכירים',
+                    'status': 'פעיל',
+                    'total_balance': 214697,
+                    'savings_balance': 111400,
+                    'severance_balance': 103297,
+                    'management_fee_savings': 0.5,
+                    'management_fee_deposits': 3.0,
+                    'death_coverage': 1077601,
+                    'disability_coverage': 15000,
+                    'employer_name': 'סאן פוד טרייד 2016 בע"מ',
+                    'section14': True,
+                    'start_date': '2018-02-01',
+                },
+                {
+                    'policy_number': '13272595',
+                    'provider': 'איילון',
+                    'product_type_name': 'ביטוח יסודי',
+                    'status': 'פעיל',
+                    'total_balance': 0,
+                    'savings_balance': 0,
+                    'severance_balance': 0,
+                    'death_coverage': 2091908,
+                    'employer_name': 'סאן פוד טרייד 2016 בע"מ',
+                    'section14': False,
+                    'start_date': '2022-07-01',
+                },
+            ],
+            'contributions': [
+                {
+                    'period': '2022-10',
+                    'employer_name': 'סאן פוד טרייד 2016 בע"מ',
+                    'employee_amount': 1200,
+                    'employer_amount': 1300,
+                    'severance_amount': 1666,
+                    'total_amount': 4166,
+                }
+            ],
+            'totals': {
+                'total_balance': 214697,
+                'total_savings': 111400,
+                'total_severance': 103297,
+                'account_count': 2,
+                'provider_count': 2,
+                'section14_coverage': True,
+            },
+            'employers': [{'name': 'סאן פוד טרייד 2016 בע"מ'}],
+        }
+
+    def test_generate_report_with_pension_data_has_affiliated_tables(self):
+        report = self.service.generate_report(self.analysis.id, language='hebrew')
+        titles = [section.title for section in report.sections]
+
+        self.assertTrue(any('סטטוס פוליסות' in title for title in titles))
+        self.assertTrue(any('מפת שיוכים' in title for title in titles))
+
+        table_sections = [section for section in report.sections if section.data_table]
+        self.assertGreater(len(table_sections), 0)
+        self.assertTrue(
+            any(
+                isinstance(section.data_table, dict) and
+                isinstance(section.data_table.get('rows'), list) and
+                section.data_table.get('rows')
+                for section in table_sections
+            )
+        )
+
+    def test_generate_report_with_pension_data_charts_regression(self):
+        # Regression for analysis.language_code typo in pension chart generation.
+        report = self.service.generate_report(self.analysis.id, language='hebrew')
+        self.assertGreater(len(report.charts), 0)
+        self.assertTrue(any(chart.type in [ChartType.BAR, ChartType.PIE, ChartType.DOUGHNUT, ChartType.GAUGE] for chart in report.charts))
+
+
 class TestHebrewWorkflow(unittest.TestCase):
     """Test complete workflow with Hebrew data"""
     
