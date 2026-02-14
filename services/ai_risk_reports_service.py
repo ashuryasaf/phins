@@ -644,18 +644,53 @@ class AIRiskReportsService:
             return 0.0
         if isinstance(value, (int, float)):
             return float(value)
+        raw = str(value).strip()
+        if not raw:
+            return 0.0
+
+        negative = False
+        if raw.startswith('(') and raw.endswith(')'):
+            negative = True
+            raw = raw[1:-1]
+
         cleaned = (
-            str(value).strip()
-            .replace(',', '')
-            .replace('₪', '')
+            raw.replace('₪', '')
             .replace('$', '')
             .replace('€', '')
             .replace('%', '')
+            .replace('\u200f', '')
+            .replace('\u200e', '')
+            .replace('\u00a0', ' ')
+            .strip()
         )
-        if not cleaned:
+        cleaned = re.sub(r'\s+', '', cleaned)
+
+        if cleaned.endswith('-'):
+            negative = True
+            cleaned = cleaned[:-1]
+
+        # Handle mixed thousand/decimal separators.
+        if ',' in cleaned and '.' in cleaned:
+            if cleaned.rfind(',') > cleaned.rfind('.'):
+                cleaned = cleaned.replace('.', '').replace(',', '.')
+            else:
+                cleaned = cleaned.replace(',', '')
+        elif ',' in cleaned:
+            comma_parts = cleaned.split(',')
+            if len(comma_parts) == 2 and len(comma_parts[1]) <= 2:
+                cleaned = '.'.join(comma_parts)
+            else:
+                cleaned = ''.join(comma_parts)
+        elif cleaned.count('.') > 1:
+            prefix, suffix = cleaned.rsplit('.', 1)
+            cleaned = prefix.replace('.', '') + '.' + suffix
+
+        match = re.search(r'-?\d+(?:\.\d+)?', cleaned)
+        if not match:
             return 0.0
         try:
-            return float(cleaned)
+            parsed = float(match.group(0))
+            return -parsed if negative and parsed > 0 else parsed
         except (ValueError, TypeError):
             return 0.0
 
@@ -699,6 +734,11 @@ class AIRiskReportsService:
         investment_keywords = ['investment', 'investments', 'השקעה', 'השקעות']
         severance_keywords = ['severance', 'פיצויים']
         balance_keywords = ['balance', 'יתרה', 'צבירה']
+        provider_keywords = ['provider', 'יצרן', 'company', 'חברה', 'carrier', 'insurer']
+        product_keywords = ['product', 'type', 'סוג מוצר', 'מוצר', 'plan', 'תוכנית', 'מסלול']
+        status_keywords = ['status', 'state', 'סטטוס', 'מצב']
+        employer_keywords = ['employer', 'מעסיק', 'company employer', 'שם מעסיק']
+        period_keywords = ['period', 'חודש', 'תקופה', 'date', 'תאריך']
 
         def has_any_keyword(text: str, keywords: List[str]) -> bool:
             return any(keyword in text for keyword in keywords)
@@ -734,6 +774,11 @@ class AIRiskReportsService:
             col for col, normalized in normalized_map.items()
             if col not in classified and has_any_keyword(normalized, balance_keywords)
         ]
+        provider_columns = [col for col, normalized in normalized_map.items() if has_any_keyword(normalized, provider_keywords)]
+        product_columns = [col for col, normalized in normalized_map.items() if has_any_keyword(normalized, product_keywords)]
+        status_columns = [col for col, normalized in normalized_map.items() if has_any_keyword(normalized, status_keywords)]
+        employer_columns = [col for col, normalized in normalized_map.items() if has_any_keyword(normalized, employer_keywords)]
+        period_columns = [col for col, normalized in normalized_map.items() if has_any_keyword(normalized, period_keywords)]
 
         if not (savings_columns or investment_columns or severance_columns or balance_columns):
             return []
@@ -755,6 +800,16 @@ class AIRiskReportsService:
                     'severance_total': 0.0,
                     'balance_total': 0.0,
                     'records_count': 0,
+                    'provider_values': [],
+                    'provider_seen': set(),
+                    'product_values': [],
+                    'product_seen': set(),
+                    'status_values': [],
+                    'status_seen': set(),
+                    'employer_values': [],
+                    'employer_seen': set(),
+                    'period_values': [],
+                    'period_seen': set(),
                 }
 
             bucket = policy_totals[policy_value]
@@ -764,15 +819,51 @@ class AIRiskReportsService:
             bucket['severance_total'] += sum(self._safe_numeric(row.get(col)) for col in severance_columns)
             bucket['balance_total'] += sum(self._safe_numeric(row.get(col)) for col in balance_columns)
 
+            detail_specs = [
+                ('provider', provider_columns),
+                ('product', product_columns),
+                ('status', status_columns),
+                ('employer', employer_columns),
+                ('period', period_columns),
+            ]
+            for detail_key, detail_columns in detail_specs:
+                seen_key = f'{detail_key}_seen'
+                values_key = f'{detail_key}_values'
+                for detail_col in detail_columns:
+                    raw_detail = row.get(detail_col)
+                    if raw_detail is None:
+                        continue
+                    detail_value = str(raw_detail).strip()
+                    if not detail_value:
+                        continue
+                    if detail_value not in bucket[seen_key]:
+                        bucket[seen_key].add(detail_value)
+                        bucket[values_key].append(detail_value)
+
         if not policy_totals:
             return []
 
         cumulative_total = 0.0
         results: List[Dict[str, Any]] = []
+
+        def summarize(values: List[str], max_items: int = 4) -> str:
+            if not values:
+                return ''
+            if len(values) <= max_items:
+                return ' | '.join(values)
+            return ' | '.join(values[:max_items]) + f' | +{len(values) - max_items}'
+
         for policy, bucket in policy_totals.items():
             derived_total = bucket['savings_total'] + bucket['investments_total'] + bucket['severance_total']
             policy_total = bucket['balance_total'] if bucket['balance_total'] > 0 else derived_total
             cumulative_total += policy_total
+
+            provider_values = bucket['provider_values']
+            product_values = bucket['product_values']
+            status_values = bucket['status_values']
+            employer_values = bucket['employer_values']
+            period_values = bucket['period_values']
+
             results.append({
                 'policy_number': policy,
                 'savings_total': bucket['savings_total'],
@@ -782,6 +873,13 @@ class AIRiskReportsService:
                 'policy_total': policy_total,
                 'cumulative_total': cumulative_total,
                 'records_count': bucket['records_count'],
+                'provider': summarize(provider_values),
+                'product': summarize(product_values),
+                'status': summarize(status_values),
+                'employer': summarize(employer_values),
+                'period': summarize(period_values),
+                'provider_primary': provider_values[0] if provider_values else '',
+                'product_primary': product_values[0] if product_values else '',
             })
 
         return results
@@ -801,6 +899,11 @@ class AIRiskReportsService:
         for metric in policy_metrics:
             table_rows.append({
                 'מספר פוליסה' if is_hebrew else 'Policy Number': metric['policy_number'],
+                'יצרנים' if is_hebrew else 'Providers': metric.get('provider', ''),
+                'מוצרים/מסלולים' if is_hebrew else 'Products/Plans': metric.get('product', ''),
+                'סטטוס' if is_hebrew else 'Status': metric.get('status', ''),
+                'מעסיקים' if is_hebrew else 'Employers': metric.get('employer', ''),
+                'תקופות' if is_hebrew else 'Periods': metric.get('period', ''),
                 'סכום חסכונות' if is_hebrew else 'Savings Sum': metric['savings_total'],
                 'סכום השקעות' if is_hebrew else 'Investments Sum': metric['investments_total'],
                 'סכום פיצויים' if is_hebrew else 'Severance Sum': metric['severance_total'],
@@ -4061,6 +4164,46 @@ Factors Affecting Score:
                 options={
                     'horizontal': False,
                     'colors': ['#f59e0b'],
+                    'currency': True,
+                    'currency_symbol': '₪',
+                }
+            ))
+
+        provider_totals: Dict[str, float] = {}
+        product_totals: Dict[str, float] = {}
+        for metric in policy_metrics:
+            policy_total = metric.get('policy_total', 0) or 0
+            provider_label = metric.get('provider_primary') or ('לא ידוע' if is_hebrew else 'Unknown')
+            product_label = metric.get('product_primary') or ('לא מוגדר' if is_hebrew else 'Undefined')
+            if policy_total > 0:
+                provider_totals[provider_label] = provider_totals.get(provider_label, 0) + policy_total
+                product_totals[product_label] = product_totals.get(product_label, 0) + policy_total
+
+        if provider_totals and len(provider_totals) > 1:
+            charts.append(ChartConfig(
+                type=ChartType.PIE,
+                title='סך יתרה לפי יצרן (הקצאת רשומות)' if is_hebrew else 'Total Balance by Provider (Record Allocation)',
+                data={
+                    'labels': list(provider_totals.keys()),
+                    'values': list(provider_totals.values()),
+                },
+                options={
+                    'colors': ['#2563eb', '#16a34a', '#f59e0b', '#ef4444', '#7c3aed', '#14b8a6'],
+                    'currency': True,
+                    'currency_symbol': '₪',
+                }
+            ))
+
+        if product_totals and len(product_totals) > 1:
+            charts.append(ChartConfig(
+                type=ChartType.DOUGHNUT,
+                title='סך יתרה לפי מוצר/מסלול' if is_hebrew else 'Total Balance by Product/Plan',
+                data={
+                    'labels': list(product_totals.keys()),
+                    'values': list(product_totals.values()),
+                },
+                options={
+                    'colors': ['#0ea5e9', '#22c55e', '#f97316', '#e11d48', '#6366f1', '#84cc16'],
                     'currency': True,
                     'currency_symbol': '₪',
                 }

@@ -326,9 +326,9 @@ class TestPensionAffiliatedReportGeneration(unittest.TestCase):
 
     def setUp(self):
         self.service = init_ai_reports_service()
-        csv_content = b"""policy_number,coverage_amount,premium,savings_amount,investment_amount
-POL-001,100000,500,10000,5000
-POL-002,150000,620,3000,2000"""
+        csv_content = b"""policy_number,coverage_amount,premium,savings_amount,investment_amount,provider_name,product_type,status,employer_name,period
+POL-001,100000,500,10000,5000,Phoenix,Managers,Active,SunFood,2022-10
+POL-002,150000,620,3000,2000,Ayalon,Basic,Active,SunFood,2022-11"""
         parse_result = self.service.parse_file('pension_seed.csv', csv_content, 'csv')
         self.doc_id = parse_result['document_id']
         self.analysis = self.service.analyze(self.doc_id)
@@ -458,6 +458,8 @@ POL-002,150000,620,3000,2000"""
         self.assertEqual(len(cumulative_rows), 2)
         self.assertEqual(cumulative_rows[0].get('סכום חסכונות'), 10000)
         self.assertEqual(cumulative_rows[0].get('סכום השקעות'), 5000)
+        self.assertEqual(cumulative_rows[0].get('יצרנים'), 'Phoenix')
+        self.assertEqual(cumulative_rows[0].get('מוצרים/מסלולים'), 'Managers')
         self.assertEqual(cumulative_rows[0].get('יתרה מחושבת לפוליסה'), 15000)
         self.assertEqual(cumulative_rows[0].get('יתרה מצטברת'), 15000)
         self.assertEqual(cumulative_rows[1].get('יתרה מצטברת'), 20000)
