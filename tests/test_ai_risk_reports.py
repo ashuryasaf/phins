@@ -441,10 +441,11 @@ POL-002,150000,620,3000,2000"""
         report = self.service.generate_report(self.analysis.id, language='hebrew')
 
         full_data_section = next(
-            (section for section in report.sections if 'טבלת נתונים מלאה' in section.title),
+            (section for section in report.sections if '📊 נתונים שחולצו' in section.title),
             None
         )
         self.assertIsNotNone(full_data_section)
+        self.assertIn('רשומות', full_data_section.title)
         full_rows = full_data_section.data_table.get('rows', [])
         self.assertEqual(len(full_rows), 2)
 

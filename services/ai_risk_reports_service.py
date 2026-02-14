@@ -823,7 +823,7 @@ class AIRiskReportsService:
         )
 
     def _build_uploaded_data_table_section(self, doc_data: Dict[str, Any], is_hebrew: bool) -> Optional[ReportSection]:
-        """Build full uploaded data table section (all rows, no sampling)."""
+        """Build full uploaded affiliated data table section (all rows, no sampling)."""
         if not doc_data:
             return None
 
@@ -851,16 +851,27 @@ class AIRiskReportsService:
                     normalized_row[col] = self._normalize_policy_number(normalized_row.get(col))
             normalized_rows.append(normalized_row)
 
+        record_count = len(normalized_rows)
+        title = (
+            f'📊 נתונים שחולצו ({record_count} רשומות) - טבלת שיוך מלאה'
+            if is_hebrew
+            else f'📊 Extracted Data ({record_count} Records) - Full Affiliated Table'
+        )
+        content = (
+            'הקצאה מלאה של כל הנתונים שחולצו לקונטקסט דוח שיוכים/סיכון/חיסכון.'
+            if is_hebrew
+            else 'Full allocation of all extracted records into affiliated savings/risk report context.'
+        )
+
         return ReportSection(
-            title='טבלת נתונים מלאה (כל הרשומות)' if is_hebrew else 'Full Uploaded Data Table (All Records)',
-            content='מציג את כל הנתונים שהתקבלו מהקבצים שהועלו.' if is_hebrew
-            else 'Displays all records parsed from uploaded files.',
+            title=title,
+            content=content,
             data_table={
                 'columns': resolved_columns,
                 'rows': normalized_rows,
                 'show_all': True
             },
-            order=8
+            order=3
         )
     
     def _parse_csv(self, text_content: str) -> Dict[str, Any]:
@@ -3513,12 +3524,15 @@ Factors Affecting Score:
             if is_hebrew:
                 content_lines.append(f"📊 נתונים שחולצו ({len(rows)} רשומות):")
                 content_lines.append("=" * 50)
+                content_lines.append("✓ כל הרשומות מוקצות בטבלת שיוך מלאה בחלק הייעודי בדוח.")
             else:
                 content_lines.append(f"📊 Extracted Data ({len(rows)} records):")
                 content_lines.append("=" * 50)
+                content_lines.append("✓ All records are allocated in the dedicated full affiliated table section.")
             
-            # Display first 10 rows with all their values
-            for i, row in enumerate(rows[:15], 1):
+            # Display preview rows here; full dataset is provided in the affiliated data table section.
+            preview_rows = rows[:5]
+            for i, row in enumerate(preview_rows, 1):
                 if is_hebrew:
                     content_lines.append(f"\n🔹 רשומה {i}:")
                 else:
@@ -3537,8 +3551,13 @@ Factors Affecting Score:
                             pass
                         content_lines.append(f"    {key}: {val_str}")
             
-            if len(rows) > 15:
-                content_lines.append(f"\n... ועוד {len(rows) - 15} רשומות" if is_hebrew else f"\n... and {len(rows) - 15} more records")
+            if len(rows) > len(preview_rows):
+                remaining = len(rows) - len(preview_rows)
+                content_lines.append(
+                    f"\n... ועוד {remaining} רשומות (מוצגות במלואן בטבלת השיוך)"
+                    if is_hebrew
+                    else f"\n... and {remaining} more records (fully shown in affiliated table)"
+                )
         
         # Extract and highlight key insurance/financial fields
         key_fields = self._extract_key_fields_from_data(rows, is_hebrew)
