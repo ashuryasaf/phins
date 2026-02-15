@@ -1110,6 +1110,7 @@
     let currentAnalysis = null;
     let currentReport = null;
     let charts = {};
+    let chartJsLoadPromise = null;
     
     // DOM Elements
     const uploadZone = document.getElementById('uploadZone');
@@ -1667,15 +1668,95 @@
       container.innerHTML = insightsHTML || '<p style="color: var(--text-muted);">No advanced insights available for this analysis.</p>';
     }
     
+    function loadScript(src) {
+      return new Promise((resolve, reject) => {
+        const existing = document.querySelector(`script[data-script-src="${src}"]`);
+        if (existing) {
+          if (typeof Chart !== 'undefined') {
+            resolve(true);
+            return;
+          }
+
+          existing.addEventListener('load', () => resolve(true), { once: true });
+          existing.addEventListener('error', () => reject(new Error(`Script failed: ${src}`)), { once: true });
+          return;
+        }
+
+        const script = document.createElement('script');
+        script.src = src;
+        script.async = true;
+        script.dataset.scriptSrc = src;
+        script.onload = () => resolve(true);
+        script.onerror = () => reject(new Error(`Script failed: ${src}`));
+        document.head.appendChild(script);
+      });
+    }
+
+    async function ensureChartJsLoaded() {
+      if (typeof Chart !== 'undefined') return true;
+
+      if (chartJsLoadPromise) {
+        return chartJsLoadPromise;
+      }
+
+      const fallbackSources = [
+        'https://unpkg.com/chart.js@4.4.1/dist/chart.umd.min.js',
+        'https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js'
+      ];
+
+      chartJsLoadPromise = (async () => {
+        for (const src of fallbackSources) {
+          try {
+            await loadScript(src);
+            if (typeof Chart !== 'undefined') {
+              return true;
+            }
+          } catch (error) {
+            console.warn('Chart.js fallback load failed:', error.message);
+          }
+        }
+        return typeof Chart !== 'undefined';
+      })();
+
+      return chartJsLoadPromise;
+    }
+
     function renderCharts(chartConfigs) {
       const container = document.getElementById('chartsGrid');
+      if (!container) return;
       container.innerHTML = '';
       
       // Destroy existing charts
-      Object.values(charts).forEach(chart => chart.destroy());
+      Object.values(charts).forEach(chart => {
+        try {
+          if (chart && typeof chart.destroy === 'function') {
+            chart.destroy();
+          }
+        } catch (error) {
+          console.warn('Chart destroy warning:', error);
+        }
+      });
       charts = {};
+
+      if (typeof Chart === 'undefined') {
+        container.innerHTML = `
+          <div class="chart-card fade-in">
+            <h5>📊 Charts</h5>
+            <p style="color: var(--text-muted);">
+              Chart library is loading or blocked by the network. Data analysis remains available.
+            </p>
+          </div>
+        `;
+
+        ensureChartJsLoaded().then((loaded) => {
+          if (loaded) {
+            renderCharts(chartConfigs);
+          }
+        });
+        return;
+      }
       
-      chartConfigs.forEach((config, index) => {
+      (chartConfigs || []).forEach((config, index) => {
         if (config.type === 'gauge') return; // Skip gauge, we have custom
         
         const chartId = `chart-${index}`;
@@ -1689,29 +1770,37 @@
         `;
         container.appendChild(card);
         
-        const ctx = document.getElementById(chartId).getContext('2d');
-        charts[chartId] = new Chart(ctx, {
-          type: config.type === 'doughnut' ? 'doughnut' : config.type,
-          data: {
-            labels: config.data.labels,
-            datasets: [{
-              data: config.data.values,
-              backgroundColor: config.options?.colors || [
-                '#1a237e', '#303f9f', '#3f51b5', '#7986cb', '#c5cae9', '#e8eaf6'
-              ],
-              borderWidth: 2,
-              borderColor: '#fff'
-            }]
-          },
-          options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: {
-              legend: { position: 'bottom' }
+        try {
+          const canvas = document.getElementById(chartId);
+          if (!canvas) return;
+          const ctx = canvas.getContext('2d');
+          if (!ctx) return;
+
+          charts[chartId] = new Chart(ctx, {
+            type: config.type === 'doughnut' ? 'doughnut' : config.type,
+            data: {
+              labels: config.data?.labels || [],
+              datasets: [{
+                data: config.data?.values || [],
+                backgroundColor: config.options?.colors || [
+                  '#1a237e', '#303f9f', '#3f51b5', '#7986cb', '#c5cae9', '#e8eaf6'
+                ],
+                borderWidth: 2,
+                borderColor: '#fff'
+              }]
             },
-            indexAxis: config.type === 'bar' && config.options?.horizontal ? 'y' : 'x'
-          }
-        });
+            options: {
+              responsive: true,
+              maintainAspectRatio: false,
+              plugins: {
+                legend: { position: 'bottom' }
+              },
+              indexAxis: config.type === 'bar' && config.options?.horizontal ? 'y' : 'x'
+            }
+          });
+        } catch (error) {
+          console.warn('Chart render warning:', error);
+        }
       });
     }
     
