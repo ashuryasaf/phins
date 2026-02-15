@@ -1484,7 +1484,7 @@ class AIRiskReportsService:
             severance_amount = self._to_float_amount(match.group(5))
             employee_amount = self._to_float_amount(match.group(6))
             employer_amount = self._to_float_amount(match.group(7))
-            total_amount = self._to_float_amount(match.group(8))
+            total_amount = self._to_float_amount(match.group(7))
 
             contributions.append({
                 'period': period,
