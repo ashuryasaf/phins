@@ -662,12 +662,30 @@ class AIRiskReportsService:
         if any(token in lowered for token in ['לא זמין', 'not available', 'n/a', 'unknown', 'missing']):
             return 'לא זמין' if re.search(r'[\u0590-\u05FF]', normalized_text) else 'Not available'
 
+        # Handle mixed identity strings that contain DOB but no actual ID number.
+        if any(token in lowered for token in ['תאריך לידה', 'birth date', 'date of birth', 'dob']):
+            long_digit_sequences = re.findall(r'\d{8,}', normalized_text)
+            if long_digit_sequences and all(len(seq) <= 8 for seq in long_digit_sequences):
+                return 'לא זמין' if re.search(r'[\u0590-\u05FF]', normalized_text) else 'Not available'
+
         digits = re.sub(r'\D', '', normalized_text)
         if not digits:
             return normalized_text
+
+        # YYYYMMDD tokens are usually birth dates, not ID numbers.
+        if re.fullmatch(r'(19|20)\d{6}', digits):
+            return 'לא זמין' if re.search(r'[\u0590-\u05FF]', normalized_text) else 'Not available'
+
+        # Keep last 9 digits when mixed strings include prefixes.
         if len(digits) > 9:
             digits = digits[-9:]
-        if len(digits) < 9:
+
+        # If fewer than 8 digits, keep as-is (too short for a reliable ID).
+        if len(digits) < 8:
+            return digits
+
+        # 8-digit IDs can be left-padded to Israeli 9-digit structure.
+        if len(digits) == 8:
             digits = digits.zfill(9)
         return digits
 
@@ -3752,8 +3770,12 @@ Factors Affecting Score:
             if roles:
                 column_roles[col] = roles
 
+        id_marker_pattern = re.compile(
+            r'(?:ת\.?\s*ז\.?|ת"ז|תז|תעודת זהות|מספר זהות|id(?:\s*number)?)',
+            re.IGNORECASE
+        )
         id_text_pattern = re.compile(
-            r'(?:ת\.?\s*ז\.?|תעודת זהות|מספר זהות|id(?:\s*number)?)\s*[:\-]?\s*([0-9]{5,18}|לא זמין|n/?a|not available|unknown)',
+            r'(?:ת\.?\s*ז\.?|ת"ז|תז|תעודת זהות|מספר זהות|id(?:\s*number)?)\s*[:,"\'\-]?\s*([0-9]{5,18}|לא זמין|לא ידוע|n/?a|not available|unknown|missing)',
             re.IGNORECASE
         )
         birth_text_pattern = re.compile(
@@ -3782,7 +3804,12 @@ Factors Affecting Score:
                 continue
             text_blob = ' | '.join(row_text_values)
 
-            for match in id_text_pattern.finditer(text_blob):
+            id_matches = list(id_text_pattern.finditer(text_blob))
+            if not id_matches and id_marker_pattern.search(text_blob):
+                # ID marker is present but no reliable value token.
+                add_value('id_number', 'לא זמין' if re.search(r'[\u0590-\u05FF]', text_blob) else 'Not available', 'row_text')
+
+            for match in id_matches:
                 add_value('id_number', match.group(1), 'row_text')
             for match in birth_text_pattern.finditer(text_blob):
                 add_value('birth_date', match.group(1), 'row_text')
@@ -3820,6 +3847,154 @@ Factors Affecting Score:
         return {
             'profile': profile,
             'rows': detail_rows[:200],
+        }
+
+    @staticmethod
+    def _build_report_type_affiliation_metadata(
+        analysis_type: str,
+        section_matrix_rows: List[Dict[str, Any]],
+        identity_profile: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """
+        Allocate metadata relevance according to report type affiliations.
+        This keeps allocation aligned with output report models per domain.
+        """
+        report_type = str(analysis_type or 'unknown').strip().lower()
+        section_lookup = {
+            str(row.get('section_key', '')).strip(): row
+            for row in (section_matrix_rows or [])
+            if isinstance(row, dict)
+        }
+
+        type_section_relevance = {
+            'insurance': [
+                ('policy_status', 'high'),
+                ('coverage_protection', 'high'),
+                ('plan_details', 'high'),
+                ('beneficiaries', 'high'),
+                ('balances_forecast', 'medium'),
+                ('contributions_debts', 'medium'),
+                ('employers_addresses', 'medium'),
+                ('operational_additional', 'medium'),
+                ('investment_assets', 'low'),
+            ],
+            'savings': [
+                ('balances_forecast', 'high'),
+                ('plan_details', 'high'),
+                ('contributions_debts', 'high'),
+                ('policy_status', 'medium'),
+                ('investment_assets', 'medium'),
+                ('employers_addresses', 'medium'),
+                ('coverage_protection', 'low'),
+                ('beneficiaries', 'low'),
+                ('operational_additional', 'low'),
+            ],
+            'investment': [
+                ('investment_assets', 'high'),
+                ('balances_forecast', 'high'),
+                ('plan_details', 'medium'),
+                ('policy_status', 'medium'),
+                ('contributions_debts', 'medium'),
+                ('coverage_protection', 'low'),
+                ('beneficiaries', 'low'),
+                ('employers_addresses', 'low'),
+                ('operational_additional', 'low'),
+            ],
+            'risk': [
+                ('policy_status', 'high'),
+                ('coverage_protection', 'high'),
+                ('contributions_debts', 'high'),
+                ('operational_additional', 'high'),
+                ('balances_forecast', 'medium'),
+                ('plan_details', 'medium'),
+                ('beneficiaries', 'medium'),
+                ('employers_addresses', 'medium'),
+                ('investment_assets', 'low'),
+            ],
+            'mixed': [
+                ('policy_status', 'high'),
+                ('plan_details', 'high'),
+                ('balances_forecast', 'high'),
+                ('coverage_protection', 'high'),
+                ('investment_assets', 'high'),
+                ('contributions_debts', 'high'),
+                ('beneficiaries', 'medium'),
+                ('employers_addresses', 'medium'),
+                ('operational_additional', 'medium'),
+            ],
+            'unknown': [
+                ('policy_status', 'medium'),
+                ('plan_details', 'medium'),
+                ('balances_forecast', 'medium'),
+                ('coverage_protection', 'medium'),
+                ('investment_assets', 'medium'),
+                ('contributions_debts', 'medium'),
+                ('beneficiaries', 'medium'),
+                ('employers_addresses', 'medium'),
+                ('operational_additional', 'medium'),
+            ],
+        }
+
+        selected_sections = type_section_relevance.get(report_type, type_section_relevance['unknown'])
+        rows: List[Dict[str, Any]] = []
+
+        for section_key, relevance in selected_sections:
+            section = section_lookup.get(section_key, {})
+            mapped_columns = section.get('mapped_columns', 0) if isinstance(section, dict) else 0
+            coverage_pct = section.get('coverage_pct', 0) if isinstance(section, dict) else 0
+            section_he = section.get('section_he', section_key) if isinstance(section, dict) else section_key
+            section_en = section.get('section_en', section_key) if isinstance(section, dict) else section_key
+            rows.append({
+                'target_type': 'section',
+                'target_key': section_key,
+                'target_he': section_he,
+                'target_en': section_en,
+                'relevance': relevance,
+                'required': relevance in ['high', 'medium'],
+                'captured': mapped_columns > 0,
+                'coverage_pct': coverage_pct,
+                'mapped_columns': mapped_columns,
+                'value': '',
+            })
+
+        identity_requirements = {
+            'insurance': [('full_name', 'high'), ('id_number', 'high'), ('birth_date', 'high')],
+            'savings': [('full_name', 'high'), ('id_number', 'high'), ('birth_date', 'high')],
+            'investment': [('full_name', 'high'), ('id_number', 'high'), ('birth_date', 'medium')],
+            'risk': [('full_name', 'high'), ('id_number', 'high'), ('birth_date', 'medium')],
+            'mixed': [('full_name', 'high'), ('id_number', 'high'), ('birth_date', 'high')],
+            'unknown': [('full_name', 'medium'), ('id_number', 'medium'), ('birth_date', 'medium')],
+        }
+        field_labels = {
+            'full_name': ('שם לקוח', 'Client Name'),
+            'id_number': ('תעודת זהות', 'ID Number'),
+            'birth_date': ('תאריך לידה', 'Date of Birth'),
+        }
+        for field_key, relevance in identity_requirements.get(report_type, identity_requirements['unknown']):
+            field_he, field_en = field_labels.get(field_key, (field_key, field_key))
+            field_value = identity_profile.get(field_key, '')
+            rows.append({
+                'target_type': 'metadata_field',
+                'target_key': field_key,
+                'target_he': field_he,
+                'target_en': field_en,
+                'relevance': relevance,
+                'required': relevance in ['high', 'medium'],
+                'captured': bool(field_value),
+                'coverage_pct': 100 if field_value else 0,
+                'mapped_columns': 1 if field_value else 0,
+                'value': field_value,
+            })
+
+        required_rows = [row for row in rows if row.get('required')]
+        covered_required = [row for row in required_rows if row.get('captured')]
+
+        return {
+            'analysis_type': report_type,
+            'rows': rows,
+            'required_targets': len(required_rows),
+            'covered_required_targets': len(covered_required),
+            'required_coverage_pct': round((len(covered_required) / max(len(required_rows), 1)) * 100, 2),
         }
 
     def _build_affiliation_matrix_metadata(
@@ -4068,6 +4243,11 @@ Factors Affecting Score:
         identity_matrix = self._extract_client_identity_metadata(rows, columns, pension_data)
         identity_profile = identity_matrix.get('profile', {}) or {}
         identity_rows = identity_matrix.get('rows', []) or []
+        report_type_affiliation = self._build_report_type_affiliation_metadata(
+            analysis.data_classification.value if analysis else '',
+            section_matrix_rows,
+            identity_profile
+        )
 
         policy_metrics = self._extract_policy_cumulative_metrics(rows, columns)
         policy_total = sum(metric.get('policy_total', 0) for metric in policy_metrics)
@@ -4088,6 +4268,9 @@ Factors Affecting Score:
             'wishful_sections_covered': len([r for r in section_matrix_rows if r.get('mapped_columns', 0) > 0]),
             'identity_fields_captured': identity_profile.get('captured_fields', 0),
             'identity_completeness_pct': identity_profile.get('completeness_pct', 0),
+            'report_type_required_targets': report_type_affiliation.get('required_targets', 0),
+            'report_type_covered_targets': report_type_affiliation.get('covered_required_targets', 0),
+            'report_type_coverage_pct': report_type_affiliation.get('required_coverage_pct', 0),
             'analysis_language': analysis.language if analysis else '',
             'analysis_type': analysis.data_classification.value if analysis else '',
         }
@@ -4109,6 +4292,7 @@ Factors Affecting Score:
             'section_matrix_rows': section_matrix_rows,
             'identity_profile': identity_profile,
             'identity_matrix_rows': identity_rows,
+            'report_type_affiliation': report_type_affiliation,
             'source_context': source_context,
             'policy_aggregate': policy_aggregate,
             'column_coverage': {
@@ -4133,6 +4317,8 @@ Factors Affecting Score:
         section_matrix_rows = matrix.get('section_matrix_rows', []) or []
         identity_profile = matrix.get('identity_profile', {}) or {}
         identity_matrix_rows = matrix.get('identity_matrix_rows', []) or []
+        report_type_affiliation = matrix.get('report_type_affiliation', {}) or {}
+        report_type_rows = report_type_affiliation.get('rows', []) or []
         source_context = matrix.get('source_context', {}) or {}
         policy_aggregate = matrix.get('policy_aggregate', {}) or {}
         column_coverage = matrix.get('column_coverage', {}) or {}
@@ -4226,6 +4412,32 @@ Factors Affecting Score:
                     order=9
                 ))
 
+        if report_type_rows:
+            report_type_table_rows = []
+            for row in report_type_rows:
+                report_type_table_rows.append({
+                    'יעד שיוך' if is_hebrew else 'Affiliation Target': row.get('target_he') if is_hebrew else row.get('target_en'),
+                    'סוג יעד' if is_hebrew else 'Target Type': 'חלק דוח' if row.get('target_type') == 'section' and is_hebrew else ('שדה מטא-דאטה' if row.get('target_type') == 'metadata_field' and is_hebrew else row.get('target_type', '')),
+                    'רמת רלוונטיות' if is_hebrew else 'Relevance': row.get('relevance', ''),
+                    'נדרש' if is_hebrew else 'Required': 'כן' if row.get('required') and is_hebrew else ('לא' if is_hebrew else ('Yes' if row.get('required') else 'No')),
+                    'זוהה' if is_hebrew else 'Captured': 'כן' if row.get('captured') and is_hebrew else ('לא' if is_hebrew else ('Yes' if row.get('captured') else 'No')),
+                    'כיסוי %' if is_hebrew else 'Coverage %': row.get('coverage_pct', 0),
+                    'עמודות משויכות' if is_hebrew else 'Mapped Columns': row.get('mapped_columns', 0),
+                    'ערך' if is_hebrew else 'Value': row.get('value', ''),
+                })
+
+            sections.append(ReportSection(
+                title='שיוך מטא-דאטה לפי סוג דוח' if is_hebrew else 'Report-Type Metadata Affiliation',
+                content='הקצאת מטא-דאטה רלוונטית בהתאם לסוג הדוח והמודל המסונף.' if is_hebrew
+                else 'Relevant metadata allocation according to report type and affiliated model.',
+                data_table={
+                    'columns': list(report_type_table_rows[0].keys()),
+                    'rows': report_type_table_rows,
+                    'show_all': True
+                },
+                order=9
+            ))
+
         if section_matrix_rows:
             section_table_rows = []
             for row in section_matrix_rows:
@@ -4287,6 +4499,9 @@ Factors Affecting Score:
             {'מדד' if is_hebrew else 'Metric': 'שלמות זיהוי לקוח %' if is_hebrew else 'Identity Completeness %', 'ערך' if is_hebrew else 'Value': source_context.get('identity_completeness_pct', 0)},
             {'מדד' if is_hebrew else 'Metric': 'ת.ז מזוהה' if is_hebrew else 'Affiliated ID Number', 'ערך' if is_hebrew else 'Value': identity_profile.get('id_number', '')},
             {'מדד' if is_hebrew else 'Metric': 'תאריך לידה (dd/mm/yyyy)' if is_hebrew else 'Birth Date (dd/mm/yyyy)', 'ערך' if is_hebrew else 'Value': identity_profile.get('birth_date', '')},
+            {'מדד' if is_hebrew else 'Metric': 'יעדים נדרשים לפי סוג דוח' if is_hebrew else 'Required Report-Type Targets', 'ערך' if is_hebrew else 'Value': source_context.get('report_type_required_targets', 0)},
+            {'מדד' if is_hebrew else 'Metric': 'יעדים נדרשים שזוהו' if is_hebrew else 'Covered Report-Type Targets', 'ערך' if is_hebrew else 'Value': source_context.get('report_type_covered_targets', 0)},
+            {'מדד' if is_hebrew else 'Metric': 'כיסוי סוג דוח %' if is_hebrew else 'Report-Type Coverage %', 'ערך' if is_hebrew else 'Value': source_context.get('report_type_coverage_pct', 0)},
             {'מדד' if is_hebrew else 'Metric': 'פוליסות מזוהות' if is_hebrew else 'Identified Policies', 'ערך' if is_hebrew else 'Value': policy_aggregate.get('policy_count', 0)},
             {'מדד' if is_hebrew else 'Metric': 'סה״כ חיסכון מזוהה' if is_hebrew else 'Identified Savings Total', 'ערך' if is_hebrew else 'Value': policy_aggregate.get('savings_total', 0)},
             {'מדד' if is_hebrew else 'Metric': 'סה״כ השקעות מזוהה' if is_hebrew else 'Identified Investments Total', 'ערך' if is_hebrew else 'Value': policy_aggregate.get('investments_total', 0)},
@@ -4318,6 +4533,8 @@ Factors Affecting Score:
         section_matrix_rows = matrix.get('section_matrix_rows', []) or []
         column_coverage = matrix.get('column_coverage', {}) or {}
         identity_profile = matrix.get('identity_profile', {}) or {}
+        report_type_affiliation = matrix.get('report_type_affiliation', {}) or {}
+        report_type_rows = report_type_affiliation.get('rows', []) or []
 
         is_hebrew = lang_code == 'hebrew'
         charts: List[ChartConfig] = []
@@ -4420,6 +4637,40 @@ Factors Affecting Score:
                     'colors': ['#06b6d4', '#f59e0b'],
                 }
             ))
+
+        required_report_rows = [row for row in report_type_rows if row.get('required')]
+        if required_report_rows:
+            captured_report_rows = [row for row in required_report_rows if row.get('captured')]
+            missing_report_rows = max(len(required_report_rows) - len(captured_report_rows), 0)
+            charts.append(ChartConfig(
+                type=ChartType.DOUGHNUT,
+                title='כיסוי שיוך לפי סוג דוח' if is_hebrew else 'Report-Type Affiliation Coverage',
+                data={
+                    'labels': ['יעדים מכוסים' if is_hebrew else 'Covered Targets', 'יעדים חסרים' if is_hebrew else 'Missing Targets'],
+                    'values': [len(captured_report_rows), missing_report_rows],
+                },
+                options={
+                    'colors': ['#2563eb', '#f97316'],
+                }
+            ))
+
+            relevant_targets = [
+                row for row in required_report_rows
+                if row.get('target_type') == 'section' and row.get('mapped_columns', 0) > 0
+            ]
+            if relevant_targets:
+                charts.append(ChartConfig(
+                    type=ChartType.BAR,
+                    title='עמודות משויכות לפי יעד דוח' if is_hebrew else 'Mapped Columns by Report Target',
+                    data={
+                        'labels': [row.get('target_he') if is_hebrew else row.get('target_en') for row in relevant_targets],
+                        'values': [row.get('mapped_columns', 0) for row in relevant_targets],
+                    },
+                    options={
+                        'horizontal': True,
+                        'colors': ['#0ea5e9', '#16a34a', '#8b5cf6', '#f59e0b', '#ef4444', '#14b8a6'],
+                    }
+                ))
 
         return charts
 

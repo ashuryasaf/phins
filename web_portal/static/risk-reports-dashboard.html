@@ -4029,6 +4029,17 @@
         Source: row.source || ''
       }));
 
+      const matrixReportTypeRows = (matrixMeta.report_type_affiliation?.rows || []).map(row => ({
+        Target: row.target_en || row.target_he || row.target_key || '',
+        'Target Type': row.target_type || '',
+        Relevance: row.relevance || '',
+        Required: row.required ? 'Yes' : 'No',
+        Captured: row.captured ? 'Yes' : 'No',
+        'Coverage %': row.coverage_pct || 0,
+        'Mapped Columns': row.mapped_columns || 0,
+        Value: row.value || ''
+      }));
+
       const matrixContextRows = (() => {
         const sourceContext = matrixMeta.source_context || {};
         const policyAggregate = matrixMeta.policy_aggregate || {};
@@ -4047,6 +4058,9 @@
           'Identity Completeness %': sourceContext.identity_completeness_pct || identityProfile.completeness_pct || 0,
           'Affiliated ID': identityProfile.id_number || '',
           'Birth Date (dd/mm/yyyy)': formatBirthDate(identityProfile.birth_date || ''),
+          'Required Report Targets': sourceContext.report_type_required_targets || matrixMeta.report_type_affiliation?.required_targets || 0,
+          'Covered Report Targets': sourceContext.report_type_covered_targets || matrixMeta.report_type_affiliation?.covered_required_targets || 0,
+          'Report-Type Coverage %': sourceContext.report_type_coverage_pct || matrixMeta.report_type_affiliation?.required_coverage_pct || 0,
           'Policies': policyAggregate.policy_count || 0,
           'Savings Total': policyAggregate.savings_total || 0,
           'Investments Total': policyAggregate.investments_total || 0,
@@ -4139,10 +4153,22 @@
           </div>
         </div>
         <div class="report-section fade-in">
+          <h3>🧭 Report-Type Metadata Affiliation</h3>
+          <div class="content">
+            ${matrixReportTypeRows.length
+              ? renderDataTable({
+                columns: ['Target', 'Target Type', 'Relevance', 'Required', 'Captured', 'Coverage %', 'Mapped Columns', 'Value'],
+                rows: matrixReportTypeRows,
+                show_all: true
+              })
+              : '<p style="color: var(--text-muted);">No report-type metadata affiliation rows available.</p>'}
+          </div>
+        </div>
+        <div class="report-section fade-in">
           <h3>📐 Metadata Allocation Metrics</h3>
           <div class="content">
             ${renderDataTable({
-              columns: ['Source Rows', 'Source Columns', 'Files', 'Matrix Columns', 'Covered Columns', 'Uncovered Columns', 'Column Coverage %', 'Covered Wishful Sections', 'Captured Identity Fields', 'Identity Completeness %', 'Affiliated ID', 'Birth Date (dd/mm/yyyy)', 'Policies', 'Savings Total', 'Investments Total', 'Cumulative Total'],
+              columns: ['Source Rows', 'Source Columns', 'Files', 'Matrix Columns', 'Covered Columns', 'Uncovered Columns', 'Column Coverage %', 'Covered Wishful Sections', 'Captured Identity Fields', 'Identity Completeness %', 'Affiliated ID', 'Birth Date (dd/mm/yyyy)', 'Required Report Targets', 'Covered Report Targets', 'Report-Type Coverage %', 'Policies', 'Savings Total', 'Investments Total', 'Cumulative Total'],
               rows: matrixContextRows
             })}
           </div>

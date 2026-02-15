@@ -485,6 +485,8 @@ POL-002,150000,620,3000,2000,Ayalon,Basic,Active,SunFood,2022-11"""
         self.assertTrue(isinstance(matrix.get('identity_profile', {}), dict))
         self.assertEqual(matrix.get('identity_profile', {}).get('birth_date'), '07/11/1952')
         self.assertEqual(matrix.get('identity_profile', {}).get('id_number'), 'לא זמין')
+        self.assertTrue(isinstance(matrix.get('report_type_affiliation', {}), dict))
+        self.assertGreaterEqual(len(matrix.get('report_type_affiliation', {}).get('rows', [])), 3)
         self.assertIn('policy_aggregate', matrix)
 
         titles = [section.title for section in report.sections]
@@ -492,6 +494,7 @@ POL-002,150000,620,3000,2000,Ayalon,Basic,Active,SunFood,2022-11"""
         self.assertTrue(any('מטריצת שיוך עמודות מקור' in title for title in titles))
         self.assertTrue(any('כיסוי מודל דוח רצוי' in title for title in titles))
         self.assertTrue(any('שיוך פרטי זיהוי לקוח' in title for title in titles))
+        self.assertTrue(any('שיוך מטא-דאטה לפי סוג דוח' in title for title in titles))
 
         self.assertTrue(
             any(
@@ -506,6 +509,8 @@ POL-002,150000,620,3000,2000,Ayalon,Basic,Active,SunFood,2022-11"""
                 or ('Source Column Affiliation Coverage' in chart.title)
                 or ('Client Identity Affiliation Completeness' in chart.title)
                 or ('שלמות שיוך זיהוי לקוח' in chart.title)
+                or ('Report-Type Affiliation Coverage' in chart.title)
+                or ('כיסוי שיוך לפי סוג דוח' in chart.title)
                 for chart in report.charts
             )
         )
@@ -514,6 +519,7 @@ POL-002,150000,620,3000,2000,Ayalon,Basic,Active,SunFood,2022-11"""
         self.assertEqual(self.service._normalize_birth_date('19521107'), '07/11/1952')
         self.assertEqual(self.service._normalize_birth_date('1952-11-07'), '07/11/1952')
         self.assertEqual(self.service._normalize_birth_date('תאריך לידה 19521107 נתוני לקוח'), '07/11/1952')
+        self.assertEqual(self.service._normalize_id_number('ת.ז, תאריך לידה 19521107 נתוני לקוח'), 'לא זמין')
 
 
 class TestHebrewWorkflow(unittest.TestCase):
