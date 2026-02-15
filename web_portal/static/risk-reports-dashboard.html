@@ -3042,6 +3042,87 @@
         .replace(/[,\s]/g, '')
         .trim();
     }
+
+    function sanitizeIdNumber(value) {
+      if (value === null || value === undefined) return '';
+      const raw = String(value).replace(/[\u200e\u200f\u00a0]/g, ' ').trim();
+      if (!raw) return '';
+
+      const lowered = raw.toLowerCase();
+      if (
+        lowered.includes('לא זמין') ||
+        lowered.includes('not available') ||
+        lowered.includes('n/a') ||
+        lowered.includes('unknown') ||
+        lowered.includes('missing')
+      ) {
+        return /[\u0590-\u05FF]/.test(raw) ? 'לא זמין' : 'Not available';
+      }
+
+      const digits = raw.replace(/\D/g, '');
+      if (!digits) return raw;
+      if (digits.length > 9) return digits.slice(-9);
+      if (digits.length < 9) return digits.padStart(9, '0');
+      return digits;
+    }
+
+    function formatBirthDate(value) {
+      if (value === null || value === undefined) return '';
+      const raw = String(value).replace(/[\u200e\u200f\u00a0]/g, ' ').trim();
+      if (!raw) return '';
+
+      const toDDMMYYYY = (day, month, year) => {
+        const d = Number(day);
+        const m = Number(month);
+        const y = Number(year);
+        const dt = new Date(Date.UTC(y, m - 1, d));
+        if (
+          Number.isNaN(dt.getTime()) ||
+          dt.getUTCFullYear() !== y ||
+          dt.getUTCMonth() !== m - 1 ||
+          dt.getUTCDate() !== d
+        ) {
+          return '';
+        }
+        return `${String(d).padStart(2, '0')}/${String(m).padStart(2, '0')}/${String(y).padStart(4, '0')}`;
+      };
+
+      const parseToken = (token) => {
+        if (/^\d{8}$/.test(token)) {
+          const yearFirst = toDDMMYYYY(token.slice(6, 8), token.slice(4, 6), token.slice(0, 4));
+          if (yearFirst) return yearFirst;
+          const dayFirst = toDDMMYYYY(token.slice(0, 2), token.slice(2, 4), token.slice(4, 8));
+          if (dayFirst) return dayFirst;
+          return '';
+        }
+
+        let match = token.match(/^(\d{1,2})[./-](\d{1,2})[./-](\d{2,4})$/);
+        if (match) {
+          const [, d, m, yRaw] = match;
+          const y = yRaw.length === 2 ? `20${yRaw}` : yRaw;
+          return toDDMMYYYY(d, m, y);
+        }
+
+        match = token.match(/^(\d{4})[./-](\d{1,2})[./-](\d{1,2})$/);
+        if (match) {
+          const [, y, m, d] = match;
+          return toDDMMYYYY(d, m, y);
+        }
+
+        return '';
+      };
+
+      const direct = parseToken(raw);
+      if (direct) return direct;
+
+      const embedded = raw.match(/(\d{8}|\d{1,2}[./-]\d{1,2}[./-]\d{2,4}|\d{4}[./-]\d{1,2}[./-]\d{1,2})/);
+      if (embedded) {
+        const normalized = parseToken(embedded[1]);
+        if (normalized) return normalized;
+      }
+
+      return raw;
+    }
     
     function renderPensionStats(pensionData) {
       // Extract real data from pension files
@@ -3050,7 +3131,8 @@
       const totals = pensionData.totals || {};
       
       const clientName = client.full_name || client.client_name || 'לא זמין';
-      const idNumber = client.id_number || 'לא זמין';
+      const idNumber = sanitizeIdNumber(client.id_number) || client.id_number || 'לא זמין';
+      const birthDate = formatBirthDate(client.birth_date);
       const totalBalance = totals.total_balance || accounts.reduce((sum, a) => sum + calculatePolicyBalance(a), 0);
       const totalSeverance = totals.total_severance || accounts.reduce((sum, a) => sum + toNumericValue(a.severance_balance), 0);
       const accountCount = accounts.length;
@@ -3064,7 +3146,7 @@
         <div class="stat-card fade-in" style="grid-column: span 2; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white;">
           <h5 style="color: white;">👤 פרטי לקוח</h5>
           <div class="value" style="font-size: 1.5rem; color: white;">${clientName}</div>
-          <small style="color: rgba(255,255,255,0.9);">ת.ז: ${idNumber}</small>
+          <small style="color: rgba(255,255,255,0.9);">ת.ז: ${idNumber}${birthDate ? ` · תאריך לידה: ${birthDate}` : ''}</small>
         </div>
         <div class="stat-card fade-in" style="background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%); color: white;">
           <h5 style="color: white;">💰 סה״כ צבירה</h5>
@@ -3112,6 +3194,8 @@
       const container = document.getElementById('insightsGrid');
       const accounts = pensionData.accounts || [];
       const client = pensionData.client || {};
+      const clientIdNumber = sanitizeIdNumber(client.id_number) || client.id_number || 'לא זמין';
+      const clientBirthDate = formatBirthDate(client.birth_date);
       
       let html = '';
       let cumulativeBalance = 0;
@@ -3122,8 +3206,8 @@
           <h5>👤 פרטי המבוטח</h5>
           <div class="insight-detail" style="direction: rtl; text-align: right;">
             <div class="stat-detail"><span class="label">שם מלא</span><span class="val">${escapeHtml(client.full_name || client.client_name || 'לא זמין')}</span></div>
-            <div class="stat-detail"><span class="label">ת.ז</span><span class="val">${escapeHtml(client.id_number || 'לא זמין')}</span></div>
-            ${client.birth_date ? `<div class="stat-detail"><span class="label">תאריך לידה</span><span class="val">${escapeHtml(client.birth_date)}</span></div>` : ''}
+            <div class="stat-detail"><span class="label">ת.ז</span><span class="val">${escapeHtml(clientIdNumber)}</span></div>
+            ${clientBirthDate ? `<div class="stat-detail"><span class="label">תאריך לידה</span><span class="val">${escapeHtml(clientBirthDate)}</span></div>` : ''}
             ${client.phone ? `<div class="stat-detail"><span class="label">טלפון</span><span class="val">${escapeHtml(client.phone)}</span></div>` : ''}
           </div>
           <span class="insight-badge" style="background: #667eea; color: white;">נתוני לקוח</span>
@@ -3938,10 +4022,18 @@
         Keywords: row.keywords_count || 0
       }));
 
+      const matrixIdentityRows = (matrixMeta.identity_matrix_rows || []).map(row => ({
+        Field: row.field_en || row.field_he || row.field_key || '',
+        'Affiliated Value': row.normalized_value || '',
+        'Raw Value': row.raw_value || '',
+        Source: row.source || ''
+      }));
+
       const matrixContextRows = (() => {
         const sourceContext = matrixMeta.source_context || {};
         const policyAggregate = matrixMeta.policy_aggregate || {};
         const columnCoverage = matrixMeta.column_coverage || {};
+        const identityProfile = matrixMeta.identity_profile || {};
         return [{
           'Source Rows': sourceContext.document_rows || 0,
           'Source Columns': sourceContext.document_columns || 0,
@@ -3951,6 +4043,10 @@
           'Uncovered Columns': sourceContext.column_matrix_uncovered || columnCoverage.uncovered || 0,
           'Column Coverage %': columnCoverage.coverage_pct || 0,
           'Covered Wishful Sections': sourceContext.wishful_sections_covered || 0,
+          'Captured Identity Fields': sourceContext.identity_fields_captured || identityProfile.captured_fields || 0,
+          'Identity Completeness %': sourceContext.identity_completeness_pct || identityProfile.completeness_pct || 0,
+          'Affiliated ID': identityProfile.id_number || '',
+          'Birth Date (dd/mm/yyyy)': formatBirthDate(identityProfile.birth_date || ''),
           'Policies': policyAggregate.policy_count || 0,
           'Savings Total': policyAggregate.savings_total || 0,
           'Investments Total': policyAggregate.investments_total || 0,
@@ -4031,10 +4127,22 @@
           </div>
         </div>
         <div class="report-section fade-in">
+          <h3>🪪 Client Identity Reaffiliation (ID & Birth Date)</h3>
+          <div class="content">
+            ${matrixIdentityRows.length
+              ? renderDataTable({
+                columns: ['Field', 'Affiliated Value', 'Raw Value', 'Source'],
+                rows: matrixIdentityRows,
+                show_all: true
+              })
+              : '<p style="color: var(--text-muted);">No client identity reaffiliation rows available.</p>'}
+          </div>
+        </div>
+        <div class="report-section fade-in">
           <h3>📐 Metadata Allocation Metrics</h3>
           <div class="content">
             ${renderDataTable({
-              columns: ['Source Rows', 'Source Columns', 'Files', 'Matrix Columns', 'Covered Columns', 'Uncovered Columns', 'Column Coverage %', 'Covered Wishful Sections', 'Policies', 'Savings Total', 'Investments Total', 'Cumulative Total'],
+              columns: ['Source Rows', 'Source Columns', 'Files', 'Matrix Columns', 'Covered Columns', 'Uncovered Columns', 'Column Coverage %', 'Covered Wishful Sections', 'Captured Identity Fields', 'Identity Completeness %', 'Affiliated ID', 'Birth Date (dd/mm/yyyy)', 'Policies', 'Savings Total', 'Investments Total', 'Cumulative Total'],
               rows: matrixContextRows
             })}
           </div>
@@ -4489,6 +4597,31 @@
       );
     }
 
+    function isIdNumberColumn(columnName) {
+      const normalized = String(columnName || '').toLowerCase().trim();
+      return (
+        normalized.includes('id number') ||
+        normalized.includes('identity id') ||
+        normalized.includes('id_number') ||
+        normalized.includes('ת.ז') ||
+        normalized.includes('ת"ז') ||
+        normalized.includes('תז') ||
+        normalized.includes('תעודת זהות') ||
+        normalized.includes('מספר זהות')
+      );
+    }
+
+    function isBirthDateColumn(columnName) {
+      const normalized = String(columnName || '').toLowerCase().trim();
+      return (
+        normalized.includes('birth date') ||
+        normalized.includes('date of birth') ||
+        normalized.includes('dob') ||
+        normalized.includes('birth_date') ||
+        normalized.includes('תאריך לידה')
+      );
+    }
+
     function formatTableCell(value, columnName = '') {
       if (value === null || value === undefined || value === '') {
         return '—';
@@ -4498,6 +4631,16 @@
         return normalizedPolicy
           ? `<span style="font-family: monospace; white-space: nowrap; word-break: keep-all;">${escapeHtml(normalizedPolicy)}</span>`
           : '—';
+      }
+      if (isIdNumberColumn(columnName)) {
+        const normalizedId = sanitizeIdNumber(value);
+        return normalizedId
+          ? `<span style="font-family: monospace; white-space: nowrap; word-break: keep-all;">${escapeHtml(normalizedId)}</span>`
+          : '—';
+      }
+      if (isBirthDateColumn(columnName)) {
+        const normalizedBirthDate = formatBirthDate(value);
+        return normalizedBirthDate ? escapeHtml(normalizedBirthDate) : '—';
       }
       if (typeof value === 'number') {
         return escapeHtml(value.toLocaleString(undefined, { maximumFractionDigits: 2 }));

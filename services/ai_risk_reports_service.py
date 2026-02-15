@@ -264,6 +264,11 @@ class HebrewDocumentExtractor:
             r'מספר זהות[\s:]*([0-9]{9})',
             r'ת"ז[\s:]*([0-9]{9})',
         ],
+        'birth_date': [
+            r'תאריך לידה[\s:]*([0-9]{8}|[0-9]{1,2}[/\-\.][0-9]{1,2}[/\-\.][0-9]{2,4}|[0-9]{4}[/\-\.][0-9]{1,2}[/\-\.][0-9]{1,2})',
+            r'date of birth[\s:]*([0-9]{8}|[0-9]{1,2}[/\-\.][0-9]{1,2}[/\-\.][0-9]{2,4}|[0-9]{4}[/\-\.][0-9]{1,2}[/\-\.][0-9]{1,2})',
+            r'\bdob[\s:]*([0-9]{8}|[0-9]{1,2}[/\-\.][0-9]{1,2}[/\-\.][0-9]{2,4}|[0-9]{4}[/\-\.][0-9]{1,2}[/\-\.][0-9]{1,2})',
+        ],
         'start_date': [
             r'תאריך תחילה[\s:]*([0-9]{1,2}[/\-\.][0-9]{1,2}[/\-\.][0-9]{2,4})',
             r'תחילת ביטוח[\s:]*([0-9]{1,2}[/\-\.][0-9]{1,2}[/\-\.][0-9]{2,4})',
@@ -337,6 +342,8 @@ class HebrewDocumentExtractor:
                             value = float(value)
                         except ValueError:
                             pass
+                    if field_name == 'birth_date':
+                        value = AIRiskReportsService._normalize_birth_date(value)
                     extracted[field_name] = value
                     break
         
@@ -635,6 +642,93 @@ class AIRiskReportsService:
         )
         text = re.sub(r'[\r\n\t]+', '', text)
         text = text.replace(' ', '').replace(',', '')
+        return text
+
+    @staticmethod
+    def _normalize_id_number(id_value: Any) -> str:
+        """Normalize identity numbers while preserving 'not available' status."""
+        if id_value is None:
+            return ''
+        text = str(id_value).strip()
+        if not text:
+            return ''
+        text = (
+            text.replace('\u200f', '')
+            .replace('\u200e', '')
+            .replace('\u00a0', ' ')
+        )
+        normalized_text = re.sub(r'\s+', ' ', text).strip()
+        lowered = normalized_text.lower()
+        if any(token in lowered for token in ['לא זמין', 'not available', 'n/a', 'unknown', 'missing']):
+            return 'לא זמין' if re.search(r'[\u0590-\u05FF]', normalized_text) else 'Not available'
+
+        digits = re.sub(r'\D', '', normalized_text)
+        if not digits:
+            return normalized_text
+        if len(digits) > 9:
+            digits = digits[-9:]
+        if len(digits) < 9:
+            digits = digits.zfill(9)
+        return digits
+
+    @staticmethod
+    def _normalize_birth_date(value: Any) -> str:
+        """Normalize birth date values into dd/mm/yyyy format."""
+        if value is None:
+            return ''
+        text = str(value).strip()
+        if not text:
+            return ''
+        text = (
+            text.replace('\u200f', '')
+            .replace('\u200e', '')
+            .replace('\u00a0', ' ')
+        )
+        text = re.sub(r'\s+', ' ', text).strip()
+
+        def try_parts(day: int, month: int, year: int) -> str:
+            try:
+                dt = date(year, month, day)
+                return dt.strftime('%d/%m/%Y')
+            except ValueError:
+                return ''
+
+        def parse_token(token: str) -> str:
+            token = token.strip()
+            if not token:
+                return ''
+
+            if re.fullmatch(r'\d{8}', token):
+                year_first = try_parts(int(token[6:8]), int(token[4:6]), int(token[:4]))
+                if year_first:
+                    return year_first
+                day_first = try_parts(int(token[:2]), int(token[2:4]), int(token[4:8]))
+                if day_first:
+                    return day_first
+                return ''
+
+            for fmt in (
+                '%d/%m/%Y', '%d-%m-%Y', '%d.%m.%Y',
+                '%Y/%m/%d', '%Y-%m-%d', '%Y.%m.%d',
+                '%d/%m/%y', '%d-%m-%y', '%d.%m.%y'
+            ):
+                try:
+                    parsed = datetime.strptime(token, fmt)
+                    return parsed.strftime('%d/%m/%Y')
+                except ValueError:
+                    continue
+            return ''
+
+        direct_parsed = parse_token(text)
+        if direct_parsed:
+            return direct_parsed
+
+        match = re.search(r'(\d{8}|\d{1,2}[./-]\d{1,2}[./-]\d{2,4}|\d{4}[./-]\d{1,2}[./-]\d{1,2})', text)
+        if match:
+            token_parsed = parse_token(match.group(1))
+            if token_parsed:
+                return token_parsed
+
         return text
 
     @staticmethod
@@ -940,19 +1034,11 @@ class AIRiskReportsService:
         else:
             resolved_columns = list({k for row in rows for k in (row or {}).keys()})
 
-        policy_like_columns = {
-            col for col in resolved_columns
-            if any(term in str(col).lower() for term in ['policy', 'מספר פוליסה', 'account number', 'מספר חשבון'])
-        }
         normalized_rows = []
         for row in rows:
             if not isinstance(row, dict):
                 continue
-            normalized_row = dict(row)
-            for col in policy_like_columns:
-                if col in normalized_row:
-                    normalized_row[col] = self._normalize_policy_number(normalized_row.get(col))
-            normalized_rows.append(normalized_row)
+            normalized_rows.append(self._normalize_policy_like_fields_in_row(row))
 
         record_count = len(normalized_rows)
         title = (
@@ -978,12 +1064,18 @@ class AIRiskReportsService:
         )
 
     def _normalize_policy_like_fields_in_row(self, row: Dict[str, Any]) -> Dict[str, Any]:
-        """Normalize policy/account-like identifiers in a row without mutating source."""
+        """Normalize policy/account/identity-like fields in a row without mutating source."""
         normalized = dict(row)
         for key, value in row.items():
             key_norm = str(key or '').lower()
             if any(token in key_norm for token in ['policy', 'מספר פוליסה', 'מס פוליסה', 'מספר חשבון', 'account number']):
                 normalized[key] = self._normalize_policy_number(value)
+                continue
+            if any(token in key_norm for token in ['ת.ז', 'ת"ז', 'תז', 'תעודת זהות', 'מספר זהות', 'id number', 'identity id', 'id_number']):
+                normalized[key] = self._normalize_id_number(value)
+                continue
+            if any(token in key_norm for token in ['תאריך לידה', 'birth date', 'date of birth', 'dob', 'birth_date']):
+                normalized[key] = self._normalize_birth_date(value)
         return normalized
 
     @staticmethod
@@ -1483,9 +1575,18 @@ class AIRiskReportsService:
                                 account[mapped_name] = 0
                         elif mapped_name == 'policy_number':
                             account[mapped_name] = self._normalize_policy_number(value)
+                        elif mapped_name == 'id_number':
+                            raw_text = str(value).strip()
+                            client_info[mapped_name] = self._normalize_id_number(raw_text)
+                            if not client_info.get('birth_date'):
+                                extracted_birth = self._normalize_birth_date(raw_text)
+                                if extracted_birth and extracted_birth != raw_text:
+                                    client_info['birth_date'] = extracted_birth
+                        elif mapped_name == 'birth_date':
+                            client_info[mapped_name] = self._normalize_birth_date(value)
                         elif mapped_name == 'section14':
                             account[mapped_name] = str(value).lower() in ['כן', 'yes', '1', 'true', 'v', '✓']
-                        elif mapped_name in ['client_name', 'first_name', 'last_name', 'id_number', 'birth_date']:
+                        elif mapped_name in ['client_name', 'first_name', 'last_name']:
                             client_info[mapped_name] = str(value).strip()
                         else:
                             account[mapped_name] = str(value).strip()
@@ -1499,6 +1600,10 @@ class AIRiskReportsService:
             client_info['full_name'] = ' '.join(p for p in parts if p)
         elif client_info.get('client_name'):
             client_info['full_name'] = client_info['client_name']
+        if client_info.get('id_number'):
+            client_info['id_number'] = self._normalize_id_number(client_info.get('id_number'))
+        if client_info.get('birth_date'):
+            client_info['birth_date'] = self._normalize_birth_date(client_info.get('birth_date'))
         
         if not accounts and not client_info:
             return None
@@ -3556,6 +3661,167 @@ Factors Affecting Score:
         text = re.sub(r'\s+', ' ', text)
         return text
 
+    def _extract_client_identity_metadata(
+        self,
+        rows: List[Dict[str, Any]],
+        columns: List[str],
+        pension_data: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """Extract and normalize client identity metadata for affiliation allocation."""
+        profile: Dict[str, Any] = {
+            'full_name': '',
+            'id_number': '',
+            'birth_date': '',
+            'id_number_raw': '',
+            'birth_date_raw': '',
+            'primary_source': '',
+        }
+        detail_rows: List[Dict[str, Any]] = []
+        seen_entries = set()
+
+        labels = {
+            'full_name': ('שם לקוח', 'Client Name'),
+            'id_number': ('תעודת זהות', 'ID Number'),
+            'birth_date': ('תאריך לידה', 'Date of Birth'),
+        }
+
+        def add_value(field_key: str, raw_value: Any, source: str) -> None:
+            raw_text = '' if raw_value is None else str(raw_value).strip()
+            if not raw_text:
+                return
+
+            if field_key == 'id_number':
+                normalized_value = self._normalize_id_number(raw_text)
+            elif field_key == 'birth_date':
+                normalized_value = self._normalize_birth_date(raw_text)
+            else:
+                normalized_value = re.sub(r'\s+', ' ', raw_text)
+
+            if not normalized_value:
+                return
+
+            entry_key = (field_key, normalized_value, source)
+            if entry_key in seen_entries:
+                return
+            seen_entries.add(entry_key)
+
+            field_he, field_en = labels.get(field_key, (field_key, field_key))
+            detail_rows.append({
+                'field_key': field_key,
+                'field_he': field_he,
+                'field_en': field_en,
+                'raw_value': raw_text,
+                'normalized_value': normalized_value,
+                'source': source,
+            })
+
+            if not profile.get(field_key):
+                profile[field_key] = normalized_value
+                profile[f'{field_key}_raw'] = raw_text
+                if not profile.get('primary_source'):
+                    profile['primary_source'] = source
+
+            if field_key == 'id_number' and not profile.get('birth_date'):
+                derived_birth = self._normalize_birth_date(raw_text)
+                if derived_birth and derived_birth != raw_text:
+                    add_value('birth_date', derived_birth, f'{source}:derived_from_id_text')
+
+        # 1) Prioritize explicit pension client payload.
+        clients = pension_data.get('client', {}) if isinstance(pension_data, dict) else {}
+        if isinstance(clients, list):
+            clients = clients[0] if clients else {}
+        if isinstance(clients, dict):
+            add_value('full_name', clients.get('full_name') or clients.get('name') or clients.get('client_name'), 'pension_client')
+            add_value('id_number', clients.get('id_number') or clients.get('id') or clients.get('identity_number'), 'pension_client')
+            add_value('birth_date', clients.get('birth_date') or clients.get('date_of_birth') or clients.get('dob'), 'pension_client')
+
+        id_keywords = ['ת.ז', 'ת"ז', 'תז', 'תעודת זהות', 'מספר זהות', 'id number', 'identity id', 'id_number']
+        birth_keywords = ['תאריך לידה', 'birth date', 'date of birth', 'dob', 'birth_date']
+        name_keywords = ['שם לקוח', 'שם מלא', 'client name', 'insured name', 'full name', 'client_name']
+
+        column_roles: Dict[str, List[str]] = {}
+        for col in columns:
+            col_norm = self._normalize_affiliation_term(col)
+            roles: List[str] = []
+            if any(token in col_norm for token in [self._normalize_affiliation_term(k) for k in id_keywords]):
+                roles.append('id_number')
+            if any(token in col_norm for token in [self._normalize_affiliation_term(k) for k in birth_keywords]):
+                roles.append('birth_date')
+            if any(token in col_norm for token in [self._normalize_affiliation_term(k) for k in name_keywords]):
+                roles.append('full_name')
+            if roles:
+                column_roles[col] = roles
+
+        id_text_pattern = re.compile(
+            r'(?:ת\.?\s*ז\.?|תעודת זהות|מספר זהות|id(?:\s*number)?)\s*[:\-]?\s*([0-9]{5,18}|לא זמין|n/?a|not available|unknown)',
+            re.IGNORECASE
+        )
+        birth_text_pattern = re.compile(
+            r'(?:תאריך לידה|date of birth|dob)\s*[:\-]?\s*([0-9]{8}|[0-9]{1,2}[./-][0-9]{1,2}[./-][0-9]{2,4}|[0-9]{4}[./-][0-9]{1,2}[./-][0-9]{1,2})',
+            re.IGNORECASE
+        )
+        name_text_pattern = re.compile(
+            r'(?:שם(?: מלא)?|client name|insured name)\s*[:\-]?\s*([^\|\n,;]{2,80})',
+            re.IGNORECASE
+        )
+
+        # 2) Extract from tabular rows and free-text row values.
+        for row in rows[:800]:
+            if not isinstance(row, dict):
+                continue
+
+            for col, roles in column_roles.items():
+                if col not in row:
+                    continue
+                value = row.get(col)
+                for role in roles:
+                    add_value(role, value, f'column:{col}')
+
+            row_text_values = [str(v).strip() for v in row.values() if v is not None and str(v).strip()]
+            if not row_text_values:
+                continue
+            text_blob = ' | '.join(row_text_values)
+
+            for match in id_text_pattern.finditer(text_blob):
+                add_value('id_number', match.group(1), 'row_text')
+            for match in birth_text_pattern.finditer(text_blob):
+                add_value('birth_date', match.group(1), 'row_text')
+            if not profile.get('full_name'):
+                for match in name_text_pattern.finditer(text_blob):
+                    candidate_name = re.sub(r'\s+', ' ', match.group(1)).strip()
+                    if candidate_name and len(candidate_name) > 1:
+                        add_value('full_name', candidate_name, 'row_text')
+                        break
+
+        # 3) Derive missing fields from combined text as fallback.
+        if not profile.get('birth_date') or not profile.get('id_number'):
+            combined_text = ' | '.join(self._normalize_affiliation_term(v) for v in columns if v)
+            if combined_text:
+                for match in id_text_pattern.finditer(combined_text):
+                    add_value('id_number', match.group(1), 'column_text')
+                for match in birth_text_pattern.finditer(combined_text):
+                    add_value('birth_date', match.group(1), 'column_text')
+
+        if profile.get('id_number') and profile['id_number'] in ['Not available'] and any(
+            row.get('normalized_value') == 'לא זמין' for row in detail_rows if row.get('field_key') == 'id_number'
+        ):
+            profile['id_number'] = 'לא זמין'
+
+        required_fields = ['full_name', 'id_number', 'birth_date']
+        captured_fields = sum(1 for field in required_fields if profile.get(field))
+        completeness_pct = round((captured_fields / max(len(required_fields), 1)) * 100, 2)
+
+        profile['birth_date_formatted'] = profile.get('birth_date', '')
+        profile['captured_fields'] = captured_fields
+        profile['required_fields'] = len(required_fields)
+        profile['completeness_pct'] = completeness_pct
+        profile['id_available'] = bool(profile.get('id_number')) and profile.get('id_number') not in ['לא זמין', 'Not available']
+
+        return {
+            'profile': profile,
+            'rows': detail_rows[:200],
+        }
+
     def _build_affiliation_matrix_metadata(
         self,
         doc_data: Optional[Dict[str, Any]],
@@ -3595,6 +3861,15 @@ Factors Affecting Score:
             if not isinstance(acct, dict):
                 continue
             for value in acct.values():
+                normalized_val = self._normalize_affiliation_term(value)
+                if normalized_val:
+                    source_terms.append(normalized_val)
+
+        pension_client = pension_data.get('client', {}) if isinstance(pension_data, dict) else {}
+        if isinstance(pension_client, list):
+            pension_client = pension_client[0] if pension_client else {}
+        if isinstance(pension_client, dict):
+            for value in pension_client.values():
                 normalized_val = self._normalize_affiliation_term(value)
                 if normalized_val:
                     source_terms.append(normalized_val)
@@ -3691,6 +3966,13 @@ Factors Affecting Score:
             if not normalized_col:
                 continue
 
+            is_birth_column = any(
+                token in normalized_col for token in ['תאריך לידה', 'birth date', 'date of birth', 'dob', 'birth_date']
+            )
+            is_id_column = any(
+                token in normalized_col for token in ['ת.ז', 'ת"ז', 'תז', 'תעודת זהות', 'מספר זהות', 'id number', 'id_number']
+            )
+
             sample_values = []
             for row in rows[:200]:
                 if not isinstance(row, dict):
@@ -3701,8 +3983,13 @@ Factors Affecting Score:
                 val = str(raw_val).strip()
                 if not val:
                     continue
-                if val not in sample_values:
-                    sample_values.append(val)
+                display_val = val
+                if is_birth_column:
+                    display_val = self._normalize_birth_date(val) or val
+                elif is_id_column:
+                    display_val = self._normalize_id_number(val) or val
+                if display_val not in sample_values:
+                    sample_values.append(display_val)
                 if len(sample_values) >= 3:
                     break
 
@@ -3778,6 +4065,10 @@ Factors Affecting Score:
                 'keywords_count': len(section.get('keywords', [])),
             })
 
+        identity_matrix = self._extract_client_identity_metadata(rows, columns, pension_data)
+        identity_profile = identity_matrix.get('profile', {}) or {}
+        identity_rows = identity_matrix.get('rows', []) or []
+
         policy_metrics = self._extract_policy_cumulative_metrics(rows, columns)
         policy_total = sum(metric.get('policy_total', 0) for metric in policy_metrics)
         policy_savings = sum(metric.get('savings_total', 0) for metric in policy_metrics)
@@ -3795,6 +4086,8 @@ Factors Affecting Score:
             'column_matrix_covered': covered_columns,
             'column_matrix_uncovered': max(total_matrix_columns - covered_columns, 0),
             'wishful_sections_covered': len([r for r in section_matrix_rows if r.get('mapped_columns', 0) > 0]),
+            'identity_fields_captured': identity_profile.get('captured_fields', 0),
+            'identity_completeness_pct': identity_profile.get('completeness_pct', 0),
             'analysis_language': analysis.language if analysis else '',
             'analysis_type': analysis.data_classification.value if analysis else '',
         }
@@ -3809,11 +4102,13 @@ Factors Affecting Score:
         }
 
         return {
-            'matrix_version': '1.1',
+            'matrix_version': '1.2',
             'summary_rows': summary_rows,
             'detail_rows': detail_rows,
             'column_matrix_rows': column_matrix_rows,
             'section_matrix_rows': section_matrix_rows,
+            'identity_profile': identity_profile,
+            'identity_matrix_rows': identity_rows,
             'source_context': source_context,
             'policy_aggregate': policy_aggregate,
             'column_coverage': {
@@ -3836,6 +4131,8 @@ Factors Affecting Score:
         detail_rows = matrix.get('detail_rows', []) or []
         column_matrix_rows = matrix.get('column_matrix_rows', []) or []
         section_matrix_rows = matrix.get('section_matrix_rows', []) or []
+        identity_profile = matrix.get('identity_profile', {}) or {}
+        identity_matrix_rows = matrix.get('identity_matrix_rows', []) or []
         source_context = matrix.get('source_context', {}) or {}
         policy_aggregate = matrix.get('policy_aggregate', {}) or {}
         column_coverage = matrix.get('column_coverage', {}) or {}
@@ -3889,6 +4186,45 @@ Factors Affecting Score:
                 },
                 order=9
             ))
+
+        if identity_matrix_rows or any(identity_profile.get(key) for key in ['full_name', 'id_number', 'birth_date']):
+            identity_table_rows = []
+            if identity_matrix_rows:
+                for row in identity_matrix_rows:
+                    identity_table_rows.append({
+                        'שדה' if is_hebrew else 'Field': row.get('field_he') if is_hebrew else row.get('field_en'),
+                        'ערך משויך' if is_hebrew else 'Affiliated Value': row.get('normalized_value', ''),
+                        'ערך מקור' if is_hebrew else 'Raw Value': row.get('raw_value', ''),
+                        'מקור שיוך' if is_hebrew else 'Affiliation Source': row.get('source', ''),
+                    })
+            else:
+                fallback_fields = [
+                    ('שם לקוח' if is_hebrew else 'Client Name', identity_profile.get('full_name', ''), identity_profile.get('full_name_raw', '')),
+                    ('תעודת זהות' if is_hebrew else 'ID Number', identity_profile.get('id_number', ''), identity_profile.get('id_number_raw', '')),
+                    ('תאריך לידה' if is_hebrew else 'Date of Birth', identity_profile.get('birth_date', ''), identity_profile.get('birth_date_raw', '')),
+                ]
+                for label, value, raw_value in fallback_fields:
+                    if not value and not raw_value:
+                        continue
+                    identity_table_rows.append({
+                        'שדה' if is_hebrew else 'Field': label,
+                        'ערך משויך' if is_hebrew else 'Affiliated Value': value,
+                        'ערך מקור' if is_hebrew else 'Raw Value': raw_value,
+                        'מקור שיוך' if is_hebrew else 'Affiliation Source': identity_profile.get('primary_source', 'derived'),
+                    })
+
+            if identity_table_rows:
+                sections.append(ReportSection(
+                    title='שיוך פרטי זיהוי לקוח (ת.ז ותאריך לידה)' if is_hebrew else 'Client Identity Affiliation (ID and Birth Date)',
+                    content='הקצאת מטא-דאטה של לקוח לפי מטריצת שיוכים, כולל נרמול תאריך לידה לפורמט יום/חודש/שנה.' if is_hebrew
+                    else 'Client metadata allocation by affiliation matrix, including date-of-birth normalization to dd/mm/yyyy.',
+                    data_table={
+                        'columns': list(identity_table_rows[0].keys()),
+                        'rows': identity_table_rows,
+                        'show_all': True
+                    },
+                    order=9
+                ))
 
         if section_matrix_rows:
             section_table_rows = []
@@ -3947,6 +4283,10 @@ Factors Affecting Score:
             {'מדד' if is_hebrew else 'Metric': 'עמודות ללא שיוך' if is_hebrew else 'Uncovered Matrix Columns', 'ערך' if is_hebrew else 'Value': source_context.get('column_matrix_uncovered', 0)},
             {'מדד' if is_hebrew else 'Metric': 'כיסוי עמודות %' if is_hebrew else 'Column Coverage %', 'ערך' if is_hebrew else 'Value': column_coverage.get('coverage_pct', 0)},
             {'מדד' if is_hebrew else 'Metric': 'חלקי דוח רצוי מכוסים' if is_hebrew else 'Covered Wishful Sections', 'ערך' if is_hebrew else 'Value': source_context.get('wishful_sections_covered', 0)},
+            {'מדד' if is_hebrew else 'Metric': 'שדות זיהוי לקוח שזוהו' if is_hebrew else 'Captured Identity Fields', 'ערך' if is_hebrew else 'Value': source_context.get('identity_fields_captured', 0)},
+            {'מדד' if is_hebrew else 'Metric': 'שלמות זיהוי לקוח %' if is_hebrew else 'Identity Completeness %', 'ערך' if is_hebrew else 'Value': source_context.get('identity_completeness_pct', 0)},
+            {'מדד' if is_hebrew else 'Metric': 'ת.ז מזוהה' if is_hebrew else 'Affiliated ID Number', 'ערך' if is_hebrew else 'Value': identity_profile.get('id_number', '')},
+            {'מדד' if is_hebrew else 'Metric': 'תאריך לידה (dd/mm/yyyy)' if is_hebrew else 'Birth Date (dd/mm/yyyy)', 'ערך' if is_hebrew else 'Value': identity_profile.get('birth_date', '')},
             {'מדד' if is_hebrew else 'Metric': 'פוליסות מזוהות' if is_hebrew else 'Identified Policies', 'ערך' if is_hebrew else 'Value': policy_aggregate.get('policy_count', 0)},
             {'מדד' if is_hebrew else 'Metric': 'סה״כ חיסכון מזוהה' if is_hebrew else 'Identified Savings Total', 'ערך' if is_hebrew else 'Value': policy_aggregate.get('savings_total', 0)},
             {'מדד' if is_hebrew else 'Metric': 'סה״כ השקעות מזוהה' if is_hebrew else 'Identified Investments Total', 'ערך' if is_hebrew else 'Value': policy_aggregate.get('investments_total', 0)},
@@ -3977,6 +4317,7 @@ Factors Affecting Score:
         summary_rows = matrix.get('summary_rows', []) or []
         section_matrix_rows = matrix.get('section_matrix_rows', []) or []
         column_coverage = matrix.get('column_coverage', {}) or {}
+        identity_profile = matrix.get('identity_profile', {}) or {}
 
         is_hebrew = lang_code == 'hebrew'
         charts: List[ChartConfig] = []
@@ -4061,6 +4402,22 @@ Factors Affecting Score:
                 },
                 options={
                     'colors': ['#10b981', '#f97316'],
+                }
+            ))
+
+        required_identity_fields = identity_profile.get('required_fields', 0)
+        captured_identity_fields = identity_profile.get('captured_fields', 0)
+        if required_identity_fields > 0:
+            missing_identity_fields = max(required_identity_fields - captured_identity_fields, 0)
+            charts.append(ChartConfig(
+                type=ChartType.DOUGHNUT,
+                title='שלמות שיוך זיהוי לקוח' if is_hebrew else 'Client Identity Affiliation Completeness',
+                data={
+                    'labels': ['שדות מזוהים' if is_hebrew else 'Captured Fields', 'שדות חסרים' if is_hebrew else 'Missing Fields'],
+                    'values': [captured_identity_fields, missing_identity_fields],
+                },
+                options={
+                    'colors': ['#06b6d4', '#f59e0b'],
                 }
             ))
 

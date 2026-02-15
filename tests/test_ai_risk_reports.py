@@ -335,6 +335,11 @@ POL-002,150000,620,3000,2000,Ayalon,Basic,Active,SunFood,2022-11"""
 
         # Inject pension-style parsed data to trigger Mislaka-affiliated path.
         self.service.documents[self.doc_id]['parsed_data']['pension_data'] = {
+            'client': {
+                'full_name': 'קרן פלס טור',
+                'id_number': 'ת.ז לא זמין תאריך לידה 19521107 נתוני לקוח',
+                'birth_date': '19521107',
+            },
             'accounts': [
                 {
                     'policy_number': '6,962,791,015',
@@ -475,12 +480,18 @@ POL-002,150000,620,3000,2000,Ayalon,Basic,Active,SunFood,2022-11"""
         self.assertGreaterEqual(len(matrix.get('column_matrix_rows', [])), 2)
         self.assertTrue(isinstance(matrix.get('section_matrix_rows', []), list))
         self.assertGreaterEqual(len(matrix.get('section_matrix_rows', [])), 1)
+        self.assertTrue(isinstance(matrix.get('identity_matrix_rows', []), list))
+        self.assertGreaterEqual(len(matrix.get('identity_matrix_rows', [])), 1)
+        self.assertTrue(isinstance(matrix.get('identity_profile', {}), dict))
+        self.assertEqual(matrix.get('identity_profile', {}).get('birth_date'), '07/11/1952')
+        self.assertEqual(matrix.get('identity_profile', {}).get('id_number'), 'לא זמין')
         self.assertIn('policy_aggregate', matrix)
 
         titles = [section.title for section in report.sections]
         self.assertTrue(any('מטריצת שיוכי מטא-דאטה' in title for title in titles))
         self.assertTrue(any('מטריצת שיוך עמודות מקור' in title for title in titles))
         self.assertTrue(any('כיסוי מודל דוח רצוי' in title for title in titles))
+        self.assertTrue(any('שיוך פרטי זיהוי לקוח' in title for title in titles))
 
         self.assertTrue(
             any(
@@ -493,9 +504,16 @@ POL-002,150000,620,3000,2000,Ayalon,Basic,Active,SunFood,2022-11"""
                 ('כיסוי חלקי מודל דוח רצוי' in chart.title)
                 or ('Wishful Report Section Coverage' in chart.title)
                 or ('Source Column Affiliation Coverage' in chart.title)
+                or ('Client Identity Affiliation Completeness' in chart.title)
+                or ('שלמות שיוך זיהוי לקוח' in chart.title)
                 for chart in report.charts
             )
         )
+
+    def test_identity_birth_date_normalization_helper(self):
+        self.assertEqual(self.service._normalize_birth_date('19521107'), '07/11/1952')
+        self.assertEqual(self.service._normalize_birth_date('1952-11-07'), '07/11/1952')
+        self.assertEqual(self.service._normalize_birth_date('תאריך לידה 19521107 נתוני לקוח'), '07/11/1952')
 
 
 class TestHebrewWorkflow(unittest.TestCase):
