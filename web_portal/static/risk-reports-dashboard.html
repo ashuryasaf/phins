@@ -342,6 +342,23 @@
     .integrity-badge.warn { background: #fef3c7; color: #92400e; }
     .integrity-badge.fail { background: #fee2e2; color: #b91c1c; }
 
+    .bottom-credentials-cta {
+      background: white;
+      border-radius: 16px;
+      padding: 1.5rem;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+      border: 1px solid #e2e8f0;
+      margin-bottom: 1rem;
+      text-align: center;
+    }
+
+    .bottom-credentials-cta .url-text {
+      margin-top: 0.6rem;
+      font-size: 0.88rem;
+      color: var(--text-muted);
+      font-family: monospace;
+    }
+
     /* Upload Section */
     .upload-section {
       background: white;
@@ -1937,23 +1954,6 @@
       <p>Generate Mislaka-ready assessments, Swiftness Safe imports, and AI-driven insights</p>
     </div>
 
-    <!-- Swiftness Hub Relocated -->
-    <section class="research-section fade-in">
-      <div class="research-header">
-        <h3>🔐 Swiftness Credentials & Resources</h3>
-        <span class="research-badge">Moved to dedicated page</span>
-      </div>
-      <p style="color: var(--text-muted); margin-bottom: 1rem;">
-        The tabs <strong>🧭 Swiftness + Mislaka Research Hub</strong> and
-        <strong>📥 Swiftness Data Resources & Downloads</strong> were moved to a separate page.
-      </p>
-      <div style="display: flex; gap: 0.75rem; flex-wrap: wrap;">
-        <a href="/swiftness-mislaka-hub.html" class="btn btn-primary" style="text-decoration: none;">
-          🔐 Open Credentials & Hub Page
-        </a>
-      </div>
-    </section>
-    
     <!-- Upload Section -->
     <section class="upload-section fade-in">
       <div class="section-header">
@@ -2140,6 +2140,17 @@
           </div>
         </div>
       </div>
+    </section>
+
+    <section class="bottom-credentials-cta fade-in">
+      <h3 style="color: var(--primary); margin-bottom: 0.5rem;">🔐 Credentials</h3>
+      <p style="color: var(--text-muted); margin-bottom: 0.9rem;">
+        Swiftness + Mislaka Research Hub and Data Resources were moved to a separate page.
+      </p>
+      <a href="/swiftness-mislaka-hub.html" class="btn btn-primary" style="text-decoration: none;">
+        🔐 Open Credentials Hub
+      </a>
+      <div class="url-text">/swiftness-mislaka-hub.html</div>
     </section>
   </main>
   
