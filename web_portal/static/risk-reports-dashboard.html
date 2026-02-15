@@ -1925,6 +1925,7 @@
     <nav class="header-nav">
       <a href="/dashboard.html">← Dashboard</a>
       <a href="/risk-dashboard.html">🎯 Assessment</a>
+      <a href="/swiftness-mislaka-hub.html">🔐 Credentials</a>
       <a href="/admin.html">Admin</a>
     </nav>
   </header>
@@ -1936,110 +1937,20 @@
       <p>Generate Mislaka-ready assessments, Swiftness Safe imports, and AI-driven insights</p>
     </div>
 
-    <!-- Research Hub -->
-    <section class="research-section fade-in" id="researchSection">
+    <!-- Swiftness Hub Relocated -->
+    <section class="research-section fade-in">
       <div class="research-header">
-        <h3>🧭 Swiftness + Mislaka Research Hub</h3>
-        <span class="research-badge">Affiliations • Standards • Safe Link</span>
+        <h3>🔐 Swiftness Credentials & Resources</h3>
+        <span class="research-badge">Moved to dedicated page</span>
       </div>
-      <div class="research-grid">
-        <div class="research-card">
-          <h4>🔗 Affiliation Map</h4>
-          <p id="affiliationsSummary" style="color: var(--text-muted); font-size: 0.9rem;">
-            Loading entity, product, and ID affiliations...
-          </p>
-          <div class="affiliations-grid" id="affiliationsGrid"></div>
-        </div>
-        <div class="research-card">
-          <h4>🧬 Interface & Compliance</h4>
-          <div class="tag-grid" id="interfaceTags"></div>
-          <div class="affiliations-grid" id="interfaceStats" style="margin-top: 1rem;"></div>
-        </div>
-        <div class="research-card">
-          <h4>🛡️ Swiftness Safe Gateway</h4>
-          <div class="status-pill pending" id="swiftnessStatusPill">Checking connection...</div>
-          <div id="swiftnessStatusMessage" style="color: var(--text-muted); font-size: 0.9rem;">
-            Validating secure channel configuration
-          </div>
-          <div class="swiftness-actions">
-            <button class="btn btn-secondary" onclick="refreshSwiftnessStatus()">🔄 Refresh</button>
-            <button class="btn btn-primary" id="swiftnessConnectBtn" onclick="openSwiftnessSafe()">🔐 Open Safe</button>
-          </div>
-        </div>
-      </div>
-      <div class="research-footer">
-        <span>Source: Mislaka schema mappings (Holdings, Severance, Events, Transference)</span>
-        <span>Entities: Providers • Clearinghouse • Agents • Savers • Employers</span>
-        <span>Data integrity is enforced with row-level ownership</span>
-      </div>
-    </section>
-
-    <!-- Swiftness Resources & Downloads -->
-    <section class="research-section fade-in" id="swiftnessResourcesSection" style="border-top: 3px solid #0ea5e9;">
-      <div class="research-header">
-        <h3>📥 Swiftness Data Resources & Downloads</h3>
-        <span class="research-badge" style="background: linear-gradient(135deg, #059669 0%, #10b981 100%);">Files • Links • Schemas</span>
-      </div>
-
-      <!-- Quick Links -->
-      <div style="display: flex; gap: 1rem; flex-wrap: wrap; margin-bottom: 1.5rem;" id="swiftnessQuickLinks">
-        <a href="https://www.swiftness.co.il/כללי-מערכת/" target="_blank" rel="noopener"
-           class="btn btn-primary" style="text-decoration: none; font-size: 0.9rem;">
-          🌐 כללי מערכת (System General)
+      <p style="color: var(--text-muted); margin-bottom: 1rem;">
+        The tabs <strong>🧭 Swiftness + Mislaka Research Hub</strong> and
+        <strong>📥 Swiftness Data Resources & Downloads</strong> were moved to a separate page.
+      </p>
+      <div style="display: flex; gap: 0.75rem; flex-wrap: wrap;">
+        <a href="/swiftness-mislaka-hub.html" class="btn btn-primary" style="text-decoration: none;">
+          🔐 Open Credentials & Hub Page
         </a>
-        <a href="https://www.swiftness.co.il/savers/קבצים-עדכניים-לעבודה-מול-המסלקה/" target="_blank" rel="noopener"
-           class="btn btn-primary" style="text-decoration: none; font-size: 0.9rem; background: linear-gradient(135deg, #059669 0%, #047857 100%);">
-          📂 קבצים עדכניים לעבודה מול המסלקה
-        </a>
-        <a href="https://www.swiftness.co.il" target="_blank" rel="noopener"
-           class="btn btn-secondary" style="text-decoration: none; font-size: 0.9rem;">
-          🏠 Swiftness Home
-        </a>
-        <a href="https://www.swiftness.co.il/savers/" target="_blank" rel="noopener"
-           class="btn btn-secondary" style="text-decoration: none; font-size: 0.9rem;">
-          👤 Savers Portal
-        </a>
-      </div>
-
-      <!-- Resource Catalog Tabs -->
-      <div style="display: flex; gap: 0.5rem; margin-bottom: 1rem;">
-        <button class="btn btn-secondary" id="tabSystemGeneral" onclick="showResourceTab('system_general')" style="padding: 8px 16px; font-size: 0.85rem; background: var(--primary); color: white;">
-          📋 System General
-        </button>
-        <button class="btn btn-secondary" id="tabMislakaFiles" onclick="showResourceTab('mislaka_work')" style="padding: 8px 16px; font-size: 0.85rem;">
-          📂 Mislaka Work Files
-        </button>
-        <button class="btn btn-secondary" id="tabReportModel" onclick="showResourceTab('report_model')" style="padding: 8px 16px; font-size: 0.85rem;">
-          📊 Report Model
-        </button>
-      </div>
-
-      <!-- System General Files -->
-      <div id="resourceTabSystemGeneral" class="resource-tab-content">
-        <div class="research-grid" id="systemGeneralGrid" style="grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));">
-          <div style="text-align: center; color: var(--text-muted); padding: 1.5rem; grid-column: 1/-1;">Loading system resources...</div>
-        </div>
-      </div>
-
-      <!-- Mislaka Work Files -->
-      <div id="resourceTabMislakaWork" class="resource-tab-content" style="display: none;">
-        <div class="research-grid" id="mislakaWorkGrid" style="grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));">
-          <div style="text-align: center; color: var(--text-muted); padding: 1.5rem; grid-column: 1/-1;">Loading Mislaka work files...</div>
-        </div>
-      </div>
-
-      <!-- Report Model -->
-      <div id="resourceTabReportModel" class="resource-tab-content" style="display: none;">
-        <div id="reportModelContainer">
-          <div style="text-align: center; color: var(--text-muted); padding: 1.5rem;">Loading report model...</div>
-        </div>
-      </div>
-
-      <!-- Resource Stats -->
-      <div class="research-footer" id="resourceStats">
-        <span id="resourceStatTotal">Loading resource catalog...</span>
-        <span id="resourceStatInterfaces"></span>
-        <span id="resourceStatFileTypes"></span>
       </div>
     </section>
     
@@ -2364,10 +2275,7 @@
       const grid = document.getElementById('affiliationsGrid');
       const interfaceTags = document.getElementById('interfaceTags');
       const interfaceStats = document.getElementById('interfaceStats');
-
-      if (!summary || !grid || !interfaceTags || !interfaceStats) {
-        return;
-      }
+      const canRender = Boolean(summary && grid && interfaceTags && interfaceStats);
 
       try {
         const response = await fetch('/api/mislaka/affiliations');
@@ -2387,58 +2295,62 @@
         const interfaceList = Object.values(data.interface_codes || {});
         const schemaCount = new Set(interfaceList.map(item => item.schema).filter(Boolean)).size;
 
-        summary.textContent = `Entities: ${entityCount} • Products: ${productCount} • Status: ${statusCount} • IDs: ${idCount}`;
+        if (canRender) {
+          summary.textContent = `Entities: ${entityCount} • Products: ${productCount} • Status: ${statusCount} • IDs: ${idCount}`;
 
-        grid.innerHTML = `
-          <div class="affiliation-item">
-            <div class="label">Entity Types</div>
-            <div class="value">${entityCount}</div>
-          </div>
-          <div class="affiliation-item">
-            <div class="label">Product Types</div>
-            <div class="value">${productCount}</div>
-          </div>
-          <div class="affiliation-item">
-            <div class="label">Status Codes</div>
-            <div class="value">${statusCount}</div>
-          </div>
-          <div class="affiliation-item">
-            <div class="label">ID Types</div>
-            <div class="value">${idCount}</div>
-          </div>
-        `;
+          grid.innerHTML = `
+            <div class="affiliation-item">
+              <div class="label">Entity Types</div>
+              <div class="value">${entityCount}</div>
+            </div>
+            <div class="affiliation-item">
+              <div class="label">Product Types</div>
+              <div class="value">${productCount}</div>
+            </div>
+            <div class="affiliation-item">
+              <div class="label">Status Codes</div>
+              <div class="value">${statusCount}</div>
+            </div>
+            <div class="affiliation-item">
+              <div class="label">ID Types</div>
+              <div class="value">${idCount}</div>
+            </div>
+          `;
 
-        interfaceTags.innerHTML = interfaceList
-          .slice(0, 8)
-          .map(item => `<span class="tag">${item.he || item.name}</span>`)
-          .join('') || '<span style="color: var(--text-muted);">No interface data</span>';
+          interfaceTags.innerHTML = interfaceList
+            .slice(0, 8)
+            .map(item => `<span class="tag">${item.he || item.name}</span>`)
+            .join('') || '<span style="color: var(--text-muted);">No interface data</span>';
 
-        interfaceStats.innerHTML = `
-          <div class="affiliation-item">
-            <div class="label">Interfaces</div>
-            <div class="value">${interfaceCount}</div>
-          </div>
-          <div class="affiliation-item">
-            <div class="label">Schemas</div>
-            <div class="value">${schemaCount || 0}</div>
-          </div>
-          <div class="affiliation-item">
-            <div class="label">Environments</div>
-            <div class="value">${environmentCount}</div>
-          </div>
-          <div class="affiliation-item">
-            <div class="label">Source</div>
-            <div class="value">Mislaka Specs</div>
-          </div>
-        `;
+          interfaceStats.innerHTML = `
+            <div class="affiliation-item">
+              <div class="label">Interfaces</div>
+              <div class="value">${interfaceCount}</div>
+            </div>
+            <div class="affiliation-item">
+              <div class="label">Schemas</div>
+              <div class="value">${schemaCount || 0}</div>
+            </div>
+            <div class="affiliation-item">
+              <div class="label">Environments</div>
+              <div class="value">${environmentCount}</div>
+            </div>
+            <div class="affiliation-item">
+              <div class="label">Source</div>
+              <div class="value">Mislaka Specs</div>
+            </div>
+          `;
+        }
         return data;
       } catch (error) {
         swiftnessAffiliations = null;
         swiftnessAffiliationsUpdatedAt = null;
-        summary.textContent = 'Affiliations data could not be loaded.';
-        grid.innerHTML = '';
-        interfaceTags.innerHTML = '<span style="color: var(--text-muted);">Check API availability</span>';
-        interfaceStats.innerHTML = '';
+        if (canRender) {
+          summary.textContent = 'Affiliations data could not be loaded.';
+          grid.innerHTML = '';
+          interfaceTags.innerHTML = '<span style="color: var(--text-muted);">Check API availability</span>';
+          interfaceStats.innerHTML = '';
+        }
         return null;
       }
     }
@@ -2685,25 +2597,25 @@
       const pill = document.getElementById('swiftnessStatusPill');
       const message = document.getElementById('swiftnessStatusMessage');
       const connectBtn = document.getElementById('swiftnessConnectBtn');
-
-      if (!pill || !message || !connectBtn) {
-        return;
-      }
+      const canRender = Boolean(pill && message && connectBtn);
 
       try {
         const response = await fetch('/api/swiftness-safe/status');
         const data = await response.json();
         swiftnessSafeBaseUrl = data.base_url || 'https://www.swiftness.co.il';
-
-        pill.className = `status-pill ${data.configured ? 'ready' : 'pending'}`;
-        pill.textContent = data.configured ? '✅ Safe Ready' : '⚠️ Safe Not Configured';
-        message.textContent = data.message || 'Swiftness Safe status unavailable';
-        connectBtn.disabled = !data.configured;
+        if (canRender) {
+          pill.className = `status-pill ${data.configured ? 'ready' : 'pending'}`;
+          pill.textContent = data.configured ? '✅ Safe Ready' : '⚠️ Safe Not Configured';
+          message.textContent = data.message || 'Swiftness Safe status unavailable';
+          connectBtn.disabled = !data.configured;
+        }
       } catch (error) {
-        pill.className = 'status-pill error';
-        pill.textContent = '❌ Safe Error';
-        message.textContent = 'Unable to reach Swiftness Safe status endpoint';
-        connectBtn.disabled = true;
+        if (canRender) {
+          pill.className = 'status-pill error';
+          pill.textContent = '❌ Safe Error';
+          message.textContent = 'Unable to reach Swiftness Safe status endpoint';
+          connectBtn.disabled = true;
+        }
       }
     }
 

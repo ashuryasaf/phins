@@ -1,0 +1,688 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PHINS - Swiftness + Mislaka Hub</title>
+  <link rel="stylesheet" href="/styles.css">
+  <style>
+    :root {
+      --primary: #0d47a1;
+      --primary-light: #1976d2;
+      --bg-light: #f5f7fa;
+      --text-dark: #1a1a2e;
+      --text-muted: #64748b;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+      background: var(--bg-light);
+      color: var(--text-dark);
+      min-height: 100vh;
+    }
+
+    .header {
+      background: linear-gradient(135deg, var(--primary) 0%, var(--primary-light) 100%);
+      color: white;
+      padding: 1rem 2rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+
+    .header h1 { font-size: 1.2rem; display: flex; align-items: center; gap: 10px; }
+    .header-nav { display: flex; gap: 10px; flex-wrap: wrap; }
+    .header-nav a {
+      color: white;
+      text-decoration: none;
+      background: rgba(255, 255, 255, 0.15);
+      padding: 8px 14px;
+      border-radius: 8px;
+      font-size: 0.9rem;
+    }
+    .header-nav a:hover { background: rgba(255, 255, 255, 0.25); }
+
+    .container {
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 2rem;
+    }
+
+    .page-title {
+      text-align: center;
+      margin-bottom: 1.5rem;
+    }
+    .page-title h2 { color: var(--primary); font-size: 1.9rem; margin-bottom: 0.35rem; }
+    .page-title p { color: var(--text-muted); }
+
+    .btn {
+      border: none;
+      border-radius: 8px;
+      padding: 10px 16px;
+      cursor: pointer;
+      font-weight: 600;
+      font-size: 0.9rem;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      text-decoration: none;
+    }
+    .btn-primary { background: linear-gradient(135deg, var(--primary) 0%, var(--primary-light) 100%); color: white; }
+    .btn-secondary { background: #e2e8f0; color: #1e293b; }
+
+    .research-section {
+      background: white;
+      border-radius: 16px;
+      padding: 2rem;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+      margin-bottom: 2rem;
+      border: 1px solid #e2e8f0;
+    }
+    .research-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 1rem;
+      padding-bottom: 1rem;
+      border-bottom: 2px solid #e2e8f0;
+      margin-bottom: 1.5rem;
+    }
+    .research-header h3 {
+      color: var(--primary);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 1.3rem;
+    }
+    .research-badge {
+      background: linear-gradient(135deg, #0ea5e9 0%, #2563eb 100%);
+      color: white;
+      padding: 6px 14px;
+      border-radius: 20px;
+      font-size: 0.82rem;
+      font-weight: 600;
+    }
+    .research-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 1.5rem;
+    }
+    .research-card {
+      background: #f8fafc;
+      border-radius: 14px;
+      padding: 1.5rem;
+      border: 1px solid #e2e8f0;
+    }
+    .research-card h4 {
+      margin-bottom: 0.75rem;
+      font-size: 1rem;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .affiliations-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 0.75rem;
+      margin-top: 0.75rem;
+    }
+    .affiliation-item {
+      background: white;
+      border-radius: 10px;
+      padding: 0.75rem;
+      border-left: 4px solid var(--primary);
+      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.05);
+    }
+    .affiliation-item .label { font-size: 0.75rem; color: var(--text-muted); margin-bottom: 0.2rem; }
+    .affiliation-item .value { font-size: 0.95rem; font-weight: 600; }
+
+    .tag-grid { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+    .tag {
+      background: #e0f2fe;
+      color: #0369a1;
+      padding: 0.35rem 0.6rem;
+      border-radius: 999px;
+      font-size: 0.75rem;
+      font-weight: 600;
+    }
+    .status-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 12px;
+      border-radius: 999px;
+      font-size: 0.8rem;
+      font-weight: 600;
+      margin-bottom: 0.75rem;
+    }
+    .status-pill.ready { background: #d1fae5; color: #047857; }
+    .status-pill.pending { background: #fef3c7; color: #92400e; }
+    .status-pill.error { background: #fee2e2; color: #b91c1c; }
+    .swiftness-actions { display: flex; gap: 0.75rem; flex-wrap: wrap; margin-top: 0.75rem; }
+
+    .research-footer {
+      margin-top: 1.5rem;
+      padding-top: 1rem;
+      border-top: 1px dashed #e2e8f0;
+      color: var(--text-muted);
+      font-size: 0.9rem;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 1rem;
+    }
+
+    .resource-file-card {
+      background: white;
+      border-radius: 12px;
+      padding: 1.25rem;
+      border: 1px solid #e2e8f0;
+      transition: all 0.2s;
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+    }
+    .resource-file-card:hover {
+      border-color: var(--primary);
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+      transform: translateY(-2px);
+    }
+    .resource-file-card .rfc-header { display: flex; align-items: center; gap: 10px; }
+    .resource-file-card .rfc-icon { font-size: 1.5rem; flex-shrink: 0; }
+    .resource-file-card .rfc-title { font-weight: 600; font-size: 0.95rem; }
+    .resource-file-card .rfc-title-en { font-size: 0.8rem; color: var(--text-muted); }
+    .resource-file-card .rfc-desc { font-size: 0.85rem; color: var(--text-muted); line-height: 1.5; }
+    .resource-file-card .rfc-meta { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: auto; }
+    .resource-file-card .rfc-tag {
+      background: #e0f2fe;
+      color: #0369a1;
+      padding: 2px 8px;
+      border-radius: 999px;
+      font-size: 0.7rem;
+      font-weight: 500;
+    }
+    .resource-file-card .rfc-tag.interface { background: #ddd6fe; color: #6d28d9; }
+    .resource-file-card .rfc-tag.version { background: #d1fae5; color: #047857; }
+    .resource-file-card .rfc-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      color: var(--primary);
+      font-size: 0.85rem;
+      font-weight: 500;
+      text-decoration: none;
+      margin-top: 0.25rem;
+    }
+    .resource-file-card .rfc-link:hover { text-decoration: underline; }
+
+    .report-model-section {
+      background: white;
+      border-radius: 12px;
+      padding: 1.25rem;
+      margin-bottom: 0.75rem;
+      border: 1px solid #e2e8f0;
+      border-left: 4px solid var(--primary);
+    }
+    .report-model-section .rms-header { display: flex; align-items: center; gap: 10px; margin-bottom: 0.5rem; }
+    .report-model-section .rms-order {
+      background: var(--primary);
+      color: white;
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.8rem;
+      font-weight: 700;
+      flex-shrink: 0;
+    }
+    .report-model-section .rms-title { font-weight: 600; color: var(--text-dark); font-size: 1rem; }
+    .report-model-section .rms-title-en { font-size: 0.85rem; color: var(--text-muted); font-weight: 400; margin-right: 0.5rem; }
+    .report-model-section .rms-desc { font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.75rem; }
+    .report-model-section .rms-fields { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+    .report-model-section .rms-field {
+      background: #f1f5f9;
+      padding: 3px 10px;
+      border-radius: 6px;
+      font-size: 0.75rem;
+      color: var(--text-dark);
+      border: 1px solid #e2e8f0;
+    }
+    .report-model-section .rms-field .field-type {
+      font-size: 0.65rem;
+      color: var(--text-muted);
+      margin-left: 4px;
+    }
+    .report-model-section .rms-charts { display: flex; gap: 0.5rem; margin-top: 0.5rem; flex-wrap: wrap; }
+    .report-model-section .rms-chart-badge {
+      background: #fef3c7;
+      color: #92400e;
+      padding: 2px 8px;
+      border-radius: 999px;
+      font-size: 0.7rem;
+      font-weight: 500;
+    }
+    .integrity-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 12px;
+      border-radius: 20px;
+      font-size: 0.75rem;
+      font-weight: 600;
+    }
+    .integrity-badge.pass { background: #d1fae5; color: #047857; }
+  </style>
+</head>
+<body>
+  <header class="header">
+    <h1><span>🧭</span> Swiftness + Mislaka Hub</h1>
+    <nav class="header-nav">
+      <a href="/dashboard.html">← Dashboard</a>
+      <a href="/risk-reports-dashboard.html">📊 Risk Reports Dashboard</a>
+      <a href="/admin.html">Admin</a>
+    </nav>
+  </header>
+
+  <main class="container">
+    <div class="page-title">
+      <h2>🧭 Swiftness + Mislaka Research & Credentials Hub</h2>
+      <p>Affiliations, secure gateway status, and Swiftness resources moved from the report dashboard.</p>
+    </div>
+
+    <section class="research-section" id="researchSection">
+      <div class="research-header">
+        <h3>🧭 Swiftness + Mislaka Research Hub</h3>
+        <span class="research-badge">Affiliations • Standards • Safe Link</span>
+      </div>
+      <div class="research-grid">
+        <div class="research-card">
+          <h4>🔗 Affiliation Map</h4>
+          <p id="affiliationsSummary" style="color: var(--text-muted); font-size: 0.9rem;">
+            Loading entity, product, and ID affiliations...
+          </p>
+          <div class="affiliations-grid" id="affiliationsGrid"></div>
+        </div>
+        <div class="research-card">
+          <h4>🧬 Interface & Compliance</h4>
+          <div class="tag-grid" id="interfaceTags"></div>
+          <div class="affiliations-grid" id="interfaceStats" style="margin-top: 1rem;"></div>
+        </div>
+        <div class="research-card">
+          <h4>🛡️ Swiftness Safe Gateway</h4>
+          <div class="status-pill pending" id="swiftnessStatusPill">Checking connection...</div>
+          <div id="swiftnessStatusMessage" style="color: var(--text-muted); font-size: 0.9rem;">
+            Validating secure channel configuration
+          </div>
+          <div class="swiftness-actions">
+            <button class="btn btn-secondary" onclick="refreshSwiftnessStatus()">🔄 Refresh</button>
+            <button class="btn btn-primary" id="swiftnessConnectBtn" onclick="openSwiftnessSafe()">🔐 Open Safe</button>
+          </div>
+        </div>
+      </div>
+      <div class="research-footer">
+        <span>Source: Mislaka schema mappings (Holdings, Severance, Events, Transference)</span>
+        <span>Entities: Providers • Clearinghouse • Agents • Savers • Employers</span>
+        <span>Data integrity is enforced with row-level ownership</span>
+      </div>
+    </section>
+
+    <section class="research-section" id="swiftnessResourcesSection" style="border-top: 3px solid #0ea5e9;">
+      <div class="research-header">
+        <h3>📥 Swiftness Data Resources & Downloads</h3>
+        <span class="research-badge" style="background: linear-gradient(135deg, #059669 0%, #10b981 100%);">Files • Links • Schemas</span>
+      </div>
+
+      <div style="display: flex; gap: 1rem; flex-wrap: wrap; margin-bottom: 1.5rem;" id="swiftnessQuickLinks">
+        <a href="https://www.swiftness.co.il/כללי-מערכת/" target="_blank" rel="noopener" class="btn btn-primary">
+          🌐 כללי מערכת (System General)
+        </a>
+        <a href="https://www.swiftness.co.il/savers/קבצים-עדכניים-לעבודה-מול-המסלקה/" target="_blank" rel="noopener" class="btn btn-primary" style="background: linear-gradient(135deg, #059669 0%, #047857 100%);">
+          📂 קבצים עדכניים לעבודה מול המסלקה
+        </a>
+        <a href="https://www.swiftness.co.il" target="_blank" rel="noopener" class="btn btn-secondary">
+          🏠 Swiftness Home
+        </a>
+        <a href="https://www.swiftness.co.il/savers/" target="_blank" rel="noopener" class="btn btn-secondary">
+          👤 Savers Portal
+        </a>
+      </div>
+
+      <div style="display: flex; gap: 0.5rem; margin-bottom: 1rem; flex-wrap: wrap;">
+        <button class="btn btn-secondary" id="tabSystemGeneral" onclick="showResourceTab('system_general')" style="background: var(--primary); color: white;">📋 System General</button>
+        <button class="btn btn-secondary" id="tabMislakaFiles" onclick="showResourceTab('mislaka_work')">📂 Mislaka Work Files</button>
+        <button class="btn btn-secondary" id="tabReportModel" onclick="showResourceTab('report_model')">📊 Report Model</button>
+      </div>
+
+      <div id="resourceTabSystemGeneral" class="resource-tab-content">
+        <div class="research-grid" id="systemGeneralGrid" style="grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));">
+          <div style="text-align: center; color: var(--text-muted); padding: 1.5rem; grid-column: 1/-1;">Loading system resources...</div>
+        </div>
+      </div>
+
+      <div id="resourceTabMislakaWork" class="resource-tab-content" style="display: none;">
+        <div class="research-grid" id="mislakaWorkGrid" style="grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));">
+          <div style="text-align: center; color: var(--text-muted); padding: 1.5rem; grid-column: 1/-1;">Loading Mislaka work files...</div>
+        </div>
+      </div>
+
+      <div id="resourceTabReportModel" class="resource-tab-content" style="display: none;">
+        <div id="reportModelContainer">
+          <div style="text-align: center; color: var(--text-muted); padding: 1.5rem;">Loading report model...</div>
+        </div>
+      </div>
+
+      <div class="research-footer" id="resourceStats">
+        <span id="resourceStatTotal">Loading resource catalog...</span>
+        <span id="resourceStatInterfaces"></span>
+        <span id="resourceStatFileTypes"></span>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    let swiftnessSafeBaseUrl = null;
+    let swiftnessAffiliations = null;
+    let swiftnessResources = null;
+    let swiftnessReportModel = null;
+
+    document.addEventListener('DOMContentLoaded', () => {
+      loadAffiliations();
+      refreshSwiftnessStatus();
+      loadSwiftnessResources();
+    });
+
+    async function loadAffiliations() {
+      const summary = document.getElementById('affiliationsSummary');
+      const grid = document.getElementById('affiliationsGrid');
+      const interfaceTags = document.getElementById('interfaceTags');
+      const interfaceStats = document.getElementById('interfaceStats');
+
+      try {
+        const response = await fetch('/api/mislaka/affiliations');
+        if (!response.ok) throw new Error('Affiliations unavailable');
+        const data = await response.json();
+        swiftnessAffiliations = data;
+
+        const entityCount = Object.keys(data.entity_types || {}).length;
+        const productCount = Object.keys(data.product_types || {}).length;
+        const statusCount = Object.keys(data.status_codes || {}).length;
+        const idCount = Object.keys(data.id_types || {}).length;
+        const interfaceCount = Object.keys(data.interface_codes || {}).length;
+        const environmentCount = Object.keys(data.environment_codes || {}).length;
+        const interfaceList = Object.values(data.interface_codes || {});
+        const schemaCount = new Set(interfaceList.map(item => item.schema).filter(Boolean)).size;
+
+        summary.textContent = `Entities: ${entityCount} • Products: ${productCount} • Status: ${statusCount} • IDs: ${idCount}`;
+        grid.innerHTML = `
+          <div class="affiliation-item"><div class="label">Entity Types</div><div class="value">${entityCount}</div></div>
+          <div class="affiliation-item"><div class="label">Product Types</div><div class="value">${productCount}</div></div>
+          <div class="affiliation-item"><div class="label">Status Codes</div><div class="value">${statusCount}</div></div>
+          <div class="affiliation-item"><div class="label">ID Types</div><div class="value">${idCount}</div></div>
+        `;
+
+        interfaceTags.innerHTML = interfaceList.slice(0, 8).map(item => `<span class="tag">${item.he || item.name}</span>`).join('')
+          || '<span style="color: var(--text-muted);">No interface data</span>';
+
+        interfaceStats.innerHTML = `
+          <div class="affiliation-item"><div class="label">Interfaces</div><div class="value">${interfaceCount}</div></div>
+          <div class="affiliation-item"><div class="label">Schemas</div><div class="value">${schemaCount || 0}</div></div>
+          <div class="affiliation-item"><div class="label">Environments</div><div class="value">${environmentCount}</div></div>
+          <div class="affiliation-item"><div class="label">Source</div><div class="value">Mislaka Specs</div></div>
+        `;
+      } catch (error) {
+        swiftnessAffiliations = null;
+        summary.textContent = 'Affiliations data could not be loaded.';
+        grid.innerHTML = '';
+        interfaceTags.innerHTML = '<span style="color: var(--text-muted);">Check API availability</span>';
+        interfaceStats.innerHTML = '';
+      }
+    }
+
+    async function refreshSwiftnessStatus() {
+      const pill = document.getElementById('swiftnessStatusPill');
+      const message = document.getElementById('swiftnessStatusMessage');
+      const connectBtn = document.getElementById('swiftnessConnectBtn');
+
+      try {
+        const response = await fetch('/api/swiftness-safe/status');
+        const data = await response.json();
+        swiftnessSafeBaseUrl = data.base_url || 'https://www.swiftness.co.il';
+        pill.className = `status-pill ${data.configured ? 'ready' : 'pending'}`;
+        pill.textContent = data.configured ? '✅ Safe Ready' : '⚠️ Safe Not Configured';
+        message.textContent = data.message || 'Swiftness Safe status unavailable';
+        connectBtn.disabled = !data.configured;
+      } catch (error) {
+        pill.className = 'status-pill error';
+        pill.textContent = '❌ Safe Error';
+        message.textContent = 'Unable to reach Swiftness Safe status endpoint';
+        connectBtn.disabled = true;
+      }
+    }
+
+    function openSwiftnessSafe() {
+      if (!swiftnessSafeBaseUrl) {
+        alert('Swiftness Safe base URL not available yet.');
+        return;
+      }
+      window.open(swiftnessSafeBaseUrl, '_blank', 'noopener');
+    }
+
+    async function loadSwiftnessResources() {
+      try {
+        const [resResponse, modelResponse] = await Promise.all([
+          fetch('/api/swiftness/resources'),
+          fetch('/api/swiftness/report-model')
+        ]);
+
+        if (resResponse.ok) {
+          swiftnessResources = await resResponse.json();
+          renderResourceCatalog(swiftnessResources);
+        }
+        if (modelResponse.ok) {
+          swiftnessReportModel = await modelResponse.json();
+          renderReportModel(swiftnessReportModel);
+        }
+      } catch (e) {
+        const el = document.getElementById('systemGeneralGrid');
+        if (el) {
+          el.innerHTML = '<div style="text-align: center; color: var(--text-muted); padding: 1.5rem; grid-column: 1/-1;">Failed to load resources. <button onclick="loadSwiftnessResources()" style="color: var(--primary); background: none; border: none; cursor: pointer; text-decoration: underline;">Retry</button></div>';
+        }
+      }
+    }
+
+    function getResourceFileIcon(ext) {
+      const icons = { xsd: '📐', xml: '🧾', xlsx: '📊', xls: '📊', pdf: '📕', csv: '📄', zip: '📦', png: '🖼️', jpg: '🖼️', jpeg: '🖼️' };
+      return icons[ext] || '📁';
+    }
+
+    function renderResourceCards(resources, gridId) {
+      const grid = document.getElementById(gridId);
+      if (!grid || !resources || !resources.length) return;
+      grid.innerHTML = resources.map(r => `
+        <div class="resource-file-card">
+          <div class="rfc-header">
+            <span class="rfc-icon">${getResourceFileIcon(r.file_type)}</span>
+            <div>
+              <div class="rfc-title">${r.name}</div>
+              <div class="rfc-title-en">${r.name_en || ''}</div>
+            </div>
+          </div>
+          <div class="rfc-desc">${r.description || ''}</div>
+          <div class="rfc-meta">
+            <span class="rfc-tag">${(r.file_type || '').toUpperCase()}</span>
+            ${r.interface ? `<span class="rfc-tag interface">${r.interface}</span>` : ''}
+            ${r.version ? `<span class="rfc-tag version">v${r.version}</span>` : ''}
+            ${(r.tags || []).slice(0, 3).map(t => `<span class="rfc-tag">${t}</span>`).join('')}
+          </div>
+          <a href="${r.url}" target="_blank" rel="noopener" class="rfc-link">📥 Open on Swiftness →</a>
+        </div>
+      `).join('');
+    }
+
+    function renderResourceCatalog(catalog) {
+      renderResourceCards(catalog.system_general || [], 'systemGeneralGrid');
+      renderResourceCards(catalog.mislaka_work_files || [], 'mislakaWorkGrid');
+
+      const meta = catalog.metadata || {};
+      const totalEl = document.getElementById('resourceStatTotal');
+      const intEl = document.getElementById('resourceStatInterfaces');
+      const ftEl = document.getElementById('resourceStatFileTypes');
+      if (totalEl) totalEl.textContent = `Total Resources: ${meta.total_resources || 0}`;
+      if (intEl) intEl.textContent = `Interfaces: ${(meta.interfaces || []).join(', ')}`;
+      if (ftEl) ftEl.textContent = `File Types: ${(meta.file_types || []).map(t => t.toUpperCase()).join(', ')}`;
+    }
+
+    function getModelSectionTitle(section, preferredLanguage = 'en') {
+      if (!section || typeof section !== 'object') {
+        return preferredLanguage === 'he' ? 'ללא כותרת' : 'Untitled Section';
+      }
+      const titleHe = section.title_he || section.titleHe || section.title;
+      const titleEn = section.title_en || section.title || section.titleHe || section.title_he;
+      if (preferredLanguage === 'he') return String(titleHe || titleEn || 'ללא כותרת');
+      return String(titleEn || titleHe || 'Untitled Section');
+    }
+
+    function renderReportModel(model) {
+      const container = document.getElementById('reportModelContainer');
+      if (!container || !model) return;
+
+      const sections = model.sections || [];
+      const meta = model.metadata || {};
+      const serviceIndex = model.service_index || {};
+      let html = `
+        <div style="background: linear-gradient(135deg, #1e40af 0%, #3b82f6 100%); color: white; border-radius: 14px; padding: 1.5rem; margin-bottom: 1.5rem; text-align: center;">
+          <h3 style="font-size: 1.3rem; margin-bottom: 0.5rem;">📊 Mislaka Portfolio Analysis Report Model</h3>
+          <p style="opacity: 0.9; font-size: 0.9rem;">${meta.based_on || 'Professional Insurance Portfolio Analysis Format'}</p>
+          <div style="display: flex; justify-content: center; gap: 1.5rem; margin-top: 1rem; flex-wrap: wrap;">
+            <span style="font-size: 0.85rem;"><strong>${sections.length}</strong> Sections</span>
+            <span style="font-size: 0.85rem;"><strong>v${meta.model_version || '2.0'}</strong> Model</span>
+            <span style="font-size: 0.85rem;">Source: <strong>${meta.source || 'swiftness.co.il'}</strong></span>
+          </div>
+        </div>
+      `;
+
+      const rules = meta.data_integrity_rules || [];
+      if (rules.length) {
+        html += `
+          <div style="background: #f0fdf4; border-radius: 12px; padding: 1rem 1.25rem; margin-bottom: 1rem; border: 1px solid #a7f3d0;">
+            <h4 style="color: #047857; font-size: 0.95rem; margin-bottom: 0.5rem;">🛡️ Data Integrity Rules</h4>
+            <div style="display: flex; flex-wrap: wrap; gap: 0.5rem;">
+              ${rules.map(r => `<span class="integrity-badge pass">✓ ${r}</span>`).join('')}
+            </div>
+          </div>
+        `;
+      }
+
+      sections.forEach(sec => {
+        const fields = sec.data_fields || [];
+        const charts = sec.charts || [];
+        const sectionTitleHe = getModelSectionTitle(sec, 'he');
+        const sectionTitleEn = getModelSectionTitle(sec, 'en');
+        const chartBadges = charts.map(c => {
+          if (typeof c === 'string') return `<span class="rms-chart-badge">📈 ${c}</span>`;
+          const chartType = c && c.type ? String(c.type).toUpperCase() : 'CHART';
+          const chartTitle = c && c.title ? c.title : 'Chart';
+          return `<span class="rms-chart-badge">📈 ${chartType}: ${chartTitle}</span>`;
+        }).join('');
+
+        html += `
+          <div class="report-model-section">
+            <div class="rms-header">
+              <span class="rms-order">${sec.order}</span>
+              <div>
+                <span class="rms-title">${sectionTitleHe}</span>
+                <span class="rms-title-en"> ${sectionTitleEn}</span>
+              </div>
+            </div>
+            <div class="rms-desc">${sec.description || ''}</div>
+            <div class="rms-fields">
+              ${fields.map(f => `
+                <span class="rms-field">
+                  ${f.label_he || f.field}
+                  <span class="field-type">${f.type || 'text'}</span>
+                </span>
+              `).join('')}
+            </div>
+            ${charts.length ? `<div class="rms-charts">${chartBadges}</div>` : ''}
+          </div>
+        `;
+      });
+
+      const companies = Object.keys(serviceIndex);
+      if (companies.length) {
+        html += `
+          <div style="background: white; border-radius: 12px; padding: 1.25rem; margin-top: 1rem; border: 1px solid #e2e8f0;">
+            <h4 style="color: var(--primary); font-size: 1rem; margin-bottom: 0.75rem;">🏢 Service Index Ratings</h4>
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 0.75rem;">
+              ${companies.map(company => {
+                const ratings = serviceIndex[company];
+                return `
+                  <div style="background: #f8fafc; padding: 0.75rem; border-radius: 8px; border: 1px solid #e2e8f0;">
+                    <div style="font-weight: 600; margin-bottom: 0.5rem; font-size: 0.9rem;">${company}</div>
+                    ${Object.entries(ratings).map(([k, v]) => `
+                      <div style="display: flex; justify-content: space-between; font-size: 0.8rem; padding: 2px 0; border-bottom: 1px dashed #e2e8f0;">
+                        <span style="color: var(--text-muted);">${String(k).replace(/_/g, ' ')}</span>
+                        <span style="font-weight: 600; color: ${v >= 80 ? '#059669' : v >= 70 ? '#d97706' : '#dc2626'};">${v}</span>
+                      </div>
+                    `).join('')}
+                  </div>
+                `;
+              }).join('')}
+            </div>
+          </div>
+        `;
+      }
+
+      const features = meta.features || [];
+      if (features.length) {
+        html += `
+          <div style="background: #f0f9ff; border-radius: 12px; padding: 1rem 1.25rem; margin-top: 1rem; border: 1px solid #bae6fd;">
+            <h4 style="color: #0369a1; font-size: 0.95rem; margin-bottom: 0.5rem;">✨ Report Features</h4>
+            <div style="columns: 2; column-gap: 1.5rem;">
+              ${features.map(f => `<div style="font-size: 0.85rem; color: var(--text-dark); padding: 2px 0; break-inside: avoid;">✓ ${f}</div>`).join('')}
+            </div>
+          </div>
+        `;
+      }
+
+      container.innerHTML = html;
+    }
+
+    function showResourceTab(tab) {
+      document.getElementById('resourceTabSystemGeneral').style.display = 'none';
+      document.getElementById('resourceTabMislakaWork').style.display = 'none';
+      document.getElementById('resourceTabReportModel').style.display = 'none';
+
+      document.getElementById('tabSystemGeneral').style.background = '';
+      document.getElementById('tabSystemGeneral').style.color = '';
+      document.getElementById('tabMislakaFiles').style.background = '';
+      document.getElementById('tabMislakaFiles').style.color = '';
+      document.getElementById('tabReportModel').style.background = '';
+      document.getElementById('tabReportModel').style.color = '';
+
+      if (tab === 'system_general') {
+        document.getElementById('resourceTabSystemGeneral').style.display = 'block';
+        document.getElementById('tabSystemGeneral').style.background = 'var(--primary)';
+        document.getElementById('tabSystemGeneral').style.color = 'white';
+      } else if (tab === 'mislaka_work') {
+        document.getElementById('resourceTabMislakaWork').style.display = 'block';
+        document.getElementById('tabMislakaFiles').style.background = 'var(--primary)';
+        document.getElementById('tabMislakaFiles').style.color = 'white';
+      } else if (tab === 'report_model') {
+        document.getElementById('resourceTabReportModel').style.display = 'block';
+        document.getElementById('tabReportModel').style.background = 'var(--primary)';
+        document.getElementById('tabReportModel').style.color = 'white';
+      }
+    }
+  </script>
+</body>
+</html>
