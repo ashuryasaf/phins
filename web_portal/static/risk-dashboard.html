@@ -517,6 +517,41 @@
       line-height: 1.8;
       white-space: pre-line;
     }
+
+    .data-table-wrap {
+      margin-top: 1rem;
+      overflow-x: auto;
+      border: 1px solid #e2e8f0;
+      border-radius: 10px;
+      background: #fff;
+    }
+
+    .data-table {
+      width: 100%;
+      border-collapse: collapse;
+      min-width: 520px;
+    }
+
+    .data-table th, .data-table td {
+      padding: 10px 12px;
+      border-bottom: 1px solid #e2e8f0;
+      text-align: left;
+      font-size: 0.88rem;
+      vertical-align: top;
+    }
+
+    .data-table th {
+      background: #f8fafc;
+      color: var(--text-dark);
+      font-weight: 600;
+      position: sticky;
+      top: 0;
+      z-index: 1;
+    }
+
+    .data-table tr:hover td {
+      background: #f8fafc;
+    }
     
     /* Charts */
     .charts-grid {
@@ -1288,6 +1323,66 @@
         reader.readAsDataURL(file);
       });
     }
+
+    function escapeHtml(value) {
+      return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
+    function stripSourceLinks(content) {
+      const text = String(content ?? '');
+      return text
+        .replace(/https?:\/\/\S+/gi, '[redacted]')
+        .replace(/swiftness\.co\.il/gi, '[redacted]');
+    }
+
+    function shouldHideSection(title) {
+      const lower = String(title || '').toLowerCase();
+      return lower.includes('swiftness') || lower.includes('resource') || lower.includes('credentials');
+    }
+
+    function renderDataTable(dataTable) {
+      if (!dataTable || typeof dataTable !== 'object') return '';
+
+      let columns = Array.isArray(dataTable.columns) ? [...dataTable.columns] : [];
+      let rows = Array.isArray(dataTable.rows) ? [...dataTable.rows] : [];
+
+      if (!rows.length && !columns.length) {
+        const keyValueRows = Object.entries(dataTable)
+          .filter(([key]) => key !== 'columns' && key !== 'rows')
+          .map(([metric, value]) => ({ Metric: metric, Value: value }));
+        if (!keyValueRows.length) return '';
+        columns = ['Metric', 'Value'];
+        rows = keyValueRows;
+      }
+
+      const dictRows = rows.filter(row => row && typeof row === 'object' && !Array.isArray(row));
+      if (!dictRows.length) return '';
+
+      if (!columns.length) {
+        columns = Object.keys(dictRows[0]);
+      }
+
+      const headerHtml = columns.map(col => `<th>${escapeHtml(col)}</th>`).join('');
+      const bodyHtml = dictRows.slice(0, 120).map(row => `
+        <tr>
+          ${columns.map(col => `<td>${escapeHtml(row[col])}</td>`).join('')}
+        </tr>
+      `).join('');
+
+      return `
+        <div class="data-table-wrap">
+          <table class="data-table">
+            <thead><tr>${headerHtml}</tr></thead>
+            <tbody>${bodyHtml}</tbody>
+          </table>
+        </div>
+      `;
+    }
     
     function displayResults(analysis, report) {
       // Determine risk level
@@ -1383,17 +1478,17 @@
       
       // Report - with pension-specific rendering
       document.getElementById('reportTitle').textContent = `📋 ${report.title}`;
-      document.getElementById('reportBody').innerHTML = report.sections.map(section => {
+      const visibleSections = (report.sections || []).filter(section => !shouldHideSection(section.title));
+      document.getElementById('reportBody').innerHTML = visibleSections.map(section => {
         const isPensionSection = section.title.includes('פנסיה') || 
                                  section.title.toLowerCase().includes('pension') ||
                                  section.title.includes('ביטוח');
         const sectionClass = isPensionSection ? 'report-section pension-section fade-in' : 'report-section fade-in';
         
         // Format content with better whitespace handling
-        let content = section.content;
+        let content = stripSourceLinks(section.content || '');
         if (content) {
-          // Preserve formatting but escape HTML
-          content = content
+          content = escapeHtml(content)
             .replace(/\n/g, '<br>')
             .replace(/={2,}/g, '<hr style="border: none; border-top: 1px solid #e2e8f0; margin: 0.5rem 0;">')
             .replace(/-{2,}/g, '<hr style="border: none; border-top: 1px dashed #e2e8f0; margin: 0.5rem 0;">');
@@ -1401,8 +1496,9 @@
         
         return `
           <div class="${sectionClass}">
-            <h4>${getSectionIcon(section.title)} ${section.title}</h4>
+            <h4>${getSectionIcon(section.title || '')} ${escapeHtml(section.title || '')}</h4>
             <div class="content">${content}</div>
+            ${renderDataTable(section.data_table)}
           </div>
         `;
       }).join('');
@@ -1641,8 +1737,56 @@
       return str ? str.charAt(0).toUpperCase() + str.slice(1) : '';
     }
     
-    function exportReport(format) {
-      alert(`Export to ${format.toUpperCase()} - Coming soon!\n\nThis will generate a downloadable ${format.toUpperCase()} file with the complete assessment report.`);
+    async function exportReport(format) {
+      if (!currentReport || !currentReport.id) {
+        alert('Generate a report first before exporting.');
+        return;
+      }
+
+      const normalized = String(format || '').toLowerCase();
+      const exportFormat = normalized === 'excel' ? 'excel' : 'pdf';
+      const token = localStorage.getItem('phins_token') || '';
+
+      try {
+        const response = await fetch(
+          `/api/reports/download-summary?report_id=${encodeURIComponent(currentReport.id)}&format=${encodeURIComponent(exportFormat)}`,
+          {
+            headers: {
+              'Authorization': `Bearer ${token}`
+            }
+          }
+        );
+
+        if (!response.ok) {
+          let message = `Export failed (${response.status})`;
+          try {
+            const errorPayload = await response.json();
+            if (errorPayload?.error) {
+              message = errorPayload.error;
+            }
+          } catch (_ignore) {}
+          throw new Error(message);
+        }
+
+        const blob = await response.blob();
+        const contentDisposition = response.headers.get('Content-Disposition') || '';
+        const filenameMatch = contentDisposition.match(/filename="([^"]+)"/i);
+        const fallbackExt = exportFormat === 'pdf' ? 'pdf' : 'csv';
+        const fallbackName = `phins_report_summary.${fallbackExt}`;
+        const filename = filenameMatch ? filenameMatch[1] : fallbackName;
+
+        const downloadUrl = window.URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = downloadUrl;
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        window.URL.revokeObjectURL(downloadUrl);
+      } catch (error) {
+        console.error('Export error:', error);
+        alert(`Unable to export report: ${error.message}`);
+      }
     }
   </script>
 </body>
