@@ -24,7 +24,7 @@ import threading
 import time
 import csv
 import io
-from typing import Dict, Any, Tuple, Optional
+from typing import Dict, Any, Tuple, Optional, List
 
 # ==============================================================================
 # CASE-INSENSITIVE STATUS HELPERS (for data integrity across pipeline)
@@ -3584,6 +3584,245 @@ class PortalHandler(BaseHTTPRequestHandler):
         auth_header = self.headers.get('Authorization', '')
         token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
         return validate_session(token) if token else None
+
+    def _resolve_reports_user_context(
+        self,
+        session: Dict[str, Any]
+    ) -> Tuple[Optional[str], str, str, Optional[str]]:
+        """
+        Resolve report-scoped user context with strict customer isolation.
+        Returns: (user_id, user_role, username, error_message)
+        """
+        user = get_session_user(session) or {}
+        username = (session.get('username') or user.get('username') or '').strip()
+        user_role = (user.get('role') or session.get('role') or 'customer').lower()
+        customer_id = (user.get('customer_id') or session.get('customer_id') or '').strip()
+
+        # Customers must always stay in customer_id scope.
+        if user_role == 'customer' and not customer_id:
+            return None, user_role, username, 'Customer session invalid - no customer_id'
+
+        user_id = customer_id or username
+        if not user_id:
+            return None, user_role, username, 'Invalid session - identity could not be resolved'
+
+        return user_id, user_role, username, None
+
+    @staticmethod
+    def _safe_download_filename(value: str, fallback: str = 'report_summary') -> str:
+        """Create a filesystem-safe ASCII filename stem."""
+        value = (value or '').strip()
+        if not value:
+            return fallback
+        safe_chars = []
+        for ch in value:
+            if ord(ch) < 128 and (ch.isalnum() or ch in ('-', '_')):
+                safe_chars.append(ch)
+            elif ch in (' ', '.'):
+                safe_chars.append('_')
+        safe = ''.join(safe_chars).strip('_')
+        return safe or fallback
+
+    def _build_report_summary_csv_bytes(self, summary: Dict[str, Any]) -> bytes:
+        """Build CSV bytes for downloadable report summary."""
+        out = io.StringIO()
+        writer = csv.writer(out)
+
+        writer.writerow(['PHINS Savings & Insurance Report Summary'])
+        writer.writerow(['Generated At', datetime.now().isoformat()])
+        writer.writerow([])
+        writer.writerow(['Report ID', summary.get('report_id', '')])
+        writer.writerow(['Title', summary.get('title', '')])
+        writer.writerow(['Language', summary.get('language', '')])
+        writer.writerow(['Report Type', summary.get('report_type', '')])
+        writer.writerow(['Risk Score', summary.get('risk_score', '')])
+        writer.writerow(['Confidence', summary.get('confidence', '')])
+        writer.writerow([])
+
+        sci = summary.get('savings_cover_id_summary', {}) or {}
+        writer.writerow(['Savings / Cover / ID Summary'])
+        writer.writerow(['Records Analyzed', sci.get('records_analyzed', 0)])
+        writer.writerow(['Unique IDs', sci.get('unique_id_count', 0)])
+        writer.writerow(['Total Savings', sci.get('total_savings', 0)])
+        writer.writerow(['Average Savings', sci.get('average_savings', 0)])
+        writer.writerow(['Total Cover', sci.get('total_cover', 0)])
+        writer.writerow(['Average Cover', sci.get('average_cover', 0)])
+        writer.writerow(['Cover/Savings Ratio', sci.get('coverage_to_savings_ratio', 'N/A')])
+        writer.writerow([])
+
+        sample_rows = sci.get('sample_rows', []) or []
+        if sample_rows:
+            writer.writerow(['Sample Savings/Cover Rows'])
+            sample_columns = ['id', 'savings', 'cover', 'reference']
+            writer.writerow(sample_columns)
+            for row in sample_rows[:120]:
+                writer.writerow([row.get(col, '') for col in sample_columns])
+            writer.writerow([])
+
+        for section in summary.get('table_sections', [])[:8]:
+            section_title = section.get('title', 'Section')
+            columns = section.get('columns', []) or []
+            rows = section.get('rows', []) or []
+            writer.writerow([section_title])
+            if columns:
+                writer.writerow(columns)
+            for row in rows[:120]:
+                writer.writerow([row.get(col, '') for col in columns] if isinstance(row, dict) else [row])
+            writer.writerow([])
+
+        chart_summaries = summary.get('chart_summaries', []) or []
+        if chart_summaries:
+            writer.writerow(['Chart Summaries'])
+            writer.writerow(['Chart Title', 'Chart Type', 'Label', 'Value'])
+            for chart in chart_summaries[:20]:
+                chart_title = chart.get('title', '')
+                chart_type = chart.get('type', '')
+                for point in chart.get('series', [])[:40]:
+                    writer.writerow([
+                        chart_title,
+                        chart_type,
+                        point.get('label', ''),
+                        point.get('value', '')
+                    ])
+            writer.writerow([])
+
+        recs = summary.get('recommendations', []) or []
+        if recs:
+            writer.writerow(['Recommendations'])
+            writer.writerow(['Priority', 'Title', 'Description', 'Expected Impact'])
+            for rec in recs[:40]:
+                writer.writerow([
+                    rec.get('priority', ''),
+                    rec.get('title', ''),
+                    rec.get('description', ''),
+                    rec.get('expected_impact', '')
+                ])
+
+        return out.getvalue().encode('utf-8')
+
+    def _build_report_summary_pdf_bytes(self, summary: Dict[str, Any]) -> bytes:
+        """Build PDF bytes for downloadable report summary."""
+        try:
+            from reportlab.lib import colors
+            from reportlab.lib.pagesizes import A4
+            from reportlab.lib.styles import getSampleStyleSheet
+            from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+        except Exception:
+            # Fallback to plain text payload if PDF libs are unavailable.
+            fallback_text = json.dumps(summary, ensure_ascii=False, indent=2)
+            return fallback_text.encode('utf-8')
+
+        buffer = io.BytesIO()
+        doc = SimpleDocTemplate(buffer, pagesize=A4, leftMargin=36, rightMargin=36, topMargin=36, bottomMargin=36)
+        styles = getSampleStyleSheet()
+        story = []
+
+        def _as_str(val: Any) -> str:
+            if val is None:
+                return ''
+            if isinstance(val, float):
+                return f"{val:,.2f}"
+            return str(val)
+
+        story.append(Paragraph('PHINS Savings & Insurance Report Summary', styles['Title']))
+        story.append(Spacer(1, 10))
+
+        info_rows = [
+            ['Report ID', _as_str(summary.get('report_id'))],
+            ['Title', _as_str(summary.get('title'))],
+            ['Language', _as_str(summary.get('language'))],
+            ['Report Type', _as_str(summary.get('report_type'))],
+            ['Risk Score', _as_str(summary.get('risk_score'))],
+            ['Confidence', _as_str(summary.get('confidence'))],
+            ['Generated At', _as_str(summary.get('generated_at'))],
+        ]
+        info_table = Table(info_rows, colWidths=[130, 360])
+        info_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (0, -1), colors.lightgrey),
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+            ('FONTNAME', (0, 0), (-1, -1), 'Helvetica'),
+            ('FONTSIZE', (0, 0), (-1, -1), 9),
+        ]))
+        story.append(info_table)
+        story.append(Spacer(1, 12))
+
+        sci = summary.get('savings_cover_id_summary', {}) or {}
+        story.append(Paragraph('Savings / Cover / ID Summary', styles['Heading2']))
+        sci_rows = [
+            ['Records Analyzed', _as_str(sci.get('records_analyzed', 0))],
+            ['Unique IDs', _as_str(sci.get('unique_id_count', 0))],
+            ['Total Savings', _as_str(sci.get('total_savings', 0))],
+            ['Average Savings', _as_str(sci.get('average_savings', 0))],
+            ['Total Cover', _as_str(sci.get('total_cover', 0))],
+            ['Average Cover', _as_str(sci.get('average_cover', 0))],
+            ['Cover/Savings Ratio', _as_str(sci.get('coverage_to_savings_ratio', 'N/A'))],
+        ]
+        sci_table = Table(sci_rows, colWidths=[170, 320])
+        sci_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (0, -1), colors.HexColor('#E8F5E9')),
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+            ('FONTNAME', (0, 0), (-1, -1), 'Helvetica'),
+            ('FONTSIZE', (0, 0), (-1, -1), 9),
+        ]))
+        story.append(sci_table)
+        story.append(Spacer(1, 12))
+
+        sample_rows = sci.get('sample_rows', []) or []
+        if sample_rows:
+            story.append(Paragraph('Sample Savings/Cover Rows', styles['Heading3']))
+            sample_columns = ['id', 'savings', 'cover', 'reference']
+            table_data = [sample_columns]
+            for row in sample_rows[:20]:
+                table_data.append([_as_str(row.get(col, '')) for col in sample_columns])
+            sample_table = Table(table_data, repeatRows=1, colWidths=[120, 110, 110, 150])
+            sample_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#E3F2FD')),
+                ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+                ('FONTNAME', (0, 0), (-1, -1), 'Helvetica'),
+                ('FONTSIZE', (0, 0), (-1, -1), 8),
+            ]))
+            story.append(sample_table)
+            story.append(Spacer(1, 12))
+
+        chart_summaries = summary.get('chart_summaries', []) or []
+        if chart_summaries:
+            story.append(Paragraph('Chart Summaries', styles['Heading3']))
+            chart_table_rows = [['Chart', 'Type', 'Top Series Points']]
+            for chart in chart_summaries[:8]:
+                points = chart.get('series', [])[:4]
+                point_text = ', '.join(f"{_as_str(p.get('label'))}: {_as_str(p.get('value'))}" for p in points)
+                chart_table_rows.append([
+                    _as_str(chart.get('title')),
+                    _as_str(chart.get('type')),
+                    point_text
+                ])
+            chart_table = Table(chart_table_rows, repeatRows=1, colWidths=[150, 80, 260])
+            chart_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#FFF3E0')),
+                ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+                ('FONTNAME', (0, 0), (-1, -1), 'Helvetica'),
+                ('FONTSIZE', (0, 0), (-1, -1), 8),
+            ]))
+            story.append(chart_table)
+            story.append(Spacer(1, 12))
+
+        recs = summary.get('recommendations', []) or []
+        if recs:
+            story.append(Paragraph('Recommendations', styles['Heading3']))
+            for rec in recs[:12]:
+                title = f"[{_as_str(rec.get('priority', 'medium')).upper()}] {_as_str(rec.get('title', 'Recommendation'))}"
+                desc = _as_str(rec.get('description', ''))
+                impact = _as_str(rec.get('expected_impact', ''))
+                story.append(Paragraph(title, styles['BodyText']))
+                if desc:
+                    story.append(Paragraph(desc, styles['BodyText']))
+                if impact:
+                    story.append(Paragraph(f"Expected Impact: {impact}", styles['BodyText']))
+                story.append(Spacer(1, 6))
+
+        doc.build(story)
+        return buffer.getvalue()
     
     def _generate_text_policy_document(self, policy: Dict, customer: Dict, underwriting: Dict, bills: list, claims: list) -> None:
         """Fallback text document generation when PDF library not available"""
@@ -7682,9 +7921,11 @@ For claims or questions, please contact:
                 from services.ai_risk_reports_service import get_ai_reports_service
                 service = get_ai_reports_service()
                 
-                # Get user info for data isolation
-                user_id = session.get('customer_id') or session.get('username')
-                user_role = session.get('role', 'customer')
+                user_id, user_role, _username, context_error = self._resolve_reports_user_context(session)
+                if context_error:
+                    self._set_json_headers(403)
+                    self.wfile.write(json.dumps({'error': context_error}).encode('utf-8'))
+                    return
                 
                 # Get reports accessible to this user
                 reports = service.get_reports_for_user(user_id, user_role)
@@ -7716,9 +7957,11 @@ For claims or questions, please contact:
                 from services.ai_risk_reports_service import get_ai_reports_service
                 service = get_ai_reports_service()
                 
-                # Get user info for data isolation
-                user_id = session.get('customer_id') or session.get('username')
-                user_role = session.get('role', 'customer')
+                user_id, user_role, _username, context_error = self._resolve_reports_user_context(session)
+                if context_error:
+                    self._set_json_headers(403)
+                    self.wfile.write(json.dumps({'error': context_error}).encode('utf-8'))
+                    return
                 
                 # Get documents accessible to this user
                 documents = service.get_documents_for_user(user_id, user_role)
@@ -7756,9 +7999,11 @@ For claims or questions, please contact:
                 from services.ai_risk_reports_service import get_ai_reports_service
                 service = get_ai_reports_service()
                 
-                # Get user info for data isolation
-                user_id = session.get('customer_id') or session.get('username')
-                user_role = session.get('role', 'customer')
+                user_id, user_role, _username, context_error = self._resolve_reports_user_context(session)
+                if context_error:
+                    self._set_json_headers(403)
+                    self.wfile.write(json.dumps({'error': context_error}).encode('utf-8'))
+                    return
                 
                 # Check authorization
                 is_authorized, auth_error = service.authorize_access('report', report_id, user_id, user_role)
@@ -7783,6 +8028,73 @@ For claims or questions, please contact:
             except Exception as e:
                 import traceback
                 print(f"Error in /api/reports/view: {e}")
+                traceback.print_exc()
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+                return
+
+        # GET /api/reports/download-summary - Download sanitized summary (PDF/CSV)
+        if path.startswith('/api/reports/download-summary'):
+            if not session:
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Authentication required'}).encode('utf-8'))
+                return
+
+            report_id = qs.get('report_id', [None])[0] or qs.get('id', [None])[0]
+            export_format = (qs.get('format', ['pdf'])[0] or 'pdf').lower()
+
+            if not report_id:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'report_id is required'}).encode('utf-8'))
+                return
+
+            if export_format not in ['pdf', 'excel', 'csv']:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'Unsupported format. Use pdf or excel.'}).encode('utf-8'))
+                return
+
+            try:
+                from services.ai_risk_reports_service import get_ai_reports_service
+                service = get_ai_reports_service()
+
+                user_id, user_role, _username, context_error = self._resolve_reports_user_context(session)
+                if context_error:
+                    self._set_json_headers(403)
+                    self.wfile.write(json.dumps({'error': context_error}).encode('utf-8'))
+                    return
+
+                summary_payload = service.build_report_download_summary(
+                    report_id=report_id,
+                    user_id=user_id,
+                    user_role=user_role
+                )
+
+                title_stem = self._safe_download_filename(summary_payload.get('title', ''), fallback='report_summary')
+                timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+
+                if export_format == 'pdf':
+                    file_bytes = self._build_report_summary_pdf_bytes(summary_payload)
+                    content_type = 'application/pdf'
+                    filename = f"{title_stem}_{timestamp}.pdf"
+                else:
+                    file_bytes = self._build_report_summary_csv_bytes(summary_payload)
+                    content_type = 'text/csv; charset=utf-8'
+                    filename = f"{title_stem}_{timestamp}.csv"
+
+                self.send_response(200)
+                self.send_header('Content-Type', content_type)
+                self.send_header('Content-Disposition', f'attachment; filename="{filename}"')
+                self.send_header('X-Content-Type-Options', 'nosniff')
+                self.end_headers()
+                self.wfile.write(file_bytes)
+                return
+            except ValueError as ve:
+                self._set_json_headers(404)
+                self.wfile.write(json.dumps({'error': str(ve)}).encode('utf-8'))
+                return
+            except Exception as e:
+                import traceback
+                print(f"Error in /api/reports/download-summary: {e}")
                 traceback.print_exc()
                 self._set_json_headers(500)
                 self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
@@ -15140,8 +15452,11 @@ For claims or questions, please contact:
                 service = get_ai_reports_service()
                 
                 # Get owner info for data isolation
-                owner_id = session.get('customer_id') or session.get('username')
-                owner_role = session.get('role', 'customer')
+                owner_id, owner_role, _username, context_error = self._resolve_reports_user_context(session)
+                if context_error:
+                    self._set_json_headers(403)
+                    self.wfile.write(json.dumps({'error': context_error}).encode('utf-8'))
+                    return
                 
                 # Parse the file with owner tracking
                 result = service.parse_file(filename, file_content, file_type, owner_id, owner_role)
@@ -15205,8 +15520,11 @@ For claims or questions, please contact:
                 service = get_ai_reports_service()
                 
                 # Check authorization - customers can only analyze their own documents
-                user_id = session.get('customer_id') or session.get('username')
-                user_role = session.get('role', 'customer')
+                user_id, user_role, _username, context_error = self._resolve_reports_user_context(session)
+                if context_error:
+                    self._set_json_headers(403)
+                    self.wfile.write(json.dumps({'error': context_error}).encode('utf-8'))
+                    return
                 
                 is_authorized, auth_error = service.authorize_access('document', document_id, user_id, user_role)
                 if not is_authorized:
@@ -15270,8 +15588,11 @@ For claims or questions, please contact:
                 service = get_ai_reports_service()
                 
                 # Check authorization - customers can only generate reports from their own analyses
-                user_id = session.get('customer_id') or session.get('username')
-                user_role = session.get('role', 'customer')
+                user_id, user_role, _username, context_error = self._resolve_reports_user_context(session)
+                if context_error:
+                    self._set_json_headers(403)
+                    self.wfile.write(json.dumps({'error': context_error}).encode('utf-8'))
+                    return
                 
                 is_authorized, auth_error = service.authorize_access('analysis', analysis_id, user_id, user_role)
                 if not is_authorized:
@@ -15327,8 +15648,11 @@ For claims or questions, please contact:
                 from services.ai_risk_reports_service import get_ai_reports_service
                 service = get_ai_reports_service()
 
-                user_id = session.get('customer_id') or session.get('username')
-                user_role = session.get('role', 'customer')
+                user_id, user_role, _username, context_error = self._resolve_reports_user_context(session)
+                if context_error:
+                    self._set_json_headers(403)
+                    self.wfile.write(json.dumps({'error': context_error}).encode('utf-8'))
+                    return
 
                 result = service.revoke_reports_for_date(
                     user_id=user_id,
@@ -15698,8 +16022,11 @@ For claims or questions, please contact:
                 # Import to AI Reports service
                 ai_service = get_ai_reports_service()
                 
-                user_id = session.get('user_id', 'unknown')
-                user_role = session.get('role', 'customer')
+                user_id, user_role, _username, context_error = self._resolve_reports_user_context(session)
+                if context_error:
+                    self._set_json_headers(403)
+                    self.wfile.write(json.dumps({'error': context_error}).encode('utf-8'))
+                    return
                 
                 # Parse the CSV
                 doc_result = ai_service.parse_file(

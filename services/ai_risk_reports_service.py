@@ -2554,11 +2554,21 @@ class AIRiskReportsService:
                 pension_data = doc_data.get('pension_data')
                 pension_report = doc_data.get('pension_report')
         
+        # Build affiliated savings/coverage/ID summary for sections/charts/downloads
+        affiliated_summary = self._extract_savings_cover_id_summary(doc_data, pension_data)
+
         # Generate sections based on data type (now with original data and pension data)
-        sections = self._generate_sections(analysis, lang, doc_data, pension_data, pension_report)
+        sections = self._generate_sections(
+            analysis,
+            lang,
+            doc_data,
+            pension_data,
+            pension_report,
+            affiliated_summary
+        )
         
-        # Generate charts - pass pension_data for specialized pension charts
-        charts = self._generate_charts(analysis, pension_data)
+        # Generate charts - pass pension_data and affiliated summary for specialized charts
+        charts = self._generate_charts(analysis, pension_data, doc_data, affiliated_summary)
         
         # Generate recommendations
         recommendations = self._generate_recommendations(analysis, lang)
@@ -2603,6 +2613,7 @@ class AIRiskReportsService:
                 'pension_data': pension_data if pension_data else None,
                 'is_pension_data': pension_data is not None or pension_report is not None,
                 'affiliation_snapshot': self._build_affiliation_snapshot_metadata(),
+                'savings_cover_id_summary': affiliated_summary,
             }
         )
         
@@ -2616,7 +2627,8 @@ class AIRiskReportsService:
     def _generate_sections(self, analysis: AnalysisResult, lang: str, 
                           doc_data: Dict[str, Any] = None,
                           pension_data: Dict[str, Any] = None,
-                          pension_report: str = None) -> List[ReportSection]:
+                          pension_report: str = None,
+                          savings_cover_id_summary: Dict[str, Any] = None) -> List[ReportSection]:
         """Generate comprehensive report sections with AI/BI insights and actual data content"""
         sections = []
         is_hebrew = lang == 'hebrew'
@@ -2648,6 +2660,13 @@ class AIRiskReportsService:
                     content=data_content_section,
                     order=3
                 ))
+
+        # 3.5 Savings/Cover/ID affiliation section (table-oriented summary)
+        if savings_cover_id_summary is None:
+            savings_cover_id_summary = self._extract_savings_cover_id_summary(doc_data, pension_data)
+        affiliated_summary_section = self._build_savings_cover_id_section(savings_cover_id_summary, is_hebrew)
+        if affiliated_summary_section:
+            sections.append(affiliated_summary_section)
         
         # 3. Hebrew Insurance Details (if extracted)
         hebrew_factors = [f for f in analysis.extracted_factors if f.category == 'hebrew_insurance']
@@ -2864,15 +2883,6 @@ Factors Affecting Score:
         if affiliation_section:
             sections.append(affiliation_section)
         
-        # 10. Swiftness Data Resources & References
-        swiftness_section = self._generate_swiftness_resources_section(is_hebrew)
-        if swiftness_section:
-            sections.append(ReportSection(
-                title='משאבי נתונים - Swiftness' if is_hebrew else 'Swiftness Data Resources',
-                content=swiftness_section,
-                order=10
-            ))
-        
         return sections
 
     def _build_affiliation_snapshot_metadata(self) -> Dict[str, Any]:
@@ -2887,7 +2897,6 @@ Factors Affecting Score:
                 'status_codes': len(MislakaSchemaMapping.STATUS_CODES),
                 'id_types': len(MislakaSchemaMapping.ID_TYPE_CODES),
                 'environment_codes': len(MislakaSchemaMapping.ENVIRONMENT_CODES),
-                'source': 'MislakaSchemaMapping'
             }
         except Exception:
             return {}
@@ -3083,6 +3092,296 @@ Factors Affecting Score:
             },
             order=9
         )
+
+    @staticmethod
+    def _to_float_amount(value: Any) -> float:
+        """Best-effort numeric conversion for monetary/coverage fields."""
+        if value is None:
+            return 0.0
+        if isinstance(value, (int, float)):
+            return float(value)
+
+        text_value = str(value).strip()
+        if not text_value:
+            return 0.0
+
+        cleaned = (
+            text_value
+            .replace(',', '')
+            .replace('₪', '')
+            .replace('$', '')
+            .replace('€', '')
+            .replace('%', '')
+        )
+        cleaned = re.sub(r'[^0-9\.\-]', '', cleaned)
+        if cleaned in ['', '-', '.', '-.']:
+            return 0.0
+        try:
+            return float(cleaned)
+        except ValueError:
+            return 0.0
+
+    @staticmethod
+    def _mask_identifier(identifier: Any) -> str:
+        """Mask identifiers for privacy in report tables."""
+        identifier_str = str(identifier or '').strip()
+        if len(identifier_str) <= 4:
+            return identifier_str
+        return f"{identifier_str[:2]}****{identifier_str[-2:]}"
+
+    @staticmethod
+    def _column_matches(column_name: str, tokens: List[str]) -> bool:
+        column_lower = (column_name or '').lower()
+        return any(token in column_lower for token in tokens)
+
+    def _extract_savings_cover_id_summary(
+        self,
+        doc_data: Optional[Dict[str, Any]],
+        pension_data: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        """
+        Extract affiliated summary metrics focused on savings, cover and ID dimensions.
+        The output is intentionally source-agnostic (no credentials or external links).
+        """
+        rows = []
+        columns = []
+        if isinstance(doc_data, dict):
+            rows = doc_data.get('rows', []) or []
+            columns = doc_data.get('columns', []) or []
+
+        id_tokens = [
+            'id', 'identity', 'id_number', 'customer_id', 'policyholder_id',
+            'ת.ז', 'ת"ז', 'תז', 'תעודת זהות', 'מספר זהות'
+        ]
+        savings_tokens = [
+            'saving', 'savings', 'balance', 'accumulated', 'total_balance',
+            'יתרה', 'צבירה', 'חיסכון', 'תגמולים'
+        ]
+        cover_tokens = [
+            'cover', 'coverage', 'insured_amount', 'sum_insured',
+            'death_coverage', 'disability_coverage', 'כיסוי', 'סכום ביטוח'
+        ]
+
+        id_columns = [c for c in columns if self._column_matches(str(c), id_tokens)]
+        savings_columns = [c for c in columns if self._column_matches(str(c), savings_tokens)]
+        cover_columns = [c for c in columns if self._column_matches(str(c), cover_tokens)]
+
+        total_savings = 0.0
+        total_cover = 0.0
+        records_with_savings = 0
+        records_with_cover = 0
+        id_values: List[str] = []
+        sample_rows: List[Dict[str, Any]] = []
+
+        # Prefer pension structured data when available (Mislaka-aligned source).
+        if isinstance(pension_data, dict) and pension_data.get('accounts'):
+            accounts = pension_data.get('accounts', []) or []
+            client_data = pension_data.get('client', {})
+            if isinstance(client_data, list):
+                client_data = client_data[0] if client_data else {}
+            shared_client_id = ''
+            if isinstance(client_data, dict):
+                shared_client_id = str(client_data.get('id_number', '') or '').strip()
+
+            for account in accounts[:500]:
+                account_id = str(account.get('id_number') or shared_client_id or account.get('policy_number') or '').strip()
+                savings_value = (
+                    self._to_float_amount(account.get('savings_balance'))
+                    or self._to_float_amount(account.get('total_balance'))
+                )
+                cover_value = (
+                    self._to_float_amount(account.get('death_coverage'))
+                    + self._to_float_amount(account.get('disability_coverage'))
+                )
+
+                if account_id:
+                    id_values.append(account_id)
+                if savings_value > 0:
+                    total_savings += savings_value
+                    records_with_savings += 1
+                if cover_value > 0:
+                    total_cover += cover_value
+                    records_with_cover += 1
+
+                if account_id or savings_value > 0 or cover_value > 0:
+                    sample_rows.append({
+                        'id': self._mask_identifier(account_id) if account_id else '',
+                        'savings': round(savings_value, 2),
+                        'cover': round(cover_value, 2),
+                        'reference': str(account.get('policy_number', '') or '')
+                    })
+        else:
+            for row in rows[:500]:
+                if not isinstance(row, dict):
+                    continue
+
+                id_value = ''
+                for col in id_columns:
+                    candidate = str(row.get(col, '') or '').strip()
+                    if candidate:
+                        id_value = candidate
+                        break
+
+                savings_value = sum(self._to_float_amount(row.get(col)) for col in savings_columns)
+                cover_value = sum(self._to_float_amount(row.get(col)) for col in cover_columns)
+
+                if id_value:
+                    id_values.append(id_value)
+                if savings_value > 0:
+                    total_savings += savings_value
+                    records_with_savings += 1
+                if cover_value > 0:
+                    total_cover += cover_value
+                    records_with_cover += 1
+
+                if id_value or savings_value > 0 or cover_value > 0:
+                    sample_rows.append({
+                        'id': self._mask_identifier(id_value) if id_value else '',
+                        'savings': round(savings_value, 2),
+                        'cover': round(cover_value, 2),
+                        'reference': ''
+                    })
+
+        unique_ids = sorted({v for v in id_values if v})
+        records_analyzed = max(len(rows), len(sample_rows), 0)
+        id_rows_count = len([entry for entry in sample_rows if entry.get('id')])
+
+        return {
+            'records_analyzed': records_analyzed,
+            'id_columns': id_columns,
+            'savings_columns': savings_columns,
+            'cover_columns': cover_columns,
+            'ids_with_values': len(id_values),
+            'unique_id_count': len(unique_ids),
+            'id_row_coverage': id_rows_count,
+            'total_savings': round(total_savings, 2),
+            'average_savings': round(total_savings / records_with_savings, 2) if records_with_savings else 0.0,
+            'total_cover': round(total_cover, 2),
+            'average_cover': round(total_cover / records_with_cover, 2) if records_with_cover else 0.0,
+            'coverage_to_savings_ratio': round(total_cover / total_savings, 2) if total_savings > 0 else None,
+            'sample_rows': sample_rows[:120],
+        }
+
+    def _build_savings_cover_id_section(
+        self,
+        summary: Optional[Dict[str, Any]],
+        is_hebrew: bool
+    ) -> Optional[ReportSection]:
+        """Build a compact affiliated section for savings/cover/ID analysis."""
+        if not summary:
+            return None
+
+        records_analyzed = int(summary.get('records_analyzed', 0) or 0)
+        total_savings = float(summary.get('total_savings', 0) or 0)
+        total_cover = float(summary.get('total_cover', 0) or 0)
+        unique_id_count = int(summary.get('unique_id_count', 0) or 0)
+        if records_analyzed <= 0 and total_savings <= 0 and total_cover <= 0 and unique_id_count <= 0:
+            return None
+
+        if is_hebrew:
+            content = (
+                "סיכום מסונף לחיסכון וביטוח (על בסיס שיוכי מסלקה):\n\n"
+                f"• רשומות שנותחו: {records_analyzed}\n"
+                f"• סך חיסכון: ₪{total_savings:,.2f}\n"
+                f"• סך כיסוי: ₪{total_cover:,.2f}\n"
+                f"• מזהים ייחודיים: {unique_id_count}\n"
+                f"• יחס כיסוי/חיסכון: {summary.get('coverage_to_savings_ratio', 'N/A')}"
+            )
+            title = 'סיכום מסונף - חיסכון, כיסוי וזיהוי'
+            columns = ['מזהה (מוסתר)', 'חיסכון', 'כיסוי', 'אסמכתא']
+            data_rows = [{
+                'מזהה (מוסתר)': row.get('id', ''),
+                'חיסכון': row.get('savings', 0),
+                'כיסוי': row.get('cover', 0),
+                'אסמכתא': row.get('reference', ''),
+            } for row in summary.get('sample_rows', [])[:60]]
+        else:
+            content = (
+                "Affiliated savings and insurance snapshot (Mislaka-aligned):\n\n"
+                f"• Records analyzed: {records_analyzed}\n"
+                f"• Total savings: ₪{total_savings:,.2f}\n"
+                f"• Total cover: ₪{total_cover:,.2f}\n"
+                f"• Unique IDs: {unique_id_count}\n"
+                f"• Cover/Savings ratio: {summary.get('coverage_to_savings_ratio', 'N/A')}"
+            )
+            title = 'Affiliated Summary - Savings, Cover & ID'
+            columns = ['Masked ID', 'Savings', 'Cover', 'Reference']
+            data_rows = [{
+                'Masked ID': row.get('id', ''),
+                'Savings': row.get('savings', 0),
+                'Cover': row.get('cover', 0),
+                'Reference': row.get('reference', ''),
+            } for row in summary.get('sample_rows', [])[:60]]
+
+        # Fall back to metric table when we don't have row-level samples.
+        if not data_rows:
+            metric_key = 'מדד' if is_hebrew else 'Metric'
+            value_key = 'ערך' if is_hebrew else 'Value'
+            metrics_rows = [
+                {metric_key: 'Records', value_key: records_analyzed},
+                {metric_key: 'Total Savings', value_key: total_savings},
+                {metric_key: 'Total Cover', value_key: total_cover},
+                {metric_key: 'Unique IDs', value_key: unique_id_count},
+                {metric_key: 'Cover/Savings Ratio', value_key: summary.get('coverage_to_savings_ratio', 'N/A')},
+            ]
+            return ReportSection(
+                title=title,
+                content=content,
+                data_table={'columns': [metric_key, value_key], 'rows': metrics_rows},
+                order=4
+            )
+
+        return ReportSection(
+            title=title,
+            content=content,
+            data_table={'columns': columns, 'rows': data_rows},
+            order=4
+        )
+
+    def _build_savings_cover_id_charts(
+        self,
+        summary: Optional[Dict[str, Any]],
+        lang_code: str
+    ) -> List[ChartConfig]:
+        """Generate supplementary charts focused on savings, cover and ID availability."""
+        if not summary:
+            return []
+
+        charts: List[ChartConfig] = []
+        is_hebrew = lang_code == 'hebrew'
+        total_savings = float(summary.get('total_savings', 0) or 0)
+        total_cover = float(summary.get('total_cover', 0) or 0)
+        records_analyzed = int(summary.get('records_analyzed', 0) or 0)
+        id_rows = int(summary.get('id_row_coverage', 0) or 0)
+
+        if total_savings > 0 or total_cover > 0:
+            charts.append(ChartConfig(
+                type=ChartType.BAR,
+                title='חיסכון מול כיסוי' if is_hebrew else 'Savings vs Cover',
+                data={
+                    'labels': ['חיסכון' if is_hebrew else 'Savings', 'כיסוי' if is_hebrew else 'Cover'],
+                    'values': [total_savings, total_cover]
+                },
+                options={
+                    'colors': ['#10b981', '#1a237e'],
+                    'currency': True,
+                    'currency_symbol': '₪'
+                }
+            ))
+
+        if records_analyzed > 0:
+            missing_ids = max(records_analyzed - id_rows, 0)
+            charts.append(ChartConfig(
+                type=ChartType.DOUGHNUT,
+                title='כיסוי שדות זיהוי' if is_hebrew else 'ID Field Coverage',
+                data={
+                    'labels': ['כולל מזהה' if is_hebrew else 'With ID', 'ללא מזהה' if is_hebrew else 'Without ID'],
+                    'values': [id_rows, missing_ids]
+                },
+                options={'colors': ['#3b82f6', '#cbd5e1']}
+            ))
+
+        return charts
     
     def _generate_swiftness_resources_section(self, is_hebrew: bool) -> str:
         """Generate a report section with Swiftness affiliated links and resources."""
@@ -3581,7 +3880,13 @@ Factors Affecting Score:
         
         return '\n'.join(content_lines)
     
-    def _generate_charts(self, analysis: AnalysisResult, pension_data: Dict = None) -> List[ChartConfig]:
+    def _generate_charts(
+        self,
+        analysis: AnalysisResult,
+        pension_data: Dict = None,
+        doc_data: Dict[str, Any] = None,
+        savings_cover_id_summary: Dict[str, Any] = None
+    ) -> List[ChartConfig]:
         """
         Generate chart configurations.
         
@@ -3592,10 +3897,14 @@ Factors Affecting Score:
         """
         charts = []
         
+        if savings_cover_id_summary is None:
+            savings_cover_id_summary = self._extract_savings_cover_id_summary(doc_data, pension_data)
+
         # Check if we have pension data for specialized charts
         if pension_data:
             charts.extend(self._generate_pension_charts(pension_data, analysis.language))
-            return charts  # Return only pension charts for pension data
+            charts.extend(self._build_savings_cover_id_charts(savings_cover_id_summary, analysis.language))
+            return charts
         
         # Risk Score Gauge (for non-pension data)
         charts.append(ChartConfig(
@@ -3641,6 +3950,8 @@ Factors Affecting Score:
                         'values': list(financial_metrics.values())[:6]
                     }
                 ))
+
+        charts.extend(self._build_savings_cover_id_charts(savings_cover_id_summary, analysis.language))
         
         return charts
     
@@ -4118,6 +4429,112 @@ Factors Affecting Score:
                 return None
         
         return self.reports.get(report_id)
+
+    def build_report_download_summary(self, report_id: str, user_id: str, user_role: str) -> Dict[str, Any]:
+        """
+        Build a sanitized report summary payload for downloadable exports.
+        This payload excludes source URLs/credentials and focuses on report metrics.
+        """
+        report = self.get_report_by_id(report_id, user_id=user_id, user_role=user_role)
+        if not report:
+            raise ValueError('Report not found or access denied')
+
+        analysis = self.analyses.get(report.analysis_id)
+        if not analysis:
+            raise ValueError('Associated analysis not found')
+
+        doc = self.documents.get(analysis.document_id, {}) if analysis.document_id else {}
+        doc_data = doc.get('parsed_data', {}) if isinstance(doc, dict) else {}
+        pension_data = doc_data.get('pension_data') if isinstance(doc_data, dict) else None
+        summary = self._extract_savings_cover_id_summary(doc_data, pension_data)
+
+        table_sections: List[Dict[str, Any]] = []
+        for section in report.sections:
+            if not section.data_table:
+                continue
+
+            section_title = section.title or ''
+            title_lower = section_title.lower()
+            if 'swiftness' in title_lower or 'resource' in title_lower:
+                continue
+
+            data_table = section.data_table if isinstance(section.data_table, dict) else {}
+            columns = data_table.get('columns', [])
+            rows = data_table.get('rows', [])
+
+            # Support key/value maps (e.g. key metrics) in addition to tabular structures.
+            if not isinstance(rows, list):
+                rows = []
+            if not rows and data_table:
+                rows = [{'Metric': key, 'Value': value} for key, value in data_table.items() if not isinstance(value, dict)]
+                columns = ['Metric', 'Value']
+
+            cleaned_rows: List[Dict[str, Any]] = []
+            for row in rows[:80]:
+                if not isinstance(row, dict):
+                    continue
+                cleaned_row = {}
+                for key, value in row.items():
+                    if isinstance(value, str):
+                        cleaned_value = re.sub(r'https?://\S+', '[redacted]', value)
+                    else:
+                        cleaned_value = value
+                    cleaned_row[str(key)] = cleaned_value
+                cleaned_rows.append(cleaned_row)
+
+            if not isinstance(columns, list) or not columns:
+                columns = list(cleaned_rows[0].keys()) if cleaned_rows else []
+
+            table_sections.append({
+                'title': section_title,
+                'columns': [str(c) for c in columns],
+                'rows': cleaned_rows
+            })
+
+        chart_summaries: List[Dict[str, Any]] = []
+        for chart in report.charts:
+            chart_data = chart.data if isinstance(chart.data, dict) else {}
+            labels = chart_data.get('labels', [])
+            values = chart_data.get('values', [])
+            if isinstance(labels, list) and isinstance(values, list):
+                series = [
+                    {
+                        'label': str(label),
+                        'value': values[index] if index < len(values) else None
+                    }
+                    for index, label in enumerate(labels[:30])
+                ]
+            else:
+                series = [{'label': 'value', 'value': chart_data.get('value')}]
+
+            chart_type = chart.type.value if isinstance(chart.type, Enum) else str(chart.type)
+            chart_summaries.append({
+                'title': chart.title,
+                'type': chart_type,
+                'series': series
+            })
+
+        recommendations = [{
+            'priority': rec.priority.value if isinstance(rec.priority, Enum) else str(rec.priority),
+            'title': rec.title,
+            'description': rec.description,
+            'action_items': rec.action_items,
+            'expected_impact': rec.expected_impact,
+        } for rec in report.recommendations]
+
+        return {
+            'report_id': report.id,
+            'title': report.title,
+            'language': report.language,
+            'generated_at': report.generated_at,
+            'report_type': report.report_type,
+            'risk_score': report.metadata.get('risk_score'),
+            'confidence': report.metadata.get('confidence'),
+            'savings_cover_id_summary': summary,
+            'table_sections': table_sections,
+            'chart_summaries': chart_summaries,
+            'recommendations': recommendations,
+        }
     
     def to_dict(self, obj) -> Dict:
         """Convert dataclass objects to dictionaries for JSON serialization"""

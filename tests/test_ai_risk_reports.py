@@ -412,6 +412,80 @@ POL-002,150000,620"""
         self.assertTrue(any(chart.type in [ChartType.BAR, ChartType.PIE, ChartType.DOUGHNUT, ChartType.GAUGE] for chart in report.charts))
 
 
+class TestOwnershipIsolationAndAffiliatedSummary(unittest.TestCase):
+    """Security and affiliated summary regression coverage."""
+
+    def setUp(self):
+        self.service = init_ai_reports_service()
+
+    def test_customer_report_access_is_strictly_isolated(self):
+        csv_content = b"""id_number,savings_balance,cover_amount
+123456789,5000,25000
+123456780,7000,30000"""
+
+        parse_result = self.service.parse_file(
+            'customer_data.csv',
+            csv_content,
+            'csv',
+            owner_id='CUST-OWNER-001',
+            owner_role='customer'
+        )
+        analysis = self.service.analyze(parse_result['document_id'])
+        report = self.service.generate_report(analysis.id, language='english')
+
+        allowed, _ = self.service.authorize_access('report', report.id, 'CUST-OWNER-001', 'customer')
+        denied, error = self.service.authorize_access('report', report.id, 'CUST-OTHER-002', 'customer')
+
+        self.assertTrue(allowed)
+        self.assertFalse(denied)
+        self.assertIn('own reports', error)
+
+    def test_affiliated_savings_cover_id_summary_in_report_and_export_payload(self):
+        csv_content = b"""id_number,savings_balance,cover_amount,policy_number
+123456789,4500,25000,POL-1001
+123456780,5500,50000,POL-1002
+123456781,0,15000,POL-1003"""
+
+        parse_result = self.service.parse_file(
+            'affiliated_snapshot.csv',
+            csv_content,
+            'csv',
+            owner_id='CUST-OWNER-001',
+            owner_role='customer'
+        )
+        analysis = self.service.analyze(parse_result['document_id'])
+        report = self.service.generate_report(analysis.id, language='english')
+
+        summary = report.metadata.get('savings_cover_id_summary', {})
+        self.assertGreater(summary.get('total_savings', 0), 0)
+        self.assertGreater(summary.get('total_cover', 0), 0)
+        self.assertGreaterEqual(summary.get('unique_id_count', 0), 2)
+
+        affiliated_sections = [
+            s for s in report.sections
+            if 'savings' in s.title.lower() and 'id' in s.title.lower()
+        ]
+        self.assertTrue(affiliated_sections)
+        self.assertTrue(affiliated_sections[0].data_table)
+        self.assertTrue(affiliated_sections[0].data_table.get('rows'))
+
+        chart_titles = [chart.title for chart in report.charts]
+        self.assertTrue(any('Savings vs Cover' in title for title in chart_titles))
+        self.assertTrue(any('ID Field Coverage' in title for title in chart_titles))
+
+        export_payload = self.service.build_report_download_summary(
+            report_id=report.id,
+            user_id='CUST-OWNER-001',
+            user_role='customer'
+        )
+        self.assertIn('savings_cover_id_summary', export_payload)
+        self.assertIn('table_sections', export_payload)
+        self.assertIn('chart_summaries', export_payload)
+        serialized = json.dumps(export_payload)
+        self.assertNotIn('http://', serialized)
+        self.assertNotIn('https://', serialized)
+
+
 class TestHebrewWorkflow(unittest.TestCase):
     """Test complete workflow with Hebrew data"""
     
