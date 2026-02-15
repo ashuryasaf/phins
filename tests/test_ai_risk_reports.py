@@ -412,6 +412,117 @@ POL-002,150000,620"""
         self.assertTrue(any(chart.type in [ChartType.BAR, ChartType.PIE, ChartType.DOUGHNUT, ChartType.GAUGE] for chart in report.charts))
 
 
+class TestMislakaPdfTextExtraction(unittest.TestCase):
+    """Regression tests for Mislaka-style PDF text induction."""
+
+    def setUp(self):
+        self.service = init_ai_reports_service()
+        self.sample_pdf_text = """
+ניתוח תיק מקיף
+סטטוס פוליסות
+עבור: כפיר כהן ת.ז 033731399 סיווג: מידע רגיש
+כמה חסכתי עד היום?
+₪214,697
+מהן ההפקדות שלי?
+₪4,679
+מה סך הפיצויים שמגיע לי?
+₪103,297
+
+רשימת תוכניות
+1 פוליסה - הפניקס
+שם תוכנית: מנהלים ושכירים
+מספר תוכנית: 6962791015
+וותק: 01/02/2018
+סטטוס: פעיל
+חיסכון לקצבה נוכחי: ₪214,697
+חיסכון לקצבה צפוי עם הפקדות: ₪1,427,973
+קצבה עם הפקדות: ₪7,101
+צבירה: ₪214,697
+פיצויים: ₪103,297
+תגמולי עובד: ₪53,472
+תגמולי מעביד: ₪57,928
+הפקדה: ₪4,166
+תאריך הפקדה אחרון: 10/2022
+ביטוח יסודי: 1,077,601 ש"ח עלות 187 ש"ח
+אובדן כושר עבודה: 15,000 ש"ח עלות 533 ש"ח
+ד.ניהול מצבירה: 0.50%
+ד.ניהול מהפקדה: 3.00%
+מעסיק נוכחי: סאן פוד טרייד 2016 בע"מ
+
+2 פרט - איילון
+שם תוכנית: ביטוח יסודי
+מספר תוכנית: 13272595
+וותק: 28/07/2022
+סטטוס: פעיל
+הפקדה: ₪139
+ביטוח יסודי: 2,091,908 ש"ח עלות 139 ש"ח
+
+פרטי הפקדות והפרשות
+1 אוקטובר 2022 ₪20,000 ₪1,666 ₪1,200 ₪1,300 ₪4,166
+2 נובמבר 2022 ₪20,000 ₪1,666 ₪1,200 ₪1,300 ₪4,166
+
+מי הם המוטבים?
+1 הפניקס מנהלים ושכירים 6962791015 פרטי שם: שרון
+כהן
+0000000034113233 25/08/1977 בן/בת הזוג 100%
+פירוט מסלולי השקעה
+
+התפתחות - הפניקס חברה לביטוח בע"מ 6962791015
+1 ראשי 03/2022 02/2023 ₪549
+2 ראשי 03/2023 02/2024 ₪580
+התפתחות - איילון חברה לביטוח 13272595
+1 ראשי 07/2022 06/2023 ₪139 40% ₪93
+2 ראשי 07/2023 06/2024 ₪167 35% ₪90
+"""
+
+    def test_mislaka_pdf_parser_extracts_customer_policy_and_savings_domains(self):
+        payload = self.service._parse_mislaka_pdf_text(
+            self.sample_pdf_text,
+            'mislaka-sample.pdf',
+            20
+        )
+
+        self.assertIsNotNone(payload)
+        pension_data = payload['pension_data']
+        self.assertEqual(pension_data.get('client', {}).get('full_name'), 'כפיר כהן')
+        self.assertEqual(pension_data.get('client', {}).get('id_number'), '033731399')
+        self.assertGreaterEqual(len(pension_data.get('accounts', [])), 2)
+        self.assertGreater(pension_data.get('totals', {}).get('total_balance', 0), 0)
+        self.assertGreaterEqual(len(pension_data.get('contributions', [])), 1)
+        self.assertGreaterEqual(len(pension_data.get('beneficiaries', [])), 1)
+        self.assertGreaterEqual(len(pension_data.get('coverage_timeline', [])), 2)
+
+    def test_report_generation_from_parsed_pdf_payload_includes_new_sections_and_charts(self):
+        payload = self.service._parse_mislaka_pdf_text(
+            self.sample_pdf_text,
+            'mislaka-sample.pdf',
+            20
+        )
+        self.assertIsNotNone(payload)
+
+        csv_content = b"policy_number,coverage_amount,premium\nPOL-001,100000,500\n"
+        parse_result = self.service.parse_file('seed.csv', csv_content, 'csv')
+        document_id = parse_result['document_id']
+        self.service.documents[document_id]['parsed_data']['pension_data'] = payload['pension_data']
+        self.service.documents[document_id]['parsed_data']['pension_report'] = payload['pension_report']
+        self.service.documents[document_id]['parsed_data']['columns'] = payload['columns']
+        self.service.documents[document_id]['parsed_data']['rows'] = payload['rows']
+
+        analysis = self.service.analyze(document_id)
+        report = self.service.generate_report(analysis.id, language='hebrew')
+
+        titles = [section.title for section in report.sections]
+        self.assertTrue(any('פרטי לקוח' in title for title in titles))
+        self.assertTrue(any('פירוט חשבונות חיסכון' in title for title in titles))
+        self.assertTrue(any('רשימת מוטבים' in title for title in titles))
+        self.assertTrue(any('התפתחות פרמיות' in title for title in titles))
+
+        chart_titles = [chart.title for chart in report.charts]
+        self.assertTrue(any('התפלגות סטטוס פוליסות' in title for title in chart_titles))
+        self.assertTrue(any('מגמת הפקדות חודשית' in title for title in chart_titles))
+        self.assertTrue(any('התפתחות פרמיה צפויה' in title for title in chart_titles))
+
+
 class TestOwnershipIsolationAndAffiliatedSummary(unittest.TestCase):
     """Security and affiliated summary regression coverage."""
 

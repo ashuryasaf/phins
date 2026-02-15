@@ -924,10 +924,115 @@ class AIRiskReportsService:
                 'filename': filename,
             }
         }
+
+    def _merge_pension_data_for_zip(self, base_data: Dict[str, Any], incoming_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Merge pension payloads from multiple files in one ZIP package."""
+        merged = dict(base_data or {})
+        incoming = incoming_data or {}
+
+        # Merge identity/header while preserving already known values.
+        base_client = merged.get('client', {})
+        if isinstance(base_client, list):
+            base_client = base_client[0] if base_client else {}
+        incoming_client = incoming.get('client', {})
+        if isinstance(incoming_client, list):
+            incoming_client = incoming_client[0] if incoming_client else {}
+
+        if isinstance(base_client, dict) and isinstance(incoming_client, dict):
+            merged_client = dict(base_client)
+            for key, value in incoming_client.items():
+                if value not in (None, '', []):
+                    merged_client.setdefault(key, value)
+            merged['client'] = merged_client
+
+        base_header = merged.get('header', {}) if isinstance(merged.get('header'), dict) else {}
+        incoming_header = incoming.get('header', {}) if isinstance(incoming.get('header'), dict) else {}
+        merged_header = dict(base_header)
+        for key, value in incoming_header.items():
+            if value not in (None, '', []):
+                merged_header.setdefault(key, value)
+        if merged_header:
+            merged['header'] = merged_header
+
+        # Merge list-like domains with deduplication by key where possible.
+        def _merge_list_of_dicts(existing: List[Dict[str, Any]], new_values: List[Dict[str, Any]], key_fields: List[str]) -> List[Dict[str, Any]]:
+            existing = existing or []
+            new_values = new_values or []
+            merged_list = list(existing)
+            seen = set()
+            for item in existing:
+                if not isinstance(item, dict):
+                    continue
+                key = tuple(item.get(field, '') for field in key_fields)
+                seen.add(key)
+            for item in new_values:
+                if not isinstance(item, dict):
+                    continue
+                key = tuple(item.get(field, '') for field in key_fields)
+                if key in seen and any(key):
+                    continue
+                merged_list.append(item)
+                seen.add(key)
+            return merged_list
+
+        merged['accounts'] = _merge_list_of_dicts(
+            merged.get('accounts', []),
+            incoming.get('accounts', []),
+            ['policy_number']
+        )
+        merged['contributions'] = _merge_list_of_dicts(
+            merged.get('contributions', []),
+            incoming.get('contributions', []),
+            ['period', 'employer_name', 'policy_number']
+        )
+        merged['beneficiaries'] = _merge_list_of_dicts(
+            merged.get('beneficiaries', []),
+            incoming.get('beneficiaries', []),
+            ['policy_number', 'beneficiary_name', 'beneficiary_id']
+        )
+        merged['coverage_timeline'] = _merge_list_of_dicts(
+            merged.get('coverage_timeline', []),
+            incoming.get('coverage_timeline', []),
+            ['policy_number', 'period_start', 'period_end', 'insured_type']
+        )
+
+        employer_names = set()
+        merged_employers: List[Dict[str, Any]] = []
+        for source in [merged.get('employers', []), incoming.get('employers', [])]:
+            for employer in source or []:
+                if isinstance(employer, dict):
+                    emp_name = str(employer.get('name', '')).strip()
+                    if not emp_name or emp_name in employer_names:
+                        continue
+                    employer_names.add(emp_name)
+                    merged_employers.append(employer)
+                else:
+                    emp_name = str(employer).strip()
+                    if not emp_name or emp_name in employer_names:
+                        continue
+                    employer_names.add(emp_name)
+                    merged_employers.append({'name': emp_name})
+        if merged_employers:
+            merged['employers'] = merged_employers
+
+        # Recompute totals/health score with PensionDataAgent logic when available.
+        try:
+            from services.pension_data_agent import get_pension_agent
+            merged = get_pension_agent()._enrich_data(merged)
+        except Exception:
+            pass
+
+        return merged
     
     def _parse_zip(self, content: bytes) -> Dict[str, Any]:
-        """Parse ZIP file containing CSV, XML (pension), image, and PDF files"""
-        combined_data = {'columns': [], 'rows': [], 'files': [], 'pension_data': None}
+        """Parse ZIP file containing CSV, XML (pension), image, and PDF files."""
+        combined_data = {
+            'columns': [],
+            'rows': [],
+            'files': [],
+            'pension_data': None,
+            'pension_report': None
+        }
         
         with zipfile.ZipFile(io.BytesIO(content), 'r') as zf:
             for name in zf.namelist():
@@ -953,9 +1058,6 @@ class AIRiskReportsService:
                     parsed = self._parse_pension_xml(file_content, name)
                     if parsed:
                         file_type = 'pension_xml'
-                        # Store pension data separately for enhanced analysis
-                        if parsed.get('pension_data'):
-                            combined_data['pension_data'] = parsed.get('pension_data')
                 elif ext in ['png', 'jpg', 'jpeg', 'gif', 'webp']:
                     parsed = self._parse_image(file_content, name, ext)
                 elif ext == 'pdf':
@@ -965,11 +1067,21 @@ class AIRiskReportsService:
                     parsed = self._parse_excel(file_content, name, ext)
                     if parsed:
                         file_type = 'excel'
-                        # Check if this looks like Mislaka data
-                        if parsed.get('pension_data'):
-                            combined_data['pension_data'] = parsed.get('pension_data')
                 
                 if parsed:
+                    parsed_pension_data = parsed.get('pension_data')
+                    if parsed_pension_data:
+                        if combined_data['pension_data'] is None:
+                            combined_data['pension_data'] = parsed_pension_data
+                        else:
+                            combined_data['pension_data'] = self._merge_pension_data_for_zip(
+                                combined_data['pension_data'],
+                                parsed_pension_data
+                            )
+
+                    if parsed.get('pension_report') and not combined_data.get('pension_report'):
+                        combined_data['pension_report'] = parsed.get('pension_report')
+
                     combined_data['files'].append({
                         'name': name,
                         'type': file_type,
@@ -1167,61 +1279,569 @@ class AIRiskReportsService:
             'original_filename': filename
         }
     
+    def _extract_pdf_text(self, content: bytes) -> Tuple[str, int]:
+        """
+        Extract text from PDF bytes.
+        Prefers pypdf if available; otherwise returns empty text.
+        """
+        text_parts: List[str] = []
+        page_count = 0
+
+        try:
+            from pypdf import PdfReader
+
+            reader = PdfReader(io.BytesIO(content))
+            page_count = len(reader.pages)
+            for page in reader.pages:
+                page_text = page.extract_text() or ''
+                if page_text:
+                    text_parts.append(page_text)
+        except Exception:
+            # Keep compatibility even when PDF libraries are unavailable.
+            pass
+
+        return '\n'.join(text_parts), page_count
+
+    def _is_mislaka_pdf_text(self, text: str) -> bool:
+        """Heuristic detection for Hebrew Mislaka / Nituach-Tik PDF reports."""
+        if not text:
+            return False
+
+        markers = [
+            'ניתוח תיק',
+            'סטטוס פוליסות',
+            'רשימת תוכניות',
+            'כמה חסכתי עד היום',
+            'הביטוחים וההגנות',
+            'פרטי הפקדות',
+            'מספר תוכנית',
+            'מספר פוליסה',
+        ]
+        hits = sum(1 for marker in markers if marker in text)
+        return hits >= 3
+
+    def _extract_currency_after_labels(self, text: str, labels: List[str]) -> float:
+        """Extract first currency-like amount after any matching label."""
+        for label in labels:
+            pattern = re.compile(
+                rf"{label}.{{0,180}}?₪\s*([0-9,]+(?:\.[0-9]+)?)",
+                re.DOTALL
+            )
+            match = pattern.search(text)
+            if match:
+                return self._to_float_amount(match.group(1))
+        return 0.0
+
+    def _parse_mislaka_plan_accounts(self, text: str) -> List[Dict[str, Any]]:
+        """Parse account/program blocks from a structured Hebrew Mislaka PDF text."""
+        policy_matches = list(re.finditer(r"מספר תוכנית:\s*([0-9]{6,})", text))
+        accounts_by_policy: Dict[str, Dict[str, Any]] = {}
+
+        for idx, match in enumerate(policy_matches[:200]):
+            policy_number = match.group(1).strip()
+            next_start = policy_matches[idx + 1].start() if idx + 1 < len(policy_matches) else len(text)
+            block_start = max(0, match.start() - 450)
+            block_end = min(len(text), next_start + 200)
+            block = text[block_start:block_end]
+
+            account = accounts_by_policy.get(policy_number, {
+                'policy_number': policy_number,
+                'source': 'mislaka_pdf'
+            })
+
+            def _capture(pattern: str) -> str:
+                found = re.search(pattern, block, re.MULTILINE)
+                return found.group(1).strip() if found else ''
+
+            def _apply_text(key: str, value: str) -> None:
+                value = (value or '').strip()
+                if value and not account.get(key):
+                    account[key] = value
+
+            def _apply_numeric(key: str, value: float, use_max: bool = False) -> None:
+                if value <= 0:
+                    return
+                current = self._to_float_amount(account.get(key))
+                if current <= 0:
+                    account[key] = round(value, 2)
+                elif use_max:
+                    account[key] = round(max(current, value), 2)
+
+            _apply_text('product_name', _capture(r"שם תוכנית:\s*([^\n]+)"))
+            _apply_text('product_type_name', account.get('product_name', ''))
+            _apply_text('provider', _capture(r"(?:פוליסה|פרט)\s*-\s*([^\n]+)"))
+            _apply_text('start_date', _capture(r"וותק:\s*([0-9]{2}/[0-9]{2}/[0-9]{4})"))
+            _apply_text('status', _capture(r"סטטוס:\s*([^\n]+)").split()[0] if _capture(r"סטטוס:\s*([^\n]+)") else '')
+            _apply_text('retirement_age', _capture(r"גיל פרישה:\s*([0-9]{2})"))
+            _apply_text('last_deposit_date', _capture(r"תאריך הפקדה אחרון:\s*([0-9/]+)"))
+            _apply_text('employer_name', _capture(r"מעסיק(?: נוכחי)?:\s*([^\n]+)"))
+
+            _apply_numeric('total_balance', self._to_float_amount(_capture(r"צבירה:\s*₪\s*([0-9,]+)")), use_max=True)
+            _apply_numeric('total_balance', self._to_float_amount(_capture(r"חיסכון לקצבה נוכחי:\s*₪\s*([0-9,]+)")), use_max=True)
+            _apply_numeric('savings_balance', self._to_float_amount(_capture(r"תגמולי עובד:\s*₪\s*([0-9,]+)")))
+            _apply_numeric('employer_contribution', self._to_float_amount(_capture(r"תגמולי מעביד:\s*₪\s*([0-9,]+)")))
+            _apply_numeric('employee_contribution', self._to_float_amount(_capture(r"תגמולי עובד:\s*₪\s*([0-9,]+)")))
+            _apply_numeric('severance_balance', self._to_float_amount(_capture(r"פיצויים:\s*₪\s*([0-9,]+)")))
+            _apply_numeric('deposit_amount', self._to_float_amount(_capture(r"הפקדה:\s*₪\s*([0-9,]+)")))
+            _apply_numeric('projected_savings', self._to_float_amount(_capture(r"חיסכון לקצבה צפוי עם הפקדות:\s*₪\s*([0-9,]+)")), use_max=True)
+            _apply_numeric('monthly_pension', self._to_float_amount(_capture(r"קצבה עם הפקדות:\s*₪\s*([0-9,]+)")), use_max=True)
+            _apply_numeric('management_fee_savings', self._to_float_amount(_capture(r"ד\.ניהול מצבירה:\s*([0-9.]+)%")))
+            _apply_numeric('management_fee_deposits', self._to_float_amount(_capture(r"ד\.ניהול מהפקדה:\s*([0-9.]+)%")))
+
+            death_candidates = [
+                self._to_float_amount(value)
+                for value in re.findall(r"(?:ביטוח יסודי|ביטוח חיים)[:\s]*([0-9][0-9,]*)\s*ש\"?ח", block)
+            ]
+            if death_candidates:
+                _apply_numeric('death_coverage', max(death_candidates), use_max=True)
+
+            disability_candidates = [
+                self._to_float_amount(value)
+                for value in re.findall(r"אובדן כושר עבודה:\s*([0-9][0-9,]*)\s*ש\"?ח", block)
+            ]
+            if disability_candidates:
+                _apply_numeric('disability_coverage', max(disability_candidates), use_max=True)
+
+            _apply_numeric(
+                'death_premium',
+                self._to_float_amount(_capture(r"ביטוח יסודי[:\s]*[0-9,]+\s*ש\"?ח\s*עלות\s*([0-9,]+)"))
+            )
+            _apply_numeric(
+                'disability_premium',
+                self._to_float_amount(_capture(r"אובדן כושר עבודה:\s*[0-9,]+\s*ש\"?ח\s*עלות\s*([0-9,]+)"))
+            )
+
+            if account.get('status'):
+                status_map = {'פעיל': 'Active', 'לא פעיל': 'Inactive', 'מוקפא': 'Frozen'}
+                account['status_en'] = status_map.get(account['status'], account['status'])
+
+            sec14_match = re.search(r"סעיף\s*14\s*(לא קיים|לא ידוע|קיים)", block)
+            if sec14_match and account.get('section14') is None:
+                sec14_value = sec14_match.group(1).strip()
+                if sec14_value == 'קיים':
+                    account['section14'] = True
+                elif sec14_value in ['לא קיים', 'לא ידוע']:
+                    account['section14'] = False
+
+            death_value = self._to_float_amount(account.get('death_coverage'))
+            disability_value = self._to_float_amount(account.get('disability_coverage'))
+            if death_value > 0 or disability_value > 0:
+                account['coverage_amount'] = round(death_value + disability_value, 2)
+
+            if account.get('product_name') and not account.get('product_type'):
+                account['product_type'] = account['product_name']
+
+            accounts_by_policy[policy_number] = account
+
+        # Secondary pass from status table, to capture policy/provider/status where missing.
+        status_pattern = re.compile(
+            r"\b\d+\s+([א-תA-Za-z\"' ]{2,})\s+([א-תA-Za-z\"' ]{2,})\s+([0-9]{6,})\s+([0-9]{2}/[0-9]{2}/[0-9]{4})\s+(פעיל|לא פעיל|מוקפא)",
+            re.MULTILINE
+        )
+        for match in status_pattern.finditer(text):
+            provider = re.sub(r"\s+", " ", match.group(1)).strip()
+            product = re.sub(r"\s+", " ", match.group(2)).strip()
+            policy_number = match.group(3).strip()
+            start_date = match.group(4).strip()
+            status = match.group(5).strip()
+
+            account = accounts_by_policy.get(policy_number, {'policy_number': policy_number, 'source': 'mislaka_pdf'})
+            if provider and not account.get('provider'):
+                account['provider'] = provider
+            if product and not account.get('product_name'):
+                account['product_name'] = product
+                account['product_type_name'] = product
+            if start_date and not account.get('start_date'):
+                account['start_date'] = start_date
+            if status and not account.get('status'):
+                account['status'] = status
+            if account.get('status') and not account.get('status_en'):
+                status_map = {'פעיל': 'Active', 'לא פעיל': 'Inactive', 'מוקפא': 'Frozen'}
+                account['status_en'] = status_map.get(account['status'], account['status'])
+            accounts_by_policy[policy_number] = account
+
+        accounts = list(accounts_by_policy.values())
+        accounts.sort(key=lambda item: str(item.get('policy_number', '')))
+        return accounts
+
+    def _parse_mislaka_contributions(self, text: str) -> List[Dict[str, Any]]:
+        """Extract monthly contribution records from Hebrew Mislaka PDF text."""
+        month_map = {
+            'ינואר': 1, 'פברואר': 2, 'מרץ': 3, 'אפריל': 4, 'מאי': 5, 'יוני': 6,
+            'יולי': 7, 'אוגוסט': 8, 'ספטמבר': 9, 'אוקטובר': 10, 'נובמבר': 11, 'דצמבר': 12
+        }
+        contribution_pattern = re.compile(
+            r"\b(\d{1,2})\s+([א-ת\"׳']+)\s+(\d{4})\s+₪\s*([0-9,]+)\s+₪\s*([0-9,]+)\s+₪\s*([0-9,]+)\s+₪\s*([0-9,]+)",
+            re.MULTILINE
+        )
+        contributions: List[Dict[str, Any]] = []
+
+        for match in contribution_pattern.finditer(text):
+            month_name = match.group(2).strip()
+            year = int(match.group(3))
+            month_num = month_map.get(month_name, 0)
+            period = f"{year}-{month_num:02d}" if month_num else f"{month_name}-{year}"
+            severance_amount = self._to_float_amount(match.group(5))
+            employee_amount = self._to_float_amount(match.group(6))
+            employer_amount = self._to_float_amount(match.group(7))
+            total_amount = self._to_float_amount(match.group(8))
+
+            contributions.append({
+                'period': period,
+                'salary_base': self._to_float_amount(match.group(4)),
+                'severance_amount': round(severance_amount, 2),
+                'employee_amount': round(employee_amount, 2),
+                'employer_amount': round(employer_amount, 2),
+                'total_amount': round(total_amount, 2),
+            })
+
+        return contributions
+
+    def _parse_mislaka_beneficiaries(self, text: str) -> List[Dict[str, Any]]:
+        """Extract beneficiary rows from the beneficiaries section."""
+        section_match = re.search(
+            r"מי הם המוטבים\?(.*?)(?:פירוט מסלולי השקעה|פרטי כתובות כפי|-- [0-9]+ of [0-9]+ --|$)",
+            text,
+            re.DOTALL
+        )
+        section_text = section_match.group(1) if section_match else text
+        beneficiaries: List[Dict[str, Any]] = []
+
+        beneficiary_pattern = re.compile(
+            r"שם:\s*([^\n]+)\s*(?:\n([^\n]+))?\s*\n(0{0,8}\d{7,16})\s+([0-9]{2}/[0-9]{2}/[0-9]{4})(?:\s+([א-ת/\" ]+))?",
+            re.MULTILINE
+        )
+
+        for match in beneficiary_pattern.finditer(section_text):
+            first = match.group(1).strip()
+            second = (match.group(2) or '').strip()
+            if second and not re.search(r"\d", second):
+                beneficiary_name = f"{first} {second}".strip()
+            else:
+                beneficiary_name = first
+
+            beneficiary_id = (match.group(3) or '').strip()
+            birth_date = (match.group(4) or '').strip()
+            relation = re.sub(r"\s+", " ", (match.group(5) or '').strip())
+
+            scope_start = max(0, match.start() - 120)
+            before_scope = section_text[scope_start:match.start()]
+            policy_refs = re.findall(r"\b([0-9]{6,})\b", before_scope)
+            policy_number = policy_refs[-1] if policy_refs else ''
+
+            beneficiaries.append({
+                'beneficiary_name': beneficiary_name,
+                'beneficiary_id': beneficiary_id,
+                'birth_date': birth_date,
+                'relation': relation,
+                'policy_number': policy_number,
+            })
+
+        return beneficiaries[:200]
+
+    def _parse_mislaka_coverage_timeline(self, text: str) -> List[Dict[str, Any]]:
+        """Extract policy premium evolution rows (התפתחות)."""
+        timeline_rows: List[Dict[str, Any]] = []
+        block_pattern = re.compile(
+            r"התפתחות\s*-\s*([^\n]+?)\s+([0-9]{6,})(.*?)(?=(?:\nהתפתחות\s*-)|\Z)",
+            re.DOTALL
+        )
+        row_pattern = re.compile(
+            r"\b\d+\s+(ראשי|משני)\s+([0-9]{2}/[0-9]{4})\s+([0-9]{2}/[0-9]{4})\s+₪\s*([0-9,]+)(?:\s+([0-9]{1,3}%)\s+₪\s*([0-9,]+))?",
+            re.MULTILINE
+        )
+
+        for block in block_pattern.finditer(text):
+            provider = re.sub(r"\s+", " ", block.group(1)).strip()
+            policy_number = block.group(2).strip()
+            body = block.group(3)
+
+            for row in row_pattern.finditer(body):
+                timeline_rows.append({
+                    'policy_number': policy_number,
+                    'provider': provider,
+                    'insured_type': row.group(1).strip(),
+                    'period_start': row.group(2).strip(),
+                    'period_end': row.group(3).strip(),
+                    'monthly_premium': round(self._to_float_amount(row.group(4)), 2),
+                    'discount_rate': (row.group(5) or '').strip(),
+                    'discount_amount': round(self._to_float_amount(row.group(6)), 2) if row.group(6) else 0.0,
+                })
+
+        return timeline_rows[:1200]
+
+    def _parse_mislaka_pdf_text(self, text: str, filename: str, page_count: int) -> Optional[Dict[str, Any]]:
+        """
+        Convert extracted PDF text into a Mislaka-aligned structured payload.
+        Returns None if the text does not look like a Mislaka report.
+        """
+        if not text or not self._is_mislaka_pdf_text(text):
+            return None
+
+        normalized_text = text.replace('\r', '\n')
+        normalized_text = re.sub(r'\n{3,}', '\n\n', normalized_text)
+        normalized_text = re.sub(r'[ \t]+\n', '\n', normalized_text)
+        lines = [line.strip() for line in normalized_text.splitlines() if line.strip()]
+
+        # Client identity and contact details.
+        client_name = ''
+        client_id = ''
+        id_match = re.search(r"עבור:\s*([^\n]+?)\s+ת\.?ז\s*([0-9]{7,10})", normalized_text)
+        if id_match:
+            client_name = re.sub(r"\s+", " ", id_match.group(1)).strip()
+            client_id = id_match.group(2).strip()
+
+        email_match = re.search(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b", normalized_text)
+        phone_match = re.search(r"\b0(?:5[0-9]|[2-9])[0-9\-]{7,9}\b", normalized_text)
+        address_line = ''
+        for line in lines[:120]:
+            if not re.search(r"[א-ת]", line):
+                continue
+            if not re.search(r"\d", line):
+                continue
+            if '₪' in line or 'ת.ז' in line or 'טלפון' in line:
+                continue
+            if re.search(r"[0-9]{2}/[0-9]{2}/[0-9]{4}", line):
+                continue
+            if 6 <= len(line) <= 80:
+                address_line = re.sub(r"\s+", " ", line).strip()
+                break
+
+        snapshot_total_savings = self._extract_currency_after_labels(
+            normalized_text,
+            ['כמה חסכתי עד היום\\?', 'כמה חסכתי עד היום']
+        )
+        snapshot_total_deposits = self._extract_currency_after_labels(
+            normalized_text,
+            ['מהן ההפקדות שלי\\?', 'מהן ההפקדות שלי']
+        )
+        snapshot_total_severance = self._extract_currency_after_labels(
+            normalized_text,
+            ['מה סך הפיצויים שמגיע לי\\?', 'סך הפיצויים']
+        )
+
+        accounts = self._parse_mislaka_plan_accounts(normalized_text)
+        contributions = self._parse_mislaka_contributions(normalized_text)
+        beneficiaries = self._parse_mislaka_beneficiaries(normalized_text)
+        coverage_timeline = self._parse_mislaka_coverage_timeline(normalized_text)
+
+        if not accounts and snapshot_total_savings <= 0 and snapshot_total_deposits <= 0:
+            return None
+
+        # Enrich accounts with shared client identifier if missing.
+        for account in accounts:
+            if client_id and not account.get('id_number'):
+                account['id_number'] = client_id
+
+        employer_set = set()
+        for account in accounts:
+            employer_name = str(account.get('employer_name', '') or '').strip()
+            if employer_name:
+                employer_set.add(employer_name)
+        for emp in re.findall(r"מעסיק(?: נוכחי)?:\s*([^\n]+)", normalized_text):
+            emp_name = re.sub(r"\s+", " ", emp).strip()
+            if emp_name:
+                employer_set.add(emp_name)
+        employers = [{'name': emp} for emp in sorted(employer_set)]
+
+        total_balance = sum(self._to_float_amount(account.get('total_balance')) for account in accounts)
+        total_savings = sum(self._to_float_amount(account.get('savings_balance')) for account in accounts)
+        total_severance = sum(self._to_float_amount(account.get('severance_balance')) for account in accounts)
+        total_coverage = sum(self._to_float_amount(account.get('coverage_amount')) for account in accounts)
+
+        if snapshot_total_savings > 0 and total_balance <= 0:
+            total_balance = snapshot_total_savings
+        if total_savings <= 0 and total_balance > 0:
+            total_savings = total_balance
+        if snapshot_total_severance > 0 and total_severance <= 0:
+            total_severance = snapshot_total_severance
+
+        contrib_totals = {}
+        if contributions:
+            employee_total = sum(self._to_float_amount(item.get('employee_amount')) for item in contributions)
+            employer_total = sum(self._to_float_amount(item.get('employer_amount')) for item in contributions)
+            severance_total = sum(self._to_float_amount(item.get('severance_amount')) for item in contributions)
+            grand_total = sum(self._to_float_amount(item.get('total_amount')) for item in contributions)
+            contrib_totals = {
+                'employee_total': round(employee_total, 2),
+                'employer_total': round(employer_total, 2),
+                'severance_total': round(severance_total, 2),
+                'grand_total': round(grand_total, 2),
+                'periods_count': len(contributions),
+            }
+        elif snapshot_total_deposits > 0:
+            contrib_totals = {
+                'employee_total': round(snapshot_total_deposits, 2),
+                'employer_total': 0.0,
+                'severance_total': 0.0,
+                'grand_total': round(snapshot_total_deposits, 2),
+                'periods_count': 1,
+            }
+
+        section14_accounts = [account for account in accounts if account.get('section14') is True]
+        provider_names = sorted({str(account.get('provider', '') or '').strip() for account in accounts if account.get('provider')})
+
+        pension_data: Dict[str, Any] = {
+            'header': {
+                'source': 'PDF-Mislaka',
+                'filename': filename,
+                'report_date': datetime.now().strftime('%Y%m%d'),
+                'page_count': page_count,
+            },
+            'client': {
+                'full_name': client_name,
+                'id_number': client_id,
+                'email': email_match.group(0) if email_match else '',
+                'phone': phone_match.group(0) if phone_match else '',
+                'address': address_line,
+            },
+            'accounts': accounts,
+            'contributions': contributions,
+            'beneficiaries': beneficiaries,
+            'coverage_timeline': coverage_timeline,
+            'employers': employers,
+            'totals': {
+                'total_balance': round(total_balance, 2),
+                'total_savings': round(total_savings, 2),
+                'total_severance': round(total_severance, 2),
+                'total_coverage': round(total_coverage, 2),
+                'account_count': len(accounts),
+                'provider_count': len(provider_names),
+                'providers': provider_names,
+                'section14_coverage': len(section14_accounts) > 0,
+                'section14_accounts': len(section14_accounts),
+                'snapshot_total_savings': round(snapshot_total_savings, 2),
+                'snapshot_total_deposits': round(snapshot_total_deposits, 2),
+                'snapshot_total_severance': round(snapshot_total_severance, 2),
+                'total_balance_formatted': f"₪{total_balance:,.2f}",
+                'total_savings_formatted': f"₪{total_savings:,.2f}",
+                'total_severance_formatted': f"₪{total_severance:,.2f}",
+                'contributions': contrib_totals,
+            }
+        }
+
+        try:
+            from services.pension_data_agent import get_pension_agent
+
+            agent = get_pension_agent()
+            pension_data = agent._enrich_data(pension_data)
+            report_text = agent.generate_report_text(pension_data, language='hebrew')
+            columns, rows = agent.to_csv_format(pension_data)
+        except Exception:
+            report_text = (
+                f"דו\"ח מסלקה (PDF): {filename}\n"
+                f"לקוח: {client_name or 'לא זמין'}\n"
+                f"ת.ז: {client_id or 'לא זמין'}\n"
+                f"פוליסות: {len(accounts)}\n"
+                f"סה\"כ חיסכון: ₪{pension_data['totals'].get('total_savings', 0):,.2f}\n"
+                f"סה\"כ כיסוי: ₪{pension_data['totals'].get('total_coverage', 0):,.2f}"
+            )
+            columns = [
+                'מספר פוליסה', 'יצרן', 'סוג מוצר', 'סטטוס',
+                'יתרה כוללת', 'חיסכון', 'פיצויים', 'כיסוי חיים',
+                'כיסוי אכ"ע', 'מעסיק', 'ת.ז', 'שם מלא'
+            ]
+            rows = []
+            for account in accounts:
+                rows.append({
+                    'מספר פוליסה': account.get('policy_number', ''),
+                    'יצרן': account.get('provider', ''),
+                    'סוג מוצר': account.get('product_type_name', account.get('product_name', '')),
+                    'סטטוס': account.get('status', ''),
+                    'יתרה כוללת': account.get('total_balance', 0),
+                    'חיסכון': account.get('savings_balance', account.get('total_balance', 0)),
+                    'פיצויים': account.get('severance_balance', 0),
+                    'כיסוי חיים': account.get('death_coverage', 0),
+                    'כיסוי אכ"ע': account.get('disability_coverage', 0),
+                    'מעסיק': account.get('employer_name', ''),
+                    'ת.ז': client_id,
+                    'שם מלא': client_name,
+                })
+
+        # Add one client row to make personal identity fields visible in table mode too.
+        if client_name or client_id:
+            rows.insert(0, {
+                'מספר פוליסה': 'פרטי לקוח',
+                'יצרן': '',
+                'סוג מוצר': '',
+                'שם מוצר': '',
+                'סטטוס': '',
+                'יתרה כוללת': '',
+                'חיסכון': '',
+                'פיצויים': '',
+                'מעסיק': '',
+                'סעיף 14': '',
+                'ת.ז': client_id,
+                'שם מלא': client_name,
+            })
+            for extra_col in ['ת.ז', 'שם מלא']:
+                if extra_col not in columns:
+                    columns.append(extra_col)
+
+        return {
+            'columns': columns,
+            'rows': rows,
+            'pension_data': pension_data,
+            'pension_report': report_text,
+        }
+
     def _parse_pdf(self, content: bytes, filename: str) -> Dict[str, Any]:
         """
-        Parse PDF file and extract metadata for analysis.
-        Creates a structured data format from PDF properties.
+        Parse PDF file.
+        Uses rich extraction for Mislaka/Nituach-Tik reports and metadata fallback otherwise.
         """
         file_size = len(content)
-        
-        # Basic PDF metadata extraction
-        page_count = 0
+        page_count = content.count(b'/Type /Page') or content.count(b'/Type/Page')
         title = filename
         author = ''
-        creation_date = ''
-        
-        # Simple PDF parsing for metadata
+
         try:
             content_str = content[:4096].decode('latin-1', errors='ignore')
-            
-            # Count pages (approximate)
-            page_count = content.count(b'/Type /Page') or content.count(b'/Type/Page')
-            
-            # Extract title if present
             if '/Title' in content_str:
                 start = content_str.find('/Title')
-                if start != -1:
-                    # Try to extract title value
-                    paren_start = content_str.find('(', start)
-                    paren_end = content_str.find(')', paren_start) if paren_start != -1 else -1
-                    if paren_start != -1 and paren_end != -1:
-                        title = content_str[paren_start+1:paren_end][:100]
-            
-            # Extract author if present
+                paren_start = content_str.find('(', start)
+                paren_end = content_str.find(')', paren_start) if paren_start != -1 else -1
+                if paren_start != -1 and paren_end != -1:
+                    title = content_str[paren_start + 1:paren_end][:100]
             if '/Author' in content_str:
                 start = content_str.find('/Author')
-                if start != -1:
-                    paren_start = content_str.find('(', start)
-                    paren_end = content_str.find(')', paren_start) if paren_start != -1 else -1
-                    if paren_start != -1 and paren_end != -1:
-                        author = content_str[paren_start+1:paren_end][:100]
-        except:
+                paren_start = content_str.find('(', start)
+                paren_end = content_str.find(')', paren_start) if paren_start != -1 else -1
+                if paren_start != -1 and paren_end != -1:
+                    author = content_str[paren_start + 1:paren_end][:100]
+        except Exception:
             pass
-        
-        # Extract text from filename for context
+
+        extracted_text, extracted_pages = self._extract_pdf_text(content)
+        if extracted_pages > 0:
+            page_count = extracted_pages
+
         filename_text = filename.replace('_', ' ').replace('-', ' ').replace('.pdf', '')
-        
-        # Detect if filename contains Hebrew
-        has_hebrew = bool(re.search(r'[\u0590-\u05FF]', filename_text))
-        
-        # Create structured data for analysis
+        has_hebrew = bool(re.search(r'[\u0590-\u05FF]', f"{filename_text} {extracted_text[:3000]}"))
+
+        structured_pdf = self._parse_mislaka_pdf_text(extracted_text, filename, page_count)
+        if structured_pdf:
+            return {
+                'columns': structured_pdf.get('columns', []),
+                'rows': structured_pdf.get('rows', []),
+                'delimiter': None,
+                'file_type': 'pdf',
+                'original_filename': filename,
+                'page_count': page_count,
+                'title': title,
+                'author': author,
+                'has_hebrew': has_hebrew,
+                'pension_data': structured_pdf.get('pension_data'),
+                'pension_report': structured_pdf.get('pension_report'),
+            }
+
         columns = ['property', 'value', 'category']
         rows = [
             {'property': 'filename', 'value': filename, 'category': 'metadata'},
             {'property': 'file_type', 'value': 'PDF', 'category': 'metadata'},
             {'property': 'file_size_bytes', 'value': str(file_size), 'category': 'metadata'},
             {'property': 'file_size_kb', 'value': str(round(file_size / 1024, 2)), 'category': 'metadata'},
-            {'property': 'file_size_mb', 'value': str(round(file_size / (1024*1024), 2)), 'category': 'metadata'},
+            {'property': 'file_size_mb', 'value': str(round(file_size / (1024 * 1024), 2)), 'category': 'metadata'},
             {'property': 'page_count', 'value': str(page_count), 'category': 'content'},
             {'property': 'title', 'value': title, 'category': 'metadata'},
             {'property': 'author', 'value': author, 'category': 'metadata'},
@@ -1229,7 +1849,13 @@ class AIRiskReportsService:
             {'property': 'source_name', 'value': filename_text, 'category': 'context'},
             {'property': 'has_hebrew', 'value': str(has_hebrew), 'category': 'language'},
         ]
-        
+        if extracted_text:
+            rows.append({
+                'property': 'text_preview',
+                'value': extracted_text[:500].replace('\n', ' ').strip(),
+                'category': 'content'
+            })
+
         return {
             'columns': columns,
             'rows': rows,
@@ -2593,6 +3219,12 @@ class AIRiskReportsService:
         
         lang_titles = titles.get(lang, titles['english'])
         title = lang_titles.get(analysis.data_classification.value, lang_titles['default'])
+        if pension_data or pension_report:
+            title = (
+                'דו״ח מסלקה - חיסכון וביטוח (שיוך פוליסות)'
+                if lang == 'hebrew'
+                else 'Mislaka Savings & Insurance Report (Policy Affiliation)'
+            )
         
         report = GeneratedReport(
             id=report_id,
@@ -2911,6 +3543,38 @@ Factors Affecting Score:
         contributions = pension_data.get('contributions', []) or []
         totals = pension_data.get('totals', {}) or {}
         employers = pension_data.get('employers', []) or []
+        beneficiaries = pension_data.get('beneficiaries', []) or []
+        coverage_timeline = pension_data.get('coverage_timeline', []) or []
+        client = pension_data.get('client', {}) or {}
+        if isinstance(client, list):
+            client = client[0] if client else {}
+
+        if client:
+            client_rows = [{
+                'שדה' if is_hebrew else 'Field': 'שם מלא' if is_hebrew else 'Full Name',
+                'ערך' if is_hebrew else 'Value': client.get('full_name', '')
+            }, {
+                'שדה' if is_hebrew else 'Field': 'תעודת זהות' if is_hebrew else 'ID Number',
+                'ערך' if is_hebrew else 'Value': self._mask_identifier(client.get('id_number', ''))
+            }, {
+                'שדה' if is_hebrew else 'Field': 'טלפון' if is_hebrew else 'Phone',
+                'ערך' if is_hebrew else 'Value': client.get('phone', '')
+            }, {
+                'שדה' if is_hebrew else 'Field': 'דוא״ל' if is_hebrew else 'Email',
+                'ערך' if is_hebrew else 'Value': client.get('email', '')
+            }, {
+                'שדה' if is_hebrew else 'Field': 'כתובת' if is_hebrew else 'Address',
+                'ערך' if is_hebrew else 'Value': client.get('address', '')
+            }]
+            sections.append(ReportSection(
+                title='פרטי לקוח וזיהוי' if is_hebrew else 'Customer Profile & Identification',
+                content='נתוני זיהוי אישיים מתוך דו״ח המסלקה.' if is_hebrew else 'Personal profile fields extracted from the Mislaka report.',
+                data_table={
+                    'columns': list(client_rows[0].keys()),
+                    'rows': client_rows
+                },
+                order=2
+            ))
 
         if accounts:
             status_rows = []
@@ -2959,6 +3623,38 @@ Factors Affecting Score:
                 order=4
             ))
 
+            savings_rows = []
+            for acct in accounts[:120]:
+                savings_balance = self._to_float_amount(acct.get('savings_balance'))
+                total_balance = self._to_float_amount(acct.get('total_balance'))
+                projected = self._to_float_amount(acct.get('projected_savings'))
+                if savings_balance <= 0 and total_balance <= 0 and projected <= 0:
+                    continue
+                savings_rows.append({
+                    'מספר פוליסה' if is_hebrew else 'Policy Number': acct.get('policy_number', ''),
+                    'יצרן' if is_hebrew else 'Provider': acct.get('provider', ''),
+                    'תוכנית' if is_hebrew else 'Plan': acct.get('product_type_name', acct.get('product_name', acct.get('product_type', ''))),
+                    'חיסכון נוכחי' if is_hebrew else 'Current Savings': savings_balance or total_balance,
+                    'צבירה כוללת' if is_hebrew else 'Total Accumulation': total_balance,
+                    'חיסכון צפוי' if is_hebrew else 'Projected Savings': projected,
+                    'קצבה חודשית צפויה' if is_hebrew else 'Projected Monthly Pension': self._to_float_amount(acct.get('monthly_pension')),
+                    'פיצויים' if is_hebrew else 'Severance': self._to_float_amount(acct.get('severance_balance')),
+                    'ד. ניהול מצבירה %' if is_hebrew else 'Mgmt Fee Savings %': self._to_float_amount(acct.get('management_fee_savings')),
+                    'ד. ניהול מהפקדה %' if is_hebrew else 'Mgmt Fee Deposit %': self._to_float_amount(acct.get('management_fee_deposits')),
+                })
+
+            if savings_rows:
+                sections.append(ReportSection(
+                    title='פירוט חשבונות חיסכון' if is_hebrew else 'Savings Accounts Detail',
+                    content='פירוט מלא של שדות חיסכון, צבירה, קצבה ודמי ניהול לכל פוליסה.' if is_hebrew else
+                    'Detailed savings-account fields per policy, including balances, projections, pension and fees.',
+                    data_table={
+                        'columns': list(savings_rows[0].keys()),
+                        'rows': savings_rows
+                    },
+                    order=5
+                ))
+
         if contributions:
             contribution_rows = []
             for contrib in contributions[:120]:
@@ -2978,7 +3674,31 @@ Factors Affecting Score:
                     'columns': list(contribution_rows[0].keys()) if contribution_rows else [],
                     'rows': contribution_rows
                 },
-                order=5
+                order=6
+            ))
+
+        if beneficiaries:
+            beneficiary_rows = []
+            for beneficiary in beneficiaries[:120]:
+                beneficiary_rows.append({
+                    'מספר פוליסה' if is_hebrew else 'Policy Number': beneficiary.get('policy_number', ''),
+                    'שם מוטב' if is_hebrew else 'Beneficiary Name': beneficiary.get('beneficiary_name', ''),
+                    'מזהה מוטב' if is_hebrew else 'Beneficiary ID': self._mask_identifier(beneficiary.get('beneficiary_id', '')),
+                    'תאריך לידה' if is_hebrew else 'Birth Date': beneficiary.get('birth_date', ''),
+                    'זיקה' if is_hebrew else 'Relation': beneficiary.get('relation', ''),
+                    'חלק באחוזים' if is_hebrew else 'Share %': beneficiary.get('share_percent', ''),
+                    'תאריך עדכון' if is_hebrew else 'Updated At': beneficiary.get('updated_at', ''),
+                })
+
+            sections.append(ReportSection(
+                title='רשימת מוטבים' if is_hebrew else 'Beneficiaries',
+                content='ריכוז מוטבים לפי פוליסות עם נתוני זיהוי ויחסים.' if is_hebrew else
+                'Beneficiaries by policy including identification and relationship fields.',
+                data_table={
+                    'columns': list(beneficiary_rows[0].keys()) if beneficiary_rows else [],
+                    'rows': beneficiary_rows
+                },
+                order=7
             ))
 
         if employers or accounts:
@@ -3011,8 +3731,32 @@ Factors Affecting Score:
                         'columns': list(employer_values[0].keys()),
                         'rows': employer_values[:80]
                     },
-                    order=6
+                    order=8
                 ))
+
+        if coverage_timeline:
+            timeline_rows = []
+            for row in coverage_timeline[:160]:
+                timeline_rows.append({
+                    'מספר פוליסה' if is_hebrew else 'Policy Number': row.get('policy_number', ''),
+                    'סוג מבוטח' if is_hebrew else 'Insured Type': row.get('insured_type', ''),
+                    'תחילת תקופה' if is_hebrew else 'Period Start': row.get('period_start', ''),
+                    'תום תקופה' if is_hebrew else 'Period End': row.get('period_end', ''),
+                    'פרמיה חודשית' if is_hebrew else 'Monthly Premium': row.get('monthly_premium', 0),
+                    'שיעור הנחה' if is_hebrew else 'Discount Rate': row.get('discount_rate', ''),
+                    'סכום הנחה' if is_hebrew else 'Discount Amount': row.get('discount_amount', 0),
+                })
+
+            sections.append(ReportSection(
+                title='התפתחות פרמיות וכיסויים' if is_hebrew else 'Premium & Coverage Evolution',
+                content='מגמות התפתחות פרמיות ביטוח לאורך זמן לפי פוליסה.' if is_hebrew else
+                'Time-series of premium evolution and coverage terms by policy.',
+                data_table={
+                    'columns': list(timeline_rows[0].keys()) if timeline_rows else [],
+                    'rows': timeline_rows
+                },
+                order=9
+            ))
 
         if totals:
             totals_rows = [{
@@ -3036,7 +3780,7 @@ Factors Affecting Score:
                     'columns': list(totals_rows[0].keys()),
                     'rows': totals_rows
                 },
-                order=7
+                order=10
             ))
 
         return sections
@@ -3968,13 +4712,15 @@ Factors Affecting Score:
         is_hebrew = lang_code == 'hebrew'
         
         totals = pension_data.get('totals', {})
-        accounts = pension_data.get('accounts', [])
+        accounts = pension_data.get('accounts', []) or []
+        contributions = pension_data.get('contributions', []) or []
+        coverage_timeline = pension_data.get('coverage_timeline', []) or []
         
         # 1. Cumulative Savings by Provider (Bar Chart)
         provider_totals = {}
         for acct in accounts:
             provider = acct.get('provider', 'לא ידוע' if is_hebrew else 'Unknown')
-            balance = acct.get('total_balance', 0) or acct.get('savings_balance', 0) or 0
+            balance = self._to_float_amount(acct.get('total_balance')) or self._to_float_amount(acct.get('savings_balance'))
             if provider and balance > 0:
                 provider_totals[provider] = provider_totals.get(provider, 0) + balance
         
@@ -3995,13 +4741,13 @@ Factors Affecting Score:
             ))
         
         # 2. Savings vs Severance Breakdown (Doughnut Chart)
-        total_savings = totals.get('total_savings_balance', 0)
-        total_severance = totals.get('total_severance_balance', 0)
+        total_savings = self._to_float_amount(totals.get('total_savings', totals.get('total_savings_balance', 0)))
+        total_severance = self._to_float_amount(totals.get('total_severance', totals.get('total_severance_balance', 0)))
         
         if not total_savings and not total_severance:
             # Calculate from accounts
-            total_savings = sum(a.get('savings_balance', 0) or 0 for a in accounts)
-            total_severance = sum(a.get('severance_balance', 0) or 0 for a in accounts)
+            total_savings = sum(self._to_float_amount(a.get('savings_balance')) for a in accounts)
+            total_severance = sum(self._to_float_amount(a.get('severance_balance')) for a in accounts)
         
         if total_savings > 0 or total_severance > 0:
             labels = ['תגמולים', 'פיצויים'] if is_hebrew else ['Savings', 'Severance']
@@ -4022,8 +4768,8 @@ Factors Affecting Score:
         # 3. Insurance Coverage Breakdown (Pie Chart)
         coverage_totals = {}
         for acct in accounts:
-            death_coverage = acct.get('death_coverage', 0) or 0
-            disability_coverage = acct.get('disability_coverage', 0) or 0
+            death_coverage = self._to_float_amount(acct.get('death_coverage'))
+            disability_coverage = self._to_float_amount(acct.get('disability_coverage'))
             
             if death_coverage > 0:
                 label = 'ביטוח חיים' if is_hebrew else 'Life Insurance'
@@ -4053,7 +4799,7 @@ Factors Affecting Score:
             product_type = acct.get('product_type_name', '') or acct.get('product_type', '')
             if not product_type:
                 product_type = 'לא מוגדר' if is_hebrew else 'Undefined'
-            balance = acct.get('total_balance', 0) or acct.get('savings_balance', 0) or 0
+            balance = self._to_float_amount(acct.get('total_balance')) or self._to_float_amount(acct.get('savings_balance'))
             if balance > 0:
                 product_balances[product_type] = product_balances.get(product_type, 0) + balance
         
@@ -4071,11 +4817,95 @@ Factors Affecting Score:
                     'currency_symbol': '₪'
                 }
             ))
+
+        # 5. Policy status distribution
+        status_counts: Dict[str, int] = {}
+        for acct in accounts:
+            status_value = str(acct.get('status') or acct.get('status_en') or ('פעיל' if is_hebrew else 'Active')).strip()
+            status_counts[status_value] = status_counts.get(status_value, 0) + 1
+        if status_counts:
+            charts.append(ChartConfig(
+                type=ChartType.DOUGHNUT,
+                title='התפלגות סטטוס פוליסות' if is_hebrew else 'Policy Status Distribution',
+                data={
+                    'labels': list(status_counts.keys()),
+                    'values': list(status_counts.values())
+                },
+                options={'colors': ['#4CAF50', '#FF9800', '#F44336', '#03A9F4', '#9C27B0']}
+            ))
+
+        # 6. Monthly contribution trend
+        if contributions:
+            contribution_points = []
+            for item in contributions:
+                period = str(item.get('period', '') or '').strip()
+                total_amount = self._to_float_amount(item.get('total_amount'))
+                if total_amount <= 0:
+                    total_amount = (
+                        self._to_float_amount(item.get('employee_amount'))
+                        + self._to_float_amount(item.get('employer_amount'))
+                        + self._to_float_amount(item.get('severance_amount'))
+                    )
+                if period and total_amount > 0:
+                    contribution_points.append((period, total_amount))
+            contribution_points = sorted(contribution_points, key=lambda value: value[0])[:120]
+            if contribution_points:
+                charts.append(ChartConfig(
+                    type=ChartType.LINE,
+                    title='מגמת הפקדות חודשית' if is_hebrew else 'Monthly Contribution Trend',
+                    data={
+                        'labels': [point[0] for point in contribution_points],
+                        'values': [point[1] for point in contribution_points]
+                    },
+                    options={
+                        'colors': ['#26A69A'],
+                        'currency': True,
+                        'currency_symbol': '₪'
+                    }
+                ))
+
+        # 7. Policy premium evolution from development pages
+        if coverage_timeline:
+            premium_by_period: Dict[str, List[float]] = {}
+            for row in coverage_timeline:
+                period = str(row.get('period_start', '') or '').strip()
+                premium = self._to_float_amount(row.get('monthly_premium'))
+                if not period or premium <= 0:
+                    continue
+                premium_by_period.setdefault(period, []).append(premium)
+
+            if premium_by_period:
+                def _period_key(period_value: str) -> Tuple[int, int]:
+                    match = re.match(r'([0-9]{2})/([0-9]{4})', period_value)
+                    if not match:
+                        return (9999, 99)
+                    month = int(match.group(1))
+                    year = int(match.group(2))
+                    return (year, month)
+
+                period_labels = sorted(premium_by_period.keys(), key=_period_key)[:160]
+                period_values = [
+                    round(sum(premium_by_period[label]) / max(len(premium_by_period[label]), 1), 2)
+                    for label in period_labels
+                ]
+                charts.append(ChartConfig(
+                    type=ChartType.LINE,
+                    title='התפתחות פרמיה צפויה' if is_hebrew else 'Projected Premium Evolution',
+                    data={
+                        'labels': period_labels,
+                        'values': period_values
+                    },
+                    options={
+                        'colors': ['#7E57C2'],
+                        'currency': True,
+                        'currency_symbol': '₪'
+                    }
+                ))
         
-        # 5. Total Summary Gauge (if we have total balance)
-        total_balance = totals.get('total_balance', 0)
+        # 8. Total Summary Gauge (if we have total balance)
+        total_balance = self._to_float_amount(totals.get('total_balance'))
         if not total_balance:
-            total_balance = sum(a.get('total_balance', 0) or 0 for a in accounts)
+            total_balance = sum(self._to_float_amount(a.get('total_balance')) for a in accounts)
         
         if total_balance > 0:
             charts.append(ChartConfig(
