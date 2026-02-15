@@ -471,14 +471,28 @@ POL-002,150000,620,3000,2000,Ayalon,Basic,Active,SunFood,2022-11"""
         self.assertTrue(isinstance(matrix, dict))
         self.assertTrue(isinstance(matrix.get('summary_rows', []), list))
         self.assertGreaterEqual(len(matrix.get('summary_rows', [])), 6)
+        self.assertTrue(isinstance(matrix.get('column_matrix_rows', []), list))
+        self.assertGreaterEqual(len(matrix.get('column_matrix_rows', [])), 2)
+        self.assertTrue(isinstance(matrix.get('section_matrix_rows', []), list))
+        self.assertGreaterEqual(len(matrix.get('section_matrix_rows', [])), 1)
         self.assertIn('policy_aggregate', matrix)
 
         titles = [section.title for section in report.sections]
         self.assertTrue(any('מטריצת שיוכי מטא-דאטה' in title for title in titles))
+        self.assertTrue(any('מטריצת שיוך עמודות מקור' in title for title in titles))
+        self.assertTrue(any('כיסוי מודל דוח רצוי' in title for title in titles))
 
         self.assertTrue(
             any(
                 ('מטריצת שיוכים' in chart.title) or ('Affiliation Matrix' in chart.title)
+                for chart in report.charts
+            )
+        )
+        self.assertTrue(
+            any(
+                ('כיסוי חלקי מודל דוח רצוי' in chart.title)
+                or ('Wishful Report Section Coverage' in chart.title)
+                or ('Source Column Affiliation Coverage' in chart.title)
                 for chart in report.charts
             )
         )

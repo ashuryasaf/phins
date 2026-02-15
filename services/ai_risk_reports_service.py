@@ -3612,11 +3612,13 @@ Factors Affecting Score:
 
         summary_rows: List[Dict[str, Any]] = []
         detail_rows: List[Dict[str, Any]] = []
+        group_term_catalog: Dict[str, Dict[str, Any]] = {}
 
         for group_key, group_en, group_he, mapping in matrix_groups:
             available = len(mapping or {})
             matched = 0
             hit_count = 0
+            group_terms = set()
 
             for code, info in (mapping or {}).items():
                 if isinstance(info, dict):
@@ -3641,6 +3643,7 @@ Factors Affecting Score:
                     normalized_term = self._normalize_affiliation_term(term)
                     if normalized_term and normalized_term not in labels and len(normalized_term) >= 2:
                         labels.append(normalized_term)
+                        group_terms.add(normalized_term)
 
                 entry_hits = 0
                 for label in labels:
@@ -3672,6 +3675,108 @@ Factors Affecting Score:
                 'coverage_pct': coverage_pct,
                 'hit_count': hit_count,
             })
+            group_term_catalog[group_key] = {
+                'group_en': group_en,
+                'group_he': group_he,
+                'terms': group_terms,
+            }
+
+        example_model = self._get_pdf_example_allocation_model()
+        normalized_columns = [(col, self._normalize_affiliation_term(col)) for col in columns]
+        column_matrix_rows: List[Dict[str, Any]] = []
+        section_column_counter: Dict[str, int] = {}
+        covered_columns = 0
+
+        for col, normalized_col in normalized_columns:
+            if not normalized_col:
+                continue
+
+            sample_values = []
+            for row in rows[:200]:
+                if not isinstance(row, dict):
+                    continue
+                raw_val = row.get(col)
+                if raw_val is None:
+                    continue
+                val = str(raw_val).strip()
+                if not val:
+                    continue
+                if val not in sample_values:
+                    sample_values.append(val)
+                if len(sample_values) >= 3:
+                    break
+
+            normalized_samples = [self._normalize_affiliation_term(val) for val in sample_values]
+            combined_text = ' | '.join([normalized_col] + [val for val in normalized_samples if val])
+
+            best_group_key = ''
+            best_group_score = 0
+            best_group_terms: List[str] = []
+            for group_key, group_cfg in group_term_catalog.items():
+                group_score = 0
+                matched_terms = []
+                for term in group_cfg.get('terms', set()):
+                    if not term:
+                        continue
+                    if term in combined_text:
+                        weight = 3 if term in normalized_col else 1
+                        group_score += combined_text.count(term) * weight
+                        matched_terms.append(term)
+                if group_score > best_group_score:
+                    best_group_score = group_score
+                    best_group_key = group_key
+                    best_group_terms = matched_terms
+
+            best_section_key = ''
+            best_section_score = 0
+            best_section_he = ''
+            best_section_en = ''
+            for section in example_model:
+                section_score = 0
+                for keyword in section.get('keywords', []):
+                    normalized_keyword = self._normalize_affiliation_term(keyword)
+                    if normalized_keyword and normalized_keyword in combined_text:
+                        section_score += combined_text.count(normalized_keyword)
+                if section_score > best_section_score:
+                    best_section_score = section_score
+                    best_section_key = section.get('key', '')
+                    best_section_he = section.get('title_he', '')
+                    best_section_en = section.get('title_en', '')
+
+            if best_group_key:
+                covered_columns += 1
+            if best_section_key:
+                section_column_counter[best_section_key] = section_column_counter.get(best_section_key, 0) + 1
+
+            group_cfg = group_term_catalog.get(best_group_key, {})
+            column_matrix_rows.append({
+                'source_column': col,
+                'normalized_column': normalized_col,
+                'mapped_group_key': best_group_key,
+                'mapped_group_en': group_cfg.get('group_en', ''),
+                'mapped_group_he': group_cfg.get('group_he', ''),
+                'group_score': best_group_score,
+                'matched_terms_count': len(best_group_terms),
+                'matched_terms': ' | '.join(best_group_terms[:8]),
+                'wishful_section_key': best_section_key,
+                'wishful_section_he': best_section_he,
+                'wishful_section_en': best_section_en,
+                'section_score': best_section_score,
+                'sample_values': ' | '.join(sample_values),
+            })
+
+        total_matrix_columns = len([col for _, col in normalized_columns if col])
+        section_matrix_rows = []
+        for section in example_model:
+            mapped_columns = section_column_counter.get(section.get('key', ''), 0)
+            section_matrix_rows.append({
+                'section_key': section.get('key', ''),
+                'section_he': section.get('title_he', ''),
+                'section_en': section.get('title_en', ''),
+                'mapped_columns': mapped_columns,
+                'coverage_pct': round((mapped_columns / max(total_matrix_columns, 1)) * 100, 2),
+                'keywords_count': len(section.get('keywords', [])),
+            })
 
         policy_metrics = self._extract_policy_cumulative_metrics(rows, columns)
         policy_total = sum(metric.get('policy_total', 0) for metric in policy_metrics)
@@ -3686,6 +3791,10 @@ Factors Affecting Score:
             'files_count': len(files),
             'pension_accounts': len(pension_data.get('accounts', []) or []),
             'pension_contributions': len(pension_data.get('contributions', []) or []),
+            'column_matrix_total': total_matrix_columns,
+            'column_matrix_covered': covered_columns,
+            'column_matrix_uncovered': max(total_matrix_columns - covered_columns, 0),
+            'wishful_sections_covered': len([r for r in section_matrix_rows if r.get('mapped_columns', 0) > 0]),
             'analysis_language': analysis.language if analysis else '',
             'analysis_type': analysis.data_classification.value if analysis else '',
         }
@@ -3700,11 +3809,19 @@ Factors Affecting Score:
         }
 
         return {
-            'matrix_version': '1.0',
+            'matrix_version': '1.1',
             'summary_rows': summary_rows,
             'detail_rows': detail_rows,
+            'column_matrix_rows': column_matrix_rows,
+            'section_matrix_rows': section_matrix_rows,
             'source_context': source_context,
             'policy_aggregate': policy_aggregate,
+            'column_coverage': {
+                'total': total_matrix_columns,
+                'covered': covered_columns,
+                'uncovered': max(total_matrix_columns - covered_columns, 0),
+                'coverage_pct': round((covered_columns / max(total_matrix_columns, 1)) * 100, 2),
+            },
             'model': 'mislaka_affiliation_matrix',
         }
 
@@ -3717,8 +3834,11 @@ Factors Affecting Score:
         matrix = affiliation_matrix or {}
         summary_rows = matrix.get('summary_rows', []) or []
         detail_rows = matrix.get('detail_rows', []) or []
+        column_matrix_rows = matrix.get('column_matrix_rows', []) or []
+        section_matrix_rows = matrix.get('section_matrix_rows', []) or []
         source_context = matrix.get('source_context', {}) or {}
         policy_aggregate = matrix.get('policy_aggregate', {}) or {}
+        column_coverage = matrix.get('column_coverage', {}) or {}
 
         sections: List[ReportSection] = []
         if not summary_rows:
@@ -3770,10 +3890,63 @@ Factors Affecting Score:
                 order=9
             ))
 
+        if section_matrix_rows:
+            section_table_rows = []
+            for row in section_matrix_rows:
+                section_table_rows.append({
+                    'חלק מודל דוח' if is_hebrew else 'Wishful Report Section': row.get('section_he') if is_hebrew else row.get('section_en'),
+                    'עמודות שהוקצו' if is_hebrew else 'Allocated Columns': row.get('mapped_columns', 0),
+                    'כיסוי % מעמודות המקור' if is_hebrew else 'Source Column Coverage %': row.get('coverage_pct', 0),
+                    'מספר מילות מפתח' if is_hebrew else 'Keyword Count': row.get('keywords_count', 0),
+                })
+
+            sections.append(ReportSection(
+                title='כיסוי מודל דוח רצוי (שיוך למסמך לדוגמה)' if is_hebrew else 'Wishful Report Model Coverage (Example-Driven)',
+                content='הקצאת עמודות המקור לחלקי הדוח לפי מודל היעד מהמסמך המצורף.' if is_hebrew
+                else 'Source-column allocation to target report sections based on the attached example model.',
+                data_table={
+                    'columns': list(section_table_rows[0].keys()),
+                    'rows': section_table_rows,
+                    'show_all': True
+                },
+                order=9
+            ))
+
+        if column_matrix_rows:
+            column_table_rows = []
+            for row in column_matrix_rows:
+                column_table_rows.append({
+                    'עמודת מקור' if is_hebrew else 'Source Column': row.get('source_column', ''),
+                    'עמודה מנורמלת' if is_hebrew else 'Normalized Column': row.get('normalized_column', ''),
+                    'קבוצת שיוך' if is_hebrew else 'Affiliation Group': row.get('mapped_group_he') if is_hebrew else row.get('mapped_group_en'),
+                    'ציון שיוך' if is_hebrew else 'Affiliation Score': row.get('group_score', 0),
+                    'התאמות מונח' if is_hebrew else 'Matched Terms': row.get('matched_terms', ''),
+                    'חלק יעד בדוח' if is_hebrew else 'Target Report Section': row.get('wishful_section_he') if is_hebrew else row.get('wishful_section_en'),
+                    'ציון חלק יעד' if is_hebrew else 'Target Section Score': row.get('section_score', 0),
+                    'דוגמאות ערכים' if is_hebrew else 'Sample Values': row.get('sample_values', ''),
+                })
+
+            sections.append(ReportSection(
+                title='מטריצת שיוך עמודות מקור' if is_hebrew else 'Source Column Affiliation Matrix',
+                content='שיוך מלא של כל עמודות המקור למטריצת ההשתייכות ולמבנה הדוח הרצוי.' if is_hebrew
+                else 'Full source-column mapping to affiliation groups and wishful report structure.',
+                data_table={
+                    'columns': list(column_table_rows[0].keys()),
+                    'rows': column_table_rows,
+                    'show_all': True
+                },
+                order=9
+            ))
+
         context_rows = [
             {'מדד' if is_hebrew else 'Metric': 'מספר רשומות מקור' if is_hebrew else 'Source Rows', 'ערך' if is_hebrew else 'Value': source_context.get('document_rows', 0)},
             {'מדד' if is_hebrew else 'Metric': 'מספר עמודות מקור' if is_hebrew else 'Source Columns', 'ערך' if is_hebrew else 'Value': source_context.get('document_columns', 0)},
             {'מדד' if is_hebrew else 'Metric': 'מספר קבצים' if is_hebrew else 'Files', 'ערך' if is_hebrew else 'Value': source_context.get('files_count', 0)},
+            {'מדד' if is_hebrew else 'Metric': 'סה״כ עמודות במטריצת שיוך' if is_hebrew else 'Column Matrix Total', 'ערך' if is_hebrew else 'Value': source_context.get('column_matrix_total', 0)},
+            {'מדד' if is_hebrew else 'Metric': 'עמודות מכוסות במטריצה' if is_hebrew else 'Covered Matrix Columns', 'ערך' if is_hebrew else 'Value': source_context.get('column_matrix_covered', 0)},
+            {'מדד' if is_hebrew else 'Metric': 'עמודות ללא שיוך' if is_hebrew else 'Uncovered Matrix Columns', 'ערך' if is_hebrew else 'Value': source_context.get('column_matrix_uncovered', 0)},
+            {'מדד' if is_hebrew else 'Metric': 'כיסוי עמודות %' if is_hebrew else 'Column Coverage %', 'ערך' if is_hebrew else 'Value': column_coverage.get('coverage_pct', 0)},
+            {'מדד' if is_hebrew else 'Metric': 'חלקי דוח רצוי מכוסים' if is_hebrew else 'Covered Wishful Sections', 'ערך' if is_hebrew else 'Value': source_context.get('wishful_sections_covered', 0)},
             {'מדד' if is_hebrew else 'Metric': 'פוליסות מזוהות' if is_hebrew else 'Identified Policies', 'ערך' if is_hebrew else 'Value': policy_aggregate.get('policy_count', 0)},
             {'מדד' if is_hebrew else 'Metric': 'סה״כ חיסכון מזוהה' if is_hebrew else 'Identified Savings Total', 'ערך' if is_hebrew else 'Value': policy_aggregate.get('savings_total', 0)},
             {'מדד' if is_hebrew else 'Metric': 'סה״כ השקעות מזוהה' if is_hebrew else 'Identified Investments Total', 'ערך' if is_hebrew else 'Value': policy_aggregate.get('investments_total', 0)},
@@ -3802,55 +3975,92 @@ Factors Affecting Score:
         """Generate charts from metadata affiliation matrix coverage."""
         matrix = affiliation_matrix or {}
         summary_rows = matrix.get('summary_rows', []) or []
-        if len(summary_rows) < 2:
-            return []
+        section_matrix_rows = matrix.get('section_matrix_rows', []) or []
+        column_coverage = matrix.get('column_coverage', {}) or {}
 
         is_hebrew = lang_code == 'hebrew'
-        labels = [row.get('group_he') if is_hebrew else row.get('group_en') for row in summary_rows]
-        coverage_values = [row.get('coverage_pct', 0) for row in summary_rows]
-        match_values = [row.get('matched', 0) for row in summary_rows]
+        charts: List[ChartConfig] = []
 
-        hit_rows = [row for row in summary_rows if row.get('hit_count', 0) > 0]
-        hit_labels = [row.get('group_he') if is_hebrew else row.get('group_en') for row in hit_rows]
-        hit_values = [row.get('hit_count', 0) for row in hit_rows]
+        if len(summary_rows) >= 2:
+            labels = [row.get('group_he') if is_hebrew else row.get('group_en') for row in summary_rows]
+            coverage_values = [row.get('coverage_pct', 0) for row in summary_rows]
+            match_values = [row.get('matched', 0) for row in summary_rows]
 
-        charts: List[ChartConfig] = [
-            ChartConfig(
+            hit_rows = [row for row in summary_rows if row.get('hit_count', 0) > 0]
+            hit_labels = [row.get('group_he') if is_hebrew else row.get('group_en') for row in hit_rows]
+            hit_values = [row.get('hit_count', 0) for row in hit_rows]
+
+            charts.extend([
+                ChartConfig(
+                    type=ChartType.BAR,
+                    title='כיסוי מטריצת שיוכים (%)' if is_hebrew else 'Affiliation Matrix Coverage (%)',
+                    data={
+                        'labels': labels,
+                        'values': coverage_values,
+                    },
+                    options={
+                        'horizontal': True,
+                        'colors': ['#0ea5e9', '#2563eb', '#16a34a', '#f59e0b', '#ef4444', '#8b5cf6'],
+                    }
+                ),
+                ChartConfig(
+                    type=ChartType.BAR,
+                    title='ערכים מותאמים לפי קבוצת שיוך' if is_hebrew else 'Matched Values by Affiliation Group',
+                    data={
+                        'labels': labels,
+                        'values': match_values,
+                    },
+                    options={
+                        'horizontal': False,
+                        'colors': ['#0891b2', '#1d4ed8', '#15803d', '#d97706', '#dc2626', '#7c3aed'],
+                    }
+                )
+            ])
+
+            if hit_labels and hit_values:
+                charts.append(ChartConfig(
+                    type=ChartType.PIE,
+                    title='פיזור פגיעות שיוך לפי קבוצה' if is_hebrew else 'Affiliation Match Hits Distribution',
+                    data={
+                        'labels': hit_labels,
+                        'values': hit_values,
+                    },
+                    options={
+                        'colors': ['#0ea5e9', '#2563eb', '#16a34a', '#f59e0b', '#ef4444', '#8b5cf6'],
+                    }
+                ))
+
+        section_rows_with_columns = [row for row in section_matrix_rows if row.get('mapped_columns', 0) > 0]
+        if section_rows_with_columns:
+            charts.append(ChartConfig(
                 type=ChartType.BAR,
-                title='כיסוי מטריצת שיוכים (%)' if is_hebrew else 'Affiliation Matrix Coverage (%)',
+                title='כיסוי חלקי מודל דוח רצוי' if is_hebrew else 'Wishful Report Section Coverage',
                 data={
-                    'labels': labels,
-                    'values': coverage_values,
+                    'labels': [
+                        row.get('section_he') if is_hebrew else row.get('section_en')
+                        for row in section_rows_with_columns
+                    ],
+                    'values': [row.get('mapped_columns', 0) for row in section_rows_with_columns],
                 },
                 options={
                     'horizontal': True,
-                    'colors': ['#0ea5e9', '#2563eb', '#16a34a', '#f59e0b', '#ef4444', '#8b5cf6'],
+                    'colors': ['#14b8a6', '#0ea5e9', '#6366f1', '#22c55e', '#f59e0b', '#f97316', '#ec4899'],
                 }
-            ),
-            ChartConfig(
-                type=ChartType.BAR,
-                title='ערכים מותאמים לפי קבוצת שיוך' if is_hebrew else 'Matched Values by Affiliation Group',
-                data={
-                    'labels': labels,
-                    'values': match_values,
-                },
-                options={
-                    'horizontal': False,
-                    'colors': ['#0891b2', '#1d4ed8', '#15803d', '#d97706', '#dc2626', '#7c3aed'],
-                }
-            )
-        ]
+            ))
 
-        if hit_labels and hit_values:
+        total_columns = column_coverage.get('total', 0)
+        covered_columns = column_coverage.get('covered', 0)
+        uncovered_columns = column_coverage.get('uncovered', 0)
+        if total_columns > 0:
             charts.append(ChartConfig(
-                type=ChartType.PIE,
-                title='פיזור פגיעות שיוך לפי קבוצה' if is_hebrew else 'Affiliation Match Hits Distribution',
+                type=ChartType.DOUGHNUT,
+                title='כיסוי שיוך עמודות מקור' if is_hebrew else 'Source Column Affiliation Coverage',
                 data={
-                    'labels': hit_labels,
-                    'values': hit_values,
+                    'labels': ['מכוסה' if is_hebrew else 'Covered', 'ללא שיוך' if is_hebrew else 'Uncovered'],
+                    'values': [covered_columns, uncovered_columns],
                 },
                 options={
-                    'colors': ['#0ea5e9', '#2563eb', '#16a34a', '#f59e0b', '#ef4444', '#8b5cf6'],
+                    'colors': ['#10b981', '#f97316'],
                 }
             ))
 

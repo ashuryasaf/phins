@@ -3920,13 +3920,37 @@
         Hits: row.hits || 0
       }));
 
+      const matrixColumnRows = (matrixMeta.column_matrix_rows || []).map(row => ({
+        'Source Column': row.source_column || '',
+        'Normalized': row.normalized_column || '',
+        Group: row.mapped_group_en || row.mapped_group_he || '',
+        'Affiliation Score': row.group_score || 0,
+        'Matched Terms': row.matched_terms || '',
+        'Target Section': row.wishful_section_en || row.wishful_section_he || '',
+        'Section Score': row.section_score || 0,
+        'Sample Values': row.sample_values || ''
+      }));
+
+      const matrixSectionRows = (matrixMeta.section_matrix_rows || []).map(row => ({
+        'Wishful Section': row.section_en || row.section_he || '',
+        'Allocated Columns': row.mapped_columns || 0,
+        'Coverage %': row.coverage_pct || 0,
+        Keywords: row.keywords_count || 0
+      }));
+
       const matrixContextRows = (() => {
         const sourceContext = matrixMeta.source_context || {};
         const policyAggregate = matrixMeta.policy_aggregate || {};
+        const columnCoverage = matrixMeta.column_coverage || {};
         return [{
           'Source Rows': sourceContext.document_rows || 0,
           'Source Columns': sourceContext.document_columns || 0,
           'Files': sourceContext.files_count || 0,
+          'Matrix Columns': sourceContext.column_matrix_total || columnCoverage.total || 0,
+          'Covered Columns': sourceContext.column_matrix_covered || columnCoverage.covered || 0,
+          'Uncovered Columns': sourceContext.column_matrix_uncovered || columnCoverage.uncovered || 0,
+          'Column Coverage %': columnCoverage.coverage_pct || 0,
+          'Covered Wishful Sections': sourceContext.wishful_sections_covered || 0,
           'Policies': policyAggregate.policy_count || 0,
           'Savings Total': policyAggregate.savings_total || 0,
           'Investments Total': policyAggregate.investments_total || 0,
@@ -3987,9 +4011,32 @@
           </div>
         </div>
         <div class="report-section fade-in">
+          <h3>🗂️ Source Column Reaffiliation Matrix</h3>
+          <div class="content">
+            ${matrixColumnRows.length
+              ? renderDataTable({
+                columns: ['Source Column', 'Normalized', 'Group', 'Affiliation Score', 'Matched Terms', 'Target Section', 'Section Score', 'Sample Values'],
+                rows: matrixColumnRows,
+                show_all: true
+              })
+              : '<p style="color: var(--text-muted);">No source-column affiliation matrix available.</p>'}
+          </div>
+        </div>
+        <div class="report-section fade-in">
+          <h3>🎯 Wishful Output Section Coverage</h3>
+          <div class="content">
+            ${matrixSectionRows.length
+              ? renderDataTable({ columns: ['Wishful Section', 'Allocated Columns', 'Coverage %', 'Keywords'], rows: matrixSectionRows, show_all: true })
+              : '<p style="color: var(--text-muted);">No wishful output section coverage data available.</p>'}
+          </div>
+        </div>
+        <div class="report-section fade-in">
           <h3>📐 Metadata Allocation Metrics</h3>
           <div class="content">
-            ${renderDataTable({ columns: ['Source Rows', 'Source Columns', 'Files', 'Policies', 'Savings Total', 'Investments Total', 'Cumulative Total'], rows: matrixContextRows })}
+            ${renderDataTable({
+              columns: ['Source Rows', 'Source Columns', 'Files', 'Matrix Columns', 'Covered Columns', 'Uncovered Columns', 'Column Coverage %', 'Covered Wishful Sections', 'Policies', 'Savings Total', 'Investments Total', 'Cumulative Total'],
+              rows: matrixContextRows
+            })}
           </div>
         </div>
         <div class="report-section fade-in">
