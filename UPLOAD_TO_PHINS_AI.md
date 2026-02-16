@@ -4,11 +4,56 @@ Complete step-by-step instructions for deploying the PHINS platform to productio
 
 ---
 
+## 📑 Table of Contents
+
+1. [Quick Summary](#-quick-summary)
+2. [Prerequisites](#-prerequisites)
+3. [Method 1: Railway Dashboard (Easiest)](#-method-1-railway-dashboard-easiest---recommended)
+4. [Method 2: Railway CLI](#-method-2-railway-cli-for-developers)
+5. [Adding Custom Domain (www.phins.ai)](#-adding-custom-domain-wwwphinsai)
+6. [Verification & Testing](#-verification--testing)
+7. [Production Security Checklist](#-production-security-checklist)
+8. [Troubleshooting](#️-troubleshooting)
+9. [Monitoring Your Deployment](#-monitoring-your-deployment)
+10. [Cost Information](#-cost-information)
+11. [Updating Your Deployment](#-updating-your-deployment)
+12. [Additional Resources](#-additional-resources)
+
+---
+
 ## 🎯 Quick Summary
 
 **Goal:** Deploy PHINS to www.phins.ai using Railway hosting  
 **Time Required:** 15-30 minutes (plus DNS propagation)  
 **Prerequisites:** GitHub account, Railway account, domain access  
+
+### Deployment Flow
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    DEPLOYMENT FLOW                          │
+└─────────────────────────────────────────────────────────────┘
+
+Step 1: Sign in to Railway (GitHub auth)
+   ↓
+Step 2: Deploy from GitHub repo (ashuryasaf/phins)
+   ↓
+Step 3: Railway auto-builds & deploys (2-5 min)
+   ↓
+Step 4: Get Railway URL (https://xxx.up.railway.app)
+   ↓
+Step 5: Test deployment ✅
+   ↓
+Step 6: Add custom domain (www.phins.ai)
+   ↓
+Step 7: Configure DNS (CNAME record)
+   ↓
+Step 8: Wait for DNS propagation (5-30 min)
+   ↓
+Step 9: SSL certificate auto-provisioned
+   ↓
+Step 10: Live at https://www.phins.ai ✅
+```
 
 ---
 
