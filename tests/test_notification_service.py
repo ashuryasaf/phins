@@ -40,6 +40,7 @@ from services.notification_service import (
     SendGridEmailProvider,
     MockSMSProvider,
     create_notification_service,
+    get_email_delivery_diagnostics,
     generate_id,
     generate_otp,
     hash_identifier,
@@ -594,6 +595,39 @@ class TestNotificationService:
 
         service = create_notification_service(use_mock=False)
         assert isinstance(service._email_provider, SendGridEmailProvider)
+
+    def test_email_delivery_diagnostics_placeholder_smtp(self, monkeypatch):
+        """Diagnostics should report placeholder SMTP and fallback recommendations."""
+        monkeypatch.setenv('EMAIL_PROVIDER', 'smtp')
+        monkeypatch.setattr(NotificationConfig, 'EMAIL_PROVIDER', 'smtp')
+        monkeypatch.setattr(NotificationConfig, 'SMTP_HOST', 'localhost')
+        monkeypatch.setattr(NotificationConfig, 'SMTP_USERNAME', '')
+        monkeypatch.setattr(NotificationConfig, 'SMTP_PASSWORD', '')
+        monkeypatch.setattr(NotificationConfig, 'SENDGRID_API_KEY', '')
+        monkeypatch.setattr(NotificationConfig, 'MAILGUN_API_KEY', '')
+        monkeypatch.setattr(NotificationConfig, 'MAILGUN_DOMAIN', '')
+
+        diagnostics = get_email_delivery_diagnostics()
+        assert diagnostics['selected_primary_provider'] == 'smtp'
+        assert diagnostics['smtp_looks_unconfigured'] is True
+        assert diagnostics['provider_runtime_config']['smtp'] is False
+        assert diagnostics['recommendations']
+
+    def test_email_delivery_diagnostics_reports_failover_chain(self, monkeypatch):
+        """Diagnostics should include provider failover order when backups exist."""
+        monkeypatch.setenv('EMAIL_PROVIDER', 'smtp')
+        monkeypatch.setattr(NotificationConfig, 'EMAIL_PROVIDER', 'smtp')
+        monkeypatch.setattr(NotificationConfig, 'SMTP_HOST', 'smtp.mailrelay.internal')
+        monkeypatch.setattr(NotificationConfig, 'SMTP_USERNAME', 'mailer')
+        monkeypatch.setattr(NotificationConfig, 'SMTP_PASSWORD', 'secret')
+        monkeypatch.setattr(NotificationConfig, 'SENDGRID_API_KEY', 'SG.test_key')
+        monkeypatch.setattr(NotificationConfig, 'MAILGUN_API_KEY', '')
+        monkeypatch.setattr(NotificationConfig, 'MAILGUN_DOMAIN', '')
+
+        diagnostics = get_email_delivery_diagnostics()
+        assert diagnostics['failover_chain'][:2] == ['smtp', 'sendgrid']
+        assert diagnostics['provider_runtime_config']['smtp'] is True
+        assert diagnostics['provider_runtime_config']['sendgrid'] is True
 
     def test_failover_provider_uses_backup_after_primary_failure(self):
         """Failover provider should recover delivery through a backup provider."""

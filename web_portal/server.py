@@ -24,6 +24,9 @@ import threading
 import time
 import csv
 import io
+import ipaddress
+import socket
+import ssl
 from typing import Dict, Any, Tuple, Optional, List
 
 # ==============================================================================
@@ -100,6 +103,238 @@ def safe_int(val, default: int = 0) -> int:
         return int(float(val))  # Handle "100.0" string -> 100
     except (TypeError, ValueError):
         return default
+
+
+DEFAULT_PUBLIC_BASE_URL = (
+    os.environ.get('DEFAULT_PUBLIC_BASE_URL', 'https://phins-portal-production.up.railway.app').strip().rstrip('/')
+)
+PUBLIC_URL_TLS_CACHE_TTL_SECONDS = int(os.environ.get('PUBLIC_URL_TLS_CACHE_TTL_SECONDS', '600'))
+_DOMAIN_TLS_CACHE: Dict[str, Dict[str, Any]] = {}
+_DOMAIN_TLS_CACHE_LOCK = threading.Lock()
+
+
+def _normalize_public_base_url(raw_url: str) -> str:
+    """Normalize public base URL and drop path/query/fragment."""
+    value = str(raw_url or '').strip()
+    if not value:
+        return ''
+
+    if '://' not in value:
+        value = f"https://{value}"
+
+    parsed = urlparse.urlparse(value)
+    if not parsed.netloc or parsed.scheme not in ('http', 'https'):
+        return ''
+
+    return f"{parsed.scheme}://{parsed.netloc}"
+
+
+def _host_from_base_url(base_url: str) -> str:
+    parsed = urlparse.urlparse(base_url or '')
+    return (parsed.hostname or '').lower()
+
+
+def _dns_pattern_matches_host(pattern: str, host: str) -> bool:
+    pattern_l = (pattern or '').lower()
+    host_l = (host or '').lower()
+    if not pattern_l or not host_l:
+        return False
+
+    if pattern_l.startswith('*.'):
+        suffix = pattern_l[2:]
+        if not host_l.endswith(f".{suffix}"):
+            return False
+        return host_l.count('.') == suffix.count('.') + 1
+
+    return pattern_l == host_l
+
+
+def _host_matches_certificate(host: str, cert: Dict[str, Any]) -> bool:
+    san = cert.get('subjectAltName', [])
+    san_dns = [value for key, value in san if key == 'DNS']
+    if san_dns:
+        return any(_dns_pattern_matches_host(pattern, host) for pattern in san_dns)
+
+    subject = cert.get('subject', ())
+    common_names = []
+    for part in subject:
+        for key, value in part:
+            if key == 'commonName':
+                common_names.append(value)
+    return any(_dns_pattern_matches_host(pattern, host) for pattern in common_names)
+
+
+def _check_domain_tls(host: str, timeout_seconds: float = 8.0) -> Dict[str, Any]:
+    """Check DNS + TLS certificate hostname validity for a host."""
+    clean_host = (host or '').strip().lower()
+    result: Dict[str, Any] = {
+        'host': clean_host,
+        'dns_addresses': [],
+        'tls_handshake': False,
+        'hostname_match': False,
+        'certificate': {},
+        'error': None,
+        'recommendations': []
+    }
+
+    if not clean_host:
+        result['error'] = 'Host is required'
+        result['recommendations'].append('Provide a valid DNS hostname')
+        return result
+
+    try:
+        dns_addresses = sorted({
+            entry[4][0]
+            for entry in socket.getaddrinfo(clean_host, 443, type=socket.SOCK_STREAM)
+        })
+        result['dns_addresses'] = dns_addresses
+
+        private_hits = []
+        for addr in dns_addresses:
+            try:
+                ip_obj = ipaddress.ip_address(addr)
+                if ip_obj.is_private or ip_obj.is_loopback or ip_obj.is_link_local:
+                    private_hits.append(addr)
+            except ValueError:
+                continue
+        if private_hits:
+            result['recommendations'].append(
+                f"Host resolves to private/local IPs ({', '.join(private_hits)}); "
+                "public TLS issuance may fail."
+            )
+    except Exception as exc:
+        result['error'] = f'DNS resolution failed: {exc}'
+        result['recommendations'].append('Verify DNS A/CNAME records for this hostname')
+        return result
+
+    try:
+        context = ssl.create_default_context()
+        context.check_hostname = False
+        with socket.create_connection((clean_host, 443), timeout=timeout_seconds) as sock:
+            with context.wrap_socket(sock, server_hostname=clean_host) as tls_sock:
+                cert = tls_sock.getpeercert() or {}
+                result['tls_handshake'] = True
+                result['hostname_match'] = _host_matches_certificate(clean_host, cert)
+                result['certificate'] = {
+                    'subject': cert.get('subject'),
+                    'issuer': cert.get('issuer'),
+                    'not_before': cert.get('notBefore'),
+                    'not_after': cert.get('notAfter'),
+                    'san': cert.get('subjectAltName')
+                }
+    except Exception as exc:
+        result['error'] = f'TLS handshake failed: {exc}'
+        result['recommendations'].append(
+            'Ensure the hostname is attached as a custom domain and certificate issuance succeeded.'
+        )
+        return result
+
+    if not result['hostname_match']:
+        result['recommendations'].append(
+            'Certificate hostname mismatch detected. Attach this exact hostname in your hosting provider '
+            'and re-issue TLS certificate.'
+        )
+
+    if not result['recommendations'] and result['tls_handshake'] and result['hostname_match']:
+        result['recommendations'].append('TLS certificate and hostname mapping look healthy')
+
+    return result
+
+
+def _get_cached_domain_tls(host: str) -> Dict[str, Any]:
+    """Cached domain TLS check to avoid frequent handshake overhead."""
+    clean_host = (host or '').strip().lower()
+    if not clean_host:
+        return _check_domain_tls(clean_host)
+
+    now_epoch = time.time()
+    with _DOMAIN_TLS_CACHE_LOCK:
+        cached = _DOMAIN_TLS_CACHE.get(clean_host)
+        if cached:
+            checked_epoch = float(cached.get('checked_epoch', 0))
+            if now_epoch - checked_epoch < PUBLIC_URL_TLS_CACHE_TTL_SECONDS:
+                return dict(cached)
+
+    fresh = _check_domain_tls(clean_host)
+    fresh['checked_at'] = datetime.now().isoformat()
+    fresh['checked_epoch'] = now_epoch
+
+    with _DOMAIN_TLS_CACHE_LOCK:
+        _DOMAIN_TLS_CACHE[clean_host] = dict(fresh)
+    return fresh
+
+
+def resolve_public_registration_base_url() -> Dict[str, Any]:
+    """
+    Resolve the safest public base URL for invitation registration links.
+    Falls back to Railway domain if configured custom domain TLS is invalid.
+    """
+    raw_candidates = [
+        ('PUBLIC_BASE_URL', os.environ.get('PUBLIC_BASE_URL', '')),
+        ('CANONICAL_PUBLIC_BASE_URL', os.environ.get('CANONICAL_PUBLIC_BASE_URL', '')),
+        ('BASE_URL', os.environ.get('BASE_URL', '')),
+        ('DEFAULT_PUBLIC_BASE_URL', DEFAULT_PUBLIC_BASE_URL),
+    ]
+
+    candidates: List[Tuple[str, str]] = []
+    seen = set()
+    for source, raw_url in raw_candidates:
+        normalized = _normalize_public_base_url(raw_url)
+        if not normalized or normalized in seen:
+            continue
+        seen.add(normalized)
+        candidates.append((source, normalized))
+
+    evaluations: List[Dict[str, Any]] = []
+    for source, base_url in candidates:
+        parsed = urlparse.urlparse(base_url)
+        host = (parsed.hostname or '').lower()
+
+        if parsed.scheme == 'http' and host in ('localhost', '127.0.0.1'):
+            return {
+                'base_url': base_url,
+                'source': source,
+                'tls_ok': True,
+                'reason': 'local_development',
+                'evaluations': evaluations
+            }
+
+        if parsed.scheme != 'https':
+            evaluations.append({
+                'source': source,
+                'base_url': base_url,
+                'accepted': False,
+                'reason': 'non_https_public_url'
+            })
+            continue
+
+        tls_result = _get_cached_domain_tls(host)
+        accepted = bool(tls_result.get('tls_handshake') and tls_result.get('hostname_match'))
+        evaluations.append({
+            'source': source,
+            'base_url': base_url,
+            'accepted': accepted,
+            'tls_handshake': tls_result.get('tls_handshake'),
+            'hostname_match': tls_result.get('hostname_match'),
+            'error': tls_result.get('error')
+        })
+        if accepted:
+            return {
+                'base_url': base_url,
+                'source': source,
+                'tls_ok': True,
+                'reason': 'tls_valid',
+                'evaluations': evaluations
+            }
+
+    fallback_url = _normalize_public_base_url(DEFAULT_PUBLIC_BASE_URL) or 'https://phins-portal-production.up.railway.app'
+    return {
+        'base_url': fallback_url,
+        'source': 'fallback',
+        'tls_ok': False,
+        'reason': 'no_tls_valid_candidate',
+        'evaluations': evaluations
+    }
 
 
 # Import billing engine
@@ -5900,6 +6135,91 @@ For claims or questions, please contact:
                 self._set_json_headers(500)
             
             self.wfile.write(json.dumps(result, indent=2).encode('utf-8'))
+            return
+
+        # Notification delivery diagnostics (safe metadata only)
+        if path == '/api/diagnostics/notifications':
+            result = {
+                'timestamp': datetime.now().isoformat(),
+                'notification_service_available': False,
+                'email_delivery': {},
+                'public_registration_base_url': resolve_public_registration_base_url(),
+                'recommendations': []
+            }
+
+            try:
+                from services.notification_service import get_email_delivery_diagnostics
+                result['notification_service_available'] = True
+                result['email_delivery'] = get_email_delivery_diagnostics()
+                result['recommendations'].extend(result['email_delivery'].get('recommendations', []))
+            except Exception as exc:
+                result['email_delivery'] = {
+                    'error': f'Unable to load notification diagnostics: {exc}'
+                }
+                result['recommendations'].append(
+                    'Notification service diagnostics unavailable. Verify deployment includes services/notification_service.py'
+                )
+
+            public_url_info = result.get('public_registration_base_url', {})
+            if public_url_info.get('reason') == 'no_tls_valid_candidate':
+                result['recommendations'].append(
+                    'No TLS-valid public base URL detected. Generated registration links will fall back to Railway domain.'
+                )
+
+            self._set_json_headers()
+            self.wfile.write(json.dumps(result, indent=2).encode('utf-8'))
+            return
+
+        # Domain/TLS diagnostics for public hosts
+        if path == '/api/diagnostics/domain-tls':
+            hosts = {
+                'www.phins.ai',
+                'phins-portal-production.up.railway.app',
+            }
+
+            request_host = (self.headers.get('Host', '') or '').split(':')[0].strip().lower()
+            if request_host:
+                hosts.add(request_host)
+
+            for env_name in ('PUBLIC_BASE_URL', 'CANONICAL_PUBLIC_BASE_URL', 'BASE_URL'):
+                env_url = _normalize_public_base_url(os.environ.get(env_name, ''))
+                env_host = _host_from_base_url(env_url)
+                if env_host:
+                    hosts.add(env_host)
+
+            raw_extra_hosts = qs.get('host', [])
+            for extra in raw_extra_hosts[:3]:
+                for candidate in extra.split(',')[:5]:
+                    h = candidate.strip().lower()
+                    if h and all(ch.isalnum() or ch in '.-' for ch in h):
+                        hosts.add(h)
+
+            checks = []
+            for host in sorted(hosts):
+                checks.append(_get_cached_domain_tls(host))
+
+            failing = [
+                check for check in checks
+                if not (check.get('tls_handshake') and check.get('hostname_match'))
+            ]
+
+            recommendations = []
+            if failing:
+                recommendations.append(
+                    'At least one public hostname has TLS/DNS issues. Attach domain in hosting provider and re-issue cert.'
+                )
+            else:
+                recommendations.append('All checked hosts passed TLS hostname validation.')
+
+            self._set_json_headers()
+            self.wfile.write(json.dumps({
+                'timestamp': datetime.now().isoformat(),
+                'hosts_checked': len(checks),
+                'healthy_hosts': len(checks) - len(failing),
+                'failing_hosts': len(failing),
+                'checks': checks,
+                'recommendations': recommendations
+            }, indent=2).encode('utf-8'))
             return
 
         # Diagnostic endpoint to check env var status (no auth required for debugging)
@@ -15382,20 +15702,29 @@ For claims or questions, please contact:
                 # Also save to persistent file for Railway deployment persistence
                 save_invitation_codes_to_file()
                 
-                # Generate registration link
-                base_url = os.environ.get('BASE_URL', 'https://phins-portal-production.up.railway.app')
+                # Generate registration link using TLS-validated public base URL.
+                base_url_info = resolve_public_registration_base_url()
+                base_url = base_url_info.get('base_url', 'https://phins-portal-production.up.railway.app')
                 registration_link = f"{base_url}/register.html?code={code}"
                 
                 self._set_json_headers(201)
-                self.wfile.write(json.dumps({
+                response_payload = {
                     'success': True,
                     'message': 'Referral code created successfully',
                     'invitation': invitation,
                     'registration_link': registration_link,
+                    'registration_link_base_source': base_url_info.get('source'),
+                    'registration_link_tls_ok': bool(base_url_info.get('tls_ok')),
                     'remaining_codes': MAX_CUSTOMER_INVITATIONS - len(existing_codes) - 1,
                     'total_generated': len(existing_codes) + 1,
                     'max_allowed': MAX_CUSTOMER_INVITATIONS
-                }).encode('utf-8'))
+                }
+                if not base_url_info.get('tls_ok'):
+                    response_payload['registration_link_warning'] = (
+                        'Configured public base URL TLS is not valid; using fallback URL.'
+                    )
+
+                self.wfile.write(json.dumps(response_payload).encode('utf-8'))
                 return
                 
             except json.JSONDecodeError:

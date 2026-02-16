@@ -2659,6 +2659,63 @@ def _build_email_provider(provider_type: str) -> EmailProvider:
     return SMTPEmailProvider()
 
 
+def _get_email_failover_chain(primary_provider_type: str) -> List[str]:
+    """
+    Build runtime email provider order (primary + configured backups).
+    """
+    chain: List[str] = [primary_provider_type]
+    for backup_type in ('sendgrid', 'mailgun', 'ses', 'smtp'):
+        if backup_type == primary_provider_type:
+            continue
+        if _email_provider_has_runtime_config(backup_type):
+            chain.append(backup_type)
+    return chain
+
+
+def get_email_delivery_diagnostics() -> Dict[str, Any]:
+    """
+    Return safe notification/email delivery diagnostics (no secrets).
+    """
+    configured_provider = (NotificationConfig.EMAIL_PROVIDER or 'smtp').strip().lower()
+    env_provider_raw = os.environ.get('EMAIL_PROVIDER')
+    env_provider_explicit = env_provider_raw is not None and bool(env_provider_raw.strip())
+    selected_provider = _select_email_provider_type()
+    smtp_placeholder = _smtp_looks_unconfigured()
+    failover_chain = _get_email_failover_chain(selected_provider)
+
+    provider_runtime_config = {
+        provider: _email_provider_has_runtime_config(provider)
+        for provider in ('smtp', 'sendgrid', 'mailgun', 'ses')
+    }
+
+    recommendations: List[str] = []
+    if selected_provider == 'smtp' and smtp_placeholder:
+        recommendations.append(
+            "SMTP appears unconfigured (placeholder host and no credentials). "
+            "Configure SENDGRID_API_KEY, Mailgun, or SES for OTP delivery."
+        )
+    if not any(provider_runtime_config.values()):
+        recommendations.append(
+            "No email provider appears configured. OTP delivery will fail until "
+            "at least one provider is configured."
+        )
+    if env_provider_explicit and configured_provider == 'smtp' and smtp_placeholder:
+        recommendations.append(
+            "EMAIL_PROVIDER is explicitly set to smtp but SMTP appears placeholder; "
+            "service will attempt provider failover if API keys are configured."
+        )
+
+    return {
+        'email_provider_env': configured_provider,
+        'email_provider_env_explicit': env_provider_explicit,
+        'selected_primary_provider': selected_provider,
+        'failover_chain': failover_chain,
+        'smtp_looks_unconfigured': smtp_placeholder,
+        'provider_runtime_config': provider_runtime_config,
+        'recommendations': recommendations,
+    }
+
+
 def create_notification_service(
     use_mock: bool = True,
     email_provider: Optional[EmailProvider] = None,
@@ -2704,12 +2761,7 @@ def create_notification_service(
                     configured_provider
                 )
 
-            provider_order: List[str] = [primary_provider_type]
-            for backup_type in ('sendgrid', 'mailgun', 'ses', 'smtp'):
-                if backup_type == primary_provider_type:
-                    continue
-                if _email_provider_has_runtime_config(backup_type):
-                    provider_order.append(backup_type)
+            provider_order = _get_email_failover_chain(primary_provider_type)
 
             if len(provider_order) > 1:
                 logger.info("Email failover chain enabled: %s", " -> ".join(provider_order))
@@ -2791,6 +2843,7 @@ __all__ = [
     
     # Factory
     'create_notification_service',
+    'get_email_delivery_diagnostics',
     
     # Helper functions
     'generate_id',
