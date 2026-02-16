@@ -16397,71 +16397,9 @@ For claims or questions, please contact:
                 dob = data.get('dob', '')
                 password = data.get('password', '')
                 invitation_code = data.get('invitation_code', '').strip().upper()
-                
-                # ========== INVITATION CODE VALIDATION (REQUIRED) ==========
-                if not invitation_code:
-                    self._set_json_headers(400)
-                    self.wfile.write(json.dumps({
-                        'error': 'Invitation code is required',
-                        'code': 'INVITATION_REQUIRED'
-                    }).encode('utf-8'))
-                    return
-                
-                # Validate invitation code - check BOTH admin and customer codes
-                invitation = INVITATION_CODES.get(invitation_code)
-                invitation_type = 'admin'
-                referrer_customer_id = None
-                
-                # If not found in admin codes, check customer-generated codes
-                if not invitation:
-                    invitation = CUSTOMER_INVITATIONS.get(invitation_code)
-                    invitation_type = 'customer'
-                    if invitation:
-                        referrer_customer_id = invitation.get('creator_customer_id')
-                
-                if not invitation:
-                    self._set_json_headers(400)
-                    self.wfile.write(json.dumps({
-                        'error': 'Invalid invitation code',
-                        'code': 'INVALID_CODE'
-                    }).encode('utf-8'))
-                    return
-                
-                # Check if expired
-                if invitation.get('expires_at'):
-                    try:
-                        expires_str = invitation['expires_at']
-                        # Handle both ISO formats with and without timezone
-                        expires = datetime.fromisoformat(expires_str.replace('Z', '+00:00'))
-                        if datetime.now() > expires.replace(tzinfo=None):
-                            self._set_json_headers(400)
-                            self.wfile.write(json.dumps({
-                                'error': 'Invitation code has expired',
-                                'code': 'CODE_EXPIRED'
-                            }).encode('utf-8'))
-                            return
-                    except Exception as e:
-                        print(f"Date parsing error for invitation code: {e}")
-                        # Don't block if date parsing fails
-                
-                # Check if already used up
-                if invitation.get('used_count', 0) >= invitation.get('max_uses', 1):
-                    self._set_json_headers(400)
-                    self.wfile.write(json.dumps({
-                        'error': 'Invitation code has already been used',
-                        'code': 'CODE_USED'
-                    }).encode('utf-8'))
-                    return
-                
-                # Check status
-                if invitation.get('status') != 'active':
-                    self._set_json_headers(400)
-                    self.wfile.write(json.dumps({
-                        'error': 'Invitation code is not active',
-                        'code': 'CODE_INACTIVE'
-                    }).encode('utf-8'))
-                    return
-                
+                verification_id = str(data.get('verification_id', '') or '').strip()
+                email_verified = bool(data.get('email_verified', False))
+
                 # ========== STANDARD VALIDATION ==========
                 if not name or not email or not password:
                     self._set_json_headers(400)
@@ -16477,58 +16415,182 @@ For claims or questions, please contact:
                     self._set_json_headers(400)
                     self.wfile.write(json.dumps({'error': 'Password must be at least 8 characters'}).encode('utf-8'))
                     return
-                
-                # Check if user already exists
-                with STATE_LOCK:
-                    user_exists = email in USERS
-                if user_exists:
-                    self._set_json_headers(409)
-                    self.wfile.write(json.dumps({'error': 'Email already registered'}).encode('utf-8'))
+
+                if not invitation_code:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({
+                        'error': 'Invitation code is required',
+                        'code': 'INVITATION_REQUIRED'
+                    }).encode('utf-8'))
                     return
-                
-                # ========== CREATE CUSTOMER WITH FULL TRACKING ==========
-                customer_id = generate_customer_id()
+
+                # OTP verification is mandatory in production. In tests, legacy calls without
+                # verification_id are allowed for backward compatibility.
+                otp_required = not PHINS_TEST_MODE or bool(verification_id)
+                otp_service = None
+                otp_purpose = None
+                if otp_required:
+                    if not verification_id:
+                        self._set_json_headers(400)
+                        self.wfile.write(json.dumps({
+                            'error': 'Email verification is required',
+                            'code': 'OTP_REQUIRED'
+                        }).encode('utf-8'))
+                        return
+
+                    if not email_verified:
+                        self._set_json_headers(400)
+                        self.wfile.write(json.dumps({
+                            'error': 'Email must be verified before registration',
+                            'code': 'EMAIL_NOT_VERIFIED'
+                        }).encode('utf-8'))
+                        return
+
+                    try:
+                        from services.otp_security_service import get_otp_security_service, OTPPurpose
+                        otp_service = get_otp_security_service()
+                        otp_purpose = OTPPurpose.REGISTRATION
+                    except Exception as otp_error:
+                        print(f"[REGISTER] OTP service unavailable: {otp_error}")
+                        self._set_json_headers(503)
+                        self.wfile.write(json.dumps({
+                            'error': 'Registration verification service is unavailable',
+                            'code': 'OTP_SERVICE_UNAVAILABLE'
+                        }).encode('utf-8'))
+                        return
+
                 registration_date = datetime.now().isoformat()
-                
-                # Enhanced customer record with all tracking fields
-                customer_record = {
-                    'id': customer_id,
-                    'name': name,
-                    'email': email,
-                    'phone': phone,
-                    'dob': dob,
-                    # Registration tracking
-                    'invitation_code': invitation_code,
-                    'invitation_type': invitation_type,
-                    'referred_by': referrer_customer_id,  # Customer ID of referrer (if customer referral)
-                    'registered_at': registration_date,
-                    'registered_ip': client_ip,
-                    'created_date': registration_date,
-                    # Referral tracking - this customer can also refer others
-                    'referral_codes_generated': 0,
-                    'successful_referrals': 0,
-                    # Application tracking (will be populated)
-                    'applications': [],
-                    # Policy tracking (will be populated)
-                    'policies': [],
-                    # Claims tracking (will be populated)
-                    'claims': [],
-                    # Financial tracking
-                    'wallet': {'balance': 0, 'transactions': []},
-                    'investments': {'positions': [], 'total_value': 0},
-                    # Metadata
-                    'last_login': None,
-                    'updated_at': registration_date
-                }
-                
-                with STATE_LOCK:
-                    CUSTOMERS[customer_id] = customer_record
-                    # Also save to registered customers for persistence
-                    REGISTERED_CUSTOMERS[customer_id] = customer_record
-                
-                # Create user account
                 pwd_hash = hash_password(password)
+                customer_id = None
+                invitation = None
+                invitation_type = 'admin'
+                referrer_customer_id = None
+
+                # Keep registration state updates atomic to prevent race conditions:
+                # duplicate emails, invitation overuse, and partial writes.
                 with STATE_LOCK:
+                    # Check if user already exists
+                    if email in USERS:
+                        self._set_json_headers(409)
+                        self.wfile.write(json.dumps({
+                            'error': 'Email already registered',
+                            'code': 'EMAIL_EXISTS'
+                        }).encode('utf-8'))
+                        return
+
+                    # Validate invitation code (admin + customer)
+                    invitation = INVITATION_CODES.get(invitation_code)
+                    invitation_type = 'admin'
+                    if not invitation:
+                        invitation = CUSTOMER_INVITATIONS.get(invitation_code)
+                        invitation_type = 'customer'
+                        if invitation:
+                            referrer_customer_id = invitation.get('creator_customer_id')
+
+                    if not invitation:
+                        self._set_json_headers(400)
+                        self.wfile.write(json.dumps({
+                            'error': 'Invalid invitation code',
+                            'code': 'INVALID_CODE'
+                        }).encode('utf-8'))
+                        return
+
+                    # Check expiration
+                    if invitation.get('expires_at'):
+                        try:
+                            expires_str = invitation['expires_at']
+                            expires = datetime.fromisoformat(expires_str.replace('Z', '+00:00'))
+                            if datetime.now() > expires.replace(tzinfo=None):
+                                self._set_json_headers(400)
+                                self.wfile.write(json.dumps({
+                                    'error': 'Invitation code has expired',
+                                    'code': 'CODE_EXPIRED'
+                                }).encode('utf-8'))
+                                return
+                        except Exception as e:
+                            print(f"Date parsing error for invitation code: {e}")
+
+                    # Check usage/status
+                    if invitation.get('used_count', 0) >= invitation.get('max_uses', 1):
+                        self._set_json_headers(400)
+                        self.wfile.write(json.dumps({
+                            'error': 'Invitation code has already been used',
+                            'code': 'CODE_USED'
+                        }).encode('utf-8'))
+                        return
+
+                    if get_status_lower(invitation) != 'active':
+                        self._set_json_headers(400)
+                        self.wfile.write(json.dumps({
+                            'error': 'Invitation code is not active',
+                            'code': 'CODE_INACTIVE'
+                        }).encode('utf-8'))
+                        return
+
+                    # Consume OTP only after all static validation passes.
+                    if otp_required and otp_service and otp_purpose:
+                        otp_result = otp_service.consume_verification(
+                            verification_id=verification_id,
+                            expected_email=email,
+                            expected_purpose=otp_purpose,
+                            ip_address=client_ip
+                        )
+                        if not otp_result.success:
+                            status_code = 409 if otp_result.error_code == 'OTP_ALREADY_USED' else 400
+                            self._set_json_headers(status_code)
+                            self.wfile.write(json.dumps({
+                                'error': otp_result.message or 'Registration verification failed',
+                                'code': otp_result.error_code or 'OTP_VALIDATION_FAILED'
+                            }).encode('utf-8'))
+                            return
+
+                    # Generate unique customer ID defensively
+                    for _ in range(20):
+                        candidate_id = generate_customer_id()
+                        if candidate_id not in CUSTOMERS and candidate_id not in REGISTERED_CUSTOMERS:
+                            customer_id = candidate_id
+                            break
+
+                    if not customer_id:
+                        self._set_json_headers(500)
+                        self.wfile.write(json.dumps({
+                            'error': 'Unable to allocate unique customer ID'
+                        }).encode('utf-8'))
+                        return
+
+                    customer_record = {
+                        'id': customer_id,
+                        'name': name,
+                        'email': email,
+                        'phone': phone,
+                        'dob': dob,
+                        # Registration tracking
+                        'invitation_code': invitation_code,
+                        'invitation_type': invitation_type,
+                        'referred_by': referrer_customer_id,
+                        'registered_at': registration_date,
+                        'registered_ip': client_ip,
+                        'created_date': registration_date,
+                        # Referral tracking
+                        'referral_codes_generated': 0,
+                        'successful_referrals': 0,
+                        # Application tracking
+                        'applications': [],
+                        # Policy tracking
+                        'policies': [],
+                        # Claims tracking
+                        'claims': [],
+                        # Financial tracking
+                        'wallet': {'balance': 0, 'transactions': []},
+                        'investments': {'positions': [], 'total_value': 0},
+                        # Metadata
+                        'last_login': None,
+                        'updated_at': registration_date
+                    }
+
+                    CUSTOMERS[customer_id] = customer_record
+                    REGISTERED_CUSTOMERS[customer_id] = customer_record
+
                     USERS[email] = {
                         'hash': pwd_hash['hash'],
                         'salt': pwd_hash['salt'],
@@ -16536,21 +16598,23 @@ For claims or questions, please contact:
                         'name': name,
                         'customer_id': customer_id
                     }
-                
-                # ========== MARK INVITATION CODE AS USED ==========
-                with STATE_LOCK:
+
+                    # Mark invitation used
                     invitation['used_count'] = invitation.get('used_count', 0) + 1
-                    invitation['used_by'].append({
+                    used_by_entries = invitation.setdefault('used_by', [])
+                    if not isinstance(used_by_entries, list):
+                        used_by_entries = []
+                        invitation['used_by'] = used_by_entries
+                    used_by_entries.append({
                         'email': email,
                         'customer_id': customer_id,
                         'used_at': registration_date
                     })
                     if invitation['used_count'] >= invitation.get('max_uses', 1):
                         invitation['status'] = 'used'
-                    
-                    # ========== UPDATE REFERRAL STATS (for customer referrals) ==========
+
+                    # Update referral stats for customer invitations
                     if invitation_type == 'customer' and referrer_customer_id:
-                        # Update referrer's stats
                         if referrer_customer_id not in CUSTOMER_REFERRAL_STATS:
                             CUSTOMER_REFERRAL_STATS[referrer_customer_id] = {
                                 'codes_generated': 0,
@@ -16560,60 +16624,83 @@ For claims or questions, please contact:
                                 'rewards': [],
                                 'total_reward_value': 0
                             }
-                        
+
                         stats = CUSTOMER_REFERRAL_STATS[referrer_customer_id]
                         stats['successful_referrals'] = stats.get('successful_referrals', 0) + 1
-                        stats['referred_customers'].append({
+                        stats.setdefault('referred_customers', []).append({
                             'customer_id': customer_id,
                             'name': name,
                             'email': email,
                             'referred_at': registration_date,
                             'code_used': invitation_code
                         })
-                        
-                        # Update the code status in referral stats
+
                         for code_entry in stats.get('codes', []):
                             if code_entry.get('code') == invitation_code:
                                 code_entry['status'] = 'used'
                                 code_entry['used_at'] = registration_date
                                 code_entry['used_by'] = customer_id
                                 break
-                        
-                        # Mark invitation reward as eligible (can be claimed later)
+
                         invitation['reward_status'] = 'eligible'
-                        
-                        # Update referrer's customer record if exists
+
                         referrer = CUSTOMERS.get(referrer_customer_id) or REGISTERED_CUSTOMERS.get(referrer_customer_id)
                         if referrer:
                             referrer['successful_referrals'] = referrer.get('successful_referrals', 0) + 1
-                        
-                        print(f"[REFERRAL] Customer {referrer_customer_id} referred new customer {customer_id} via code {invitation_code}")
-                
-                # ========== PERSIST ALL DATA ==========
+
+                        print(
+                            f"[REFERRAL] Customer {referrer_customer_id} referred "
+                            f"new customer {customer_id} via code {invitation_code}"
+                        )
+
+                # Persist all state
                 save_ledger_data()
-                # Save invitation codes to persistent file (used code status updated)
                 save_invitation_codes_to_file()
-                
-                # Also append to dynamic seeds file for server restart persistence
                 append_customer_to_seeds(email, password, name, customer_id, registration_date)
-                
-                # Build success response
+
+                # Best-effort welcome notification
+                welcome_notification_sent = False
+                try:
+                    from services.notification_service import (
+                        create_notification_service,
+                        NotificationRequest,
+                        NotificationChannel
+                    )
+                    use_mock_notifications = PHINS_TEST_MODE or str(
+                        os.environ.get('PHINS_USE_MOCK_NOTIFICATIONS', '')
+                    ).lower() in ('1', 'true', 'yes', 'y')
+
+                    notification_service = create_notification_service(use_mock=use_mock_notifications)
+                    welcome_result = notification_service.send(NotificationRequest(
+                        channel=NotificationChannel.EMAIL,
+                        recipient=email,
+                        template_id='welcome',
+                        template_vars={
+                            'name': name,
+                            'login_url': '/login.html'
+                        },
+                        customer_id=customer_id
+                    ))
+                    welcome_notification_sent = bool(welcome_result.success)
+                except Exception as notify_error:
+                    print(f"[REGISTER] Welcome notification failed: {notify_error}")
+
                 response_data = {
                     'success': True,
                     'customer_id': customer_id,
                     'email': email,
                     'registered_at': registration_date,
+                    'welcome_notification_sent': welcome_notification_sent,
                     'message': 'Account created successfully. Please login with your credentials.'
                 }
-                
-                # Add referral info if applicable
+
                 if referrer_customer_id:
                     referrer = CUSTOMERS.get(referrer_customer_id) or REGISTERED_CUSTOMERS.get(referrer_customer_id)
                     response_data['referred_by'] = {
                         'customer_id': referrer_customer_id,
                         'name': referrer.get('name', 'A PHINS Customer') if referrer else 'A PHINS Customer'
                     }
-                
+
                 self._set_json_headers(201)
                 self.wfile.write(json.dumps(response_data).encode('utf-8'))
             except json.JSONDecodeError:

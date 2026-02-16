@@ -17,6 +17,7 @@ Data Persistence:
 """
 
 import json
+import os
 from datetime import datetime, timezone
 from typing import Dict, Any, Optional, Tuple
 
@@ -93,6 +94,82 @@ except ImportError:
 _contribution_ledger: Dict = {}
 _admin_dashboard_data: Dict = {}
 _accounting_dashboard_data: Dict = {}
+PHINS_TEST_MODE = str(os.environ.get('PHINS_TEST_MODE', '')).lower() in ('1', 'true', 'yes', 'y')
+EXPOSE_DEMO_OTP = PHINS_TEST_MODE or str(os.environ.get('PHINS_EXPOSE_DEMO_OTP', '')).lower() in (
+    '1', 'true', 'yes', 'y'
+)
+
+
+def _prepare_otp_client_response(response_data: Dict[str, Any]) -> Tuple[Dict[str, Any], Optional[str], Optional[str]]:
+    """
+    Remove sensitive OTP internals from API responses.
+
+    Returns:
+        (sanitized_response, otp_code_for_internal_delivery, email_for_internal_delivery)
+    """
+    sanitized = dict(response_data)
+    otp_code: Optional[str] = None
+    delivery_email: Optional[str] = None
+
+    data = sanitized.get('data')
+    if isinstance(data, dict):
+        safe_data = dict(data)
+        otp_code = safe_data.pop('otp_code', None)
+        delivery_email = safe_data.pop('email', None)
+        sanitized['data'] = safe_data
+
+        if safe_data.get('verification_id'):
+            sanitized['verification_id'] = safe_data.get('verification_id')
+        if safe_data.get('masked_email'):
+            sanitized['masked_email'] = safe_data.get('masked_email')
+        if safe_data.get('expires_in_seconds') is not None:
+            sanitized['expires_in_seconds'] = safe_data.get('expires_in_seconds')
+
+    if EXPOSE_DEMO_OTP and otp_code:
+        sanitized['demo_otp_code'] = otp_code
+
+    return sanitized, otp_code, delivery_email
+
+
+def _send_otp_email(
+    email: str,
+    otp_code: str,
+    expiry_seconds: int,
+    purpose: str,
+    ip_address: Optional[str] = None
+) -> Tuple[bool, Optional[str]]:
+    """Send OTP through the notification service."""
+    try:
+        from services.notification_service import (
+            create_notification_service,
+            NotificationRequest,
+            NotificationChannel,
+            NotificationPriority
+        )
+    except Exception as exc:
+        return False, f"Notification service unavailable: {exc}"
+
+    try:
+        use_mock_notifications = PHINS_TEST_MODE or str(
+            os.environ.get('PHINS_USE_MOCK_NOTIFICATIONS', '')
+        ).lower() in ('1', 'true', 'yes', 'y')
+
+        notification_service = create_notification_service(use_mock=use_mock_notifications)
+        result = notification_service.send(NotificationRequest(
+            channel=NotificationChannel.EMAIL,
+            recipient=email,
+            template_id='otp_email',
+            template_vars={
+                'code': otp_code,
+                'expiry_minutes': max(1, int(expiry_seconds // 60))
+            },
+            priority=NotificationPriority.HIGH,
+            ip_address=ip_address,
+            metadata={'purpose': purpose}
+        ))
+        return bool(result.success), result.error_message
+    except Exception as exc:
+        return False, str(exc)
 
 
 # ============================================================================
@@ -168,20 +245,35 @@ def handle_otp_request(client_ip: str, body_data: Dict, user_agent: str = "") ->
         device_fingerprint=device_fingerprint
     )
     
-    # In development/demo mode, include OTP in response
-    # In production, this would be sent via email
-    response_data = result.to_dict()
-    if result.success and result.data:
-        response_data['verification_id'] = result.data.get('verification_id')
-        response_data['masked_email'] = result.data.get('masked_email')
-        response_data['expires_in_seconds'] = result.data.get('expires_in_seconds', 300)
-        # For demo purposes, include the OTP code
-        # REMOVE THIS IN PRODUCTION
-        if result.data.get('otp_code'):
-            response_data['demo_otp_code'] = result.data.get('otp_code')
-            print(f"[DEMO] OTP Code for {email}: {result.data.get('otp_code')}")
-    
-    return 200 if result.success else 400, response_data
+    response_data, otp_code, _delivery_email = _prepare_otp_client_response(result.to_dict())
+
+    if result.success:
+        expiry_seconds = int(response_data.get('expires_in_seconds', 300) or 300)
+        notification_sent = False
+        notification_error = None
+
+        if otp_code:
+            notification_sent, notification_error = _send_otp_email(
+                email=email,
+                otp_code=otp_code,
+                expiry_seconds=expiry_seconds,
+                purpose=purpose,
+                ip_address=client_ip
+            )
+        response_data['notification_sent'] = notification_sent
+
+        if not notification_sent:
+            response_data['notification_error'] = notification_error or 'Unable to send OTP notification'
+            # If OTP cannot be delivered and demo OTP is disabled, fail safely.
+            if not EXPOSE_DEMO_OTP:
+                response_data['success'] = False
+                response_data['error_code'] = 'OTP_DELIVERY_FAILED'
+                response_data['message'] = (
+                    "Unable to deliver verification code right now. Please try again later."
+                )
+                return 503, response_data
+
+    return 200 if response_data.get('success') else 400, response_data
 
 
 def handle_otp_verify(client_ip: str, body_data: Dict) -> Tuple[int, Dict]:
@@ -212,13 +304,44 @@ def handle_otp_resend(client_ip: str, body_data: Dict, user_agent: str = "") -> 
     """POST /api/security/otp/resend - Resend OTP code"""
     if not OTP_SERVICE_AVAILABLE:
         return 503, {"error": "OTP security service not available"}
-    
-    # For now, require a new OTP request
-    # A more sophisticated implementation would reuse verification data
-    return 400, {
-        "success": False, 
-        "message": "Please request a new OTP code"
-    }
+
+    verification_id = body_data.get('verification_id')
+    if not verification_id:
+        return 400, {
+            "success": False,
+            "error": "verification_id is required"
+        }
+
+    service = get_otp_security_service()
+    result = service.resend_otp(
+        verification_id=verification_id,
+        ip_address=client_ip,
+        user_agent=user_agent
+    )
+    response_data, otp_code, delivery_email = _prepare_otp_client_response(result.to_dict())
+
+    if result.success:
+        expiry_seconds = int(response_data.get('expires_in_seconds', 300) or 300)
+        if otp_code and delivery_email:
+            sent, send_error = _send_otp_email(
+                email=delivery_email,
+                otp_code=otp_code,
+                expiry_seconds=expiry_seconds,
+                purpose='otp_resend',
+                ip_address=client_ip
+            )
+            response_data['notification_sent'] = sent
+            if not sent:
+                response_data['notification_error'] = send_error or 'Unable to resend OTP notification'
+                if not EXPOSE_DEMO_OTP:
+                    response_data['success'] = False
+                    response_data['error_code'] = 'OTP_DELIVERY_FAILED'
+                    response_data['message'] = (
+                        "Unable to resend verification code right now. Please try again later."
+                    )
+                    return 503, response_data
+
+    return 200 if response_data.get('success') else 400, response_data
 
 
 def handle_login_check(client_ip: str, body_data: Dict, user_agent: str = "") -> Tuple[int, Dict]:
