@@ -95,6 +95,55 @@ Railway automatically provisions SSL via Let's Encrypt:
 - Takes 5-15 minutes after DNS propagates
 - Your site will be accessible at `https://```www.phins.ai````
 
+### Step 5: Validate TLS Hostname Mapping (Important)
+
+If browsers show certificate warnings (hostname mismatch), verify certificate SAN
+actually includes `www.phins.ai`.
+
+```bash
+# Should return a valid certificate for www.phins.ai
+python3 - <<'PY'
+import socket, ssl
+host = "www.phins.ai"
+ctx = ssl.create_default_context()
+with socket.create_connection((host, 443), timeout=10) as sock:
+    with ctx.wrap_socket(sock, server_hostname=host) as s:
+        cert = s.getpeercert()
+        print("subject:", cert.get("subject"))
+        print("issuer:", cert.get("issuer"))
+        print("san:", cert.get("subjectAltName"))
+PY
+```
+
+If SAN does not include `www.phins.ai`, re-open Railway → Project → Settings → Domains,
+remove and re-add the custom domain, then wait for re-issuance.
+
+---
+
+## OTP Notification Delivery (Registration)
+
+OTP delivery requires at least one real email provider in environment variables.
+If only placeholder SMTP is configured, OTP requests will fail with:
+
+`OTP_DELIVERY_FAILED` / `connection refused`
+
+Configure one of:
+
+- `SENDGRID_API_KEY`
+- `MAILGUN_API_KEY` + `MAILGUN_DOMAIN`
+- AWS SES credentials/identity (`AWS_ACCESS_KEY_ID` / profile / workload identity)
+
+Optional SMTP settings (only if you have a real SMTP relay):
+
+- `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`
+
+### Runtime diagnostics endpoints
+
+After deploying latest server:
+
+- `/api/diagnostics/notifications` → provider selection/failover status
+- `/api/diagnostics/domain-tls` → DNS/TLS hostname validation for public hosts
+
 ## Verify Deployment
 
 ### Check Health
