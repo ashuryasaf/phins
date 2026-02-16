@@ -1,0 +1,149 @@
+┌──────────────────────────────────────────────────────────────────────────┐
+│                                                                          │
+│                   📤 QUICK DEPLOY REFERENCE CARD                         │
+│                      www.phins.ai Deployment                             │
+│                                                                          │
+└──────────────────────────────────────────────────────────────────────────┘
+
+╔══════════════════════════════════════════════════════════════════════════╗
+║                        FASTEST WAY TO DEPLOY                             ║
+╚══════════════════════════════════════════════════════════════════════════╝
+
+  1. Go to: https://railway.app
+  2. Click: "Login with GitHub"
+  3. Click: "New Project" → "Deploy from GitHub repo"
+  4. Select: ashuryasaf/phins
+  5. Wait 2-5 minutes for build
+  6. Done! ✅
+
+  Your site: https://[project-name].up.railway.app
+
+
+╔══════════════════════════════════════════════════════════════════════════╗
+║                        AUTOMATED SCRIPT                                  ║
+╚══════════════════════════════════════════════════════════════════════════╝
+
+  ./deploy_railway.sh
+
+
+╔══════════════════════════════════════════════════════════════════════════╗
+║                        RAILWAY CLI COMMANDS                              ║
+╚══════════════════════════════════════════════════════════════════════════╝
+
+  # Install CLI
+  npm install -g @railway/cli
+  # or
+  brew install railway
+
+  # Deploy
+  railway login
+  railway init
+  railway up
+
+  # Monitor
+  railway logs
+  railway logs --follow
+
+  # Get URL
+  railway domain
+
+  # Open in browser
+  railway open
+
+
+╔══════════════════════════════════════════════════════════════════════════╗
+║                    CUSTOM DOMAIN (www.phins.ai)                          ║
+╚══════════════════════════════════════════════════════════════════════════╝
+
+  Railway Dashboard:
+    Settings → Domains → Custom Domain → Enter: www.phins.ai
+    Copy the CNAME target
+
+  Your DNS Provider:
+    Type:   CNAME
+    Name:   www
+    Target: [your-railway-url].up.railway.app
+    TTL:    3600
+
+  Wait: 5-30 minutes for DNS propagation
+  SSL:  Automatic (15 minutes after DNS)
+
+
+╔══════════════════════════════════════════════════════════════════════════╗
+║                          TEST DEPLOYMENT                                 ║
+╚══════════════════════════════════════════════════════════════════════════╝
+
+  # Check health
+  curl https://www.phins.ai/api/health
+
+  # Test login
+  curl -X POST https://www.phins.ai/api/login \
+    -H "Content-Type: application/json" \
+    -d '{"username":"admin","password":"admin123"}'
+
+  # Open admin portal
+  https://www.phins.ai/admin-portal.html
+
+
+╔══════════════════════════════════════════════════════════════════════════╗
+║                           TROUBLESHOOTING                                ║
+╚══════════════════════════════════════════════════════════════════════════╝
+
+  Build failed:      railway logs
+  502 Bad Gateway:   Check server logs, verify start command
+  Can't login:       Try incognito mode, check credentials
+  Domain not work:   Verify DNS with: nslookup www.phins.ai
+  No SSL:            Wait 30 min after DNS propagation
+
+
+╔══════════════════════════════════════════════════════════════════════════╗
+║                          USEFUL RESOURCES                                ║
+╚══════════════════════════════════════════════════════════════════════════╝
+
+  📘 Complete Guide:    UPLOAD_TO_PHINS_AI.md
+  📘 Deployment:        DEPLOYMENT.md
+  📘 Railway Guide:     RAILWAY_DEPLOYMENT.md
+  📘 Security:          PRODUCTION_DEPLOYMENT_REPORT.md
+
+  🌐 Railway Docs:      https://docs.railway.app
+  🌐 Check DNS:         https://www.whatsmydns.net
+  🌐 Railway Status:    https://status.railway.app
+
+
+╔══════════════════════════════════════════════════════════════════════════╗
+║                       DEFAULT CREDENTIALS                                ║
+╚══════════════════════════════════════════════════════════════════════════╝
+
+  Username: admin             Password: admin123
+  Username: underwriter       Password: admin123
+  Username: claims_adjuster   Password: admin123
+  Username: accountant        Password: admin123
+
+  ⚠️  CHANGE THESE IN PRODUCTION!
+
+
+╔══════════════════════════════════════════════════════════════════════════╗
+║                          COST ESTIMATE                                   ║
+╚══════════════════════════════════════════════════════════════════════════╝
+
+  Hobby (Free):       $5 credits/month
+  Developer:          $5/month
+  Team:               $20/month
+
+  Perfect for testing and small production deployments
+
+
+╔══════════════════════════════════════════════════════════════════════════╗
+║                         SUPPORT & HELP                                   ║
+╚══════════════════════════════════════════════════════════════════════════╝
+
+  📧 Railway Support:  https://railway.app/help
+  💬 Discord:          https://discord.gg/railway
+  📖 Documentation:    See README.md and UPLOAD_TO_PHINS_AI.md
+
+
+┌──────────────────────────────────────────────────────────────────────────┐
+│                                                                          │
+│  Need detailed instructions? See: UPLOAD_TO_PHINS_AI.md                 │
+│                                                                          │
+└──────────────────────────────────────────────────────────────────────────┘
