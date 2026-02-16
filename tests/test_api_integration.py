@@ -57,6 +57,32 @@ def _post(url, payload, token=None):
         return resp.read().decode('utf-8'), resp.status
 
 
+def _request_and_verify_registration_otp(base_url: str, email: str) -> str:
+    """Request + verify OTP and return verification_id."""
+    otp_body, otp_status = _post(base_url + "/api/security/otp/request", {
+        "email": email,
+        "purpose": "registration",
+        "user_type": "customer"
+    })
+    assert otp_status == 200
+    otp_data = json.loads(otp_body)
+
+    verification_id = otp_data.get('verification_id') or otp_data.get('data', {}).get('verification_id')
+    otp_code = otp_data.get('demo_otp_code') or otp_data.get('data', {}).get('otp_code')
+    assert verification_id, f"Missing verification_id in OTP response: {otp_data}"
+    assert otp_code, f"Missing OTP code in OTP response: {otp_data}"
+
+    verify_body, verify_status = _post(base_url + "/api/security/otp/verify", {
+        "verification_id": verification_id,
+        "otp_code": otp_code
+    })
+    assert verify_status == 200
+    verify_data = json.loads(verify_body)
+    assert verify_data.get('success') is True
+
+    return verification_id
+
+
 def test_login_endpoint():
     """Test POST /api/login"""
     port = 8031
@@ -131,6 +157,8 @@ def test_register_endpoint():
     # This is automatically created when PHINS_TEST_MODE=1
     test_invitation_code = "TESTCODE2026"
     
+    verification_id = _request_and_verify_registration_otp(base, "newcustomer@example.com")
+
     # Test successful registration with invitation code
     body, status = _post(base + "/api/register", {
         "name": "New Customer",
@@ -138,7 +166,9 @@ def test_register_endpoint():
         "password": "secure123456",
         "phone": "555-9999",
         "dob": "1990-01-01",
-        "invitation_code": test_invitation_code
+        "invitation_code": test_invitation_code,
+        "email_verified": True,
+        "verification_id": verification_id
     })
     assert status == 201
     data = json.loads(body)
@@ -172,6 +202,74 @@ def test_register_endpoint():
         assert e.code == 400
     
     srv.stop()
+
+
+def test_register_rejects_invalid_verification_id_when_provided():
+    """If verification_id is provided, it must be valid and verified."""
+    port = 8123
+    srv = ServerThread(port)
+    srv.start()
+    time.sleep(0.2)
+
+    base = f"http://127.0.0.1:{port}"
+
+    try:
+        try:
+            _post(base + "/api/register", {
+                "name": "Bad OTP User",
+                "email": "badotp@example.com",
+                "password": "secure123456",
+                "phone": "555-3333",
+                "invitation_code": "TESTCODE2026",
+                "email_verified": True,
+                "verification_id": "OTP_INVALID_TEST_ID"
+            })
+            assert False, "Registration should fail for invalid verification_id"
+        except HTTPError as e:
+            assert e.code == 400
+            payload = json.loads(e.read().decode('utf-8'))
+            assert payload.get('code') in {'INVALID_VERIFICATION', 'OTP_VALIDATION_FAILED'}
+    finally:
+        srv.stop()
+
+
+def test_otp_resend_endpoint_active():
+    """OTP resend endpoint should actively issue a fresh code."""
+    port = 8124
+    srv = ServerThread(port)
+    srv.start()
+    time.sleep(0.2)
+
+    base = f"http://127.0.0.1:{port}"
+
+    # Reduce cooldown for deterministic testing.
+    import services.otp_security_service as otp_security
+    original_cooldown = otp_security.OTPSecurityConfig.OTP_RESEND_COOLDOWN_SECONDS
+    otp_security.OTPSecurityConfig.OTP_RESEND_COOLDOWN_SECONDS = 0
+    otp_security.reset_otp_security_service()
+
+    try:
+        otp_body, otp_status = _post(base + "/api/security/otp/request", {
+            "email": "resend_test@example.com",
+            "purpose": "registration",
+            "user_type": "customer"
+        })
+        assert otp_status == 200
+        otp_data = json.loads(otp_body)
+        verification_id = otp_data.get('verification_id') or otp_data.get('data', {}).get('verification_id')
+        assert verification_id
+
+        resend_body, resend_status = _post(base + "/api/security/otp/resend", {
+            "verification_id": verification_id
+        })
+        assert resend_status == 200
+        resend_data = json.loads(resend_body)
+        assert resend_data.get('success') is True
+        assert resend_data.get('verification_id') == verification_id
+    finally:
+        otp_security.OTPSecurityConfig.OTP_RESEND_COOLDOWN_SECONDS = original_cooldown
+        otp_security.reset_otp_security_service()
+        srv.stop()
 
 
 def test_profile_endpoint():

@@ -29,6 +29,7 @@ import uuid
 import json
 
 logger = logging.getLogger('phins.otp_security')
+PHINS_TEST_MODE = str(os.environ.get('PHINS_TEST_MODE', '')).lower() in ('1', 'true', 'yes', 'y')
 
 
 # ============================================================================
@@ -66,7 +67,9 @@ class OTPSecurityConfig:
     
     # Rate Limiting
     LOGIN_ATTEMPTS_PER_IP_HOUR = int(os.environ.get('LOGIN_ATTEMPTS_PER_IP_HOUR', '20'))
-    OTP_REQUESTS_PER_IP_HOUR = int(os.environ.get('OTP_REQUESTS_PER_IP_HOUR', '10'))
+    OTP_REQUESTS_PER_IP_HOUR = int(
+        os.environ.get('OTP_REQUESTS_PER_IP_HOUR', '2000' if PHINS_TEST_MODE else '10')
+    )
     CAPTCHA_FAILURES_BEFORE_BLOCK = int(os.environ.get('CAPTCHA_FAILURES_BEFORE_BLOCK', '5'))
     
     # Block Duration
@@ -374,6 +377,7 @@ class OTPSecurityService:
         # In-memory storage (use database in production)
         self._challenges: Dict[str, CaptchaChallenge] = {}
         self._verifications: Dict[str, OTPVerification] = {}
+        self._consumed_verifications: set[str] = set()
         self._trusted_devices: Dict[str, TrustedDevice] = {}
         self._rate_limits: Dict[str, List[datetime]] = {}
         self._blocked_ips: Dict[str, datetime] = {}
@@ -675,7 +679,7 @@ class OTPSecurityService:
                 "is_new_device": is_new_device
             }
         )
-        
+
         return SecurityResult(
             success=True,
             verification_id=verification.verification_id,
@@ -686,6 +690,89 @@ class OTPSecurityService:
                 "expires_in_seconds": OTPSecurityConfig.OTP_EXPIRY_SECONDS,
                 "is_new_device": is_new_device,
                 "risk_level": "high" if risk_score > 0.7 else ("medium" if risk_score > 0.4 else "low")
+            }
+        )
+
+    def resend_otp(
+        self,
+        verification_id: str,
+        ip_address: Optional[str] = None,
+        user_agent: Optional[str] = None
+    ) -> SecurityResult:
+        """Resend OTP for an existing verification request."""
+        with self._lock:
+            verification = self._verifications.get(verification_id)
+            if not verification:
+                return SecurityResult(
+                    success=False,
+                    error_code="INVALID_VERIFICATION",
+                    message="Invalid verification request"
+                )
+
+            if verification.status == VerificationStatus.BLOCKED:
+                return SecurityResult(
+                    success=False,
+                    error_code="MAX_ATTEMPTS",
+                    message="Verification is blocked due to too many attempts"
+                )
+
+            if verification.status == VerificationStatus.VERIFIED:
+                return SecurityResult(
+                    success=False,
+                    error_code="ALREADY_VERIFIED",
+                    message="Verification already completed"
+                )
+
+            now = datetime.now(timezone.utc)
+            cooldown_until = verification.created_at + timedelta(
+                seconds=OTPSecurityConfig.OTP_RESEND_COOLDOWN_SECONDS
+            )
+            if now < cooldown_until:
+                retry_after = max(1, int((cooldown_until - now).total_seconds()))
+                return SecurityResult(
+                    success=False,
+                    error_code="RESEND_COOLDOWN",
+                    message=f"Please wait {retry_after} seconds before resending",
+                    data={"retry_after_seconds": retry_after}
+                )
+
+            otp_code = generate_otp(OTPSecurityConfig.OTP_LENGTH)
+            salt = generate_salt()
+            verification.otp_salt = salt
+            verification.otp_hash = hash_otp(otp_code, salt)
+            verification.status = VerificationStatus.PENDING
+            verification.attempts = 0
+            verification.created_at = now
+            verification.expires_at = now + timedelta(
+                seconds=OTPSecurityConfig.OTP_EXPIRY_SECONDS
+            )
+            if ip_address:
+                verification.ip_address = ip_address
+            if user_agent:
+                verification.user_agent = user_agent
+
+        self._log_audit(
+            action="otp_resent",
+            user_type=verification.user_type,
+            user_id=verification.user_id,
+            ip_address=ip_address,
+            details={
+                "verification_id": verification_id,
+                "purpose": verification.purpose.value
+            },
+            success=True
+        )
+
+        return SecurityResult(
+            success=True,
+            message="OTP resent successfully",
+            verification_id=verification_id,
+            data={
+                "verification_id": verification_id,
+                "email": verification.email,
+                "masked_email": mask_email(verification.email),
+                "otp_code": otp_code,
+                "expires_in_seconds": OTPSecurityConfig.OTP_EXPIRY_SECONDS
             }
         )
     
@@ -792,6 +879,92 @@ class OTPSecurityService:
                 "purpose": verification.purpose.value,
                 "device_trusted": device_id is not None,
                 "device_id": device_id
+            }
+        )
+
+    def consume_verification(
+        self,
+        verification_id: str,
+        expected_email: Optional[str] = None,
+        expected_purpose: Optional[OTPPurpose] = None,
+        ip_address: Optional[str] = None
+    ) -> SecurityResult:
+        """
+        Mark a verified OTP as consumed for one-time backend operations.
+        This prevents replay of a previously verified registration token.
+        """
+        with self._lock:
+            verification = self._verifications.get(verification_id)
+            if not verification:
+                return SecurityResult(
+                    success=False,
+                    error_code="INVALID_VERIFICATION",
+                    message="Invalid verification request"
+                )
+
+            if verification_id in self._consumed_verifications:
+                return SecurityResult(
+                    success=False,
+                    error_code="OTP_ALREADY_USED",
+                    message="Verification token has already been consumed"
+                )
+
+            if verification.status != VerificationStatus.VERIFIED:
+                return SecurityResult(
+                    success=False,
+                    error_code="OTP_NOT_VERIFIED",
+                    message="OTP verification is required before continuing"
+                )
+
+            if expected_email and verification.email.lower() != expected_email.lower():
+                return SecurityResult(
+                    success=False,
+                    error_code="EMAIL_MISMATCH",
+                    message="Verified email does not match registration email"
+                )
+
+            if expected_purpose and verification.purpose != expected_purpose:
+                if not (
+                    expected_purpose == OTPPurpose.REGISTRATION
+                    and verification.purpose == OTPPurpose.EMAIL_VERIFICATION
+                ):
+                    return SecurityResult(
+                        success=False,
+                        error_code="PURPOSE_MISMATCH",
+                        message="Verification purpose does not match this operation"
+                    )
+
+            verified_at = verification.verified_at or verification.created_at
+            max_age_seconds = max(OTPSecurityConfig.OTP_EXPIRY_SECONDS, 300)
+            if datetime.now(timezone.utc) - verified_at > timedelta(seconds=max_age_seconds):
+                return SecurityResult(
+                    success=False,
+                    error_code="VERIFICATION_EXPIRED",
+                    message="Verification window has expired. Please request a new OTP."
+                )
+
+            self._consumed_verifications.add(verification_id)
+
+        self._log_audit(
+            action="otp_consumed",
+            user_type=verification.user_type,
+            user_id=verification.user_id,
+            ip_address=ip_address,
+            details={
+                "verification_id": verification_id,
+                "purpose": verification.purpose.value
+            },
+            success=True
+        )
+
+        return SecurityResult(
+            success=True,
+            message="Verification consumed successfully",
+            verification_id=verification_id,
+            data={
+                "user_id": verification.user_id,
+                "user_type": verification.user_type,
+                "purpose": verification.purpose.value
             }
         )
     

@@ -244,10 +244,13 @@ document.addEventListener('DOMContentLoaded', function () {
   }
 
   // ========== RESEND OTP ==========
-  function startResendCountdown() {
-    resendCountdown = 60;
+  function startResendCountdown(seconds = 60) {
+    const parsedSeconds = Number(seconds);
+    resendCountdown = Number.isFinite(parsedSeconds) && parsedSeconds > 0
+      ? Math.floor(parsedSeconds)
+      : 60;
     resendOtp.classList.add('disabled');
-    resendOtp.innerHTML = 'Resend code in <span id="resend-timer">60</span>s';
+    resendOtp.innerHTML = `Resend code in <span id="resend-timer">${resendCountdown}</span>s`;
     
     resendInterval = setInterval(() => {
       resendCountdown--;
@@ -277,13 +280,19 @@ document.addEventListener('DOMContentLoaded', function () {
       const data = await response.json();
       
       if (data.success) {
+        if (data.verification_id) {
+          verificationId.value = data.verification_id;
+        }
         msg.textContent = 'New code sent!';
         msg.style.color = '#28a745';
-        startResendCountdown();
+        startResendCountdown(data.retry_after_seconds || 60);
         clearOTPInputs();
       } else {
         msg.textContent = data.message || 'Failed to resend code';
         msg.style.color = '#dc3545';
+        if (data.retry_after_seconds) {
+          startResendCountdown(data.retry_after_seconds);
+        }
       }
     } catch (e) {
       msg.textContent = 'Error sending code';
