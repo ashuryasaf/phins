@@ -2494,6 +2494,74 @@ class ClientVerificationService:
 # FACTORY FUNCTION
 # ============================================================================
 
+_EMAIL_PROVIDER_TYPES = {'smtp', 'sendgrid', 'ses', 'mailgun'}
+
+
+def _smtp_looks_unconfigured() -> bool:
+    """
+    Detect placeholder/default SMTP settings.
+
+    We treat localhost + no credentials as a likely non-production SMTP setup.
+    """
+    host = (NotificationConfig.SMTP_HOST or '').strip().lower()
+    username = (NotificationConfig.SMTP_USERNAME or '').strip()
+    password = (NotificationConfig.SMTP_PASSWORD or '').strip()
+    return host in ('', 'localhost', '127.0.0.1') and not username and not password
+
+
+def _select_email_provider_type() -> str:
+    """
+    Select an email provider with safe auto-detection.
+
+    Rules:
+      - If EMAIL_PROVIDER is explicitly set, respect it.
+      - If provider is not explicit and defaults to placeholder SMTP, auto-select
+        a configured API provider (SendGrid/Mailgun/SES) when available.
+    """
+    provider_type = (NotificationConfig.EMAIL_PROVIDER or 'smtp').strip().lower()
+    if provider_type not in _EMAIL_PROVIDER_TYPES:
+        logger.warning("Unknown EMAIL_PROVIDER '%s'; falling back to smtp", provider_type)
+        provider_type = 'smtp'
+
+    if os.environ.get('EMAIL_PROVIDER') is not None:
+        return provider_type
+
+    if provider_type != 'smtp' or not _smtp_looks_unconfigured():
+        return provider_type
+
+    if NotificationConfig.SENDGRID_API_KEY:
+        return 'sendgrid'
+
+    if NotificationConfig.MAILGUN_API_KEY and NotificationConfig.MAILGUN_DOMAIN:
+        return 'mailgun'
+
+    aws_identity_configured = any(
+        os.environ.get(name)
+        for name in (
+            'AWS_ACCESS_KEY_ID',
+            'AWS_PROFILE',
+            'AWS_WEB_IDENTITY_TOKEN_FILE',
+            'AWS_CONTAINER_CREDENTIALS_RELATIVE_URI',
+            'AWS_CONTAINER_CREDENTIALS_FULL_URI',
+        )
+    )
+    if aws_identity_configured:
+        return 'ses'
+
+    return provider_type
+
+
+def _build_email_provider(provider_type: str) -> EmailProvider:
+    """Construct an email provider instance from provider type."""
+    if provider_type == 'sendgrid':
+        return SendGridEmailProvider()
+    if provider_type == 'ses':
+        return AWSSESEmailProvider()
+    if provider_type == 'mailgun':
+        return MailgunEmailProvider()
+    return SMTPEmailProvider()
+
+
 def create_notification_service(
     use_mock: bool = True,
     email_provider: Optional[EmailProvider] = None,
@@ -2530,15 +2598,15 @@ def create_notification_service(
         if email_provider:
             email = email_provider
         else:
-            provider_type = NotificationConfig.EMAIL_PROVIDER.lower()
-            if provider_type == 'sendgrid':
-                email = SendGridEmailProvider()
-            elif provider_type == 'ses':
-                email = AWSSESEmailProvider()
-            elif provider_type == 'mailgun':
-                email = MailgunEmailProvider()
-            else:  # default to SMTP
-                email = SMTPEmailProvider()
+            configured_provider = (NotificationConfig.EMAIL_PROVIDER or 'smtp').strip().lower()
+            provider_type = _select_email_provider_type()
+            if provider_type != configured_provider:
+                logger.info(
+                    "Auto-selected email provider '%s' (configured '%s')",
+                    provider_type,
+                    configured_provider
+                )
+            email = _build_email_provider(provider_type)
         
         # SMS provider selection
         if sms_provider:

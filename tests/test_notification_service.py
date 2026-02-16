@@ -18,6 +18,7 @@ from unittest.mock import Mock, patch, MagicMock
 
 # Import service components
 from services.notification_service import (
+    NotificationConfig,
     NotificationService,
     OTPService,
     ClientVerificationService,
@@ -33,6 +34,8 @@ from services.notification_service import (
     RateLimiter,
     TemplateEngine,
     MockEmailProvider,
+    SMTPEmailProvider,
+    SendGridEmailProvider,
     MockSMSProvider,
     create_notification_service,
     generate_id,
@@ -517,6 +520,32 @@ class TestNotificationService:
         service = create_notification_service(use_mock=True)
         assert service is not None
         assert isinstance(service.otp_service, OTPService)
+
+    def test_factory_auto_selects_sendgrid_when_default_smtp_is_placeholder(self, monkeypatch):
+        """Auto-select API email provider when SMTP is only the default placeholder."""
+        monkeypatch.delenv('EMAIL_PROVIDER', raising=False)
+        monkeypatch.setattr(NotificationConfig, 'EMAIL_PROVIDER', 'smtp')
+        monkeypatch.setattr(NotificationConfig, 'SMTP_HOST', 'localhost')
+        monkeypatch.setattr(NotificationConfig, 'SMTP_USERNAME', '')
+        monkeypatch.setattr(NotificationConfig, 'SMTP_PASSWORD', '')
+        monkeypatch.setattr(NotificationConfig, 'SENDGRID_API_KEY', 'SG.test_key')
+        monkeypatch.setattr(NotificationConfig, 'MAILGUN_API_KEY', '')
+        monkeypatch.setattr(NotificationConfig, 'MAILGUN_DOMAIN', '')
+
+        service = create_notification_service(use_mock=False)
+        assert isinstance(service._email_provider, SendGridEmailProvider)
+
+    def test_factory_respects_explicit_smtp_provider(self, monkeypatch):
+        """Explicit EMAIL_PROVIDER should not be auto-overridden."""
+        monkeypatch.setenv('EMAIL_PROVIDER', 'smtp')
+        monkeypatch.setattr(NotificationConfig, 'EMAIL_PROVIDER', 'smtp')
+        monkeypatch.setattr(NotificationConfig, 'SMTP_HOST', 'localhost')
+        monkeypatch.setattr(NotificationConfig, 'SMTP_USERNAME', '')
+        monkeypatch.setattr(NotificationConfig, 'SMTP_PASSWORD', '')
+        monkeypatch.setattr(NotificationConfig, 'SENDGRID_API_KEY', 'SG.test_key')
+
+        service = create_notification_service(use_mock=False)
+        assert isinstance(service._email_provider, SMTPEmailProvider)
     
     def test_send_email_notification(self):
         """Test sending email notification"""
