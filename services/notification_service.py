@@ -2514,13 +2514,20 @@ def _select_email_provider_type() -> str:
     Select an email provider with safe auto-detection.
 
     Rules:
-      - If EMAIL_PROVIDER is explicitly set, respect it.
+      - If EMAIL_PROVIDER is explicitly set (via env var or config), respect it.
       - If provider is not explicit and defaults to placeholder SMTP, auto-select
-        a configured API provider (SendGrid/Mailgun/SES) when available.
+        a configured API provider (SendGrid/Mailgun) when available.
+      - SES is NOT auto-selected based on generic AWS credentials; it requires
+        explicit EMAIL_PROVIDER=ses configuration.
     """
     raw_env_provider = os.environ.get('EMAIL_PROVIDER')
-    has_explicit_provider = raw_env_provider is not None and bool(raw_env_provider.strip())
-    provider_type = (NotificationConfig.EMAIL_PROVIDER or 'smtp').strip().lower()
+    # Explicit if env var is set, OR if config differs from default 'smtp'
+    config_provider = (NotificationConfig.EMAIL_PROVIDER or '').strip().lower()
+    has_explicit_provider = (
+        (raw_env_provider is not None and bool(raw_env_provider.strip())) or
+        (config_provider and config_provider != 'smtp')
+    )
+    provider_type = config_provider if config_provider else 'smtp'
     if provider_type not in _EMAIL_PROVIDER_TYPES:
         logger.warning("Unknown EMAIL_PROVIDER '%s'; falling back to smtp", provider_type)
         provider_type = 'smtp'
@@ -2533,24 +2540,19 @@ def _select_email_provider_type() -> str:
     if provider_type != 'smtp' or not _smtp_looks_unconfigured():
         return provider_type
 
-    if NotificationConfig.SENDGRID_API_KEY:
+    # Strip whitespace from API keys to avoid selecting providers with blank credentials
+    sendgrid_key = (NotificationConfig.SENDGRID_API_KEY or '').strip()
+    if sendgrid_key:
         return 'sendgrid'
 
-    if NotificationConfig.MAILGUN_API_KEY and NotificationConfig.MAILGUN_DOMAIN:
+    mailgun_key = (NotificationConfig.MAILGUN_API_KEY or '').strip()
+    mailgun_domain = (NotificationConfig.MAILGUN_DOMAIN or '').strip()
+    if mailgun_key and mailgun_domain:
         return 'mailgun'
 
-    aws_identity_configured = any(
-        os.environ.get(name)
-        for name in (
-            'AWS_ACCESS_KEY_ID',
-            'AWS_PROFILE',
-            'AWS_WEB_IDENTITY_TOKEN_FILE',
-            'AWS_CONTAINER_CREDENTIALS_RELATIVE_URI',
-            'AWS_CONTAINER_CREDENTIALS_FULL_URI',
-        )
-    )
-    if aws_identity_configured:
-        return 'ses'
+    # Note: SES is NOT auto-selected based on generic AWS credentials (AWS_ACCESS_KEY_ID,
+    # AWS_PROFILE, etc.) as these may be present for other AWS services. SES requires
+    # explicit EMAIL_PROVIDER=ses configuration.
 
     return provider_type
 
