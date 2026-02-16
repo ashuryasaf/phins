@@ -4318,7 +4318,8 @@ For claims or questions, please contact:
         if path == '/api/invitations' or path.startswith('/api/invitations/'):
             # Validate endpoint is public (for registration form)
             if path == '/api/invitations/validate':
-                code = qs.get('code', [''])[0].strip().upper()
+                # Normalize copied codes robustly (e.g., trailing tabs/newlines/spaces).
+                code = ''.join((qs.get('code', [''])[0] or '').split()).upper()
                 if not code:
                     self._set_json_headers(400)
                     self.wfile.write(json.dumps({'valid': False, 'error': 'No code provided'}).encode('utf-8'))
@@ -4356,7 +4357,7 @@ For claims or questions, please contact:
                     return
                 
                 # Check status
-                if invitation.get('status') != 'active':
+                if get_status_lower(invitation) != 'active':
                     self._set_json_headers(200)
                     self.wfile.write(json.dumps({'valid': False, 'error': 'Invitation code is not active'}).encode('utf-8'))
                     return
@@ -16396,7 +16397,7 @@ For claims or questions, please contact:
                 phone = sanitize_input(data.get('phone', ''), 20)
                 dob = data.get('dob', '')
                 password = data.get('password', '')
-                invitation_code = data.get('invitation_code', '').strip().upper()
+                invitation_code = ''.join(str(data.get('invitation_code', '') or '').split()).upper()
                 verification_id = str(data.get('verification_id', '') or '').strip()
                 email_verified = bool(data.get('email_verified', False))
 

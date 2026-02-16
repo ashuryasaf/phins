@@ -1012,6 +1012,62 @@ class MailgunEmailProvider(EmailProvider):
             return False, None, str(e)
 
 
+class FailoverEmailProvider(EmailProvider):
+    """
+    Email provider wrapper with sequential failover.
+
+    Tries providers in configured order and returns on first success.
+    """
+
+    def __init__(self, providers: List[Tuple[str, EmailProvider]]):
+        self._providers = providers
+
+    def send(
+        self,
+        to: str,
+        subject: str,
+        body: str,
+        html_body: Optional[str] = None,
+        from_address: Optional[str] = None,
+        from_name: Optional[str] = None,
+        reply_to: Optional[str] = None,
+        attachments: Optional[List[Dict[str, Any]]] = None
+    ) -> Tuple[bool, Optional[str], Optional[str]]:
+        errors: List[str] = []
+
+        for provider_name, provider in self._providers:
+            try:
+                success, message_id, error = provider.send(
+                    to=to,
+                    subject=subject,
+                    body=body,
+                    html_body=html_body,
+                    from_address=from_address,
+                    from_name=from_name,
+                    reply_to=reply_to,
+                    attachments=attachments
+                )
+            except Exception as exc:
+                success, message_id, error = False, None, str(exc)
+
+            if success:
+                if errors:
+                    logger.warning(
+                        "Email delivery recovered via fallback provider '%s' after failures: %s",
+                        provider_name,
+                        "; ".join(errors)
+                    )
+                return True, message_id, None
+
+            failure = f"{provider_name}: {error or 'unknown error'}"
+            errors.append(failure)
+            logger.warning("Email provider '%s' failed: %s", provider_name, error or 'unknown error')
+
+        if not errors:
+            return False, None, "No email providers configured"
+        return False, None, "; ".join(errors)
+
+
 # ============================================================================
 # SMS PROVIDER ABSTRACTION
 # ============================================================================
@@ -2497,6 +2553,20 @@ class ClientVerificationService:
 _EMAIL_PROVIDER_TYPES = {'smtp', 'sendgrid', 'ses', 'mailgun'}
 
 
+def _aws_identity_configured() -> bool:
+    """Detect whether AWS identity is available for SES."""
+    return any(
+        bool((os.environ.get(name) or '').strip())
+        for name in (
+            'AWS_ACCESS_KEY_ID',
+            'AWS_PROFILE',
+            'AWS_WEB_IDENTITY_TOKEN_FILE',
+            'AWS_CONTAINER_CREDENTIALS_RELATIVE_URI',
+            'AWS_CONTAINER_CREDENTIALS_FULL_URI',
+        )
+    )
+
+
 def _smtp_looks_unconfigured() -> bool:
     """
     Detect placeholder/default SMTP settings.
@@ -2517,6 +2587,24 @@ def _smtp_looks_unconfigured() -> bool:
     }
     host_is_placeholder = host in placeholder_hosts or host.endswith('.example.com')
     return host_is_placeholder and not username and not password
+
+
+def _email_provider_has_runtime_config(provider_type: str) -> bool:
+    """
+    Check whether a provider appears configured enough for runtime failover.
+    """
+    provider = (provider_type or '').strip().lower()
+    if provider == 'smtp':
+        return not _smtp_looks_unconfigured()
+    if provider == 'sendgrid':
+        return bool((NotificationConfig.SENDGRID_API_KEY or '').strip())
+    if provider == 'mailgun':
+        return bool((NotificationConfig.MAILGUN_API_KEY or '').strip()) and bool(
+            (NotificationConfig.MAILGUN_DOMAIN or '').strip()
+        )
+    if provider == 'ses':
+        return _aws_identity_configured()
+    return False
 
 
 def _select_email_provider_type() -> str:
@@ -2548,17 +2636,7 @@ def _select_email_provider_type() -> str:
     if NotificationConfig.MAILGUN_API_KEY and NotificationConfig.MAILGUN_DOMAIN:
         return 'mailgun'
 
-    aws_identity_configured = any(
-        os.environ.get(name)
-        for name in (
-            'AWS_ACCESS_KEY_ID',
-            'AWS_PROFILE',
-            'AWS_WEB_IDENTITY_TOKEN_FILE',
-            'AWS_CONTAINER_CREDENTIALS_RELATIVE_URI',
-            'AWS_CONTAINER_CREDENTIALS_FULL_URI',
-        )
-    )
-    if aws_identity_configured:
+    if _aws_identity_configured():
         return 'ses'
 
     if has_explicit_provider:
@@ -2618,14 +2696,29 @@ def create_notification_service(
             email = email_provider
         else:
             configured_provider = (NotificationConfig.EMAIL_PROVIDER or 'smtp').strip().lower()
-            provider_type = _select_email_provider_type()
-            if provider_type != configured_provider:
+            primary_provider_type = _select_email_provider_type()
+            if primary_provider_type != configured_provider:
                 logger.info(
                     "Auto-selected email provider '%s' (configured '%s')",
-                    provider_type,
+                    primary_provider_type,
                     configured_provider
                 )
-            email = _build_email_provider(provider_type)
+
+            provider_order: List[str] = [primary_provider_type]
+            for backup_type in ('sendgrid', 'mailgun', 'ses', 'smtp'):
+                if backup_type == primary_provider_type:
+                    continue
+                if _email_provider_has_runtime_config(backup_type):
+                    provider_order.append(backup_type)
+
+            if len(provider_order) > 1:
+                logger.info("Email failover chain enabled: %s", " -> ".join(provider_order))
+                email = FailoverEmailProvider([
+                    (provider_type, _build_email_provider(provider_type))
+                    for provider_type in provider_order
+                ])
+            else:
+                email = _build_email_provider(primary_provider_type)
         
         # SMS provider selection
         if sms_provider:
@@ -2676,6 +2769,7 @@ __all__ = [
     
     # Email Providers
     'EmailProvider',
+    'FailoverEmailProvider',
     'SMTPEmailProvider',
     'MockEmailProvider',
     'SendGridEmailProvider',

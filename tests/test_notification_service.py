@@ -19,6 +19,8 @@ from unittest.mock import Mock, patch, MagicMock
 # Import service components
 from services.notification_service import (
     NotificationConfig,
+    EmailProvider,
+    FailoverEmailProvider,
     NotificationService,
     OTPService,
     ClientVerificationService,
@@ -542,10 +544,28 @@ class TestNotificationService:
         monkeypatch.setattr(NotificationConfig, 'SMTP_HOST', 'smtp.mailrelay.internal')
         monkeypatch.setattr(NotificationConfig, 'SMTP_USERNAME', 'mailer')
         monkeypatch.setattr(NotificationConfig, 'SMTP_PASSWORD', 'secret')
-        monkeypatch.setattr(NotificationConfig, 'SENDGRID_API_KEY', 'SG.test_key')
+        monkeypatch.setattr(NotificationConfig, 'SENDGRID_API_KEY', '')
+        monkeypatch.setattr(NotificationConfig, 'MAILGUN_API_KEY', '')
+        monkeypatch.setattr(NotificationConfig, 'MAILGUN_DOMAIN', '')
 
         service = create_notification_service(use_mock=False)
         assert isinstance(service._email_provider, SMTPEmailProvider)
+
+    def test_factory_adds_sendgrid_failover_when_smtp_and_sendgrid_configured(self, monkeypatch):
+        """Configured SMTP can still fail over to SendGrid when available."""
+        monkeypatch.setenv('EMAIL_PROVIDER', 'smtp')
+        monkeypatch.setattr(NotificationConfig, 'EMAIL_PROVIDER', 'smtp')
+        monkeypatch.setattr(NotificationConfig, 'SMTP_HOST', 'smtp.mailrelay.internal')
+        monkeypatch.setattr(NotificationConfig, 'SMTP_USERNAME', 'mailer')
+        monkeypatch.setattr(NotificationConfig, 'SMTP_PASSWORD', 'secret')
+        monkeypatch.setattr(NotificationConfig, 'SENDGRID_API_KEY', 'SG.test_key')
+        monkeypatch.setattr(NotificationConfig, 'MAILGUN_API_KEY', '')
+        monkeypatch.setattr(NotificationConfig, 'MAILGUN_DOMAIN', '')
+
+        service = create_notification_service(use_mock=False)
+        assert isinstance(service._email_provider, FailoverEmailProvider)
+        provider_names = [name for name, _provider in service._email_provider._providers]
+        assert provider_names[:2] == ['smtp', 'sendgrid']
 
     def test_factory_explicit_placeholder_smtp_uses_configured_api_provider(self, monkeypatch):
         """Template/default SMTP should fail over to API provider if configured."""
@@ -574,6 +594,50 @@ class TestNotificationService:
 
         service = create_notification_service(use_mock=False)
         assert isinstance(service._email_provider, SendGridEmailProvider)
+
+    def test_failover_provider_uses_backup_after_primary_failure(self):
+        """Failover provider should recover delivery through a backup provider."""
+        class AlwaysFailProvider(EmailProvider):
+            def send(
+                self,
+                to: str,
+                subject: str,
+                body: str,
+                html_body=None,
+                from_address=None,
+                from_name=None,
+                reply_to=None,
+                attachments=None
+            ):
+                return False, None, "primary down"
+
+        class AlwaysSuccessProvider(EmailProvider):
+            def send(
+                self,
+                to: str,
+                subject: str,
+                body: str,
+                html_body=None,
+                from_address=None,
+                from_name=None,
+                reply_to=None,
+                attachments=None
+            ):
+                return True, "MSG_BACKUP_OK", None
+
+        provider = FailoverEmailProvider([
+            ('primary', AlwaysFailProvider()),
+            ('backup', AlwaysSuccessProvider())
+        ])
+        success, message_id, error = provider.send(
+            to='test@example.com',
+            subject='OTP',
+            body='Code'
+        )
+
+        assert success is True
+        assert message_id == "MSG_BACKUP_OK"
+        assert error is None
     
     def test_send_email_notification(self):
         """Test sending email notification"""
