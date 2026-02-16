@@ -546,6 +546,20 @@ class TestNotificationService:
 
         service = create_notification_service(use_mock=False)
         assert isinstance(service._email_provider, SMTPEmailProvider)
+
+    def test_factory_blank_email_provider_still_allows_auto_detection(self, monkeypatch):
+        """Blank EMAIL_PROVIDER should behave like unset and allow safe auto-selection."""
+        monkeypatch.setenv('EMAIL_PROVIDER', '   ')
+        monkeypatch.setattr(NotificationConfig, 'EMAIL_PROVIDER', '')
+        monkeypatch.setattr(NotificationConfig, 'SMTP_HOST', 'localhost')
+        monkeypatch.setattr(NotificationConfig, 'SMTP_USERNAME', '')
+        monkeypatch.setattr(NotificationConfig, 'SMTP_PASSWORD', '')
+        monkeypatch.setattr(NotificationConfig, 'SENDGRID_API_KEY', 'SG.test_key')
+        monkeypatch.setattr(NotificationConfig, 'MAILGUN_API_KEY', '')
+        monkeypatch.setattr(NotificationConfig, 'MAILGUN_DOMAIN', '')
+
+        service = create_notification_service(use_mock=False)
+        assert isinstance(service._email_provider, SendGridEmailProvider)
     
     def test_send_email_notification(self):
         """Test sending email notification"""

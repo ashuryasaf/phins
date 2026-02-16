@@ -2518,12 +2518,16 @@ def _select_email_provider_type() -> str:
       - If provider is not explicit and defaults to placeholder SMTP, auto-select
         a configured API provider (SendGrid/Mailgun/SES) when available.
     """
+    raw_env_provider = os.environ.get('EMAIL_PROVIDER')
+    has_explicit_provider = raw_env_provider is not None and bool(raw_env_provider.strip())
     provider_type = (NotificationConfig.EMAIL_PROVIDER or 'smtp').strip().lower()
     if provider_type not in _EMAIL_PROVIDER_TYPES:
         logger.warning("Unknown EMAIL_PROVIDER '%s'; falling back to smtp", provider_type)
         provider_type = 'smtp'
+        # Invalid explicit provider should not block safe auto-detection.
+        has_explicit_provider = False
 
-    if os.environ.get('EMAIL_PROVIDER') is not None:
+    if has_explicit_provider:
         return provider_type
 
     if provider_type != 'smtp' or not _smtp_looks_unconfigured():
