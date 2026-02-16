@@ -1,0 +1,28 @@
+╔═══════════════════════════════════════════════════════════════╗
+║                                                               ║
+║     📤 HOW TO UPLOAD TO www.phins.ai                          ║
+║                                                               ║
+╚═══════════════════════════════════════════════════════════════╝
+
+Complete instructions: See UPLOAD_TO_PHINS_AI.md
+
+Quick Deploy:
+  ./deploy_railway.sh
+
+Requirements:
+  ✓ GitHub account
+  ✓ Railway account (free at railway.app)
+  ✓ Domain access for phins.ai
+
+Documentation:
+  📘 UPLOAD_TO_PHINS_AI.md       - Complete step-by-step guide
+  📘 DEPLOYMENT.md               - General deployment options
+  📘 RAILWAY_DEPLOYMENT.md       - Railway-specific guide
+  📘 PRODUCTION_DEPLOYMENT_REPORT.md - Production checklist
+
+Support:
+  - Railway docs: https://docs.railway.app
+  - Check logs: railway logs
+  - Test locally: python3 web_portal/server.py
+
+═══════════════════════════════════════════════════════════════

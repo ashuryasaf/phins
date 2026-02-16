@@ -478,6 +478,22 @@ Tested with simulated 1,000,000 concurrent users:
 
 ## 🌍 Deployment Options
 
+### 📤 Upload to www.phins.ai (Production)
+
+**Complete step-by-step guide:** See **[UPLOAD_TO_PHINS_AI.md](UPLOAD_TO_PHINS_AI.md)**
+
+Quick deploy to Railway:
+```bash
+./deploy_railway.sh
+```
+
+Or follow the comprehensive guide for:
+- Railway deployment with custom domain
+- DNS configuration for www.phins.ai
+- SSL certificate setup
+- Production security checklist
+- Troubleshooting and monitoring
+
 ### Kubernetes (Recommended for 1M+ users)
 
 ```bash
@@ -520,6 +536,9 @@ gcloud run deploy phins --source . --platform managed
 ## 📖 Documentation
 
 - **README.md** - This file, overview and features
+- **[UPLOAD_TO_PHINS_AI.md](UPLOAD_TO_PHINS_AI.md)** - 📤 **Step-by-step deployment guide to www.phins.ai**
+- **DEPLOYMENT.md** - General deployment options (Railway, Render, Docker, VPS)
+- **RAILWAY_DEPLOYMENT.md** - Railway-specific deployment guide
 - **RISK_REPORTS_DASHBOARD_GUIDE.md** - Complete guide on using risk assessment reports
 - **INTERNATIONALIZATION.md** - Complete i18n guide with 20 language support
 - **.github/copilot-instructions.md** - Architecture guide for AI agents
