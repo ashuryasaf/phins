@@ -2495,6 +2495,14 @@ class ClientVerificationService:
 # ============================================================================
 
 _EMAIL_PROVIDER_TYPES = {'smtp', 'sendgrid', 'ses', 'mailgun'}
+_SMTP_PLACEHOLDER_HOSTS = {
+    '',
+    'localhost',
+    '127.0.0.1',
+    'smtp.example.com',
+    'mail.example.com',
+    'example.com',
+}
 
 
 def _smtp_looks_unconfigured() -> bool:
@@ -2506,7 +2514,42 @@ def _smtp_looks_unconfigured() -> bool:
     host = (NotificationConfig.SMTP_HOST or '').strip().lower()
     username = (NotificationConfig.SMTP_USERNAME or '').strip()
     password = (NotificationConfig.SMTP_PASSWORD or '').strip()
-    return host in ('', 'localhost', '127.0.0.1') and not username and not password
+    if host in _SMTP_PLACEHOLDER_HOSTS and not username and not password:
+        return True
+
+    # Guard against obvious docs placeholders copied into production env.
+    if host.endswith('.example.com'):
+        return True
+
+    return False
+
+
+def _aws_identity_configured() -> bool:
+    """Check whether AWS runtime credentials are available."""
+    return any(
+        os.environ.get(name)
+        for name in (
+            'AWS_ACCESS_KEY_ID',
+            'AWS_PROFILE',
+            'AWS_WEB_IDENTITY_TOKEN_FILE',
+            'AWS_CONTAINER_CREDENTIALS_RELATIVE_URI',
+            'AWS_CONTAINER_CREDENTIALS_FULL_URI',
+        )
+    )
+
+
+def _detect_configured_api_email_provider() -> Optional[str]:
+    """Return the best configured API email provider, if any."""
+    if NotificationConfig.SENDGRID_API_KEY:
+        return 'sendgrid'
+
+    if NotificationConfig.MAILGUN_API_KEY and NotificationConfig.MAILGUN_DOMAIN:
+        return 'mailgun'
+
+    if _aws_identity_configured():
+        return 'ses'
+
+    return None
 
 
 def _select_email_provider_type() -> str:
@@ -2514,7 +2557,8 @@ def _select_email_provider_type() -> str:
     Select an email provider with safe auto-detection.
 
     Rules:
-      - If EMAIL_PROVIDER is explicitly set, respect it.
+      - If EMAIL_PROVIDER is explicitly set, respect it unless it points to
+        placeholder SMTP settings that cannot deliver.
       - If provider is not explicit and defaults to placeholder SMTP, auto-select
         a configured API provider (SendGrid/Mailgun/SES) when available.
     """
@@ -2527,30 +2571,24 @@ def _select_email_provider_type() -> str:
         # Invalid explicit provider should not block safe auto-detection.
         has_explicit_provider = False
 
+    configured_api_provider = _detect_configured_api_email_provider()
+
     if has_explicit_provider:
+        # Common production misconfiguration: EMAIL_PROVIDER=smtp is set, but SMTP
+        # itself is still a placeholder while a real API provider key is present.
+        if provider_type == 'smtp' and _smtp_looks_unconfigured() and configured_api_provider:
+            logger.warning(
+                "EMAIL_PROVIDER='smtp' looks unconfigured; auto-selecting '%s' for delivery",
+                configured_api_provider
+            )
+            return configured_api_provider
         return provider_type
 
     if provider_type != 'smtp' or not _smtp_looks_unconfigured():
         return provider_type
 
-    if NotificationConfig.SENDGRID_API_KEY:
-        return 'sendgrid'
-
-    if NotificationConfig.MAILGUN_API_KEY and NotificationConfig.MAILGUN_DOMAIN:
-        return 'mailgun'
-
-    aws_identity_configured = any(
-        os.environ.get(name)
-        for name in (
-            'AWS_ACCESS_KEY_ID',
-            'AWS_PROFILE',
-            'AWS_WEB_IDENTITY_TOKEN_FILE',
-            'AWS_CONTAINER_CREDENTIALS_RELATIVE_URI',
-            'AWS_CONTAINER_CREDENTIALS_FULL_URI',
-        )
-    )
-    if aws_identity_configured:
-        return 'ses'
+    if configured_api_provider:
+        return configured_api_provider
 
     return provider_type
 
