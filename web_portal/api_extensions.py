@@ -19,7 +19,7 @@ Data Persistence:
 import json
 import os
 from datetime import datetime, timezone
-from typing import Dict, Any, Optional, Tuple
+from typing import Dict, Any, Optional, Tuple, List
 
 # Import services
 try:
@@ -131,6 +131,20 @@ def _prepare_otp_client_response(response_data: Dict[str, Any]) -> Tuple[Dict[st
     return sanitized, otp_code, delivery_email
 
 
+def _has_aws_identity() -> bool:
+    """Detect whether AWS credentials are available for SES fallback."""
+    return any(
+        os.environ.get(name)
+        for name in (
+            'AWS_ACCESS_KEY_ID',
+            'AWS_PROFILE',
+            'AWS_WEB_IDENTITY_TOKEN_FILE',
+            'AWS_CONTAINER_CREDENTIALS_RELATIVE_URI',
+            'AWS_CONTAINER_CREDENTIALS_FULL_URI',
+        )
+    )
+
+
 def _send_otp_email(
     email: str,
     otp_code: str,
@@ -144,7 +158,11 @@ def _send_otp_email(
             create_notification_service,
             NotificationRequest,
             NotificationChannel,
-            NotificationPriority
+            NotificationPriority,
+            NotificationConfig,
+            SendGridEmailProvider,
+            MailgunEmailProvider,
+            AWSSESEmailProvider,
         )
     except Exception as exc:
         return False, f"Notification service unavailable: {exc}"
@@ -154,20 +172,78 @@ def _send_otp_email(
             os.environ.get('PHINS_USE_MOCK_NOTIFICATIONS', '')
         ).lower() in ('1', 'true', 'yes', 'y')
 
+        def build_request() -> NotificationRequest:
+            return NotificationRequest(
+                channel=NotificationChannel.EMAIL,
+                recipient=email,
+                template_id='otp_email',
+                template_vars={
+                    'code': otp_code,
+                    'expiry_minutes': max(1, int(expiry_seconds // 60))
+                },
+                priority=NotificationPriority.HIGH,
+                ip_address=ip_address,
+                metadata={'purpose': purpose}
+            )
+
+        def provider_kind(service_obj: Any) -> str:
+            provider = getattr(service_obj, '_email_provider', None)
+            if not provider:
+                return ''
+            class_name = provider.__class__.__name__.lower()
+            if 'sendgrid' in class_name:
+                return 'sendgrid'
+            if 'mailgun' in class_name:
+                return 'mailgun'
+            if 'ses' in class_name:
+                return 'ses'
+            if 'smtp' in class_name:
+                return 'smtp'
+            return class_name
+
+        def configured_email_fallbacks() -> List[Tuple[str, Any]]:
+            fallbacks: List[Tuple[str, Any]] = []
+            if NotificationConfig.SENDGRID_API_KEY:
+                fallbacks.append(('sendgrid', SendGridEmailProvider))
+            if NotificationConfig.MAILGUN_API_KEY and NotificationConfig.MAILGUN_DOMAIN:
+                fallbacks.append(('mailgun', MailgunEmailProvider))
+            if _has_aws_identity():
+                fallbacks.append(('ses', AWSSESEmailProvider))
+            return fallbacks
+
         notification_service = create_notification_service(use_mock=use_mock_notifications)
-        result = notification_service.send(NotificationRequest(
-            channel=NotificationChannel.EMAIL,
-            recipient=email,
-            template_id='otp_email',
-            template_vars={
-                'code': otp_code,
-                'expiry_minutes': max(1, int(expiry_seconds // 60))
-            },
-            priority=NotificationPriority.HIGH,
-            ip_address=ip_address,
-            metadata={'purpose': purpose}
-        ))
-        return bool(result.success), result.error_message
+        result = notification_service.send(build_request())
+        if result.success:
+            return True, None
+
+        # In mock mode, keep existing behavior and don't cascade across live providers.
+        if use_mock_notifications:
+            return False, result.error_message
+
+        primary_provider = provider_kind(notification_service)
+        errors: List[str] = [result.error_message or 'primary email provider failed']
+
+        # Delivery hardening: if primary provider fails, try other configured providers.
+        for fallback_name, fallback_provider in configured_email_fallbacks():
+            if fallback_name == primary_provider:
+                continue
+
+            try:
+                fallback_service = create_notification_service(
+                    use_mock=False,
+                    email_provider=fallback_provider()
+                )
+                fallback_result = fallback_service.send(build_request())
+                if fallback_result.success:
+                    return True, None
+                errors.append(
+                    f"{fallback_name} fallback failed: "
+                    f"{fallback_result.error_message or 'unknown error'}"
+                )
+            except Exception as fallback_exc:
+                errors.append(f"{fallback_name} fallback exception: {fallback_exc}")
+
+        return False, '; '.join(errors)
     except Exception as exc:
         return False, str(exc)
 

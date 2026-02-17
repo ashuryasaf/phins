@@ -15,9 +15,11 @@ Tests every API endpoint for correctness and proper behavior:
 import threading
 import time
 import json
+from datetime import datetime, timedelta
 from http.server import HTTPServer
 from urllib.request import urlopen, Request
 from urllib.error import HTTPError
+from urllib.parse import quote
 
 import web_portal.server as portal
 
@@ -229,6 +231,58 @@ def test_register_rejects_invalid_verification_id_when_provided():
             assert e.code == 400
             payload = json.loads(e.read().decode('utf-8'))
             assert payload.get('code') in {'INVALID_VERIFICATION', 'OTP_VALIDATION_FAILED'}
+    finally:
+        srv.stop()
+
+
+def test_register_accepts_invitation_code_with_paste_artifacts():
+    """Registration should accept invitation codes with tabs/spaces/unicode dashes."""
+    port = 8126
+    srv = ServerThread(port)
+    srv.start()
+    time.sleep(0.2)
+
+    base = f"http://127.0.0.1:{port}"
+    canonical_code = "PHINS-2026-28919A81"
+    portal.INVITATION_CODES[canonical_code] = {
+        'code': canonical_code,
+        'created_at': datetime.now().isoformat(),
+        'created_by': 'admin',
+        'expires_at': (datetime.now() + timedelta(days=30)).isoformat(),
+        'max_uses': 5,
+        'used_count': 0,
+        'used_by': [],
+        'status': 'active',
+        'notes': 'Normalization test code',
+    }
+
+    # Includes leading/trailing whitespace, tab, and Unicode en dashes.
+    pasted_code = "  PHINS–2026–28919A81\t"
+
+    try:
+        validate_body, validate_status = _get(
+            base + "/api/invitations/validate?code=" + quote(pasted_code)
+        )
+        assert validate_status == 200
+        validate_data = json.loads(validate_body)
+        assert validate_data.get('valid') is True
+        assert validate_data.get('code') == canonical_code
+
+        verification_id = _request_and_verify_registration_otp(base, "normcode@example.com")
+        register_body, register_status = _post(base + "/api/register", {
+            "name": "Normalization User",
+            "email": "normcode@example.com",
+            "password": "SecurePass123",
+            "phone": "555-4444",
+            "dob": "1991-06-15",
+            "invitation_code": pasted_code,
+            "email_verified": True,
+            "verification_id": verification_id
+        })
+        assert register_status == 201
+        register_data = json.loads(register_body)
+        assert register_data.get('success') is True
+        assert register_data.get('customer_id')
     finally:
         srv.stop()
 

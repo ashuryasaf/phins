@@ -49,14 +49,22 @@ document.addEventListener('DOMContentLoaded', function () {
   let resendInterval = null;
   let pendingRegistrationData = null;
 
+  function normalizeInvitationCode(value) {
+    return String(value || '')
+      .replace(/[\u2010\u2011\u2012\u2013\u2014\u2015\u2212]/g, '-')
+      .replace(/\s+/g, '')
+      .toUpperCase();
+  }
+
   // ========== AUTO-FILL FROM URL PARAMETER ==========
   const urlParams = new URLSearchParams(window.location.search);
   const codeFromUrl = urlParams.get('code');
   
   if (codeFromUrl) {
-    invitationCodeInput.value = codeFromUrl.toUpperCase();
+    const normalizedCode = normalizeInvitationCode(codeFromUrl);
+    invitationCodeInput.value = normalizedCode;
     setTimeout(() => {
-      validateInvitationCode(codeFromUrl.toUpperCase());
+      validateInvitationCode(normalizedCode);
     }, 300);
     msg.innerHTML = '🎟️ Invitation code detected! Please complete your registration.';
     msg.style.color = '#28a745';
@@ -94,7 +102,7 @@ document.addEventListener('DOMContentLoaded', function () {
   let codeValidationTimeout = null;
   
   invitationCodeInput.addEventListener('input', function() {
-    const code = invitationCodeInput.value.trim().toUpperCase();
+    const code = normalizeInvitationCode(invitationCodeInput.value);
     invitationCodeInput.value = code;
     
     if (codeValidationTimeout) {
@@ -442,7 +450,7 @@ document.addEventListener('DOMContentLoaded', function () {
       return;
     }
     
-    const invitationCode = form.invitation_code.value.trim().toUpperCase();
+    const invitationCode = normalizeInvitationCode(form.invitation_code.value);
     const fullName = form.full_name.value.trim();
     const email = form.email.value.trim();
     const phone = form.phone.value.trim();

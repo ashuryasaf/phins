@@ -3136,6 +3136,28 @@ def sanitize_input(value: str, max_length: int = 255) -> str:
     
     return value.strip()
 
+
+def normalize_invitation_code(raw_code: Any) -> str:
+    """
+    Normalize invitation codes from user/admin input.
+
+    Handles copy/paste artifacts (tabs/newlines/spaces) and common Unicode dash
+    variants so code matching remains deterministic across web/mobile clients.
+    """
+    if raw_code is None:
+        return ''
+
+    code = str(raw_code)
+
+    # Normalize common Unicode dash/minus characters to ASCII hyphen.
+    for dash_char in ('\u2010', '\u2011', '\u2012', '\u2013', '\u2014', '\u2015', '\u2212'):
+        code = code.replace(dash_char, '-')
+
+    # Remove all whitespace (including tabs/newlines/non-breaking spaces).
+    code = ''.join(code.split())
+    return code.upper()
+
+
 def validate_email(email: str) -> bool:
     """Basic email validation"""
     import re
@@ -4318,7 +4340,7 @@ For claims or questions, please contact:
         if path == '/api/invitations' or path.startswith('/api/invitations/'):
             # Validate endpoint is public (for registration form)
             if path == '/api/invitations/validate':
-                code = qs.get('code', [''])[0].strip().upper()
+                code = normalize_invitation_code(qs.get('code', [''])[0])
                 if not code:
                     self._set_json_headers(400)
                     self.wfile.write(json.dumps({'valid': False, 'error': 'No code provided'}).encode('utf-8'))
@@ -15227,7 +15249,7 @@ For claims or questions, please contact:
                 data = json.loads(body)
                 
                 # Support custom code for restoration, otherwise generate new
-                custom_code = data.get('code', '').strip().upper()
+                custom_code = normalize_invitation_code(data.get('code', ''))
                 if custom_code and custom_code.startswith('PHINS-'):
                     # Admin is restoring a specific code
                     code = custom_code
@@ -16396,7 +16418,7 @@ For claims or questions, please contact:
                 phone = sanitize_input(data.get('phone', ''), 20)
                 dob = data.get('dob', '')
                 password = data.get('password', '')
-                invitation_code = data.get('invitation_code', '').strip().upper()
+                invitation_code = normalize_invitation_code(data.get('invitation_code', ''))
                 verification_id = str(data.get('verification_id', '') or '').strip()
                 email_verified = bool(data.get('email_verified', False))
 
