@@ -2518,7 +2518,8 @@ def _smtp_looks_unconfigured() -> bool:
         return True
 
     # Guard against obvious docs placeholders copied into production env.
-    if host.endswith('.example.com'):
+    # Check both subdomains (*.example.com) and the bare domain (example.com).
+    if host.endswith('.example.com') or host == 'example.com':
         return True
 
     return False
