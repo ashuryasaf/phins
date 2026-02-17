@@ -1936,75 +1936,6 @@
       <p>Generate Mislaka-ready assessments, Swiftness Safe imports, and AI-driven insights</p>
     </div>
 
-    <!-- Swiftness Resources & Downloads -->
-    <section class="research-section fade-in" id="swiftnessResourcesSection" style="border-top: 3px solid #0ea5e9;">
-      <div class="research-header">
-        <h3>📥 Swiftness Data Resources & Downloads</h3>
-        <span class="research-badge" style="background: linear-gradient(135deg, #059669 0%, #10b981 100%);">Files • Links • Schemas</span>
-      </div>
-
-      <!-- Quick Links -->
-      <div style="display: flex; gap: 1rem; flex-wrap: wrap; margin-bottom: 1.5rem;" id="swiftnessQuickLinks">
-        <a href="https://www.swiftness.co.il/כללי-מערכת/" target="_blank" rel="noopener"
-           class="btn btn-primary" style="text-decoration: none; font-size: 0.9rem;">
-          🌐 כללי מערכת (System General)
-        </a>
-        <a href="https://www.swiftness.co.il/savers/קבצים-עדכניים-לעבודה-מול-המסלקה/" target="_blank" rel="noopener"
-           class="btn btn-primary" style="text-decoration: none; font-size: 0.9rem; background: linear-gradient(135deg, #059669 0%, #047857 100%);">
-          📂 קבצים עדכניים לעבודה מול המסלקה
-        </a>
-        <a href="https://www.swiftness.co.il" target="_blank" rel="noopener"
-           class="btn btn-secondary" style="text-decoration: none; font-size: 0.9rem;">
-          🏠 Swiftness Home
-        </a>
-        <a href="https://www.swiftness.co.il/savers/" target="_blank" rel="noopener"
-           class="btn btn-secondary" style="text-decoration: none; font-size: 0.9rem;">
-          👤 Savers Portal
-        </a>
-      </div>
-
-      <!-- Resource Catalog Tabs -->
-      <div style="display: flex; gap: 0.5rem; margin-bottom: 1rem;">
-        <button class="btn btn-secondary" id="tabSystemGeneral" onclick="showResourceTab('system_general')" style="padding: 8px 16px; font-size: 0.85rem; background: var(--primary); color: white;">
-          📋 System General
-        </button>
-        <button class="btn btn-secondary" id="tabMislakaFiles" onclick="showResourceTab('mislaka_work')" style="padding: 8px 16px; font-size: 0.85rem;">
-          📂 Mislaka Work Files
-        </button>
-        <button class="btn btn-secondary" id="tabReportModel" onclick="showResourceTab('report_model')" style="padding: 8px 16px; font-size: 0.85rem;">
-          📊 Report Model
-        </button>
-      </div>
-
-      <!-- System General Files -->
-      <div id="resourceTabSystemGeneral" class="resource-tab-content">
-        <div class="research-grid" id="systemGeneralGrid" style="grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));">
-          <div style="text-align: center; color: var(--text-muted); padding: 1.5rem; grid-column: 1/-1;">Loading system resources...</div>
-        </div>
-      </div>
-
-      <!-- Mislaka Work Files -->
-      <div id="resourceTabMislakaWork" class="resource-tab-content" style="display: none;">
-        <div class="research-grid" id="mislakaWorkGrid" style="grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));">
-          <div style="text-align: center; color: var(--text-muted); padding: 1.5rem; grid-column: 1/-1;">Loading Mislaka work files...</div>
-        </div>
-      </div>
-
-      <!-- Report Model -->
-      <div id="resourceTabReportModel" class="resource-tab-content" style="display: none;">
-        <div id="reportModelContainer">
-          <div style="text-align: center; color: var(--text-muted); padding: 1.5rem;">Loading report model...</div>
-        </div>
-      </div>
-
-      <!-- Resource Stats -->
-      <div class="research-footer" id="resourceStats">
-        <span id="resourceStatTotal">Loading resource catalog...</span>
-        <span id="resourceStatInterfaces"></span>
-        <span id="resourceStatFileTypes"></span>
-      </div>
-    </section>
-    
     <!-- Upload Section -->
     <section class="upload-section fade-in">
       <div class="section-header">
@@ -2225,6 +2156,7 @@
       loadReportHistory();
       loadAffiliations();
       refreshSwiftnessStatus();
+      // Keep resource/model payloads preloaded for downstream report integrity logic.
       loadSwiftnessResources();
     });
     
@@ -2617,36 +2549,6 @@
       }
 
       container.innerHTML = html;
-    }
-
-    function showResourceTab(tab) {
-      // Hide all tabs
-      document.getElementById('resourceTabSystemGeneral').style.display = 'none';
-      document.getElementById('resourceTabMislakaWork').style.display = 'none';
-      document.getElementById('resourceTabReportModel').style.display = 'none';
-
-      // Reset button styles
-      document.getElementById('tabSystemGeneral').style.background = '';
-      document.getElementById('tabSystemGeneral').style.color = '';
-      document.getElementById('tabMislakaFiles').style.background = '';
-      document.getElementById('tabMislakaFiles').style.color = '';
-      document.getElementById('tabReportModel').style.background = '';
-      document.getElementById('tabReportModel').style.color = '';
-
-      // Show selected tab
-      if (tab === 'system_general') {
-        document.getElementById('resourceTabSystemGeneral').style.display = 'block';
-        document.getElementById('tabSystemGeneral').style.background = 'var(--primary)';
-        document.getElementById('tabSystemGeneral').style.color = 'white';
-      } else if (tab === 'mislaka_work') {
-        document.getElementById('resourceTabMislakaWork').style.display = 'block';
-        document.getElementById('tabMislakaFiles').style.background = 'var(--primary)';
-        document.getElementById('tabMislakaFiles').style.color = 'white';
-      } else if (tab === 'report_model') {
-        document.getElementById('resourceTabReportModel').style.display = 'block';
-        document.getElementById('tabReportModel').style.background = 'var(--primary)';
-        document.getElementById('tabReportModel').style.color = 'white';
-      }
     }
 
     async function refreshSwiftnessStatus() {
