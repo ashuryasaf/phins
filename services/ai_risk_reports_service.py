@@ -4830,14 +4830,19 @@ Factors Affecting Score:
             'expected_impact': rec.expected_impact,
         } for rec in report.recommendations]
 
+        is_customer_affiliated_view = bool(
+            summary.get('customer_overview')
+            or summary.get('policy_savings_benefits')
+        )
+
         return {
             'report_id': report.id,
             'title': report.title,
             'language': report.language,
             'generated_at': report.generated_at,
             'report_type': report.report_type,
-            'risk_score': report.metadata.get('risk_score'),
-            'confidence': report.metadata.get('confidence'),
+            'risk_score': None if is_customer_affiliated_view else report.metadata.get('risk_score'),
+            'confidence': None if is_customer_affiliated_view else report.metadata.get('confidence'),
             'savings_cover_id_summary': summary,
             'customer_overview': summary.get('customer_overview', {}),
             'policy_savings_benefits': summary.get('policy_savings_benefits', []),

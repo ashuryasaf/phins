@@ -3627,6 +3627,13 @@ class PortalHandler(BaseHTTPRequestHandler):
         """Build CSV bytes for downloadable report summary."""
         out = io.StringIO()
         writer = csv.writer(out)
+        sci = summary.get('savings_cover_id_summary', {}) or {}
+        is_customer_affiliated_view = bool(
+            sci.get('customer_overview')
+            or sci.get('policy_savings_benefits')
+            or summary.get('customer_overview')
+            or summary.get('policy_savings_benefits')
+        )
 
         writer.writerow(['PHINS Savings & Insurance Report Summary'])
         writer.writerow(['Generated At', datetime.now().isoformat()])
@@ -3635,11 +3642,11 @@ class PortalHandler(BaseHTTPRequestHandler):
         writer.writerow(['Title', summary.get('title', '')])
         writer.writerow(['Language', summary.get('language', '')])
         writer.writerow(['Report Type', summary.get('report_type', '')])
-        writer.writerow(['Risk Score', summary.get('risk_score', '')])
-        writer.writerow(['Confidence', summary.get('confidence', '')])
+        if not is_customer_affiliated_view:
+            writer.writerow(['Risk Score', summary.get('risk_score', '')])
+            writer.writerow(['Confidence', summary.get('confidence', '')])
         writer.writerow([])
 
-        sci = summary.get('savings_cover_id_summary', {}) or {}
         writer.writerow(['Savings / Cover / ID Summary'])
         writer.writerow(['Records Analyzed', sci.get('records_analyzed', 0)])
         writer.writerow(['Unique IDs', sci.get('unique_id_count', 0)])
@@ -3756,15 +3763,23 @@ class PortalHandler(BaseHTTPRequestHandler):
         story.append(Paragraph('PHINS Savings & Insurance Report Summary', styles['Title']))
         story.append(Spacer(1, 10))
 
+        sci = summary.get('savings_cover_id_summary', {}) or {}
+        is_customer_affiliated_view = bool(
+            sci.get('customer_overview')
+            or sci.get('policy_savings_benefits')
+            or summary.get('customer_overview')
+            or summary.get('policy_savings_benefits')
+        )
         info_rows = [
             ['Report ID', _as_str(summary.get('report_id'))],
             ['Title', _as_str(summary.get('title'))],
             ['Language', _as_str(summary.get('language'))],
             ['Report Type', _as_str(summary.get('report_type'))],
-            ['Risk Score', _as_str(summary.get('risk_score'))],
-            ['Confidence', _as_str(summary.get('confidence'))],
             ['Generated At', _as_str(summary.get('generated_at'))],
         ]
+        if not is_customer_affiliated_view:
+            info_rows.insert(4, ['Risk Score', _as_str(summary.get('risk_score'))])
+            info_rows.insert(5, ['Confidence', _as_str(summary.get('confidence'))])
         info_table = Table(info_rows, colWidths=[130, 360])
         info_table.setStyle(TableStyle([
             ('BACKGROUND', (0, 0), (0, -1), colors.lightgrey),
@@ -3776,7 +3791,6 @@ class PortalHandler(BaseHTTPRequestHandler):
         story.append(info_table)
         story.append(Spacer(1, 12))
 
-        sci = summary.get('savings_cover_id_summary', {}) or {}
         story.append(Paragraph('Savings / Cover / ID Summary', styles['Heading2']))
         sci_rows = [
             ['Records Analyzed', _as_str(sci.get('records_analyzed', 0))],
@@ -3910,6 +3924,13 @@ class PortalHandler(BaseHTTPRequestHandler):
         wb = Workbook()
         ws = wb.active
         ws.title = 'Overview'
+        sci = summary.get('savings_cover_id_summary', {}) or {}
+        is_customer_affiliated_view = bool(
+            sci.get('customer_overview')
+            or sci.get('policy_savings_benefits')
+            or summary.get('customer_overview')
+            or summary.get('policy_savings_benefits')
+        )
 
         def _cell(value: Any) -> Any:
             if value is None:
@@ -3927,11 +3948,11 @@ class PortalHandler(BaseHTTPRequestHandler):
         ws.append(['Title', _cell(summary.get('title'))])
         ws.append(['Language', _cell(summary.get('language'))])
         ws.append(['Report Type', _cell(summary.get('report_type'))])
-        ws.append(['Risk Score', _cell(summary.get('risk_score'))])
-        ws.append(['Confidence', _cell(summary.get('confidence'))])
+        if not is_customer_affiliated_view:
+            ws.append(['Risk Score', _cell(summary.get('risk_score'))])
+            ws.append(['Confidence', _cell(summary.get('confidence'))])
         ws.append([])
 
-        sci = summary.get('savings_cover_id_summary', {}) or {}
         ws.append(['Savings / Cover / ID Summary'])
         ws.append(['Records Analyzed', _cell(sci.get('records_analyzed', 0))])
         ws.append(['Unique IDs', _cell(sci.get('unique_id_count', 0))])
