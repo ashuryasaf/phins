@@ -536,16 +536,30 @@ class TestNotificationService:
         assert isinstance(service._email_provider, SendGridEmailProvider)
 
     def test_factory_respects_explicit_smtp_provider(self, monkeypatch):
-        """Explicit EMAIL_PROVIDER should not be auto-overridden."""
+        """Explicit, configured SMTP provider should not be auto-overridden."""
+        monkeypatch.setenv('EMAIL_PROVIDER', 'smtp')
+        monkeypatch.setattr(NotificationConfig, 'EMAIL_PROVIDER', 'smtp')
+        monkeypatch.setattr(NotificationConfig, 'SMTP_HOST', 'smtp.gmail.com')
+        monkeypatch.setattr(NotificationConfig, 'SMTP_USERNAME', 'smtp-user')
+        monkeypatch.setattr(NotificationConfig, 'SMTP_PASSWORD', 'smtp-pass')
+        monkeypatch.setattr(NotificationConfig, 'SENDGRID_API_KEY', 'SG.test_key')
+
+        service = create_notification_service(use_mock=False)
+        assert isinstance(service._email_provider, SMTPEmailProvider)
+
+    def test_factory_overrides_explicit_placeholder_smtp_when_api_provider_available(self, monkeypatch):
+        """Explicit SMTP with placeholder settings should fail over to configured API provider."""
         monkeypatch.setenv('EMAIL_PROVIDER', 'smtp')
         monkeypatch.setattr(NotificationConfig, 'EMAIL_PROVIDER', 'smtp')
         monkeypatch.setattr(NotificationConfig, 'SMTP_HOST', 'localhost')
         monkeypatch.setattr(NotificationConfig, 'SMTP_USERNAME', '')
         monkeypatch.setattr(NotificationConfig, 'SMTP_PASSWORD', '')
         monkeypatch.setattr(NotificationConfig, 'SENDGRID_API_KEY', 'SG.test_key')
+        monkeypatch.setattr(NotificationConfig, 'MAILGUN_API_KEY', '')
+        monkeypatch.setattr(NotificationConfig, 'MAILGUN_DOMAIN', '')
 
         service = create_notification_service(use_mock=False)
-        assert isinstance(service._email_provider, SMTPEmailProvider)
+        assert isinstance(service._email_provider, SendGridEmailProvider)
 
     def test_factory_blank_email_provider_still_allows_auto_detection(self, monkeypatch):
         """Blank EMAIL_PROVIDER should behave like unset and allow safe auto-selection."""
