@@ -2201,7 +2201,6 @@
     let currentReport = null;
     let charts = {};
     let reportHistory = [];
-    let swiftnessSafeBaseUrl = null;
     let swiftnessAffiliations = null;
     let swiftnessAffiliationsUpdatedAt = null;
     let swiftnessSafeSnapshot = {
@@ -2657,7 +2656,6 @@
       try {
         const response = await fetch('/api/swiftness-safe/status');
         const data = await response.json();
-        swiftnessSafeBaseUrl = data.base_url || 'https://www.swiftness.co.il';
         swiftnessSafeSnapshot = {
           status: data.configured ? '✅ Safe Ready' : '⚠️ Safe Not Configured',
           message: data.message || 'Swiftness Safe status unavailable',
@@ -2693,14 +2691,6 @@
       }
     }
 
-    function openSwiftnessSafe() {
-      if (!swiftnessSafeBaseUrl) {
-        alert('Swiftness Safe base URL not available yet.');
-        return;
-      }
-      window.open(swiftnessSafeBaseUrl, '_blank', 'noopener');
-    }
-    
     function formatDate(dateStr) {
       if (!dateStr) return '';
       const date = new Date(dateStr);
