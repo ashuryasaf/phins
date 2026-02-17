@@ -5139,11 +5139,11 @@
 
         const normalizedCoverageStr = newCoverageRaw.replace(/,/g, '').trim();
         const newCoverage = Number(normalizedCoverageStr);
-        if (!Number.isFinite(newCoverage) || newCoverage <= 0) {
-          alert('Coverage amount must be a positive number');
-          return;
-        }
         if (newCoverage !== currentCoverage) {
+          if (!Number.isFinite(newCoverage) || newCoverage <= 0) {
+            alert('Coverage amount must be a positive number');
+            return;
+          }
           payload.coverage_amount = newCoverage;
         }
 
