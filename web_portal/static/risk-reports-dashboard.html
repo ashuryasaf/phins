@@ -3463,16 +3463,6 @@
           </div>
           <span class="insight-badge">Upload Sync</span>
         </div>
-        <div class="insight-card fade-in" style="border-left-color: #059669;">
-          <h5>📥 Swiftness Data Resources</h5>
-          <div class="insight-detail">
-            <div class="stat-detail"><span class="label">System General</span><span class="val">${resMeta.system_general_count || 0} files</span></div>
-            <div class="stat-detail"><span class="label">Mislaka Work Files</span><span class="val">${resMeta.mislaka_work_files_count || 0} files</span></div>
-            <div class="stat-detail"><span class="label">Quick Links</span><span class="val">${resMeta.links_count || 0}</span></div>
-            <div class="stat-detail"><span class="label">Report Sections</span><span class="val">${swiftnessReportModel ? swiftnessReportModel.sections.length : 0}</span></div>
-          </div>
-          <span class="insight-badge" style="background: rgba(5, 150, 105, 0.1); color: #059669;">Swiftness Catalog</span>
-        </div>
       `;
 
       const fileListHtml = fileSummary.length
@@ -3491,15 +3481,6 @@
             `).join('')}
           </div>`
         : '<p style="color: var(--text-muted);">Schema coverage unavailable.</p>';
-
-      // Build Swiftness links section for report
-      const swiftnessLinksHtml = (swiftnessResources && swiftnessResources.quick_links)
-        ? swiftnessResources.quick_links.map(link => `
-            <a href="${link.url}" target="_blank" rel="noopener" style="display: inline-flex; align-items: center; gap: 6px; color: #0369a1; text-decoration: none; padding: 6px 12px; background: #e0f2fe; border-radius: 8px; font-size: 0.85rem; margin: 4px;">
-              🔗 ${link.label_he} (${link.label})
-            </a>
-          `).join('')
-        : '<p style="color: var(--text-muted);">Swiftness links not available.</p>';
 
       // Build report model summary for report body with interactive minitabs
       const reportModelSummary = swiftnessReportModel
@@ -3594,14 +3575,6 @@
             ${schemaGridHtml}
           </div>
         </div>
-        <div class="report-section fade-in" style="background: linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%); border-left: 4px solid #10b981; border-radius: 12px; padding: 1.5rem;">
-          <h3 style="color: #047857;">📥 Swiftness Data Resources</h3>
-          <div class="content">
-            <p><strong>Source:</strong> <a href="https://www.swiftness.co.il" target="_blank" rel="noopener">swiftness.co.il</a></p>
-            <p><strong>Total Resources:</strong> ${totalResources} files and schemas</p>
-            <div style="margin: 0.75rem 0;">${swiftnessLinksHtml}</div>
-          </div>
-        </div>
         <div class="report-section fade-in" style="background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%); border-left: 4px solid #2563eb; border-radius: 12px; padding: 1.5rem;">
           <h3 style="color: #1e40af;">📊 Report Model Structure (Nituach Tik)</h3>
           <div class="content">
@@ -3633,7 +3606,6 @@
           const shouldBeMinimized = 
             headingText.includes('📁 Uploaded Document Context') ||
             headingText.includes('🧬 Interface & Schema Coverage') ||
-            headingText.includes('📥 Swiftness Data Resources') ||
             headingText.includes('🧭 Swiftness Affiliation Report') ||
             headingText.includes('🧭 Swiftness Affiliation Intelligence');
           
