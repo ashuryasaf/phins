@@ -3653,9 +3653,10 @@
       }
 
       // Check if this is pension/Mislaka data
-      const isPensionData = report.metadata?.is_pension_data || 
-                           report.metadata?.pension_data ||
-                           report.language === 'hebrew';
+      const isPensionData = Boolean(
+        report.metadata?.is_pension_data ||
+        report.metadata?.pension_data
+      );
       const pensionData = report.metadata?.pension_data;
       const reportLanguage = report.language === 'hebrew' ? 'hebrew' : 'english';
       
@@ -3695,7 +3696,29 @@
       
       // Report Sections - with enhanced Mislaka/pension-specific rendering
       const reportBody = document.getElementById('reportBody');
-      reportBody.innerHTML = (report.sections || []).map(section => {
+      const statisticalSectionTitles = [
+        'Data Profile',
+        'Statistical Analysis',
+        'Correlation Analysis',
+        'Patterns & Trends',
+        'Anomalies & Warnings',
+        'Risk Assessment',
+        'Key Metrics',
+        'פרופיל נתונים',
+        'ניתוח סטטיסטי',
+        'ניתוח מתאמים',
+        'דפוסים ומגמות',
+        'חריגות ואזהרות',
+        'הערכת סיכון',
+        'מדדים מרכזיים',
+        'מפת שיוכים',
+      ];
+      const visibleSections = (report.sections || []).filter(section => {
+        if (!isPensionData) return true;
+        const title = String(section?.title || '');
+        return !statisticalSectionTitles.some(pattern => title.includes(pattern));
+      });
+      reportBody.innerHTML = visibleSections.map(section => {
         const title = section.title || '';
         const isMislakaSection = title.includes('מסלקה') || 
                                  title.toLowerCase().includes('mislaka');

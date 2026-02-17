@@ -2632,11 +2632,28 @@ class AIRiskReportsService:
         """Generate comprehensive report sections with AI/BI insights and actual data content"""
         sections = []
         is_hebrew = lang == 'hebrew'
+        is_customer_affiliated_view = bool(pension_data or pension_report)
+
+        executive_summary = analysis.summary
+        if is_customer_affiliated_view:
+            friendly_summary = self._build_customer_friendly_executive_summary(pension_data, is_hebrew)
+            if friendly_summary:
+                executive_summary = friendly_summary
+            elif is_hebrew:
+                executive_summary = (
+                    "דוח לקוח מסונף למסלקה הופק בהצלחה.\n\n"
+                    "הדוח מציג נתוני לקוח, חיסכון לפי פוליסה והטבות ביטוחיות בפורמט פשוט וברור."
+                )
+            else:
+                executive_summary = (
+                    "Customer-facing Mislaka affiliated report generated successfully.\n\n"
+                    "The report presents customer data, per-policy savings, and insurance benefits in a simple format."
+                )
         
         # 1. Executive Summary
         sections.append(ReportSection(
             title='תקציר מנהלים' if is_hebrew else 'Executive Summary',
-            content=analysis.summary,
+            content=executive_summary,
             order=1
         ))
         
@@ -2658,7 +2675,7 @@ class AIRiskReportsService:
             sections.extend(self._build_pension_affiliated_sections(pension_data, is_hebrew))
         
         # 3. ACTUAL DATA CONTENT SECTION - Show extracted data from the files
-        if doc_data:
+        if doc_data and not is_customer_affiliated_view:
             data_content_section = self._generate_data_content_section(doc_data, analysis, is_hebrew)
             if data_content_section:
                 sections.append(ReportSection(
@@ -2668,21 +2685,27 @@ class AIRiskReportsService:
                 ))
 
         # 3.5 Savings/Cover/ID affiliation section (table-oriented summary)
-        if savings_cover_id_summary is None:
-            savings_cover_id_summary = self._extract_savings_cover_id_summary(doc_data, pension_data)
-        affiliated_summary_section = self._build_savings_cover_id_section(savings_cover_id_summary, is_hebrew)
-        if affiliated_summary_section:
-            sections.append(affiliated_summary_section)
+        if not is_customer_affiliated_view:
+            if savings_cover_id_summary is None:
+                savings_cover_id_summary = self._extract_savings_cover_id_summary(doc_data, pension_data)
+            affiliated_summary_section = self._build_savings_cover_id_section(savings_cover_id_summary, is_hebrew)
+            if affiliated_summary_section:
+                sections.append(affiliated_summary_section)
         
         # 3. Hebrew Insurance Details (if extracted)
-        hebrew_factors = [f for f in analysis.extracted_factors if f.category == 'hebrew_insurance']
-        if hebrew_factors:
-            hebrew_content = self._generate_hebrew_insurance_section(hebrew_factors, is_hebrew)
-            sections.append(ReportSection(
-                title='פרטי פוליסת ביטוח' if is_hebrew else 'Insurance Policy Details',
-                content=hebrew_content,
-                order=3
-            ))
+        if not is_customer_affiliated_view:
+            hebrew_factors = [f for f in analysis.extracted_factors if f.category == 'hebrew_insurance']
+            if hebrew_factors:
+                hebrew_content = self._generate_hebrew_insurance_section(hebrew_factors, is_hebrew)
+                sections.append(ReportSection(
+                    title='פרטי פוליסת ביטוח' if is_hebrew else 'Insurance Policy Details',
+                    content=hebrew_content,
+                    order=3
+                ))
+
+        # Keep pension/Mislaka output customer-friendly (no statistical analytics blocks).
+        if is_customer_affiliated_view:
+            return sections
         
         # 4. Data Profile Overview
         total_records = analysis.key_metrics.get('total_records', 0)
@@ -3169,6 +3192,64 @@ Factors Affecting Score:
             return client_data
         return {}
 
+    def _build_customer_friendly_executive_summary(self, pension_data: Optional[Dict[str, Any]], is_hebrew: bool) -> str:
+        """Build a non-statistical executive summary for customer-facing Mislaka reports."""
+        if not isinstance(pension_data, dict):
+            return ''
+
+        accounts = pension_data.get('accounts', []) or []
+        totals = pension_data.get('totals', {}) or {}
+        client = self._normalize_client_payload(pension_data.get('client', {}))
+
+        full_name = str(
+            client.get('full_name')
+            or client.get('client_name')
+            or f"{client.get('first_name', '')} {client.get('last_name', '')}".strip()
+            or ''
+        ).strip()
+        birth_date = self._format_date_ddmmyyyy(client.get('birth_date') or client.get('date_of_birth'))
+
+        policy_count = int(totals.get('account_count') or len(accounts))
+        active_policies = len([
+            acct for acct in accounts
+            if str(acct.get('status', '')).strip().lower() in ('active', 'פעיל')
+        ])
+        section14_policies = len([acct for acct in accounts if acct.get('section14')])
+
+        total_savings = self._to_float_amount(totals.get('total_savings', totals.get('total_savings_balance', 0)))
+        if total_savings <= 0:
+            total_savings = sum(
+                self._to_float_amount(acct.get('savings_balance')) or self._to_float_amount(acct.get('total_balance'))
+                for acct in accounts
+            )
+
+        life_benefits = sum(self._to_float_amount(acct.get('death_coverage')) for acct in accounts)
+        disability_benefits = sum(self._to_float_amount(acct.get('disability_coverage')) for acct in accounts)
+        total_benefits = life_benefits + disability_benefits
+
+        if is_hebrew:
+            return (
+                "סיכום לקוח - דו\"ח מסלקה בפורמט פשוט:\n\n"
+                f"• שם לקוח: {full_name or 'לא זמין'}\n"
+                f"• תאריך לידה: {birth_date or 'לא זמין'}\n"
+                f"• מספר פוליסות: {policy_count}\n"
+                f"• פוליסות פעילות: {active_policies}\n"
+                f"• סך חיסכון מצטבר: ₪{total_savings:,.2f}\n"
+                f"• הטבות ביטוח כוללות (חיים + אכ\"ע): ₪{total_benefits:,.2f}\n"
+                f"• פוליסות עם סעיף 14: {section14_policies}"
+            )
+
+        return (
+            "Customer summary - Mislaka report in a simple view:\n\n"
+            f"• Customer Name: {full_name or 'N/A'}\n"
+            f"• Date of Birth: {birth_date or 'N/A'}\n"
+            f"• Policies: {policy_count}\n"
+            f"• Active Policies: {active_policies}\n"
+            f"• Total Savings: ₪{total_savings:,.2f}\n"
+            f"• Total Insurance Benefits (Life + Disability): ₪{total_benefits:,.2f}\n"
+            f"• Policies with Section 14: {section14_policies}"
+        )
+
     def _build_customer_snapshot_section(self, pension_data: Optional[Dict[str, Any]], is_hebrew: bool) -> Optional[ReportSection]:
         """Build a simple customer overview section (DOB, totals, coverage)."""
         if not isinstance(pension_data, dict):
@@ -3354,8 +3435,6 @@ Factors Affecting Score:
 
         total_savings = 0.0
         total_cover = 0.0
-        records_with_savings = 0
-        records_with_cover = 0
         id_values: List[str] = []
         sample_rows: List[Dict[str, Any]] = []
         customer_overview: Dict[str, Any] = {}
@@ -3394,10 +3473,8 @@ Factors Affecting Score:
                     id_values.append(account_id)
                 if savings_value > 0:
                     total_savings += savings_value
-                    records_with_savings += 1
                 if cover_value > 0:
                     total_cover += cover_value
-                    records_with_cover += 1
 
                 if account_id or savings_value > 0 or cover_value > 0:
                     sample_rows.append({
@@ -3459,10 +3536,8 @@ Factors Affecting Score:
                     id_values.append(id_value)
                 if savings_value > 0:
                     total_savings += savings_value
-                    records_with_savings += 1
                 if cover_value > 0:
                     total_cover += cover_value
-                    records_with_cover += 1
 
                 if id_value or savings_value > 0 or cover_value > 0:
                     sample_rows.append({
@@ -3485,10 +3560,7 @@ Factors Affecting Score:
             'unique_id_count': len(unique_ids),
             'id_row_coverage': id_rows_count,
             'total_savings': round(total_savings, 2),
-            'average_savings': round(total_savings / records_with_savings, 2) if records_with_savings else 0.0,
             'total_cover': round(total_cover, 2),
-            'average_cover': round(total_cover / records_with_cover, 2) if records_with_cover else 0.0,
-            'coverage_to_savings_ratio': round(total_cover / total_savings, 2) if total_savings > 0 else None,
             'sample_rows': sample_rows[:120],
             'customer_overview': customer_overview,
             'policy_savings_benefits': policy_savings_benefits[:120],
@@ -3519,8 +3591,7 @@ Factors Affecting Score:
                 f"• רשומות שנותחו: {records_analyzed}\n"
                 f"• סך חיסכון: ₪{total_savings:,.2f}\n"
                 f"• סך כיסוי: ₪{total_cover:,.2f}\n"
-                f"• מזהים ייחודיים: {unique_id_count}\n"
-                f"• יחס כיסוי/חיסכון: {summary.get('coverage_to_savings_ratio', 'N/A')}"
+                f"• מזהים ייחודיים: {unique_id_count}"
             )
             if birth_date:
                 content += f"\n• תאריך לידה: {birth_date}"
@@ -3538,8 +3609,7 @@ Factors Affecting Score:
                 f"• Records analyzed: {records_analyzed}\n"
                 f"• Total savings: ₪{total_savings:,.2f}\n"
                 f"• Total cover: ₪{total_cover:,.2f}\n"
-                f"• Unique IDs: {unique_id_count}\n"
-                f"• Cover/Savings ratio: {summary.get('coverage_to_savings_ratio', 'N/A')}"
+                f"• Unique IDs: {unique_id_count}"
             )
             if birth_date:
                 content += f"\n• Date of Birth: {birth_date}"
@@ -3561,7 +3631,6 @@ Factors Affecting Score:
                 {metric_key: 'Total Savings', value_key: total_savings},
                 {metric_key: 'Total Cover', value_key: total_cover},
                 {metric_key: 'Unique IDs', value_key: unique_id_count},
-                {metric_key: 'Cover/Savings Ratio', value_key: summary.get('coverage_to_savings_ratio', 'N/A')},
             ]
             return ReportSection(
                 title=title,

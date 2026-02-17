@@ -3644,10 +3644,7 @@ class PortalHandler(BaseHTTPRequestHandler):
         writer.writerow(['Records Analyzed', sci.get('records_analyzed', 0)])
         writer.writerow(['Unique IDs', sci.get('unique_id_count', 0)])
         writer.writerow(['Total Savings', sci.get('total_savings', 0)])
-        writer.writerow(['Average Savings', sci.get('average_savings', 0)])
         writer.writerow(['Total Cover', sci.get('total_cover', 0)])
-        writer.writerow(['Average Cover', sci.get('average_cover', 0)])
-        writer.writerow(['Cover/Savings Ratio', sci.get('coverage_to_savings_ratio', 'N/A')])
         writer.writerow([])
 
         customer_overview = sci.get('customer_overview', {}) or summary.get('customer_overview', {}) or {}
@@ -3785,10 +3782,7 @@ class PortalHandler(BaseHTTPRequestHandler):
             ['Records Analyzed', _as_str(sci.get('records_analyzed', 0))],
             ['Unique IDs', _as_str(sci.get('unique_id_count', 0))],
             ['Total Savings', _as_str(sci.get('total_savings', 0))],
-            ['Average Savings', _as_str(sci.get('average_savings', 0))],
             ['Total Cover', _as_str(sci.get('total_cover', 0))],
-            ['Average Cover', _as_str(sci.get('average_cover', 0))],
-            ['Cover/Savings Ratio', _as_str(sci.get('coverage_to_savings_ratio', 'N/A'))],
         ]
         sci_table = Table(sci_rows, colWidths=[170, 320])
         sci_table.setStyle(TableStyle([
@@ -3942,10 +3936,7 @@ class PortalHandler(BaseHTTPRequestHandler):
         ws.append(['Records Analyzed', _cell(sci.get('records_analyzed', 0))])
         ws.append(['Unique IDs', _cell(sci.get('unique_id_count', 0))])
         ws.append(['Total Savings', _cell(sci.get('total_savings', 0))])
-        ws.append(['Average Savings', _cell(sci.get('average_savings', 0))])
         ws.append(['Total Cover', _cell(sci.get('total_cover', 0))])
-        ws.append(['Average Cover', _cell(sci.get('average_cover', 0))])
-        ws.append(['Cover/Savings Ratio', _cell(sci.get('coverage_to_savings_ratio', 'N/A'))])
 
         customer_overview = sci.get('customer_overview', {}) or summary.get('customer_overview', {}) or {}
         if customer_overview:

@@ -399,7 +399,30 @@ POL-002,150000,620"""
         self.assertTrue(any('תמצית לקוח' in title for title in titles))
         self.assertTrue(any('חיסכון והטבות לפי פוליסה' in title for title in titles))
         self.assertTrue(any('סטטוס פוליסות' in title for title in titles))
-        self.assertTrue(any('מפת שיוכים' in title for title in titles))
+
+        forbidden_stat_titles = [
+            'פרופיל נתונים',
+            'ניתוח סטטיסטי',
+            'ניתוח מתאמים',
+            'דפוסים ומגמות',
+            'חריגות ואזהרות',
+            'הערכת סיכון',
+            'מדדים מרכזיים',
+            'מפת שיוכים',
+            'Data Profile',
+            'Statistical Analysis',
+            'Correlation Analysis',
+            'Patterns & Trends',
+            'Anomalies & Warnings',
+            'Risk Assessment',
+            'Key Metrics',
+            'Affiliation Mapping Snapshot',
+        ]
+        for forbidden_title in forbidden_stat_titles:
+            self.assertFalse(
+                any(forbidden_title in title for title in titles),
+                msg=f"Unexpected technical/statistical section present: {forbidden_title}"
+            )
 
         table_sections = [section for section in report.sections if section.data_table]
         self.assertGreater(len(table_sections), 0)
