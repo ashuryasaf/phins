@@ -337,6 +337,23 @@ def resolve_public_registration_base_url() -> Dict[str, Any]:
     }
 
 
+def _sanitize_landing_page_links(html_bytes: bytes) -> bytes:
+    """
+    Remove deprecated Risk Reports links from landing page HTML.
+
+    This acts as a defensive server-side fallback in case stale static content
+    is still present during rollout.
+    """
+    replacements = (
+        b'<a href="/risk-reports-documentation.html">\xf0\x9f\x93\x8a Risk Reports Docs</a>',
+        b'<a href="/risk-reports-documentation.html">Risk Reports Documentation</a>',
+    )
+    sanitized = html_bytes
+    for token in replacements:
+        sanitized = sanitized.replace(token, b'')
+    return sanitized
+
+
 # Import billing engine
 try:
     sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
@@ -15055,7 +15072,12 @@ For claims or questions, please contact:
             try:
                 self._set_file_headers(file_path)
                 with open(file_path, 'rb') as fh:
-                    self.wfile.write(fh.read())
+                    content = fh.read()
+
+                if path in ('/', '/index.html'):
+                    content = _sanitize_landing_page_links(content)
+
+                self.wfile.write(content)
             except Exception as e:
                 self.send_error(500, str(e))
         else:
