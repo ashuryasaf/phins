@@ -1936,44 +1936,6 @@
       <p>Generate Mislaka-ready assessments, Swiftness Safe imports, and AI-driven insights</p>
     </div>
 
-    <!-- Research Hub -->
-    <section class="research-section fade-in" id="researchSection">
-      <div class="research-header">
-        <h3>🧭 Swiftness + Mislaka Research Hub</h3>
-        <span class="research-badge">Affiliations • Standards • Safe Link</span>
-      </div>
-      <div class="research-grid">
-        <div class="research-card">
-          <h4>🔗 Affiliation Map</h4>
-          <p id="affiliationsSummary" style="color: var(--text-muted); font-size: 0.9rem;">
-            Loading entity, product, and ID affiliations...
-          </p>
-          <div class="affiliations-grid" id="affiliationsGrid"></div>
-        </div>
-        <div class="research-card">
-          <h4>🧬 Interface & Compliance</h4>
-          <div class="tag-grid" id="interfaceTags"></div>
-          <div class="affiliations-grid" id="interfaceStats" style="margin-top: 1rem;"></div>
-        </div>
-        <div class="research-card">
-          <h4>🛡️ Swiftness Safe Gateway</h4>
-          <div class="status-pill pending" id="swiftnessStatusPill">Checking connection...</div>
-          <div id="swiftnessStatusMessage" style="color: var(--text-muted); font-size: 0.9rem;">
-            Validating secure channel configuration
-          </div>
-          <div class="swiftness-actions">
-            <button class="btn btn-secondary" onclick="refreshSwiftnessStatus()">🔄 Refresh</button>
-            <button class="btn btn-primary" id="swiftnessConnectBtn" onclick="openSwiftnessSafe()">🔐 Open Safe</button>
-          </div>
-        </div>
-      </div>
-      <div class="research-footer">
-        <span>Source: Mislaka schema mappings (Holdings, Severance, Events, Transference)</span>
-        <span>Entities: Providers • Clearinghouse • Agents • Savers • Employers</span>
-        <span>Data integrity is enforced with row-level ownership</span>
-      </div>
-    </section>
-
     <!-- Swiftness Resources & Downloads -->
     <section class="research-section fade-in" id="swiftnessResourcesSection" style="border-top: 3px solid #0ea5e9;">
       <div class="research-header">
@@ -2242,6 +2204,11 @@
     let swiftnessSafeBaseUrl = null;
     let swiftnessAffiliations = null;
     let swiftnessAffiliationsUpdatedAt = null;
+    let swiftnessSafeSnapshot = {
+      status: 'Status unavailable',
+      message: '',
+      configured: false
+    };
     
     // DOM Elements
     const uploadZone = document.getElementById('uploadZone');
@@ -2364,10 +2331,7 @@
       const grid = document.getElementById('affiliationsGrid');
       const interfaceTags = document.getElementById('interfaceTags');
       const interfaceStats = document.getElementById('interfaceStats');
-
-      if (!summary || !grid || !interfaceTags || !interfaceStats) {
-        return;
-      }
+      const hasAffiliationsUi = Boolean(summary && grid && interfaceTags && interfaceStats);
 
       try {
         const response = await fetch('/api/mislaka/affiliations');
@@ -2387,58 +2351,62 @@
         const interfaceList = Object.values(data.interface_codes || {});
         const schemaCount = new Set(interfaceList.map(item => item.schema).filter(Boolean)).size;
 
-        summary.textContent = `Entities: ${entityCount} • Products: ${productCount} • Status: ${statusCount} • IDs: ${idCount}`;
+        if (hasAffiliationsUi) {
+          summary.textContent = `Entities: ${entityCount} • Products: ${productCount} • Status: ${statusCount} • IDs: ${idCount}`;
 
-        grid.innerHTML = `
-          <div class="affiliation-item">
-            <div class="label">Entity Types</div>
-            <div class="value">${entityCount}</div>
-          </div>
-          <div class="affiliation-item">
-            <div class="label">Product Types</div>
-            <div class="value">${productCount}</div>
-          </div>
-          <div class="affiliation-item">
-            <div class="label">Status Codes</div>
-            <div class="value">${statusCount}</div>
-          </div>
-          <div class="affiliation-item">
-            <div class="label">ID Types</div>
-            <div class="value">${idCount}</div>
-          </div>
-        `;
+          grid.innerHTML = `
+            <div class="affiliation-item">
+              <div class="label">Entity Types</div>
+              <div class="value">${entityCount}</div>
+            </div>
+            <div class="affiliation-item">
+              <div class="label">Product Types</div>
+              <div class="value">${productCount}</div>
+            </div>
+            <div class="affiliation-item">
+              <div class="label">Status Codes</div>
+              <div class="value">${statusCount}</div>
+            </div>
+            <div class="affiliation-item">
+              <div class="label">ID Types</div>
+              <div class="value">${idCount}</div>
+            </div>
+          `;
 
-        interfaceTags.innerHTML = interfaceList
-          .slice(0, 8)
-          .map(item => `<span class="tag">${item.he || item.name}</span>`)
-          .join('') || '<span style="color: var(--text-muted);">No interface data</span>';
+          interfaceTags.innerHTML = interfaceList
+            .slice(0, 8)
+            .map(item => `<span class="tag">${item.he || item.name}</span>`)
+            .join('') || '<span style="color: var(--text-muted);">No interface data</span>';
 
-        interfaceStats.innerHTML = `
-          <div class="affiliation-item">
-            <div class="label">Interfaces</div>
-            <div class="value">${interfaceCount}</div>
-          </div>
-          <div class="affiliation-item">
-            <div class="label">Schemas</div>
-            <div class="value">${schemaCount || 0}</div>
-          </div>
-          <div class="affiliation-item">
-            <div class="label">Environments</div>
-            <div class="value">${environmentCount}</div>
-          </div>
-          <div class="affiliation-item">
-            <div class="label">Source</div>
-            <div class="value">Mislaka Specs</div>
-          </div>
-        `;
+          interfaceStats.innerHTML = `
+            <div class="affiliation-item">
+              <div class="label">Interfaces</div>
+              <div class="value">${interfaceCount}</div>
+            </div>
+            <div class="affiliation-item">
+              <div class="label">Schemas</div>
+              <div class="value">${schemaCount || 0}</div>
+            </div>
+            <div class="affiliation-item">
+              <div class="label">Environments</div>
+              <div class="value">${environmentCount}</div>
+            </div>
+            <div class="affiliation-item">
+              <div class="label">Source</div>
+              <div class="value">Mislaka Specs</div>
+            </div>
+          `;
+        }
         return data;
       } catch (error) {
         swiftnessAffiliations = null;
         swiftnessAffiliationsUpdatedAt = null;
-        summary.textContent = 'Affiliations data could not be loaded.';
-        grid.innerHTML = '';
-        interfaceTags.innerHTML = '<span style="color: var(--text-muted);">Check API availability</span>';
-        interfaceStats.innerHTML = '';
+        if (hasAffiliationsUi) {
+          summary.textContent = 'Affiliations data could not be loaded.';
+          grid.innerHTML = '';
+          interfaceTags.innerHTML = '<span style="color: var(--text-muted);">Check API availability</span>';
+          interfaceStats.innerHTML = '';
+        }
         return null;
       }
     }
@@ -2686,24 +2654,42 @@
       const message = document.getElementById('swiftnessStatusMessage');
       const connectBtn = document.getElementById('swiftnessConnectBtn');
 
-      if (!pill || !message || !connectBtn) {
-        return;
-      }
-
       try {
         const response = await fetch('/api/swiftness-safe/status');
         const data = await response.json();
         swiftnessSafeBaseUrl = data.base_url || 'https://www.swiftness.co.il';
+        swiftnessSafeSnapshot = {
+          status: data.configured ? '✅ Safe Ready' : '⚠️ Safe Not Configured',
+          message: data.message || 'Swiftness Safe status unavailable',
+          configured: Boolean(data.configured)
+        };
 
-        pill.className = `status-pill ${data.configured ? 'ready' : 'pending'}`;
-        pill.textContent = data.configured ? '✅ Safe Ready' : '⚠️ Safe Not Configured';
-        message.textContent = data.message || 'Swiftness Safe status unavailable';
-        connectBtn.disabled = !data.configured;
+        if (pill) {
+          pill.className = `status-pill ${data.configured ? 'ready' : 'pending'}`;
+          pill.textContent = swiftnessSafeSnapshot.status;
+        }
+        if (message) {
+          message.textContent = swiftnessSafeSnapshot.message;
+        }
+        if (connectBtn) {
+          connectBtn.disabled = !data.configured;
+        }
       } catch (error) {
-        pill.className = 'status-pill error';
-        pill.textContent = '❌ Safe Error';
-        message.textContent = 'Unable to reach Swiftness Safe status endpoint';
-        connectBtn.disabled = true;
+        swiftnessSafeSnapshot = {
+          status: '❌ Safe Error',
+          message: 'Unable to reach Swiftness Safe status endpoint',
+          configured: false
+        };
+        if (pill) {
+          pill.className = 'status-pill error';
+          pill.textContent = swiftnessSafeSnapshot.status;
+        }
+        if (message) {
+          message.textContent = swiftnessSafeSnapshot.message;
+        }
+        if (connectBtn) {
+          connectBtn.disabled = true;
+        }
       }
     }
 
@@ -3265,8 +3251,8 @@
       const pill = document.getElementById('swiftnessStatusPill');
       const message = document.getElementById('swiftnessStatusMessage');
       return {
-        status: pill?.textContent || 'Status unavailable',
-        message: message?.textContent || ''
+        status: pill?.textContent || swiftnessSafeSnapshot.status || 'Status unavailable',
+        message: message?.textContent || swiftnessSafeSnapshot.message || ''
       };
     }
 
@@ -3637,7 +3623,7 @@
         <div class="report-section fade-in">
           <h3>🧭 Affiliation Snapshot</h3>
           <div class="content">
-            <p>Generated from Swiftness + Mislaka Research Hub affiliations.</p>
+            <p>Generated from Swiftness affiliation mappings.</p>
             ${affiliationNotice}
             <p><strong>Snapshot Timestamp:</strong> ${updatedAtLabel}</p>
             <div class="affiliations-grid">
