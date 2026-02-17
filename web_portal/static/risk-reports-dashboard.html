@@ -2358,61 +2358,14 @@
 
         if (resResponse.ok) {
           swiftnessResources = await resResponse.json();
-          renderResourceCatalog(swiftnessResources);
         }
 
         if (modelResponse.ok) {
           swiftnessReportModel = await modelResponse.json();
-          renderReportModel(swiftnessReportModel);
         }
       } catch (e) {
         console.error('Error loading Swiftness resources:', e);
-        const el = document.getElementById('systemGeneralGrid');
-        if (el) el.innerHTML = '<div style="text-align: center; color: var(--text-muted); padding: 1.5rem; grid-column: 1/-1;">Failed to load resources. <button onclick="loadSwiftnessResources()" style="color: var(--primary); background: none; border: none; cursor: pointer; text-decoration: underline;">Retry</button></div>';
       }
-    }
-
-    function getResourceFileIcon(ext) {
-      const icons = { xsd: '📐', xml: '🧾', xlsx: '📊', xls: '📊', pdf: '📕', csv: '📄', zip: '📦', png: '🖼️', jpg: '🖼️', jpeg: '🖼️' };
-      return icons[ext] || '📁';
-    }
-
-    function renderResourceCards(resources, gridId) {
-      const grid = document.getElementById(gridId);
-      if (!grid || !resources || !resources.length) return;
-
-      grid.innerHTML = resources.map(r => `
-        <div class="resource-file-card">
-          <div class="rfc-header">
-            <span class="rfc-icon">${getResourceFileIcon(r.file_type)}</span>
-            <div>
-              <div class="rfc-title">${r.name}</div>
-              <div class="rfc-title-en">${r.name_en || ''}</div>
-            </div>
-          </div>
-          <div class="rfc-desc">${r.description || ''}</div>
-          <div class="rfc-meta">
-            <span class="rfc-tag">${(r.file_type || '').toUpperCase()}</span>
-            ${r.interface ? `<span class="rfc-tag interface">${r.interface}</span>` : ''}
-            ${r.version ? `<span class="rfc-tag version">v${r.version}</span>` : ''}
-            ${(r.tags || []).slice(0, 3).map(t => `<span class="rfc-tag">${t}</span>`).join('')}
-          </div>
-          <a href="${r.url}" target="_blank" rel="noopener" class="rfc-link">📥 Open on Swiftness &rarr;</a>
-        </div>
-      `).join('');
-    }
-
-    function renderResourceCatalog(catalog) {
-      renderResourceCards(catalog.system_general || [], 'systemGeneralGrid');
-      renderResourceCards(catalog.mislaka_work_files || [], 'mislakaWorkGrid');
-
-      const meta = catalog.metadata || {};
-      const totalEl = document.getElementById('resourceStatTotal');
-      const intEl = document.getElementById('resourceStatInterfaces');
-      const ftEl = document.getElementById('resourceStatFileTypes');
-      if (totalEl) totalEl.textContent = `Total Resources: ${meta.total_resources || 0}`;
-      if (intEl) intEl.textContent = `Interfaces: ${(meta.interfaces || []).join(', ')}`;
-      if (ftEl) ftEl.textContent = `File Types: ${(meta.file_types || []).map(t => t.toUpperCase()).join(', ')}`;
     }
 
     function getModelSectionTitle(section, preferredLanguage = 'en') {
@@ -2433,122 +2386,6 @@
       return String(value || '')
         .replace(/\\/g, '\\\\')
         .replace(/'/g, "\\'");
-    }
-
-    function renderReportModel(model) {
-      const container = document.getElementById('reportModelContainer');
-      if (!container || !model) return;
-
-      const sections = model.sections || [];
-      const meta = model.metadata || {};
-      const serviceIndex = model.service_index || {};
-
-      let html = `
-        <div style="background: linear-gradient(135deg, #1e40af 0%, #3b82f6 100%); color: white; border-radius: 14px; padding: 1.5rem; margin-bottom: 1.5rem; text-align: center;">
-          <h3 style="font-size: 1.3rem; margin-bottom: 0.5rem;">📊 Mislaka Portfolio Analysis Report Model</h3>
-          <p style="opacity: 0.9; font-size: 0.9rem;">${meta.based_on || 'Professional Insurance Portfolio Analysis Format'}</p>
-          <div style="display: flex; justify-content: center; gap: 1.5rem; margin-top: 1rem; flex-wrap: wrap;">
-            <span style="font-size: 0.85rem;"><strong>${sections.length}</strong> Sections</span>
-            <span style="font-size: 0.85rem;"><strong>v${meta.model_version || '2.0'}</strong> Model</span>
-            <span style="font-size: 0.85rem;">Source: <strong>${meta.source || 'swiftness.co.il'}</strong></span>
-          </div>
-        </div>
-      `;
-
-      // Data Integrity Rules
-      const rules = meta.data_integrity_rules || [];
-      if (rules.length) {
-        html += `
-          <div style="background: #f0fdf4; border-radius: 12px; padding: 1rem 1.25rem; margin-bottom: 1rem; border: 1px solid #a7f3d0;">
-            <h4 style="color: #047857; font-size: 0.95rem; margin-bottom: 0.5rem;">🛡️ Data Integrity Rules</h4>
-            <div style="display: flex; flex-wrap: wrap; gap: 0.5rem;">
-              ${rules.map(r => `<span class="integrity-badge pass">✓ ${r}</span>`).join('')}
-            </div>
-          </div>
-        `;
-      }
-
-      // Report sections
-      sections.forEach(sec => {
-        const fields = sec.data_fields || [];
-        const charts = sec.charts || [];
-        const sectionTitleHe = getModelSectionTitle(sec, 'he');
-        const sectionTitleEn = getModelSectionTitle(sec, 'en');
-        const chartBadges = charts.map(c => {
-          if (typeof c === 'string') {
-            return `<span class="rms-chart-badge">📈 ${c}</span>`;
-          }
-          const chartType = c && c.type ? String(c.type).toUpperCase() : 'CHART';
-          const chartTitle = c && c.title ? c.title : 'Chart';
-          return `<span class="rms-chart-badge">📈 ${chartType}: ${chartTitle}</span>`;
-        }).join('');
-        html += `
-          <div class="report-model-section">
-            <div class="rms-header">
-              <span class="rms-order">${sec.order}</span>
-              <div>
-                <span class="rms-title">${sectionTitleHe}</span>
-                <span class="rms-title-en"> ${sectionTitleEn}</span>
-              </div>
-            </div>
-            <div class="rms-desc">${sec.description || ''}</div>
-            <div class="rms-fields">
-              ${fields.map(f => `
-                <span class="rms-field">
-                  ${f.label_he || f.field}
-                  <span class="field-type">${f.type || 'text'}</span>
-                </span>
-              `).join('')}
-            </div>
-            ${charts.length ? `
-              <div class="rms-charts">
-                ${chartBadges}
-              </div>
-            ` : ''}
-          </div>
-        `;
-      });
-
-      // Service Index
-      const companies = Object.keys(serviceIndex);
-      if (companies.length) {
-        html += `
-          <div style="background: white; border-radius: 12px; padding: 1.25rem; margin-top: 1rem; border: 1px solid #e2e8f0;">
-            <h4 style="color: var(--primary); font-size: 1rem; margin-bottom: 0.75rem;">🏢 Service Index Ratings</h4>
-            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 0.75rem;">
-              ${companies.map(company => {
-                const ratings = serviceIndex[company];
-                return `
-                  <div style="background: #f8fafc; padding: 0.75rem; border-radius: 8px; border: 1px solid #e2e8f0;">
-                    <div style="font-weight: 600; margin-bottom: 0.5rem; font-size: 0.9rem;">${company}</div>
-                    ${Object.entries(ratings).map(([k, v]) => `
-                      <div style="display: flex; justify-content: space-between; font-size: 0.8rem; padding: 2px 0; border-bottom: 1px dashed #e2e8f0;">
-                        <span style="color: var(--text-muted);">${String(k).replace(/_/g, ' ')}</span>
-                        <span style="font-weight: 600; color: ${v >= 80 ? '#059669' : v >= 70 ? '#d97706' : '#dc2626'};">${v}</span>
-                      </div>
-                    `).join('')}
-                  </div>
-                `;
-              }).join('')}
-            </div>
-          </div>
-        `;
-      }
-
-      // Features
-      const features = meta.features || [];
-      if (features.length) {
-        html += `
-          <div style="background: #f0f9ff; border-radius: 12px; padding: 1rem 1.25rem; margin-top: 1rem; border: 1px solid #bae6fd;">
-            <h4 style="color: #0369a1; font-size: 0.95rem; margin-bottom: 0.5rem;">✨ Report Features</h4>
-            <div style="columns: 2; column-gap: 1.5rem;">
-              ${features.map(f => `<div style="font-size: 0.85rem; color: var(--text-dark); padding: 2px 0; break-inside: avoid;">✓ ${f}</div>`).join('')}
-            </div>
-          </div>
-        `;
-      }
-
-      container.innerHTML = html;
     }
 
     async function refreshSwiftnessStatus() {
