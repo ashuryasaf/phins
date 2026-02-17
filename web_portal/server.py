@@ -4357,6 +4357,11 @@ For claims or questions, please contact:
             self.send_header('Location', '/dashboard.html')
             self.end_headers()
             return
+
+        # Retired documentation page should not be served anymore.
+        if path == '/risk-reports-documentation.html':
+            self.send_error(404, 'Not Found')
+            return
         
         # Validate query parameters for injection attacks
         for key, values in qs.items():
