@@ -3363,10 +3363,6 @@
         ? ''
         : '<p style="color: var(--warning);">Affiliation data was not returned for this run. Verify Swiftness connectivity.</p>';
 
-      // Resource count from cached catalog
-      const resMeta = (swiftnessResources && swiftnessResources.metadata) || {};
-      const totalResources = resMeta.total_resources || 0;
-
       statsGrid.innerHTML = `
         <div class="stat-card fade-in" style="grid-column: span 3; background: linear-gradient(135deg, #2563eb 0%, #0ea5e9 100%); color: white;">
           <h5 style="color: white;">🧭 Swiftness Affiliation Output</h5>
@@ -3407,11 +3403,6 @@
           <h5>🌐 Environments</h5>
           <div class="value">${summary.environmentCount}</div>
           <small>Deployment targets</small>
-        </div>
-        <div class="stat-card fade-in" style="background: linear-gradient(135deg, #059669 0%, #10b981 100%); color: white;">
-          <h5 style="color: white;">📥 Swiftness Resources</h5>
-          <div class="value" style="color: white;">${totalResources}</div>
-          <small style="color: rgba(255,255,255,0.9);">Data files & schemas</small>
         </div>
       `;
 
