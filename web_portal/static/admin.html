@@ -5093,9 +5093,114 @@
       }
     }
     
-    // Edit policy (placeholder)
-    function editPolicy(policyId) {
-      alert(`✏️ Edit Policy: ${policyId}\n\nFull policy editing form coming soon.\nFor now, use the underwriting dashboard for policy modifications.`);
+    // Edit policy via /api/policy/update
+    async function editPolicy(policyId) {
+      try {
+        const detailsRes = await fetch(`/api/policy/${encodeURIComponent(policyId)}`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+
+        if (!detailsRes.ok) {
+          alert(`Failed to load policy ${policyId} details`);
+          return;
+        }
+
+        const policy = await detailsRes.json();
+        const currentType = String(policy.type || policy.policy_type || 'standard');
+        const currentCoverage = Number(policy.coverage_amount || 0);
+        const currentStatus = String(policy.status || 'draft').toLowerCase();
+        const currentBeneficiary = String(policy.beneficiary || policy.beneficiary_name || '');
+        const currentNotes = String(policy.notes || '');
+
+        const newType = prompt('Policy type:', currentType);
+        if (newType === null) return;
+
+        const newCoverageRaw = prompt('Coverage amount (number):', String(currentCoverage));
+        if (newCoverageRaw === null) return;
+
+        const newStatusRaw = prompt(
+          'Status (draft, pending_underwriting, approved, active, suspended, cancelled, expired):',
+          currentStatus
+        );
+        if (newStatusRaw === null) return;
+
+        const newBeneficiary = prompt('Beneficiary (optional):', currentBeneficiary);
+        if (newBeneficiary === null) return;
+
+        const newNotes = prompt('Notes (optional):', currentNotes);
+        if (newNotes === null) return;
+
+        const payload = { policy_id: policyId };
+
+        const normalizedType = newType.trim();
+        if (normalizedType && normalizedType !== currentType) {
+          payload.type = normalizedType;
+        }
+
+        const normalizedCoverageStr = newCoverageRaw.replace(/,/g, '').trim();
+        const newCoverage = Number(normalizedCoverageStr);
+        if (!Number.isFinite(newCoverage) || newCoverage <= 0) {
+          alert('Coverage amount must be a positive number');
+          return;
+        }
+        if (newCoverage !== currentCoverage) {
+          payload.coverage_amount = newCoverage;
+        }
+
+        const validStatuses = new Set([
+          'draft',
+          'pending_underwriting',
+          'approved',
+          'active',
+          'suspended',
+          'cancelled',
+          'expired'
+        ]);
+        const normalizedStatus = newStatusRaw.trim().toLowerCase();
+        if (!validStatuses.has(normalizedStatus)) {
+          alert('Invalid status selected');
+          return;
+        }
+        if (normalizedStatus !== currentStatus) {
+          payload.status = normalizedStatus;
+        }
+
+        const normalizedBeneficiary = newBeneficiary.trim();
+        if (normalizedBeneficiary !== currentBeneficiary.trim()) {
+          payload.beneficiary = normalizedBeneficiary;
+        }
+
+        const normalizedNotes = newNotes.trim();
+        if (normalizedNotes !== currentNotes.trim()) {
+          payload.notes = normalizedNotes;
+        }
+
+        if (Object.keys(payload).length === 1) {
+          alert('No changes detected');
+          return;
+        }
+
+        const updateRes = await fetch('/api/policy/update', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(payload)
+        });
+
+        const updateData = await updateRes.json().catch(() => ({}));
+        if (!updateRes.ok || updateData.success === false) {
+          alert(`Failed to update policy ${policyId}: ${updateData.error || 'Unknown error'}`);
+          return;
+        }
+
+        alert(`✅ Policy ${policyId} updated successfully`);
+        loadPolicies();
+        loadDashboardStats();
+      } catch (err) {
+        alert(`Failed to edit policy: ${err.message}`);
+      }
     }
     
     // Sync individual policy to ledger
