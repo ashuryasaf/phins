@@ -698,6 +698,12 @@ class TestCommunityDashboardService:
         
         assert submit_result['success'] is True
         assert submit_result['status'] == 'vote_in_progress'
+        vote_id = submit_result['vote_id']
+        assert vote_id in community_service.foundation_votes
+        vote = community_service.foundation_votes[vote_id]
+        assert vote['contract_id'] == contract_id
+        assert vote['foundation_id'] == 'FND-001'
+        assert vote['status'] == 'open'
     
     def test_create_investment_allocation(self, community_service):
         """Test creating an investment allocation"""

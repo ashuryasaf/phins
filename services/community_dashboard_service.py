@@ -301,8 +301,29 @@ class CommunityDashboardService:
         
         if contract.requires_vote:
             contract.status = ContractStatus.VOTE_IN_PROGRESS
-            # In full implementation, would create a vote record
-            contract.vote_id = self._generate_id("VOTE")
+            vote_id = self._generate_id("VOTE")
+            now = datetime.now(timezone.utc)
+            self.foundation_votes[vote_id] = {
+                'id': vote_id,
+                'foundation_id': contract.foundation_id,
+                'contract_id': contract.contract_id,
+                'proposal_type': 'contract_approval',
+                'title': f'Approve Contract: {contract.title}',
+                'subject': contract.title,
+                'description': contract.description,
+                'status': 'open',
+                'threshold': contract.vote_threshold,
+                'votes_for': 0,
+                'votes_against': 0,
+                'votes_abstain': 0,
+                'result': None,
+                'created_by': submitted_by,
+                'created_at': now.isoformat(),
+                'opens_at': now.isoformat(),
+                'closes_at': (now + timedelta(days=7)).isoformat(),
+                'updated_at': now.isoformat()
+            }
+            contract.vote_id = vote_id
         else:
             contract.status = ContractStatus.PENDING_APPROVAL
         
