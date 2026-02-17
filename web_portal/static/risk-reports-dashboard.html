@@ -2082,8 +2082,8 @@
         <div class="report-header">
           <h2 id="reportTitle">📋 Analysis Report</h2>
           <div class="report-actions">
-            <button class="btn btn-white" onclick="exportReport('pdf')">📥 Export PDF</button>
-            <button class="btn btn-white" onclick="exportReport('excel')">📊 Export Excel</button>
+            <button class="btn btn-white" id="exportPdfBtn" onclick="exportReport('pdf')">📥 Export PDF</button>
+            <button class="btn btn-white" id="exportExcelBtn" onclick="exportReport('excel')">📊 Export Excel</button>
           </div>
         </div>
         <div class="report-body" id="reportBody">
@@ -2608,6 +2608,32 @@
       const date = new Date(dateStr);
       return date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
     }
+
+    function formatDateDDMMYYYY(dateValue) {
+      const raw = String(dateValue || '').trim();
+      if (!raw) return '';
+
+      const normalized = raw.split('T')[0].trim();
+      if (/^\d{8}$/.test(normalized)) {
+        return `${normalized.slice(6, 8)}/${normalized.slice(4, 6)}/${normalized.slice(0, 4)}`;
+      }
+      if (/^\d{4}[-/]\d{2}[-/]\d{2}$/.test(normalized)) {
+        const parts = normalized.replace(/\//g, '-').split('-');
+        return `${parts[2]}/${parts[1]}/${parts[0]}`;
+      }
+      if (/^\d{2}[./-]\d{2}[./-]\d{4}$/.test(normalized)) {
+        return normalized.replace(/[.-]/g, '/');
+      }
+
+      const parsed = new Date(normalized);
+      if (!Number.isNaN(parsed.getTime())) {
+        const day = String(parsed.getDate()).padStart(2, '0');
+        const month = String(parsed.getMonth() + 1).padStart(2, '0');
+        const year = parsed.getFullYear();
+        return `${day}/${month}/${year}`;
+      }
+      return raw;
+    }
     
     function getRiskColor(score) {
       if (score < 30) return 'var(--success)';
@@ -2910,6 +2936,7 @@
       
       const clientName = client.full_name || client.client_name || 'לא זמין';
       const idNumber = client.id_number || 'לא זמין';
+      const birthDate = formatDateDDMMYYYY(client.birth_date || client.date_of_birth);
       const totalBalance = totals.total_balance || accounts.reduce((sum, a) => sum + (parseFloat(a.total_balance) || 0), 0);
       const totalSeverance = totals.total_severance || accounts.reduce((sum, a) => sum + (parseFloat(a.severance_balance) || 0), 0);
       const accountCount = accounts.length;
@@ -2918,12 +2945,13 @@
       // Calculate total insurance coverage
       const totalDeathCoverage = accounts.reduce((sum, a) => sum + (parseFloat(a.death_coverage) || 0), 0);
       const totalDisabilityCoverage = accounts.reduce((sum, a) => sum + (parseFloat(a.disability_coverage) || 0), 0);
+      const totalBenefits = totalDeathCoverage + totalDisabilityCoverage;
       
       document.getElementById('statsGrid').innerHTML = `
         <div class="stat-card fade-in" style="grid-column: span 2; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white;">
           <h5 style="color: white;">👤 פרטי לקוח</h5>
           <div class="value" style="font-size: 1.5rem; color: white;">${clientName}</div>
-          <small style="color: rgba(255,255,255,0.9);">ת.ז: ${idNumber}</small>
+          <small style="color: rgba(255,255,255,0.9);">ת.ז: ${idNumber}${birthDate ? ` • תאריך לידה: ${birthDate}` : ''}</small>
         </div>
         <div class="stat-card fade-in" style="background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%); color: white;">
           <h5 style="color: white;">💰 סה״כ צבירה</h5>
@@ -2959,6 +2987,11 @@
           <small>פיצוי חודשי</small>
         </div>
         ` : ''}
+        <div class="stat-card fade-in">
+          <h5>🎁 סך הטבות ביטוח</h5>
+          <div class="value" style="font-size: 1.2rem;">₪${totalBenefits.toLocaleString('he-IL')}</div>
+          <small>חיים + אובדן כושר</small>
+        </div>
         <div class="stat-card fade-in" style="background: #f0f9ff; border: 2px solid #0ea5e9;">
           <h5>📋 מקור נתונים</h5>
           <div class="value" style="font-size: 1rem; color: #0369a1;">מסלקת הביטוח והפנסיה</div>
@@ -2971,6 +3004,7 @@
       const container = document.getElementById('insightsGrid');
       const accounts = pensionData.accounts || [];
       const client = pensionData.client || {};
+      const birthDate = formatDateDDMMYYYY(client.birth_date || client.date_of_birth);
       
       let html = '';
       
@@ -2981,7 +3015,7 @@
           <div class="insight-detail" style="direction: rtl; text-align: right;">
             <div class="stat-detail"><span class="label">שם מלא</span><span class="val">${client.full_name || client.client_name || 'לא זמין'}</span></div>
             <div class="stat-detail"><span class="label">ת.ז</span><span class="val">${client.id_number || 'לא זמין'}</span></div>
-            ${client.birth_date ? `<div class="stat-detail"><span class="label">תאריך לידה</span><span class="val">${client.birth_date}</span></div>` : ''}
+            ${birthDate ? `<div class="stat-detail"><span class="label">תאריך לידה</span><span class="val">${birthDate}</span></div>` : ''}
             ${client.phone ? `<div class="stat-detail"><span class="label">טלפון</span><span class="val">${client.phone}</span></div>` : ''}
           </div>
           <span class="insight-badge" style="background: #667eea; color: white;">נתוני לקוח</span>
@@ -2997,6 +3031,10 @@
         const mgmtFeeDeposits = parseFloat(acct.management_fee_deposits) || 0;
         const deathCoverage = parseFloat(acct.death_coverage) || 0;
         const disabilityCoverage = parseFloat(acct.disability_coverage) || 0;
+        const policySavings = savings > 0 ? savings : balance;
+        const benefitsLabel = (deathCoverage > 0 || disabilityCoverage > 0)
+          ? `חיים: ₪${deathCoverage.toLocaleString('he-IL')} • אכ"ע: ₪${disabilityCoverage.toLocaleString('he-IL')}/חודש`
+          : '—';
         
         html += `
           <div class="insight-card fade-in" style="background: #f8fafc; border: 1px solid #e2e8f0;">
@@ -3005,6 +3043,8 @@
               <div class="stat-detail"><span class="label">מספר פוליסה</span><span class="val" style="font-family: monospace;">${acct.policy_number || '-'}</span></div>
               <div class="stat-detail"><span class="label">סוג מוצר</span><span class="val">${acct.product_type_name || acct.product_type || '-'}</span></div>
               <div class="stat-detail"><span class="label">סטטוס</span><span class="val">${acct.status || 'פעיל'}</span></div>
+              <div class="stat-detail"><span class="label">חיסכון בפוליסה</span><span class="val" style="color: #059669; font-weight: bold;">${policySavings > 0 ? `₪${policySavings.toLocaleString('he-IL')}` : '—'}</span></div>
+              <div class="stat-detail"><span class="label">הטבות</span><span class="val">${benefitsLabel}</span></div>
               ${balance > 0 ? `<div class="stat-detail"><span class="label">צבירה כוללת</span><span class="val" style="color: #059669; font-weight: bold;">₪${balance.toLocaleString('he-IL')}</span></div>` : ''}
               ${savings > 0 && savings !== balance ? `<div class="stat-detail"><span class="label">תגמולים</span><span class="val">₪${savings.toLocaleString('he-IL')}</span></div>` : ''}
               ${severance > 0 ? `<div class="stat-detail"><span class="label">פיצויים</span><span class="val">₪${severance.toLocaleString('he-IL')}</span></div>` : ''}
@@ -4524,19 +4564,74 @@
     
     // Export report to PDF (excludes minimized/closed sections)
     async function exportReport(format) {
-      if (format !== 'pdf') {
-        alert(`Export to ${format.toUpperCase()} - Coming soon!\n\nThis will generate a downloadable ${format.toUpperCase()} file with the complete report.`);
+      const exportFormat = String(format || '').toLowerCase();
+      if (!['pdf', 'excel'].includes(exportFormat)) {
+        alert('Unsupported export format');
         return;
       }
-      
-      // Load jsPDF library dynamically if not already loaded
-      if (typeof window.jspdf === 'undefined') {
-        const script = document.createElement('script');
-        script.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
-        script.onload = () => generatePDF();
-        document.head.appendChild(script);
-      } else {
-        generatePDF();
+
+      const reportId = currentReport?.id || currentReport?.report_id;
+      if (!reportId) {
+        alert('Generate or open a report first.');
+        return;
+      }
+
+      const actionBtn = exportFormat === 'pdf'
+        ? document.getElementById('exportPdfBtn')
+        : document.getElementById('exportExcelBtn');
+      const originalText = actionBtn ? actionBtn.textContent : '';
+      if (actionBtn) {
+        actionBtn.disabled = true;
+        actionBtn.textContent = '⏳ Preparing...';
+      }
+
+      try {
+        const response = await fetch(
+          `/api/reports/download-summary?report_id=${encodeURIComponent(reportId)}&format=${exportFormat}`,
+          {
+            headers: {
+              'Authorization': `Bearer ${localStorage.getItem('phins_token') || ''}`
+            }
+          }
+        );
+
+        if (!response.ok) {
+          let errorMessage = 'Export failed';
+          try {
+            const errorPayload = await response.json();
+            errorMessage = errorPayload.error || errorPayload.message || errorMessage;
+          } catch (e) {
+            const fallbackText = await response.text();
+            if (fallbackText) {
+              errorMessage = fallbackText;
+            }
+          }
+          throw new Error(errorMessage);
+        }
+
+        const blob = await response.blob();
+        const contentDisposition = response.headers.get('Content-Disposition') || '';
+        const match = contentDisposition.match(/filename="([^"]+)"/);
+        const fallbackExt = exportFormat === 'pdf' ? 'pdf' : 'xlsx';
+        const safeReportId = String(reportId).replace(/[^a-zA-Z0-9_-]/g, '');
+        const filename = match ? match[1] : `phins_report_${safeReportId}.${fallbackExt}`;
+
+        const objectUrl = window.URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = objectUrl;
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        window.URL.revokeObjectURL(objectUrl);
+      } catch (error) {
+        console.error(`Report export error (${exportFormat}):`, error);
+        alert(`Failed to export ${exportFormat.toUpperCase()}: ${error.message}`);
+      } finally {
+        if (actionBtn) {
+          actionBtn.disabled = false;
+          actionBtn.textContent = originalText;
+        }
       }
     }
     

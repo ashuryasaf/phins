@@ -335,6 +335,11 @@ POL-002,150000,620"""
 
         # Inject pension-style parsed data to trigger Mislaka-affiliated path.
         self.service.documents[self.doc_id]['parsed_data']['pension_data'] = {
+            'client': {
+                'full_name': 'ישראל ישראלי',
+                'id_number': '123456789',
+                'birth_date': '1984-03-21',
+            },
             'accounts': [
                 {
                     'policy_number': '6962791015',
@@ -391,6 +396,8 @@ POL-002,150000,620"""
         report = self.service.generate_report(self.analysis.id, language='hebrew')
         titles = [section.title for section in report.sections]
 
+        self.assertTrue(any('תמצית לקוח' in title for title in titles))
+        self.assertTrue(any('חיסכון והטבות לפי פוליסה' in title for title in titles))
         self.assertTrue(any('סטטוס פוליסות' in title for title in titles))
         self.assertTrue(any('מפת שיוכים' in title for title in titles))
 
@@ -404,6 +411,18 @@ POL-002,150000,620"""
                 for section in table_sections
             )
         )
+
+    def test_pension_affiliated_summary_includes_customer_snapshot_and_policy_benefits(self):
+        report = self.service.generate_report(self.analysis.id, language='hebrew')
+        summary = report.metadata.get('savings_cover_id_summary', {})
+        customer_overview = summary.get('customer_overview', {})
+        policy_rows = summary.get('policy_savings_benefits', [])
+
+        self.assertEqual(customer_overview.get('birth_date_ddmmyyyy'), '21/03/1984')
+        self.assertGreater(customer_overview.get('total_savings', 0), 0)
+        self.assertGreater(len(policy_rows), 0)
+        self.assertIn('savings', policy_rows[0])
+        self.assertIn('life_benefit', policy_rows[0])
 
     def test_generate_report_with_pension_data_charts_regression(self):
         # Regression for analysis.language_code typo in pension chart generation.

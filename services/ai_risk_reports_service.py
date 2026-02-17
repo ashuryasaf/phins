@@ -2649,6 +2649,12 @@ class AIRiskReportsService:
                     content=pension_section,
                     order=2
                 ))
+            customer_snapshot_section = self._build_customer_snapshot_section(pension_data, is_hebrew)
+            if customer_snapshot_section:
+                sections.append(customer_snapshot_section)
+            policy_benefits_section = self._build_policy_savings_benefits_section(pension_data, is_hebrew)
+            if policy_benefits_section:
+                sections.append(policy_benefits_section)
             sections.extend(self._build_pension_affiliated_sections(pension_data, is_hebrew))
         
         # 3. ACTUAL DATA CONTENT SECTION - Show extracted data from the files
@@ -3130,6 +3136,186 @@ Factors Affecting Score:
         return f"{identifier_str[:2]}****{identifier_str[-2:]}"
 
     @staticmethod
+    def _format_date_ddmmyyyy(value: Any) -> str:
+        """Normalize dates to dd/mm/yyyy for customer-facing views."""
+        raw = str(value or '').strip()
+        if not raw:
+            return ''
+
+        candidate = raw.split('T')[0].strip()
+        formats = [
+            '%Y-%m-%d', '%Y/%m/%d', '%d/%m/%Y', '%d-%m-%Y', '%d.%m.%Y',
+            '%Y%m%d', '%d%m%Y', '%d/%m/%y', '%d-%m-%y'
+        ]
+        for date_format in formats:
+            try:
+                parsed = datetime.strptime(candidate, date_format)
+                return parsed.strftime('%d/%m/%Y')
+            except ValueError:
+                continue
+
+        # Already in day/month/year-like format, keep as-is.
+        if re.match(r'^\d{2}[\/\.-]\d{2}[\/\.-]\d{4}$', candidate):
+            return candidate.replace('-', '/').replace('.', '/')
+
+        return raw
+
+    @staticmethod
+    def _normalize_client_payload(client_data: Any) -> Dict[str, Any]:
+        """Normalize client data from dict/list payload variants."""
+        if isinstance(client_data, list):
+            return client_data[0] if client_data and isinstance(client_data[0], dict) else {}
+        if isinstance(client_data, dict):
+            return client_data
+        return {}
+
+    def _build_customer_snapshot_section(self, pension_data: Optional[Dict[str, Any]], is_hebrew: bool) -> Optional[ReportSection]:
+        """Build a simple customer overview section (DOB, totals, coverage)."""
+        if not isinstance(pension_data, dict):
+            return None
+
+        accounts = pension_data.get('accounts', []) or []
+        totals = pension_data.get('totals', {}) or {}
+        client = self._normalize_client_payload(pension_data.get('client', {}))
+        if not accounts and not client:
+            return None
+
+        full_name = str(
+            client.get('full_name')
+            or client.get('client_name')
+            or f"{client.get('first_name', '')} {client.get('last_name', '')}".strip()
+            or ''
+        ).strip()
+        masked_id = self._mask_identifier(client.get('id_number', '') or '')
+        birth_date = self._format_date_ddmmyyyy(client.get('birth_date') or client.get('date_of_birth'))
+
+        total_savings = self._to_float_amount(totals.get('total_savings', totals.get('total_savings_balance', 0)))
+        if total_savings <= 0:
+            total_savings = sum(
+                self._to_float_amount(acct.get('savings_balance')) or self._to_float_amount(acct.get('total_balance'))
+                for acct in accounts
+            )
+        total_severance = self._to_float_amount(totals.get('total_severance', totals.get('total_severance_balance', 0)))
+        if total_severance <= 0:
+            total_severance = sum(self._to_float_amount(acct.get('severance_balance')) for acct in accounts)
+        total_life = sum(self._to_float_amount(acct.get('death_coverage')) for acct in accounts)
+        total_disability = sum(self._to_float_amount(acct.get('disability_coverage')) for acct in accounts)
+        provider_count = int(totals.get('provider_count') or len({acct.get('provider') for acct in accounts if acct.get('provider')}))
+
+        if is_hebrew:
+            content = (
+                "תצוגת לקוח פשוטה על בסיס שיוכי מסלקה:\n\n"
+                f"• שם: {full_name or 'לא זמין'}\n"
+                f"• תעודת זהות (מוסתרת): {masked_id or 'לא זמין'}\n"
+                f"• תאריך לידה: {birth_date or 'לא זמין'}\n"
+                f"• מספר פוליסות: {len(accounts)}\n"
+                f"• סך חיסכון: ₪{total_savings:,.2f}\n"
+                f"• הטבות ביטוח (חיים + אכ\"ע): ₪{(total_life + total_disability):,.2f}"
+            )
+            row = {
+                'שם לקוח': full_name or 'לא זמין',
+                'ת.ז (מוסתר)': masked_id or 'לא זמין',
+                'תאריך לידה': birth_date or 'לא זמין',
+                'פוליסות': len(accounts),
+                'יצרנים': provider_count,
+                'סך חיסכון': round(total_savings, 2),
+                'סך פיצויים': round(total_severance, 2),
+                'הטבות חיים': round(total_life, 2),
+                'הטבות אכ"ע': round(total_disability, 2),
+            }
+            title = 'תמצית לקוח (תאריך לידה, חיסכון והטבות)'
+        else:
+            content = (
+                "Simple customer view based on Mislaka affiliations:\n\n"
+                f"• Full name: {full_name or 'N/A'}\n"
+                f"• Masked ID: {masked_id or 'N/A'}\n"
+                f"• Date of Birth: {birth_date or 'N/A'}\n"
+                f"• Policy count: {len(accounts)}\n"
+                f"• Total savings: ₪{total_savings:,.2f}\n"
+                f"• Insurance benefits (Life + Disability): ₪{(total_life + total_disability):,.2f}"
+            )
+            row = {
+                'Customer Name': full_name or 'N/A',
+                'Masked ID': masked_id or 'N/A',
+                'Date of Birth': birth_date or 'N/A',
+                'Policies': len(accounts),
+                'Providers': provider_count,
+                'Total Savings': round(total_savings, 2),
+                'Total Severance': round(total_severance, 2),
+                'Life Benefits': round(total_life, 2),
+                'Disability Benefits': round(total_disability, 2),
+            }
+            title = 'Customer Snapshot (DOB, Savings & Benefits)'
+
+        return ReportSection(
+            title=title,
+            content=content,
+            data_table={'columns': list(row.keys()), 'rows': [row]},
+            order=3
+        )
+
+    def _build_policy_savings_benefits_section(self, pension_data: Optional[Dict[str, Any]], is_hebrew: bool) -> Optional[ReportSection]:
+        """Build a per-policy table with savings and benefits for customers."""
+        if not isinstance(pension_data, dict):
+            return None
+
+        accounts = pension_data.get('accounts', []) or []
+        if not accounts:
+            return None
+
+        rows: List[Dict[str, Any]] = []
+        for account in accounts[:120]:
+            savings_value = (
+                self._to_float_amount(account.get('savings_balance'))
+                or self._to_float_amount(account.get('total_balance'))
+            )
+            life_benefit = self._to_float_amount(account.get('death_coverage'))
+            disability_benefit = self._to_float_amount(account.get('disability_coverage'))
+            beneficiaries = account.get('beneficiaries', [])
+            if isinstance(beneficiaries, list):
+                beneficiaries_count = len([b for b in beneficiaries if str(b).strip()])
+            else:
+                beneficiaries_count = 1 if beneficiaries else 0
+            section14_label_he = 'כן' if account.get('section14') else 'לא'
+            section14_label_en = 'Yes' if account.get('section14') else 'No'
+
+            if is_hebrew:
+                rows.append({
+                    'מספר פוליסה': str(account.get('policy_number', '') or ''),
+                    'יצרן': str(account.get('provider', '') or ''),
+                    'סוג מוצר': str(account.get('product_type_name', account.get('product_type', '')) or ''),
+                    'סטטוס': str(account.get('status', '') or ''),
+                    'חיסכון בפוליסה': round(savings_value, 2),
+                    'הטבת חיים': round(life_benefit, 2),
+                    'הטבת אכ"ע': round(disability_benefit, 2),
+                    'מוטבים': beneficiaries_count,
+                    'סעיף 14': section14_label_he,
+                })
+            else:
+                rows.append({
+                    'Policy Number': str(account.get('policy_number', '') or ''),
+                    'Provider': str(account.get('provider', '') or ''),
+                    'Product Type': str(account.get('product_type_name', account.get('product_type', '')) or ''),
+                    'Status': str(account.get('status', '') or ''),
+                    'Savings in Policy': round(savings_value, 2),
+                    'Life Benefit': round(life_benefit, 2),
+                    'Disability Benefit': round(disability_benefit, 2),
+                    'Beneficiaries': beneficiaries_count,
+                    'Section 14': section14_label_en,
+                })
+
+        if not rows:
+            return None
+
+        return ReportSection(
+            title='חיסכון והטבות לפי פוליסה' if is_hebrew else 'Policy Savings & Benefits',
+            content='טבלה ידידותית ללקוח: חיסכון והטבות בכל פוליסה.' if is_hebrew
+            else 'Customer-friendly table: savings and benefits by policy.',
+            data_table={'columns': list(rows[0].keys()), 'rows': rows},
+            order=4
+        )
+
+    @staticmethod
     def _column_matches(column_name: str, tokens: List[str]) -> bool:
         column_lower = (column_name or '').lower()
         return any(token in column_lower for token in tokens)
@@ -3172,16 +3358,26 @@ Factors Affecting Score:
         records_with_cover = 0
         id_values: List[str] = []
         sample_rows: List[Dict[str, Any]] = []
+        customer_overview: Dict[str, Any] = {}
+        policy_savings_benefits: List[Dict[str, Any]] = []
 
         # Prefer pension structured data when available (Mislaka-aligned source).
         if isinstance(pension_data, dict) and pension_data.get('accounts'):
             accounts = pension_data.get('accounts', []) or []
-            client_data = pension_data.get('client', {})
-            if isinstance(client_data, list):
-                client_data = client_data[0] if client_data else {}
+            client_data = self._normalize_client_payload(pension_data.get('client', {}))
+            totals = pension_data.get('totals', {}) or {}
             shared_client_id = ''
             if isinstance(client_data, dict):
                 shared_client_id = str(client_data.get('id_number', '') or '').strip()
+            shared_client_name = str(
+                client_data.get('full_name')
+                or client_data.get('client_name')
+                or f"{client_data.get('first_name', '')} {client_data.get('last_name', '')}".strip()
+                or ''
+            ).strip()
+            birth_date_ddmmyyyy = self._format_date_ddmmyyyy(
+                client_data.get('birth_date') or client_data.get('date_of_birth')
+            )
 
             for account in accounts[:500]:
                 account_id = str(account.get('id_number') or shared_client_id or account.get('policy_number') or '').strip()
@@ -3210,6 +3406,40 @@ Factors Affecting Score:
                         'cover': round(cover_value, 2),
                         'reference': str(account.get('policy_number', '') or '')
                     })
+                    beneficiaries = account.get('beneficiaries', [])
+                    if isinstance(beneficiaries, list):
+                        beneficiaries_count = len([b for b in beneficiaries if str(b).strip()])
+                    else:
+                        beneficiaries_count = 1 if beneficiaries else 0
+                    policy_savings_benefits.append({
+                        'policy_number': str(account.get('policy_number', '') or ''),
+                        'provider': str(account.get('provider', '') or ''),
+                        'product_type': str(account.get('product_type_name', account.get('product_type', '')) or ''),
+                        'status': str(account.get('status', '') or ''),
+                        'savings': round(savings_value, 2),
+                        'life_benefit': round(self._to_float_amount(account.get('death_coverage')), 2),
+                        'disability_benefit': round(self._to_float_amount(account.get('disability_coverage')), 2),
+                        'beneficiaries_count': beneficiaries_count,
+                        'section14': bool(account.get('section14')),
+                    })
+
+            provider_count = len({acct.get('provider') for acct in accounts if acct.get('provider')})
+            total_severance = self._to_float_amount(totals.get('total_severance', totals.get('total_severance_balance', 0)))
+            total_life_benefits = sum(self._to_float_amount(acct.get('death_coverage')) for acct in accounts)
+            total_disability_benefits = sum(self._to_float_amount(acct.get('disability_coverage')) for acct in accounts)
+            customer_overview = {
+                'full_name': shared_client_name,
+                'id_masked': self._mask_identifier(shared_client_id) if shared_client_id else '',
+                'birth_date_ddmmyyyy': birth_date_ddmmyyyy,
+                'policy_count': len(accounts),
+                'provider_count': int(totals.get('provider_count') or provider_count),
+                'total_savings': round(total_savings, 2),
+                'total_cover': round(total_cover, 2),
+                'total_severance': round(total_severance, 2),
+                'life_benefits': round(total_life_benefits, 2),
+                'disability_benefits': round(total_disability_benefits, 2),
+                'total_benefits': round(total_life_benefits + total_disability_benefits, 2),
+            }
         else:
             for row in rows[:500]:
                 if not isinstance(row, dict):
@@ -3260,6 +3490,8 @@ Factors Affecting Score:
             'average_cover': round(total_cover / records_with_cover, 2) if records_with_cover else 0.0,
             'coverage_to_savings_ratio': round(total_cover / total_savings, 2) if total_savings > 0 else None,
             'sample_rows': sample_rows[:120],
+            'customer_overview': customer_overview,
+            'policy_savings_benefits': policy_savings_benefits[:120],
         }
 
     def _build_savings_cover_id_section(
@@ -3278,6 +3510,9 @@ Factors Affecting Score:
         if records_analyzed <= 0 and total_savings <= 0 and total_cover <= 0 and unique_id_count <= 0:
             return None
 
+        customer_overview = summary.get('customer_overview', {}) or {}
+        birth_date = customer_overview.get('birth_date_ddmmyyyy')
+
         if is_hebrew:
             content = (
                 "סיכום מסונף לחיסכון וביטוח (על בסיס שיוכי מסלקה):\n\n"
@@ -3287,6 +3522,8 @@ Factors Affecting Score:
                 f"• מזהים ייחודיים: {unique_id_count}\n"
                 f"• יחס כיסוי/חיסכון: {summary.get('coverage_to_savings_ratio', 'N/A')}"
             )
+            if birth_date:
+                content += f"\n• תאריך לידה: {birth_date}"
             title = 'סיכום מסונף - חיסכון, כיסוי וזיהוי'
             columns = ['מזהה (מוסתר)', 'חיסכון', 'כיסוי', 'אסמכתא']
             data_rows = [{
@@ -3304,6 +3541,8 @@ Factors Affecting Score:
                 f"• Unique IDs: {unique_id_count}\n"
                 f"• Cover/Savings ratio: {summary.get('coverage_to_savings_ratio', 'N/A')}"
             )
+            if birth_date:
+                content += f"\n• Date of Birth: {birth_date}"
             title = 'Affiliated Summary - Savings, Cover & ID'
             columns = ['Masked ID', 'Savings', 'Cover', 'Reference']
             data_rows = [{
@@ -4531,6 +4770,8 @@ Factors Affecting Score:
             'risk_score': report.metadata.get('risk_score'),
             'confidence': report.metadata.get('confidence'),
             'savings_cover_id_summary': summary,
+            'customer_overview': summary.get('customer_overview', {}),
+            'policy_savings_benefits': summary.get('policy_savings_benefits', []),
             'table_sections': table_sections,
             'chart_summaries': chart_summaries,
             'recommendations': recommendations,

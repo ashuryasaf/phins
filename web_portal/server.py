@@ -3650,6 +3650,38 @@ class PortalHandler(BaseHTTPRequestHandler):
         writer.writerow(['Cover/Savings Ratio', sci.get('coverage_to_savings_ratio', 'N/A')])
         writer.writerow([])
 
+        customer_overview = sci.get('customer_overview', {}) or summary.get('customer_overview', {}) or {}
+        if customer_overview:
+            writer.writerow(['Customer Snapshot (Mislaka Affiliation)'])
+            writer.writerow(['Full Name', customer_overview.get('full_name', '')])
+            writer.writerow(['Masked ID', customer_overview.get('id_masked', '')])
+            writer.writerow(['Date of Birth (dd/mm/yyyy)', customer_overview.get('birth_date_ddmmyyyy', '')])
+            writer.writerow(['Policy Count', customer_overview.get('policy_count', 0)])
+            writer.writerow(['Provider Count', customer_overview.get('provider_count', 0)])
+            writer.writerow(['Total Savings', customer_overview.get('total_savings', 0)])
+            writer.writerow(['Total Severance', customer_overview.get('total_severance', 0)])
+            writer.writerow(['Life Benefits', customer_overview.get('life_benefits', 0)])
+            writer.writerow(['Disability Benefits', customer_overview.get('disability_benefits', 0)])
+            writer.writerow(['Total Benefits', customer_overview.get('total_benefits', 0)])
+            writer.writerow([])
+
+        policy_rows = sci.get('policy_savings_benefits', []) or summary.get('policy_savings_benefits', []) or []
+        if policy_rows:
+            writer.writerow(['Policy Savings & Benefits'])
+            preferred_policy_columns = [
+                'policy_number', 'provider', 'product_type', 'status',
+                'savings', 'life_benefit', 'disability_benefit',
+                'beneficiaries_count', 'section14'
+            ]
+            policy_columns = [col for col in preferred_policy_columns if col in (policy_rows[0] if isinstance(policy_rows[0], dict) else {})]
+            if not policy_columns and isinstance(policy_rows[0], dict):
+                policy_columns = list(policy_rows[0].keys())
+            if policy_columns:
+                writer.writerow(policy_columns)
+                for row in policy_rows[:200]:
+                    writer.writerow([row.get(col, '') for col in policy_columns] if isinstance(row, dict) else [row])
+                writer.writerow([])
+
         sample_rows = sci.get('sample_rows', []) or []
         if sample_rows:
             writer.writerow(['Sample Savings/Cover Rows'])
@@ -3768,6 +3800,55 @@ class PortalHandler(BaseHTTPRequestHandler):
         story.append(sci_table)
         story.append(Spacer(1, 12))
 
+        customer_overview = sci.get('customer_overview', {}) or summary.get('customer_overview', {}) or {}
+        if customer_overview:
+            story.append(Paragraph('Customer Snapshot (Mislaka Affiliation)', styles['Heading3']))
+            customer_rows = [
+                ['Full Name', _as_str(customer_overview.get('full_name'))],
+                ['Masked ID', _as_str(customer_overview.get('id_masked'))],
+                ['Date of Birth (dd/mm/yyyy)', _as_str(customer_overview.get('birth_date_ddmmyyyy'))],
+                ['Policy Count', _as_str(customer_overview.get('policy_count'))],
+                ['Provider Count', _as_str(customer_overview.get('provider_count'))],
+                ['Total Savings', _as_str(customer_overview.get('total_savings'))],
+                ['Total Severance', _as_str(customer_overview.get('total_severance'))],
+                ['Life Benefits', _as_str(customer_overview.get('life_benefits'))],
+                ['Disability Benefits', _as_str(customer_overview.get('disability_benefits'))],
+                ['Total Benefits', _as_str(customer_overview.get('total_benefits'))],
+            ]
+            customer_table = Table(customer_rows, colWidths=[190, 300])
+            customer_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (0, -1), colors.HexColor('#F3E5F5')),
+                ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+                ('FONTNAME', (0, 0), (-1, -1), 'Helvetica'),
+                ('FONTSIZE', (0, 0), (-1, -1), 9),
+            ]))
+            story.append(customer_table)
+            story.append(Spacer(1, 12))
+
+        policy_rows = sci.get('policy_savings_benefits', []) or summary.get('policy_savings_benefits', []) or []
+        if policy_rows and isinstance(policy_rows[0], dict):
+            story.append(Paragraph('Policy Savings & Benefits', styles['Heading3']))
+            preferred_policy_columns = [
+                'policy_number', 'provider', 'product_type', 'status',
+                'savings', 'life_benefit', 'disability_benefit',
+                'beneficiaries_count', 'section14'
+            ]
+            columns = [col for col in preferred_policy_columns if col in policy_rows[0]]
+            if not columns:
+                columns = list(policy_rows[0].keys())
+            table_rows = [columns]
+            for row in policy_rows[:25]:
+                table_rows.append([_as_str(row.get(col, '')) for col in columns])
+            policy_table = Table(table_rows, repeatRows=1)
+            policy_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#E8F5E9')),
+                ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+                ('FONTNAME', (0, 0), (-1, -1), 'Helvetica'),
+                ('FONTSIZE', (0, 0), (-1, -1), 8),
+            ]))
+            story.append(policy_table)
+            story.append(Spacer(1, 12))
+
         sample_rows = sci.get('sample_rows', []) or []
         if sample_rows:
             story.append(Paragraph('Sample Savings/Cover Rows', styles['Heading3']))
@@ -3823,6 +3904,113 @@ class PortalHandler(BaseHTTPRequestHandler):
 
         doc.build(story)
         return buffer.getvalue()
+
+    def _build_report_summary_excel_bytes(self, summary: Dict[str, Any]) -> bytes:
+        """Build XLSX bytes for downloadable report summary."""
+        try:
+            from openpyxl import Workbook
+        except Exception:
+            # Graceful fallback keeps download path functional.
+            return self._build_report_summary_csv_bytes(summary)
+
+        wb = Workbook()
+        ws = wb.active
+        ws.title = 'Overview'
+
+        def _cell(value: Any) -> Any:
+            if value is None:
+                return ''
+            if isinstance(value, (int, float, bool)):
+                return value
+            if isinstance(value, (list, dict)):
+                return json.dumps(value, ensure_ascii=False)
+            return str(value)
+
+        ws.append(['PHINS Savings & Insurance Report Summary'])
+        ws.append(['Generated At', datetime.now().isoformat()])
+        ws.append([])
+        ws.append(['Report ID', _cell(summary.get('report_id'))])
+        ws.append(['Title', _cell(summary.get('title'))])
+        ws.append(['Language', _cell(summary.get('language'))])
+        ws.append(['Report Type', _cell(summary.get('report_type'))])
+        ws.append(['Risk Score', _cell(summary.get('risk_score'))])
+        ws.append(['Confidence', _cell(summary.get('confidence'))])
+        ws.append([])
+
+        sci = summary.get('savings_cover_id_summary', {}) or {}
+        ws.append(['Savings / Cover / ID Summary'])
+        ws.append(['Records Analyzed', _cell(sci.get('records_analyzed', 0))])
+        ws.append(['Unique IDs', _cell(sci.get('unique_id_count', 0))])
+        ws.append(['Total Savings', _cell(sci.get('total_savings', 0))])
+        ws.append(['Average Savings', _cell(sci.get('average_savings', 0))])
+        ws.append(['Total Cover', _cell(sci.get('total_cover', 0))])
+        ws.append(['Average Cover', _cell(sci.get('average_cover', 0))])
+        ws.append(['Cover/Savings Ratio', _cell(sci.get('coverage_to_savings_ratio', 'N/A'))])
+
+        customer_overview = sci.get('customer_overview', {}) or summary.get('customer_overview', {}) or {}
+        if customer_overview:
+            ws.append([])
+            ws.append(['Customer Snapshot'])
+            ws.append(['Full Name', _cell(customer_overview.get('full_name'))])
+            ws.append(['Masked ID', _cell(customer_overview.get('id_masked'))])
+            ws.append(['Date of Birth (dd/mm/yyyy)', _cell(customer_overview.get('birth_date_ddmmyyyy'))])
+            ws.append(['Policy Count', _cell(customer_overview.get('policy_count'))])
+            ws.append(['Provider Count', _cell(customer_overview.get('provider_count'))])
+            ws.append(['Total Savings', _cell(customer_overview.get('total_savings'))])
+            ws.append(['Total Severance', _cell(customer_overview.get('total_severance'))])
+            ws.append(['Life Benefits', _cell(customer_overview.get('life_benefits'))])
+            ws.append(['Disability Benefits', _cell(customer_overview.get('disability_benefits'))])
+            ws.append(['Total Benefits', _cell(customer_overview.get('total_benefits'))])
+
+        policy_rows = sci.get('policy_savings_benefits', []) or summary.get('policy_savings_benefits', []) or []
+        if policy_rows and isinstance(policy_rows[0], dict):
+            policy_sheet = wb.create_sheet(title='Policy Benefits')
+            preferred_policy_columns = [
+                'policy_number', 'provider', 'product_type', 'status',
+                'savings', 'life_benefit', 'disability_benefit',
+                'beneficiaries_count', 'section14'
+            ]
+            columns = [col for col in preferred_policy_columns if col in policy_rows[0]]
+            if not columns:
+                columns = list(policy_rows[0].keys())
+            policy_sheet.append(columns)
+            for row in policy_rows[:500]:
+                policy_sheet.append([_cell(row.get(col)) for col in columns])
+
+        for index, section in enumerate(summary.get('table_sections', [])[:6], start=1):
+            section_title = str(section.get('title', f'Section {index}')).strip()
+            safe_title = re.sub(r'[\\/*?:\[\]]', '_', section_title)[:28] or f'Section{index}'
+            sheet = wb.create_sheet(title=f'S{index}_{safe_title}'[:31])
+            columns = section.get('columns', []) or []
+            rows = section.get('rows', []) or []
+            if columns:
+                sheet.append([_cell(col) for col in columns])
+            for row in rows[:500]:
+                if isinstance(row, dict) and columns:
+                    sheet.append([_cell(row.get(col)) for col in columns])
+                elif isinstance(row, dict):
+                    dynamic_cols = list(row.keys())
+                    if not sheet.max_row:
+                        sheet.append(dynamic_cols)
+                    sheet.append([_cell(row.get(col)) for col in dynamic_cols])
+                else:
+                    sheet.append([_cell(row)])
+
+        recs = summary.get('recommendations', []) or []
+        if recs:
+            rec_sheet = wb.create_sheet(title='Recommendations')
+            rec_sheet.append(['Priority', 'Title', 'Description', 'Expected Impact'])
+            for rec in recs[:500]:
+                rec_sheet.append([
+                    _cell(rec.get('priority', '')),
+                    _cell(rec.get('title', '')),
+                    _cell(rec.get('description', '')),
+                    _cell(rec.get('expected_impact', '')),
+                ])
+
+        output = io.BytesIO()
+        wb.save(output)
+        return output.getvalue()
     
     def _generate_text_policy_document(self, policy: Dict, customer: Dict, underwriting: Dict, bills: list, claims: list) -> None:
         """Fallback text document generation when PDF library not available"""
@@ -8050,7 +8238,7 @@ For claims or questions, please contact:
 
             if export_format not in ['pdf', 'excel', 'csv']:
                 self._set_json_headers(400)
-                self.wfile.write(json.dumps({'error': 'Unsupported format. Use pdf or excel.'}).encode('utf-8'))
+                self.wfile.write(json.dumps({'error': 'Unsupported format. Use pdf, excel, or csv.'}).encode('utf-8'))
                 return
 
             try:
@@ -8076,6 +8264,10 @@ For claims or questions, please contact:
                     file_bytes = self._build_report_summary_pdf_bytes(summary_payload)
                     content_type = 'application/pdf'
                     filename = f"{title_stem}_{timestamp}.pdf"
+                elif export_format == 'excel':
+                    file_bytes = self._build_report_summary_excel_bytes(summary_payload)
+                    content_type = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+                    filename = f"{title_stem}_{timestamp}.xlsx"
                 else:
                     file_bytes = self._build_report_summary_csv_bytes(summary_payload)
                     content_type = 'text/csv; charset=utf-8'
