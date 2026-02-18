@@ -122,22 +122,6 @@ _SMTP_PLACEHOLDER_HOSTS = {
 }
 
 
-def _aws_identity_available() -> bool:
-    """Check whether AWS runtime credentials are available for SES delivery."""
-    return any(
-        os.environ.get(name)
-        for name in (
-            'AWS_ACCESS_KEY_ID',
-            'AWS_SECRET_ACCESS_KEY',
-            'AWS_PROFILE',
-            'AWS_ROLE_ARN',
-            'AWS_WEB_IDENTITY_TOKEN_FILE',
-            'AWS_CONTAINER_CREDENTIALS_RELATIVE_URI',
-            'AWS_CONTAINER_CREDENTIALS_FULL_URI',
-        )
-    )
-
-
 def _smtp_delivery_configured(notification_config: Any) -> bool:
     """Detect whether SMTP settings are likely production-capable."""
     host = str(getattr(notification_config, 'SMTP_HOST', '') or '').strip().lower()
@@ -204,6 +188,7 @@ def _send_otp_email(
             SendGridEmailProvider,
             AWSSESEmailProvider,
             MailgunEmailProvider,
+            _aws_identity_configured,
         )
     except Exception as exc:
         return False, f"Notification service unavailable: {exc}"
@@ -277,7 +262,7 @@ def _send_otp_email(
             and getattr(NotificationConfig, 'MAILGUN_DOMAIN', '')
         ):
             fallback_provider_factories.append(('mailgun', MailgunEmailProvider))
-        if _aws_identity_available():
+        if _aws_identity_configured():
             fallback_provider_factories.append(('ses', AWSSESEmailProvider))
         if _smtp_delivery_configured(NotificationConfig):
             fallback_provider_factories.append(('smtp', SMTPEmailProvider))
