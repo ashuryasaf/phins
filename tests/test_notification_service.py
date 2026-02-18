@@ -528,7 +528,7 @@ class TestNotificationService:
         monkeypatch.setattr(NotificationConfig, 'SMTP_HOST', 'localhost')
         monkeypatch.setattr(NotificationConfig, 'SMTP_USERNAME', '')
         monkeypatch.setattr(NotificationConfig, 'SMTP_PASSWORD', '')
-        monkeypatch.setattr(NotificationConfig, 'SENDGRID_API_KEY', 'SG.test_key')
+        monkeypatch.setattr(NotificationConfig, 'SENDGRID_API_KEY', 'fake-sendgrid-key-for-testing')
         monkeypatch.setattr(NotificationConfig, 'MAILGUN_API_KEY', '')
         monkeypatch.setattr(NotificationConfig, 'MAILGUN_DOMAIN', '')
 
@@ -542,7 +542,7 @@ class TestNotificationService:
         monkeypatch.setattr(NotificationConfig, 'SMTP_HOST', 'smtp.gmail.com')
         monkeypatch.setattr(NotificationConfig, 'SMTP_USERNAME', 'smtp-user')
         monkeypatch.setattr(NotificationConfig, 'SMTP_PASSWORD', 'smtp-pass')
-        monkeypatch.setattr(NotificationConfig, 'SENDGRID_API_KEY', 'SG.test_key')
+        monkeypatch.setattr(NotificationConfig, 'SENDGRID_API_KEY', 'fake-sendgrid-key-for-testing')
 
         service = create_notification_service(use_mock=False)
         assert isinstance(service._email_provider, SMTPEmailProvider)
@@ -554,7 +554,7 @@ class TestNotificationService:
         monkeypatch.setattr(NotificationConfig, 'SMTP_HOST', 'localhost')
         monkeypatch.setattr(NotificationConfig, 'SMTP_USERNAME', '')
         monkeypatch.setattr(NotificationConfig, 'SMTP_PASSWORD', '')
-        monkeypatch.setattr(NotificationConfig, 'SENDGRID_API_KEY', 'SG.test_key')
+        monkeypatch.setattr(NotificationConfig, 'SENDGRID_API_KEY', 'fake-sendgrid-key-for-testing')
         monkeypatch.setattr(NotificationConfig, 'MAILGUN_API_KEY', '')
         monkeypatch.setattr(NotificationConfig, 'MAILGUN_DOMAIN', '')
 
@@ -568,7 +568,7 @@ class TestNotificationService:
         monkeypatch.setattr(NotificationConfig, 'SMTP_HOST', 'localhost')
         monkeypatch.setattr(NotificationConfig, 'SMTP_USERNAME', '')
         monkeypatch.setattr(NotificationConfig, 'SMTP_PASSWORD', '')
-        monkeypatch.setattr(NotificationConfig, 'SENDGRID_API_KEY', 'SG.test_key')
+        monkeypatch.setattr(NotificationConfig, 'SENDGRID_API_KEY', 'fake-sendgrid-key-for-testing')
         monkeypatch.setattr(NotificationConfig, 'MAILGUN_API_KEY', '')
         monkeypatch.setattr(NotificationConfig, 'MAILGUN_DOMAIN', '')
 

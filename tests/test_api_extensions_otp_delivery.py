@@ -56,7 +56,7 @@ def test_send_otp_email_uses_fallback_provider_when_primary_fails(monkeypatch):
 
     monkeypatch.setattr(notification_service.NotificationConfig, "EMAIL_PROVIDER", "smtp")
     monkeypatch.setattr(notification_service.NotificationConfig, "SMTP_HOST", "localhost")
-    monkeypatch.setattr(notification_service.NotificationConfig, "SENDGRID_API_KEY", "SG.test_key")
+    monkeypatch.setattr(notification_service.NotificationConfig, "SENDGRID_API_KEY", "fake-sendgrid-key-for-testing")
     monkeypatch.setattr(notification_service.NotificationConfig, "MAILGUN_API_KEY", "")
     monkeypatch.setattr(notification_service.NotificationConfig, "MAILGUN_DOMAIN", "")
 
