@@ -260,6 +260,30 @@ def get_default_rules(foundation_type: str) -> Dict[str, Any]:
     return DEFAULT_RULES.get(foundation_type, DEFAULT_RULES["custom"]).copy()
 
 
+def _safe_float(value: Any, default: float = 0.0) -> float:
+    """Best-effort numeric conversion used by financial reconciliations."""
+    try:
+        if value is None:
+            return default
+        if isinstance(value, bool):
+            return float(int(value))
+        return float(str(value).replace(",", "").strip())
+    except Exception:
+        return default
+
+
+def _safe_int(value: Any, default: int = 0) -> int:
+    """Best-effort integer conversion helper."""
+    try:
+        if value is None:
+            return default
+        if isinstance(value, bool):
+            return int(value)
+        return int(float(value))
+    except Exception:
+        return default
+
+
 # ============================================================================
 # FOUNDATION SERVICE (In-Memory Implementation)
 # ============================================================================
@@ -309,6 +333,12 @@ class FoundationService:
         self._vote_casts: Dict[str, Dict[str, Any]] = {}
         self._claims: Dict[str, Dict[str, Any]] = {}
         self._activities: Dict[str, Dict[str, Any]] = {}
+        self._asset_transactions: Dict[str, Dict[str, Any]] = {}
+        self._liability_records: Dict[str, Dict[str, Any]] = {}
+        self._internal_loans: Dict[str, Dict[str, Any]] = {}
+        self._customer_connections: Dict[str, Dict[str, Any]] = {}
+        self._foundation_ledger: Dict[str, Dict[str, Any]] = {}
+        self._integrity_history: Dict[str, Dict[str, Any]] = {}
         # Use 'is None' check to preserve reference to caller's dict (even if empty)
         self._billing_integration_records: Dict[str, Dict[str, Any]] = billing_records if billing_records is not None else {}
         
@@ -355,6 +385,206 @@ class FoundationService:
             except Exception as e:
                 logger.error(f"Error initializing billing integration: {e}")
                 self._billing_enabled = False
+
+        # Ensure all in-memory records include the latest financial fields.
+        self._initialize_foundation_state_defaults()
+
+    def _initialize_foundation_state_defaults(self) -> None:
+        """Backfill defaults for foundations and financial state stores."""
+        for foundation in self._foundations.values():
+            self._ensure_foundation_financial_defaults(foundation)
+
+        # Rebuild missing relationship records from membership table.
+        for member in self._members.values():
+            foundation_id = member.get("foundation_id")
+            member_user_id = str(member.get("member_id") or "")
+            if foundation_id and member_user_id:
+                self._touch_customer_connection(foundation_id, member_user_id, role=member.get("role"))
+
+    def _ensure_foundation_financial_defaults(self, foundation: Dict[str, Any]) -> None:
+        """Ensure a foundation record has complete financial defaults."""
+        foundation.setdefault("currency", "USD")
+        foundation.setdefault("total_fund_balance", 0.0)
+        foundation.setdefault("total_asset_value", 0.0)
+        foundation.setdefault("total_liability_value", 0.0)
+        foundation.setdefault("net_equity_value", 0.0)
+        foundation.setdefault("total_internal_debt", 0.0)
+        foundation.setdefault("total_internal_credit", 0.0)
+        foundation.setdefault("last_integrity_check_at", None)
+        foundation.setdefault("integrity_last_status", "unknown")
+        foundation.setdefault("integrity_issue_count", 0)
+        foundation.setdefault("last_balance_sheet_at", None)
+        foundation.setdefault("analytics", {})
+        foundation["total_fund_balance"] = round(_safe_float(foundation.get("total_fund_balance")), 2)
+        foundation["total_asset_value"] = round(_safe_float(foundation.get("total_asset_value")), 2)
+        foundation["total_liability_value"] = round(_safe_float(foundation.get("total_liability_value")), 2)
+        foundation["net_equity_value"] = round(
+            _safe_float(foundation.get("total_fund_balance"))
+            + _safe_float(foundation.get("total_asset_value"))
+            - _safe_float(foundation.get("total_liability_value")),
+            2
+        )
+        foundation["total_internal_debt"] = round(_safe_float(foundation.get("total_internal_debt")), 2)
+        foundation["total_internal_credit"] = round(_safe_float(foundation.get("total_internal_credit")), 2)
+
+    def _touch_customer_connection(self, foundation_id: str, member_user_id: str, role: Optional[str] = None) -> None:
+        """Maintain a lightweight relationship graph for foundation members."""
+        connection_id = f"{foundation_id}:{member_user_id}"
+        entry = self._customer_connections.get(connection_id)
+        now_iso = datetime.now(timezone.utc).isoformat()
+        if not entry:
+            entry = {
+                "id": connection_id,
+                "foundation_id": foundation_id,
+                "customer_id": member_user_id,
+                "role": role or "member",
+                "connected_customers": [],
+                "connections_count": 0,
+                "joined_at": now_iso,
+                "last_seen_at": now_iso,
+                "updated_at": now_iso,
+            }
+            self._customer_connections[connection_id] = entry
+        else:
+            if role:
+                entry["role"] = role
+            entry["last_seen_at"] = now_iso
+            entry["updated_at"] = now_iso
+
+        # Rebuild connection links against other active members in foundation.
+        peers = sorted(
+            {
+                str(member.get("member_id"))
+                for member in self._members.values()
+                if member.get("foundation_id") == foundation_id
+                and member.get("status") == "active"
+                and str(member.get("member_id")) != member_user_id
+            }
+        )
+        entry["connected_customers"] = peers
+        entry["connections_count"] = len(peers)
+        entry["updated_at"] = now_iso
+
+        # Keep peer lists symmetric for all active members.
+        active_member_ids = sorted(
+            {
+                str(member.get("member_id"))
+                for member in self._members.values()
+                if member.get("foundation_id") == foundation_id and member.get("status") == "active"
+            }
+        )
+        for customer_id in active_member_ids:
+            cid = f"{foundation_id}:{customer_id}"
+            existing = self._customer_connections.get(cid)
+            if not existing:
+                existing = {
+                    "id": cid,
+                    "foundation_id": foundation_id,
+                    "customer_id": customer_id,
+                    "role": "member",
+                    "connected_customers": [],
+                    "connections_count": 0,
+                    "joined_at": now_iso,
+                    "last_seen_at": now_iso,
+                    "updated_at": now_iso,
+                }
+                self._customer_connections[cid] = existing
+            existing_peers = [mid for mid in active_member_ids if mid != customer_id]
+            existing["connected_customers"] = existing_peers
+            existing["connections_count"] = len(existing_peers)
+            existing["last_seen_at"] = now_iso
+            existing["updated_at"] = now_iso
+
+    def _reconcile_foundation_totals(self, foundation_id: str, update_timestamp: bool = False) -> Dict[str, Any]:
+        """Reconcile computed totals for a foundation financial state."""
+        foundation = self._foundations.get(foundation_id)
+        if not foundation:
+            return {"success": False, "error": "FOUNDATION_NOT_FOUND"}
+
+        cash_total = round(
+            sum(
+                _safe_float(fund.get("balance"))
+                for fund in self._funds.values()
+                if fund.get("foundation_id") == foundation_id and fund.get("status") != "archived"
+            ),
+            2
+        )
+        foundation["total_fund_balance"] = cash_total
+
+        asset_total = round(
+            sum(
+                _safe_float(asset.get("net_amount"))
+                for asset in self._asset_transactions.values()
+                if asset.get("foundation_id") == foundation_id and asset.get("status") == "active"
+            ),
+            2
+        )
+        foundation["total_asset_value"] = asset_total
+
+        liability_total = round(
+            sum(
+                _safe_float(liability.get("outstanding_amount", liability.get("amount")))
+                for liability in self._liability_records.values()
+                if liability.get("foundation_id") == foundation_id and liability.get("status") in {"open", "active", "past_due"}
+            ),
+            2
+        )
+        foundation["total_liability_value"] = liability_total
+
+        internal_outstanding = round(
+            sum(
+                _safe_float(loan.get("outstanding_amount"))
+                for loan in self._internal_loans.values()
+                if loan.get("foundation_id") == foundation_id and loan.get("status") in {"active", "past_due"}
+            ),
+            2
+        )
+        # Same principal appears as debt for borrowers and credit for lenders.
+        internal_debt = internal_outstanding
+        internal_credit = internal_outstanding
+        foundation["total_internal_debt"] = internal_debt
+        foundation["total_internal_credit"] = internal_credit
+
+        foundation["net_equity_value"] = round(cash_total + asset_total - liability_total, 2)
+        if update_timestamp:
+            foundation["updated_at"] = datetime.now(timezone.utc).isoformat()
+        return {
+            "success": True,
+            "cash_total": cash_total,
+            "asset_total": asset_total,
+            "liability_total": liability_total,
+            "equity": foundation["net_equity_value"],
+        }
+
+    def _record_ledger_entry(
+        self,
+        *,
+        foundation_id: str,
+        category: str,
+        action: str,
+        actor_id: str,
+        amount: float = 0.0,
+        reference_id: Optional[str] = None,
+        payload: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """Record immutable transaction-style entries for foundation ledger views."""
+        entry_id = generate_id("LEDGER")
+        entry = {
+            "id": entry_id,
+            "foundation_id": foundation_id,
+            "category": category,
+            "action": action,
+            "actor_id": actor_id,
+            "amount": round(_safe_float(amount), 2),
+            "reference_id": reference_id,
+            "payload": payload or {},
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "entry_hash": hashlib.sha256(
+                f"{entry_id}:{foundation_id}:{category}:{action}:{reference_id or ''}:{amount}".encode()
+            ).hexdigest()[:24],
+        }
+        self._foundation_ledger[entry_id] = entry
+        return entry
     
     def _load_from_persistence(self) -> None:
         """Load all data from persistence storage."""
@@ -373,7 +603,16 @@ class FoundationService:
             self._vote_casts = data.get('vote_casts', {})
             self._claims = data.get('claims', {})
             self._activities = data.get('activities', {})
+            self._asset_transactions = data.get('asset_transactions', {})
+            self._liability_records = data.get('liability_records', {})
+            self._internal_loans = data.get('internal_loans', {})
+            self._customer_connections = data.get('customer_connections', {})
+            self._foundation_ledger = data.get('ledger', {})
+            self._integrity_history = data.get('integrity_history', {})
             self._billing_integration_records = data.get('billing_integration', {})
+
+            # Normalize loaded records to include expected defaults.
+            self._initialize_foundation_state_defaults()
             
             logger.info(f"Loaded {len(self._foundations)} foundations from persistence")
             
@@ -402,8 +641,19 @@ class FoundationService:
                 'vote_casts': self._vote_casts,
                 'claims': self._claims,
                 'activities': self._activities,
+                'asset_transactions': self._asset_transactions,
+                'liability_records': self._liability_records,
+                'internal_loans': self._internal_loans,
+                'customer_connections': self._customer_connections,
+                'ledger': self._foundation_ledger,
+                'integrity_history': self._integrity_history,
                 'billing_integration': self._billing_integration_records
             }
+
+            if self._persistence_service:
+                is_valid, issues = self._persistence_service.validate_data_integrity(data)
+                if not is_valid:
+                    logger.warning("Foundation persistence validation issues: %s", "; ".join(issues[:8]))
             
             # Create backup if requested
             if create_backup and self._backup_enabled and self._backup_service:
@@ -438,7 +688,13 @@ class FoundationService:
                 'votes': self._votes,
                 'vote_casts': self._vote_casts,
                 'claims': self._claims,
-                'activities': self._activities
+                'activities': self._activities,
+                'asset_transactions': self._asset_transactions,
+                'liability_records': self._liability_records,
+                'internal_loans': self._internal_loans,
+                'customer_connections': self._customer_connections,
+                'ledger': self._foundation_ledger,
+                'integrity_history': self._integrity_history
             }
             
             return self._backup_service.backup_foundation_ledger(data, label)
@@ -575,6 +831,16 @@ class FoundationService:
             'is_unlimited': is_unlimited,
             'current_members': 1,  # Founder counts
             'total_fund_balance': 0.0,
+            'total_asset_value': 0.0,
+            'total_liability_value': 0.0,
+            'net_equity_value': 0.0,
+            'total_internal_debt': 0.0,
+            'total_internal_credit': 0.0,
+            'last_integrity_check_at': None,
+            'integrity_last_status': 'unknown',
+            'integrity_issue_count': 0,
+            'last_balance_sheet_at': None,
+            'analytics': {},
             'reserve_percentage': settings["fund_rules"]["min_reserve_percentage"],
             'currency': 'USD',
             'settings': settings,
@@ -587,6 +853,7 @@ class FoundationService:
         }
         
         self._foundations[foundation_id] = foundation
+        self._ensure_foundation_financial_defaults(foundation)
         
         # Add founder as first member
         member_id = generate_id("MEM")
@@ -613,6 +880,7 @@ class FoundationService:
             'updated_at': datetime.now(timezone.utc).isoformat()
         }
         self._members[member_id] = founder_member
+        self._touch_customer_connection(foundation_id, request.founder_id, role='founder')
         
         # Create default funds
         self._create_default_funds(foundation_id)
@@ -623,6 +891,14 @@ class FoundationService:
             activity_type="foundation_created",
             actor_id=request.founder_id,
             details={"name": request.name, "type": request.foundation_type}
+        )
+        self._record_ledger_entry(
+            foundation_id=foundation_id,
+            category="foundation",
+            action="created",
+            actor_id=request.founder_id,
+            reference_id=foundation_id,
+            payload={"name": request.name, "foundation_type": request.foundation_type},
         )
         
         logger.info(f"Foundation created: {foundation_id} by {request.founder_id}")
@@ -982,6 +1258,8 @@ class FoundationService:
         expires_at = datetime.fromisoformat(invitation['expires_at'].replace('Z', '+00:00'))
         if datetime.now(timezone.utc) > expires_at:
             invitation['status'] = 'expired'
+            invitation['updated_at'] = datetime.now(timezone.utc).isoformat()
+            self._persist(create_backup=False)
             return {"valid": False, "error": "Invitation has expired"}
         
         # Check usage limit
@@ -1502,7 +1780,8 @@ class FoundationService:
         summary: str = "",
         outlines: Optional[List[str]] = None,
         voting_mechanism: str = "simple_majority",
-        options: Optional[List[str]] = None
+        options: Optional[List[str]] = None,
+        proposal_payload: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         """
         Create a new vote/proposal with comprehensive decision-making features.
@@ -1565,6 +1844,7 @@ class FoundationService:
             'outlines': json.dumps(outlines or []),
             'voting_mechanism': voting_mechanism,
             'options': json.dumps(options),
+            'proposal_payload': json.dumps(proposal_payload or {}),
             'status': 'pending_approval' if requires_admin else 'open',
             'threshold': actual_threshold,
             'quorum': 0.50,
@@ -1594,7 +1874,8 @@ class FoundationService:
                 "title": title,
                 "subject": subject,
                 "mechanism": voting_mechanism,
-                "requires_approval": requires_admin
+                "requires_approval": requires_admin,
+                "proposal_type": proposal_type
             }
         )
         
@@ -1778,7 +2059,7 @@ class FoundationService:
         
         vote_copy = vote.copy()
         # Parse JSON fields
-        for field in ['outlines', 'options', 'option_votes', 'decision_record']:
+        for field in ['outlines', 'options', 'option_votes', 'decision_record', 'proposal_payload']:
             if vote_copy.get(field) and isinstance(vote_copy[field], str):
                 try:
                     vote_copy[field] = json.loads(vote_copy[field])
@@ -1808,7 +2089,7 @@ class FoundationService:
             if vote['foundation_id'] == foundation_id and vote['status'] in ['open', 'pending_approval']:
                 vote_copy = vote.copy()
                 # Parse JSON fields
-                for field in ['outlines', 'options', 'option_votes']:
+                for field in ['outlines', 'options', 'option_votes', 'proposal_payload']:
                     if vote_copy.get(field) and isinstance(vote_copy[field], str):
                         try:
                             vote_copy[field] = json.loads(vote_copy[field])
@@ -1832,7 +2113,7 @@ class FoundationService:
                 if status is None or vote['status'] == status:
                     vote_copy = vote.copy()
                     # Parse JSON fields
-                    for field in ['outlines', 'options', 'option_votes', 'decision_record']:
+                    for field in ['outlines', 'options', 'option_votes', 'decision_record', 'proposal_payload']:
                         if vote_copy.get(field) and isinstance(vote_copy[field], str):
                             try:
                                 vote_copy[field] = json.loads(vote_copy[field])
@@ -1964,6 +2245,12 @@ and determine result with comprehensive decision record"""
             'duration_hours': round((datetime.fromisoformat(vote['closed_at'].replace('Z', '+00:00')) - 
                                      datetime.fromisoformat(vote['created_at'].replace('Z', '+00:00'))).total_seconds() / 3600, 1)
         }
+
+        # Governance automation: execute supported proposal payloads after approval.
+        if vote.get('status') == 'passed':
+            execution_result = self._execute_vote_outcome(vote)
+            if execution_result:
+                decision_record['execution_result'] = execution_result
         vote['decision_record'] = json.dumps(decision_record)
         
         self._log_activity(
@@ -1978,6 +2265,74 @@ and determine result with comprehensive decision record"""
                 "participation_rate": decision_record['participation_rate']
             }
         )
+
+    def _execute_vote_outcome(self, vote: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Execute structured governance proposals once vote passes.
+
+        Supported proposal_type values:
+        - asset_purchase / asset_sale
+        - liability_open
+        - internal_loan
+        """
+        proposal_type = str(vote.get("proposal_type", "")).strip().lower()
+        payload_raw = vote.get("proposal_payload")
+        payload: Dict[str, Any] = {}
+        if isinstance(payload_raw, str) and payload_raw:
+            try:
+                payload = json.loads(payload_raw)
+            except Exception:
+                payload = {}
+        elif isinstance(payload_raw, dict):
+            payload = payload_raw
+
+        if proposal_type in {"asset_purchase", "asset_sale"}:
+            transaction_type = "buy" if proposal_type == "asset_purchase" else "sell"
+            result = self.record_asset_transaction(
+                foundation_id=vote["foundation_id"],
+                actor_id="system",
+                asset_symbol=str(payload.get("asset_symbol") or payload.get("symbol") or "ASSET"),
+                asset_name=str(payload.get("asset_name") or payload.get("name") or "Governance Asset"),
+                asset_type=str(payload.get("asset_type") or "financial"),
+                transaction_type=transaction_type,
+                amount=_safe_float(payload.get("amount"), 0.0),
+                quantity=_safe_float(payload.get("quantity"), 0.0),
+                unit_price=_safe_float(payload.get("unit_price"), 0.0) if payload.get("unit_price") is not None else None,
+                notes=str(payload.get("notes") or f"Executed from vote {vote.get('id')}"),
+                metadata={"vote_id": vote.get("id"), "proposal_type": proposal_type},
+                enforce_role_check=False,
+            )
+            return {"proposal_type": proposal_type, "result": result}
+
+        if proposal_type == "liability_open":
+            result = self.record_liability(
+                foundation_id=vote["foundation_id"],
+                actor_id="system",
+                liability_type=str(payload.get("liability_type") or "governance_debt"),
+                amount=_safe_float(payload.get("amount"), 0.0),
+                creditor_id=payload.get("creditor_id"),
+                debtor_id=payload.get("debtor_id") or vote.get("foundation_id"),
+                due_date=payload.get("due_date"),
+                notes=str(payload.get("notes") or f"Executed from vote {vote.get('id')}"),
+                metadata={"vote_id": vote.get("id"), "proposal_type": proposal_type},
+                enforce_role_check=False,
+            )
+            return {"proposal_type": proposal_type, "result": result}
+
+        if proposal_type == "internal_loan":
+            result = self.lend_funds(
+                foundation_id=vote["foundation_id"],
+                lender_user_id=str(payload.get("lender_user_id") or ""),
+                borrower_user_id=str(payload.get("borrower_user_id") or ""),
+                amount=_safe_float(payload.get("amount"), 0.0),
+                actor_id="system",
+                interest_rate=_safe_float(payload.get("interest_rate"), 0.0),
+                due_days=_safe_int(payload.get("due_days"), 30),
+                notes=str(payload.get("notes") or f"Executed from vote {vote.get('id')}"),
+            )
+            return {"proposal_type": proposal_type, "result": result}
+
+        return {"proposal_type": proposal_type or "none", "result": "no_execution_handler"}
     
     # ========== CLAIMS ==========
     
@@ -2182,16 +2537,82 @@ and determine result with comprehensive decision record"""
     ) -> None:
         """Log foundation activity"""
         activity_id = generate_id("ACT")
+        details_payload = details or {}
         activity = {
             'id': activity_id,
             'foundation_id': foundation_id,
             'activity_type': activity_type,
             'actor_id': actor_id,
-            'details': json.dumps(details or {}),
+            'details': json.dumps(details_payload),
             'ip_address': ip_address,
             'timestamp': datetime.now(timezone.utc).isoformat()
         }
         self._activities[activity_id] = activity
+
+        category_map = {
+            "foundation": {
+                "foundation_created", "foundation_activated", "foundation_rejected",
+                "foundation_dissolved", "pipeline_processed"
+            },
+            "membership": {
+                "member_joined", "member_approved", "member_rejected",
+                "member_removed", "member_role_changed", "member_details_updated",
+                "member_left"
+            },
+            "invitation": {"invitation_created"},
+            "governance": {"vote_created", "vote_cast", "vote_closed", "vote_approved", "vote_rejected"},
+            "claims": {"claim_submitted", "claim_approved", "claim_rejected"},
+            "financial": {
+                "contribution_made", "asset_recorded", "liability_recorded",
+                "internal_loan_created", "internal_loan_settled"
+            },
+        }
+        category = "activity"
+        for bucket, actions in category_map.items():
+            if activity_type in actions:
+                category = bucket
+                break
+
+        amount = _safe_float(details_payload.get("amount"))
+        reference_id = (
+            details_payload.get("vote_id")
+            or details_payload.get("claim_id")
+            or details_payload.get("contribution_id")
+            or details_payload.get("asset_id")
+            or details_payload.get("liability_id")
+            or details_payload.get("loan_id")
+            or details_payload.get("foundation_id")
+        )
+        self._record_ledger_entry(
+            foundation_id=foundation_id,
+            category=category,
+            action=activity_type,
+            actor_id=actor_id or "system",
+            amount=amount,
+            reference_id=reference_id,
+            payload=details_payload,
+        )
+
+        # Maintain relationship graph on membership operations.
+        member_user_id = details_payload.get("member_id") or actor_id
+        if activity_type in {
+            "member_joined", "member_approved", "member_role_changed",
+            "member_details_updated", "foundation_created"
+        } and member_user_id:
+            role = details_payload.get("new_role")
+            if not role:
+                member_record = self._get_member_by_user(foundation_id, str(member_user_id))
+                role = member_record.get("role") if member_record else None
+            self._touch_customer_connection(foundation_id, str(member_user_id), role=role)
+
+        if activity_type in {
+            "contribution_made", "claim_approved", "asset_recorded",
+            "liability_recorded", "internal_loan_created", "internal_loan_settled"
+        }:
+            self._reconcile_foundation_totals(foundation_id, update_timestamp=True)
+
+        # Persist after each mutation activity to guarantee record durability.
+        self._persist(create_backup=False)
     
     def get_foundation_activities(
         self,
@@ -2430,6 +2851,11 @@ and determine result with comprehensive decision record"""
                 monthly_breakdown[month] = {'contributions': 0, 'count': 0}
             monthly_breakdown[month]['contributions'] += contrib['amount']
             monthly_breakdown[month]['count'] += 1
+
+        balance_sheet = self.get_foundation_balance_sheet(foundation_id)
+        assets_total = _safe_float(balance_sheet.get('assets', {}).get('total_assets'))
+        liabilities_total = _safe_float(balance_sheet.get('liabilities', {}).get('total_liabilities'))
+        equity_total = _safe_float(balance_sheet.get('equity', {}).get('net_equity'))
         
         return {
             "foundation_id": foundation_id,
@@ -2442,7 +2868,10 @@ and determine result with comprehensive decision record"""
                 "net_balance": total_contributions - total_claims_paid,
                 "reserve_percentage": foundation.get('reserve_percentage', 20),
                 "reserve_amount": foundation['total_fund_balance'] * (foundation.get('reserve_percentage', 20) / 100),
-                "available_for_claims": foundation['total_fund_balance'] * (1 - foundation.get('reserve_percentage', 20) / 100)
+                "available_for_claims": foundation['total_fund_balance'] * (1 - foundation.get('reserve_percentage', 20) / 100),
+                "assets_total": assets_total,
+                "liabilities_total": liabilities_total,
+                "equity_total": equity_total
             },
             "members": {
                 "total": len(members),
@@ -2453,6 +2882,7 @@ and determine result with comprehensive decision record"""
                 {"month": k, **v} 
                 for k, v in sorted(monthly_breakdown.items(), reverse=True)[:12]
             ],
+            "balance_sheet": balance_sheet if balance_sheet.get("success") else None,
             "generated_at": datetime.now(timezone.utc).isoformat()
         }
     
@@ -2520,6 +2950,21 @@ and determine result with comprehensive decision record"""
         claims = self.get_foundation_claims(foundation_id)
         activities = self.get_foundation_activities(foundation_id, limit=50)
         billing = self.get_foundation_billing_summary(foundation_id)
+        balance_sheet = self.get_foundation_balance_sheet(foundation_id)
+        insights = self.get_foundation_bi_ai_insights(foundation_id, lookback_days=180)
+        connections = self.get_foundation_connections(foundation_id)
+        active_loans = [
+            loan for loan in self._internal_loans.values()
+            if loan.get("foundation_id") == foundation_id and loan.get("status") in {"active", "past_due"}
+        ]
+        assets = [
+            tx for tx in self._asset_transactions.values()
+            if tx.get("foundation_id") == foundation_id and tx.get("status") == "active"
+        ]
+        liabilities = [
+            item for item in self._liability_records.values()
+            if item.get("foundation_id") == foundation_id and item.get("status") in {"open", "active", "past_due"}
+        ]
         
         report = {
             "report_type": report_type,
@@ -2543,6 +2988,7 @@ and determine result with comprehensive decision record"""
                 }
             },
             "financial": billing.get('summary', {}),
+            "balance_sheet": balance_sheet if balance_sheet.get("success") else None,
             "funds": [
                 {
                     "id": f['id'],
@@ -2569,6 +3015,26 @@ and determine result with comprehensive decision record"""
                 "rejected": len([c for c in claims if c['status'] == 'rejected']),
                 "total_approved_amount": sum(c.get('amount_approved', 0) for c in claims if c['status'] == 'approved')
             },
+            "assets": {
+                "transactions_count": len(assets),
+                "total_value": round(sum(_safe_float(tx.get("net_amount")) for tx in assets), 2),
+            },
+            "liabilities": {
+                "count": len(liabilities),
+                "total_outstanding": round(
+                    sum(_safe_float(item.get("outstanding_amount", item.get("amount"))) for item in liabilities),
+                    2
+                ),
+            },
+            "internal_loans": {
+                "active_count": len(active_loans),
+                "total_outstanding": round(
+                    sum(_safe_float(loan.get("outstanding_amount")) for loan in active_loans),
+                    2
+                ),
+            },
+            "connections": connections.get("totals", {}),
+            "bi_ai_insights": insights if insights.get("success") else None,
             "recent_activities": activities[:10],
             "generated_at": datetime.now(timezone.utc).isoformat()
         }
@@ -2707,6 +3173,10 @@ and determine result with comprehensive decision record"""
                         'claim_approved': ('claim', '✅', 'Claim Approved'),
                         'claim_rejected': ('claim', '❌', 'Claim Rejected'),
                         'fund_created': ('fund', '📁', 'Fund Created'),
+                        'asset_recorded': ('asset', '📈', 'Asset Transaction'),
+                        'liability_recorded': ('liability', '📉', 'Liability Recorded'),
+                        'internal_loan_created': ('loan', '🤝', 'Internal Loan Created'),
+                        'internal_loan_settled': ('loan', '✅', 'Internal Loan Settled'),
                     }
                     
                     category, icon, action = category_map.get(tx_type, ('other', '📋', tx_type.replace('_', ' ').title()))
@@ -2747,6 +3217,32 @@ and determine result with comprehensive decision record"""
                         'verified': True,
                         'block_number': abs(hash(activity['id'])) % 1000000  # Simulated block number
                     })
+
+            # Add explicit ledger records for non-activity financial operations.
+            for entry in self._foundation_ledger.values():
+                if entry.get('foundation_id') != fnd_id:
+                    continue
+                if any(tx.get('id') == entry.get('id') for tx in transactions):
+                    continue
+                transactions.append({
+                    'id': entry.get('id'),
+                    'transaction_hash': entry.get('entry_hash') or hashlib.sha256(
+                        f"{entry.get('id')}:{entry.get('timestamp')}".encode()
+                    ).hexdigest()[:16].upper(),
+                    'foundation_id': fnd_id,
+                    'foundation_name': foundation_name,
+                    'category': entry.get('category', 'ledger'),
+                    'type': entry.get('action', 'ledger_entry'),
+                    'icon': '🧾',
+                    'action': entry.get('action', 'Ledger Entry').replace('_', ' ').title(),
+                    'description': entry.get('action', 'ledger_entry').replace('_', ' ').title(),
+                    'actor_id': entry.get('actor_id'),
+                    'amount': _safe_float(entry.get('amount')),
+                    'details': entry.get('payload') or {},
+                    'timestamp': entry.get('timestamp'),
+                    'verified': True,
+                    'block_number': abs(hash(entry.get('id'))) % 1000000
+                })
         
         # Sort by timestamp (newest first)
         transactions.sort(key=lambda x: x['timestamp'], reverse=True)
@@ -2893,6 +3389,844 @@ and determine result with comprehensive decision record"""
                 for fnd_id in foundation_ids
             },
             'generated_at': datetime.now(timezone.utc).isoformat()
+        }
+
+    # ========== FOUNDATION FINANCIAL INTELLIGENCE ==========
+
+    def _require_active_member(
+        self,
+        foundation_id: str,
+        user_id: str,
+        allowed_roles: Optional[set] = None
+    ) -> Tuple[bool, Optional[str], Optional[Dict[str, Any]]]:
+        """Check membership and role constraints for financial operations."""
+        member = self._get_member_by_user(foundation_id, user_id)
+        if not member:
+            return False, "You are not a member of this foundation", None
+        if member.get("status") != "active":
+            return False, "Only active members can perform this operation", None
+        if allowed_roles and member.get("role") not in allowed_roles:
+            return False, "Insufficient permissions for this operation", None
+        return True, None, member
+
+    def _apply_cash_delta_to_funds(self, foundation_id: str, cash_delta: float) -> bool:
+        """Apply cash movement to fund balances while keeping totals consistent."""
+        if abs(cash_delta) < 0.000001:
+            return True
+
+        funds = [
+            fund for fund in self._funds.values()
+            if fund.get("foundation_id") == foundation_id and fund.get("status") == "active"
+        ]
+        if not funds:
+            return False
+
+        now_iso = datetime.now(timezone.utc).isoformat()
+        if cash_delta > 0:
+            target = sorted(funds, key=lambda f: _safe_float(f.get("balance")), reverse=True)[0]
+            target["balance"] = round(_safe_float(target.get("balance")) + cash_delta, 2)
+            target["last_activity"] = now_iso
+            target["updated_at"] = now_iso
+            return True
+
+        # cash_delta < 0: consume from funds with highest balance first.
+        remaining = round(abs(cash_delta), 2)
+        for fund in sorted(funds, key=lambda f: _safe_float(f.get("balance")), reverse=True):
+            current_balance = round(_safe_float(fund.get("balance")), 2)
+            if current_balance <= 0:
+                continue
+            deduct = min(current_balance, remaining)
+            fund["balance"] = round(current_balance - deduct, 2)
+            fund["last_activity"] = now_iso
+            fund["updated_at"] = now_iso
+            remaining = round(remaining - deduct, 2)
+            if remaining <= 0:
+                break
+        return remaining <= 0
+
+    def record_asset_transaction(
+        self,
+        *,
+        foundation_id: str,
+        actor_id: str,
+        asset_symbol: str,
+        asset_name: str,
+        asset_type: str,
+        transaction_type: str,
+        amount: float,
+        quantity: float = 0.0,
+        unit_price: Optional[float] = None,
+        notes: str = "",
+        metadata: Optional[Dict[str, Any]] = None,
+        enforce_role_check: bool = True,
+    ) -> Dict[str, Any]:
+        """Record a foundation asset movement (buy/sell/revalue/adjust)."""
+        foundation = self._foundations.get(foundation_id)
+        if not foundation:
+            return {"success": False, "error": "Foundation not found"}
+
+        if enforce_role_check:
+            allowed, error_message, _ = self._require_active_member(
+                foundation_id, actor_id, allowed_roles={"founder", "admin"}
+            )
+            if not allowed:
+                return {"success": False, "error": error_message}
+
+        normalized_tx = str(transaction_type or "").strip().lower()
+        if normalized_tx not in {"buy", "sell", "revalue", "adjust"}:
+            return {"success": False, "error": "Invalid transaction_type (buy/sell/revalue/adjust)"}
+
+        base_amount = round(abs(_safe_float(amount)), 2)
+        if base_amount <= 0:
+            return {"success": False, "error": "Amount must be positive"}
+
+        cash_delta = 0.0
+        net_amount = base_amount
+        if normalized_tx == "buy":
+            cash_delta = -base_amount
+        elif normalized_tx == "sell":
+            cash_delta = base_amount
+            net_amount = -base_amount
+        elif normalized_tx == "revalue":
+            # Revaluation affects carrying value without moving cash.
+            net_amount = _safe_float(amount)
+            cash_delta = 0.0
+        elif normalized_tx == "adjust":
+            net_amount = _safe_float(amount)
+            cash_delta = 0.0
+
+        if cash_delta < 0 and _safe_float(foundation.get("total_fund_balance")) + cash_delta < -0.01:
+            return {"success": False, "error": "Insufficient cash balance for asset purchase"}
+        if cash_delta != 0 and not self._apply_cash_delta_to_funds(foundation_id, cash_delta):
+            return {"success": False, "error": "Unable to apply cash movement to foundation funds"}
+
+        asset_id = generate_id("ASSET")
+        asset_record = {
+            "id": asset_id,
+            "foundation_id": foundation_id,
+            "asset_symbol": str(asset_symbol or "UNSPECIFIED").upper(),
+            "asset_name": str(asset_name or asset_symbol or "Asset"),
+            "asset_type": str(asset_type or "financial"),
+            "transaction_type": normalized_tx,
+            "amount": base_amount,
+            "net_amount": round(_safe_float(net_amount), 2),
+            "quantity": round(_safe_float(quantity), 8),
+            "unit_price": round(_safe_float(unit_price), 8) if unit_price is not None else None,
+            "currency": foundation.get("currency", "USD"),
+            "status": "active",
+            "notes": notes,
+            "metadata": metadata or {},
+            "recorded_by": actor_id,
+            "recorded_at": datetime.now(timezone.utc).isoformat(),
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }
+        self._asset_transactions[asset_id] = asset_record
+
+        self._log_activity(
+            foundation_id=foundation_id,
+            activity_type="asset_recorded",
+            actor_id=actor_id,
+            details={
+                "asset_id": asset_id,
+                "asset_symbol": asset_record["asset_symbol"],
+                "transaction_type": normalized_tx,
+                "amount": base_amount,
+                "cash_delta": cash_delta,
+            },
+        )
+        reconcile = self._reconcile_foundation_totals(foundation_id)
+        return {
+            "success": True,
+            "asset_id": asset_id,
+            "transaction": asset_record,
+            "reconciled": reconcile,
+        }
+
+    def record_liability(
+        self,
+        *,
+        foundation_id: str,
+        actor_id: str,
+        liability_type: str,
+        amount: float,
+        creditor_id: Optional[str] = None,
+        debtor_id: Optional[str] = None,
+        due_date: Optional[str] = None,
+        notes: str = "",
+        metadata: Optional[Dict[str, Any]] = None,
+        enforce_role_check: bool = True,
+    ) -> Dict[str, Any]:
+        """Record a liability/debt item in the foundation balance sheet."""
+        foundation = self._foundations.get(foundation_id)
+        if not foundation:
+            return {"success": False, "error": "Foundation not found"}
+
+        if enforce_role_check:
+            allowed, error_message, _ = self._require_active_member(
+                foundation_id, actor_id, allowed_roles={"founder", "admin"}
+            )
+            if not allowed:
+                return {"success": False, "error": error_message}
+
+        principal = round(abs(_safe_float(amount)), 2)
+        if principal <= 0:
+            return {"success": False, "error": "Liability amount must be positive"}
+
+        liability_id = generate_id("LIAB")
+        record = {
+            "id": liability_id,
+            "foundation_id": foundation_id,
+            "liability_type": str(liability_type or "general").lower(),
+            "amount": principal,
+            "outstanding_amount": principal,
+            "creditor_id": creditor_id,
+            "debtor_id": debtor_id,
+            "due_date": due_date,
+            "status": "open",
+            "notes": notes,
+            "metadata": metadata or {},
+            "recorded_by": actor_id,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }
+        self._liability_records[liability_id] = record
+
+        self._log_activity(
+            foundation_id=foundation_id,
+            activity_type="liability_recorded",
+            actor_id=actor_id,
+            details={
+                "liability_id": liability_id,
+                "liability_type": record["liability_type"],
+                "amount": principal,
+            },
+        )
+        reconcile = self._reconcile_foundation_totals(foundation_id)
+        return {
+            "success": True,
+            "liability_id": liability_id,
+            "liability": record,
+            "reconciled": reconcile,
+        }
+
+    def lend_funds(
+        self,
+        *,
+        foundation_id: str,
+        lender_user_id: str,
+        borrower_user_id: str,
+        amount: float,
+        actor_id: Optional[str] = None,
+        interest_rate: float = 0.0,
+        due_days: int = 30,
+        notes: str = "",
+    ) -> Dict[str, Any]:
+        """Create an internal member-to-member loan (lend$$ operation)."""
+        foundation = self._foundations.get(foundation_id)
+        if not foundation:
+            return {"success": False, "error": "Foundation not found"}
+        if lender_user_id == borrower_user_id:
+            return {"success": False, "error": "Lender and borrower must be different members"}
+
+        principal = round(abs(_safe_float(amount)), 2)
+        if principal <= 0:
+            return {"success": False, "error": "Loan amount must be positive"}
+
+        lender_ok, lender_err, lender_member = self._require_active_member(foundation_id, lender_user_id)
+        if not lender_ok:
+            return {"success": False, "error": lender_err}
+        borrower_ok, borrower_err, borrower_member = self._require_active_member(foundation_id, borrower_user_id)
+        if not borrower_ok:
+            return {"success": False, "error": borrower_err}
+
+        actor = actor_id or lender_user_id
+        actor_member = self._get_member_by_user(foundation_id, actor)
+        if actor not in {lender_user_id, borrower_user_id} and (
+            not actor_member or actor_member.get("role") not in {"founder", "admin"}
+        ):
+            return {"success": False, "error": "Only lender, borrower, founder, or admin can create this loan"}
+
+        loan_id = generate_id("LOAN")
+        created_at = datetime.now(timezone.utc)
+        due_date = (created_at + timedelta(days=max(1, _safe_int(due_days, 30)))).isoformat()
+        loan_record = {
+            "id": loan_id,
+            "foundation_id": foundation_id,
+            "lender_member_id": lender_member.get("id"),
+            "lender_user_id": lender_user_id,
+            "borrower_member_id": borrower_member.get("id"),
+            "borrower_user_id": borrower_user_id,
+            "principal_amount": principal,
+            "outstanding_amount": principal,
+            "interest_rate": round(max(0.0, _safe_float(interest_rate)), 4),
+            "due_date": due_date,
+            "status": "active",
+            "notes": notes,
+            "created_by": actor,
+            "created_at": created_at.isoformat(),
+            "updated_at": created_at.isoformat(),
+            "settlements": [],
+        }
+        self._internal_loans[loan_id] = loan_record
+
+        liability_result = self.record_liability(
+            foundation_id=foundation_id,
+            actor_id=actor,
+            liability_type="internal_loan",
+            amount=principal,
+            creditor_id=lender_user_id,
+            debtor_id=borrower_user_id,
+            due_date=due_date,
+            notes=notes,
+            metadata={"loan_id": loan_id},
+            enforce_role_check=False,
+        )
+        if liability_result.get("success"):
+            loan_record["liability_id"] = liability_result.get("liability_id")
+
+        self._log_activity(
+            foundation_id=foundation_id,
+            activity_type="internal_loan_created",
+            actor_id=actor,
+            details={
+                "loan_id": loan_id,
+                "lender_user_id": lender_user_id,
+                "borrower_user_id": borrower_user_id,
+                "amount": principal,
+                "interest_rate": loan_record["interest_rate"],
+                "liability_id": loan_record.get("liability_id"),
+            },
+        )
+        return {
+            "success": True,
+            "loan_id": loan_id,
+            "loan": loan_record,
+        }
+
+    def borrow_funds(
+        self,
+        *,
+        foundation_id: str,
+        borrower_user_id: str,
+        lender_user_id: str,
+        amount: float,
+        actor_id: Optional[str] = None,
+        interest_rate: float = 0.0,
+        due_days: int = 30,
+        notes: str = "",
+    ) -> Dict[str, Any]:
+        """Create an internal member-to-member loan (borrow$$ operation)."""
+        return self.lend_funds(
+            foundation_id=foundation_id,
+            lender_user_id=lender_user_id,
+            borrower_user_id=borrower_user_id,
+            amount=amount,
+            actor_id=actor_id or borrower_user_id,
+            interest_rate=interest_rate,
+            due_days=due_days,
+            notes=notes,
+        )
+
+    def settle_internal_loan(
+        self,
+        *,
+        foundation_id: str,
+        loan_id: str,
+        payer_user_id: str,
+        amount: float,
+        notes: str = "",
+    ) -> Dict[str, Any]:
+        """Settle part or all of an internal loan."""
+        loan = self._internal_loans.get(loan_id)
+        if not loan or loan.get("foundation_id") != foundation_id:
+            return {"success": False, "error": "Loan not found"}
+        if loan.get("status") not in {"active", "past_due"}:
+            return {"success": False, "error": f"Loan cannot be settled in status {loan.get('status')}"}
+
+        payer_member = self._get_member_by_user(foundation_id, payer_user_id)
+        if payer_user_id != loan.get("borrower_user_id") and (
+            not payer_member or payer_member.get("role") not in {"founder", "admin"}
+        ):
+            return {"success": False, "error": "Only borrower, founder, or admin can settle this loan"}
+
+        payment_amount = round(abs(_safe_float(amount)), 2)
+        if payment_amount <= 0:
+            return {"success": False, "error": "Settlement amount must be positive"}
+
+        outstanding_before = round(_safe_float(loan.get("outstanding_amount")), 2)
+        if payment_amount - outstanding_before > 0.01:
+            return {"success": False, "error": "Settlement amount exceeds outstanding balance"}
+
+        outstanding_after = round(outstanding_before - payment_amount, 2)
+        loan["outstanding_amount"] = outstanding_after
+        loan["updated_at"] = datetime.now(timezone.utc).isoformat()
+        settlements = list(loan.get("settlements") or [])
+        settlements.append(
+            {
+                "settled_by": payer_user_id,
+                "amount": payment_amount,
+                "notes": notes,
+                "settled_at": loan["updated_at"],
+            }
+        )
+        loan["settlements"] = settlements
+        if outstanding_after <= 0.01:
+            loan["status"] = "settled"
+            loan["outstanding_amount"] = 0.0
+            loan["settled_at"] = loan["updated_at"]
+
+        liability_id = loan.get("liability_id")
+        if liability_id and liability_id in self._liability_records:
+            liability = self._liability_records[liability_id]
+            liability["outstanding_amount"] = loan["outstanding_amount"]
+            liability["updated_at"] = loan["updated_at"]
+            if loan.get("status") == "settled":
+                liability["status"] = "closed"
+
+        self._log_activity(
+            foundation_id=foundation_id,
+            activity_type="internal_loan_settled",
+            actor_id=payer_user_id,
+            details={
+                "loan_id": loan_id,
+                "amount": payment_amount,
+                "remaining": loan["outstanding_amount"],
+                "liability_id": liability_id,
+            },
+        )
+        return {"success": True, "loan": loan}
+
+    def get_foundation_balance_sheet(self, foundation_id: str) -> Dict[str, Any]:
+        """Build a foundation-level balance sheet (assets/liabilities/equity)."""
+        foundation = self._foundations.get(foundation_id)
+        if not foundation:
+            return {"success": False, "error": "Foundation not found"}
+
+        self._ensure_foundation_financial_defaults(foundation)
+        self._reconcile_foundation_totals(foundation_id)
+
+        cash_assets = round(_safe_float(foundation.get("total_fund_balance")), 2)
+        asset_positions: Dict[str, Dict[str, Any]] = {}
+        for tx in self._asset_transactions.values():
+            if tx.get("foundation_id") != foundation_id or tx.get("status") != "active":
+                continue
+            symbol = tx.get("asset_symbol", "UNSPECIFIED")
+            position = asset_positions.setdefault(
+                symbol,
+                {
+                    "asset_symbol": symbol,
+                    "asset_name": tx.get("asset_name", symbol),
+                    "asset_type": tx.get("asset_type", "financial"),
+                    "net_quantity": 0.0,
+                    "net_value": 0.0,
+                    "transactions": 0,
+                },
+            )
+            position["net_quantity"] = round(position["net_quantity"] + _safe_float(tx.get("quantity")), 8)
+            position["net_value"] = round(position["net_value"] + _safe_float(tx.get("net_amount")), 2)
+            position["transactions"] += 1
+
+        investment_assets = round(sum(pos["net_value"] for pos in asset_positions.values()), 2)
+        liability_items = []
+        for liability in self._liability_records.values():
+            if liability.get("foundation_id") != foundation_id:
+                continue
+            if liability.get("status") not in {"open", "active", "past_due"}:
+                continue
+            liability_items.append(
+                {
+                    "id": liability.get("id"),
+                    "liability_type": liability.get("liability_type"),
+                    "outstanding_amount": round(_safe_float(liability.get("outstanding_amount", liability.get("amount"))), 2),
+                    "creditor_id": liability.get("creditor_id"),
+                    "debtor_id": liability.get("debtor_id"),
+                    "due_date": liability.get("due_date"),
+                    "status": liability.get("status"),
+                }
+            )
+
+        pending_claim_liability = round(
+            sum(
+                _safe_float(claim.get("amount_requested"))
+                for claim in self._claims.values()
+                if claim.get("foundation_id") == foundation_id and claim.get("status") in {"reviewing", "vote_open"}
+            ),
+            2
+        )
+        if pending_claim_liability > 0:
+            liability_items.append(
+                {
+                    "id": f"PENDING-CLAIMS-{foundation_id}",
+                    "liability_type": "pending_claims",
+                    "outstanding_amount": pending_claim_liability,
+                    "creditor_id": None,
+                    "debtor_id": foundation_id,
+                    "due_date": None,
+                    "status": "open",
+                }
+            )
+
+        total_liabilities = round(sum(_safe_float(item.get("outstanding_amount")) for item in liability_items), 2)
+        total_assets = round(cash_assets + investment_assets, 2)
+        equity = round(total_assets - total_liabilities, 2)
+
+        balance_sheet = {
+            "success": True,
+            "foundation_id": foundation_id,
+            "foundation_name": foundation.get("name"),
+            "currency": foundation.get("currency", "USD"),
+            "assets": {
+                "cash": cash_assets,
+                "investments": investment_assets,
+                "positions": sorted(asset_positions.values(), key=lambda x: x["net_value"], reverse=True),
+                "total_assets": total_assets,
+            },
+            "liabilities": {
+                "items": liability_items,
+                "total_liabilities": total_liabilities,
+            },
+            "equity": {
+                "net_equity": equity,
+                "solvency_ratio": round(total_assets / max(total_liabilities, 1.0), 4) if total_liabilities > 0 else 999.0,
+            },
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+        }
+
+        foundation["total_asset_value"] = investment_assets
+        foundation["total_liability_value"] = total_liabilities
+        foundation["net_equity_value"] = equity
+        foundation["last_balance_sheet_at"] = balance_sheet["generated_at"]
+        return balance_sheet
+
+    def get_foundation_bi_ai_insights(self, foundation_id: str, lookback_days: int = 90) -> Dict[str, Any]:
+        """Return BI metrics + AI-style optimization recommendations for a foundation."""
+        foundation = self._foundations.get(foundation_id)
+        if not foundation:
+            return {"success": False, "error": "Foundation not found"}
+
+        balance_sheet = self.get_foundation_balance_sheet(foundation_id)
+        if not balance_sheet.get("success"):
+            return balance_sheet
+
+        cutoff = datetime.now(timezone.utc) - timedelta(days=max(7, _safe_int(lookback_days, 90)))
+        contribution_volume = 0.0
+        contribution_count = 0
+        claim_volume = 0.0
+        claim_count = 0
+        vote_count = 0
+        votes_passed = 0
+        for activity in self._activities.values():
+            if activity.get("foundation_id") != foundation_id:
+                continue
+            try:
+                ts = datetime.fromisoformat(str(activity.get("timestamp")).replace("Z", "+00:00"))
+            except Exception:
+                continue
+            if ts < cutoff:
+                continue
+            activity_type = activity.get("activity_type")
+            details = activity.get("details", {})
+            if isinstance(details, str):
+                try:
+                    details = json.loads(details)
+                except Exception:
+                    details = {}
+            if activity_type == "contribution_made":
+                contribution_count += 1
+                contribution_volume += _safe_float(details.get("amount"))
+            elif activity_type == "claim_approved":
+                claim_count += 1
+                claim_volume += _safe_float(details.get("amount"))
+            elif activity_type == "vote_closed":
+                vote_count += 1
+                if str(details.get("result", "")).startswith("passed") or details.get("result") == "passed":
+                    votes_passed += 1
+
+        total_assets = _safe_float(balance_sheet["assets"]["total_assets"])
+        total_liabilities = _safe_float(balance_sheet["liabilities"]["total_liabilities"])
+        reserve_ratio = round(
+            _safe_float(foundation.get("reserve_percentage", 20.0)) / 100.0,
+            4
+        )
+        claims_to_contributions = round(
+            claim_volume / max(contribution_volume, 1.0),
+            4
+        )
+
+        recommendations: List[str] = []
+        if claims_to_contributions > 0.65:
+            recommendations.append(
+                "Increase reserve ratio or tighten auto-approve thresholds to reduce payout pressure."
+            )
+        if total_liabilities > total_assets * 0.55:
+            recommendations.append(
+                "Liabilities exceed 55% of assets; prioritize debt settlement and delay discretionary asset purchases."
+            )
+        if vote_count > 0 and (votes_passed / max(vote_count, 1)) < 0.35:
+            recommendations.append(
+                "Low governance pass rate detected; publish clearer proposal summaries before opening votes."
+            )
+        if not recommendations:
+            recommendations.append(
+                "Foundation financial health is stable. Continue monthly integrity checks and governance cadence."
+            )
+
+        health_score = 100.0
+        health_score -= min(40.0, claims_to_contributions * 30.0)
+        if total_assets > 0:
+            health_score -= min(35.0, (total_liabilities / total_assets) * 35.0)
+        health_score += min(10.0, contribution_count * 0.5)
+        health_score = round(max(0.0, min(100.0, health_score)), 2)
+
+        return {
+            "success": True,
+            "foundation_id": foundation_id,
+            "lookback_days": max(7, _safe_int(lookback_days, 90)),
+            "kpis": {
+                "contribution_volume": round(contribution_volume, 2),
+                "contribution_count": contribution_count,
+                "claim_volume": round(claim_volume, 2),
+                "claim_count": claim_count,
+                "claims_to_contributions_ratio": claims_to_contributions,
+                "governance_pass_rate": round((votes_passed / max(vote_count, 1)) * 100.0, 2) if vote_count else 0.0,
+                "reserve_ratio": reserve_ratio,
+                "total_assets": round(total_assets, 2),
+                "total_liabilities": round(total_liabilities, 2),
+                "net_equity": round(_safe_float(balance_sheet["equity"]["net_equity"]), 2),
+                "health_score": health_score,
+            },
+            "recommendations": recommendations,
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+        }
+
+    def validate_foundation_integrity(self, foundation_id: str, auto_correct: bool = False) -> Dict[str, Any]:
+        """Validate and optionally fix a foundation's financial/governance integrity."""
+        foundation = self._foundations.get(foundation_id)
+        if not foundation:
+            return {"success": False, "error": "Foundation not found"}
+
+        issues: List[str] = []
+        corrections: List[str] = []
+
+        # Member count consistency
+        active_members = sum(
+            1 for member in self._members.values()
+            if member.get("foundation_id") == foundation_id and member.get("status") == "active"
+        )
+        expected_members = _safe_int(foundation.get("current_members"), 0)
+        if active_members != expected_members:
+            issues.append(
+                f"member_count_mismatch expected={expected_members} actual={active_members}"
+            )
+            if auto_correct:
+                foundation["current_members"] = active_members
+                corrections.append("current_members_reconciled")
+
+        # Fund total consistency
+        actual_fund_total = round(
+            sum(
+                _safe_float(fund.get("balance"))
+                for fund in self._funds.values()
+                if fund.get("foundation_id") == foundation_id and fund.get("status") == "active"
+            ),
+            2
+        )
+        expected_fund_total = round(_safe_float(foundation.get("total_fund_balance")), 2)
+        if abs(actual_fund_total - expected_fund_total) > 0.01:
+            issues.append(
+                f"fund_balance_mismatch expected={expected_fund_total} actual={actual_fund_total}"
+            )
+            if auto_correct:
+                foundation["total_fund_balance"] = actual_fund_total
+                corrections.append("total_fund_balance_reconciled")
+
+        # Internal loan linkage checks
+        for loan in self._internal_loans.values():
+            if loan.get("foundation_id") != foundation_id:
+                continue
+            borrower = self._get_member_by_user(foundation_id, str(loan.get("borrower_user_id")))
+            lender = self._get_member_by_user(foundation_id, str(loan.get("lender_user_id")))
+            if not borrower:
+                issues.append(f"loan_{loan.get('id')}_borrower_missing")
+            if not lender:
+                issues.append(f"loan_{loan.get('id')}_lender_missing")
+
+        reconcile = self._reconcile_foundation_totals(foundation_id)
+        report_id = generate_id("FINT")
+        report = {
+            "id": report_id,
+            "foundation_id": foundation_id,
+            "is_valid": len(issues) == 0,
+            "issues": issues,
+            "corrections": corrections,
+            "reconciled_totals": reconcile,
+            "checked_at": datetime.now(timezone.utc).isoformat(),
+        }
+        self._integrity_history[report_id] = report
+
+        foundation["last_integrity_check_at"] = report["checked_at"]
+        foundation["integrity_last_status"] = "valid" if report["is_valid"] else "warning"
+        foundation["integrity_issue_count"] = len(issues)
+        if auto_correct and corrections:
+            self._persist(create_backup=False)
+
+        return {"success": True, "report": report}
+
+    def validate_all_foundations_integrity(self, auto_correct: bool = False) -> Dict[str, Any]:
+        """Run integrity validation across all foundations."""
+        reports = []
+        valid_count = 0
+        for foundation_id in self._foundations.keys():
+            result = self.validate_foundation_integrity(foundation_id, auto_correct=auto_correct)
+            report = result.get("report", {})
+            if report.get("is_valid"):
+                valid_count += 1
+            reports.append(report)
+
+        return {
+            "success": True,
+            "total_foundations": len(reports),
+            "valid_foundations": valid_count,
+            "invalid_foundations": len(reports) - valid_count,
+            "reports": reports,
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+        }
+
+    def get_foundation_connections(self, foundation_id: str) -> Dict[str, Any]:
+        """Return customer relation graph data for a foundation."""
+        foundation = self._foundations.get(foundation_id)
+        if not foundation:
+            return {"success": False, "error": "Foundation not found"}
+
+        nodes = []
+        edges = []
+        seen_nodes = set()
+        members = self.get_foundation_members(foundation_id, include_pending=True)
+        for member in members:
+            customer_id = str(member.get("member_id"))
+            node_id = f"cust:{customer_id}"
+            seen_nodes.add(node_id)
+            nodes.append(
+                {
+                    "id": node_id,
+                    "customer_id": customer_id,
+                    "display_name": member.get("display_name") or customer_id,
+                    "role": member.get("role"),
+                    "status": member.get("status"),
+                }
+            )
+
+        for loan in self._internal_loans.values():
+            if loan.get("foundation_id") != foundation_id:
+                continue
+            lender = f"cust:{loan.get('lender_user_id')}"
+            borrower = f"cust:{loan.get('borrower_user_id')}"
+            edges.append(
+                {
+                    "id": f"edge:{loan.get('id')}",
+                    "source": lender,
+                    "target": borrower,
+                    "relationship": "internal_loan",
+                    "amount": round(_safe_float(loan.get("outstanding_amount")), 2),
+                    "status": loan.get("status"),
+                }
+            )
+
+        return {
+            "success": True,
+            "foundation_id": foundation_id,
+            "foundation_name": foundation.get("name"),
+            "nodes": nodes,
+            "edges": edges,
+            "totals": {"nodes": len(nodes), "edges": len(edges)},
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+        }
+
+    def sync_foundations_to_seed_snapshot(
+        self,
+        *,
+        seed_path: Optional[str] = None,
+        auto_correct_integrity: bool = True,
+    ) -> Dict[str, Any]:
+        """
+        Validate foundations and export seed snapshot with relations and finance data.
+        """
+        integrity = self.validate_all_foundations_integrity(auto_correct=auto_correct_integrity)
+        workspace_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        output_path = seed_path or os.path.join(workspace_root, "database", "foundation_seed_data.json")
+        os.makedirs(os.path.dirname(output_path), exist_ok=True)
+
+        foundation_items = []
+        for foundation_id, foundation in self._foundations.items():
+            balance_sheet = self.get_foundation_balance_sheet(foundation_id)
+            insights = self.get_foundation_bi_ai_insights(foundation_id, lookback_days=180)
+            members = self.get_foundation_members(foundation_id, include_pending=True)
+            votes = self.get_all_votes(foundation_id, limit=500)
+            claims = self.get_foundation_claims(foundation_id)
+            activities = self.get_foundation_activities(foundation_id, limit=500)
+            funds = self.get_foundation_funds(foundation_id)
+            assets = [
+                tx for tx in self._asset_transactions.values()
+                if tx.get("foundation_id") == foundation_id
+            ]
+            liabilities = [
+                liab for liab in self._liability_records.values()
+                if liab.get("foundation_id") == foundation_id
+            ]
+            loans = [
+                loan for loan in self._internal_loans.values()
+                if loan.get("foundation_id") == foundation_id
+            ]
+            relations = self.get_foundation_connections(foundation_id)
+
+            foundation_items.append(
+                {
+                    "foundation": foundation,
+                    "funds": funds,
+                    "members": members,
+                    "votes": votes,
+                    "claims": claims,
+                    "activities": activities,
+                    "assets": assets,
+                    "liabilities": liabilities,
+                    "internal_loans": loans,
+                    "balance_sheet": balance_sheet,
+                    "bi_ai_insights": insights,
+                    "connections": relations,
+                }
+            )
+
+        payload = {
+            "version": "1.0",
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "integrity_summary": integrity,
+            "foundations": foundation_items,
+            "counts": {
+                "foundations": len(self._foundations),
+                "members": len(self._members),
+                "funds": len(self._funds),
+                "contributions": len(self._contributions),
+                "votes": len(self._votes),
+                "claims": len(self._claims),
+                "assets": len(self._asset_transactions),
+                "liabilities": len(self._liability_records),
+                "internal_loans": len(self._internal_loans),
+                "connections": len(self._customer_connections),
+                "ledger_entries": len(self._foundation_ledger),
+            },
+        }
+
+        with open(output_path, "w", encoding="utf-8") as handle:
+            json.dump(payload, handle, indent=2, default=str)
+
+        return {
+            "success": True,
+            "seed_path": output_path,
+            "counts": payload["counts"],
+            "integrity_summary": {
+                "total_foundations": integrity.get("total_foundations", 0),
+                "invalid_foundations": integrity.get("invalid_foundations", 0),
+            },
         }
     
     def make_contribution_with_billing(
@@ -3257,6 +4591,7 @@ and determine result with comprehensive decision record"""
         wallet = self.get_customer_wallet_balance(customer_id)
         
         logger.info(f"Wallet deposit {deposit_id}: ${amount} for customer {customer_id}")
+        self._persist(create_backup=False)
         
         return {
             "success": True,

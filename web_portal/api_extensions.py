@@ -820,7 +820,8 @@ def handle_foundation_vote_create(session: Dict, foundation_id: str, body_data: 
         summary=body_data.get('summary', ''),
         outlines=body_data.get('outlines'),
         voting_mechanism=body_data.get('voting_mechanism', 'simple_majority'),
-        options=body_data.get('options')
+        options=body_data.get('options'),
+        proposal_payload=body_data.get('proposal_payload') if isinstance(body_data.get('proposal_payload'), dict) else None
     )
     
     return 201 if result.get('success') else 400, result
@@ -1047,6 +1048,232 @@ def handle_foundation_report(session: Dict, foundation_id: str, query_params: Di
         return 404, report
     
     return 200, report
+
+
+def handle_foundation_balance_sheet(session: Dict, foundation_id: str) -> Tuple[int, Dict]:
+    """GET /api/foundations/{id}/balance-sheet - Foundation assets/liabilities/equity snapshot."""
+    if not FOUNDATION_SERVICE_AVAILABLE:
+        return 503, {"error": "Foundation service not available"}
+    if not session:
+        return 401, {"error": "Authentication required"}
+
+    service = get_foundation_service()
+    user_id = _session_user_id(session)
+    member = service._get_member_by_user(foundation_id, user_id) if user_id else None
+    if not member:
+        return 403, {"error": "You are not a member of this foundation"}
+
+    result = service.get_foundation_balance_sheet(foundation_id)
+    return (200 if result.get("success") else 400), result
+
+
+def handle_foundation_integrity(session: Dict, foundation_id: str, query_params: Dict) -> Tuple[int, Dict]:
+    """GET /api/foundations/{id}/integrity - Validate foundation data integrity."""
+    if not FOUNDATION_SERVICE_AVAILABLE:
+        return 503, {"error": "Foundation service not available"}
+    if not session:
+        return 401, {"error": "Authentication required"}
+
+    service = get_foundation_service()
+    user_id = _session_user_id(session)
+    member = service._get_member_by_user(foundation_id, user_id) if user_id else None
+    if not member:
+        return 403, {"error": "You are not a member of this foundation"}
+
+    auto_correct = str(query_params.get('auto_correct', ['false'])[0]).lower() == 'true'
+    result = service.validate_foundation_integrity(foundation_id, auto_correct=auto_correct)
+    return (200 if result.get("success") else 400), result
+
+
+def handle_foundation_bi_insights(session: Dict, foundation_id: str, query_params: Dict) -> Tuple[int, Dict]:
+    """GET /api/foundations/{id}/bi-insights - BI/AI optimization insights."""
+    if not FOUNDATION_SERVICE_AVAILABLE:
+        return 503, {"error": "Foundation service not available"}
+    if not session:
+        return 401, {"error": "Authentication required"}
+
+    service = get_foundation_service()
+    user_id = _session_user_id(session)
+    member = service._get_member_by_user(foundation_id, user_id) if user_id else None
+    if not member:
+        return 403, {"error": "You are not a member of this foundation"}
+
+    lookback_days = int(query_params.get('lookback_days', ['90'])[0] or 90)
+    result = service.get_foundation_bi_ai_insights(foundation_id, lookback_days=lookback_days)
+    return (200 if result.get("success") else 400), result
+
+
+def handle_foundation_connections(session: Dict, foundation_id: str) -> Tuple[int, Dict]:
+    """GET /api/foundations/{id}/connections - Member relation graph."""
+    if not FOUNDATION_SERVICE_AVAILABLE:
+        return 503, {"error": "Foundation service not available"}
+    if not session:
+        return 401, {"error": "Authentication required"}
+
+    service = get_foundation_service()
+    user_id = _session_user_id(session)
+    member = service._get_member_by_user(foundation_id, user_id) if user_id else None
+    if not member:
+        return 403, {"error": "You are not a member of this foundation"}
+
+    result = service.get_foundation_connections(foundation_id)
+    return (200 if result.get("success") else 400), result
+
+
+def handle_foundation_asset_record(session: Dict, foundation_id: str, body_data: Dict) -> Tuple[int, Dict]:
+    """POST /api/foundations/{id}/assets - Record asset buy/sell/revalue."""
+    if not FOUNDATION_SERVICE_AVAILABLE:
+        return 503, {"error": "Foundation service not available"}
+    if not session:
+        return 401, {"error": "Authentication required"}
+
+    user_id = _session_user_id(session)
+    if not user_id:
+        return 401, {"error": "Authentication required"}
+
+    service = get_foundation_service()
+    result = service.record_asset_transaction(
+        foundation_id=foundation_id,
+        actor_id=user_id,
+        asset_symbol=body_data.get('asset_symbol', ''),
+        asset_name=body_data.get('asset_name') or body_data.get('name') or body_data.get('asset_symbol', ''),
+        asset_type=body_data.get('asset_type', 'financial'),
+        transaction_type=body_data.get('transaction_type', 'buy'),
+        amount=float(body_data.get('amount', 0) or 0),
+        quantity=float(body_data.get('quantity', 0) or 0),
+        unit_price=float(body_data['unit_price']) if body_data.get('unit_price') is not None else None,
+        notes=body_data.get('notes', ''),
+        metadata=body_data.get('metadata') if isinstance(body_data.get('metadata'), dict) else {},
+    )
+    return (200 if result.get("success") else 400), result
+
+
+def handle_foundation_liability_record(session: Dict, foundation_id: str, body_data: Dict) -> Tuple[int, Dict]:
+    """POST /api/foundations/{id}/liabilities - Record liabilities/debts."""
+    if not FOUNDATION_SERVICE_AVAILABLE:
+        return 503, {"error": "Foundation service not available"}
+    if not session:
+        return 401, {"error": "Authentication required"}
+
+    user_id = _session_user_id(session)
+    if not user_id:
+        return 401, {"error": "Authentication required"}
+
+    service = get_foundation_service()
+    result = service.record_liability(
+        foundation_id=foundation_id,
+        actor_id=user_id,
+        liability_type=body_data.get('liability_type', 'general'),
+        amount=float(body_data.get('amount', 0) or 0),
+        creditor_id=body_data.get('creditor_id'),
+        debtor_id=body_data.get('debtor_id') or foundation_id,
+        due_date=body_data.get('due_date'),
+        notes=body_data.get('notes', ''),
+        metadata=body_data.get('metadata') if isinstance(body_data.get('metadata'), dict) else {},
+    )
+    return (200 if result.get("success") else 400), result
+
+
+def handle_foundation_borrow(session: Dict, foundation_id: str, body_data: Dict) -> Tuple[int, Dict]:
+    """POST /api/foundations/{id}/borrow - Borrow funds between members."""
+    if not FOUNDATION_SERVICE_AVAILABLE:
+        return 503, {"error": "Foundation service not available"}
+    if not session:
+        return 401, {"error": "Authentication required"}
+
+    borrower_id = _session_user_id(session)
+    if not borrower_id:
+        return 401, {"error": "Authentication required"}
+
+    lender_id = body_data.get('lender_user_id')
+    if not lender_id:
+        return 400, {"error": "lender_user_id is required"}
+
+    service = get_foundation_service()
+    result = service.borrow_funds(
+        foundation_id=foundation_id,
+        borrower_user_id=borrower_id,
+        lender_user_id=lender_id,
+        amount=float(body_data.get('amount', 0) or 0),
+        actor_id=borrower_id,
+        interest_rate=float(body_data.get('interest_rate', 0) or 0),
+        due_days=int(body_data.get('due_days', 30) or 30),
+        notes=body_data.get('notes', ''),
+    )
+    return (200 if result.get("success") else 400), result
+
+
+def handle_foundation_lend(session: Dict, foundation_id: str, body_data: Dict) -> Tuple[int, Dict]:
+    """POST /api/foundations/{id}/lend - Lend funds between members."""
+    if not FOUNDATION_SERVICE_AVAILABLE:
+        return 503, {"error": "Foundation service not available"}
+    if not session:
+        return 401, {"error": "Authentication required"}
+
+    lender_id = _session_user_id(session)
+    if not lender_id:
+        return 401, {"error": "Authentication required"}
+
+    borrower_id = body_data.get('borrower_user_id')
+    if not borrower_id:
+        return 400, {"error": "borrower_user_id is required"}
+
+    service = get_foundation_service()
+    result = service.lend_funds(
+        foundation_id=foundation_id,
+        lender_user_id=lender_id,
+        borrower_user_id=borrower_id,
+        amount=float(body_data.get('amount', 0) or 0),
+        actor_id=lender_id,
+        interest_rate=float(body_data.get('interest_rate', 0) or 0),
+        due_days=int(body_data.get('due_days', 30) or 30),
+        notes=body_data.get('notes', ''),
+    )
+    return (200 if result.get("success") else 400), result
+
+
+def handle_foundation_loan_settle(
+    session: Dict,
+    foundation_id: str,
+    loan_id: str,
+    body_data: Dict
+) -> Tuple[int, Dict]:
+    """POST /api/foundations/{id}/loans/{loan_id}/settle - Settle internal loan."""
+    if not FOUNDATION_SERVICE_AVAILABLE:
+        return 503, {"error": "Foundation service not available"}
+    if not session:
+        return 401, {"error": "Authentication required"}
+
+    payer_user_id = _session_user_id(session)
+    if not payer_user_id:
+        return 401, {"error": "Authentication required"}
+
+    service = get_foundation_service()
+    result = service.settle_internal_loan(
+        foundation_id=foundation_id,
+        loan_id=loan_id,
+        payer_user_id=payer_user_id,
+        amount=float(body_data.get('amount', 0) or 0),
+        notes=body_data.get('notes', ''),
+    )
+    return (200 if result.get("success") else 400), result
+
+
+def handle_foundation_seed_sync(session: Dict, body_data: Dict) -> Tuple[int, Dict]:
+    """POST /api/foundations/seeds/sync - Validate and export foundation seed snapshot."""
+    if not FOUNDATION_SERVICE_AVAILABLE:
+        return 503, {"error": "Foundation service not available"}
+    if not session:
+        return 401, {"error": "Authentication required"}
+    if session.get('role') not in ['admin', 'accountant', 'actuary']:
+        return 403, {"error": "Admin/accounting access required"}
+
+    service = get_foundation_service()
+    result = service.sync_foundations_to_seed_snapshot(
+        seed_path=body_data.get('seed_path'),
+        auto_correct_integrity=bool(body_data.get('auto_correct_integrity', True)),
+    )
+    return (200 if result.get("success") else 400), result
 
 
 # ============================================================================
@@ -2371,6 +2598,14 @@ def dispatch_get(path: str, session: Dict, query_params: Dict, client_ip: str) -
                 return handle_foundation_activities(session, foundation_id, query_params)
             elif resource == 'messages':
                 return handle_foundation_messages_list(session, foundation_id, query_params)
+            elif resource == 'balance-sheet':
+                return handle_foundation_balance_sheet(session, foundation_id)
+            elif resource == 'integrity':
+                return handle_foundation_integrity(session, foundation_id, query_params)
+            elif resource == 'bi-insights':
+                return handle_foundation_bi_insights(session, foundation_id, query_params)
+            elif resource == 'connections':
+                return handle_foundation_connections(session, foundation_id)
         
         # /api/foundations/{id}/export/{format}
         if len(parts) == 6 and parts[4] == 'export':
@@ -2479,6 +2714,10 @@ def dispatch_post(path: str, session: Dict, body_data: Dict, client_ip: str, use
     # Foundation: Create backup (admin only)
     if path == '/api/foundations/backup':
         return handle_foundation_create_backup(session)
+
+    # Foundation: Validate + export seed snapshot (admin/accounting)
+    if path == '/api/foundations/seeds/sync':
+        return handle_foundation_seed_sync(session, body_data)
     
     # Wallet: Deposit
     if path == '/api/foundation-wallet/deposit':
@@ -2511,6 +2750,14 @@ def dispatch_post(path: str, session: Dict, body_data: Dict, client_ip: str, use
                 return handle_foundation_claim_submit(session, foundation_id, body_data)
             elif action == 'messages':
                 return handle_foundation_message_create(session, foundation_id, body_data)
+            elif action == 'assets':
+                return handle_foundation_asset_record(session, foundation_id, body_data)
+            elif action == 'liabilities':
+                return handle_foundation_liability_record(session, foundation_id, body_data)
+            elif action == 'borrow':
+                return handle_foundation_borrow(session, foundation_id, body_data)
+            elif action == 'lend':
+                return handle_foundation_lend(session, foundation_id, body_data)
         
         # /api/foundations/{id}/members/{member_id}/{action}
         if len(parts) == 7 and parts[4] == 'members':
@@ -2559,6 +2806,14 @@ def dispatch_post(path: str, session: Dict, body_data: Dict, client_ip: str, use
                 return handle_foundation_message_reply(session, foundation_id, thread_id, body_data)
             elif action == 'close':
                 return handle_foundation_message_close(session, foundation_id, thread_id)
+
+        # /api/foundations/{id}/loans/{loan_id}/settle
+        if len(parts) == 7 and parts[4] == 'loans':
+            foundation_id = parts[3]
+            loan_id = parts[5]
+            action = parts[6]
+            if action == 'settle':
+                return handle_foundation_loan_settle(session, foundation_id, loan_id, body_data)
     
     # Admin: Suspend foundation
     if path.endswith('/suspend') and path.startswith('/api/admin/foundations/'):

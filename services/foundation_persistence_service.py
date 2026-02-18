@@ -60,6 +60,11 @@ class FoundationPersistenceService:
         self.vote_casts_file = os.path.join(data_dir, 'vote_casts.json')
         self.claims_file = os.path.join(data_dir, 'claims.json')
         self.activities_file = os.path.join(data_dir, 'activities.json')
+        self.asset_transactions_file = os.path.join(data_dir, 'asset_transactions.json')
+        self.liability_records_file = os.path.join(data_dir, 'liability_records.json')
+        self.internal_loans_file = os.path.join(data_dir, 'internal_loans.json')
+        self.customer_connections_file = os.path.join(data_dir, 'customer_connections.json')
+        self.integrity_history_file = os.path.join(data_dir, 'integrity_history.json')
         self.ledger_file = os.path.join(data_dir, 'foundation_ledger.json')
         self.billing_integration_file = os.path.join(data_dir, 'billing_integration.json')
         
@@ -101,7 +106,12 @@ class FoundationPersistenceService:
                 'votes': self.votes_file,
                 'vote_casts': self.vote_casts_file,
                 'claims': self.claims_file,
-                'activities': self.activities_file
+                'activities': self.activities_file,
+                'asset_transactions': self.asset_transactions_file,
+                'liability_records': self.liability_records_file,
+                'internal_loans': self.internal_loans_file,
+                'customer_connections': self.customer_connections_file,
+                'integrity_history': self.integrity_history_file,
             }
             
             for key, file_path in file_mapping.items():
@@ -141,6 +151,11 @@ class FoundationPersistenceService:
             'vote_casts': self._load_json(self.vote_casts_file) or {},
             'claims': self._load_json(self.claims_file) or {},
             'activities': self._load_json(self.activities_file) or {},
+            'asset_transactions': self._load_json(self.asset_transactions_file) or {},
+            'liability_records': self._load_json(self.liability_records_file) or {},
+            'internal_loans': self._load_json(self.internal_loans_file) or {},
+            'customer_connections': self._load_json(self.customer_connections_file) or {},
+            'integrity_history': self._load_json(self.integrity_history_file) or {},
             'ledger': self._load_json(self.ledger_file) or {},
             'billing_integration': self._load_json(self.billing_integration_file) or {}
         }
@@ -179,6 +194,11 @@ class FoundationPersistenceService:
             self.vote_casts_file,
             self.claims_file,
             self.activities_file,
+            self.asset_transactions_file,
+            self.liability_records_file,
+            self.internal_loans_file,
+            self.customer_connections_file,
+            self.integrity_history_file,
             self.ledger_file,
             self.billing_integration_file
         ]
@@ -331,6 +351,8 @@ class FoundationPersistenceService:
         members = data.get('members', {})
         funds = data.get('funds', {})
         contributions = data.get('contributions', {})
+        liabilities = data.get('liability_records', {})
+        internal_loans = data.get('internal_loans', {})
         
         # Validate foundation references
         for member_id, member in members.items():
@@ -349,6 +371,31 @@ class FoundationPersistenceService:
             fund_id = contrib.get('fund_id')
             if fund_id and fund_id not in funds:
                 issues.append(f"Contribution {contrib_id} references non-existent fund {fund_id}")
+
+        # Validate liability references
+        for liability_id, liability in liabilities.items():
+            foundation_id = liability.get('foundation_id')
+            if foundation_id and foundation_id not in foundations:
+                issues.append(
+                    f"Liability {liability_id} references non-existent foundation {foundation_id}"
+                )
+
+        # Validate internal loan references
+        member_user_index = {
+            (m.get('foundation_id'), m.get('member_id'))
+            for m in members.values()
+        }
+        for loan_id, loan in internal_loans.items():
+            foundation_id = loan.get('foundation_id')
+            if foundation_id and foundation_id not in foundations:
+                issues.append(f"Loan {loan_id} references non-existent foundation {foundation_id}")
+                continue
+            lender_key = (foundation_id, loan.get('lender_user_id'))
+            borrower_key = (foundation_id, loan.get('borrower_user_id'))
+            if lender_key not in member_user_index:
+                issues.append(f"Loan {loan_id} references missing lender {loan.get('lender_user_id')}")
+            if borrower_key not in member_user_index:
+                issues.append(f"Loan {loan_id} references missing borrower {loan.get('borrower_user_id')}")
         
         # Validate member counts
         for foundation_id, foundation in foundations.items():

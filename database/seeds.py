@@ -30,6 +30,7 @@ logger = logging.getLogger(__name__)
 
 # Path to dynamic customers file (created by registration)
 DYNAMIC_CUSTOMERS_FILE = os.path.join(os.path.dirname(__file__), 'dynamic_customers.json')
+FOUNDATION_SEED_FILE = os.path.join(os.path.dirname(__file__), 'foundation_seed_data.json')
 
 
 def hash_password(password: str) -> dict:
@@ -193,6 +194,7 @@ def seed_default_users(session=None):
         
         # ========== LOAD DYNAMIC CUSTOMERS (from registration) ==========
         seed_dynamic_customers(session, user_repo)
+        seed_foundation_connected_users(session, user_repo)
         
     except Exception as e:
         logger.error(f"Error seeding users: {e}")
@@ -251,6 +253,58 @@ def seed_dynamic_customers(session, user_repo):
         logger.error(f"Error parsing dynamic customers file: {e}")
     except Exception as e:
         logger.error(f"Error loading dynamic customers: {e}")
+
+
+def seed_foundation_connected_users(session, user_repo):
+    """
+    Seed user accounts discovered from validated foundation seed snapshots.
+
+    This bridges foundation membership/connection snapshots into user seeds so
+    relation data remains available after restart.
+    """
+    try:
+        if not os.path.exists(FOUNDATION_SEED_FILE):
+            logger.info("No foundation seed snapshot found, skipping foundation-connected users...")
+            return
+
+        with open(FOUNDATION_SEED_FILE, 'r', encoding='utf-8') as handle:
+            payload = json.load(handle)
+
+        foundations = payload.get('foundations', [])
+        seeded_count = 0
+        for foundation_bundle in foundations:
+            members = foundation_bundle.get('members', [])
+            for member in members:
+                username = str(member.get('email') or member.get('member_id') or '').strip().lower()
+                if not username:
+                    continue
+                if user_repo.get_by_username(username):
+                    continue
+
+                display_name = str(member.get('display_name') or member.get('member_name') or username).strip()
+                email = str(member.get('email') or '').strip().lower()
+                if not email:
+                    email = username if '@' in username else f"{username}@foundation.local"
+
+                password_hash = hash_password(secrets.token_urlsafe(24))
+                user_repo.create(
+                    username=username,
+                    password_hash=password_hash['hash'],
+                    password_salt=password_hash['salt'],
+                    role='customer',
+                    name=display_name,
+                    email=email,
+                    active=True
+                )
+                seeded_count += 1
+
+        if seeded_count:
+            logger.info(f"Foundation-connected users seeded: {seeded_count}")
+        else:
+            logger.info("Foundation seed snapshot loaded; no new users required")
+
+    except Exception as exc:
+        logger.error(f"Error seeding foundation-connected users: {exc}")
 
 
 def seed_sample_data(session=None):
