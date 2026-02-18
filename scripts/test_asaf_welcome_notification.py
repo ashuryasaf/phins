@@ -19,6 +19,10 @@ import os
 import sys
 from typing import Any, Dict, List, Optional
 
+ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if ROOT_DIR not in sys.path:
+    sys.path.insert(0, ROOT_DIR)
+
 from services.customer_communication_agent import get_customer_communication_agent
 from services.notification_service import create_notification_service
 
