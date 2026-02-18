@@ -143,7 +143,11 @@ def _smtp_delivery_configured(notification_config: Any) -> bool:
     host = str(getattr(notification_config, 'SMTP_HOST', '') or '').strip().lower()
     if not host:
         return False
-    if host in _SMTP_PLACEHOLDER_HOSTS or host.endswith('.example.com'):
+    username = str(getattr(notification_config, 'SMTP_USERNAME', '') or '').strip()
+    password = str(getattr(notification_config, 'SMTP_PASSWORD', '') or '').strip()
+    if host in _SMTP_PLACEHOLDER_HOSTS and not username and not password:
+        return False
+    if host.endswith('.example.com'):
         return False
     return True
 
@@ -303,7 +307,10 @@ def _send_otp_email(
             return False, 'Unable to send OTP notification'
 
         # Keep response payload compact while preserving actionable diagnostics.
-        return False, " | ".join(errors[-3:])
+        # Always include the primary error (first entry) as it is the most useful.
+        if len(errors) <= 3:
+            return False, " | ".join(errors)
+        return False, " | ".join([errors[0]] + errors[-2:])
     except Exception as exc:
         return False, str(exc)
 
