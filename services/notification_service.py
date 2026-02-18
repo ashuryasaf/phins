@@ -1315,7 +1315,7 @@ class OTPService:
                     error_code="INVALID_EMAIL",
                     error_message="Invalid email format"
                 )
-        elif request.channel == NotificationChannel.SMS:
+        elif request.channel in (NotificationChannel.SMS, NotificationChannel.WHATSAPP):
             if not validate_phone(request.identifier):
                 return OTPResult(
                     success=False,
@@ -1659,7 +1659,7 @@ For security reasons, never share this code with anyone.
                 sent_at=datetime.now(timezone.utc) if success else None
             )
         
-        elif request.channel == NotificationChannel.SMS:
+        elif request.channel in (NotificationChannel.SMS, NotificationChannel.WHATSAPP):
             message = f"Your PHINS verification code is: {otp_code}. Expires in {request.expiry_seconds // 60} min. Never share this code."
             
             success, message_id, error = self._sms_provider.send(
@@ -1798,6 +1798,17 @@ class NotificationService:
                     error_code="PREFERENCE_BLOCKED",
                     error_message=pref_result.get('reason', 'Blocked by customer preferences')
                 )
+
+        # Optional OTP gate for sensitive notifications.
+        otp_requirement_error = self._validate_otp_requirement(request)
+        if otp_requirement_error:
+            return NotificationResult(
+                success=False,
+                notification_id=notification_id,
+                status=NotificationStatus.FAILED,
+                error_code="OTP_VALIDATION_FAILED",
+                error_message=otp_requirement_error
+            )
         
         # Render template if specified
         content = request.content
@@ -1867,7 +1878,7 @@ class NotificationService:
         
         if channel == NotificationChannel.EMAIL:
             self._email_suppression.add(identifier_hash)
-        elif channel == NotificationChannel.SMS:
+        elif channel in (NotificationChannel.SMS, NotificationChannel.WHATSAPP):
             self._sms_suppression.add(identifier_hash)
         else:
             return False
@@ -1892,7 +1903,7 @@ class NotificationService:
         
         if channel == NotificationChannel.EMAIL:
             self._email_suppression.discard(identifier_hash)
-        elif channel == NotificationChannel.SMS:
+        elif channel in (NotificationChannel.SMS, NotificationChannel.WHATSAPP):
             self._sms_suppression.discard(identifier_hash)
         else:
             return False
@@ -1912,6 +1923,7 @@ class NotificationService:
         self._preferences[customer_id] = {
             'email_enabled': preferences.get('email_enabled', True),
             'sms_enabled': preferences.get('sms_enabled', True),
+            'whatsapp_enabled': preferences.get('whatsapp_enabled', True),
             'push_enabled': preferences.get('push_enabled', True),
             'quiet_hours': preferences.get('quiet_hours'),
             'max_daily': preferences.get('max_daily'),
@@ -1963,7 +1975,7 @@ class NotificationService:
         if request.channel == NotificationChannel.EMAIL:
             if not validate_email(request.recipient):
                 return "Invalid email format"
-        elif request.channel == NotificationChannel.SMS:
+        elif request.channel in (NotificationChannel.SMS, NotificationChannel.WHATSAPP):
             if not validate_phone(request.recipient):
                 return "Invalid phone number format"
         
@@ -1978,7 +1990,7 @@ class NotificationService:
         
         if channel == NotificationChannel.EMAIL:
             return identifier_hash in self._email_suppression
-        elif channel == NotificationChannel.SMS:
+        elif channel in (NotificationChannel.SMS, NotificationChannel.WHATSAPP):
             return identifier_hash in self._sms_suppression
         
         return False
@@ -1993,7 +2005,7 @@ class NotificationService:
                 'per_hour': (NotificationConfig.EMAIL_RATE_LIMIT_PER_HOUR, 3600),
                 'per_day': (NotificationConfig.EMAIL_RATE_LIMIT_PER_DAY, 86400),
             }
-        elif channel == 'sms':
+        elif channel in ('sms', 'whatsapp'):
             limits = {
                 'per_minute': (NotificationConfig.SMS_RATE_LIMIT_PER_MINUTE, 60),
                 'per_hour': (NotificationConfig.SMS_RATE_LIMIT_PER_HOUR, 3600),
@@ -2015,8 +2027,59 @@ class NotificationService:
             return {'allowed': False, 'reason': 'Email notifications disabled'}
         if request.channel == NotificationChannel.SMS and not prefs.get('sms_enabled', True):
             return {'allowed': False, 'reason': 'SMS notifications disabled'}
+        if request.channel == NotificationChannel.WHATSAPP and not prefs.get('whatsapp_enabled', True):
+            return {'allowed': False, 'reason': 'WhatsApp notifications disabled'}
         
         return {'allowed': True}
+
+    def _validate_otp_requirement(self, request: NotificationRequest) -> Optional[str]:
+        """
+        Validate optional OTP metadata for notification sends.
+
+        Request metadata contract:
+            - require_otp_validation: bool
+            - otp_code: str
+            - otp_identifier: str (optional, defaults to request.recipient)
+            - otp_verification_type: str (optional, defaults to transaction_confirm)
+        """
+        metadata = request.metadata or {}
+        if not metadata.get('require_otp_validation'):
+            return None
+
+        otp_code = str(metadata.get('otp_code', '')).strip()
+        if not otp_code:
+            return "OTP validation required but otp_code is missing"
+
+        otp_identifier = str(metadata.get('otp_identifier') or request.recipient).strip()
+        verification_type_raw = str(
+            metadata.get('otp_verification_type', VerificationType.TRANSACTION_CONFIRM.value)
+        )
+        try:
+            verification_type = VerificationType(verification_type_raw)
+        except ValueError:
+            return f"Invalid otp_verification_type: {verification_type_raw}"
+
+        otp_result = self.verify_otp(
+            identifier=otp_identifier,
+            code=otp_code,
+            verification_type=verification_type,
+            ip_address=request.ip_address
+        )
+        if not otp_result.success:
+            return otp_result.error_message or "OTP verification failed"
+
+        _audit_logger.log(
+            action="notification_otp_verified",
+            customer_id=request.customer_id,
+            ip_address=request.ip_address,
+            details={
+                'channel': request.channel.value,
+                'verification_type': verification_type.value,
+                'recipient_masked': self._mask_recipient(request.recipient, request.channel)
+            }
+        )
+
+        return None
     
     def _render_template(
         self,
@@ -2076,6 +2139,21 @@ class NotificationService:
                 sent_at=datetime.now(timezone.utc) if success else None
             )
         
+        elif request.channel == NotificationChannel.WHATSAPP:
+            success, message_id, error = self._sms_provider.send(
+                to=request.recipient,
+                message=content
+            )
+            
+            return NotificationResult(
+                success=success,
+                notification_id=notification_id,
+                status=NotificationStatus.DELIVERED if success else NotificationStatus.FAILED,
+                provider_message_id=message_id,
+                error_message=error,
+                sent_at=datetime.now(timezone.utc) if success else None
+            )
+        
         return NotificationResult(
             success=False,
             notification_id=notification_id,
@@ -2117,7 +2195,7 @@ class NotificationService:
         """Mask recipient for logging"""
         if channel == NotificationChannel.EMAIL:
             return mask_email(recipient)
-        elif channel == NotificationChannel.SMS:
+        elif channel in (NotificationChannel.SMS, NotificationChannel.WHATSAPP):
             return mask_phone(recipient)
         return '***'
     
@@ -2173,6 +2251,57 @@ If you have any questions, please contact our support team.
 
 Best regards,
 The PHINS Team'''
+            },
+            'welcome_executive_branded': {
+                'subject': 'Welcome to PHINS | Executive Portfolio Brief',
+                'body': '''Hello {{ name }},
+
+Welcome to PHINS.
+
+Your executive snapshot:
+- Active Policies: {{ active_policies }}/{{ total_policies }}
+- Total Coverage: {{ total_coverage }}
+- Outstanding Billing: {{ outstanding_bills }} items ({{ outstanding_amount }})
+- Accounts Tracked: {{ accounts_count }}
+
+You can log in at: {{ login_url }}
+
+Best regards,
+PHINS Client Success Team''',
+                'html_body': '''
+<html>
+<body style="font-family:Arial,sans-serif;background:#f2f5fb;margin:0;padding:24px;">
+  <div style="max-width:760px;margin:0 auto;background:#ffffff;border-radius:16px;overflow:hidden;border:1px solid #e3e8f3;">
+    <div style="background:linear-gradient(120deg,#0b1f3a,#275ecf);padding:28px 32px;color:#fff;">
+      <div style="font-size:12px;letter-spacing:1.5px;opacity:.8;">PHINS EXECUTIVE ONBOARDING</div>
+      <h1 style="margin:8px 0 0;font-size:24px;">Welcome, {{ name }}</h1>
+      <p style="margin:8px 0 0;opacity:.9;">A branded snapshot of your insurance and billing footprint.</p>
+    </div>
+    <div style="padding:28px 32px;">
+      <div style="display:flex;flex-wrap:wrap;gap:12px;margin-bottom:18px;">
+        <div style="flex:1 1 220px;background:#f7f9ff;border:1px solid #dde6ff;border-radius:10px;padding:14px;">
+          <div style="font-size:12px;color:#5a6780;">Active Policies</div>
+          <div style="font-size:22px;font-weight:700;color:#12284c;">{{ active_policies }}/{{ total_policies }}</div>
+        </div>
+        <div style="flex:1 1 220px;background:#f7f9ff;border:1px solid #dde6ff;border-radius:10px;padding:14px;">
+          <div style="font-size:12px;color:#5a6780;">Total Coverage</div>
+          <div style="font-size:22px;font-weight:700;color:#12284c;">{{ total_coverage }}</div>
+        </div>
+        <div style="flex:1 1 220px;background:#f7f9ff;border:1px solid #dde6ff;border-radius:10px;padding:14px;">
+          <div style="font-size:12px;color:#5a6780;">Outstanding Billing</div>
+          <div style="font-size:22px;font-weight:700;color:#12284c;">{{ outstanding_bills }}</div>
+          <div style="font-size:12px;color:#5a6780;">{{ outstanding_amount }}</div>
+        </div>
+      </div>
+      <p style="margin:8px 0 0;color:#2f3f5b;">Accounts tracked: <strong>{{ accounts_count }}</strong></p>
+      <p style="margin:18px 0 0;color:#2f3f5b;">Sign in to your customer cockpit: <a href="{{ login_url }}">{{ login_url }}</a></p>
+    </div>
+    <div style="background:#0f1a2e;color:#9fb0d0;padding:12px 32px;font-size:12px;">
+      PHINS • Advanced Insurance Intelligence
+    </div>
+  </div>
+</body>
+</html>'''
             },
             'policy_approved': {
                 'subject': 'Your PHINS Policy Has Been Approved',

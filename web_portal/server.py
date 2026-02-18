@@ -16658,32 +16658,56 @@ For claims or questions, please contact:
                 save_invitation_codes_to_file()
                 append_customer_to_seeds(email, password, name, customer_id, registration_date)
 
-                # Best-effort welcome notification
+                # Best-effort branded welcome communication package
                 welcome_notification_sent = False
+                welcome_whatsapp_sent = False
+                welcome_report_summary = None
                 try:
-                    from services.notification_service import (
-                        create_notification_service,
-                        NotificationRequest,
-                        NotificationChannel
-                    )
+                    from services.notification_service import create_notification_service
+                    from services.customer_communication_agent import get_customer_communication_agent
+
                     use_mock_notifications = PHINS_TEST_MODE or str(
                         os.environ.get('PHINS_USE_MOCK_NOTIFICATIONS', '')
                     ).lower() in ('1', 'true', 'yes', 'y')
 
                     notification_service = create_notification_service(use_mock=use_mock_notifications)
-                    welcome_result = notification_service.send(NotificationRequest(
-                        channel=NotificationChannel.EMAIL,
-                        recipient=email,
-                        template_id='welcome',
-                        template_vars={
-                            'name': name,
-                            'login_url': '/login.html'
-                        },
-                        customer_id=customer_id
-                    ))
-                    welcome_notification_sent = bool(welcome_result.success)
+                    communication_agent = get_customer_communication_agent(
+                        notification_service=notification_service
+                    )
+
+                    wallet_balance = float(customer_record.get('wallet', {}).get('balance', 0.0) or 0.0)
+                    account_snapshot = [{
+                        'name': 'PHINS Wallet',
+                        'balance': wallet_balance
+                    }]
+
+                    welcome_package = communication_agent.send_welcome_package(
+                        customer_id=customer_id,
+                        customer_name=name,
+                        email=email,
+                        policies=customer_record.get('policies', []),
+                        bills=customer_record.get('bills', []),
+                        accounts=account_snapshot,
+                        communities=[],
+                        whatsapp_phone=phone if phone else None,
+                        login_url='/login.html'
+                    )
+                    welcome_notification_sent = bool(
+                        welcome_package.get('email', {}).get('success')
+                    )
+                    welcome_whatsapp_sent = bool(
+                        (welcome_package.get('whatsapp') or {}).get('success')
+                    )
+                    report_payload = welcome_package.get('report', {})
+                    if isinstance(report_payload, dict):
+                        welcome_report_summary = {
+                            'diversification_index': report_payload.get('diversification_index'),
+                            'total_policies': report_payload.get('total_policies'),
+                            'active_policies': report_payload.get('active_policies'),
+                            'outstanding_amount': report_payload.get('outstanding_amount')
+                        }
                 except Exception as notify_error:
-                    print(f"[REGISTER] Welcome notification failed: {notify_error}")
+                    print(f"[REGISTER] Branded welcome package failed: {notify_error}")
 
                 response_data = {
                     'success': True,
@@ -16691,6 +16715,8 @@ For claims or questions, please contact:
                     'email': email,
                     'registered_at': registration_date,
                     'welcome_notification_sent': welcome_notification_sent,
+                    'welcome_whatsapp_sent': welcome_whatsapp_sent,
+                    'welcome_report_summary': welcome_report_summary,
                     'message': 'Account created successfully. Please login with your credentials.'
                 }
 

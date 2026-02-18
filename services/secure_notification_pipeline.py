@@ -1443,6 +1443,29 @@ class SecureNotificationPipeline:
         priority: NotificationPriority = NotificationPriority.NORMAL
     ) -> Dict[str, Any]:
         """Send notification to a specific channel"""
+        sanitized_data = dict(data or {})
+        recipient_for_validation = email if channel == NotificationChannel.EMAIL else phone
+        otp_error = self._validate_push_notification_otp(
+            channel=channel,
+            customer_id=customer_id,
+            recipient=recipient_for_validation,
+            data=sanitized_data
+        )
+        if otp_error:
+            return {
+                'success': False,
+                'error_code': 'OTP_VALIDATION_FAILED',
+                'error': otp_error
+            }
+
+        # OTP fields are consumed by validation and should not be forwarded.
+        for otp_field in (
+            'require_otp_validation',
+            'otp_code',
+            'otp_identifier',
+            'otp_verification_type',
+        ):
+            sanitized_data.pop(otp_field, None)
         
         if channel == NotificationChannel.EMAIL:
             if not email:
@@ -1455,7 +1478,7 @@ class SecureNotificationPipeline:
                 content=message,
                 customer_id=customer_id,
                 priority=priority,
-                metadata={'notification_type': notification_type.value, **(data or {})}
+                metadata={'notification_type': notification_type.value, **sanitized_data}
             )
             result = self._notification_service.send(request)
             return {
@@ -1477,7 +1500,7 @@ class SecureNotificationPipeline:
                 content=sms_message,
                 customer_id=customer_id,
                 priority=priority,
-                metadata={'notification_type': notification_type.value, **(data or {})}
+                metadata={'notification_type': notification_type.value, **sanitized_data}
             )
             result = self._notification_service.send(request)
             return {
@@ -1499,6 +1522,54 @@ class SecureNotificationPipeline:
             }
         
         return {'success': False, 'error': f'Unsupported channel: {channel.value}'}
+
+    def _validate_push_notification_otp(
+        self,
+        channel: NotificationChannel,
+        customer_id: str,
+        recipient: Optional[str],
+        data: Dict[str, Any]
+    ) -> Optional[str]:
+        """Validate optional OTP requirement for push notifications."""
+        if not data.get('require_otp_validation'):
+            return None
+
+        otp_code = str(data.get('otp_code', '')).strip()
+        if not otp_code:
+            return "OTP validation required but otp_code is missing"
+
+        otp_identifier = str(data.get('otp_identifier') or recipient or '').strip()
+        if not otp_identifier:
+            return "OTP validation required but otp_identifier is missing"
+
+        verification_type_raw = str(
+            data.get('otp_verification_type', VerificationType.TRANSACTION_CONFIRM.value)
+        )
+        try:
+            verification_type = VerificationType(verification_type_raw)
+        except ValueError:
+            return f"Invalid otp_verification_type: {verification_type_raw}"
+
+        ip_address = data.get('ip_address')
+        otp_result = self._notification_service.verify_otp(
+            identifier=otp_identifier,
+            code=otp_code,
+            verification_type=verification_type,
+            ip_address=ip_address
+        )
+        if not otp_result.success:
+            return otp_result.error_message or "OTP verification failed"
+
+        self._audit_operation(
+            action='push_notification_otp_verified',
+            customer_id=customer_id,
+            ip_address=ip_address,
+            details={
+                'channel': channel.value,
+                'verification_type': verification_type.value
+            }
+        )
+        return None
     
     def _audit_operation(
         self,

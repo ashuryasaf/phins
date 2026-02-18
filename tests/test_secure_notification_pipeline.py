@@ -278,6 +278,115 @@ class TestPushNotifications:
         assert result.success is True
         assert 'email' in result.channel_results
         assert 'sms' in result.channel_results
+
+    def test_push_notification_email_requires_otp_validation(self, pipeline):
+        """Test OTP-gated email push notification flow"""
+        from services.secure_notification_pipeline import (
+            PushNotificationRequest,
+            PushNotificationType,
+        )
+        from services.notification_service import (
+            NotificationChannel,
+            OTPRequest,
+            VerificationType,
+        )
+
+        # Generate OTP for recipient email first.
+        otp_result = pipeline._notification_service.send_otp(OTPRequest(
+            identifier='test@example.com',
+            channel=NotificationChannel.EMAIL,
+            verification_type=VerificationType.TRANSACTION_CONFIRM
+        ))
+        assert otp_result.success
+
+        otp_email = pipeline._notification_service._email_provider.sent_emails[0]
+        otp_code = otp_email['subject'].split(": ")[1]
+
+        request = PushNotificationRequest(
+            notification_type=PushNotificationType.POLICY_CREATED,
+            customer_id='CUST001',
+            title='Secure Policy Update',
+            message='Your policy summary is ready.',
+            channels=[NotificationChannel.EMAIL],
+            email='test@example.com',
+            data={
+                'require_otp_validation': True,
+                'otp_code': otp_code,
+                'otp_identifier': 'test@example.com',
+                'otp_verification_type': VerificationType.TRANSACTION_CONFIRM.value,
+            }
+        )
+
+        result = pipeline.send_push_notification(request)
+        assert result.success is True
+        assert result.channel_results['email']['success'] is True
+
+    def test_push_notification_whatsapp_requires_otp_validation(self, pipeline):
+        """Test OTP-gated WhatsApp push notification flow"""
+        from services.secure_notification_pipeline import (
+            PushNotificationRequest,
+            PushNotificationType,
+        )
+        from services.notification_service import (
+            NotificationChannel,
+            OTPRequest,
+            VerificationType,
+        )
+
+        otp_result = pipeline._notification_service.send_otp(OTPRequest(
+            identifier='+1234567890',
+            channel=NotificationChannel.SMS,
+            verification_type=VerificationType.TRANSACTION_CONFIRM
+        ))
+        assert otp_result.success
+
+        otp_sms = pipeline._notification_service._sms_provider.sent_messages[0]['message']
+        otp_code = otp_sms.split(": ")[1].split(".")[0]
+
+        request = PushNotificationRequest(
+            notification_type=PushNotificationType.SECURITY_ALERT if hasattr(PushNotificationType, 'SECURITY_ALERT') else PushNotificationType.LOGIN_ALERT,
+            customer_id='CUST001',
+            title='Secure WhatsApp Alert',
+            message='Secure channel verification passed.',
+            channels=[NotificationChannel.WHATSAPP],
+            phone='+1234567890',
+            data={
+                'require_otp_validation': True,
+                'otp_code': otp_code,
+                'otp_identifier': '+1234567890',
+                'otp_verification_type': VerificationType.TRANSACTION_CONFIRM.value,
+            }
+        )
+
+        result = pipeline.send_push_notification(request)
+        assert result.success is True
+        assert result.channel_results['whatsapp']['success'] is True
+
+    def test_push_notification_requires_otp_validation_fails_without_code(self, pipeline):
+        """Test OTP requirement blocks notification when OTP is missing"""
+        from services.secure_notification_pipeline import (
+            PushNotificationRequest,
+            PushNotificationType,
+        )
+        from services.notification_service import NotificationChannel
+
+        request = PushNotificationRequest(
+            notification_type=PushNotificationType.POLICY_CREATED,
+            customer_id='CUST001',
+            title='Secure Policy Update',
+            message='This should require OTP.',
+            channels=[NotificationChannel.EMAIL],
+            email='test@example.com',
+            data={
+                'require_otp_validation': True,
+                'otp_identifier': 'test@example.com',
+            }
+        )
+
+        result = pipeline.send_push_notification(request)
+        assert result.success is False
+        assert result.channel_results['email']['success'] is False
+        assert result.channel_results['email'].get('error_code') == 'OTP_VALIDATION_FAILED'
     
     def test_notify_policy_event(self, pipeline):
         """Test policy event notification"""

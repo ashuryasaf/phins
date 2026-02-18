@@ -90,6 +90,20 @@ except ImportError:
     PAYMENT_SERVICE_AVAILABLE = False
     print("Warning: Contribution payment service not available")
 
+try:
+    from services.community_messaging_service import get_community_messaging_service
+    COMMUNITY_MESSAGING_AVAILABLE = True
+except ImportError:
+    COMMUNITY_MESSAGING_AVAILABLE = False
+    print("Warning: Community messaging service not available")
+
+try:
+    from services.customer_communication_agent import get_customer_communication_agent
+    CUSTOMER_COMMUNICATION_AGENT_AVAILABLE = True
+except ImportError:
+    CUSTOMER_COMMUNICATION_AGENT_AVAILABLE = False
+    print("Warning: Customer communication agent not available")
+
 # Shared data stores for cross-dashboard integration
 _contribution_ledger: Dict = {}
 _admin_dashboard_data: Dict = {}
@@ -170,6 +184,14 @@ def _send_otp_email(
         return bool(result.success), result.error_message
     except Exception as exc:
         return False, str(exc)
+
+
+def _session_user_id(session: Optional[Dict[str, Any]]) -> Optional[str]:
+    """Resolve canonical user identifier from session."""
+    if not session:
+        return None
+    customer_id = session.get('customer_id')
+    return customer_id or session.get('username')
 
 
 # ============================================================================
@@ -371,6 +393,71 @@ def handle_login_check(client_ip: str, body_data: Dict, user_agent: str = "") ->
     )
     
     return 200, result.to_dict()
+
+
+def handle_security_welcome_report(session: Dict, body_data: Dict) -> Tuple[int, Dict]:
+    """
+    POST /api/security/communications/welcome-report
+    Send a branded welcome package with diversified executive report.
+    """
+    if not CUSTOMER_COMMUNICATION_AGENT_AVAILABLE:
+        return 503, {"error": "Customer communication agent not available"}
+    if not session:
+        return 401, {"error": "Authentication required"}
+
+    caller_user_id = _session_user_id(session)
+    if not caller_user_id:
+        return 401, {"error": "Authentication required"}
+
+    customer_id = body_data.get('customer_id') or caller_user_id
+    if session.get('role') not in ['admin', 'underwriter', 'accountant'] and customer_id != caller_user_id:
+        return 403, {"error": "You can only send your own welcome package"}
+
+    email = str(body_data.get('email', '')).strip().lower()
+    if not email:
+        return 400, {"error": "email is required"}
+
+    customer_name = body_data.get('customer_name') or body_data.get('name') or "PHINS Customer"
+    policies = body_data.get('policies', [])
+    bills = body_data.get('bills', [])
+    accounts = body_data.get('accounts', [])
+    communities = body_data.get('communities', [])
+    whatsapp_phone = body_data.get('whatsapp_phone') or body_data.get('phone')
+
+    require_otp_validation = bool(body_data.get('require_otp_validation', False))
+    otp_code = body_data.get('otp_code')
+    otp_identifier = body_data.get('otp_identifier')
+    from services.notification_service import create_notification_service, VerificationType
+
+    otp_type_raw = str(body_data.get('otp_verification_type', VerificationType.ACCOUNT_ACTIVATION.value))
+    try:
+        otp_verification_type = VerificationType(otp_type_raw)
+    except ValueError:
+        return 400, {"error": f"Invalid otp_verification_type: {otp_type_raw}"}
+
+    use_mock_notifications = PHINS_TEST_MODE or str(
+        os.environ.get('PHINS_USE_MOCK_NOTIFICATIONS', '')
+    ).lower() in ('1', 'true', 'yes', 'y')
+    notification_service = create_notification_service(use_mock=use_mock_notifications)
+    agent = get_customer_communication_agent(notification_service=notification_service)
+
+    result = agent.send_welcome_package(
+        customer_id=customer_id,
+        customer_name=customer_name,
+        email=email,
+        policies=policies,
+        bills=bills,
+        accounts=accounts,
+        communities=communities,
+        whatsapp_phone=whatsapp_phone,
+        login_url=body_data.get('login_url', '/login.html'),
+        require_otp_validation=require_otp_validation,
+        otp_code=otp_code,
+        otp_identifier=otp_identifier,
+        otp_verification_type=otp_verification_type,
+    )
+
+    return (200 if result.get('success') else 400), result
 
 
 # ============================================================================
@@ -1526,6 +1613,127 @@ def handle_foundation_activities(session: Dict, foundation_id: str, query_params
     }
 
 
+def handle_foundation_messages_list(session: Dict, foundation_id: str, query_params: Dict) -> Tuple[int, Dict]:
+    """GET /api/foundations/{id}/messages - List community message threads."""
+    if not COMMUNITY_MESSAGING_AVAILABLE:
+        return 503, {"error": "Community messaging service not available"}
+    if not session:
+        return 401, {"error": "Authentication required"}
+
+    user_id = _session_user_id(session)
+    if not user_id:
+        return 401, {"error": "Authentication required"}
+
+    status = query_params.get('status', [''])[0] or None
+    limit = int(query_params.get('limit', ['50'])[0] or 50)
+
+    service = get_community_messaging_service()
+    result = service.list_threads(
+        foundation_id=foundation_id,
+        user_id=user_id,
+        limit=limit,
+        status=status,
+    )
+    return (200 if result.get('success') else 400), result
+
+
+def handle_foundation_message_get(
+    session: Dict,
+    foundation_id: str,
+    thread_id: str,
+    query_params: Dict
+) -> Tuple[int, Dict]:
+    """GET /api/foundations/{id}/messages/{thread_id} - Get thread details/messages."""
+    if not COMMUNITY_MESSAGING_AVAILABLE:
+        return 503, {"error": "Community messaging service not available"}
+    if not session:
+        return 401, {"error": "Authentication required"}
+
+    user_id = _session_user_id(session)
+    if not user_id:
+        return 401, {"error": "Authentication required"}
+
+    limit_messages = int(query_params.get('limit_messages', ['200'])[0] or 200)
+    service = get_community_messaging_service()
+    result = service.get_thread(
+        foundation_id=foundation_id,
+        user_id=user_id,
+        thread_id=thread_id,
+        limit_messages=limit_messages,
+    )
+    return (200 if result.get('success') else 400), result
+
+
+def handle_foundation_message_create(session: Dict, foundation_id: str, body_data: Dict) -> Tuple[int, Dict]:
+    """POST /api/foundations/{id}/messages - Create a new community message thread."""
+    if not COMMUNITY_MESSAGING_AVAILABLE:
+        return 503, {"error": "Community messaging service not available"}
+    if not session:
+        return 401, {"error": "Authentication required"}
+
+    user_id = _session_user_id(session)
+    if not user_id:
+        return 401, {"error": "Authentication required"}
+
+    service = get_community_messaging_service()
+    result = service.create_thread(
+        foundation_id=foundation_id,
+        sender_user_id=user_id,
+        title=body_data.get('title', ''),
+        message=body_data.get('message', ''),
+        tags=body_data.get('tags', []),
+        notify_members=bool(body_data.get('notify_members', True)),
+    )
+    return (200 if result.get('success') else 400), result
+
+
+def handle_foundation_message_reply(
+    session: Dict,
+    foundation_id: str,
+    thread_id: str,
+    body_data: Dict
+) -> Tuple[int, Dict]:
+    """POST /api/foundations/{id}/messages/{thread_id}/reply - Reply to a thread."""
+    if not COMMUNITY_MESSAGING_AVAILABLE:
+        return 503, {"error": "Community messaging service not available"}
+    if not session:
+        return 401, {"error": "Authentication required"}
+
+    user_id = _session_user_id(session)
+    if not user_id:
+        return 401, {"error": "Authentication required"}
+
+    service = get_community_messaging_service()
+    result = service.post_reply(
+        foundation_id=foundation_id,
+        thread_id=thread_id,
+        sender_user_id=user_id,
+        content=body_data.get('message', ''),
+        notify_members=bool(body_data.get('notify_members', True)),
+    )
+    return (200 if result.get('success') else 400), result
+
+
+def handle_foundation_message_close(session: Dict, foundation_id: str, thread_id: str) -> Tuple[int, Dict]:
+    """POST /api/foundations/{id}/messages/{thread_id}/close - Close thread."""
+    if not COMMUNITY_MESSAGING_AVAILABLE:
+        return 503, {"error": "Community messaging service not available"}
+    if not session:
+        return 401, {"error": "Authentication required"}
+
+    user_id = _session_user_id(session)
+    if not user_id:
+        return 401, {"error": "Authentication required"}
+
+    service = get_community_messaging_service()
+    result = service.close_thread(
+        foundation_id=foundation_id,
+        thread_id=thread_id,
+        actor_user_id=user_id,
+    )
+    return (200 if result.get('success') else 400), result
+
+
 def handle_foundation_ledger(session: Dict, query_params: Dict) -> Tuple[int, Dict]:
     """GET /api/foundation-ledger - Get user's foundation ledger entries (activities)"""
     if not FOUNDATION_SERVICE_AVAILABLE:
@@ -2161,6 +2369,8 @@ def dispatch_get(path: str, session: Dict, query_params: Dict, client_ip: str) -
                 return handle_foundation_report(session, foundation_id, query_params)
             elif resource == 'activities':
                 return handle_foundation_activities(session, foundation_id, query_params)
+            elif resource == 'messages':
+                return handle_foundation_messages_list(session, foundation_id, query_params)
         
         # /api/foundations/{id}/export/{format}
         if len(parts) == 6 and parts[4] == 'export':
@@ -2175,6 +2385,12 @@ def dispatch_get(path: str, session: Dict, query_params: Dict, client_ip: str) -
             foundation_id = parts[3]
             vote_id = parts[5]
             return handle_foundation_vote_get(session, foundation_id, vote_id)
+        
+        # /api/foundations/{id}/messages/{thread_id}
+        if len(parts) == 6 and parts[4] == 'messages':
+            foundation_id = parts[3]
+            thread_id = parts[5]
+            return handle_foundation_message_get(session, foundation_id, thread_id, query_params)
         
         # /api/foundations/{id}/members/{member_id}/billing
         if len(parts) == 7 and parts[4] == 'members' and parts[6] == 'billing':
@@ -2248,6 +2464,10 @@ def dispatch_post(path: str, session: Dict, body_data: Dict, client_ip: str, use
     if path == '/api/security/login/check':
         return handle_login_check(client_ip, body_data, user_agent)
     
+    # Security: Branded welcome communication package
+    if path == '/api/security/communications/welcome-report':
+        return handle_security_welcome_report(session, body_data)
+    
     # Foundation: Create
     if path == '/api/foundations':
         return handle_foundation_create(session, body_data)
@@ -2289,6 +2509,8 @@ def dispatch_post(path: str, session: Dict, body_data: Dict, client_ip: str, use
                 return handle_foundation_vote_create(session, foundation_id, body_data)
             elif action == 'claims':
                 return handle_foundation_claim_submit(session, foundation_id, body_data)
+            elif action == 'messages':
+                return handle_foundation_message_create(session, foundation_id, body_data)
         
         # /api/foundations/{id}/members/{member_id}/{action}
         if len(parts) == 7 and parts[4] == 'members':
@@ -2326,6 +2548,17 @@ def dispatch_post(path: str, session: Dict, body_data: Dict, client_ip: str, use
             
             if action == 'approve':
                 return handle_foundation_claim_approve(session, foundation_id, claim_id, body_data)
+        
+        # /api/foundations/{id}/messages/{thread_id}/{action}
+        if len(parts) == 7 and parts[4] == 'messages':
+            foundation_id = parts[3]
+            thread_id = parts[5]
+            action = parts[6]
+            
+            if action == 'reply':
+                return handle_foundation_message_reply(session, foundation_id, thread_id, body_data)
+            elif action == 'close':
+                return handle_foundation_message_close(session, foundation_id, thread_id)
     
     # Admin: Suspend foundation
     if path.endswith('/suspend') and path.startswith('/api/admin/foundations/'):

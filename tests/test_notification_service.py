@@ -602,6 +602,19 @@ class TestNotificationService:
         
         assert result.success
         assert result.status == NotificationStatus.DELIVERED
+
+    def test_send_whatsapp_notification(self):
+        """Test sending WhatsApp notification"""
+        service = create_notification_service(use_mock=True)
+
+        result = service.send(NotificationRequest(
+            channel=NotificationChannel.WHATSAPP,
+            recipient="+14155551234",
+            content="Test WhatsApp message"
+        ))
+
+        assert result.success
+        assert result.status == NotificationStatus.DELIVERED
     
     def test_send_invalid_email(self):
         """Test sending to invalid email"""
@@ -663,6 +676,25 @@ class TestNotificationService:
             content="Test"
         ))
         
+        assert not result.success
+        assert result.error_code == "RECIPIENT_SUPPRESSED"
+
+    def test_whatsapp_suppression_list(self):
+        """Test suppression list blocks WhatsApp recipients"""
+        service = create_notification_service(use_mock=True)
+
+        service.add_to_suppression(
+            "+14155551234",
+            NotificationChannel.WHATSAPP,
+            "test"
+        )
+
+        result = service.send(NotificationRequest(
+            channel=NotificationChannel.WHATSAPP,
+            recipient="+14155551234",
+            content="Test"
+        ))
+
         assert not result.success
         assert result.error_code == "RECIPIENT_SUPPRESSED"
     
@@ -730,6 +762,119 @@ class TestNotificationService:
         ))
         
         assert result.success
+
+    def test_whatsapp_preferences_blocking(self):
+        """Test WhatsApp preference-based blocking"""
+        service = create_notification_service(use_mock=True)
+
+        service.set_preferences("CUST123", {
+            "email_enabled": True,
+            "sms_enabled": True,
+            "whatsapp_enabled": False
+        })
+
+        result = service.send(NotificationRequest(
+            channel=NotificationChannel.WHATSAPP,
+            recipient="+14155551234",
+            content="Test",
+            customer_id="CUST123"
+        ))
+
+        assert not result.success
+        assert result.error_code == "PREFERENCE_BLOCKED"
+
+    def test_email_notification_requires_otp_validation(self):
+        """Test OTP-gated email notifications"""
+        email_provider = MockEmailProvider()
+        service = NotificationService(
+            email_provider=email_provider,
+            sms_provider=MockSMSProvider()
+        )
+
+        otp_result = service.send_otp(OTPRequest(
+            identifier="test@example.com",
+            channel=NotificationChannel.EMAIL,
+            verification_type=VerificationType.TRANSACTION_CONFIRM
+        ))
+        assert otp_result.success
+
+        otp_email = email_provider.sent_emails[0]
+        otp_code = otp_email['subject'].split(": ")[1]
+
+        result = service.send(NotificationRequest(
+            channel=NotificationChannel.EMAIL,
+            recipient="test@example.com",
+            subject="Secure Message",
+            content="Your secure PHINS update.",
+            metadata={
+                "require_otp_validation": True,
+                "otp_code": otp_code,
+                "otp_identifier": "test@example.com",
+                "otp_verification_type": VerificationType.TRANSACTION_CONFIRM.value
+            }
+        ))
+
+        assert result.success
+        assert result.status == NotificationStatus.DELIVERED
+
+    def test_notification_requires_otp_with_invalid_code_fails(self):
+        """Test OTP-gated notification fails with invalid OTP"""
+        service = create_notification_service(use_mock=True)
+
+        # Generate a valid OTP first so a verification record exists.
+        generated = service.send_otp(OTPRequest(
+            identifier="test@example.com",
+            channel=NotificationChannel.EMAIL,
+            verification_type=VerificationType.TRANSACTION_CONFIRM
+        ))
+        assert generated.success
+
+        result = service.send(NotificationRequest(
+            channel=NotificationChannel.EMAIL,
+            recipient="test@example.com",
+            content="Secure message",
+            metadata={
+                "require_otp_validation": True,
+                "otp_code": "000000",
+                "otp_identifier": "test@example.com",
+                "otp_verification_type": VerificationType.TRANSACTION_CONFIRM.value
+            }
+        ))
+
+        assert not result.success
+        assert result.error_code == "OTP_VALIDATION_FAILED"
+
+    def test_whatsapp_notification_requires_otp_validation(self):
+        """Test OTP-gated WhatsApp notification"""
+        sms_provider = MockSMSProvider()
+        service = NotificationService(
+            email_provider=MockEmailProvider(),
+            sms_provider=sms_provider
+        )
+
+        otp_result = service.send_otp(OTPRequest(
+            identifier="+14155551234",
+            channel=NotificationChannel.SMS,
+            verification_type=VerificationType.TRANSACTION_CONFIRM
+        ))
+        assert otp_result.success
+        otp_message = sms_provider.sent_messages[0]["message"]
+        otp_code = otp_message.split(": ")[1].split(".")[0]
+
+        result = service.send(NotificationRequest(
+            channel=NotificationChannel.WHATSAPP,
+            recipient="+14155551234",
+            content="Secure WhatsApp update.",
+            metadata={
+                "require_otp_validation": True,
+                "otp_code": otp_code,
+                "otp_identifier": "+14155551234",
+                "otp_verification_type": VerificationType.TRANSACTION_CONFIRM.value
+            }
+        ))
+
+        assert result.success
+        assert result.status == NotificationStatus.DELIVERED
 
 
 # ============================================================================
