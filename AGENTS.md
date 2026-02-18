@@ -216,6 +216,21 @@ Start with:
 - `RAILWAY_DEPLOYMENT.md`
 - `RAILWAY_POSTGRES_FIX.md`
 
+## 13) Agent Operating Rules (Practical)
+
+Use these guardrails during implementation work:
+
+1. Keep changes tightly scoped to the requested task.
+2. Reuse existing services/repositories before introducing new abstractions.
+3. Preserve API response shape and error payload conventions.
+4. Avoid modifying unrelated files, even if they are already changed locally.
+5. Add or update tests whenever behavior changes.
+6. Prefer targeted test runs for speed, then run a broader smoke test for high-risk areas.
+7. Document non-obvious behavior changes in code comments or docs when needed.
+8. Commit with clear, descriptive messages that explain what changed and why.
+9. Never include secrets, tokens, or environment-specific credentials in code or logs.
+10. If a request is ambiguous, choose the least disruptive implementation path.
+
 ---
 
-Last updated: February 2026
+Last updated: February 18, 2026
