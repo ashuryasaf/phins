@@ -1144,35 +1144,35 @@
                     <div class="form-group">
                         <label class="form-label">Symbol</label>
                         <select class="form-select" id="quickTradeSymbol">
-                            <optgroup label="📊 Indices">
+                            <optgroup label="📊 Indices" data-asset-class="index">
                                 <option value="SPY">SPY - S&P 500</option>
                                 <option value="QQQ">QQQ - NASDAQ</option>
                                 <option value="DIA">DIA - Dow Jones</option>
                             </optgroup>
-                            <optgroup label="📈 Equities">
+                            <optgroup label="📈 Equities" data-asset-class="equity">
                                 <option value="AAPL">AAPL - Apple</option>
                                 <option value="MSFT">MSFT - Microsoft</option>
                                 <option value="NVDA">NVDA - NVIDIA</option>
                                 <option value="GOOGL">GOOGL - Alphabet</option>
                                 <option value="TSLA">TSLA - Tesla</option>
                             </optgroup>
-                            <optgroup label="₿ Crypto">
+                            <optgroup label="₿ Crypto" data-asset-class="crypto">
                                 <option value="BTC">BTC - Bitcoin</option>
                                 <option value="ETH">ETH - Ethereum</option>
                                 <option value="SOL">SOL - Solana</option>
                                 <option value="AVAX">AVAX - Avalanche</option>
                             </optgroup>
-                            <optgroup label="🛢️ Commodities">
+                            <optgroup label="🛢️ Commodities" data-asset-class="commodity">
                                 <option value="GLD">GLD - Gold</option>
                                 <option value="SLV">SLV - Silver</option>
                                 <option value="USO">USO - Oil</option>
                             </optgroup>
-                            <optgroup label="💱 Forex">
+                            <optgroup label="💱 Forex" data-asset-class="forex">
                                 <option value="EURUSD">EUR/USD</option>
                                 <option value="GBPUSD">GBP/USD</option>
                                 <option value="USDJPY">USD/JPY</option>
                             </optgroup>
-                            <optgroup label="📜 Bonds">
+                            <optgroup label="📜 Bonds" data-asset-class="bond">
                                 <option value="BND">BND - Total Bond</option>
                                 <option value="TLT">TLT - 20+ Yr Treasury</option>
                                 <option value="HYG">HYG - High Yield</option>
@@ -1507,6 +1507,9 @@
                 loadSmartBotTemplates(),
                 loadExtendedMarket('')
             ]);
+
+            // Ensure quick trade symbol list follows selected asset class.
+            updateQuickTradeSymbols();
             
             // Update stats with advanced metrics
             await updateStats();
@@ -1650,12 +1653,65 @@
             return names[strategy] || strategy;
         }
         
+        function normalizeQuickTradeClass(assetClass) {
+            const normalized = String(assetClass || '').toLowerCase().trim();
+            if (normalized === 'etf') {
+                return 'equity';
+            }
+            if (['index', 'equity', 'crypto', 'commodity', 'forex', 'bond'].includes(normalized)) {
+                return normalized;
+            }
+            return '';
+        }
+        
         function updateQuickTradeSymbols() {
-            // Future enhancement: filter symbols by asset class
-            const assetClass = document.getElementById('quickTradeClass').value;
-            // For now just show a toast
-            if (assetClass !== 'all') {
-                showToast(`Filtering by ${assetClass} assets`, 'info');
+            const classSelect = document.getElementById('quickTradeClass');
+            const symbolSelect = document.getElementById('quickTradeSymbol');
+            if (!classSelect || !symbolSelect) {
+                return;
+            }
+            
+            const selectedClass = classSelect.value;
+            const currentSymbol = symbolSelect.value;
+            let firstVisibleSymbol = '';
+            let currentSymbolVisible = false;
+            
+            Array.from(symbolSelect.querySelectorAll('optgroup')).forEach(group => {
+                const groupClass = group.dataset.assetClass || '';
+                const shouldShow = selectedClass === 'all' || groupClass === selectedClass;
+                group.hidden = !shouldShow;
+                group.disabled = !shouldShow;
+                
+                if (shouldShow) {
+                    const options = Array.from(group.querySelectorAll('option'));
+                    if (!firstVisibleSymbol && options.length > 0) {
+                        firstVisibleSymbol = options[0].value;
+                    }
+                    if (options.some(option => option.value === currentSymbol)) {
+                        currentSymbolVisible = true;
+                    }
+                }
+            });
+            
+            // Standalone options are only shown in "all" view.
+            Array.from(symbolSelect.children).forEach(child => {
+                if (child.tagName !== 'OPTION') {
+                    return;
+                }
+                const shouldShow = selectedClass === 'all';
+                child.hidden = !shouldShow;
+                child.disabled = !shouldShow;
+                
+                if (shouldShow && !firstVisibleSymbol) {
+                    firstVisibleSymbol = child.value;
+                }
+                if (shouldShow && child.value === currentSymbol) {
+                    currentSymbolVisible = true;
+                }
+            });
+            
+            if (!currentSymbolVisible && firstVisibleSymbol) {
+                symbolSelect.value = firstVisibleSymbol;
             }
         }
         
@@ -2329,8 +2385,12 @@
         }
         
         function selectAssetForTrade(symbol) {
-            // Add symbol to quick trade dropdown if not present
+            const classSelect = document.getElementById('quickTradeClass');
             const select = document.getElementById('quickTradeSymbol');
+            const asset = extendedMarketData.find(item => item.symbol === symbol);
+            const normalizedClass = normalizeQuickTradeClass(asset?.class);
+            
+            // Add symbol to quick trade dropdown if not present
             let found = false;
             for (let option of select.options) {
                 if (option.value === symbol) {
@@ -2341,9 +2401,28 @@
             if (!found) {
                 const option = document.createElement('option');
                 option.value = symbol;
-                option.text = symbol;
-                select.add(option);
+                option.text = asset?.name ? `${symbol} - ${asset.name}` : symbol;
+                
+                const targetGroup = normalizedClass
+                    ? select.querySelector(`optgroup[data-asset-class="${normalizedClass}"]`)
+                    : null;
+                
+                if (targetGroup) {
+                    targetGroup.appendChild(option);
+                } else {
+                    select.add(option);
+                }
             }
+            
+            if (classSelect) {
+                if (normalizedClass && classSelect.querySelector(`option[value="${normalizedClass}"]`)) {
+                    classSelect.value = normalizedClass;
+                } else {
+                    classSelect.value = 'all';
+                }
+            }
+            updateQuickTradeSymbols();
+            
             select.value = symbol;
             
             // Scroll to quick trade section
