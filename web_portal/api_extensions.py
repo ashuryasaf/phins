@@ -427,6 +427,7 @@ def handle_security_welcome_report(session: Dict, body_data: Dict) -> Tuple[int,
     require_otp_validation = bool(body_data.get('require_otp_validation', False))
     otp_code = body_data.get('otp_code')
     otp_identifier = body_data.get('otp_identifier')
+    verification_id = body_data.get('verification_id')
     from services.notification_service import create_notification_service, VerificationType
 
     otp_type_raw = str(body_data.get('otp_verification_type', VerificationType.ACCOUNT_ACTIVATION.value))
@@ -434,6 +435,39 @@ def handle_security_welcome_report(session: Dict, body_data: Dict) -> Tuple[int,
         otp_verification_type = VerificationType(otp_type_raw)
     except ValueError:
         return 400, {"error": f"Invalid otp_verification_type: {otp_type_raw}"}
+
+    # If OTP validation is required, verify it here using OTPSecurityService
+    # (which is where OTPs from /api/security/otp/request are stored).
+    # After successful verification, pass require_otp_validation=False to the agent.
+    otp_already_verified = False
+    if require_otp_validation:
+        if not otp_code:
+            return 400, {"error": "otp_code is required when require_otp_validation is true"}
+        
+        # Prefer verification_id (from OTPSecurityService) if available
+        if verification_id and OTP_SERVICE_AVAILABLE:
+            otp_security_service = get_otp_security_service()
+            otp_result = otp_security_service.verify_otp(
+                verification_id=verification_id,
+                otp_code=otp_code,
+                ip_address=None,
+                trust_device=False
+            )
+            if not otp_result.success:
+                return 400, {
+                    "success": False,
+                    "error": otp_result.message or "OTP verification failed",
+                    "code": otp_result.error_code or "OTP_VALIDATION_FAILED"
+                }
+            otp_already_verified = True
+        elif not verification_id:
+            # No verification_id provided - cannot verify without it since
+            # OTPs are stored in OTPSecurityService which uses verification_id
+            return 400, {
+                "success": False,
+                "error": "verification_id is required when require_otp_validation is true (from /api/security/otp/request response)",
+                "code": "VERIFICATION_ID_REQUIRED"
+            }
 
     use_mock_notifications = PHINS_TEST_MODE or str(
         os.environ.get('PHINS_USE_MOCK_NOTIFICATIONS', '')
@@ -451,8 +485,9 @@ def handle_security_welcome_report(session: Dict, body_data: Dict) -> Tuple[int,
         communities=communities,
         whatsapp_phone=whatsapp_phone,
         login_url=body_data.get('login_url', '/login.html'),
-        require_otp_validation=require_otp_validation,
-        otp_code=otp_code,
+        # Skip OTP validation in agent if already verified here
+        require_otp_validation=require_otp_validation and not otp_already_verified,
+        otp_code=otp_code if not otp_already_verified else None,
         otp_identifier=otp_identifier,
         otp_verification_type=otp_verification_type,
     )

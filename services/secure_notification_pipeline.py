@@ -957,6 +957,36 @@ class SecureNotificationPipeline:
         """
         notification_id = f"PUSH_{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}_{secrets.token_hex(6)}"
         
+        # Validate OTP once at bundle-level before sending to any channel.
+        # This prevents the OTP from being consumed by the first channel,
+        # causing subsequent channels to fail.
+        sanitized_data = dict(request.data or {})
+        if sanitized_data.get('require_otp_validation'):
+            # Determine recipient for validation (prefer email, fallback to phone)
+            recipient_for_validation = request.email or request.phone
+            otp_error = self._validate_push_notification_otp(
+                channel=request.channels[0] if request.channels else NotificationChannel.EMAIL,
+                customer_id=request.customer_id,
+                recipient=recipient_for_validation,
+                data=sanitized_data
+            )
+            if otp_error:
+                return PushNotificationResult(
+                    success=False,
+                    notification_id=notification_id,
+                    notification_type=request.notification_type,
+                    error_code='OTP_VALIDATION_FAILED',
+                    error_message=otp_error
+                )
+            # Remove OTP fields so channels don't re-validate
+            for otp_field in (
+                'require_otp_validation',
+                'otp_code',
+                'otp_identifier',
+                'otp_verification_type',
+            ):
+                sanitized_data.pop(otp_field, None)
+        
         channel_results = {}
         any_success = False
         
@@ -969,7 +999,7 @@ class SecureNotificationPipeline:
                 message=request.message,
                 email=request.email,
                 phone=request.phone,
-                data=request.data,
+                data=sanitized_data,
                 priority=request.priority
             )
             channel_results[channel.value] = result
@@ -1442,30 +1472,12 @@ class SecureNotificationPipeline:
         data: Optional[Dict[str, Any]] = None,
         priority: NotificationPriority = NotificationPriority.NORMAL
     ) -> Dict[str, Any]:
-        """Send notification to a specific channel"""
+        """Send notification to a specific channel.
+        
+        Note: OTP validation is performed at the bundle level in send_push_notification
+        before this method is called, so OTP fields should already be stripped from data.
+        """
         sanitized_data = dict(data or {})
-        recipient_for_validation = email if channel == NotificationChannel.EMAIL else phone
-        otp_error = self._validate_push_notification_otp(
-            channel=channel,
-            customer_id=customer_id,
-            recipient=recipient_for_validation,
-            data=sanitized_data
-        )
-        if otp_error:
-            return {
-                'success': False,
-                'error_code': 'OTP_VALIDATION_FAILED',
-                'error': otp_error
-            }
-
-        # OTP fields are consumed by validation and should not be forwarded.
-        for otp_field in (
-            'require_otp_validation',
-            'otp_code',
-            'otp_identifier',
-            'otp_verification_type',
-        ):
-            sanitized_data.pop(otp_field, None)
         
         if channel == NotificationChannel.EMAIL:
             if not email:

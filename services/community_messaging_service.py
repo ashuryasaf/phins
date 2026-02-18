@@ -9,6 +9,7 @@ Provides foundation-scoped discussion threads and member-to-member messages.
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import os
 import threading
 import uuid
 from typing import Any, Dict, List, Optional, Tuple
@@ -20,6 +21,10 @@ from services.notification_service import (
     NotificationRequest,
     create_notification_service,
 )
+
+# Determine mock mode from environment variables (same pattern as other services)
+PHINS_TEST_MODE = str(os.environ.get('PHINS_TEST_MODE', '')).lower() in ('1', 'true', 'yes', 'y')
+PHINS_USE_MOCK_NOTIFICATIONS = str(os.environ.get('PHINS_USE_MOCK_NOTIFICATIONS', '')).lower() in ('1', 'true', 'yes', 'y')
 
 
 def _now_iso() -> str:
@@ -44,7 +49,9 @@ class CommunityMessagingService:
 
     def __init__(self, foundation_service=None, notification_service=None):
         self._foundation_service = foundation_service or get_foundation_service()
-        self._notification_service = notification_service or create_notification_service(use_mock=True)
+        # Use mock only when in test mode or explicitly requested, not hardcoded
+        use_mock = PHINS_TEST_MODE or PHINS_USE_MOCK_NOTIFICATIONS
+        self._notification_service = notification_service or create_notification_service(use_mock=use_mock)
 
         self._threads: Dict[str, Dict[str, Any]] = {}
         self._messages: Dict[str, Dict[str, Any]] = {}

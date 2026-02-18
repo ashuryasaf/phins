@@ -11,6 +11,7 @@ High-level customer communication agent focused on:
 
 from __future__ import annotations
 
+import html
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
@@ -241,11 +242,15 @@ class CustomerCommunicationAgent:
 
     def render_executive_report_html(self, customer_name: str, report: ExecutiveReport, login_url: str) -> str:
         """Render branded HTML report for sophisticated onboarding communication."""
+        # Escape user-controlled values to prevent HTML injection
+        safe_customer_name = html.escape(str(customer_name))
+        safe_login_url = html.escape(str(login_url))
+        
         policy_mix_html = "".join(
-            f"<li><strong>{kind}</strong>: {count}</li>"
+            f"<li><strong>{html.escape(str(kind))}</strong>: {count}</li>"
             for kind, count in sorted(report.policy_mix.items(), key=lambda item: item[0])
         ) or "<li><strong>n/a</strong>: 0</li>"
-        highlights_html = "".join(f"<li>{item}</li>" for item in report.highlights)
+        highlights_html = "".join(f"<li>{html.escape(str(item))}</li>" for item in report.highlights)
 
         return f"""
 <html>
@@ -253,7 +258,7 @@ class CustomerCommunicationAgent:
   <div style="max-width:860px;margin:24px auto;background:#ffffff;border:1px solid #dae4f7;border-radius:16px;overflow:hidden;">
     <div style="padding:30px;background:linear-gradient(120deg,#0b1730,#2455b5);color:#ffffff;">
       <div style="font-size:12px;letter-spacing:2px;opacity:0.8;">PHINS CUSTOMER EXECUTIVE BRIEF</div>
-      <h1 style="margin:8px 0 0 0;font-size:28px;">Welcome, {customer_name}</h1>
+      <h1 style="margin:8px 0 0 0;font-size:28px;">Welcome, {safe_customer_name}</h1>
       <p style="margin:8px 0 0 0;opacity:0.9;">Branded portfolio intelligence for your first PHINS session.</p>
     </div>
     <div style="padding:26px;">
@@ -286,7 +291,7 @@ class CustomerCommunicationAgent:
         Accounts tracked: <strong>{report.accounts_count}</strong> (${report.total_account_value:,.2f})<br/>
         Communities connected: <strong>{report.communities_count}</strong>
       </div>
-      <p style="margin-top:18px;">Open your dashboard: <a href="{login_url}">{login_url}</a></p>
+      <p style="margin-top:18px;">Open your dashboard: <a href="{safe_login_url}">{safe_login_url}</a></p>
     </div>
     <div style="padding:12px 26px;background:#0f1a2e;color:#94a6c7;font-size:12px;">
       PHINS | Branded Advanced Insurance Experience
