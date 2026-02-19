@@ -1203,8 +1203,16 @@ class SupplyChainEcosystemService:
             raise ValueError(f"Supplier {supplier_id} not found")
         
         supplier_type = supplier.get("supplier_type", "other")
-        monthly_volume = supplier.get("total_revenue", 0) / max(1, 
-            (datetime.now() - datetime.fromisoformat(supplier["created_date"].replace('Z', '+00:00'))).days / 30)
+        created_raw = str(supplier.get("created_date") or supplier.get("application_date") or "")
+        try:
+            created_dt = datetime.fromisoformat(created_raw.replace('Z', '+00:00'))
+        except Exception:
+            created_dt = datetime.now(timezone.utc)
+        if created_dt.tzinfo is None:
+            created_dt = created_dt.replace(tzinfo=timezone.utc)
+        now_dt = datetime.now(created_dt.tzinfo)
+        days_active = max(1, (now_dt - created_dt).days)
+        monthly_volume = self._safe_float(supplier.get("total_revenue"), 0.0) / max(1, days_active / 30)
         
         return self.fee_schedule.calculate_commission(
             amount=amount,
