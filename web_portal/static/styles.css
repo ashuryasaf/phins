@@ -1384,3 +1384,86 @@ body{
     padding: 14px;
   }
 }
+
+/* ========== DASHBOARD VISUAL CLARITY MODE ========== */
+.ux-compact-dashboard {
+  color: var(--text-dark);
+}
+
+.ux-compact-dashboard .welcome-section h1,
+.ux-compact-dashboard .section-header h2,
+.ux-compact-dashboard h2,
+.ux-compact-dashboard h3 {
+  font-weight: 800 !important;
+  letter-spacing: -0.02em;
+}
+
+.ux-compact-dashboard .dashboard-stats,
+.ux-compact-dashboard .stats-grid {
+  gap: 14px !important;
+}
+
+.ux-compact-dashboard .dashboard-stats {
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)) !important;
+}
+
+.ux-compact-dashboard .stat-box,
+.ux-compact-dashboard .dashboard-stats > .stat-card,
+.ux-compact-dashboard .stats-grid > .stat-card {
+  padding: 16px 14px !important;
+  border-radius: 12px !important;
+  box-shadow: 0 2px 12px rgba(21, 101, 192, 0.1) !important;
+}
+
+.ux-compact-dashboard .stat-icon,
+.ux-compact-dashboard .stat-card-icon {
+  font-size: 1.15rem !important;
+  margin-bottom: 6px !important;
+}
+
+.ux-compact-dashboard .stat-value,
+.ux-compact-dashboard .stat-card-value {
+  font-size: 1.8rem !important;
+  font-weight: 800 !important;
+  margin: 4px 0 !important;
+}
+
+.ux-compact-dashboard .stat-label,
+.ux-compact-dashboard .stat-card-label {
+  font-size: 0.82rem !important;
+  font-weight: 700 !important;
+  opacity: 0.9;
+}
+
+.ux-compact-dashboard .stat-change {
+  font-size: 0.76rem !important;
+  font-weight: 700 !important;
+}
+
+.ux-compact-dashboard .action-card {
+  padding: 20px 16px !important;
+  border-radius: 12px !important;
+  box-shadow: 0 4px 16px rgba(13, 71, 161, 0.2) !important;
+}
+
+.ux-compact-dashboard .card,
+.ux-compact-dashboard .table-card {
+  border-radius: 12px !important;
+  box-shadow: 0 2px 12px rgba(21, 101, 192, 0.08) !important;
+}
+
+.ux-compact-dashboard .phins-nav a,
+.ux-compact-dashboard .nav a,
+.ux-compact-dashboard button,
+.ux-compact-dashboard .btn,
+.ux-compact-dashboard .compact-tab,
+.ux-compact-dashboard .pill-tab,
+.ux-compact-dashboard .mini-tab {
+  font-weight: 700 !important;
+}
+
+.ux-compact-dashboard .dashboard-stats > .stat-box,
+.ux-compact-dashboard .dashboard-stats > .stat-card,
+.ux-compact-dashboard .dashboard-actions > .action-card {
+  filter: saturate(0.9);
+}
