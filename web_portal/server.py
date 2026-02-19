@@ -898,9 +898,18 @@ def save_ledger_data():
             except:
                 pass
             
+            supplier_invitations = {}
+            for code, invitation in dict(globals().get('SUPPLIER_INVITATIONS', {})).items():
+                if hasattr(invitation, 'to_dict'):
+                    supplier_invitations[code] = invitation.to_dict()
+                elif isinstance(invitation, dict):
+                    supplier_invitations[code] = invitation
+                else:
+                    supplier_invitations[code] = {'code': code, 'raw_value': str(invitation)}
+
             data = {
                 'saved_at': datetime.now().isoformat(),
-                'version': '1.7',
+                'version': '1.9',
                 'health_wallets': HEALTH_WALLETS,
                 'medical_purchases': MEDICAL_PURCHASES,
                 'nft_ledger': NFT_LEDGER,
@@ -929,7 +938,14 @@ def save_ledger_data():
                 'registered_customers': REGISTERED_CUSTOMERS,
                 # v1.8 additions - Customer Referral System
                 'customer_invitations': CUSTOMER_INVITATIONS,
-                'customer_referral_stats': CUSTOMER_REFERRAL_STATS
+                'customer_referral_stats': CUSTOMER_REFERRAL_STATS,
+                # v1.9 additions - Supplier ecosystem and supply-chain stores
+                'suppliers': dict(globals().get('SUPPLIERS', {})),
+                'supplier_offers': dict(globals().get('SUPPLIER_OFFERS', {})),
+                'supplier_orders': dict(globals().get('SUPPLIER_ORDERS', {})),
+                'supplier_documents': dict(globals().get('SUPPLIER_DOCUMENTS', {})),
+                'supplier_invitations': supplier_invitations,
+                'supply_chain_ledger': dict(globals().get('SUPPLY_CHAIN_LEDGER', {})),
             }
             
             # Write to temp file first, then rename for atomic operation
@@ -1142,12 +1158,242 @@ def load_dynamic_customers():
         print(f"[DYNAMIC] Error loading dynamic customers: {e}")
         return 0
 
+SUPPLIER_SEEDS_FILE = os.path.join(os.path.dirname(__file__), '..', 'database', 'dynamic_suppliers.json')
+try:
+    SUPPLIER_SEED_BACKFILL_HOURS = max(0, int(os.environ.get('SUPPLIER_SEED_BACKFILL_HOURS', '24')))
+except Exception:
+    SUPPLIER_SEED_BACKFILL_HOURS = 24
+
+def _parse_iso_datetime(value: Any) -> Optional[datetime]:
+    """Parse ISO datetime into a naive datetime for safe comparisons."""
+    raw = str(value or '').strip()
+    if not raw:
+        return None
+    try:
+        parsed = datetime.fromisoformat(raw.replace('Z', '+00:00'))
+    except Exception:
+        return None
+    if getattr(parsed, 'tzinfo', None) is not None:
+        return parsed.replace(tzinfo=None)
+    return parsed
+
+def _read_supplier_seeds_file() -> List[Dict[str, Any]]:
+    """Read supplier seed file (list format), returning valid dict rows only."""
+    if not os.path.exists(SUPPLIER_SEEDS_FILE):
+        return []
+    try:
+        with open(SUPPLIER_SEEDS_FILE, 'r') as f:
+            rows = json.load(f)
+        if not isinstance(rows, list):
+            print("[DYNAMIC-SUPPLIERS] Supplier seeds file is not a list; resetting to empty")
+            return []
+        return [row for row in rows if isinstance(row, dict)]
+    except json.JSONDecodeError as e:
+        print(f"[DYNAMIC-SUPPLIERS] Error parsing supplier seeds file: {e}")
+        return []
+    except Exception as e:
+        print(f"[DYNAMIC-SUPPLIERS] Error reading supplier seeds file: {e}")
+        return []
+
+def _write_supplier_seeds_file(rows: List[Dict[str, Any]]) -> None:
+    """Persist supplier seed rows atomically to avoid partial writes."""
+    os.makedirs(os.path.dirname(SUPPLIER_SEEDS_FILE), exist_ok=True)
+    temp_path = SUPPLIER_SEEDS_FILE + '.tmp'
+    with open(temp_path, 'w') as f:
+        json.dump(rows, f, indent=2, default=str)
+    os.replace(temp_path, SUPPLIER_SEEDS_FILE)
+
+def _build_supplier_seed_record(supplier: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """Normalize supplier data for deterministic, password-safe seed persistence."""
+    if not isinstance(supplier, dict):
+        return None
+
+    supplier_id = str(supplier.get('id') or '').strip()
+    contact_email = str(supplier.get('contact_email') or '').strip().lower()
+    if not supplier_id or not contact_email:
+        return None
+
+    application_date = str(
+        supplier.get('application_date')
+        or supplier.get('created_date')
+        or supplier.get('registered_at')
+        or datetime.now().isoformat()
+    )
+    created_date = str(supplier.get('created_date') or application_date)
+    updated_date = str(supplier.get('updated_date') or supplier.get('last_login') or created_date)
+
+    row = dict(supplier)
+    row.pop('password', None)
+    row['id'] = supplier_id
+    row['contact_email'] = contact_email
+    row['role'] = 'supplier'
+    row['application_date'] = application_date
+    row['created_date'] = created_date
+    row['updated_date'] = updated_date
+    row['registered_at'] = str(supplier.get('registered_at') or application_date)
+    row['seed_synced_at'] = datetime.now().isoformat()
+    return row
+
+def sync_supplier_registries_to_seeds(
+    backfill_hours: int = SUPPLIER_SEED_BACKFILL_HOURS,
+    include_all: bool = False
+) -> Dict[str, Any]:
+    """
+    Upsert supplier registries into dynamic supplier seeds.
+    When include_all is False, only suppliers created/updated within backfill_hours are synced.
+    """
+    try:
+        hours = max(0, int(backfill_hours))
+    except Exception:
+        hours = SUPPLIER_SEED_BACKFILL_HOURS
+
+    cutoff_dt = datetime.now() - timedelta(hours=hours)
+    existing_rows = _read_supplier_seeds_file()
+    merged_by_id: Dict[str, Dict[str, Any]] = {}
+    for row in existing_rows:
+        normalized = _build_supplier_seed_record(row)
+        if normalized:
+            merged_by_id[normalized['id']] = normalized
+
+    with STATE_LOCK:
+        supplier_snapshot = [
+            dict(supplier)
+            for supplier in SUPPLIERS.values()
+            if isinstance(supplier, dict)
+        ]
+
+    upserted = 0
+    skipped = 0
+    for supplier in supplier_snapshot:
+        normalized = _build_supplier_seed_record(supplier)
+        if not normalized:
+            skipped += 1
+            continue
+
+        candidate_dt = _parse_iso_datetime(
+            normalized.get('updated_date')
+            or normalized.get('created_date')
+            or normalized.get('application_date')
+        )
+        if not include_all and candidate_dt and candidate_dt < cutoff_dt:
+            skipped += 1
+            continue
+
+        supplier_id = normalized['id']
+        current = merged_by_id.get(supplier_id, {})
+        current_updated = _parse_iso_datetime(
+            current.get('updated_date')
+            or current.get('last_login')
+            or current.get('created_date')
+        )
+        normalized_updated = _parse_iso_datetime(
+            normalized.get('updated_date')
+            or normalized.get('last_login')
+            or normalized.get('created_date')
+        )
+
+        if current and current_updated and normalized_updated and current_updated > normalized_updated:
+            merged = dict(normalized)
+            merged.update(current)
+            merged['seed_synced_at'] = datetime.now().isoformat()
+        else:
+            merged = dict(current)
+            merged.update(normalized)
+            merged['seed_synced_at'] = datetime.now().isoformat()
+
+        merged_by_id[supplier_id] = merged
+        upserted += 1
+
+    sorted_rows = sorted(
+        merged_by_id.values(),
+        key=lambda row: _parse_iso_datetime(
+            row.get('updated_date') or row.get('created_date') or row.get('application_date')
+        ) or datetime.min,
+        reverse=True
+    )
+
+    _write_supplier_seeds_file(sorted_rows)
+    print(
+        f"[DYNAMIC-SUPPLIERS] Synced {upserted} suppliers to seeds "
+        f"(stored={len(sorted_rows)}, include_all={include_all}, backfill_hours={hours}, skipped={skipped})"
+    )
+    return {
+        'success': True,
+        'upserted': upserted,
+        'stored': len(sorted_rows),
+        'include_all': include_all,
+        'backfill_hours': hours,
+        'skipped': skipped,
+    }
+
+def load_dynamic_suppliers() -> int:
+    """Load supplier registries from dynamic seeds into in-memory supplier store."""
+    global SUPPLIERS
+
+    if not os.path.exists(SUPPLIER_SEEDS_FILE):
+        print("[DYNAMIC-SUPPLIERS] No dynamic suppliers file found")
+        return 0
+
+    rows = _read_supplier_seeds_file()
+    if not rows:
+        print("[DYNAMIC-SUPPLIERS] Dynamic suppliers file is empty")
+        return 0
+
+    loaded_count = 0
+    merged_count = 0
+
+    with STATE_LOCK:
+        for row in rows:
+            normalized = _build_supplier_seed_record(row)
+            if not normalized:
+                continue
+
+            supplier_id = normalized['id']
+            existing = SUPPLIERS.get(supplier_id)
+
+            if not isinstance(existing, dict):
+                SUPPLIERS[supplier_id] = normalized
+                loaded_count += 1
+                continue
+
+            existing_updated = _parse_iso_datetime(
+                existing.get('updated_date')
+                or existing.get('last_login')
+                or existing.get('created_date')
+            )
+            normalized_updated = _parse_iso_datetime(
+                normalized.get('updated_date')
+                or normalized.get('last_login')
+                or normalized.get('created_date')
+            )
+
+            if not existing_updated or (normalized_updated and normalized_updated > existing_updated):
+                merged = dict(existing)
+                merged.update(normalized)
+                SUPPLIERS[supplier_id] = merged
+                merged_count += 1
+            else:
+                updated_any = False
+                for field, value in normalized.items():
+                    if existing.get(field) in (None, '', [], {}) and value not in (None, '', [], {}):
+                        existing[field] = value
+                        updated_any = True
+                if updated_any:
+                    merged_count += 1
+
+    print(
+        f"[DYNAMIC-SUPPLIERS] Loaded {loaded_count} new suppliers and "
+        f"merged {merged_count} existing suppliers from seeds"
+    )
+    return loaded_count + merged_count
+
 def load_ledger_data():
     """Load ledger data from persistent storage on startup"""
     global HEALTH_WALLETS, MEDICAL_PURCHASES, NFT_LEDGER, CUSTOMER_ALLOCATIONS, INVESTMENT_ACCOUNTS, TRANSACTION_LEDGER
     global BILLING, POLICIES, CUSTOMERS, UNDERWRITING_APPLICATIONS, PHINS_BALANCE_SHEET, CLAIMS, CLAIM_FILES, UNDERWRITING_FILES
     global MEDIA_ASSETS, DESIGN_SETTINGS, INVITATION_CODES, REGISTERED_CUSTOMERS
     global CUSTOMER_INVITATIONS, CUSTOMER_REFERRAL_STATS
+    global SUPPLIERS, SUPPLIER_OFFERS, SUPPLIER_ORDERS, SUPPLIER_DOCUMENTS, SUPPLIER_INVITATIONS, SUPPLY_CHAIN_LEDGER
     global _loaded_algo_balances, _loaded_trading_bots
     
     # Temporary storage for algo data until services are initialized
@@ -1246,6 +1492,33 @@ def load_ledger_data():
         if loaded_referral_stats:
             CUSTOMER_REFERRAL_STATS.update(loaded_referral_stats)
             print(f"  - Customer Referral Stats: {len(CUSTOMER_REFERRAL_STATS)} customer stats loaded from persistence")
+
+        # Load Supplier Ecosystem and Supply-Chain stores (v1.9+ / backward-compatible)
+        loaded_suppliers = data.get('suppliers', {})
+        loaded_supplier_offers = data.get('supplier_offers', {})
+        loaded_supplier_orders = data.get('supplier_orders', {})
+        loaded_supplier_documents = data.get('supplier_documents', {})
+        loaded_supplier_invitations = data.get('supplier_invitations', {})
+        loaded_supply_chain_ledger = data.get('supply_chain_ledger', {})
+
+        if loaded_suppliers:
+            SUPPLIERS.update(loaded_suppliers)
+            print(f"  - Suppliers: {len(SUPPLIERS)} loaded from persistence")
+        if loaded_supplier_offers:
+            SUPPLIER_OFFERS.update(loaded_supplier_offers)
+            print(f"  - Supplier Offers: {len(SUPPLIER_OFFERS)} loaded from persistence")
+        if loaded_supplier_orders:
+            SUPPLIER_ORDERS.update(loaded_supplier_orders)
+            print(f"  - Supplier Orders: {len(SUPPLIER_ORDERS)} loaded from persistence")
+        if loaded_supplier_documents:
+            SUPPLIER_DOCUMENTS.update(loaded_supplier_documents)
+            print(f"  - Supplier Documents: {len(SUPPLIER_DOCUMENTS)} loaded from persistence")
+        if loaded_supplier_invitations:
+            SUPPLIER_INVITATIONS.update(loaded_supplier_invitations)
+            print(f"  - Supplier Invitations: {len(SUPPLIER_INVITATIONS)} loaded from persistence")
+        if loaded_supply_chain_ledger:
+            SUPPLY_CHAIN_LEDGER.update(loaded_supply_chain_ledger)
+            print(f"  - Supply Chain Ledger: {len(SUPPLY_CHAIN_LEDGER)} loaded from persistence")
         
         print(f"[PERSISTENCE] Loaded ledger data from {LEDGER_PERSISTENCE_FILE}")
         print(f"  - Health Wallets: {len(HEALTH_WALLETS)}")
@@ -1258,6 +1531,10 @@ def load_ledger_data():
         print(f"  - Policies: {len(POLICIES)}")
         print(f"  - Customers: {len(CUSTOMERS)}")
         print(f"  - Underwriting: {len(UNDERWRITING_APPLICATIONS)}")
+        print(f"  - Suppliers: {len(SUPPLIERS)}")
+        print(f"  - Supplier Offers: {len(SUPPLIER_OFFERS)}")
+        print(f"  - Supplier Orders: {len(SUPPLIER_ORDERS)}")
+        print(f"  - Supply Chain Ledger: {len(SUPPLY_CHAIN_LEDGER)}")
         if _loaded_algo_balances:
             print(f"  - Algo Trading Balances: {len(_loaded_algo_balances)} accounts (pending sync)")
         if _loaded_trading_bots:
@@ -17873,6 +18150,11 @@ For claims or questions, please contact:
             try:
                 payload = json.loads(body or '{}')
                 result = supplier_service.register_supplier(payload)
+                save_ledger_data()
+                sync_supplier_registries_to_seeds(
+                    backfill_hours=SUPPLIER_SEED_BACKFILL_HOURS,
+                    include_all=False
+                )
                 self._set_json_headers()
                 self.wfile.write(json.dumps(result).encode('utf-8'))
             except ValueError as e:
@@ -17900,6 +18182,8 @@ For claims or questions, please contact:
                     self.wfile.write(json.dumps({'error': 'Email and password required'}).encode('utf-8'))
                     return
                 
+                # Ensure restart-persisted supplier registries are available at login time.
+                load_dynamic_suppliers()
                 supplier_info = supplier_service.authenticate_supplier(email, password)
                 
                 # Create session token for supplier
@@ -17920,6 +18204,13 @@ For claims or questions, please contact:
                         'company_name': supplier_info['company_name'],
                         'expires': expires.isoformat()
                     }
+
+                # Persist updated supplier login metadata and refresh seed snapshots.
+                save_ledger_data()
+                sync_supplier_registries_to_seeds(
+                    backfill_hours=SUPPLIER_SEED_BACKFILL_HOURS,
+                    include_all=False
+                )
                 
                 self._set_json_headers()
                 self.wfile.write(json.dumps({
@@ -17960,6 +18251,11 @@ For claims or questions, please contact:
                 notes = payload.get('notes')
                 
                 result = supplier_service.approve_supplier(supplier_id, admin_user, notes)
+                save_ledger_data()
+                sync_supplier_registries_to_seeds(
+                    backfill_hours=SUPPLIER_SEED_BACKFILL_HOURS,
+                    include_all=False
+                )
                 
                 # Log audit
                 if audit:
@@ -18003,6 +18299,11 @@ For claims or questions, please contact:
                     return
                 
                 result = supplier_service.reject_supplier(supplier_id, admin_user, reason)
+                save_ledger_data()
+                sync_supplier_registries_to_seeds(
+                    backfill_hours=SUPPLIER_SEED_BACKFILL_HOURS,
+                    include_all=False
+                )
                 
                 # Log audit
                 if audit:
@@ -18046,6 +18347,11 @@ For claims or questions, please contact:
                     return
                 
                 result = supplier_service.suspend_supplier(supplier_id, admin_user, reason)
+                save_ledger_data()
+                sync_supplier_registries_to_seeds(
+                    backfill_hours=SUPPLIER_SEED_BACKFILL_HOURS,
+                    include_all=False
+                )
                 
                 # Log audit
                 if audit:
@@ -18082,6 +18388,11 @@ For claims or questions, please contact:
                 admin_user = (session or {}).get('username', 'admin')
                 
                 result = supplier_service.reactivate_supplier(supplier_id, admin_user)
+                save_ledger_data()
+                sync_supplier_registries_to_seeds(
+                    backfill_hours=SUPPLIER_SEED_BACKFILL_HOURS,
+                    include_all=False
+                )
                 
                 # Log audit
                 if audit:
@@ -18229,6 +18540,7 @@ For claims or questions, please contact:
                     except Exception:
                         pass
 
+                save_ledger_data()
                 self._set_json_headers(201 if not existing else 200)
                 self.wfile.write(json.dumps({'success': True, 'id': offer_id}).encode('utf-8'))
             except json.JSONDecodeError:
@@ -18308,6 +18620,7 @@ For claims or questions, please contact:
                         audit.log(actor, 'delete', 'supplier_offer', offer_id, {'supplier_id': existing.get('supplier_id')})
                     except Exception:
                         pass
+                save_ledger_data()
                 self._set_json_headers()
                 self.wfile.write(json.dumps({'success': True}).encode('utf-8'))
             except json.JSONDecodeError:
@@ -18478,6 +18791,7 @@ For claims or questions, please contact:
                     commission_override=float(data['commission_override']) if data.get('commission_override') else None,
                     notes=data.get('notes', '')
                 )
+                save_ledger_data()
                 
                 self._set_json_headers(201)
                 self.wfile.write(json.dumps(result, default=str).encode('utf-8'))
@@ -18496,6 +18810,11 @@ For claims or questions, please contact:
             try:
                 data = json.loads(body or '{}')
                 result = supply_chain_service.register_supplier(data)
+                save_ledger_data()
+                sync_supplier_registries_to_seeds(
+                    backfill_hours=SUPPLIER_SEED_BACKFILL_HOURS,
+                    include_all=False
+                )
                 
                 self._set_json_headers(201)
                 self.wfile.write(json.dumps(result, default=str).encode('utf-8'))
@@ -18532,6 +18851,11 @@ For claims or questions, please contact:
                     approved_by=admin_user,
                     notes=data.get('notes', '')
                 )
+                save_ledger_data()
+                sync_supplier_registries_to_seeds(
+                    backfill_hours=SUPPLIER_SEED_BACKFILL_HOURS,
+                    include_all=False
+                )
                 
                 self._set_json_headers(200)
                 self.wfile.write(json.dumps(result, default=str).encode('utf-8'))
@@ -18567,6 +18891,11 @@ For claims or questions, please contact:
                     supplier_id=supplier_id,
                     rejected_by=admin_user,
                     reason=data.get('reason', 'Not specified')
+                )
+                save_ledger_data()
+                sync_supplier_registries_to_seeds(
+                    backfill_hours=SUPPLIER_SEED_BACKFILL_HOURS,
+                    include_all=False
                 )
                 
                 self._set_json_headers(200)
@@ -30877,6 +31206,26 @@ def run_server(port: int = PORT) -> None:
     dynamic_count = load_dynamic_customers()
     if dynamic_count > 0:
         print(f"✓ Loaded {dynamic_count} dynamically registered customers")
+
+    # Load dynamic suppliers from seeds for restart-safe supplier login/registry continuity.
+    print("🏪 Loading dynamic suppliers...")
+    supplier_count = load_dynamic_suppliers()
+    if supplier_count > 0:
+        print(f"✓ Loaded/merged {supplier_count} dynamically registered suppliers")
+
+    # Backfill and normalize supplier registry seeds (includes last 24h registrations by default).
+    try:
+        supplier_seed_sync = sync_supplier_registries_to_seeds(
+            backfill_hours=SUPPLIER_SEED_BACKFILL_HOURS,
+            include_all=True
+        )
+        if supplier_seed_sync.get('upserted', 0) > 0:
+            print(
+                f"✓ Supplier registries synced to seeds "
+                f"(upserted={supplier_seed_sync.get('upserted')}, stored={supplier_seed_sync.get('stored')})"
+            )
+    except Exception as supplier_sync_error:
+        print(f"⚠️  Supplier seed sync skipped: {supplier_sync_error}")
     
     # Load invitation codes from persistent file
     print("🎟️ Loading invitation codes...")

@@ -7,6 +7,7 @@ invitation -> supplier registration -> admin approval -> offer publishing
 """
 
 import json
+import os
 import threading
 import time
 from http.server import HTTPServer
@@ -52,6 +53,8 @@ def _reset_supply_chain_state():
     with portal.STATE_LOCK:
         portal.SUPPLIERS.clear()
         portal.SUPPLIER_OFFERS.clear()
+        portal.SUPPLIER_ORDERS.clear()
+        portal.SUPPLIER_DOCUMENTS.clear()
         portal.SUPPLIER_INVITATIONS.clear()
         portal.SUPPLY_CHAIN_LEDGER.clear()
         portal.HEALTH_WALLETS.clear()
@@ -67,6 +70,12 @@ def test_supply_chain_invitation_to_purchase_pipeline_with_ledger_integrity():
     _reset_supply_chain_state()
 
     port = 8161
+    temp_supplier_seeds_file = f"/tmp/phins_dynamic_suppliers_{port}.json"
+    original_supplier_seeds_file = portal.SUPPLIER_SEEDS_FILE
+    portal.SUPPLIER_SEEDS_FILE = temp_supplier_seeds_file
+    if os.path.exists(temp_supplier_seeds_file):
+        os.remove(temp_supplier_seeds_file)
+
     srv = ServerThread(port)
     srv.start()
     time.sleep(0.5)
@@ -114,6 +123,10 @@ def test_supply_chain_invitation_to_purchase_pipeline_with_ledger_integrity():
         assert status == 201
         supplier_id = reg.get("supplier_id")
         assert supplier_id
+        assert os.path.exists(temp_supplier_seeds_file)
+        with open(temp_supplier_seeds_file, "r", encoding="utf-8") as f:
+            supplier_seed_rows = json.load(f)
+        assert any(row.get("id") == supplier_id for row in supplier_seed_rows)
 
         # 3) Admin approves supplier account.
         approved, status = _post(
@@ -131,6 +144,10 @@ def test_supply_chain_invitation_to_purchase_pipeline_with_ledger_integrity():
         )
         assert status == 200
         supplier_token = supplier_login["token"]
+        with open(temp_supplier_seeds_file, "r", encoding="utf-8") as f:
+            supplier_seed_rows = json.load(f)
+        seed_supplier = next((row for row in supplier_seed_rows if row.get("id") == supplier_id), {})
+        assert seed_supplier.get("last_login")
 
         offer_res, status = _post(
             f"{base}/api/supplier/offers/upsert",
@@ -226,9 +243,19 @@ def test_supply_chain_invitation_to_purchase_pipeline_with_ledger_integrity():
         assert integrity.get("total_entries", 0) > 0
         assert integrity.get("integrity_score", 0) >= 99
 
+        # 10) Supplier registry survives restart-style memory reset via seed reload.
+        with portal.STATE_LOCK:
+            portal.SUPPLIERS.clear()
+        restored = portal.load_dynamic_suppliers()
+        assert restored >= 1
+        assert supplier_id in portal.SUPPLIERS
+
     except HTTPError as e:
         body = e.read().decode("utf-8", errors="ignore")
         raise AssertionError(f"Unexpected HTTPError {e.code}: {body}") from e
     finally:
         srv.stop()
+        portal.SUPPLIER_SEEDS_FILE = original_supplier_seeds_file
+        if os.path.exists(temp_supplier_seeds_file):
+            os.remove(temp_supplier_seeds_file)
 
