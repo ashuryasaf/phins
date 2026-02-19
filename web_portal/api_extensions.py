@@ -19,7 +19,7 @@ Data Persistence:
 import json
 import os
 from datetime import datetime, timezone
-from typing import Dict, Any, Optional, Tuple
+from typing import Dict, Any, Optional, Set, Tuple
 
 # Import services
 try:
@@ -112,6 +112,40 @@ PHINS_TEST_MODE = str(os.environ.get('PHINS_TEST_MODE', '')).lower() in ('1', 't
 EXPOSE_DEMO_OTP = PHINS_TEST_MODE or str(os.environ.get('PHINS_EXPOSE_DEMO_OTP', '')).lower() in (
     '1', 'true', 'yes', 'y'
 )
+_SMTP_PLACEHOLDER_HOSTS = {
+    '',
+    'localhost',
+    '127.0.0.1',
+    'smtp.example.com',
+    'mail.example.com',
+    'example.com',
+}
+
+
+def _aws_identity_available() -> bool:
+    """Check whether AWS runtime credentials are available for SES delivery."""
+    return any(
+        os.environ.get(name)
+        for name in (
+            'AWS_ACCESS_KEY_ID',
+            'AWS_SECRET_ACCESS_KEY',
+            'AWS_PROFILE',
+            'AWS_ROLE_ARN',
+            'AWS_WEB_IDENTITY_TOKEN_FILE',
+            'AWS_CONTAINER_CREDENTIALS_RELATIVE_URI',
+            'AWS_CONTAINER_CREDENTIALS_FULL_URI',
+        )
+    )
+
+
+def _smtp_delivery_configured(notification_config: Any) -> bool:
+    """Detect whether SMTP settings are likely production-capable."""
+    host = str(getattr(notification_config, 'SMTP_HOST', '') or '').strip().lower()
+    if not host:
+        return False
+    if host in _SMTP_PLACEHOLDER_HOSTS or host.endswith('.example.com'):
+        return False
+    return True
 
 
 def _prepare_otp_client_response(response_data: Dict[str, Any]) -> Tuple[Dict[str, Any], Optional[str], Optional[str]]:
@@ -153,12 +187,23 @@ def _send_otp_email(
     ip_address: Optional[str] = None
 ) -> Tuple[bool, Optional[str]]:
     """Send OTP through the notification service."""
+    normalized_email = str(email or '').strip().lower()
+    if not normalized_email:
+        return False, "Recipient email is required"
+
     try:
         from services.notification_service import (
             create_notification_service,
+            NotificationService,
             NotificationRequest,
             NotificationChannel,
-            NotificationPriority
+            NotificationPriority,
+            NotificationConfig,
+            MockSMSProvider,
+            SMTPEmailProvider,
+            SendGridEmailProvider,
+            AWSSESEmailProvider,
+            MailgunEmailProvider,
         )
     except Exception as exc:
         return False, f"Notification service unavailable: {exc}"
@@ -168,10 +213,9 @@ def _send_otp_email(
             os.environ.get('PHINS_USE_MOCK_NOTIFICATIONS', '')
         ).lower() in ('1', 'true', 'yes', 'y')
 
-        notification_service = create_notification_service(use_mock=use_mock_notifications)
-        result = notification_service.send(NotificationRequest(
+        request = NotificationRequest(
             channel=NotificationChannel.EMAIL,
-            recipient=email,
+            recipient=normalized_email,
             template_id='otp_email',
             template_vars={
                 'code': otp_code,
@@ -180,8 +224,86 @@ def _send_otp_email(
             priority=NotificationPriority.HIGH,
             ip_address=ip_address,
             metadata={'purpose': purpose}
-        ))
-        return bool(result.success), result.error_message
+        )
+
+        errors = []
+
+        def _attempt_delivery(label: str, service: Any) -> bool:
+            try:
+                result = service.send(request)
+            except Exception as send_exc:
+                errors.append(f"{label}: {send_exc}")
+                return False
+
+            if bool(getattr(result, 'success', False)):
+                return True
+
+            detail = (
+                getattr(result, 'error_message', None)
+                or getattr(result, 'error_code', None)
+                or 'send failed'
+            )
+            errors.append(f"{label}: {detail}")
+            return False
+
+        primary_service = create_notification_service(use_mock=use_mock_notifications)
+        if _attempt_delivery('primary', primary_service):
+            return True, None
+
+        # In test/mock mode, there is no additional provider fallback to try.
+        if use_mock_notifications:
+            return False, errors[-1] if errors else 'Unable to send OTP notification'
+
+        attempted_provider_types: Set[str] = set()
+        primary_provider = getattr(primary_service, '_email_provider', None)
+        if isinstance(primary_provider, SendGridEmailProvider):
+            attempted_provider_types.add('sendgrid')
+        elif isinstance(primary_provider, AWSSESEmailProvider):
+            attempted_provider_types.add('ses')
+        elif isinstance(primary_provider, MailgunEmailProvider):
+            attempted_provider_types.add('mailgun')
+        elif isinstance(primary_provider, SMTPEmailProvider):
+            attempted_provider_types.add('smtp')
+        else:
+            attempted_provider_types.add(
+                str(getattr(NotificationConfig, 'EMAIL_PROVIDER', 'smtp') or 'smtp').strip().lower()
+            )
+
+        fallback_provider_factories = []
+        if getattr(NotificationConfig, 'SENDGRID_API_KEY', ''):
+            fallback_provider_factories.append(('sendgrid', SendGridEmailProvider))
+        if (
+            getattr(NotificationConfig, 'MAILGUN_API_KEY', '')
+            and getattr(NotificationConfig, 'MAILGUN_DOMAIN', '')
+        ):
+            fallback_provider_factories.append(('mailgun', MailgunEmailProvider))
+        if _aws_identity_available():
+            fallback_provider_factories.append(('ses', AWSSESEmailProvider))
+        if _smtp_delivery_configured(NotificationConfig):
+            fallback_provider_factories.append(('smtp', SMTPEmailProvider))
+
+        for provider_type, provider_factory in fallback_provider_factories:
+            if provider_type in attempted_provider_types:
+                continue
+            attempted_provider_types.add(provider_type)
+
+            try:
+                fallback_service = NotificationService(
+                    email_provider=provider_factory(),
+                    sms_provider=MockSMSProvider()
+                )
+            except Exception as init_exc:
+                errors.append(f"fallback:{provider_type}: init failed ({init_exc})")
+                continue
+
+            if _attempt_delivery(f"fallback:{provider_type}", fallback_service):
+                return True, None
+
+        if not errors:
+            return False, 'Unable to send OTP notification'
+
+        # Keep response payload compact while preserving actionable diagnostics.
+        return False, " | ".join(errors[-3:])
     except Exception as exc:
         return False, str(exc)
 
@@ -242,10 +364,10 @@ def handle_otp_request(client_ip: str, body_data: Dict, user_agent: str = "") ->
     
     service = get_otp_security_service()
     
-    email = body_data.get('email')
+    email = str(body_data.get('email', '') or '').strip().lower()
     purpose = body_data.get('purpose', 'login')
     user_type = body_data.get('user_type', 'customer')
-    user_id = body_data.get('user_id', email)  # Use email as user_id if not provided
+    user_id = str(body_data.get('user_id') or email)  # Use email as user_id if not provided
     device_fingerprint = body_data.get('device_fingerprint')
     
     if not email:
