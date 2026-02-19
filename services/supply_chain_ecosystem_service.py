@@ -409,7 +409,7 @@ class SupplyChainEcosystemService:
         Normalize percentages supplied as either decimal (0.1) or percent (10).
         """
         raw = default_value if value is None else SupplyChainEcosystemService._safe_float(value, default_value)
-        if abs(raw) > 1:
+        if abs(raw) >= 1:
             raw = raw / 100.0
         return raw
 
@@ -1490,29 +1490,6 @@ class SupplyChainEcosystemService:
                 description=f"External payment for order {order_id}",
                 metadata={"payment_method": external_payment_method}
             )
-
-        # Record on main transaction ledger
-        if self.record_transaction:
-            try:
-                self.record_transaction(
-                    customer_id=customer_id,
-                    tx_type="marketplace_order",
-                    amount=total_amount,
-                    description=f"Order {order_id} - {offer.get('name')}",
-                    metadata={
-                        "order_id": order_id,
-                        "supplier_id": supplier_id,
-                        "offer_id": offer_id,
-                        "commission": commission,
-                        "supplier_payout": supplier_payout,
-                        "pricing_plan": pricing_plan,
-                        "wallet_deduction": wallet_deduction,
-                        "external_payment_amount": external_payment_amount,
-                        "payment_method": payment_method
-                    }
-                )
-            except Exception:
-                pass
 
         return {
             "success": True,

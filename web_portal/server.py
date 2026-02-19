@@ -170,7 +170,7 @@ DEFAULT_WALLET_DISCOUNTED_RATE_PCT = 0.035
 def normalize_percentage_input(value: Any, default_value: float) -> float:
     """Normalize incoming percentages that may be provided as 0.15 or 15."""
     raw = default_value if value is None else safe_float(value, default_value)
-    if abs(raw) > 1:
+    if abs(raw) >= 1:
         raw = raw / 100.0
     return raw
 
