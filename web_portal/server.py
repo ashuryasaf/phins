@@ -170,7 +170,7 @@ DEFAULT_WALLET_DISCOUNTED_RATE_PCT = 0.035
 def normalize_percentage_input(value: Any, default_value: float) -> float:
     """Normalize incoming percentages that may be provided as 0.15 or 15."""
     raw = default_value if value is None else safe_float(value, default_value)
-    if abs(raw) >= 1:
+    if abs(raw) > 1:
         raw = raw / 100.0
     return raw
 
@@ -18636,6 +18636,26 @@ For claims or questions, please contact:
                     supplier_id=data.get('supplier_id'),
                     offer_id=data.get('offer_id'),
                     data=data
+                )
+                
+                order = result.get('order', {})
+                pricing_plan = result.get('pricing_plan', {})
+                record_transaction(
+                    customer_id=customer_id,
+                    tx_type='marketplace_order',
+                    amount=safe_float(order.get('total_amount'), 0.0),
+                    description=f"Order {order.get('id')} - {order.get('item_name')}",
+                    metadata={
+                        'order_id': order.get('id'),
+                        'supplier_id': order.get('supplier_id'),
+                        'offer_id': data.get('offer_id'),
+                        'commission': order.get('commission'),
+                        'supplier_payout': order.get('supplier_payout'),
+                        'pricing_plan': pricing_plan,
+                        'wallet_deduction': order.get('wallet_deduction'),
+                        'external_payment_amount': order.get('external_payment_amount'),
+                        'payment_method': order.get('payment_method')
+                    }
                 )
                 
                 self._set_json_headers(201)

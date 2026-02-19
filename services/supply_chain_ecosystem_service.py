@@ -409,7 +409,7 @@ class SupplyChainEcosystemService:
         Normalize percentages supplied as either decimal (0.1) or percent (10).
         """
         raw = default_value if value is None else SupplyChainEcosystemService._safe_float(value, default_value)
-        if abs(raw) >= 1:
+        if abs(raw) > 1:
             raw = raw / 100.0
         return raw
 
