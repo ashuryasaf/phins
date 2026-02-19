@@ -102,6 +102,122 @@ def safe_int(val, default: int = 0) -> int:
         return default
 
 
+# ==============================================================================
+# MARKETPLACE NORMALIZATION HELPERS
+# ==============================================================================
+MARKETPLACE_CATEGORY_ALIASES: Dict[str, str] = {
+    'consultation': 'medical_services',
+    'homecare': 'medical_services',
+    'medical_services': 'medical_services',
+    'medical_service': 'medical_services',
+    'service': 'medical_services',
+    'services': 'medical_services',
+    'legal': 'legal_services',
+    'legal_service': 'legal_services',
+    'legal_services': 'legal_services',
+    'law': 'legal_services',
+    'pharmacy': 'medications',
+    'medication': 'medications',
+    'medications': 'medications',
+    'rx': 'medications',
+    'medicine': 'medications',
+    'devices': 'medical_equipment',
+    'device': 'medical_equipment',
+    'equipment': 'medical_equipment',
+    'medical_equipment': 'medical_equipment',
+    'supplies': 'medical_equipment',
+    'supply': 'medical_equipment',
+}
+
+
+def normalize_marketplace_category(value: Any) -> str:
+    """Normalize marketplace categories to canonical bucket names."""
+    raw = str(value or '').strip().lower().replace(' ', '_').replace('-', '_')
+    if not raw:
+        return ''
+    return MARKETPLACE_CATEGORY_ALIASES.get(raw, raw)
+
+
+def parse_wallet_compatible(raw_wallets: Any) -> List[str]:
+    """Parse wallet compatibility from list/json/string into normalized list."""
+    wallets = raw_wallets
+    if isinstance(wallets, str):
+        stripped = wallets.strip()
+        if stripped.startswith('['):
+            try:
+                wallets = json.loads(stripped)
+            except Exception:
+                wallets = [stripped]
+        elif stripped:
+            wallets = [w.strip() for w in stripped.split(',') if w.strip()]
+        else:
+            wallets = []
+    if not isinstance(wallets, list):
+        wallets = []
+    normalized = []
+    for w in wallets:
+        normalized_name = str(w or '').strip().lower()
+        if normalized_name:
+            normalized.append(normalized_name)
+    return sorted(set(normalized))
+
+
+DEFAULT_WALLET_EXPENSE_LOADING_PCT = 0.15
+DEFAULT_WALLET_PROFIT_MARGIN_PCT = 0.10
+DEFAULT_WALLET_DISCOUNTED_RATE_PCT = 0.035
+
+
+def normalize_percentage_input(value: Any, default_value: float) -> float:
+    """Normalize incoming percentages that may be provided as 0.15 or 15."""
+    raw = default_value if value is None else safe_float(value, default_value)
+    if abs(raw) > 1:
+        raw = raw / 100.0
+    return raw
+
+
+def normalize_payment_method(value: Any) -> str:
+    """Normalize payment method aliases used by wallet and marketplace flows."""
+    method = str(value or 'health_wallet').strip().lower()
+    aliases = {
+        'wallet': 'health_wallet',
+        'health': 'health_wallet',
+        'card': 'credit_card',
+        'credit': 'credit_card',
+        'debit': 'debit_card',
+        'bank': 'bank_transfer',
+        'ach': 'bank_transfer',
+    }
+    return aliases.get(method, method)
+
+
+def build_purchase_pricing_plan(base_amount: float, payload: Dict[str, Any] = None) -> Dict[str, Any]:
+    """Build pricing breakdown with expense loading, margin, and discounted rate."""
+    data = payload or {}
+    base = round(max(safe_float(base_amount, 0.0), 0.0), 2)
+    expense_pct = normalize_percentage_input(data.get('expense_loading_pct'), DEFAULT_WALLET_EXPENSE_LOADING_PCT)
+    profit_pct = normalize_percentage_input(data.get('profit_margin_pct'), DEFAULT_WALLET_PROFIT_MARGIN_PCT)
+    discount_pct = normalize_percentage_input(data.get('discounted_rate_pct'), DEFAULT_WALLET_DISCOUNTED_RATE_PCT)
+
+    expense_amount = round(base * expense_pct, 2)
+    subtotal = round(base + expense_amount, 2)
+    profit_amount = round(subtotal * profit_pct, 2)
+    gross_before_discount = round(subtotal + profit_amount, 2)
+    discount_amount = round(gross_before_discount * discount_pct, 2)
+    final_amount = round(max(gross_before_discount - discount_amount, 0.0), 2)
+
+    return {
+        'base_amount': base,
+        'expense_loading_pct': round(expense_pct, 6),
+        'expense_loading_amount': expense_amount,
+        'profit_margin_pct': round(profit_pct, 6),
+        'profit_margin_amount': profit_amount,
+        'discounted_rate_pct': round(discount_pct, 6),
+        'discounted_rate_amount': discount_amount,
+        'gross_before_discount': gross_before_discount,
+        'final_customer_amount': final_amount
+    }
+
+
 # Import billing engine
 try:
     sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
@@ -6048,6 +6164,17 @@ For claims or questions, please contact:
                 offers = list(SUPPLIER_OFFERS.values())
             if supplier_id:
                 offers = [o for o in offers if o.get('supplier_id') == supplier_id]
+            normalized_offers = []
+            for offer in offers:
+                row = dict(offer)
+                row['wallet_compatible'] = parse_wallet_compatible(row.get('wallet_compatible', ['health']))
+                row['normalized_category'] = normalize_marketplace_category(row.get('category'))
+                if not isinstance(row.get('delivery_config'), dict):
+                    row['delivery_config'] = {}
+                if not isinstance(row.get('billing_config'), dict):
+                    row['billing_config'] = {}
+                normalized_offers.append(row)
+            offers = normalized_offers
             offers = sorted(offers, key=lambda x: x.get('updated_at') or x.get('created_at') or '', reverse=True)
             self._set_json_headers()
             self.wfile.write(json.dumps({'items': offers}).encode('utf-8'))
@@ -6065,6 +6192,7 @@ For claims or questions, please contact:
                 supplier_type = (qs.get('supplier_type', [None])[0] or '').strip().lower() or None
                 page_raw = qs.get('page', ['1'])[0]
                 limit_raw = qs.get('limit', ['50'])[0]
+                category_filter = normalize_marketplace_category(category)
                 
                 try:
                     page = max(1, int(page_raw))
@@ -6089,8 +6217,10 @@ For claims or questions, please contact:
                 # Apply filters
                 filtered_offers = []
                 for offer in all_offers:
+                    offer_category = normalize_marketplace_category(offer.get('category'))
+
                     # Category filter
-                    if category and (offer.get('category') or '').lower() != category:
+                    if category_filter and offer_category != category_filter:
                         continue
                     
                     # Item type filter (service/product)
@@ -6098,12 +6228,11 @@ For claims or questions, please contact:
                         continue
                     
                     # Wallet compatibility filter
-                    wallet_compatible = offer.get('wallet_compatible', '[]')
-                    if isinstance(wallet_compatible, str):
-                        try:
-                            wallet_compatible = json.loads(wallet_compatible)
-                        except:
-                            wallet_compatible = ['health', 'general']
+                    wallet_compatible = parse_wallet_compatible(
+                        offer.get('wallet_compatible', ['health', 'general'])
+                    )
+                    if not wallet_compatible:
+                        wallet_compatible = ['health', 'general']
                     if wallet_type and wallet_type not in [w.lower() for w in (wallet_compatible or [])]:
                         continue
                     
@@ -6117,17 +6246,26 @@ For claims or questions, please contact:
                     if search:
                         name = (offer.get('name') or '').lower()
                         desc = (offer.get('description') or '').lower()
-                        cat = (offer.get('category') or '').lower()
-                        if search not in name and search not in desc and search not in cat:
+                        cat = offer_category
+                        supplier_name = (approved_suppliers.get(offer.get('supplier_id'), {}).get('company_name') or '').lower()
+                        if search not in name and search not in desc and search not in cat and search not in supplier_name:
                             continue
                     
                     # Enrich offer with supplier info
                     supplier = approved_suppliers.get(offer.get('supplier_id'), {})
                     enriched_offer = dict(offer)
+                    enriched_offer['wallet_compatible'] = wallet_compatible
+                    enriched_offer['normalized_category'] = offer_category
                     enriched_offer['supplier_name'] = supplier.get('company_name', 'Unknown Supplier')
                     enriched_offer['supplier_type'] = supplier.get('supplier_type', 'other')
                     enriched_offer['supplier_rating'] = supplier.get('average_rating', 0.0)
                     enriched_offer['supplier_reviews'] = supplier.get('total_reviews', 0)
+                    enriched_offer['supplier_approved_on'] = supplier.get('approval_date')
+                    enriched_offer['offer_approved_on'] = (
+                        offer.get('offer_approved_on') or supplier.get('approval_date')
+                    )
+                    enriched_offer['delivery_config'] = offer.get('delivery_config', {})
+                    enriched_offer['billing_config'] = offer.get('billing_config', {})
                     
                     filtered_offers.append(enriched_offer)
                 
@@ -6144,11 +6282,39 @@ For claims or questions, please contact:
                 paginated_offers = filtered_offers[start:end]
                 
                 # Get available categories for filtering
-                categories = list(set(o.get('category', 'general').lower() for o in all_offers if o.get('category')))
+                categories = list({
+                    normalize_marketplace_category(o.get('category', 'general'))
+                    for o in all_offers
+                    if o.get('category')
+                })
                 supplier_types = list(set(
                     approved_suppliers.get(o.get('supplier_id'), {}).get('supplier_type', 'other')
                     for o in all_offers
                 ))
+
+                # Category summary for wallet tab rendering
+                category_groups: Dict[str, Dict[str, Any]] = {}
+                for offer in filtered_offers:
+                    cat = offer.get('normalized_category') or 'other'
+                    group = category_groups.setdefault(cat, {
+                        'category': cat,
+                        'count': 0,
+                        'min_price': None,
+                        'max_price': None,
+                        'supplier_count': 0,
+                        'suppliers': set()
+                    })
+                    price_value = safe_float(offer.get('price'), 0.0)
+                    group['count'] += 1
+                    group['min_price'] = price_value if group['min_price'] is None else min(group['min_price'], price_value)
+                    group['max_price'] = price_value if group['max_price'] is None else max(group['max_price'], price_value)
+                    supplier_id = offer.get('supplier_id')
+                    if supplier_id:
+                        group['suppliers'].add(supplier_id)
+
+                for group in category_groups.values():
+                    group['supplier_count'] = len(group['suppliers'])
+                    group['suppliers'] = sorted(group['suppliers'])
                 
                 self._set_json_headers()
                 self.wfile.write(json.dumps({
@@ -6162,7 +6328,8 @@ For claims or questions, please contact:
                         'categories': sorted(categories),
                         'supplier_types': sorted(supplier_types),
                         'item_types': ['service', 'product']
-                    }
+                    },
+                    'category_groups': category_groups
                 }).encode('utf-8'))
             except Exception as e:
                 self._set_json_headers(500)
@@ -17945,57 +18112,91 @@ For claims or questions, please contact:
                 user = get_session_user(session) or {}
                 role = (user.get('role') or session.get('role') or '').lower()
                 actor = (session or {}).get('username') if session else 'unknown'
-
-                offer_id = str(payload.get('id') or '').strip() or f"OFF-{datetime.now().strftime('%Y%m%d')}-{random.randint(1000,9999)}"
                 # SECURITY: suppliers must only write offers for themselves.
                 supplier_id = (session or {}).get('username') if role == 'supplier' else str(payload.get('supplier_id') or '').strip()
-                category = str(payload.get('category') or '').strip().lower()
-                name = str(payload.get('name') or '').strip()
-                item_type = str(payload.get('item_type') or 'product').strip().lower()
-                currency = str(payload.get('currency') or 'USD').strip().upper()
-                active = bool(payload.get('active', True))
-                price_raw = payload.get('price')
 
                 if not supplier_id:
                     self._set_json_headers(400)
                     self.wfile.write(json.dumps({'error': 'Missing supplier_id'}).encode('utf-8'))
                     return
-                if not category:
-                    self._set_json_headers(400)
-                    self.wfile.write(json.dumps({'error': 'Missing category'}).encode('utf-8'))
-                    return
-                if not name:
-                    self._set_json_headers(400)
-                    self.wfile.write(json.dumps({'error': 'Missing name'}).encode('utf-8'))
-                    return
-                try:
-                    price = float(price_raw)
-                except Exception:
-                    self._set_json_headers(400)
-                    self.wfile.write(json.dumps({'error': 'Invalid price'}).encode('utf-8'))
-                    return
-                if price < 0:
-                    self._set_json_headers(400)
-                    self.wfile.write(json.dumps({'error': 'Price must be non-negative'}).encode('utf-8'))
-                    return
 
-                now = datetime.now().isoformat()
-                with STATE_LOCK:
-                    existing = SUPPLIER_OFFERS.get(offer_id)
-                    created_at = existing.get('created_at') if existing else now
-                    SUPPLIER_OFFERS[offer_id] = {
+                existing = None
+                if payload.get('id'):
+                    with STATE_LOCK:
+                        existing = SUPPLIER_OFFERS.get(str(payload.get('id')).strip())
+
+                if supply_chain_enabled and supply_chain_service and hasattr(supply_chain_service, 'upsert_offer'):
+                    result = supply_chain_service.upsert_offer(
+                        supplier_id=supplier_id,
+                        data=payload,
+                        actor=actor
+                    )
+                    offer_row = result.get('offer') or {}
+                    offer_id = offer_row.get('id') or result.get('offer_id')
+                else:
+                    # Backward-compatible fallback when supply-chain service is unavailable.
+                    category = str(payload.get('category') or '').strip().lower()
+                    name = str(payload.get('name') or '').strip()
+                    item_type = str(payload.get('item_type') or 'product').strip().lower()
+                    currency = str(payload.get('currency') or 'USD').strip().upper()
+                    active = bool(payload.get('active', True))
+                    price = safe_float(payload.get('price'), -1)
+                    if not category:
+                        self._set_json_headers(400)
+                        self.wfile.write(json.dumps({'error': 'Missing category'}).encode('utf-8'))
+                        return
+                    if not name:
+                        self._set_json_headers(400)
+                        self.wfile.write(json.dumps({'error': 'Missing name'}).encode('utf-8'))
+                        return
+                    if price < 0:
+                        self._set_json_headers(400)
+                        self.wfile.write(json.dumps({'error': 'Invalid price'}).encode('utf-8'))
+                        return
+
+                    offer_id = str(payload.get('id') or '').strip() or f"OFF-{datetime.now().strftime('%Y%m%d')}-{random.randint(1000,9999)}"
+                    now = datetime.now().isoformat()
+                    created_at = (existing or {}).get('created_at') or now
+                    offer_row = {
                         'id': offer_id,
                         'supplier_id': supplier_id,
                         'category': category,
+                        'normalized_category': normalize_marketplace_category(category),
                         'name': name,
+                        'description': payload.get('description'),
                         'item_type': item_type,
-                        'price': price,
+                        'price': round(price, 2),
                         'currency': currency,
+                        'unit': payload.get('unit', 'per_item'),
+                        'wallet_compatible': parse_wallet_compatible(payload.get('wallet_compatible', ['health'])),
+                        'delivery_config': payload.get('delivery_config') or {
+                            'mode': payload.get('delivery_mode', 'delivery'),
+                            'eta_days': safe_int(payload.get('delivery_eta_days', 0), 0),
+                            'fee': round(max(0.0, safe_float(payload.get('delivery_fee'), 0.0)), 2),
+                            'notes': payload.get('delivery_notes')
+                        },
+                        'billing_config': payload.get('billing_config') or {
+                            'billing_cycle': payload.get('billing_cycle', 'one_time'),
+                            'billing_terms': payload.get('billing_terms'),
+                            'invoice_supported': bool(payload.get('invoice_supported', True)),
+                            'tax_rate_pct': safe_float(payload.get('tax_rate_pct', 0.0), 0.0)
+                        },
                         'active': active,
                         'created_at': created_at,
                         'updated_at': now,
+                        'created_date': created_at,
+                        'updated_date': now,
                         'updated_by': actor,
                     }
+                    with STATE_LOCK:
+                        SUPPLIER_OFFERS[offer_id] = offer_row
+
+                if offer_id:
+                    with STATE_LOCK:
+                        # Keep aliases consistent for existing UI consumers.
+                        if offer_id in SUPPLIER_OFFERS:
+                            SUPPLIER_OFFERS[offer_id]['created_at'] = SUPPLIER_OFFERS[offer_id].get('created_at') or SUPPLIER_OFFERS[offer_id].get('created_date')
+                            SUPPLIER_OFFERS[offer_id]['updated_at'] = SUPPLIER_OFFERS[offer_id].get('updated_at') or SUPPLIER_OFFERS[offer_id].get('updated_date')
 
                 # Pipeline-style integrity trace (non-financial): record offer lifecycle event in ledger for auditability.
                 try:
@@ -18007,10 +18208,12 @@ For claims or questions, please contact:
                         metadata={
                             'offer_id': offer_id,
                             'supplier_id': supplier_id,
-                            'category': category,
-                            'price': price,
-                            'currency': currency,
-                            'active': active,
+                            'category': (payload.get('category') or ''),
+                            'price': safe_float(payload.get('price'), 0.0),
+                            'currency': (payload.get('currency') or 'USD'),
+                            'active': bool(payload.get('active', True)),
+                            'delivery_config': payload.get('delivery_config'),
+                            'billing_config': payload.get('billing_config'),
                         },
                     )
                 except Exception:
@@ -18018,7 +18221,11 @@ For claims or questions, please contact:
 
                 if audit:
                     try:
-                        audit.log(actor, 'upsert', 'supplier_offer', offer_id, {'supplier_id': supplier_id, 'category': category, 'price': price})
+                        audit.log(actor, 'upsert', 'supplier_offer', offer_id, {
+                            'supplier_id': supplier_id,
+                            'category': payload.get('category'),
+                            'price': safe_float(payload.get('price'), 0.0)
+                        })
                     except Exception:
                         pass
 
@@ -18027,6 +18234,9 @@ For claims or questions, please contact:
             except json.JSONDecodeError:
                 self._set_json_headers(400)
                 self.wfile.write(json.dumps({'error': 'Invalid JSON payload'}).encode('utf-8'))
+            except ValueError as e:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
             except Exception as e:
                 self._set_json_headers(500)
                 self.wfile.write(json.dumps({'error': 'Failed to upsert offer', 'details': str(e)}).encode('utf-8'))
@@ -18062,7 +18272,23 @@ For claims or questions, please contact:
                         self._set_json_headers(403)
                         self.wfile.write(json.dumps({'error': 'Forbidden'}).encode('utf-8'))
                         return
-                    del SUPPLIER_OFFERS[offer_id]
+
+                supplier_id = existing.get('supplier_id')
+                if supply_chain_enabled and supply_chain_service and hasattr(supply_chain_service, 'deactivate_offer'):
+                    supply_chain_service.deactivate_offer(
+                        supplier_id=supplier_id,
+                        offer_id=offer_id,
+                        actor=actor
+                    )
+                else:
+                    with STATE_LOCK:
+                        now = datetime.now().isoformat()
+                        existing['active'] = False
+                        existing['offer_status'] = 'inactive'
+                        existing['updated_at'] = now
+                        existing['updated_date'] = now
+                        existing['updated_by'] = actor
+                        SUPPLIER_OFFERS[offer_id] = existing
 
                 try:
                     record_transaction(
@@ -18087,6 +18313,9 @@ For claims or questions, please contact:
             except json.JSONDecodeError:
                 self._set_json_headers(400)
                 self.wfile.write(json.dumps({'error': 'Invalid JSON payload'}).encode('utf-8'))
+            except ValueError as e:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
             except Exception as e:
                 self._set_json_headers(500)
                 self.wfile.write(json.dumps({'error': 'Failed to delete offer', 'details': str(e)}).encode('utf-8'))
@@ -24519,20 +24748,24 @@ For claims or questions, please contact:
         # Purchase medical product/service
         if path == '/api/health-wallet/purchase':
             try:
-                data = json.loads(body)
+                data = json.loads(body or '{}')
                 customer_id = data.get('customer_id', 'CUST001')
-                product_id = data.get('product_id')
+                product_id = data.get('offer_id') or data.get('product_id')
                 product_name = data.get('product_name')
-                amount = float(data.get('amount', 0))
+                quantity = max(1, safe_int(data.get('quantity', 1), 1))
+                amount = safe_float(data.get('amount'), 0.0)
                 category = data.get('category', 'general')
                 provider = data.get('provider', '')
-                
-                if not product_id or not amount:
+                payment_method = normalize_payment_method(
+                    data.get('payment_method') or data.get('payment_source') or 'health_wallet'
+                )
+
+                if not product_id or amount <= 0:
                     self._set_json_headers(400)
                     self.wfile.write(json.dumps({'error': 'Product ID and amount required'}).encode('utf-8'))
                     return
-                
-                # Check wallet balance
+
+                # Ensure wallet object exists for compatibility even when paying by card.
                 if customer_id not in HEALTH_WALLETS:
                     HEALTH_WALLETS[customer_id] = {
                         'customer_id': customer_id,
@@ -24541,30 +24774,156 @@ For claims or questions, please contact:
                         'transactions': [],
                         'created_at': datetime.now().isoformat()
                     }
-                
-                wallet = HEALTH_WALLETS[customer_id]
-                if wallet['balance'] < amount:
-                    self._set_json_headers(400)
+
+                # If product_id maps to a registered supplier offer, route through supply-chain
+                # order pipeline so invitation→approval→offer→purchase stays connected.
+                with STATE_LOCK:
+                    supplier_offer = SUPPLIER_OFFERS.get(product_id)
+
+                if supplier_offer and supply_chain_enabled and supply_chain_service:
+                    supplier_id = data.get('supplier_id') or supplier_offer.get('supplier_id')
+                    order_payload = {
+                        'quantity': quantity,
+                        'payment_method': payment_method,
+                        'promo_code': data.get('promo_code'),
+                        'delivery_address': data.get('delivery_address'),
+                        'delivery_notes': data.get('delivery_notes'),
+                        'scheduled_date': data.get('scheduled_date'),
+                        'billing_terms': data.get('billing_terms'),
+                        'payment_reference': data.get('payment_reference'),
+                        'allow_credit_fallback': bool(data.get('allow_credit_fallback', True)),
+                        'fallback_payment_method': normalize_payment_method(
+                            data.get('fallback_payment_method') or (
+                                'credit_card' if payment_method == 'health_wallet' else payment_method
+                            )
+                        ),
+                        'expense_loading_pct': data.get('expense_loading_pct'),
+                        'profit_margin_pct': data.get('profit_margin_pct'),
+                        'discounted_rate_pct': data.get('discounted_rate_pct'),
+                        'is_b2b': bool(data.get('is_b2b', False)),
+                        'business_customer': bool(data.get('business_customer', False)),
+                        'business_name': data.get('business_name')
+                    }
+
+                    order_result = supply_chain_service.create_order(
+                        customer_id=customer_id,
+                        supplier_id=supplier_id,
+                        offer_id=product_id,
+                        data=order_payload
+                    )
+                    order = order_result.get('order', {})
+                    pricing_plan = order_result.get('pricing_plan') or order.get('pricing_plan') or {}
+
+                    # Auto-complete immediately for paid checkout flows.
+                    if order.get('payment_status') == 'paid':
+                        try:
+                            supply_chain_service.complete_order(order.get('id'), completed_by='wallet_checkout')
+                            order = supply_chain_service.orders.get(order.get('id'), order)
+                        except Exception:
+                            pass
+
+                    purchase_id = f"PUR-{datetime.now().strftime('%Y%m%d%H%M%S')}-{random.randint(1000, 9999)}"
+                    final_amount = safe_float(order.get('total_amount'), 0.0)
+                    wallet_deduction = safe_float(order.get('wallet_deduction'), 0.0)
+                    external_payment_amount = safe_float(order.get('external_payment_amount'), 0.0)
+                    external_payment_method = order.get('external_payment_method')
+
+                    ledger_tx = record_transaction(
+                        customer_id=customer_id,
+                        tx_type='medical_purchase',
+                        amount=final_amount,
+                        description=f"Marketplace Purchase: {order.get('item_name') or product_name}",
+                        metadata={
+                            'purchase_id': purchase_id,
+                            'order_id': order.get('id'),
+                            'offer_id': product_id,
+                            'supplier_id': supplier_id,
+                            'product_name': order.get('item_name') or product_name,
+                            'category': order.get('order_type') or category,
+                            'provider': provider or order.get('supplier_id'),
+                            'payment_method': payment_method,
+                            'wallet_deduction': wallet_deduction,
+                            'external_payment_amount': external_payment_amount,
+                            'external_payment_method': external_payment_method,
+                            'pricing_plan': pricing_plan
+                        }
+                    )
+
+                    purchase = {
+                        'id': purchase_id,
+                        'customer_id': customer_id,
+                        'order_id': order.get('id'),
+                        'offer_id': product_id,
+                        'supplier_id': supplier_id,
+                        'product_id': product_id,
+                        'product_name': order.get('item_name') or product_name or supplier_offer.get('name'),
+                        'category': normalize_marketplace_category(
+                            order.get('order_type') or supplier_offer.get('category') or category
+                        ),
+                        'provider': provider or supplier_offer.get('supplier_name') or 'PHINS Marketplace',
+                        'quantity': quantity,
+                        'amount': final_amount,
+                        'status': 'completed' if order.get('payment_status') == 'paid' else 'pending',
+                        'timestamp': datetime.now().isoformat(),
+                        'payment_method': payment_method,
+                        'wallet_deduction': wallet_deduction,
+                        'external_payment_amount': external_payment_amount,
+                        'external_payment_method': external_payment_method,
+                        'pricing_plan': pricing_plan,
+                        'nft_token_id': ledger_tx.get('nft_token_id'),
+                        'transaction_hash': NFT_LEDGER.get(ledger_tx.get('nft_token_id'), {}).get('transaction_hash', ''),
+                        'verification_hash': NFT_LEDGER.get(ledger_tx.get('nft_token_id'), {}).get('verification_hash', ''),
+                        'ledger_tx_id': ledger_tx.get('id')
+                    }
+                    MEDICAL_PURCHASES[purchase_id] = purchase
+
+                    self._set_json_headers()
                     self.wfile.write(json.dumps({
-                        'error': 'Insufficient balance',
-                        'balance': wallet['balance'],
-                        'required': amount,
-                        'shortfall': amount - wallet['balance']
+                        'success': True,
+                        'purchase': purchase,
+                        'order': order,
+                        'transaction': ledger_tx,
+                        'pricing_plan': pricing_plan,
+                        'payment_summary': order_result.get('payment_summary', {}),
+                        'nft_token_id': ledger_tx.get('nft_token_id'),
+                        'ledger_recorded': True,
+                        'new_balance': HEALTH_WALLETS.get(customer_id, {}).get('balance', 0.0)
                     }).encode('utf-8'))
                     return
-                
-                # Deduct amount
+
+                # Fallback path for non-supplier-catalog products
+                wallet = HEALTH_WALLETS[customer_id]
+                pricing_plan = build_purchase_pricing_plan(amount, data)
+                final_amount = pricing_plan['final_customer_amount']
                 prev_balance = wallet['balance']
-                wallet['balance'] -= amount
-                
-                # Create purchase record
+
+                wallet_deduction = 0.0
+                external_payment_amount = 0.0
+                external_payment_method = None
+
+                if payment_method == 'health_wallet':
+                    if wallet['balance'] < final_amount:
+                        self._set_json_headers(400)
+                        self.wfile.write(json.dumps({
+                            'error': 'Insufficient balance',
+                            'balance': wallet['balance'],
+                            'required': final_amount,
+                            'shortfall': final_amount - wallet['balance'],
+                            'pricing_plan': pricing_plan
+                        }).encode('utf-8'))
+                        return
+                    wallet['balance'] = round(wallet['balance'] - final_amount, 2)
+                    wallet_deduction = final_amount
+                else:
+                    external_payment_method = payment_method
+                    external_payment_amount = final_amount
+
                 purchase_id = f"PUR-{datetime.now().strftime('%Y%m%d%H%M%S')}-{random.randint(1000, 9999)}"
-                
-                # Record on TRANSACTION_LEDGER and NFT_LEDGER
+
                 ledger_tx = record_transaction(
                     customer_id=customer_id,
                     tx_type='medical_purchase',
-                    amount=amount,
+                    amount=final_amount,
                     description=f"Medical Purchase: {product_name} from {provider or 'provider'}",
                     metadata={
                         'purchase_id': purchase_id,
@@ -24572,21 +24931,33 @@ For claims or questions, please contact:
                         'product_name': product_name,
                         'category': category,
                         'provider': provider,
+                        'quantity': quantity,
+                        'payment_method': payment_method,
+                        'wallet_deduction': wallet_deduction,
+                        'external_payment_amount': external_payment_amount,
+                        'external_payment_method': external_payment_method,
+                        'pricing_plan': pricing_plan,
                         'previous_balance': prev_balance,
                         'new_balance': wallet['balance'],
-                        'payment_source': 'health_wallet'
+                        'payment_source': payment_method
                     }
                 )
-                
+
                 purchase = {
                     'id': purchase_id,
                     'customer_id': customer_id,
                     'product_id': product_id,
                     'product_name': product_name,
-                    'category': category,
+                    'category': normalize_marketplace_category(category) or category,
                     'provider': provider,
-                    'amount': amount,
+                    'quantity': quantity,
+                    'amount': final_amount,
                     'status': 'completed',
+                    'payment_method': payment_method,
+                    'wallet_deduction': wallet_deduction,
+                    'external_payment_amount': external_payment_amount,
+                    'external_payment_method': external_payment_method,
+                    'pricing_plan': pricing_plan,
                     'timestamp': datetime.now().isoformat(),
                     'nft_token_id': ledger_tx.get('nft_token_id'),
                     'transaction_hash': NFT_LEDGER.get(ledger_tx.get('nft_token_id'), {}).get('transaction_hash', ''),
@@ -24594,28 +24965,32 @@ For claims or questions, please contact:
                     'ledger_tx_id': ledger_tx.get('id')  # Fixed: use 'id' not 'tx_id'
                 }
                 MEDICAL_PURCHASES[purchase_id] = purchase
-                
+
                 # Record transaction in wallet
-                transaction_id = f"TXN-{datetime.now().strftime('%Y%m%d%H%M%S')}-{random.randint(1000, 9999)}"
-                transaction = {
-                    'id': transaction_id,
-                    'type': 'purchase',
-                    'amount': -amount,
-                    'product_id': product_id,
-                    'product_name': product_name,
-                    'category': category,
-                    'timestamp': datetime.now().isoformat(),
-                    'balance_after': wallet['balance'],
-                    'nft_token_id': ledger_tx.get('nft_token_id'),
-                    'ledger_tx_id': ledger_tx.get('id')  # Fixed: use 'id' not 'tx_id'
-                }
-                wallet['transactions'].append(transaction)
-                
+                transaction = None
+                if wallet_deduction > 0:
+                    transaction_id = f"TXN-{datetime.now().strftime('%Y%m%d%H%M%S')}-{random.randint(1000, 9999)}"
+                    transaction = {
+                        'id': transaction_id,
+                        'type': 'purchase',
+                        'amount': -wallet_deduction,
+                        'product_id': product_id,
+                        'product_name': product_name,
+                        'category': category,
+                        'timestamp': datetime.now().isoformat(),
+                        'payment_method': payment_method,
+                        'balance_after': wallet['balance'],
+                        'nft_token_id': ledger_tx.get('nft_token_id'),
+                        'ledger_tx_id': ledger_tx.get('id')
+                    }
+                    wallet['transactions'].append(transaction)
+
                 self._set_json_headers()
                 self.wfile.write(json.dumps({
                     'success': True,
                     'purchase': purchase,
                     'transaction': transaction,
+                    'pricing_plan': pricing_plan,
                     'nft_token_id': ledger_tx.get('nft_token_id'),
                     'ledger_recorded': True,
                     'new_balance': wallet['balance']

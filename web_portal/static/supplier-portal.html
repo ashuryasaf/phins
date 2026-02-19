@@ -529,6 +529,43 @@
             </select>
           </div>
         </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label>Delivery Mode</label>
+            <select id="offer-delivery-mode">
+              <option value="delivery">Delivery</option>
+              <option value="pickup">Pickup</option>
+              <option value="on_site">On-site Service</option>
+              <option value="digital">Digital</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Delivery ETA (days)</label>
+            <input type="number" id="offer-delivery-eta" min="0" step="1" placeholder="0">
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label>Delivery Fee</label>
+            <input type="number" id="offer-delivery-fee" min="0" step="0.01" placeholder="0.00">
+          </div>
+          <div class="form-group">
+            <label>Billing Cycle</label>
+            <select id="offer-billing-cycle">
+              <option value="one_time">One-time</option>
+              <option value="weekly">Weekly</option>
+              <option value="monthly">Monthly</option>
+              <option value="quarterly">Quarterly</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label>Billing Terms</label>
+          <input type="text" id="offer-billing-terms" placeholder="e.g., Due on delivery / Net 30">
+        </div>
         
         <div class="form-group">
           <label>Compatible Wallets</label>
@@ -748,32 +785,41 @@
           return;
         }
         
-        grid.innerHTML = items.map(offer => `
-          <div class="offer-card ${offer.active ? '' : 'inactive'}">
-            <div class="type-badge ${offer.item_type}">${offer.item_type}</div>
-            <h4>${esc(offer.name)}</h4>
-            <div class="category">${esc(offer.category)}</div>
-            <div class="price">${formatCurrency(offer.price, offer.currency)}</div>
-            <div class="unit">${(offer.unit || 'per_item').replace(/_/g, ' ')}</div>
-            ${(offer.wallet_compatible || []).length ? `
-              <div style="margin-bottom:12px">
-                ${(Array.isArray(offer.wallet_compatible) ? offer.wallet_compatible : []).map(w => 
-                  `<span class="wallet-badge">${w}</span>`
-                ).join(' ')}
+        grid.innerHTML = items.map(offer => {
+          const deliveryMode = offer?.delivery_config?.mode || offer.delivery_mode;
+          const deliveryEta = offer?.delivery_config?.eta_days ?? offer.delivery_eta_days;
+          const deliveryFee = offer?.delivery_config?.fee ?? offer.delivery_fee;
+          const billingCycle = offer?.billing_config?.billing_cycle || offer.billing_cycle;
+          const billingTerms = offer?.billing_config?.billing_terms || offer.billing_terms;
+          const wallets = Array.isArray(offer.wallet_compatible) ? offer.wallet_compatible : [];
+
+          return `
+            <div class="offer-card ${offer.active ? '' : 'inactive'}">
+              <div class="type-badge ${offer.item_type}">${offer.item_type}</div>
+              <h4>${esc(offer.name)}</h4>
+              <div class="category">${esc(offer.category)}</div>
+              <div class="price">${formatCurrency(offer.price, offer.currency)}</div>
+              <div class="unit">${(offer.unit || 'per_item').replace(/_/g, ' ')}</div>
+              ${deliveryMode ? `<div style="font-size:12px;color:#666;margin-bottom:6px;">🚚 ${esc(String(deliveryMode).replace(/_/g, ' '))}${deliveryEta != null ? ` • ${esc(deliveryEta)} day(s)` : ''}${deliveryFee ? ` • ${formatCurrency(deliveryFee, offer.currency || 'USD')} fee` : ''}</div>` : ''}
+              ${billingCycle ? `<div style="font-size:12px;color:#666;margin-bottom:8px;">🧾 ${esc(String(billingCycle).replace(/_/g, ' '))}${billingTerms ? ` • ${esc(billingTerms)}` : ''}</div>` : ''}
+              ${wallets.length ? `
+                <div style="margin-bottom:12px">
+                  ${wallets.map(w => `<span class="wallet-badge">${esc(w)}</span>`).join(' ')}
+                </div>
+              ` : ''}
+              <div class="stats">
+                <span>Orders: ${offer.total_orders || 0}</span>
+                <span>Revenue: ${formatCurrency(offer.total_revenue)}</span>
               </div>
-            ` : ''}
-            <div class="stats">
-              <span>Orders: ${offer.total_orders || 0}</span>
-              <span>Revenue: ${formatCurrency(offer.total_revenue)}</span>
+              <div class="actions">
+                <button class="btn-sm btn-edit" onclick="editOffer('${esc(offer.id)}')">Edit</button>
+                <button class="btn-sm btn-toggle" onclick="toggleOffer('${esc(offer.id)}', ${!offer.active})">
+                  ${offer.active ? 'Deactivate' : 'Activate'}
+                </button>
+              </div>
             </div>
-            <div class="actions">
-              <button class="btn-sm btn-edit" onclick="editOffer('${esc(offer.id)}')">Edit</button>
-              <button class="btn-sm btn-toggle" onclick="toggleOffer('${esc(offer.id)}', ${!offer.active})">
-                ${offer.active ? 'Deactivate' : 'Activate'}
-              </button>
-            </div>
-          </div>
-        `).join('');
+          `;
+        }).join('');
       } catch (e) {
         grid.innerHTML = `<div class="text-danger">Failed to load offers: ${esc(e.message)}</div>`;
       }
@@ -840,6 +886,11 @@
         document.getElementById('offer-currency').value = 'USD';
         document.getElementById('offer-unit').value = 'per_item';
         document.getElementById('offer-active').value = 'true';
+        document.getElementById('offer-delivery-mode').value = 'delivery';
+        document.getElementById('offer-delivery-eta').value = '0';
+        document.getElementById('offer-delivery-fee').value = '0';
+        document.getElementById('offer-billing-cycle').value = 'one_time';
+        document.getElementById('offer-billing-terms').value = '';
         document.querySelectorAll('input[name="wallet"]').forEach(cb => {
           cb.checked = cb.value === 'health';
         });
@@ -871,8 +922,22 @@
         document.getElementById('offer-currency').value = offer.currency || 'USD';
         document.getElementById('offer-unit').value = offer.unit || 'per_item';
         document.getElementById('offer-active').value = offer.active ? 'true' : 'false';
+        document.getElementById('offer-delivery-mode').value = offer?.delivery_config?.mode || offer.delivery_mode || 'delivery';
+        document.getElementById('offer-delivery-eta').value = offer?.delivery_config?.eta_days ?? offer.delivery_eta_days ?? 0;
+        document.getElementById('offer-delivery-fee').value = offer?.delivery_config?.fee ?? offer.delivery_fee ?? 0;
+        document.getElementById('offer-billing-cycle').value = offer?.billing_config?.billing_cycle || offer.billing_cycle || 'one_time';
+        document.getElementById('offer-billing-terms').value = offer?.billing_config?.billing_terms || offer.billing_terms || '';
         
-        const wallets = Array.isArray(offer.wallet_compatible) ? offer.wallet_compatible : [];
+        let wallets = [];
+        if (Array.isArray(offer.wallet_compatible)) {
+          wallets = offer.wallet_compatible;
+        } else if (typeof offer.wallet_compatible === 'string') {
+          try {
+            wallets = JSON.parse(offer.wallet_compatible);
+          } catch {
+            wallets = offer.wallet_compatible.split(',').map(w => w.trim()).filter(Boolean);
+          }
+        }
         document.querySelectorAll('input[name="wallet"]').forEach(cb => {
           cb.checked = wallets.includes(cb.value);
         });
@@ -893,6 +958,11 @@
       const currency = document.getElementById('offer-currency').value;
       const unit = document.getElementById('offer-unit').value;
       const active = document.getElementById('offer-active').value === 'true';
+      const deliveryMode = document.getElementById('offer-delivery-mode').value;
+      const deliveryEtaDays = parseInt(document.getElementById('offer-delivery-eta').value || '0', 10);
+      const deliveryFee = parseFloat(document.getElementById('offer-delivery-fee').value || '0');
+      const billingCycle = document.getElementById('offer-billing-cycle').value;
+      const billingTerms = document.getElementById('offer-billing-terms').value.trim();
       
       const wallet_compatible = Array.from(document.querySelectorAll('input[name="wallet"]:checked')).map(cb => cb.value);
       
@@ -912,7 +982,17 @@
           currency,
           unit,
           active,
-          wallet_compatible
+          wallet_compatible,
+          delivery_config: {
+            mode: deliveryMode || 'delivery',
+            eta_days: Number.isFinite(deliveryEtaDays) && deliveryEtaDays >= 0 ? deliveryEtaDays : 0,
+            fee: Number.isFinite(deliveryFee) && deliveryFee >= 0 ? deliveryFee : 0
+          },
+          billing_config: {
+            billing_cycle: billingCycle || 'one_time',
+            billing_terms: billingTerms || null,
+            invoice_supported: true
+          }
         };
         
         await apiPost('/api/supplier/offers/upsert', payload);
