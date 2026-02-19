@@ -4745,6 +4745,11 @@
         { id: 'hc-4', name: '🚗 Medical Transportation', price: 45, description: 'Round-trip to medical appointments', distance: 'Up to 25 miles' },
         { id: 'hc-5', name: '🏡 Home Safety Assessment', price: 150, description: 'Professional home safety evaluation', includes: 'Written report' },
         { id: 'hc-6', name: '🧹 Light Housekeeping (4 hrs)', price: 80, description: 'Basic cleaning and organization', duration: '4 hours' },
+      ],
+      legal: [
+        { id: 'leg-1', name: '⚖️ Legal Consultation (30 min)', price: 95, description: 'Policy, claim, and documentation guidance', duration: '30 minutes' },
+        { id: 'leg-2', name: '📄 Claims Representation', price: 350, description: 'Claim dispute representation and filing support', duration: 'Per case' },
+        { id: 'leg-3', name: '📝 Contract Review', price: 180, description: 'Legal review of care/service contracts', duration: 'Per contract' }
       ]
     };
     
@@ -4753,11 +4758,13 @@
       devices: '🦽 Medical Devices & Equipment',
       supplies: '🧴 Daily Care Supplies',
       pharmacy: '💊 Pharmacy & Medications',
-      homecare: '🏠 Home Care Services'
+      homecare: '🏠 Home Care Services',
+      legal: '⚖️ Legal Services'
     };
     
     // ========== SHOPPING CART SYSTEM ==========
     let shoppingCart = [];
+    let marketplaceOfferIndex = {};
     
     // HTML escape helper function
     function escapeHtml(text) {
@@ -4768,6 +4775,7 @@
     }
     
     function addToCart(productId, productName, price, category = 'general', supplierId = null) {
+      const indexed = marketplaceOfferIndex[productId] || {};
       // Check if item already in cart
       const existingItem = shoppingCart.find(item => item.id === productId);
       if (existingItem) {
@@ -4775,12 +4783,14 @@
       } else {
         shoppingCart.push({
           id: productId,
-          name: productName,
+          name: indexed.name || productName,
           price: price,
-          category: category,
+          category: indexed.category || category,
           quantity: 1,
-          supplier_id: supplierId,  // Track supplier for marketplace orders
-          is_supplier_offer: !!supplierId
+          supplier_id: supplierId || indexed.supplier_id || null,  // Track supplier for marketplace orders
+          offer_id: indexed.isSupplierOffer ? productId : null,
+          product_details: indexed,
+          is_supplier_offer: !!(supplierId || indexed.supplier_id)
         });
       }
       updateCartDisplay();
@@ -5066,12 +5076,43 @@
     async function processCartPayment(paymentMethod) {
       const cid = customerId || sessionStorage.getItem('customer_id') || '';
       const total = getCartTotal();
+      const methodMap = {
+        health_wallet: 'health_wallet',
+        split: 'health_wallet',
+        investment: 'health_wallet',
+        card: 'credit_card'
+      };
+      const apiPaymentMethod = methodMap[paymentMethod] || paymentMethod;
       
       // Close checkout modal and show processing
       closeCartCheckoutModal();
       showNotification('🔄 Processing your order...', 'info');
       
       try {
+        if (paymentMethod === 'investment' || paymentMethod === 'split') {
+          const transferAmount = paymentMethod === 'split'
+            ? Math.max(total - walletBalance, 0)
+            : total;
+          if (transferAmount > 0) {
+            const transferResponse = await fetch('/api/unified-payment/deposit', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                customer_id: cid,
+                amount: transferAmount,
+                destination: 'health_wallet',
+                payment_method: 'internal_transfer',
+                source_account: 'investment'
+              })
+            });
+            const transferResult = await transferResponse.json();
+            if (!transferResult.success) {
+              throw new Error(transferResult.error || 'Investment transfer failed');
+            }
+            walletBalance = transferResult.destination_new_balance || walletBalance;
+          }
+        }
+
         // Process each item in cart
         for (const item of shoppingCart) {
           const itemTotal = item.price * item.quantity;
@@ -5085,11 +5126,15 @@
             body: JSON.stringify({
               customer_id: cid,
               product_id: item.id,
+              offer_id: item.offer_id || (item.is_supplier_offer ? item.id : undefined),
+              supplier_id: item.supplier_id || undefined,
               product_name: item.name,
               amount: itemTotal,
               quantity: item.quantity,
               category: item.category,
-              payment_source: paymentMethod
+              provider: item.product_details?.supplier_name || 'PHINS Marketplace',
+              payment_method: apiPaymentMethod,
+              allow_credit_fallback: true
             })
           });
           
@@ -5176,7 +5221,8 @@
       devices: 'equipment_supplier',
       supplies: 'equipment_supplier',
       pharmacy: 'pharmacy',
-      homecare: 'healthcare_provider'
+      homecare: 'healthcare_provider',
+      legal: 'legal_service'
     };
     
     const categoryToItemType = {
@@ -5184,7 +5230,8 @@
       devices: 'product',
       supplies: 'product',
       pharmacy: 'product',
-      homecare: 'service'
+      homecare: 'service',
+      legal: 'service'
     };
     
     async function showMedicalCategory(category) {
@@ -5214,12 +5261,16 @@
             name: offer.name,
             price: parseFloat(offer.price) || 0,
             description: offer.description || '',
-            category: offer.category,
+            category: offer.normalized_category || offer.category,
             supplier_name: offer.supplier_name,
             supplier_id: offer.supplier_id,
             supplier_rating: offer.supplier_rating || 0,
             supplier_reviews: offer.supplier_reviews || 0,
             unit: offer.unit,
+            delivery_config: offer.delivery_config || {},
+            billing_config: offer.billing_config || {},
+            supplier_approved_on: offer.supplier_approved_on,
+            offer_approved_on: offer.offer_approved_on,
             isSupplierOffer: true
           }));
         }
@@ -5240,6 +5291,12 @@
           `;
           return;
         }
+
+        // Build index used by checkout payloads.
+        marketplaceOfferIndex = {};
+        products.forEach(product => {
+          marketplaceOfferIndex[product.id] = product;
+        });
         
         grid.innerHTML = products.map(product => `
           <div class="product-card" style="background: white; border-radius: 12px; padding: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); position: relative;">
@@ -5263,6 +5320,8 @@
             ${product.category && !product.isSupplierOffer ? `<p style="color: #888; font-size: 12px; margin: 0 0 8px 0;">📁 ${product.category}</p>` : ''}
             ${product.size ? `<p style="color: #888; font-size: 12px; margin: 0 0 8px 0;">📏 ${product.size}</p>` : ''}
             ${product.unit ? `<p style="color: #888; font-size: 12px; margin: 0 0 8px 0;">📦 ${product.unit.replace(/_/g, ' ')}</p>` : ''}
+            ${product.delivery_config?.mode ? `<p style="color: #888; font-size: 12px; margin: 0 0 6px 0;">🚚 ${String(product.delivery_config.mode).replace(/_/g, ' ')}${Number.isFinite(Number(product.delivery_config.eta_days)) ? ` • ${Number(product.delivery_config.eta_days)} day(s)` : ''}</p>` : ''}
+            ${product.billing_config?.billing_cycle ? `<p style="color: #888; font-size: 12px; margin: 0 0 6px 0;">🧾 ${String(product.billing_config.billing_cycle).replace(/_/g, ' ')}</p>` : ''}
             <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 16px;">
               <span style="font-size: 20px; font-weight: bold; color: #28a745;">$${product.price.toFixed(2)}</span>
               <div style="display: flex; gap: 8px;">
@@ -5270,7 +5329,7 @@
                         style="background: linear-gradient(135deg, #ff9800 0%, #f57c00 100%); color: white; border: none; padding: 10px 16px; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 13px;">
                   🛒 Add to Cart
                 </button>
-              <button onclick="purchaseProduct('${product.id}', '${product.name.replace(/'/g, "\\'")}', ${product.price})" 
+              <button onclick="purchaseProduct('${product.id}', '${product.name.replace(/'/g, "\\'")}', ${product.price}, '${category}')" 
                       style="background: #667eea; color: white; border: none; padding: 10px 16px; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 13px;">
                 ⚡ Buy Now
               </button>
@@ -5300,6 +5359,9 @@
     // Smart Purchase Modal - AI-powered payment flow
     async function purchaseProduct(productId, productName, price, category = 'general', productDetails = {}) {
       const cid = customerId || sessionStorage.getItem('customer_id') || '';
+      const resolvedDetails = (productDetails && Object.keys(productDetails).length)
+        ? productDetails
+        : (marketplaceOfferIndex[productId] || {});
       
       // Fetch all balances for smart payment options
       let totalDeposits = { health_wallet: walletBalance, investment: 0, algo_trading: 0, total: walletBalance };
@@ -5322,7 +5384,7 @@
       } catch (e) { console.log('Using local balance data'); }
       
       // Show smart payment modal
-      showSmartPaymentModal(productId, productName, price, category, productDetails, totalDeposits);
+      showSmartPaymentModal(productId, productName, price, category, resolvedDetails, totalDeposits);
     }
     
     // Smart Payment Modal with AI recommendations
@@ -5523,6 +5585,7 @@
     async function executeSmartPurchase(productId, productName, price, category) {
       const option = document.getElementById('selected-payment-option').value;
       const cid = customerId || sessionStorage.getItem('customer_id') || '';
+      const details = marketplaceOfferIndex[productId] || {};
       
       closeSmartPaymentModal();
       showNotification('🔄 Processing payment...', 'info');
@@ -5563,10 +5626,15 @@
           body: JSON.stringify({
             customer_id: cid,
             product_id: productId,
+            offer_id: details.isSupplierOffer ? productId : undefined,
+            supplier_id: details.supplier_id || undefined,
             product_name: productName,
             amount: price,
-            category: category,
-            provider: 'PHINS Marketplace'
+            quantity: 1,
+            payment_method: 'health_wallet',
+            category: details.category || category,
+            provider: details.supplier_name || 'PHINS Marketplace',
+            allow_credit_fallback: true
           })
         });
         
@@ -5594,6 +5662,9 @@
     
     // Legacy function for backwards compatibility
     async function purchaseProductLegacy(productId, productName, price, category = 'general', productDetails = {}) {
+      const details = (productDetails && Object.keys(productDetails).length)
+        ? productDetails
+        : (marketplaceOfferIndex[productId] || {});
       if (price > walletBalance) {
         const shortfall = price - walletBalance;
         if (confirm(`Insufficient balance! You need $${shortfall.toFixed(2)} more.\n\nWould you like to add funds to your wallet?`)) {
@@ -5617,10 +5688,14 @@
           body: JSON.stringify({
             customer_id: customerId || sessionStorage.getItem('customer_id') || '',
             product_id: productId,
+            offer_id: details.isSupplierOffer ? productId : undefined,
+            supplier_id: details.supplier_id || undefined,
             product_name: productName,
             amount: price,
+            payment_method: 'health_wallet',
             category: category,
-            provider: productDetails.provider || 'PHINS Marketplace'
+            provider: details.supplier_name || productDetails.provider || 'PHINS Marketplace',
+            allow_credit_fallback: true
           })
         });
         

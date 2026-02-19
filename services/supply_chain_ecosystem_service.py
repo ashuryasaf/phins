@@ -373,12 +373,97 @@ class SupplyChainEcosystemService:
         
         # Fee schedule (adjustable)
         self.fee_schedule = FeeSchedule()
+        self.default_expense_loading_pct = 0.15
+        self.default_profit_margin_pct = 0.10
+        self.default_discounted_rate_pct = 0.035
         
         # Settlement tracking
         self.pending_settlements: Dict[str, List] = {}  # supplier_id -> pending payouts
         
         # Ledger chain tracking
         self.ledger_chain: List[str] = []  # List of entry hashes in order
+
+    @staticmethod
+    def _safe_float(value: Any, default: float = 0.0) -> float:
+        """Safely cast a value to float."""
+        if value is None:
+            return default
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return default
+
+    @staticmethod
+    def _safe_int(value: Any, default: int = 0) -> int:
+        """Safely cast a value to int."""
+        if value is None:
+            return default
+        try:
+            return int(float(value))
+        except (TypeError, ValueError):
+            return default
+
+    @staticmethod
+    def _normalize_percentage(value: Any, default_value: float) -> float:
+        """
+        Normalize percentages supplied as either decimal (0.1) or percent (10).
+        """
+        raw = default_value if value is None else SupplyChainEcosystemService._safe_float(value, default_value)
+        if abs(raw) > 1:
+            raw = raw / 100.0
+        return raw
+
+    def _build_pricing_plan(self, base_amount: float, overrides: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """
+        Compute pricing components used across wallet/card purchases:
+        expense loading, profit margin, and discounted rate.
+        """
+        payload = overrides or {}
+        base = round(max(self._safe_float(base_amount, 0.0), 0.0), 2)
+
+        expense_loading_pct = self._normalize_percentage(
+            payload.get("expense_loading_pct"), self.default_expense_loading_pct
+        )
+        profit_margin_pct = self._normalize_percentage(
+            payload.get("profit_margin_pct"), self.default_profit_margin_pct
+        )
+        discounted_rate_pct = self._normalize_percentage(
+            payload.get("discounted_rate_pct"), self.default_discounted_rate_pct
+        )
+
+        expense_loading_amount = round(base * expense_loading_pct, 2)
+        subtotal_before_profit = round(base + expense_loading_amount, 2)
+        profit_margin_amount = round(subtotal_before_profit * profit_margin_pct, 2)
+        gross_before_discount = round(subtotal_before_profit + profit_margin_amount, 2)
+        discounted_rate_amount = round(gross_before_discount * discounted_rate_pct, 2)
+        final_customer_amount = round(max(gross_before_discount - discounted_rate_amount, 0.0), 2)
+
+        return {
+            "base_amount": base,
+            "expense_loading_pct": round(expense_loading_pct, 6),
+            "expense_loading_amount": expense_loading_amount,
+            "profit_margin_pct": round(profit_margin_pct, 6),
+            "profit_margin_amount": profit_margin_amount,
+            "discounted_rate_pct": round(discounted_rate_pct, 6),
+            "discounted_rate_amount": discounted_rate_amount,
+            "gross_before_discount": gross_before_discount,
+            "final_customer_amount": final_customer_amount
+        }
+
+    @staticmethod
+    def _normalize_payment_method(raw_method: Any) -> str:
+        """Normalize payment method aliases into canonical values."""
+        method = str(raw_method or "health_wallet").strip().lower()
+        aliases = {
+            "wallet": "health_wallet",
+            "health": "health_wallet",
+            "card": "credit_card",
+            "credit": "credit_card",
+            "debit": "debit_card",
+            "bank": "bank_transfer",
+            "ach": "bank_transfer"
+        }
+        return aliases.get(method, method)
     
     # =========================================================================
     # INVITATION MANAGEMENT
@@ -865,6 +950,199 @@ class SupplyChainEcosystemService:
             "status": SupplierStatus.REJECTED.value,
             "message": f"Supplier {supplier['company_name']} rejected"
         }
+
+    # =========================================================================
+    # OFFER MANAGEMENT
+    # =========================================================================
+
+    def upsert_offer(self, supplier_id: str, data: Dict[str, Any], actor: str = "system") -> Dict[str, Any]:
+        """
+        Create or update a supplier offer with delivery/billing metadata.
+        Only approved suppliers may publish offers to the marketplace.
+        """
+        supplier = self.suppliers.get(supplier_id)
+        if not supplier:
+            raise ValueError(f"Supplier {supplier_id} not found")
+        if supplier.get("status") != SupplierStatus.APPROVED.value:
+            raise ValueError("Only approved suppliers can publish offers")
+
+        offer_id = str(data.get("id") or "").strip()
+        if not offer_id:
+            offer_id = f"OFF-{datetime.now().strftime('%Y%m%d%H%M%S')}-{secrets.token_hex(3).upper()}"
+
+        existing = self.offers.get(offer_id)
+        if existing and existing.get("supplier_id") != supplier_id:
+            raise ValueError("Offer belongs to a different supplier")
+
+        name = str(data.get("name") or "").strip()
+        category = str(data.get("category") or "").strip().lower()
+        item_type = str(data.get("item_type") or "product").strip().lower()
+        if item_type not in ("service", "product"):
+            raise ValueError("item_type must be 'service' or 'product'")
+        if not name:
+            raise ValueError("Offer name is required")
+        if not category:
+            raise ValueError("Offer category is required")
+
+        price = self._safe_float(data.get("price"), -1)
+        if price < 0:
+            raise ValueError("Offer price must be non-negative")
+
+        wallet_compatible = data.get("wallet_compatible")
+        if isinstance(wallet_compatible, str):
+            try:
+                wallet_compatible = json.loads(wallet_compatible)
+            except Exception:
+                wallet_compatible = []
+        if not isinstance(wallet_compatible, list):
+            wallet_compatible = []
+        wallet_compatible = sorted({
+            str(w).strip().lower()
+            for w in wallet_compatible
+            if str(w).strip()
+        })
+        if not wallet_compatible:
+            wallet_compatible = ["health"]
+
+        raw_delivery_config = data.get("delivery_config") if isinstance(data.get("delivery_config"), dict) else {}
+        delivery_mode = str(
+            raw_delivery_config.get("mode")
+            or data.get("delivery_mode")
+            or ("on_site" if item_type == "service" else "delivery")
+        ).strip().lower()
+        delivery_eta_days = max(
+            0,
+            self._safe_int(
+                raw_delivery_config.get("eta_days", data.get("delivery_eta_days", data.get("delivery_days", 0))),
+                0
+            )
+        )
+        delivery_fee = round(
+            max(0.0, self._safe_float(raw_delivery_config.get("fee", data.get("delivery_fee", 0.0)), 0.0)), 2
+        )
+        delivery_notes = str(raw_delivery_config.get("notes") or data.get("delivery_notes") or "").strip() or None
+
+        raw_billing_config = data.get("billing_config") if isinstance(data.get("billing_config"), dict) else {}
+        tax_rate_pct = self._normalize_percentage(
+            raw_billing_config.get("tax_rate_pct", data.get("tax_rate_pct", data.get("tax_rate", 0.0))), 0.0
+        )
+        billing_cycle = str(raw_billing_config.get("billing_cycle") or data.get("billing_cycle") or "one_time").strip().lower()
+        billing_terms = str(raw_billing_config.get("billing_terms") or data.get("billing_terms") or "").strip() or None
+        invoice_supported = bool(raw_billing_config.get("invoice_supported", data.get("invoice_supported", True)))
+
+        delivery_config = {
+            "mode": delivery_mode,
+            "eta_days": delivery_eta_days,
+            "fee": delivery_fee,
+            "notes": delivery_notes
+        }
+        billing_config = {
+            "billing_cycle": billing_cycle,
+            "billing_terms": billing_terms,
+            "invoice_supported": invoice_supported,
+            "tax_rate_pct": round(tax_rate_pct, 6)
+        }
+
+        now = datetime.now(timezone.utc).isoformat()
+        created_date = (existing or {}).get("created_date") or (existing or {}).get("created_at") or now
+        offer_approved_on = (existing or {}).get("offer_approved_on") or now
+        offer_active = bool(data.get("active", True))
+
+        offer = {
+            "id": offer_id,
+            "supplier_id": supplier_id,
+            "name": name,
+            "description": str(data.get("description") or "").strip() or None,
+            "item_type": item_type,
+            "category": category,
+            "sub_category": str(data.get("sub_category") or "").strip() or None,
+            "price": round(price, 2),
+            "currency": str(data.get("currency") or "USD").strip().upper(),
+            "unit": str(data.get("unit") or "per_item").strip().lower(),
+            "min_quantity": max(1, self._safe_int(data.get("min_quantity"), 1)),
+            "max_quantity": (
+                max(1, self._safe_int(data.get("max_quantity"), 0))
+                if data.get("max_quantity") is not None and str(data.get("max_quantity")).strip() != ""
+                else None
+            ),
+            "wallet_compatible": wallet_compatible,
+            "active": offer_active,
+            "featured": bool(data.get("featured", (existing or {}).get("featured", False))),
+            "delivery_config": delivery_config,
+            "billing_config": billing_config,
+            "delivery_mode": delivery_mode,
+            "delivery_eta_days": delivery_eta_days,
+            "delivery_fee": delivery_fee,
+            "billing_cycle": billing_cycle,
+            "billing_terms": billing_terms,
+            "invoice_supported": invoice_supported,
+            "tax_rate_pct": round(tax_rate_pct, 6),
+            "supplier_approved_on": supplier.get("approval_date"),
+            "offer_status": "approved" if offer_active else "inactive",
+            "offer_approved_on": offer_approved_on,
+            "created_date": created_date,
+            "updated_date": now,
+            "created_at": created_date,
+            "updated_at": now,
+            "updated_by": actor,
+            "total_orders": self._safe_int((existing or {}).get("total_orders"), 0),
+            "total_revenue": round(self._safe_float((existing or {}).get("total_revenue"), 0.0), 2),
+            "average_rating": self._safe_float((existing or {}).get("average_rating"), 0.0)
+        }
+
+        self.offers[offer_id] = offer
+
+        self._record_ledger_entry(
+            entry_type="offer_upsert",
+            supplier_id=supplier_id,
+            amount=offer["price"],
+            description=f"Offer upsert: {offer['name']}",
+            metadata={
+                "offer_id": offer_id,
+                "category": offer["category"],
+                "item_type": offer["item_type"],
+                "active": offer["active"],
+                "delivery_mode": delivery_mode,
+                "billing_cycle": billing_cycle,
+                "updated_by": actor
+            }
+        )
+
+        return {
+            "success": True,
+            "offer_id": offer_id,
+            "offer": offer,
+            "message": "Offer saved successfully"
+        }
+
+    def deactivate_offer(self, supplier_id: str, offer_id: str, actor: str = "system") -> Dict[str, Any]:
+        """Soft deactivate an offer to preserve ledger and reporting integrity."""
+        offer = self.offers.get(offer_id)
+        if not offer:
+            raise ValueError(f"Offer {offer_id} not found")
+        if offer.get("supplier_id") != supplier_id:
+            raise ValueError("Offer belongs to a different supplier")
+
+        now = datetime.now(timezone.utc).isoformat()
+        offer["active"] = False
+        offer["offer_status"] = "inactive"
+        offer["updated_date"] = now
+        offer["updated_at"] = now
+        offer["updated_by"] = actor
+
+        self._record_ledger_entry(
+            entry_type="offer_deactivate",
+            supplier_id=supplier_id,
+            amount=0.0,
+            description=f"Offer deactivated: {offer.get('name', offer_id)}",
+            metadata={"offer_id": offer_id, "updated_by": actor}
+        )
+
+        return {
+            "success": True,
+            "offer_id": offer_id,
+            "message": "Offer deactivated successfully"
+        }
     
     # =========================================================================
     # FEE SCHEDULE MANAGEMENT
@@ -925,8 +1203,16 @@ class SupplyChainEcosystemService:
             raise ValueError(f"Supplier {supplier_id} not found")
         
         supplier_type = supplier.get("supplier_type", "other")
-        monthly_volume = supplier.get("total_revenue", 0) / max(1, 
-            (datetime.now() - datetime.fromisoformat(supplier["created_date"].replace('Z', '+00:00'))).days / 30)
+        created_raw = str(supplier.get("created_date") or supplier.get("application_date") or "")
+        try:
+            created_dt = datetime.fromisoformat(created_raw.replace('Z', '+00:00'))
+        except Exception:
+            created_dt = datetime.now(timezone.utc)
+        if created_dt.tzinfo is None:
+            created_dt = created_dt.replace(tzinfo=timezone.utc)
+        now_dt = datetime.now(created_dt.tzinfo)
+        days_active = max(1, (now_dt - created_dt).days)
+        monthly_volume = self._safe_float(supplier.get("total_revenue"), 0.0) / max(1, days_active / 30)
         
         return self.fee_schedule.calculate_commission(
             amount=amount,
@@ -954,48 +1240,109 @@ class SupplyChainEcosystemService:
         Returns:
             Order details with payment breakdown
         """
+        # Get offer first so supplier can be inferred safely
+        offer = self.offers.get(offer_id)
+        if not offer:
+            raise ValueError(f"Offer {offer_id} not found")
+        if not offer.get("active", True):
+            raise ValueError("This offer is no longer available")
+
+        inferred_supplier_id = supplier_id or offer.get("supplier_id")
+        if not inferred_supplier_id:
+            raise ValueError("supplier_id is required")
+        if offer.get("supplier_id") and offer.get("supplier_id") != inferred_supplier_id:
+            raise ValueError("Offer does not belong to requested supplier")
+        supplier_id = inferred_supplier_id
+
         # Validate supplier
         supplier = self.suppliers.get(supplier_id)
         if not supplier:
             raise ValueError(f"Supplier {supplier_id} not found")
         if supplier.get("status") != SupplierStatus.APPROVED.value:
             raise ValueError("Supplier is not active")
-        
-        # Get offer
-        offer = self.offers.get(offer_id)
-        if not offer:
-            raise ValueError(f"Offer {offer_id} not found")
-        if not offer.get("active", True):
-            raise ValueError("This offer is no longer available")
-        
-        # Calculate amounts
-        quantity = int(data.get("quantity", 1))
-        unit_price = float(offer.get("price", 0))
-        total_amount = unit_price * quantity
-        
-        # Calculate commission
+
+        # Validate quantity
+        quantity = max(1, self._safe_int(data.get("quantity"), 1))
+        min_qty = max(1, self._safe_int(offer.get("min_quantity"), 1))
+        max_qty = self._safe_int(offer.get("max_quantity"), 0) if offer.get("max_quantity") is not None else 0
+        if quantity < min_qty:
+            raise ValueError(f"Minimum quantity is {min_qty}")
+        if max_qty and quantity > max_qty:
+            raise ValueError(f"Maximum quantity is {max_qty}")
+
+        # Pricing plan: base + expense loading + profit margin - discounted rate
+        unit_price = round(max(self._safe_float(offer.get("price"), 0.0), 0.0), 2)
+        base_amount = round(unit_price * quantity, 2)
+        pricing_plan = self._build_pricing_plan(base_amount, data)
+        total_amount = pricing_plan["final_customer_amount"]
+
+        # Calculate commission and payout against final customer charge
         fee_calc = self.calculate_order_fees(supplier_id, total_amount, data.get("promo_code"))
         commission = fee_calc["commission"]
         supplier_payout = fee_calc["supplier_payout"]
-        
-        # Check health wallet balance (if paying from wallet)
-        payment_method = data.get("payment_method", "health_wallet")
-        wallet_deduction = 0
+
+        payment_method = self._normalize_payment_method(data.get("payment_method", "health_wallet"))
+        wallet_deduction = 0.0
+        external_payment_amount = 0.0
+        external_payment_method = None
         out_of_pocket = total_amount
-        
-        if payment_method == "health_wallet":
+        payment_status = "pending"
+
+        wallet_methods = {"health_wallet"}
+
+        if payment_method in wallet_methods:
             wallet = self.health_wallets.get(customer_id, {})
-            wallet_balance = float(wallet.get("balance", 0))
-            wallet_deduction = min(total_amount, wallet_balance)
-            out_of_pocket = total_amount - wallet_deduction
-        
+            wallet_balance = self._safe_float(wallet.get("balance"), 0.0)
+            wallet_deduction = round(min(total_amount, wallet_balance), 2)
+            out_of_pocket = round(total_amount - wallet_deduction, 2)
+
+            if out_of_pocket > 0:
+                if bool(data.get("allow_credit_fallback", True)):
+                    external_payment_method = self._normalize_payment_method(
+                        data.get("fallback_payment_method", "credit_card")
+                    )
+                    if external_payment_method in wallet_methods:
+                        external_payment_method = "credit_card"
+                    external_payment_amount = out_of_pocket
+                    payment_status = "paid"
+                else:
+                    payment_status = "partially_paid"
+            else:
+                payment_status = "paid"
+        elif payment_method == "mixed":
+            wallet = self.health_wallets.get(customer_id, {})
+            wallet_balance = self._safe_float(wallet.get("balance"), 0.0)
+            requested_wallet = self._safe_float(data.get("wallet_amount"), wallet_balance)
+            wallet_deduction = round(min(requested_wallet, wallet_balance, total_amount), 2)
+            out_of_pocket = round(total_amount - wallet_deduction, 2)
+            if out_of_pocket > 0:
+                external_payment_method = self._normalize_payment_method(
+                    data.get("external_payment_method", "credit_card")
+                )
+                if external_payment_method in wallet_methods:
+                    external_payment_method = "credit_card"
+                external_payment_amount = out_of_pocket
+            payment_status = "paid"
+        else:
+            # Direct external payment path (credit/debit/bank/etc.)
+            external_payment_method = payment_method
+            external_payment_amount = total_amount
+            payment_status = "paid"
+            out_of_pocket = total_amount
+
         # Determine B2B or B2C
-        is_b2b = data.get("is_b2b", False) or data.get("business_customer", False)
-        
+        is_b2b = bool(data.get("is_b2b", False) or data.get("business_customer", False))
+
         # Generate order ID
         order_id = f"ORD-{datetime.now().strftime('%Y%m%d%H%M%S')}-{secrets.token_hex(4).upper()}"
         now = datetime.now(timezone.utc)
-        
+        now_iso = now.isoformat()
+
+        delivery_config = offer.get("delivery_config") if isinstance(offer.get("delivery_config"), dict) else {}
+        billing_config = offer.get("billing_config") if isinstance(offer.get("billing_config"), dict) else {}
+        delivery_eta_days = self._safe_int(delivery_config.get("eta_days"), 0)
+        estimated_delivery = (now + timedelta(days=delivery_eta_days)).isoformat() if delivery_eta_days > 0 else None
+
         order = {
             "id": order_id,
             "supplier_id": supplier_id,
@@ -1006,29 +1353,51 @@ class SupplyChainEcosystemService:
             "item_description": offer.get("description"),
             "quantity": quantity,
             "unit_price": unit_price,
+            "base_amount": base_amount,
             "total_amount": total_amount,
+            "pricing_plan": pricing_plan,
+            "expense_loading_pct": pricing_plan["expense_loading_pct"],
+            "expense_loading_amount": pricing_plan["expense_loading_amount"],
+            "profit_margin_pct": pricing_plan["profit_margin_pct"],
+            "profit_margin_amount": pricing_plan["profit_margin_amount"],
+            "discounted_rate_pct": pricing_plan["discounted_rate_pct"],
+            "discounted_rate_amount": pricing_plan["discounted_rate_amount"],
+            "gross_before_discount": pricing_plan["gross_before_discount"],
             "commission": commission,
             "commission_rate_pct": fee_calc["effective_rate_pct"],
             "supplier_payout": supplier_payout,
             "payment_method": payment_method,
+            "payment_status": payment_status,
+            "payment_date": now_iso if payment_status == "paid" else None,
             "wallet_deduction": wallet_deduction,
             "out_of_pocket": out_of_pocket,
+            "external_payment_method": external_payment_method,
+            "external_payment_amount": external_payment_amount,
+            "external_payment_reference": data.get("payment_reference"),
             "promo_code": data.get("promo_code"),
             "status": OrderStatus.PENDING.value,
             "delivery_address": data.get("delivery_address"),
             "delivery_notes": data.get("delivery_notes"),
+            "delivery_config": delivery_config,
+            "billing_config": billing_config,
+            "billing_terms": billing_config.get("billing_terms") or data.get("billing_terms"),
             "scheduled_date": data.get("scheduled_date"),
+            "estimated_delivery": estimated_delivery,
+            "supplier_approved_on": supplier.get("approval_date"),
+            "offer_approved_on": offer.get("offer_approved_on"),
             "is_b2b": is_b2b,
             "business_name": data.get("business_name") if is_b2b else None,
-            "created_date": now.isoformat(),
-            "updated_date": now.isoformat()
+            "created_date": now_iso,
+            "updated_date": now_iso
         }
-        
+
         # Deduct from health wallet if applicable
         if wallet_deduction > 0:
             if customer_id not in self.health_wallets:
-                self.health_wallets[customer_id] = {"balance": 0, "transactions": []}
-            self.health_wallets[customer_id]["balance"] -= wallet_deduction
+                self.health_wallets[customer_id] = {"balance": 0.0, "transactions": []}
+            self.health_wallets[customer_id]["balance"] = round(
+                self._safe_float(self.health_wallets[customer_id].get("balance"), 0.0) - wallet_deduction, 2
+            )
             self.health_wallets[customer_id]["transactions"] = self.health_wallets[customer_id].get("transactions", [])
             self.health_wallets[customer_id]["transactions"].append({
                 "id": f"WAL-ORD-{order_id}",
@@ -1036,31 +1405,39 @@ class SupplyChainEcosystemService:
                 "amount": -wallet_deduction,
                 "order_id": order_id,
                 "supplier_id": supplier_id,
-                "timestamp": now.isoformat()
+                "payment_method": "health_wallet",
+                "pricing_plan": pricing_plan,
+                "timestamp": now_iso
             })
-        
+
         # Generate NFT token for order
         nft_token_id = f"NFT-ORD-{secrets.token_hex(6).upper()}"
         order["nft_token_id"] = nft_token_id
-        
+
         self.nft_ledger[nft_token_id] = {
             "token_id": nft_token_id,
             "owner_id": customer_id,
             "asset_type": "order",
             "asset_id": order_id,
-            "created_at": now.isoformat(),
+            "created_at": now_iso,
             "metadata": {
                 "supplier_id": supplier_id,
+                "offer_id": offer_id,
                 "total_amount": total_amount,
                 "commission": commission,
+                "supplier_payout": supplier_payout,
+                "wallet_deduction": wallet_deduction,
+                "external_payment_amount": external_payment_amount,
+                "payment_method": payment_method,
+                "pricing_plan": pricing_plan,
                 "is_b2b": is_b2b
             }
         }
-        
+
         # Store order
         self.orders[order_id] = order
-        
-        # Record on ledger
+
+        # Record on supply chain ledger
         self._record_ledger_entry(
             entry_type="order_created",
             supplier_id=supplier_id,
@@ -1078,7 +1455,42 @@ class SupplyChainEcosystemService:
                 "nft_token_id": nft_token_id
             }
         )
-        
+        self._record_ledger_entry(
+            entry_type="order_pricing_plan",
+            supplier_id=supplier_id,
+            customer_id=customer_id,
+            order_id=order_id,
+            amount=base_amount,
+            commission=commission,
+            supplier_payout=supplier_payout,
+            description=f"Pricing plan applied: {offer.get('name')}",
+            metadata={
+                "pricing_plan": pricing_plan,
+                "wallet_deduction": wallet_deduction,
+                "external_payment_amount": external_payment_amount
+            }
+        )
+        if wallet_deduction > 0:
+            self._record_ledger_entry(
+                entry_type="wallet_payment",
+                supplier_id=supplier_id,
+                customer_id=customer_id,
+                order_id=order_id,
+                amount=wallet_deduction,
+                description=f"Wallet payment for order {order_id}",
+                metadata={"payment_method": "health_wallet"}
+            )
+        if external_payment_amount > 0:
+            self._record_ledger_entry(
+                entry_type="external_payment",
+                supplier_id=supplier_id,
+                customer_id=customer_id,
+                order_id=order_id,
+                amount=external_payment_amount,
+                description=f"External payment for order {order_id}",
+                metadata={"payment_method": external_payment_method}
+            )
+
         # Record on main transaction ledger
         if self.record_transaction:
             try:
@@ -1090,16 +1502,31 @@ class SupplyChainEcosystemService:
                     metadata={
                         "order_id": order_id,
                         "supplier_id": supplier_id,
-                        "commission": commission
+                        "offer_id": offer_id,
+                        "commission": commission,
+                        "supplier_payout": supplier_payout,
+                        "pricing_plan": pricing_plan,
+                        "wallet_deduction": wallet_deduction,
+                        "external_payment_amount": external_payment_amount,
+                        "payment_method": payment_method
                     }
                 )
             except Exception:
                 pass
-        
+
         return {
             "success": True,
             "order": order,
             "payment_breakdown": fee_calc,
+            "pricing_plan": pricing_plan,
+            "payment_summary": {
+                "payment_method": payment_method,
+                "wallet_deduction": wallet_deduction,
+                "external_payment_method": external_payment_method,
+                "external_payment_amount": external_payment_amount,
+                "remaining_out_of_pocket": out_of_pocket,
+                "payment_status": payment_status
+            },
             "wallet_deduction": wallet_deduction,
             "out_of_pocket": out_of_pocket,
             "nft_token_id": nft_token_id,

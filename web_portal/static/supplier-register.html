@@ -361,6 +361,11 @@
           <h3>Company Information</h3>
           <div class="form-grid">
             <div class="form-group full-width">
+              <label>Supplier Invitation Code</label>
+              <input type="text" id="invitation_code" name="invitation_code" placeholder="PHINS-SUP-202602-ABC12345 (recommended)">
+              <small class="muted-text">If provided, registration is routed through invitation-only approval workflow.</small>
+            </div>
+            <div class="form-group full-width">
               <label>Company Name <span class="required">*</span></label>
               <input type="text" id="company_name" name="company_name" required placeholder="Your company's legal name">
             </div>
@@ -703,8 +708,10 @@
       if (!validateStep(4)) return;
       
       // Gather form data
+      const invitationCode = document.getElementById('invitation_code').value.trim();
       const formData = {
         supplier_type: document.getElementById('supplier_type').value,
+        invitation_code: invitationCode || undefined,
         company_name: document.getElementById('company_name').value.trim(),
         business_registration_number: document.getElementById('business_registration_number').value.trim(),
         tax_id: document.getElementById('tax_id').value.trim(),
@@ -732,7 +739,8 @@
       };
 
       try {
-        const response = await fetch('/api/supplier/register', {
+        const endpoint = invitationCode ? '/api/supply-chain/register' : '/api/supplier/register';
+        const response = await fetch(endpoint, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(formData)
