@@ -252,12 +252,17 @@ def _send_otp_email(
     attempts: List[Tuple[str, Optional[str]]] = [('auto', None)]
     if not use_mock_notifications:
         configured_fallbacks = _configured_email_provider_types()
-        non_smtp_fallbacks = [provider for provider in configured_fallbacks if provider != 'smtp']
-        if non_smtp_fallbacks:
-            attempts.extend((provider, provider) for provider in non_smtp_fallbacks)
-            # Keep SMTP as final backstop when alternative providers are configured.
-            if 'smtp' in configured_fallbacks:
-                attempts.append(('smtp', 'smtp'))
+        # Exclude the default provider from explicit fallbacks since 'auto' already covers it.
+        default_provider = str(os.environ.get('EMAIL_PROVIDER', 'smtp') or 'smtp').strip().lower()
+        alternative_fallbacks = [
+            provider for provider in configured_fallbacks
+            if provider != 'smtp' and provider != default_provider
+        ]
+        if alternative_fallbacks:
+            attempts.extend((provider, provider) for provider in alternative_fallbacks)
+        # Keep SMTP as final backstop when the default provider is not SMTP.
+        if 'smtp' in configured_fallbacks and default_provider != 'smtp':
+            attempts.append(('smtp', 'smtp'))
 
     attempted_labels = set()
     errors: List[str] = []

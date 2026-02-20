@@ -108,8 +108,9 @@ document.addEventListener('DOMContentLoaded', function () {
   function persistPendingRegistrationState() {
     if (!pendingRegistrationData) return;
     try {
-      // Session-scoped persistence keeps OTP flow recoverable on refresh.
-      sessionStorage.setItem(PENDING_REGISTRATION_KEY, JSON.stringify(pendingRegistrationData));
+      // Exclude password from persisted data to avoid storing plaintext credentials.
+      const { password, ...safeData } = pendingRegistrationData;
+      sessionStorage.setItem(PENDING_REGISTRATION_KEY, JSON.stringify(safeData));
     } catch (e) {
       // Ignore storage errors silently.
     }
@@ -365,6 +366,7 @@ document.addEventListener('DOMContentLoaded', function () {
       if (data.success) {
         if (data.verification_id) {
           verificationId.value = data.verification_id;
+          persistOtpContext(otpEmail.textContent, data.verification_id);
         }
         msg.textContent = 'New code sent!';
         msg.style.color = '#28a745';
