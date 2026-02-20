@@ -261,3 +261,33 @@ def test_handle_otp_request_rejects_invalid_email_format(monkeypatch):
     assert status == 400
     assert payload.get("success") is False
     assert payload.get("error") == "Invalid email format"
+
+
+def test_send_otp_email_returns_preflight_error_when_no_provider_configured(monkeypatch):
+    monkeypatch.setattr(api_extensions, "PHINS_TEST_MODE", False)
+    monkeypatch.setenv("PHINS_USE_MOCK_NOTIFICATIONS", "false")
+    monkeypatch.setenv("SMTP_HOST", "localhost")
+    monkeypatch.delenv("SMTP_USERNAME", raising=False)
+    monkeypatch.delenv("SMTP_PASSWORD", raising=False)
+    monkeypatch.delenv("SENDGRID_API_KEY", raising=False)
+    monkeypatch.delenv("MAILGUN_API_KEY", raising=False)
+    monkeypatch.delenv("MAILGUN_DOMAIN", raising=False)
+    monkeypatch.delenv("RESEND_API_KEY", raising=False)
+    monkeypatch.setattr(api_extensions, "_configured_email_provider_types", lambda: ["smtp"])
+    monkeypatch.setattr(
+        api_extensions,
+        "_create_notification_service_for_provider",
+        lambda **_kwargs: (_ for _ in ()).throw(AssertionError("should not send")),
+    )
+
+    sent, error = api_extensions._send_otp_email(
+        email="blocked@example.com",
+        otp_code="778899",
+        expiry_seconds=300,
+        purpose="registration",
+        ip_address="127.0.0.1",
+    )
+
+    assert sent is False
+    assert isinstance(error, str)
+    assert "Email delivery is not configured" in error

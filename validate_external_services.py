@@ -223,6 +223,18 @@ class ServiceValidator:
             bool(otp_from_addr) and '@' in otp_from_addr,
             f"OTP sender: {otp_from_addr}" if otp_from_addr else "Not configured"
         ))
+        allow_custom_otp_sender = str(
+            os.environ.get('PHINS_ALLOW_CUSTOM_OTP_FROM_ADDRESS', '')
+        ).strip().lower() in ('1', 'true', 'yes', 'y', 'on')
+        self.add_result(ValidationResult(
+            "OTP sender policy",
+            allow_custom_otp_sender or otp_from_addr.lower() == 'donotreply@phins.ai',
+            (
+                "Using platform default sender donotreply@phins.ai"
+                if (otp_from_addr.lower() == 'donotreply@phins.ai' or not otp_from_addr)
+                else "Custom OTP sender allowed by PHINS_ALLOW_CUSTOM_OTP_FROM_ADDRESS"
+            )
+        ))
         
         # Provider-specific checks
         if provider == 'smtp':

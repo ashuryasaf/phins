@@ -133,6 +133,14 @@ _REGISTRATION_OTP_PURPOSES = {'registration', 'email_verification'}
 _EMAIL_REGEX = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 _OTP_FROM_ADDRESS_DEFAULT = "donotreply@phins.ai"
 _OTP_FROM_NAME_DEFAULT = "PHINS Security"
+_SMTP_PLACEHOLDER_HOSTS = {
+    '',
+    'localhost',
+    '127.0.0.1',
+    'smtp.example.com',
+    'mail.example.com',
+    'example.com',
+}
 
 
 def _aws_identity_configured() -> bool:
@@ -221,6 +229,40 @@ def _configured_email_provider_types() -> List[str]:
         if provider not in unique:
             unique.append(provider)
     return unique
+
+
+def _smtp_looks_unconfigured() -> bool:
+    """Detect placeholder/default SMTP settings."""
+    host = str(os.environ.get('SMTP_HOST', '') or '').strip().lower()
+    username = str(os.environ.get('SMTP_USERNAME', '') or '').strip()
+    password = str(os.environ.get('SMTP_PASSWORD', '') or '').strip()
+    if host in _SMTP_PLACEHOLDER_HOSTS and not username and not password:
+        return True
+    if host.endswith('.example.com'):
+        return True
+    return False
+
+
+def _otp_delivery_preflight_error(use_mock_notifications: bool) -> Optional[str]:
+    """
+    Validate provider readiness before OTP send attempts.
+
+    Returns an actionable error message when no real email route appears configured.
+    """
+    if use_mock_notifications:
+        return None
+
+    configured_fallbacks = _configured_email_provider_types()
+    non_smtp_ready = any(provider != 'smtp' for provider in configured_fallbacks)
+    if non_smtp_ready:
+        return None
+
+    if _smtp_looks_unconfigured():
+        return (
+            "Email delivery is not configured. Configure a provider key "
+            "(SENDGRID_API_KEY, RESEND_API_KEY, MAILGUN_API_KEY) or valid SMTP settings."
+        )
+    return None
 
 
 def _runtime_environment_name() -> str:
@@ -384,6 +426,9 @@ def _send_otp_email(
     use_mock_notifications = PHINS_TEST_MODE or str(
         os.environ.get('PHINS_USE_MOCK_NOTIFICATIONS', '')
     ).lower() in ('1', 'true', 'yes', 'y')
+    preflight_error = _otp_delivery_preflight_error(use_mock_notifications)
+    if preflight_error:
+        return False, preflight_error
 
     attempts: List[Tuple[str, Optional[str]]] = [('auto', None)]
     if not use_mock_notifications:
