@@ -113,6 +113,9 @@ EXPOSE_DEMO_OTP = PHINS_TEST_MODE or str(os.environ.get('PHINS_EXPOSE_DEMO_OTP',
     '1', 'true', 'yes', 'y'
 )
 _EMAIL_PROVIDER_TYPES = {'smtp', 'sendgrid', 'ses', 'mailgun'}
+_TRUTHY_VALUES = {'1', 'true', 'yes', 'y', 'on'}
+_PRODUCTION_ENV_NAMES = {'prod', 'production', 'live'}
+_REGISTRATION_OTP_PURPOSES = {'registration', 'email_verification'}
 
 
 def _aws_identity_configured() -> bool:
@@ -156,6 +159,62 @@ def _configured_email_provider_types() -> List[str]:
         if provider not in unique:
             unique.append(provider)
     return unique
+
+
+def _runtime_environment_name() -> str:
+    """Best-effort runtime environment detector."""
+    for env_key in ('PHINS_ENV', 'ENVIRONMENT', 'RAILWAY_ENVIRONMENT_NAME', 'NODE_ENV'):
+        raw_value = str(os.environ.get(env_key, '') or '').strip().lower()
+        if raw_value:
+            return raw_value
+    return 'development'
+
+
+def _allow_registration_demo_otp_fallback() -> bool:
+    """
+    Allow OTP fallback code exposure only for non-production registration flows.
+
+    Operators can override with PHINS_ALLOW_REGISTRATION_DEMO_OTP_FALLBACK.
+    """
+    explicit_override = os.environ.get('PHINS_ALLOW_REGISTRATION_DEMO_OTP_FALLBACK')
+    if explicit_override is not None:
+        return str(explicit_override).strip().lower() in _TRUTHY_VALUES
+
+    return _runtime_environment_name() not in _PRODUCTION_ENV_NAMES
+
+
+def _registration_otp_fallback_eligible(purpose: Optional[str]) -> bool:
+    """Restrict fallback OTP exposure to registration verification flows."""
+    normalized = str(purpose or '').strip().lower()
+    return normalized in _REGISTRATION_OTP_PURPOSES
+
+
+def _apply_registration_demo_otp_fallback(
+    response_data: Dict[str, Any],
+    otp_code: Optional[str],
+    purpose: Optional[str]
+) -> bool:
+    """
+    Populate response with demo OTP fallback for non-production registration flows.
+
+    Returns True when fallback is applied and the request can continue.
+    """
+    if not otp_code or EXPOSE_DEMO_OTP:
+        return False
+    if not _registration_otp_fallback_eligible(purpose):
+        return False
+    if not _allow_registration_demo_otp_fallback():
+        return False
+
+    response_data['success'] = True
+    response_data['delivery_mode'] = 'demo_otp_fallback'
+    response_data['demo_otp_code'] = otp_code
+    response_data.pop('error_code', None)
+    response_data['message'] = (
+        "Email delivery is currently unavailable. Use the fallback verification "
+        "code shown here to continue registration."
+    )
+    return True
 
 
 def _create_notification_service_for_provider(
@@ -252,12 +311,16 @@ def _send_otp_email(
     attempts: List[Tuple[str, Optional[str]]] = [('auto', None)]
     if not use_mock_notifications:
         configured_fallbacks = _configured_email_provider_types()
-        non_smtp_fallbacks = [provider for provider in configured_fallbacks if provider != 'smtp']
-        if non_smtp_fallbacks:
-            attempts.extend((provider, provider) for provider in non_smtp_fallbacks)
-            # Keep SMTP as final backstop when alternative providers are configured.
-            if 'smtp' in configured_fallbacks:
-                attempts.append(('smtp', 'smtp'))
+        default_provider = str(os.environ.get('EMAIL_PROVIDER', 'smtp') or 'smtp').strip().lower()
+        non_default_fallbacks = [
+            provider for provider in configured_fallbacks
+            if provider != 'smtp' and provider != default_provider
+        ]
+        if non_default_fallbacks:
+            attempts.extend((provider, provider) for provider in non_default_fallbacks)
+        # Keep SMTP as a final backstop when default provider is not SMTP.
+        if 'smtp' in configured_fallbacks and default_provider != 'smtp':
+            attempts.append(('smtp', 'smtp'))
 
     attempted_labels = set()
     errors: List[str] = []
@@ -397,6 +460,12 @@ def handle_otp_request(client_ip: str, body_data: Dict, user_agent: str = "") ->
 
         if not notification_sent:
             response_data['notification_error'] = notification_error or 'Unable to send OTP notification'
+            if _apply_registration_demo_otp_fallback(
+                response_data=response_data,
+                otp_code=otp_code,
+                purpose=purpose
+            ):
+                return 200, response_data
             # If OTP cannot be delivered and demo OTP is disabled, fail safely.
             if not EXPOSE_DEMO_OTP:
                 response_data['success'] = False
@@ -466,6 +535,16 @@ def handle_otp_resend(client_ip: str, body_data: Dict, user_agent: str = "") -> 
             response_data['notification_sent'] = sent
             if not sent:
                 response_data['notification_error'] = send_error or 'Unable to resend OTP notification'
+                resend_purpose = None
+                resend_data = response_data.get('data')
+                if isinstance(resend_data, dict):
+                    resend_purpose = resend_data.get('purpose')
+                if _apply_registration_demo_otp_fallback(
+                    response_data=response_data,
+                    otp_code=otp_code,
+                    purpose=resend_purpose
+                ):
+                    return 200, response_data
                 if not EXPOSE_DEMO_OTP:
                     response_data['success'] = False
                     response_data['error_code'] = 'OTP_DELIVERY_FAILED'

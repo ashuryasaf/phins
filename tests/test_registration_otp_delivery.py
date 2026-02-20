@@ -86,3 +86,103 @@ def test_send_otp_email_returns_combined_errors_when_all_providers_fail(monkeypa
     assert isinstance(error, str)
     assert "auto:" in error
     assert "sendgrid:" in error
+
+
+def test_handle_otp_request_uses_demo_fallback_for_non_production_registration(monkeypatch):
+    monkeypatch.setattr(api_extensions, "OTP_SERVICE_AVAILABLE", True)
+    monkeypatch.setattr(api_extensions, "EXPOSE_DEMO_OTP", False)
+    monkeypatch.setenv("PHINS_ENV", "development")
+    monkeypatch.delenv("PHINS_ALLOW_REGISTRATION_DEMO_OTP_FALLBACK", raising=False)
+
+    class _FakeOtpResult:
+        success = True
+
+        @staticmethod
+        def to_dict():
+            return {
+                "success": True,
+                "data": {
+                    "verification_id": "OTP_TEST_DEV_FALLBACK",
+                    "otp_code": "654321",
+                    "masked_email": "d***@example.com",
+                    "expires_in_seconds": 300,
+                },
+            }
+
+    class _FakeOtpService:
+        @staticmethod
+        def create_otp_verification(**_kwargs):
+            return _FakeOtpResult()
+
+    monkeypatch.setattr(api_extensions, "get_otp_security_service", lambda: _FakeOtpService())
+    monkeypatch.setattr(
+        api_extensions,
+        "_send_otp_email",
+        lambda **_kwargs: (False, "smtp: [Errno 111] Connection refused"),
+    )
+
+    status, payload = api_extensions.handle_otp_request(
+        client_ip="127.0.0.1",
+        body_data={
+            "email": "dev-fallback@example.com",
+            "purpose": "registration",
+            "user_type": "customer",
+        },
+        user_agent="pytest",
+    )
+
+    assert status == 200
+    assert payload.get("success") is True
+    assert payload.get("delivery_mode") == "demo_otp_fallback"
+    assert payload.get("demo_otp_code") == "654321"
+    assert payload.get("notification_sent") is False
+    assert payload.get("verification_id") == "OTP_TEST_DEV_FALLBACK"
+
+
+def test_handle_otp_request_keeps_delivery_hard_fail_in_production(monkeypatch):
+    monkeypatch.setattr(api_extensions, "OTP_SERVICE_AVAILABLE", True)
+    monkeypatch.setattr(api_extensions, "EXPOSE_DEMO_OTP", False)
+    monkeypatch.setenv("PHINS_ENV", "production")
+    monkeypatch.delenv("PHINS_ALLOW_REGISTRATION_DEMO_OTP_FALLBACK", raising=False)
+
+    class _FakeOtpResult:
+        success = True
+
+        @staticmethod
+        def to_dict():
+            return {
+                "success": True,
+                "data": {
+                    "verification_id": "OTP_TEST_PROD_FAIL",
+                    "otp_code": "123456",
+                    "masked_email": "p***@example.com",
+                    "expires_in_seconds": 300,
+                },
+            }
+
+    class _FakeOtpService:
+        @staticmethod
+        def create_otp_verification(**_kwargs):
+            return _FakeOtpResult()
+
+    monkeypatch.setattr(api_extensions, "get_otp_security_service", lambda: _FakeOtpService())
+    monkeypatch.setattr(
+        api_extensions,
+        "_send_otp_email",
+        lambda **_kwargs: (False, "smtp: [Errno 111] Connection refused"),
+    )
+
+    status, payload = api_extensions.handle_otp_request(
+        client_ip="127.0.0.1",
+        body_data={
+            "email": "prod-fail@example.com",
+            "purpose": "registration",
+            "user_type": "customer",
+        },
+        user_agent="pytest",
+    )
+
+    assert status == 503
+    assert payload.get("success") is False
+    assert payload.get("error_code") == "OTP_DELIVERY_FAILED"
+    assert "demo_otp_code" not in payload

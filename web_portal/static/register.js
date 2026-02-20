@@ -326,6 +326,40 @@ document.addEventListener('DOMContentLoaded', function () {
     otpDigits[0].focus();
   }
 
+  function extractFallbackOtpCode(payload) {
+    if (!payload || payload.delivery_mode !== 'demo_otp_fallback') {
+      return '';
+    }
+    const normalized = String(payload.demo_otp_code || '').replace(/\D/g, '').slice(0, otpDigits.length);
+    return normalized.length === otpDigits.length ? normalized : '';
+  }
+
+  function prefillOtpDigits(code) {
+    const normalized = String(code || '').replace(/\D/g, '').slice(0, otpDigits.length);
+    if (normalized.length !== otpDigits.length) return false;
+    otpDigits.forEach((digit, index) => {
+      digit.value = normalized[index];
+    });
+    otpDigits[otpDigits.length - 1].focus();
+    return true;
+  }
+
+  function applyOtpDeliveryFeedback(payload, isResend = false) {
+    const fallbackCode = extractFallbackOtpCode(payload);
+    if (fallbackCode) {
+      prefillOtpDigits(fallbackCode);
+      const baseMessage = payload.message || 'Email delivery is unavailable right now.';
+      msg.textContent = `${baseMessage} Fallback code: ${fallbackCode}`;
+      msg.style.color = '#856404';
+      return;
+    }
+
+    msg.textContent = isResend
+      ? 'New verification code sent!'
+      : 'Please enter the verification code sent to your email';
+    msg.style.color = isResend ? '#28a745' : '#2e7d32';
+  }
+
   // ========== RESEND OTP ==========
   function startResendCountdown(seconds = 60) {
     const parsedSeconds = Number(seconds);
@@ -365,11 +399,13 @@ document.addEventListener('DOMContentLoaded', function () {
       if (data.success) {
         if (data.verification_id) {
           verificationId.value = data.verification_id;
+          persistOtpContext(otpEmail.textContent, data.verification_id);
         }
-        msg.textContent = 'New code sent!';
-        msg.style.color = '#28a745';
+        applyOtpDeliveryFeedback(data, true);
         startResendCountdown(data.retry_after_seconds || 60);
-        clearOTPInputs();
+        if (!extractFallbackOtpCode(data)) {
+          clearOTPInputs();
+        }
       } else {
         msg.textContent = data.message || 'Failed to resend code';
         msg.style.color = '#dc3545';
@@ -665,8 +701,7 @@ document.addEventListener('DOMContentLoaded', function () {
       if (otpData.success && otpData.verification_id) {
         // Show OTP step
         showOTPStep(otpData.masked_email || email, otpData.verification_id);
-        msg.textContent = 'Please enter the verification code sent to your email';
-        msg.style.color = '#2e7d32';
+        applyOtpDeliveryFeedback(otpData, false);
         submitBtn.disabled = false;
         
       } else {
