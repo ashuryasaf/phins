@@ -48,6 +48,9 @@ document.addEventListener('DOMContentLoaded', function () {
   let resendCountdown = 0;
   let resendInterval = null;
   let pendingRegistrationData = null;
+  const REGISTRATION_DRAFT_KEY = 'phins.registrationDraft.v1';
+  const PENDING_REGISTRATION_KEY = 'phins.pendingRegistration.v1';
+  const OTP_CONTEXT_KEY = 'phins.registrationOtpContext.v1';
 
   // ========== AUTO-FILL FROM URL PARAMETER ==========
   const urlParams = new URLSearchParams(window.location.search);
@@ -60,6 +63,86 @@ document.addEventListener('DOMContentLoaded', function () {
     }, 300);
     msg.innerHTML = '🎟️ Invitation code detected! Please complete your registration.';
     msg.style.color = '#28a745';
+  }
+
+  function safeParseStorage(key) {
+    try {
+      const raw = sessionStorage.getItem(key);
+      return raw ? JSON.parse(raw) : null;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function saveRegistrationDraft() {
+    const draft = {
+      invitation_code: form.invitation_code?.value?.trim()?.toUpperCase() || '',
+      full_name: form.full_name?.value?.trim() || '',
+      email: form.email?.value?.trim() || '',
+      phone: form.phone?.value?.trim() || '',
+      dob: form.dob?.value || ''
+    };
+    try {
+      sessionStorage.setItem(REGISTRATION_DRAFT_KEY, JSON.stringify(draft));
+    } catch (e) {
+      // Ignore storage errors silently (quota/private mode).
+    }
+  }
+
+  function restoreRegistrationDraft() {
+    const draft = safeParseStorage(REGISTRATION_DRAFT_KEY);
+    if (!draft || currentStep !== 1) return;
+
+    if (!form.invitation_code.value && draft.invitation_code) {
+      form.invitation_code.value = draft.invitation_code;
+      if (draft.invitation_code.length >= 10) {
+        validateInvitationCode(draft.invitation_code);
+      }
+    }
+    if (!form.full_name.value && draft.full_name) form.full_name.value = draft.full_name;
+    if (!form.email.value && draft.email) form.email.value = draft.email;
+    if (!form.phone.value && draft.phone) form.phone.value = draft.phone;
+    if (!form.dob.value && draft.dob) form.dob.value = draft.dob;
+  }
+
+  function persistPendingRegistrationState() {
+    if (!pendingRegistrationData) return;
+    try {
+      // Session-scoped persistence keeps OTP flow recoverable on refresh.
+      sessionStorage.setItem(PENDING_REGISTRATION_KEY, JSON.stringify(pendingRegistrationData));
+    } catch (e) {
+      // Ignore storage errors silently.
+    }
+  }
+
+  function persistOtpContext(email, verId) {
+    try {
+      sessionStorage.setItem(OTP_CONTEXT_KEY, JSON.stringify({
+        email: email || '',
+        verification_id: verId || '',
+        saved_at: Date.now()
+      }));
+    } catch (e) {
+      // Ignore storage errors silently.
+    }
+  }
+
+  function clearRegistrationState() {
+    pendingRegistrationData = null;
+    try {
+      sessionStorage.removeItem(PENDING_REGISTRATION_KEY);
+      sessionStorage.removeItem(OTP_CONTEXT_KEY);
+      sessionStorage.removeItem(REGISTRATION_DRAFT_KEY);
+    } catch (e) {
+      // Ignore storage errors silently.
+    }
+  }
+
+  function restorePendingRegistrationState() {
+    const pending = safeParseStorage(PENDING_REGISTRATION_KEY);
+    if (pending && pending.email && pending.password && pending.invitation_code) {
+      pendingRegistrationData = pending;
+    }
   }
 
   // ========== CAPTCHA INITIALIZATION ==========
@@ -317,6 +400,7 @@ document.addEventListener('DOMContentLoaded', function () {
     // Set values
     otpEmail.textContent = email;
     verificationId.value = verId;
+    persistOtpContext(email, verId);
     
     submitBtn.textContent = 'Verify Email';
     updateSubmitButton();
@@ -399,6 +483,7 @@ document.addEventListener('DOMContentLoaded', function () {
       
       if (data.success || data.customer_id) {
         showCompleteStep();
+        clearRegistrationState();
         
         msg.innerHTML = '✅ Account created successfully! Redirecting to login...';
         msg.style.color = '#28a745';
@@ -424,6 +509,48 @@ document.addEventListener('DOMContentLoaded', function () {
       msg.style.color = '#dc3545';
       submitBtn.disabled = false;
     }
+  }
+
+  async function requestRegistrationOTP(email) {
+    const maxAttempts = 2;
+    let lastFailure = null;
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        const otpResponse = await fetch('/api/security/otp/request', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            email: email,
+            purpose: 'registration',
+            user_type: 'customer'
+          })
+        });
+        const otpData = await otpResponse.json();
+
+        if (otpData.success && otpData.verification_id) {
+          return otpData;
+        }
+
+        lastFailure = otpData;
+        const shouldRetry =
+          attempt < maxAttempts &&
+          (otpData.error_code === 'OTP_DELIVERY_FAILED' || otpData.error_code === 'RATE_LIMITED');
+        if (!shouldRetry) break;
+
+        msg.textContent = 'Delivery retry in progress...';
+        msg.style.color = '#856404';
+        await new Promise(resolve => setTimeout(resolve, 1200));
+      } catch (error) {
+        lastFailure = { message: 'Network error while requesting code' };
+        if (attempt < maxAttempts) {
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          continue;
+        }
+      }
+    }
+
+    return lastFailure || { message: 'Failed to send verification code' };
   }
 
   // ========== FORM SUBMISSION ==========
@@ -520,29 +647,22 @@ document.addEventListener('DOMContentLoaded', function () {
         }
       }
       
+      // Keep registration payload in session so refresh doesn't lose progress.
+      pendingRegistrationData = {
+        invitation_code: invitationCode,
+        name: fullName,
+        email: email,
+        phone: phone,
+        dob: dob,
+        password: password
+      };
+      persistPendingRegistrationState();
+      saveRegistrationDraft();
+
       // Step 2: Request email verification OTP
-      const otpResponse = await fetch('/api/security/otp/request', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          email: email,
-          purpose: 'registration',
-          user_type: 'customer'
-        })
-      });
-      const otpData = await otpResponse.json();
+      const otpData = await requestRegistrationOTP(email);
       
       if (otpData.success && otpData.verification_id) {
-        // Save registration data for later
-        pendingRegistrationData = {
-          invitation_code: invitationCode,
-          name: fullName,
-          email: email,
-          phone: phone,
-          dob: dob,
-          password: password
-        };
-        
         // Show OTP step
         showOTPStep(otpData.masked_email || email, otpData.verification_id);
         msg.textContent = 'Please enter the verification code sent to your email';
@@ -564,5 +684,26 @@ document.addEventListener('DOMContentLoaded', function () {
   });
 
   // Initialize
+  restoreRegistrationDraft();
+  restorePendingRegistrationState();
+  const otpContext = safeParseStorage(OTP_CONTEXT_KEY);
+  if (
+    pendingRegistrationData &&
+    otpContext &&
+    otpContext.verification_id &&
+    typeof otpContext.verification_id === 'string'
+  ) {
+    showOTPStep(otpContext.email || pendingRegistrationData.email, otpContext.verification_id);
+    msg.textContent = 'Continue by entering the verification code from your email.';
+    msg.style.color = '#2e7d32';
+    submitBtn.disabled = false;
+  }
+
+  form.addEventListener('input', function () {
+    if (currentStep === 1) {
+      saveRegistrationDraft();
+    }
+  });
+
   updateSubmitButton();
 });

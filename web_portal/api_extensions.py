@@ -19,7 +19,7 @@ Data Persistence:
 import json
 import os
 from datetime import datetime, timezone
-from typing import Dict, Any, Optional, Tuple
+from typing import Dict, Any, Optional, Tuple, List
 
 # Import services
 try:
@@ -112,6 +112,84 @@ PHINS_TEST_MODE = str(os.environ.get('PHINS_TEST_MODE', '')).lower() in ('1', 't
 EXPOSE_DEMO_OTP = PHINS_TEST_MODE or str(os.environ.get('PHINS_EXPOSE_DEMO_OTP', '')).lower() in (
     '1', 'true', 'yes', 'y'
 )
+_EMAIL_PROVIDER_TYPES = {'smtp', 'sendgrid', 'ses', 'mailgun'}
+
+
+def _aws_identity_configured() -> bool:
+    """Check whether AWS runtime credentials are available."""
+    return any(
+        os.environ.get(name)
+        for name in (
+            'AWS_ACCESS_KEY_ID',
+            'AWS_PROFILE',
+            'AWS_WEB_IDENTITY_TOKEN_FILE',
+            'AWS_CONTAINER_CREDENTIALS_RELATIVE_URI',
+            'AWS_CONTAINER_CREDENTIALS_FULL_URI',
+        )
+    )
+
+
+def _configured_email_provider_types() -> List[str]:
+    """
+    Resolve configured email providers for delivery fallback.
+
+    Order preserves operator preference first, then auto-detected alternatives.
+    """
+    provider_types: List[str] = []
+
+    configured_provider = str(os.environ.get('EMAIL_PROVIDER', 'smtp') or 'smtp').strip().lower()
+    if configured_provider in _EMAIL_PROVIDER_TYPES:
+        provider_types.append(configured_provider)
+
+    if os.environ.get('SENDGRID_API_KEY'):
+        provider_types.append('sendgrid')
+    if os.environ.get('MAILGUN_API_KEY') and os.environ.get('MAILGUN_DOMAIN'):
+        provider_types.append('mailgun')
+    if _aws_identity_configured():
+        provider_types.append('ses')
+
+    # Keep SMTP as final safety-net attempt.
+    provider_types.append('smtp')
+
+    unique: List[str] = []
+    for provider in provider_types:
+        if provider not in unique:
+            unique.append(provider)
+    return unique
+
+
+def _create_notification_service_for_provider(
+    use_mock_notifications: bool,
+    provider_type: Optional[str] = None
+):
+    """
+    Build notification service for a specific provider fallback attempt.
+    """
+    from services.notification_service import (
+        create_notification_service,
+        SMTPEmailProvider,
+        SendGridEmailProvider,
+        AWSSESEmailProvider,
+        MailgunEmailProvider,
+    )
+
+    if use_mock_notifications or not provider_type:
+        return create_notification_service(use_mock=use_mock_notifications)
+
+    normalized = provider_type.strip().lower()
+    if normalized not in _EMAIL_PROVIDER_TYPES:
+        return create_notification_service(use_mock=use_mock_notifications)
+
+    if normalized == 'sendgrid':
+        provider = SendGridEmailProvider()
+    elif normalized == 'ses':
+        provider = AWSSESEmailProvider()
+    elif normalized == 'mailgun':
+        provider = MailgunEmailProvider()
+    else:
+        provider = SMTPEmailProvider()
+
+    return create_notification_service(use_mock=False, email_provider=provider)
 
 
 def _prepare_otp_client_response(response_data: Dict[str, Any]) -> Tuple[Dict[str, Any], Optional[str], Optional[str]]:
@@ -152,10 +230,14 @@ def _send_otp_email(
     purpose: str,
     ip_address: Optional[str] = None
 ) -> Tuple[bool, Optional[str]]:
-    """Send OTP through the notification service."""
+    """
+    Send OTP through notification service with provider-level fallback.
+
+    This improves delivery reliability when one provider is temporarily down
+    or misconfigured while alternatives are available.
+    """
     try:
         from services.notification_service import (
-            create_notification_service,
             NotificationRequest,
             NotificationChannel,
             NotificationPriority
@@ -163,27 +245,56 @@ def _send_otp_email(
     except Exception as exc:
         return False, f"Notification service unavailable: {exc}"
 
-    try:
-        use_mock_notifications = PHINS_TEST_MODE or str(
-            os.environ.get('PHINS_USE_MOCK_NOTIFICATIONS', '')
-        ).lower() in ('1', 'true', 'yes', 'y')
+    use_mock_notifications = PHINS_TEST_MODE or str(
+        os.environ.get('PHINS_USE_MOCK_NOTIFICATIONS', '')
+    ).lower() in ('1', 'true', 'yes', 'y')
 
-        notification_service = create_notification_service(use_mock=use_mock_notifications)
-        result = notification_service.send(NotificationRequest(
-            channel=NotificationChannel.EMAIL,
-            recipient=email,
-            template_id='otp_email',
-            template_vars={
-                'code': otp_code,
-                'expiry_minutes': max(1, int(expiry_seconds // 60))
-            },
-            priority=NotificationPriority.HIGH,
-            ip_address=ip_address,
-            metadata={'purpose': purpose}
-        ))
-        return bool(result.success), result.error_message
-    except Exception as exc:
-        return False, str(exc)
+    attempts: List[Tuple[str, Optional[str]]] = [('auto', None)]
+    if not use_mock_notifications:
+        configured_fallbacks = _configured_email_provider_types()
+        non_smtp_fallbacks = [provider for provider in configured_fallbacks if provider != 'smtp']
+        if non_smtp_fallbacks:
+            attempts.extend((provider, provider) for provider in non_smtp_fallbacks)
+            # Keep SMTP as final backstop when alternative providers are configured.
+            if 'smtp' in configured_fallbacks:
+                attempts.append(('smtp', 'smtp'))
+
+    attempted_labels = set()
+    errors: List[str] = []
+
+    for label, explicit_provider in attempts:
+        if label in attempted_labels:
+            continue
+        attempted_labels.add(label)
+
+        try:
+            notification_service = _create_notification_service_for_provider(
+                use_mock_notifications=use_mock_notifications,
+                provider_type=explicit_provider
+            )
+            result = notification_service.send(NotificationRequest(
+                channel=NotificationChannel.EMAIL,
+                recipient=email,
+                template_id='otp_email',
+                template_vars={
+                    'code': otp_code,
+                    'expiry_minutes': max(1, int(expiry_seconds // 60))
+                },
+                priority=NotificationPriority.HIGH,
+                ip_address=ip_address,
+                metadata={'purpose': purpose}
+            ))
+            if bool(result.success):
+                if label != 'auto':
+                    print(
+                        f"[OTP] Delivery succeeded via fallback provider '{label}'"
+                    )
+                return True, None
+            errors.append(f"{label}: {result.error_message or 'Unknown send failure'}")
+        except Exception as exc:
+            errors.append(f"{label}: {exc}")
+
+    return False, "; ".join(errors) if errors else "Unable to send OTP notification"
 
 
 def _session_user_id(session: Optional[Dict[str, Any]]) -> Optional[str]:
