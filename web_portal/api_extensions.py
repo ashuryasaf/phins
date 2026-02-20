@@ -18,6 +18,7 @@ Data Persistence:
 
 import json
 import os
+import re
 from datetime import datetime, timezone
 from typing import Dict, Any, Optional, Tuple, List
 
@@ -114,27 +115,55 @@ EXPOSE_DEMO_OTP = PHINS_TEST_MODE or str(os.environ.get('PHINS_EXPOSE_DEMO_OTP',
 )
 _EMAIL_PROVIDER_TYPES = {'smtp', 'sendgrid', 'ses', 'mailgun', 'resend'}
 _EMAIL_PROVIDER_ALIASES = {
-    'send-grid': 'sendgrid',
     'send_grid': 'sendgrid',
+    'sendgrid_api': 'sendgrid',
     'sg': 'sendgrid',
     'aws_ses': 'ses',
-    'aws-ses': 'ses',
     'amazon_ses': 'ses',
-    'amazon-ses': 'ses',
-    'mail-gun': 'mailgun',
+    'amazon_simple_email_service': 'ses',
+    'amazonses': 'ses',
+    'sesv2': 'ses',
     'mail_gun': 'mailgun',
+    'mailgun_api': 'mailgun',
     'resend_api': 'resend',
-    'resend-api': 'resend',
+    'resendapi': 'resend',
 }
 _TRUTHY_VALUES = {'1', 'true', 'yes', 'y', 'on'}
 _PRODUCTION_ENV_NAMES = {'prod', 'production', 'live'}
 _REGISTRATION_OTP_PURPOSES = {'registration', 'email_verification'}
 
 
+def _env_or_notification_default(name: str, default: str = '') -> str:
+    """
+    Read config from environment first, then notification defaults if available.
+
+    This keeps provider detection aligned with NotificationConfig.
+    """
+    raw_value = os.environ.get(name)
+    if raw_value is not None:
+        return str(raw_value or '').strip()
+
+    try:
+        from services.notification_service import NotificationConfig
+        return str(getattr(NotificationConfig, name, default) or '').strip()
+    except Exception:
+        return str(default or '').strip()
+
+
+def _normalize_provider_alias_token(raw_provider: Optional[str]) -> str:
+    """Normalize provider token for robust alias handling."""
+    normalized = str(raw_provider or '').strip().lower()
+    if not normalized:
+        return ''
+    normalized = re.sub(r'[\s\-.]+', '_', normalized)
+    normalized = re.sub(r'_+', '_', normalized).strip('_')
+    return normalized
+
+
 def _aws_identity_configured() -> bool:
     """Check whether AWS runtime credentials are available."""
     return any(
-        os.environ.get(name)
+        str(os.environ.get(name, '') or '').strip()
         for name in (
             'AWS_ACCESS_KEY_ID',
             'AWS_PROFILE',
@@ -147,7 +176,7 @@ def _aws_identity_configured() -> bool:
 
 def _normalize_email_provider_type(raw_provider: Optional[str]) -> str:
     """Normalize provider aliases and default safely."""
-    normalized = str(raw_provider or '').strip().lower()
+    normalized = _normalize_provider_alias_token(raw_provider)
     if not normalized:
         return 'smtp'
     normalized = _EMAIL_PROVIDER_ALIASES.get(normalized, normalized)
@@ -165,16 +194,19 @@ def _configured_email_provider_types() -> List[str]:
     provider_types: List[str] = []
 
     configured_provider = _normalize_email_provider_type(
-        os.environ.get('EMAIL_PROVIDER', 'smtp')
+        _env_or_notification_default('EMAIL_PROVIDER', 'smtp')
     )
     if configured_provider in _EMAIL_PROVIDER_TYPES:
         provider_types.append(configured_provider)
 
-    if os.environ.get('SENDGRID_API_KEY'):
+    if _env_or_notification_default('SENDGRID_API_KEY'):
         provider_types.append('sendgrid')
-    if os.environ.get('MAILGUN_API_KEY') and os.environ.get('MAILGUN_DOMAIN'):
+    if (
+        _env_or_notification_default('MAILGUN_API_KEY')
+        and _env_or_notification_default('MAILGUN_DOMAIN')
+    ):
         provider_types.append('mailgun')
-    if os.environ.get('RESEND_API_KEY'):
+    if _env_or_notification_default('RESEND_API_KEY'):
         provider_types.append('resend')
     if _aws_identity_configured():
         provider_types.append('ses')
@@ -343,7 +375,7 @@ def _send_otp_email(
     if not use_mock_notifications:
         configured_fallbacks = _configured_email_provider_types()
         default_provider = _normalize_email_provider_type(
-            os.environ.get('EMAIL_PROVIDER', 'smtp')
+            _env_or_notification_default('EMAIL_PROVIDER', 'smtp')
         )
         non_default_fallbacks = [
             provider for provider in configured_fallbacks

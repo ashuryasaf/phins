@@ -662,6 +662,58 @@ class TestNotificationService:
         assert error is None
         assert sent_messages, "SMTP send should be called"
         assert sent_messages[0]['from_addr'] == 'mailer@example.com'
+
+    def test_smtp_provider_keeps_smtp_from_address_over_username_fallback(self, monkeypatch):
+        """Explicit SMTP sender env should not be replaced by SMTP_USERNAME fallback."""
+        sent_messages = []
+
+        class _FakeSMTP:
+            def __init__(self, host, port):
+                self.host = host
+                self.port = port
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc_val, exc_tb):
+                return False
+
+            def starttls(self):
+                return None
+
+            def login(self, username, password):
+                return None
+
+            def sendmail(self, from_addr, to_addrs, message):
+                sent_messages.append({
+                    'from_addr': from_addr,
+                    'to_addrs': to_addrs,
+                    'message': message
+                })
+
+        monkeypatch.setenv('SMTP_FROM_ADDRESS', 'verified-sender@example.com')
+        monkeypatch.delenv('EMAIL_FROM_ADDRESS', raising=False)
+        monkeypatch.setattr(NotificationConfig, 'EMAIL_FROM_ADDRESS', 'noreply@phins.ai')
+        monkeypatch.setattr(NotificationConfig, 'EMAIL_FROM_NAME', 'PHINS Insurance')
+        monkeypatch.setattr(NotificationConfig, 'SMTP_HOST', 'smtp.gmail.com')
+        monkeypatch.setattr(NotificationConfig, 'SMTP_PORT', 587)
+        monkeypatch.setattr(NotificationConfig, 'SMTP_USE_TLS', True)
+        monkeypatch.setattr(NotificationConfig, 'SMTP_USERNAME', 'mailer@example.com')
+        monkeypatch.setattr(NotificationConfig, 'SMTP_PASSWORD', 'smtp-app-password')
+        monkeypatch.setattr('smtplib.SMTP', _FakeSMTP)
+
+        provider = SMTPEmailProvider()
+        success, message_id, error = provider.send(
+            to='recipient@example.com',
+            subject='OTP Test',
+            body='Your code is 123456'
+        )
+
+        assert success is True
+        assert message_id is not None
+        assert error is None
+        assert sent_messages, "SMTP send should be called"
+        assert sent_messages[0]['from_addr'] == 'verified-sender@example.com'
     
     def test_send_email_notification(self):
         """Test sending email notification"""
