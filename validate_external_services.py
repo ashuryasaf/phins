@@ -212,6 +212,17 @@ class ServiceValidator:
             bool(from_addr) and '@' in from_addr,
             f"Address: {from_addr}" if from_addr else "Not configured"
         ))
+
+        otp_from_addr = (
+            os.environ.get('PHINS_OTP_FROM_ADDRESS')
+            or os.environ.get('OTP_FROM_ADDRESS')
+            or from_addr
+        ).strip()
+        self.add_result(ValidationResult(
+            "OTP sender address set",
+            bool(otp_from_addr) and '@' in otp_from_addr,
+            f"OTP sender: {otp_from_addr}" if otp_from_addr else "Not configured"
+        ))
         
         # Provider-specific checks
         if provider == 'smtp':

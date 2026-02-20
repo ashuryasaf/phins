@@ -18,6 +18,7 @@ Data Persistence:
 
 import json
 import os
+import re
 from datetime import datetime, timezone
 from typing import Dict, Any, Optional, Tuple, List
 
@@ -129,6 +130,9 @@ _EMAIL_PROVIDER_ALIASES = {
 _TRUTHY_VALUES = {'1', 'true', 'yes', 'y', 'on'}
 _PRODUCTION_ENV_NAMES = {'prod', 'production', 'live'}
 _REGISTRATION_OTP_PURPOSES = {'registration', 'email_verification'}
+_EMAIL_REGEX = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+_OTP_FROM_ADDRESS_DEFAULT = "donotreply@phins.ai"
+_OTP_FROM_NAME_DEFAULT = "PHINS Security"
 
 
 def _aws_identity_configured() -> bool:
@@ -154,6 +158,36 @@ def _normalize_email_provider_type(raw_provider: Optional[str]) -> str:
     if normalized in _EMAIL_PROVIDER_TYPES:
         return normalized
     return 'smtp'
+
+
+def _is_valid_email_address(email: Optional[str]) -> bool:
+    """Basic email format validation for request preflight checks."""
+    normalized = str(email or '').strip()
+    return bool(normalized) and bool(_EMAIL_REGEX.match(normalized))
+
+
+def _otp_sender_from_address() -> str:
+    """Resolve OTP sender address, defaulting to PHINS do-not-reply mailbox."""
+    configured = str(
+        os.environ.get('PHINS_OTP_FROM_ADDRESS')
+        or os.environ.get('OTP_FROM_ADDRESS')
+        or _OTP_FROM_ADDRESS_DEFAULT
+    ).strip().lower()
+    allow_custom_sender = str(
+        os.environ.get('PHINS_ALLOW_CUSTOM_OTP_FROM_ADDRESS', '')
+    ).strip().lower() in _TRUTHY_VALUES
+    if allow_custom_sender and configured and _is_valid_email_address(configured):
+        return configured
+    return _OTP_FROM_ADDRESS_DEFAULT
+
+
+def _otp_sender_from_name() -> str:
+    """Resolve OTP sender display name."""
+    configured = str(
+        os.environ.get('PHINS_OTP_FROM_NAME')
+        or _OTP_FROM_NAME_DEFAULT
+    ).strip()
+    return configured or _OTP_FROM_NAME_DEFAULT
 
 
 def _configured_email_provider_types() -> List[str]:
@@ -335,6 +369,18 @@ def _send_otp_email(
     except Exception as exc:
         return False, f"Notification service unavailable: {exc}"
 
+    normalized_email = str(email or '').strip().lower()
+    if not _is_valid_email_address(normalized_email):
+        return False, "Invalid recipient email format"
+
+    otp_from_address = _otp_sender_from_address()
+    if not _is_valid_email_address(otp_from_address):
+        return False, (
+            "Invalid OTP sender configuration. "
+            "Set PHINS_OTP_FROM_ADDRESS to a valid mailbox."
+        )
+    otp_from_name = _otp_sender_from_name()
+
     use_mock_notifications = PHINS_TEST_MODE or str(
         os.environ.get('PHINS_USE_MOCK_NOTIFICATIONS', '')
     ).lower() in ('1', 'true', 'yes', 'y')
@@ -370,7 +416,7 @@ def _send_otp_email(
             )
             result = notification_service.send(NotificationRequest(
                 channel=NotificationChannel.EMAIL,
-                recipient=email,
+                recipient=normalized_email,
                 template_id='otp_email',
                 template_vars={
                     'code': otp_code,
@@ -378,7 +424,9 @@ def _send_otp_email(
                 },
                 priority=NotificationPriority.HIGH,
                 ip_address=ip_address,
-                metadata={'purpose': purpose}
+                metadata={'purpose': purpose},
+                from_address=otp_from_address,
+                from_name=otp_from_name
             ))
             if bool(result.success):
                 if label != 'auto':
@@ -446,23 +494,25 @@ def handle_otp_request(client_ip: str, body_data: Dict, user_agent: str = "") ->
     """POST /api/security/otp/request - Request OTP for verification"""
     if not OTP_SERVICE_AVAILABLE:
         return 503, {"error": "OTP security service not available"}
-    
-    service = get_otp_security_service()
-    
-    email = body_data.get('email')
-    purpose = body_data.get('purpose', 'login')
+
+    email = str(body_data.get('email', '') or '').strip().lower()
+    purpose = str(body_data.get('purpose', 'login') or 'login').strip().lower()
     user_type = body_data.get('user_type', 'customer')
     user_id = body_data.get('user_id', email)  # Use email as user_id if not provided
     device_fingerprint = body_data.get('device_fingerprint')
     
     if not email:
         return 400, {"success": False, "error": "Email is required"}
+    if not _is_valid_email_address(email):
+        return 400, {"success": False, "error": "Invalid email format"}
     
     # Convert purpose string to enum
     try:
         purpose_enum = OTPPurpose(purpose)
     except ValueError:
         purpose_enum = OTPPurpose.LOGIN
+
+    service = get_otp_security_service()
     
     result = service.create_otp_verification(
         user_type=user_type,

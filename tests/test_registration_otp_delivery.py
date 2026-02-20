@@ -199,3 +199,65 @@ def test_configured_email_provider_types_supports_aliases_and_resend(monkeypatch
     assert providers[0] == "ses"
     assert "resend" in providers
     assert providers[-1] == "smtp"
+
+
+def test_send_otp_email_forces_donotreply_sender(monkeypatch):
+    monkeypatch.setattr(api_extensions, "PHINS_TEST_MODE", False)
+    monkeypatch.setenv("PHINS_USE_MOCK_NOTIFICATIONS", "false")
+    monkeypatch.setenv("PHINS_OTP_FROM_ADDRESS", "custom-sender@example.com")
+    monkeypatch.setenv("PHINS_OTP_FROM_NAME", "PHINS Security")
+    monkeypatch.setenv("PHINS_ALLOW_CUSTOM_OTP_FROM_ADDRESS", "false")
+    monkeypatch.setattr(
+        api_extensions,
+        "_configured_email_provider_types",
+        lambda: ["smtp"],
+    )
+
+    captured = {}
+
+    class _FakeNotificationService:
+        @staticmethod
+        def send(request):
+            captured["from_address"] = getattr(request, "from_address", None)
+            captured["from_name"] = getattr(request, "from_name", None)
+            captured["recipient"] = getattr(request, "recipient", None)
+            return SimpleNamespace(success=True, error_message=None)
+
+    monkeypatch.setattr(
+        api_extensions,
+        "_create_notification_service_for_provider",
+        lambda **_kwargs: _FakeNotificationService(),
+    )
+
+    sent, error = api_extensions._send_otp_email(
+        email="newuser@example.com",
+        otp_code="778899",
+        expiry_seconds=300,
+        purpose="registration",
+        ip_address="127.0.0.1",
+    )
+
+    assert sent is True
+    assert error is None
+    assert captured.get("from_address") == "donotreply@phins.ai"
+    assert captured.get("from_name") == "PHINS Security"
+    assert captured.get("recipient") == "newuser@example.com"
+
+
+def test_handle_otp_request_rejects_invalid_email_format(monkeypatch):
+    monkeypatch.setattr(api_extensions, "OTP_SERVICE_AVAILABLE", True)
+    monkeypatch.setattr(api_extensions, "get_otp_security_service", lambda: object())
+
+    status, payload = api_extensions.handle_otp_request(
+        client_ip="127.0.0.1",
+        body_data={
+            "email": "not-an-email",
+            "purpose": "registration",
+            "user_type": "customer",
+        },
+        user_agent="pytest",
+    )
+
+    assert status == 400
+    assert payload.get("success") is False
+    assert payload.get("error") == "Invalid email format"

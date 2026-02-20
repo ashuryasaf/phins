@@ -58,7 +58,7 @@ class NotificationConfig:
     SMTP_USERNAME = os.environ.get('SMTP_USERNAME', '')
     SMTP_PASSWORD = os.environ.get('SMTP_PASSWORD', '')
     
-    EMAIL_FROM_ADDRESS = os.environ.get('EMAIL_FROM_ADDRESS', 'noreply@phins.ai')
+    EMAIL_FROM_ADDRESS = os.environ.get('EMAIL_FROM_ADDRESS', 'donotreply@phins.ai')
     EMAIL_FROM_NAME = os.environ.get('EMAIL_FROM_NAME', 'PHINS Insurance')
     EMAIL_REPLY_TO = os.environ.get('EMAIL_REPLY_TO', 'support@phins.ai')
     
@@ -223,6 +223,9 @@ class NotificationRequest:
     html_content: Optional[str] = None
     attachments: List[Dict[str, Any]] = field(default_factory=list)
     metadata: Dict[str, Any] = field(default_factory=dict)
+    from_address: Optional[str] = None
+    from_name: Optional[str] = None
+    reply_to: Optional[str] = None
 
 
 @dataclass
@@ -2347,7 +2350,11 @@ class NotificationService:
                 to=request.recipient,
                 subject=subject or "PHINS Notification",
                 body=content,
-                html_body=html_content
+                html_body=html_content,
+                from_address=request.from_address,
+                from_name=request.from_name,
+                reply_to=request.reply_to,
+                attachments=request.attachments
             )
             
             return NotificationResult(

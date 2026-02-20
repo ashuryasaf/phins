@@ -641,7 +641,7 @@ class TestNotificationService:
                 })
 
         monkeypatch.delenv('EMAIL_FROM_ADDRESS', raising=False)
-        monkeypatch.setattr(NotificationConfig, 'EMAIL_FROM_ADDRESS', 'noreply@phins.ai')
+        monkeypatch.setattr(NotificationConfig, 'EMAIL_FROM_ADDRESS', 'donotreply@phins.ai')
         monkeypatch.setattr(NotificationConfig, 'EMAIL_FROM_NAME', 'PHINS Insurance')
         monkeypatch.setattr(NotificationConfig, 'SMTP_HOST', 'smtp.gmail.com')
         monkeypatch.setattr(NotificationConfig, 'SMTP_PORT', 587)
@@ -677,6 +677,47 @@ class TestNotificationService:
         assert result.success
         assert result.status == NotificationStatus.DELIVERED
         assert result.notification_id is not None
+
+    def test_send_email_notification_respects_sender_overrides(self):
+        """Explicit sender overrides on NotificationRequest should be passed to provider."""
+        captured = {}
+
+        class _CaptureProvider(MockEmailProvider):
+            def send(
+                self,
+                to,
+                subject,
+                body,
+                html_body=None,
+                from_address=None,
+                from_name=None,
+                reply_to=None,
+                attachments=None
+            ):
+                captured['from_address'] = from_address
+                captured['from_name'] = from_name
+                captured['reply_to'] = reply_to
+                return True, "MSG_CAPTURE", None
+
+        service = NotificationService(
+            email_provider=_CaptureProvider(),
+            sms_provider=MockSMSProvider()
+        )
+
+        result = service.send(NotificationRequest(
+            channel=NotificationChannel.EMAIL,
+            recipient="test@example.com",
+            subject="OTP",
+            content="Code 123456",
+            from_address="donotreply@phins.ai",
+            from_name="PHINS Security",
+            reply_to="support@phins.ai"
+        ))
+
+        assert result.success
+        assert captured.get('from_address') == "donotreply@phins.ai"
+        assert captured.get('from_name') == "PHINS Security"
+        assert captured.get('reply_to') == "support@phins.ai"
     
     def test_send_sms_notification(self):
         """Test sending SMS notification"""

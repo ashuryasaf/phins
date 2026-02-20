@@ -112,7 +112,7 @@ class PHINSConfig:
     SMTP_HOST = "localhost"
     SMTP_PORT = 587
     SMTP_USE_TLS = True
-    EMAIL_FROM_ADDRESS = "noreply@phins.ai"
+    EMAIL_FROM_ADDRESS = "donotreply@phins.ai"
     
     # ========== SMS Configuration ==========
     ENABLE_SMS_NOTIFICATIONS = False
