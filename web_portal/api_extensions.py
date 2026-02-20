@@ -112,7 +112,20 @@ PHINS_TEST_MODE = str(os.environ.get('PHINS_TEST_MODE', '')).lower() in ('1', 't
 EXPOSE_DEMO_OTP = PHINS_TEST_MODE or str(os.environ.get('PHINS_EXPOSE_DEMO_OTP', '')).lower() in (
     '1', 'true', 'yes', 'y'
 )
-_EMAIL_PROVIDER_TYPES = {'smtp', 'sendgrid', 'ses', 'mailgun'}
+_EMAIL_PROVIDER_TYPES = {'smtp', 'sendgrid', 'ses', 'mailgun', 'resend'}
+_EMAIL_PROVIDER_ALIASES = {
+    'send-grid': 'sendgrid',
+    'send_grid': 'sendgrid',
+    'sg': 'sendgrid',
+    'aws_ses': 'ses',
+    'aws-ses': 'ses',
+    'amazon_ses': 'ses',
+    'amazon-ses': 'ses',
+    'mail-gun': 'mailgun',
+    'mail_gun': 'mailgun',
+    'resend_api': 'resend',
+    'resend-api': 'resend',
+}
 _TRUTHY_VALUES = {'1', 'true', 'yes', 'y', 'on'}
 _PRODUCTION_ENV_NAMES = {'prod', 'production', 'live'}
 _REGISTRATION_OTP_PURPOSES = {'registration', 'email_verification'}
@@ -132,6 +145,17 @@ def _aws_identity_configured() -> bool:
     )
 
 
+def _normalize_email_provider_type(raw_provider: Optional[str]) -> str:
+    """Normalize provider aliases and default safely."""
+    normalized = str(raw_provider or '').strip().lower()
+    if not normalized:
+        return 'smtp'
+    normalized = _EMAIL_PROVIDER_ALIASES.get(normalized, normalized)
+    if normalized in _EMAIL_PROVIDER_TYPES:
+        return normalized
+    return 'smtp'
+
+
 def _configured_email_provider_types() -> List[str]:
     """
     Resolve configured email providers for delivery fallback.
@@ -140,7 +164,9 @@ def _configured_email_provider_types() -> List[str]:
     """
     provider_types: List[str] = []
 
-    configured_provider = str(os.environ.get('EMAIL_PROVIDER', 'smtp') or 'smtp').strip().lower()
+    configured_provider = _normalize_email_provider_type(
+        os.environ.get('EMAIL_PROVIDER', 'smtp')
+    )
     if configured_provider in _EMAIL_PROVIDER_TYPES:
         provider_types.append(configured_provider)
 
@@ -148,6 +174,8 @@ def _configured_email_provider_types() -> List[str]:
         provider_types.append('sendgrid')
     if os.environ.get('MAILGUN_API_KEY') and os.environ.get('MAILGUN_DOMAIN'):
         provider_types.append('mailgun')
+    if os.environ.get('RESEND_API_KEY'):
+        provider_types.append('resend')
     if _aws_identity_configured():
         provider_types.append('ses')
 
@@ -230,12 +258,13 @@ def _create_notification_service_for_provider(
         SendGridEmailProvider,
         AWSSESEmailProvider,
         MailgunEmailProvider,
+        ResendEmailProvider,
     )
 
     if use_mock_notifications or not provider_type:
         return create_notification_service(use_mock=use_mock_notifications)
 
-    normalized = provider_type.strip().lower()
+    normalized = _normalize_email_provider_type(provider_type)
     if normalized not in _EMAIL_PROVIDER_TYPES:
         return create_notification_service(use_mock=use_mock_notifications)
 
@@ -245,6 +274,8 @@ def _create_notification_service_for_provider(
         provider = AWSSESEmailProvider()
     elif normalized == 'mailgun':
         provider = MailgunEmailProvider()
+    elif normalized == 'resend':
+        provider = ResendEmailProvider()
     else:
         provider = SMTPEmailProvider()
 
@@ -311,7 +342,9 @@ def _send_otp_email(
     attempts: List[Tuple[str, Optional[str]]] = [('auto', None)]
     if not use_mock_notifications:
         configured_fallbacks = _configured_email_provider_types()
-        default_provider = str(os.environ.get('EMAIL_PROVIDER', 'smtp') or 'smtp').strip().lower()
+        default_provider = _normalize_email_provider_type(
+            os.environ.get('EMAIL_PROVIDER', 'smtp')
+        )
         non_default_fallbacks = [
             provider for provider in configured_fallbacks
             if provider != 'smtp' and provider != default_provider

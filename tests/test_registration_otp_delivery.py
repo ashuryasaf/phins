@@ -186,3 +186,16 @@ def test_handle_otp_request_keeps_delivery_hard_fail_in_production(monkeypatch):
     assert payload.get("success") is False
     assert payload.get("error_code") == "OTP_DELIVERY_FAILED"
     assert "demo_otp_code" not in payload
+
+
+def test_configured_email_provider_types_supports_aliases_and_resend(monkeypatch):
+    monkeypatch.setenv("EMAIL_PROVIDER", "aws_ses")
+    monkeypatch.setenv("RESEND_API_KEY", "re_test_key")
+    monkeypatch.delenv("SENDGRID_API_KEY", raising=False)
+    monkeypatch.delenv("MAILGUN_API_KEY", raising=False)
+    monkeypatch.delenv("MAILGUN_DOMAIN", raising=False)
+
+    providers = api_extensions._configured_email_provider_types()
+    assert providers[0] == "ses"
+    assert "resend" in providers
+    assert providers[-1] == "smtp"

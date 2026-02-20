@@ -149,12 +149,61 @@ class ServiceValidator:
     
     def validate_email(self):
         """Validate email service configuration"""
-        provider = os.environ.get('EMAIL_PROVIDER', 'smtp')
-        from_addr = os.environ.get('EMAIL_FROM_ADDRESS', '')
+        provider_aliases = {
+            'send-grid': 'sendgrid',
+            'send_grid': 'sendgrid',
+            'sg': 'sendgrid',
+            'aws_ses': 'ses',
+            'aws-ses': 'ses',
+            'amazon_ses': 'ses',
+            'amazon-ses': 'ses',
+            'mail-gun': 'mailgun',
+            'mail_gun': 'mailgun',
+            'resend_api': 'resend',
+            'resend-api': 'resend',
+        }
+        provider_raw = str(os.environ.get('EMAIL_PROVIDER', 'smtp') or 'smtp').strip().lower()
+        provider = provider_aliases.get(provider_raw, provider_raw or 'smtp')
+
+        from_addr = (
+            os.environ.get('NOTIFICATION_FROM_ADDRESS')
+            or os.environ.get('DEFAULT_FROM_EMAIL')
+            or os.environ.get('MAIL_FROM')
+            or os.environ.get('MAIL_FROM_ADDRESS')
+            or os.environ.get('EMAIL_FROM_ADDRESS')
+            or ''
+        ).strip()
+        if not from_addr:
+            if provider == 'sendgrid':
+                from_addr = (
+                    os.environ.get('SENDGRID_FROM_ADDRESS')
+                    or os.environ.get('SENDGRID_FROM_EMAIL')
+                    or os.environ.get('SENDGRID_SENDER_EMAIL')
+                    or ''
+                ).strip()
+            elif provider == 'mailgun':
+                from_addr = (
+                    os.environ.get('MAILGUN_FROM_ADDRESS')
+                    or os.environ.get('MAILGUN_FROM_EMAIL')
+                    or ''
+                ).strip()
+            elif provider == 'ses':
+                from_addr = (
+                    os.environ.get('SES_FROM_ADDRESS')
+                    or os.environ.get('AWS_SES_FROM_ADDRESS')
+                    or os.environ.get('AWS_SES_FROM_EMAIL')
+                    or ''
+                ).strip()
+            elif provider == 'resend':
+                from_addr = (
+                    os.environ.get('RESEND_FROM_ADDRESS')
+                    or os.environ.get('RESEND_FROM_EMAIL')
+                    or ''
+                ).strip()
         
         self.add_result(ValidationResult(
             "Email provider configured",
-            provider in ['smtp', 'sendgrid', 'ses', 'mailgun'],
+            provider in ['smtp', 'sendgrid', 'ses', 'mailgun', 'resend'],
             f"Provider: {provider}"
         ))
         
@@ -187,6 +236,13 @@ class ServiceValidator:
                 "AWS SES credentials",
                 bool(aws_key) and bool(aws_region),
                 f"Region: {aws_region}" if aws_region else "AWS credentials not fully configured"
+            ))
+        elif provider == 'resend':
+            api_key = os.environ.get('RESEND_API_KEY', '')
+            self.add_result(ValidationResult(
+                "Resend API key",
+                bool(api_key),
+                "API key configured" if api_key else "RESEND_API_KEY not set"
             ))
     
     def validate_sms(self):

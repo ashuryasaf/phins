@@ -63,11 +63,13 @@ class NotificationConfig:
     EMAIL_REPLY_TO = os.environ.get('EMAIL_REPLY_TO', 'support@phins.ai')
     
     # Email provider selection
-    EMAIL_PROVIDER = os.environ.get('EMAIL_PROVIDER', 'smtp')  # smtp, sendgrid, ses, mailgun
+    EMAIL_PROVIDER = os.environ.get('EMAIL_PROVIDER', 'smtp')  # smtp, sendgrid, ses, mailgun, resend
     SENDGRID_API_KEY = os.environ.get('SENDGRID_API_KEY', '')
     AWS_SES_REGION = os.environ.get('AWS_SES_REGION', 'us-east-1')
     MAILGUN_API_KEY = os.environ.get('MAILGUN_API_KEY', '')
     MAILGUN_DOMAIN = os.environ.get('MAILGUN_DOMAIN', '')
+    RESEND_API_KEY = os.environ.get('RESEND_API_KEY', '')
+    RESEND_API_BASE_URL = os.environ.get('RESEND_API_BASE_URL', 'https://api.resend.com')
     
     # ========== SMS Configuration ==========
     SMS_PROVIDER = os.environ.get('SMS_PROVIDER', 'twilio')  # twilio, sns, vonage, messagebird
@@ -695,6 +697,148 @@ class EmailProvider(ABC):
         pass
 
 
+_EMAIL_PROVIDER_NAME_ALIASES = {
+    'send-grid': 'sendgrid',
+    'send_grid': 'sendgrid',
+    'sg': 'sendgrid',
+    'aws_ses': 'ses',
+    'aws-ses': 'ses',
+    'amazon_ses': 'ses',
+    'amazon-ses': 'ses',
+    'mail-gun': 'mailgun',
+    'mail_gun': 'mailgun',
+    'resend_api': 'resend',
+    'resend-api': 'resend',
+}
+_SUPPORTED_EMAIL_PROVIDERS = {'smtp', 'sendgrid', 'ses', 'mailgun', 'resend'}
+_PROVIDER_FROM_ADDRESS_ENV_VARS = {
+    'smtp': ('SMTP_FROM_ADDRESS', 'SMTP_FROM_EMAIL'),
+    'sendgrid': (
+        'SENDGRID_FROM_ADDRESS',
+        'SENDGRID_FROM_EMAIL',
+        'SENDGRID_SENDER_EMAIL',
+        'SENDGRID_VERIFIED_SENDER',
+    ),
+    'ses': ('SES_FROM_ADDRESS', 'AWS_SES_FROM_ADDRESS', 'AWS_SES_FROM_EMAIL'),
+    'mailgun': ('MAILGUN_FROM_ADDRESS', 'MAILGUN_FROM_EMAIL'),
+    'resend': ('RESEND_FROM_ADDRESS', 'RESEND_FROM_EMAIL'),
+}
+_PROVIDER_FROM_NAME_ENV_VARS = {
+    'smtp': ('SMTP_FROM_NAME',),
+    'sendgrid': ('SENDGRID_FROM_NAME',),
+    'ses': ('SES_FROM_NAME', 'AWS_SES_FROM_NAME'),
+    'mailgun': ('MAILGUN_FROM_NAME',),
+    'resend': ('RESEND_FROM_NAME',),
+}
+_GLOBAL_FROM_ADDRESS_ENV_VARS = (
+    'NOTIFICATION_FROM_ADDRESS',
+    'NOTIFICATIONS_FROM_ADDRESS',
+    'DEFAULT_FROM_EMAIL',
+    'MAIL_FROM',
+    'MAIL_FROM_ADDRESS',
+    'EMAIL_FROM_ADDRESS',
+)
+_GLOBAL_FROM_NAME_ENV_VARS = (
+    'NOTIFICATION_FROM_NAME',
+    'NOTIFICATIONS_FROM_NAME',
+    'DEFAULT_FROM_NAME',
+    'MAIL_FROM_NAME',
+    'EMAIL_FROM_NAME',
+)
+_REPLY_TO_ENV_VARS = (
+    'NOTIFICATION_REPLY_TO',
+    'NOTIFICATIONS_REPLY_TO',
+    'DEFAULT_REPLY_TO',
+    'EMAIL_REPLY_TO',
+)
+
+
+def _canonical_email_provider_type(raw_provider: Optional[str]) -> Optional[str]:
+    """Return canonical email provider name if supported."""
+    normalized = str(raw_provider or '').strip().lower()
+    if not normalized:
+        return None
+    normalized = _EMAIL_PROVIDER_NAME_ALIASES.get(normalized, normalized)
+    if normalized in _SUPPORTED_EMAIL_PROVIDERS:
+        return normalized
+    return None
+
+
+def _normalize_email_provider_type(raw_provider: Optional[str], default: str = 'smtp') -> str:
+    """Normalize provider aliases and fall back safely."""
+    return _canonical_email_provider_type(raw_provider) or default
+
+
+def _first_non_empty_env(*env_names: str) -> Optional[str]:
+    """Return the first non-empty environment value."""
+    for env_name in env_names:
+        raw_value = os.environ.get(env_name)
+        if raw_value is None:
+            continue
+        value = str(raw_value).strip()
+        if value:
+            return value
+    return None
+
+
+def _resolve_email_sender(
+    provider_type: str,
+    from_address: Optional[str],
+    from_name: Optional[str]
+) -> Tuple[str, str]:
+    """
+    Resolve sender identity with provider-specific overrides.
+
+    For SMTP, if EMAIL_FROM_ADDRESS is not explicitly configured and SMTP_USERNAME
+    is an email address, use SMTP_USERNAME as the sender to avoid relay rejection.
+    """
+    normalized_provider = _normalize_email_provider_type(provider_type)
+    explicit_from_address = str(from_address or '').strip()
+    explicit_from_name = str(from_name or '').strip()
+
+    resolved_from_address = explicit_from_address or (
+        _first_non_empty_env(*_PROVIDER_FROM_ADDRESS_ENV_VARS.get(normalized_provider, ()))
+        or _first_non_empty_env(*_GLOBAL_FROM_ADDRESS_ENV_VARS)
+        or str(NotificationConfig.EMAIL_FROM_ADDRESS or '').strip()
+    )
+    resolved_from_name = explicit_from_name or (
+        _first_non_empty_env(*_PROVIDER_FROM_NAME_ENV_VARS.get(normalized_provider, ()))
+        or _first_non_empty_env(*_GLOBAL_FROM_NAME_ENV_VARS)
+        or str(NotificationConfig.EMAIL_FROM_NAME or '').strip()
+    )
+
+    email_from_explicitly_set = bool(str(os.environ.get('EMAIL_FROM_ADDRESS', '') or '').strip())
+    if (
+        normalized_provider == 'smtp'
+        and not explicit_from_address
+        and not email_from_explicitly_set
+    ):
+        smtp_username = str(
+            os.environ.get('SMTP_USERNAME') or NotificationConfig.SMTP_USERNAME or ''
+        ).strip()
+        if validate_email(smtp_username):
+            resolved_from_address = smtp_username
+
+    if not validate_email(resolved_from_address):
+        fallback_from_address = str(NotificationConfig.EMAIL_FROM_ADDRESS or '').strip()
+        if validate_email(fallback_from_address):
+            resolved_from_address = fallback_from_address
+
+    return resolved_from_address, resolved_from_name or "PHINS Insurance"
+
+
+def _resolve_reply_to_address(reply_to: Optional[str]) -> Optional[str]:
+    """Resolve reply-to address from explicit value or configured defaults."""
+    explicit_reply_to = str(reply_to or '').strip()
+    if explicit_reply_to:
+        return explicit_reply_to
+    return (
+        _first_non_empty_env(*_REPLY_TO_ENV_VARS)
+        or str(NotificationConfig.EMAIL_REPLY_TO or '').strip()
+        or None
+    )
+
+
 class SMTPEmailProvider(EmailProvider):
     """SMTP-based email provider"""
     
@@ -715,8 +859,12 @@ class SMTPEmailProvider(EmailProvider):
             from email.mime.text import MIMEText
             from email.mime.multipart import MIMEMultipart
             
-            from_addr = from_address or NotificationConfig.EMAIL_FROM_ADDRESS
-            from_display = from_name or NotificationConfig.EMAIL_FROM_NAME
+            from_addr, from_display = _resolve_email_sender(
+                provider_type='smtp',
+                from_address=from_address,
+                from_name=from_name
+            )
+            reply_to_address = _resolve_reply_to_address(reply_to)
             
             # Create message
             if html_body:
@@ -729,11 +877,12 @@ class SMTPEmailProvider(EmailProvider):
             msg['Subject'] = subject
             msg['From'] = f"{from_display} <{from_addr}>"
             msg['To'] = to
-            if reply_to:
-                msg['Reply-To'] = reply_to
+            if reply_to_address:
+                msg['Reply-To'] = reply_to_address
             
             # Generate message ID
-            message_id = f"<{generate_id('MSG')}@{from_addr.split('@')[1]}>"
+            from_domain = from_addr.split('@', 1)[1] if '@' in from_addr else 'phins.local'
+            message_id = f"<{generate_id('MSG')}@{from_domain}>"
             msg['Message-ID'] = message_id
             
             # Connect and send
@@ -802,13 +951,17 @@ class SendGridEmailProvider(EmailProvider):
             import urllib.request
             import urllib.error
             
-            api_key = NotificationConfig.SENDGRID_API_KEY
+            api_key = _first_non_empty_env('SENDGRID_API_KEY') or NotificationConfig.SENDGRID_API_KEY
             if not api_key:
                 logger.warning("SendGrid API key not configured, falling back to mock")
                 return MockEmailProvider().send(to, subject, body, html_body, from_address, from_name)
             
-            from_addr = from_address or NotificationConfig.EMAIL_FROM_ADDRESS
-            from_display = from_name or NotificationConfig.EMAIL_FROM_NAME
+            from_addr, from_display = _resolve_email_sender(
+                provider_type='sendgrid',
+                from_address=from_address,
+                from_name=from_name
+            )
+            reply_to_address = _resolve_reply_to_address(reply_to)
             
             # Build SendGrid API payload
             payload = {
@@ -837,8 +990,8 @@ class SendGridEmailProvider(EmailProvider):
                 })
             
             # Add reply-to if provided
-            if reply_to:
-                payload["reply_to"] = {"email": reply_to}
+            if reply_to_address:
+                payload["reply_to"] = {"email": reply_to_address}
             
             # Make API request
             url = "https://api.sendgrid.com/v3/mail/send"
@@ -890,7 +1043,7 @@ class AWSSESEmailProvider(EmailProvider):
                 logger.warning("boto3 library not installed, falling back to mock")
                 return MockEmailProvider().send(to, subject, body, html_body, from_address, from_name)
             
-            region = NotificationConfig.AWS_SES_REGION
+            region = _first_non_empty_env('AWS_SES_REGION') or NotificationConfig.AWS_SES_REGION
             
             # Create SES client
             try:
@@ -899,8 +1052,12 @@ class AWSSESEmailProvider(EmailProvider):
                 logger.warning("AWS credentials not configured, falling back to mock")
                 return MockEmailProvider().send(to, subject, body, html_body, from_address, from_name)
             
-            from_addr = from_address or NotificationConfig.EMAIL_FROM_ADDRESS
-            from_display = from_name or NotificationConfig.EMAIL_FROM_NAME
+            from_addr, from_display = _resolve_email_sender(
+                provider_type='ses',
+                from_address=from_address,
+                from_name=from_name
+            )
+            reply_to_address = _resolve_reply_to_address(reply_to)
             
             # Build message
             message = {
@@ -926,8 +1083,8 @@ class AWSSESEmailProvider(EmailProvider):
                 'Message': message
             }
             
-            if reply_to:
-                kwargs['ReplyToAddresses'] = [reply_to]
+            if reply_to_address:
+                kwargs['ReplyToAddresses'] = [reply_to_address]
             
             response = ses.send_email(**kwargs)
             message_id = response.get('MessageId', generate_id('SES'))
@@ -964,15 +1121,19 @@ class MailgunEmailProvider(EmailProvider):
             import urllib.error
             import base64
             
-            api_key = NotificationConfig.MAILGUN_API_KEY
-            domain = NotificationConfig.MAILGUN_DOMAIN
+            api_key = _first_non_empty_env('MAILGUN_API_KEY') or NotificationConfig.MAILGUN_API_KEY
+            domain = _first_non_empty_env('MAILGUN_DOMAIN') or NotificationConfig.MAILGUN_DOMAIN
             
             if not api_key or not domain:
                 logger.warning("Mailgun not configured, falling back to mock")
                 return MockEmailProvider().send(to, subject, body, html_body, from_address, from_name)
             
-            from_addr = from_address or NotificationConfig.EMAIL_FROM_ADDRESS
-            from_display = from_name or NotificationConfig.EMAIL_FROM_NAME
+            from_addr, from_display = _resolve_email_sender(
+                provider_type='mailgun',
+                from_address=from_address,
+                from_name=from_name
+            )
+            reply_to_address = _resolve_reply_to_address(reply_to)
             
             # Build form data
             data = {
@@ -985,8 +1146,8 @@ class MailgunEmailProvider(EmailProvider):
             if html_body:
                 data['html'] = html_body
             
-            if reply_to:
-                data['h:Reply-To'] = reply_to
+            if reply_to_address:
+                data['h:Reply-To'] = reply_to_address
             
             # Make API request
             url = f"https://api.mailgun.net/v3/{domain}/messages"
@@ -1009,6 +1170,80 @@ class MailgunEmailProvider(EmailProvider):
                 
         except Exception as e:
             logger.error(f"Mailgun send error: {str(e)}")
+            return False, None, str(e)
+
+
+class ResendEmailProvider(EmailProvider):
+    """Resend API email provider"""
+
+    def send(
+        self,
+        to: str,
+        subject: str,
+        body: str,
+        html_body: Optional[str] = None,
+        from_address: Optional[str] = None,
+        from_name: Optional[str] = None,
+        reply_to: Optional[str] = None,
+        attachments: Optional[List[Dict[str, Any]]] = None
+    ) -> Tuple[bool, Optional[str], Optional[str]]:
+        """Send email via Resend API"""
+        try:
+            import urllib.request
+            import urllib.error
+
+            api_key = (
+                _first_non_empty_env('RESEND_API_KEY')
+                or str(NotificationConfig.RESEND_API_KEY or '').strip()
+            )
+            if not api_key:
+                logger.warning("Resend API key not configured, falling back to mock")
+                return MockEmailProvider().send(
+                    to, subject, body, html_body, from_address, from_name
+                )
+
+            base_url = (
+                _first_non_empty_env('RESEND_API_BASE_URL')
+                or str(NotificationConfig.RESEND_API_BASE_URL or '').strip()
+                or 'https://api.resend.com'
+            ).rstrip('/')
+            from_addr, from_display = _resolve_email_sender(
+                provider_type='resend',
+                from_address=from_address,
+                from_name=from_name
+            )
+            reply_to_address = _resolve_reply_to_address(reply_to)
+
+            payload: Dict[str, Any] = {
+                "from": f"{from_display} <{from_addr}>" if from_display else from_addr,
+                "to": [to],
+                "subject": subject,
+                "text": body,
+            }
+            if html_body:
+                payload["html"] = html_body
+            if reply_to_address:
+                payload["reply_to"] = reply_to_address
+
+            data = json.dumps(payload).encode('utf-8')
+            req = urllib.request.Request(f"{base_url}/emails", data=data, method='POST')
+            req.add_header('Authorization', f'Bearer {api_key}')
+            req.add_header('Content-Type', 'application/json')
+
+            try:
+                with urllib.request.urlopen(req, timeout=30) as response:
+                    if response.status not in [200, 201, 202]:
+                        return False, None, f"Unexpected status: {response.status}"
+                    result = json.loads(response.read().decode('utf-8') or '{}')
+                    message_id = result.get('id', generate_id('RS'))
+                    return True, message_id, None
+            except urllib.error.HTTPError as e:
+                error_body = e.read().decode() if e.fp else str(e)
+                logger.error(f"Resend API error: {e.code} - {error_body}")
+                return False, None, f"Resend error: {e.code}"
+
+        except Exception as e:
+            logger.error(f"Resend send error: {str(e)}")
             return False, None, str(e)
 
 
@@ -2623,7 +2858,7 @@ class ClientVerificationService:
 # FACTORY FUNCTION
 # ============================================================================
 
-_EMAIL_PROVIDER_TYPES = {'smtp', 'sendgrid', 'ses', 'mailgun'}
+_EMAIL_PROVIDER_TYPES = {'smtp', 'sendgrid', 'ses', 'mailgun', 'resend'}
 _SMTP_PLACEHOLDER_HOSTS = {
     '',
     'localhost',
@@ -2634,15 +2869,23 @@ _SMTP_PLACEHOLDER_HOSTS = {
 }
 
 
+def _env_or_default(name: str, default: str = '') -> str:
+    """Read env var with fallback to already-loaded config default."""
+    raw_value = os.environ.get(name)
+    if raw_value is None:
+        raw_value = default
+    return str(raw_value or '').strip()
+
+
 def _smtp_looks_unconfigured() -> bool:
     """
     Detect placeholder/default SMTP settings.
 
     We treat localhost + no credentials as a likely non-production SMTP setup.
     """
-    host = (NotificationConfig.SMTP_HOST or '').strip().lower()
-    username = (NotificationConfig.SMTP_USERNAME or '').strip()
-    password = (NotificationConfig.SMTP_PASSWORD or '').strip()
+    host = _env_or_default('SMTP_HOST', NotificationConfig.SMTP_HOST).lower()
+    username = _env_or_default('SMTP_USERNAME', NotificationConfig.SMTP_USERNAME)
+    password = _env_or_default('SMTP_PASSWORD', NotificationConfig.SMTP_PASSWORD)
     if host in _SMTP_PLACEHOLDER_HOSTS and not username and not password:
         return True
 
@@ -2669,11 +2912,17 @@ def _aws_identity_configured() -> bool:
 
 def _detect_configured_api_email_provider() -> Optional[str]:
     """Return the best configured API email provider, if any."""
-    if NotificationConfig.SENDGRID_API_KEY:
+    if _env_or_default('SENDGRID_API_KEY', NotificationConfig.SENDGRID_API_KEY):
         return 'sendgrid'
 
-    if NotificationConfig.MAILGUN_API_KEY and NotificationConfig.MAILGUN_DOMAIN:
+    if (
+        _env_or_default('MAILGUN_API_KEY', NotificationConfig.MAILGUN_API_KEY)
+        and _env_or_default('MAILGUN_DOMAIN', NotificationConfig.MAILGUN_DOMAIN)
+    ):
         return 'mailgun'
+
+    if _env_or_default('RESEND_API_KEY', NotificationConfig.RESEND_API_KEY):
+        return 'resend'
 
     if _aws_identity_configured():
         return 'ses'
@@ -2689,11 +2938,14 @@ def _select_email_provider_type() -> str:
       - If EMAIL_PROVIDER is explicitly set, respect it unless it points to
         placeholder SMTP settings that cannot deliver.
       - If provider is not explicit and defaults to placeholder SMTP, auto-select
-        a configured API provider (SendGrid/Mailgun/SES) when available.
+        a configured API provider (SendGrid/Mailgun/Resend/SES) when available.
     """
     raw_env_provider = os.environ.get('EMAIL_PROVIDER')
-    has_explicit_provider = raw_env_provider is not None and bool(raw_env_provider.strip())
-    provider_type = (NotificationConfig.EMAIL_PROVIDER or 'smtp').strip().lower()
+    has_explicit_provider = _canonical_email_provider_type(raw_env_provider) is not None
+    provider_type = _normalize_email_provider_type(
+        raw_env_provider if has_explicit_provider else NotificationConfig.EMAIL_PROVIDER,
+        default='smtp'
+    )
     if provider_type not in _EMAIL_PROVIDER_TYPES:
         logger.warning("Unknown EMAIL_PROVIDER '%s'; falling back to smtp", provider_type)
         provider_type = 'smtp'
@@ -2724,12 +2976,15 @@ def _select_email_provider_type() -> str:
 
 def _build_email_provider(provider_type: str) -> EmailProvider:
     """Construct an email provider instance from provider type."""
+    provider_type = _normalize_email_provider_type(provider_type, default='smtp')
     if provider_type == 'sendgrid':
         return SendGridEmailProvider()
     if provider_type == 'ses':
         return AWSSESEmailProvider()
     if provider_type == 'mailgun':
         return MailgunEmailProvider()
+    if provider_type == 'resend':
+        return ResendEmailProvider()
     return SMTPEmailProvider()
 
 
@@ -2754,6 +3009,7 @@ def create_notification_service(
         - 'sendgrid': SendGrid API
         - 'ses': AWS Simple Email Service
         - 'mailgun': Mailgun API
+        - 'resend': Resend API
     
     SMS providers (set via SMS_PROVIDER env var):
         - 'twilio' (default): Twilio SMS API
@@ -2769,7 +3025,10 @@ def create_notification_service(
         if email_provider:
             email = email_provider
         else:
-            configured_provider = (NotificationConfig.EMAIL_PROVIDER or 'smtp').strip().lower()
+            configured_provider = _normalize_email_provider_type(
+                os.environ.get('EMAIL_PROVIDER', NotificationConfig.EMAIL_PROVIDER),
+                default='smtp'
+            )
             provider_type = _select_email_provider_type()
             if provider_type != configured_provider:
                 logger.info(
@@ -2833,6 +3092,7 @@ __all__ = [
     'SendGridEmailProvider',
     'AWSSESEmailProvider',
     'MailgunEmailProvider',
+    'ResendEmailProvider',
     
     # SMS Providers
     'SMSProvider',
