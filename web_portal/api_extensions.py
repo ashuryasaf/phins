@@ -105,6 +105,52 @@ except ImportError:
     CUSTOMER_COMMUNICATION_AGENT_AVAILABLE = False
     print("Warning: Customer communication agent not available")
 
+# Import shared provider alias normalization from notification_service to avoid duplication
+try:
+    from services.notification_service import (
+        _EMAIL_PROVIDER_NAME_ALIASES as _EMAIL_PROVIDER_ALIASES,
+        _SUPPORTED_EMAIL_PROVIDERS as _EMAIL_PROVIDER_TYPES,
+        _normalize_provider_alias_token,
+        _normalize_email_provider_type,
+    )
+    NOTIFICATION_ALIASES_AVAILABLE = True
+except ImportError:
+    NOTIFICATION_ALIASES_AVAILABLE = False
+    _EMAIL_PROVIDER_TYPES = {'smtp', 'sendgrid', 'ses', 'mailgun', 'resend'}
+    _EMAIL_PROVIDER_ALIASES = {
+        'send_grid': 'sendgrid',
+        'sendgrid_api': 'sendgrid',
+        'sg': 'sendgrid',
+        'aws_ses': 'ses',
+        'amazon_ses': 'ses',
+        'amazon_simple_email_service': 'ses',
+        'amazonses': 'ses',
+        'sesv2': 'ses',
+        'mail_gun': 'mailgun',
+        'mailgun_api': 'mailgun',
+        'resend_api': 'resend',
+        'resendapi': 'resend',
+    }
+
+    def _normalize_provider_alias_token(raw_provider: Optional[str]) -> str:
+        """Normalize provider token for robust alias handling."""
+        normalized = str(raw_provider or '').strip().lower()
+        if not normalized:
+            return ''
+        normalized = re.sub(r'[\s\-.]+', '_', normalized)
+        normalized = re.sub(r'_+', '_', normalized).strip('_')
+        return normalized
+
+    def _normalize_email_provider_type(raw_provider: Optional[str], default: str = 'smtp') -> str:
+        """Normalize provider aliases and default safely."""
+        normalized = _normalize_provider_alias_token(raw_provider)
+        if not normalized:
+            return default
+        normalized = _EMAIL_PROVIDER_ALIASES.get(normalized, normalized)
+        if normalized in _EMAIL_PROVIDER_TYPES:
+            return normalized
+        return default
+
 # Shared data stores for cross-dashboard integration
 _contribution_ledger: Dict = {}
 _admin_dashboard_data: Dict = {}
@@ -113,21 +159,6 @@ PHINS_TEST_MODE = str(os.environ.get('PHINS_TEST_MODE', '')).lower() in ('1', 't
 EXPOSE_DEMO_OTP = PHINS_TEST_MODE or str(os.environ.get('PHINS_EXPOSE_DEMO_OTP', '')).lower() in (
     '1', 'true', 'yes', 'y'
 )
-_EMAIL_PROVIDER_TYPES = {'smtp', 'sendgrid', 'ses', 'mailgun', 'resend'}
-_EMAIL_PROVIDER_ALIASES = {
-    'send_grid': 'sendgrid',
-    'sendgrid_api': 'sendgrid',
-    'sg': 'sendgrid',
-    'aws_ses': 'ses',
-    'amazon_ses': 'ses',
-    'amazon_simple_email_service': 'ses',
-    'amazonses': 'ses',
-    'sesv2': 'ses',
-    'mail_gun': 'mailgun',
-    'mailgun_api': 'mailgun',
-    'resend_api': 'resend',
-    'resendapi': 'resend',
-}
 _TRUTHY_VALUES = {'1', 'true', 'yes', 'y', 'on'}
 _PRODUCTION_ENV_NAMES = {'prod', 'production', 'live'}
 _REGISTRATION_OTP_PURPOSES = {'registration', 'email_verification'}
@@ -150,16 +181,6 @@ def _env_or_notification_default(name: str, default: str = '') -> str:
         return str(default or '').strip()
 
 
-def _normalize_provider_alias_token(raw_provider: Optional[str]) -> str:
-    """Normalize provider token for robust alias handling."""
-    normalized = str(raw_provider or '').strip().lower()
-    if not normalized:
-        return ''
-    normalized = re.sub(r'[\s\-.]+', '_', normalized)
-    normalized = re.sub(r'_+', '_', normalized).strip('_')
-    return normalized
-
-
 def _aws_identity_configured() -> bool:
     """Check whether AWS runtime credentials are available."""
     return any(
@@ -172,17 +193,6 @@ def _aws_identity_configured() -> bool:
             'AWS_CONTAINER_CREDENTIALS_FULL_URI',
         )
     )
-
-
-def _normalize_email_provider_type(raw_provider: Optional[str]) -> str:
-    """Normalize provider aliases and default safely."""
-    normalized = _normalize_provider_alias_token(raw_provider)
-    if not normalized:
-        return 'smtp'
-    normalized = _EMAIL_PROVIDER_ALIASES.get(normalized, normalized)
-    if normalized in _EMAIL_PROVIDER_TYPES:
-        return normalized
-    return 'smtp'
 
 
 def _configured_email_provider_types() -> List[str]:
