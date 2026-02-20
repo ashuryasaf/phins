@@ -115,6 +115,7 @@ EXPOSE_DEMO_OTP = PHINS_TEST_MODE or str(os.environ.get('PHINS_EXPOSE_DEMO_OTP',
 _EMAIL_PROVIDER_TYPES = {'smtp', 'sendgrid', 'ses', 'mailgun'}
 _TRUTHY_VALUES = {'1', 'true', 'yes', 'y', 'on'}
 _PRODUCTION_ENV_NAMES = {'prod', 'production', 'live'}
+_DEVELOPMENT_ENV_NAMES = {'dev', 'development', 'local', 'test', 'testing', 'staging'}
 _REGISTRATION_OTP_PURPOSES = {'registration', 'email_verification'}
 
 
@@ -162,17 +163,24 @@ def _configured_email_provider_types() -> List[str]:
 
 
 def _runtime_environment_name() -> str:
-    """Best-effort runtime environment detector."""
+    """Best-effort runtime environment detector.
+
+    Returns 'unknown' when no environment is configured to ensure fail-closed
+    security behavior for OTP fallback decisions.
+    """
     for env_key in ('PHINS_ENV', 'ENVIRONMENT', 'RAILWAY_ENVIRONMENT_NAME', 'NODE_ENV'):
         raw_value = str(os.environ.get(env_key, '') or '').strip().lower()
         if raw_value:
             return raw_value
-    return 'development'
+    return 'unknown'
 
 
 def _allow_registration_demo_otp_fallback() -> bool:
     """
-    Allow OTP fallback code exposure only for non-production registration flows.
+    Allow OTP fallback code exposure only for explicitly recognized development environments.
+
+    Uses fail-closed approach: unknown environments deny fallback to prevent accidental
+    OTP exposure in misconfigured production deployments.
 
     Operators can override with PHINS_ALLOW_REGISTRATION_DEMO_OTP_FALLBACK.
     """
@@ -180,7 +188,7 @@ def _allow_registration_demo_otp_fallback() -> bool:
     if explicit_override is not None:
         return str(explicit_override).strip().lower() in _TRUTHY_VALUES
 
-    return _runtime_environment_name() not in _PRODUCTION_ENV_NAMES
+    return _runtime_environment_name() in _DEVELOPMENT_ENV_NAMES
 
 
 def _registration_otp_fallback_eligible(purpose: Optional[str]) -> bool:
