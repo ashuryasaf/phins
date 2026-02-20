@@ -199,3 +199,14 @@ def test_configured_email_provider_types_supports_aliases_and_resend(monkeypatch
     assert providers[0] == "ses"
     assert "resend" in providers
     assert providers[-1] == "smtp"
+
+
+def test_configured_email_provider_types_normalizes_spaced_aliases(monkeypatch):
+    monkeypatch.setenv("EMAIL_PROVIDER", "AWS SES")
+    monkeypatch.delenv("SENDGRID_API_KEY", raising=False)
+    monkeypatch.delenv("MAILGUN_API_KEY", raising=False)
+    monkeypatch.delenv("MAILGUN_DOMAIN", raising=False)
+    monkeypatch.delenv("RESEND_API_KEY", raising=False)
+
+    providers = api_extensions._configured_email_provider_types()
+    assert providers[0] == "ses"

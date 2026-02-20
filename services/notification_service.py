@@ -24,6 +24,7 @@ import hmac
 import secrets
 import hashlib
 import logging
+from email.utils import parseaddr
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
@@ -698,19 +699,22 @@ class EmailProvider(ABC):
 
 
 _EMAIL_PROVIDER_NAME_ALIASES = {
-    'send-grid': 'sendgrid',
     'send_grid': 'sendgrid',
+    'sendgrid_api': 'sendgrid',
     'sg': 'sendgrid',
     'aws_ses': 'ses',
-    'aws-ses': 'ses',
     'amazon_ses': 'ses',
-    'amazon-ses': 'ses',
-    'mail-gun': 'mailgun',
+    'amazon_simple_email_service': 'ses',
+    'amazonses': 'ses',
+    'sesv2': 'ses',
     'mail_gun': 'mailgun',
+    'mailgun_api': 'mailgun',
     'resend_api': 'resend',
-    'resend-api': 'resend',
+    'resendapi': 'resend',
 }
 _SUPPORTED_EMAIL_PROVIDERS = {'smtp', 'sendgrid', 'ses', 'mailgun', 'resend'}
+_DEFAULT_NOTIFICATION_FROM_ADDRESS = 'noreply@phins.ai'
+_DEFAULT_NOTIFICATION_FROM_NAME = 'PHINS Insurance'
 _PROVIDER_FROM_ADDRESS_ENV_VARS = {
     'smtp': ('SMTP_FROM_ADDRESS', 'SMTP_FROM_EMAIL'),
     'sendgrid': (
@@ -753,9 +757,42 @@ _REPLY_TO_ENV_VARS = (
 )
 
 
+def _normalize_provider_alias_token(raw_provider: Optional[str]) -> str:
+    """Normalize provider token for robust alias matching."""
+    normalized = str(raw_provider or '').strip().lower()
+    if not normalized:
+        return ''
+    normalized = re.sub(r'[\s\-.]+', '_', normalized)
+    normalized = re.sub(r'_+', '_', normalized).strip('_')
+    return normalized
+
+
+def _coerce_email_address(raw_address: Optional[str]) -> Tuple[Optional[str], Optional[str]]:
+    """
+    Parse and validate email address values.
+
+    Accepts both "user@example.com" and "Display Name <user@example.com>".
+    Returns (email, display_name).
+    """
+    candidate = str(raw_address or '').strip()
+    if not candidate:
+        return None, None
+
+    parsed_name, parsed_email = parseaddr(candidate)
+    parsed_email = str(parsed_email or '').strip()
+    parsed_name = str(parsed_name or '').strip()
+    if validate_email(parsed_email):
+        return parsed_email, parsed_name or None
+
+    if validate_email(candidate):
+        return candidate, None
+
+    return None, None
+
+
 def _canonical_email_provider_type(raw_provider: Optional[str]) -> Optional[str]:
     """Return canonical email provider name if supported."""
-    normalized = str(raw_provider or '').strip().lower()
+    normalized = _normalize_provider_alias_token(raw_provider)
     if not normalized:
         return None
     normalized = _EMAIL_PROVIDER_NAME_ALIASES.get(normalized, normalized)
@@ -796,47 +833,97 @@ def _resolve_email_sender(
     explicit_from_address = str(from_address or '').strip()
     explicit_from_name = str(from_name or '').strip()
 
-    resolved_from_address = explicit_from_address or (
-        _first_non_empty_env(*_PROVIDER_FROM_ADDRESS_ENV_VARS.get(normalized_provider, ()))
-        or _first_non_empty_env(*_GLOBAL_FROM_ADDRESS_ENV_VARS)
-        or str(NotificationConfig.EMAIL_FROM_ADDRESS or '').strip()
+    provider_from_address = _first_non_empty_env(
+        *_PROVIDER_FROM_ADDRESS_ENV_VARS.get(normalized_provider, ())
     )
-    resolved_from_name = explicit_from_name or (
-        _first_non_empty_env(*_PROVIDER_FROM_NAME_ENV_VARS.get(normalized_provider, ()))
-        or _first_non_empty_env(*_GLOBAL_FROM_NAME_ENV_VARS)
-        or str(NotificationConfig.EMAIL_FROM_NAME or '').strip()
+    global_from_address = _first_non_empty_env(*_GLOBAL_FROM_ADDRESS_ENV_VARS)
+    config_from_address = str(NotificationConfig.EMAIL_FROM_ADDRESS or '').strip()
+    resolved_from_address = (
+        explicit_from_address
+        or provider_from_address
+        or global_from_address
+        or config_from_address
     )
 
-    email_from_explicitly_set = bool(str(os.environ.get('EMAIL_FROM_ADDRESS', '') or '').strip())
+    provider_from_name = _first_non_empty_env(
+        *_PROVIDER_FROM_NAME_ENV_VARS.get(normalized_provider, ())
+    )
+    global_from_name = _first_non_empty_env(*_GLOBAL_FROM_NAME_ENV_VARS)
+    config_from_name = str(NotificationConfig.EMAIL_FROM_NAME or '').strip()
+    resolved_from_name = explicit_from_name or provider_from_name or global_from_name or config_from_name
+
+    normalized_address, parsed_sender_name = _coerce_email_address(resolved_from_address)
+    if normalized_address:
+        resolved_from_address = normalized_address
+
+    if (
+        parsed_sender_name
+        and not explicit_from_name
+        and not provider_from_name
+        and not global_from_name
+        and (
+            not config_from_name
+            or config_from_name == _DEFAULT_NOTIFICATION_FROM_NAME
+        )
+    ):
+        resolved_from_name = parsed_sender_name
+
+    email_from_explicitly_set = bool(_first_non_empty_env('EMAIL_FROM_ADDRESS'))
+    has_non_default_config_from = bool(
+        config_from_address
+        and config_from_address.lower() != _DEFAULT_NOTIFICATION_FROM_ADDRESS
+    )
     if (
         normalized_provider == 'smtp'
         and not explicit_from_address
+        and not provider_from_address
+        and not global_from_address
         and not email_from_explicitly_set
+        and not has_non_default_config_from
     ):
         smtp_username = str(
             os.environ.get('SMTP_USERNAME') or NotificationConfig.SMTP_USERNAME or ''
         ).strip()
-        if validate_email(smtp_username):
-            resolved_from_address = smtp_username
+        smtp_sender, _ = _coerce_email_address(smtp_username)
+        if smtp_sender:
+            resolved_from_address = smtp_sender
 
     if not validate_email(resolved_from_address):
-        fallback_from_address = str(NotificationConfig.EMAIL_FROM_ADDRESS or '').strip()
-        if validate_email(fallback_from_address):
-            resolved_from_address = fallback_from_address
+        fallback_candidates = [
+            provider_from_address,
+            global_from_address,
+            config_from_address,
+            _DEFAULT_NOTIFICATION_FROM_ADDRESS,
+        ]
+        if normalized_provider == 'smtp':
+            fallback_candidates.insert(
+                0, str(os.environ.get('SMTP_USERNAME') or NotificationConfig.SMTP_USERNAME or '')
+            )
+        if normalized_provider == 'resend':
+            # Resend sandbox accounts can deliver from this default identity.
+            fallback_candidates.append('onboarding@resend.dev')
 
-    return resolved_from_address, resolved_from_name or "PHINS Insurance"
+        for fallback_candidate in fallback_candidates:
+            fallback_sender, _ = _coerce_email_address(fallback_candidate)
+            if fallback_sender:
+                resolved_from_address = fallback_sender
+                break
+
+    return resolved_from_address, resolved_from_name or _DEFAULT_NOTIFICATION_FROM_NAME
 
 
 def _resolve_reply_to_address(reply_to: Optional[str]) -> Optional[str]:
     """Resolve reply-to address from explicit value or configured defaults."""
     explicit_reply_to = str(reply_to or '').strip()
-    if explicit_reply_to:
-        return explicit_reply_to
-    return (
+    reply_to_candidate = explicit_reply_to or (
         _first_non_empty_env(*_REPLY_TO_ENV_VARS)
         or str(NotificationConfig.EMAIL_REPLY_TO or '').strip()
-        or None
     )
+    if not reply_to_candidate:
+        return None
+
+    normalized_reply_to, _ = _coerce_email_address(reply_to_candidate)
+    return normalized_reply_to
 
 
 class SMTPEmailProvider(EmailProvider):
