@@ -772,7 +772,8 @@ class OTPSecurityService:
                 "email": verification.email,
                 "masked_email": mask_email(verification.email),
                 "otp_code": otp_code,
-                "expires_in_seconds": OTPSecurityConfig.OTP_EXPIRY_SECONDS
+                "expires_in_seconds": OTPSecurityConfig.OTP_EXPIRY_SECONDS,
+                "purpose": verification.purpose.value
             }
         )
     
