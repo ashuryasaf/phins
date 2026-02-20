@@ -36,6 +36,8 @@ from services.notification_service import (
     MockEmailProvider,
     SMTPEmailProvider,
     SendGridEmailProvider,
+    AWSSESEmailProvider,
+    ResendEmailProvider,
     MockSMSProvider,
     create_notification_service,
     generate_id,
@@ -574,6 +576,92 @@ class TestNotificationService:
 
         service = create_notification_service(use_mock=False)
         assert isinstance(service._email_provider, SendGridEmailProvider)
+
+    def test_factory_normalizes_alias_for_aws_ses_provider(self, monkeypatch):
+        """Provider aliases should map to canonical SES provider."""
+        monkeypatch.setenv('EMAIL_PROVIDER', 'aws_ses')
+        monkeypatch.setattr(NotificationConfig, 'EMAIL_PROVIDER', 'aws_ses')
+        monkeypatch.setattr(NotificationConfig, 'SMTP_HOST', 'smtp.example.com')
+        monkeypatch.setattr(NotificationConfig, 'SMTP_USERNAME', 'smtp-user')
+        monkeypatch.setattr(NotificationConfig, 'SMTP_PASSWORD', 'smtp-pass')
+
+        service = create_notification_service(use_mock=False)
+        assert isinstance(service._email_provider, AWSSESEmailProvider)
+
+    def test_factory_auto_selects_resend_when_available(self, monkeypatch):
+        """Auto-select Resend when SMTP is placeholder and Resend key exists."""
+        monkeypatch.delenv('EMAIL_PROVIDER', raising=False)
+        monkeypatch.delenv('SENDGRID_API_KEY', raising=False)
+        monkeypatch.delenv('MAILGUN_API_KEY', raising=False)
+        monkeypatch.delenv('MAILGUN_DOMAIN', raising=False)
+        monkeypatch.delenv('AWS_ACCESS_KEY_ID', raising=False)
+        monkeypatch.delenv('AWS_PROFILE', raising=False)
+        monkeypatch.delenv('AWS_WEB_IDENTITY_TOKEN_FILE', raising=False)
+        monkeypatch.delenv('AWS_CONTAINER_CREDENTIALS_RELATIVE_URI', raising=False)
+        monkeypatch.delenv('AWS_CONTAINER_CREDENTIALS_FULL_URI', raising=False)
+        monkeypatch.setenv('RESEND_API_KEY', 're_test_key')
+        monkeypatch.setattr(NotificationConfig, 'EMAIL_PROVIDER', 'smtp')
+        monkeypatch.setattr(NotificationConfig, 'SMTP_HOST', 'localhost')
+        monkeypatch.setattr(NotificationConfig, 'SMTP_USERNAME', '')
+        monkeypatch.setattr(NotificationConfig, 'SMTP_PASSWORD', '')
+        monkeypatch.setattr(NotificationConfig, 'SENDGRID_API_KEY', '')
+        monkeypatch.setattr(NotificationConfig, 'MAILGUN_API_KEY', '')
+        monkeypatch.setattr(NotificationConfig, 'MAILGUN_DOMAIN', '')
+        monkeypatch.setattr(NotificationConfig, 'RESEND_API_KEY', 're_test_key')
+
+        service = create_notification_service(use_mock=False)
+        assert isinstance(service._email_provider, ResendEmailProvider)
+
+    def test_smtp_provider_uses_smtp_username_as_sender_when_from_not_explicit(self, monkeypatch):
+        """SMTP should fall back to SMTP_USERNAME sender when EMAIL_FROM_ADDRESS is unset."""
+        sent_messages = []
+
+        class _FakeSMTP:
+            def __init__(self, host, port):
+                self.host = host
+                self.port = port
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc_val, exc_tb):
+                return False
+
+            def starttls(self):
+                return None
+
+            def login(self, username, password):
+                return None
+
+            def sendmail(self, from_addr, to_addrs, message):
+                sent_messages.append({
+                    'from_addr': from_addr,
+                    'to_addrs': to_addrs,
+                    'message': message
+                })
+
+        monkeypatch.delenv('EMAIL_FROM_ADDRESS', raising=False)
+        monkeypatch.setattr(NotificationConfig, 'EMAIL_FROM_ADDRESS', 'noreply@phins.ai')
+        monkeypatch.setattr(NotificationConfig, 'EMAIL_FROM_NAME', 'PHINS Insurance')
+        monkeypatch.setattr(NotificationConfig, 'SMTP_HOST', 'smtp.gmail.com')
+        monkeypatch.setattr(NotificationConfig, 'SMTP_PORT', 587)
+        monkeypatch.setattr(NotificationConfig, 'SMTP_USE_TLS', True)
+        monkeypatch.setattr(NotificationConfig, 'SMTP_USERNAME', 'mailer@example.com')
+        monkeypatch.setattr(NotificationConfig, 'SMTP_PASSWORD', 'smtp-app-password')
+        monkeypatch.setattr('smtplib.SMTP', _FakeSMTP)
+
+        provider = SMTPEmailProvider()
+        success, message_id, error = provider.send(
+            to='recipient@example.com',
+            subject='OTP Test',
+            body='Your code is 123456'
+        )
+
+        assert success is True
+        assert message_id is not None
+        assert error is None
+        assert sent_messages, "SMTP send should be called"
+        assert sent_messages[0]['from_addr'] == 'mailer@example.com'
     
     def test_send_email_notification(self):
         """Test sending email notification"""
