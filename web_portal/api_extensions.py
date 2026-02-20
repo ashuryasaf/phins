@@ -251,10 +251,13 @@ def _send_otp_email(
 
     attempts: List[Tuple[str, Optional[str]]] = [('auto', None)]
     if not use_mock_notifications:
-        attempts.extend(
-            (provider_type, provider_type)
-            for provider_type in _configured_email_provider_types()
-        )
+        configured_fallbacks = _configured_email_provider_types()
+        non_smtp_fallbacks = [provider for provider in configured_fallbacks if provider != 'smtp']
+        if non_smtp_fallbacks:
+            attempts.extend((provider, provider) for provider in non_smtp_fallbacks)
+            # Keep SMTP as final backstop when alternative providers are configured.
+            if 'smtp' in configured_fallbacks:
+                attempts.append(('smtp', 'smtp'))
 
     attempted_labels = set()
     errors: List[str] = []
