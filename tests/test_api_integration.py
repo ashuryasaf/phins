@@ -874,6 +874,110 @@ def test_claims_pay_endpoint():
     srv.stop()
 
 
+def test_claims_approve_clamps_to_claimed_amount_for_integrity():
+    """Approved amount must not exceed claimed amount."""
+    port = 8147
+    srv = ServerThread(port)
+    srv.start()
+    time.sleep(0.2)
+
+    base = f"http://127.0.0.1:{port}"
+
+    body, _ = _post(base + "/api/policies/create", {
+        "customer_name": "Claim Clamp Test",
+        "customer_email": "claimclamp@example.com",
+        "type": "health",
+        "coverage_amount": 150000
+    })
+    policy_id = json.loads(body)['policy']['id']
+    customer_id = json.loads(body)['customer']['id']
+
+    body, _ = _post(base + "/api/claims/create", {
+        "policy_id": policy_id,
+        "customer_id": customer_id,
+        "type": "medical",
+        "claimed_amount": 12000
+    })
+    claim_id = json.loads(body)['id']
+
+    body, status = _post(base + "/api/claims/approve", {
+        "id": claim_id,
+        "approved_amount": 90000,
+        "approved_by": "<script>adjuster</script>",
+        "notes": "approval over requested amount should clamp"
+    })
+
+    assert status == 200
+    data = json.loads(body)
+    assert data['success'] is True
+    assert data['claim']['status'] == 'approved'
+    assert data['claim']['approved_amount'] == 12000
+
+    srv.stop()
+
+
+def test_claims_approve_rejects_non_positive_amount():
+    """Non-positive approved_amount should return HTTP 400."""
+    port = 8148
+    srv = ServerThread(port)
+    srv.start()
+    time.sleep(0.2)
+
+    base = f"http://127.0.0.1:{port}"
+
+    body, _ = _post(base + "/api/policies/create", {
+        "customer_name": "Claim Invalid Approval Test",
+        "customer_email": "claiminvalidapprove@example.com",
+        "type": "health",
+        "coverage_amount": 150000
+    })
+    policy_id = json.loads(body)['policy']['id']
+    customer_id = json.loads(body)['customer']['id']
+
+    body, _ = _post(base + "/api/claims/create", {
+        "policy_id": policy_id,
+        "customer_id": customer_id,
+        "type": "medical",
+        "claimed_amount": 8000
+    })
+    claim_id = json.loads(body)['id']
+
+    try:
+        _post(base + "/api/claims/approve", {
+            "id": claim_id,
+            "approved_amount": 0
+        })
+        assert False, "Expected HTTP 400 for non-positive approved_amount"
+    except HTTPError as e:
+        assert e.code == 400
+        body = e.read().decode('utf-8')
+        err = json.loads(body)
+        assert 'approved_amount' in err.get('error', '')
+    finally:
+        srv.stop()
+
+
+def test_claims_probability_report_requires_claim_id():
+    """Probability report endpoint should enforce claim id input."""
+    port = 8149
+    srv = ServerThread(port)
+    srv.start()
+    time.sleep(0.2)
+
+    base = f"http://127.0.0.1:{port}"
+
+    try:
+        _post(base + "/api/claims/probability-report", {})
+        assert False, "Expected HTTP 400 when claim id is missing"
+    except HTTPError as e:
+        assert e.code == 400
+        body = e.read().decode('utf-8')
+        err = json.loads(body)
+        assert 'Claim ID is required' in err.get('error', '')
+    finally:
+        srv.stop()
+
+
 def test_billing_create_endpoint():
     """Test POST /api/billing/create"""
     port = 8045

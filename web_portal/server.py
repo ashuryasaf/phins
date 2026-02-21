@@ -22658,17 +22658,29 @@ For claims or questions, please contact:
                 claim = CLAIMS.get(claim_id)
                 
                 if claim:
-                    approved_amount = float(data.get('approved_amount', claim['claimed_amount']))
+                    claimed_amount = max(0.0, safe_float(claim.get('claimed_amount', 0), 0.0))
+                    requested_approved = safe_float(data.get('approved_amount', claimed_amount), claimed_amount)
+                    if requested_approved <= 0:
+                        self._set_json_headers(400)
+                        self.wfile.write(json.dumps({'error': 'approved_amount must be greater than 0'}).encode('utf-8'))
+                        return
+                    approved_amount = requested_approved
+                    if claimed_amount > 0:
+                        approved_amount = min(requested_approved, claimed_amount)
+
+                    approved_by = sanitize_input(str(data.get('approved_by', 'admin')), max_length=80) or 'admin'
+                    approval_notes = sanitize_input(str(data.get('notes', '')), max_length=2000)
                     
                     claim['status'] = 'approved'
                     claim['approved_amount'] = approved_amount
                     claim['approval_date'] = datetime.now().isoformat()
-                    claim['approved_by'] = data.get('approved_by', 'admin')
-                    claim['approval_notes'] = data.get('notes', '')
+                    claim['approved_by'] = approved_by
+                    claim['approval_notes'] = approval_notes
                     claim['next_stage'] = 'payment'  # Pipeline tracking
                     
                     # Persist to database
                     CLAIMS[claim_id] = claim
+                    save_ledger_data()
                     
                     # Record in transaction ledger for audit trail
                     record_transaction(
@@ -22681,8 +22693,8 @@ For claims or questions, please contact:
                             'policy_id': claim.get('policy_id'),
                             'claimed_amount': claim.get('claimed_amount'),
                             'approved_amount': approved_amount,
-                            'approved_by': data.get('approved_by', 'admin'),
-                            'notes': data.get('notes', '')
+                            'approved_by': approved_by,
+                            'notes': approval_notes
                         }
                     )
                     
@@ -22716,15 +22728,17 @@ For claims or questions, please contact:
                 claim = CLAIMS.get(claim_id)
                 
                 if claim:
-                    rejection_reason = data.get('reason', 'Not covered')
+                    rejection_reason = sanitize_input(str(data.get('reason', 'Not covered')), max_length=2000) or 'Not covered'
+                    rejected_by = sanitize_input(str(data.get('rejected_by', 'admin')), max_length=80) or 'admin'
                     
                     claim['status'] = 'rejected'
                     claim['rejection_date'] = datetime.now().isoformat()
                     claim['rejection_reason'] = rejection_reason
-                    claim['rejected_by'] = data.get('rejected_by', 'admin')
+                    claim['rejected_by'] = rejected_by
                     
                     # Persist to database
                     CLAIMS[claim_id] = claim
+                    save_ledger_data()
                     
                     # Record in transaction ledger
                     record_transaction(
@@ -22737,12 +22751,12 @@ For claims or questions, please contact:
                             'policy_id': claim.get('policy_id'),
                             'claimed_amount': claim.get('claimed_amount'),
                             'rejection_reason': rejection_reason,
-                            'rejected_by': data.get('rejected_by', 'admin')
+                            'rejected_by': rejected_by
                         }
                     )
                     
                     if audit:
-                        actor = data.get('rejected_by', 'admin')
+                        actor = rejected_by
                         try:
                             audit.log(actor, 'reject', 'claim', claim_id, {'reason': claim['rejection_reason']})
                         except Exception:
@@ -22843,10 +22857,14 @@ For claims or questions, please contact:
                 claim = CLAIMS.get(claim_id)
                 
                 # Check if claim is approved (case-insensitive)
-                if claim and claim.get('status', '').lower() == 'approved':
-                    paid_amount = claim.get('approved_amount', claim['claimed_amount'])
+                if claim and status_eq(claim, 'approved'):
+                    paid_amount = max(0.0, safe_float(claim.get('approved_amount', claim.get('claimed_amount', 0)), 0.0))
+                    if paid_amount <= 0:
+                        self._set_json_headers(400)
+                        self.wfile.write(json.dumps({'error': 'Claim approved amount must be greater than 0 for payment'}).encode('utf-8'))
+                        return
                     customer_id = claim.get('customer_id', 'unknown')
-                    processed_by = data.get('processed_by', 'accountant')
+                    processed_by = sanitize_input(str(data.get('processed_by', 'accountant')), max_length=80) or 'accountant'
                     
                     # Process payment through PHINS Balance Sheet to Health Wallet
                     payment_result = process_claim_payment_to_wallet(
@@ -23076,8 +23094,8 @@ For claims or questions, please contact:
         # Generate AI/BI probability report for a claim (fraud detection)
         if path == '/api/claims/probability-report':
             try:
-                data = json.loads(body)
-                claim_id = data.get('id') or data.get('claim_id')
+                data = json.loads(body or '{}')
+                claim_id = str(data.get('id') or data.get('claim_id') or '').strip()
                 
                 if not claim_id:
                     self._set_json_headers(400)
