@@ -249,6 +249,94 @@ def test_auto_pay_action_flow_records_paid_bill_and_ledger_entry_when_due():
         server.stop()
 
 
+def test_auto_pay_save_settings_applies_billing_defaults_and_preserves_integrity():
+    """Saving auto-pay settings must normalize invalid values to safe billing defaults."""
+    port = 8164
+    server = ServerThread(port)
+    server.start()
+    time.sleep(0.25)
+    base = f"http://127.0.0.1:{port}"
+
+    try:
+        token = _login_admin(base)
+        email = f"autopay-defaults-{int(time.time())}@example.com"
+
+        create_data, create_status = _post(
+            base + "/api/policies/create",
+            {
+                "customer_name": "AutoPay Defaults Customer",
+                "customer_email": email,
+                "coverage_amount": 160000,
+                "type": "life",
+                "payment_setup": {"billing_frequency": "monthly", "auto_pay": True},
+            },
+            token,
+        )
+        assert create_status == 201, create_data
+        customer_id = create_data["customer"]["id"]
+        policy_id = create_data["policy"]["id"]
+        underwriting_id = create_data["underwriting"]["id"]
+
+        approve_data, approve_status = _post(
+            base + "/api/underwriting/approve",
+            {"id": underwriting_id, "approved_by": "admin_autopay_defaults_test"},
+            token,
+        )
+        assert approve_status == 200, approve_data
+        assert approve_data.get("success") is True
+
+        config_data, config_status = _post(
+            base + "/api/billing/auto-pay/configure",
+            {
+                "customer_id": customer_id,
+                "policy_id": policy_id,
+                "enabled": "true",
+                "payment_method": "not_a_real_method",
+                "card_type": "invalid_card_type",
+                "card_last4": "12AB",
+                "billing_frequency": "weekly",
+                "billing_day": 99,
+                "notify_before": -5,
+                "ai_optimization": "true",
+            },
+            token,
+        )
+        assert config_status == 200, config_data
+        assert config_data.get("success") is True
+
+        configured = config_data.get("auto_pay_config", {})
+        assert configured.get("enabled") is True
+        assert configured.get("billing_frequency") == "monthly"
+        assert configured.get("billing_day") == 1
+        assert configured.get("card_last4") == "4444"
+        assert configured.get("card_type") == "visa"
+
+        settings_data, settings_status = _post(
+            base + "/api/billing/auto-pay/settings",
+            {"policy_id": policy_id, "customer_id": customer_id},
+            token,
+        )
+        assert settings_status == 200, settings_data
+        auto_pay_settings = settings_data.get("auto_pay", {})
+        assert auto_pay_settings.get("enabled") is True
+        assert auto_pay_settings.get("billing_frequency") == "monthly"
+        assert auto_pay_settings.get("billing_day") == 1
+        assert auto_pay_settings.get("card_last4") == "4444"
+        assert auto_pay_settings.get("payment_method_raw") == "credit_card"
+
+        policy = portal.POLICIES[policy_id]
+        payment_setup = policy.get("payment_setup", {})
+        billing = policy.get("billing", {})
+        assert payment_setup.get("auto_pay") is True
+        assert payment_setup.get("billing_frequency") == "monthly"
+        assert payment_setup.get("billing_day") == 1
+        assert payment_setup.get("card_last4") == "4444"
+        assert payment_setup.get("payment_method") == "credit_card"
+        assert billing.get("frequency") == "monthly"
+    finally:
+        server.stop()
+
+
 def test_registration_and_notification_metadata_remain_available():
     """Registration path should keep welcome notification metadata and history API accessible."""
     port = 8163

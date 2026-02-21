@@ -28716,16 +28716,54 @@ For claims or questions, please contact:
                     self.wfile.write(json.dumps({'error': 'Policy does not belong to customer'}).encode('utf-8'))
                     return
                 
-                # Parse auto-pay configuration
-                enabled = data.get('enabled', True)
-                payment_method = data.get('payment_method', 'credit_card')
-                card_last4 = data.get('card_last4', '4444')  # Default to 4444 if not provided
-                card_type = data.get('card_type', 'visa')
-                billing_frequency = data.get('billing_frequency', 'monthly')
-                billing_day = int(data.get('billing_day', 1))
-                max_amount = data.get('max_amount')
-                notify_before = int(data.get('notify_before', 3))
-                ai_optimization = data.get('ai_optimization', True)
+                # Parse auto-pay configuration with defensive normalization for data integrity.
+                def _to_bool(value: Any, default: bool = False) -> bool:
+                    if value is None:
+                        return default
+                    if isinstance(value, bool):
+                        return value
+                    return str(value).strip().lower() in ('1', 'true', 'yes', 'y', 'on', 'enabled')
+
+                enabled = _to_bool(data.get('enabled', True), True)
+
+                valid_payment_methods = {'credit_card', 'bank_transfer', 'health_wallet'}
+                payment_method = str(data.get('payment_method', 'credit_card') or 'credit_card').strip().lower()
+                if payment_method not in valid_payment_methods:
+                    payment_method = 'credit_card'
+
+                valid_card_types = {'visa', 'mastercard', 'amex', 'discover'}
+                card_type = str(data.get('card_type', 'visa') or 'visa').strip().lower()
+                if card_type not in valid_card_types:
+                    card_type = 'visa'
+
+                raw_last4 = ''.join(ch for ch in str(data.get('card_last4', '') or '') if ch.isdigit())
+                card_last4 = raw_last4[-4:] if len(raw_last4) >= 4 else '4444'
+
+                raw_frequency = str(data.get('billing_frequency', 'monthly') or 'monthly').strip().lower()
+                if raw_frequency == 'yearly':
+                    raw_frequency = 'annual'
+                billing_frequency = raw_frequency if raw_frequency in {'monthly', 'quarterly', 'annual'} else 'monthly'
+
+                try:
+                    billing_day = int(data.get('billing_day', 1))
+                except (TypeError, ValueError):
+                    billing_day = 1
+
+                raw_max_amount = data.get('max_amount')
+                try:
+                    max_amount = float(raw_max_amount) if raw_max_amount not in (None, '') else None
+                    if max_amount is not None and max_amount <= 0:
+                        max_amount = None
+                except (TypeError, ValueError):
+                    max_amount = None
+
+                try:
+                    notify_before = int(data.get('notify_before', 3))
+                except (TypeError, ValueError):
+                    notify_before = 3
+                notify_before = max(0, min(notify_before, 30))
+
+                ai_optimization = _to_bool(data.get('ai_optimization', True), True)
                 
                 # Validate billing day (1-28 for safety)
                 if billing_day < 1 or billing_day > 28:
@@ -28889,12 +28927,35 @@ For claims or questions, please contact:
                 billing_config = policy.get('billing', {})
                 auto_pay_config = billing_config.get('auto_pay_config', {})
                 
-                enabled = payment_setup.get('auto_pay', False) or billing_config.get('auto_pay', False)
-                billing_frequency = payment_setup.get('billing_frequency') or billing_config.get('frequency', 'monthly')
-                billing_day = payment_setup.get('billing_day', 1)
-                card_last4 = payment_setup.get('card_last4', '4444')
-                card_type = payment_setup.get('card_type', 'card')
-                payment_method = payment_setup.get('payment_method', 'credit_card')
+                if 'auto_pay' in payment_setup:
+                    enabled = bool(payment_setup.get('auto_pay'))
+                else:
+                    enabled = bool(billing_config.get('auto_pay', False))
+
+                raw_frequency = str(
+                    payment_setup.get('billing_frequency') or billing_config.get('frequency', 'monthly') or 'monthly'
+                ).strip().lower()
+                if raw_frequency == 'yearly':
+                    raw_frequency = 'annual'
+                billing_frequency = raw_frequency if raw_frequency in ['monthly', 'quarterly', 'annual'] else 'monthly'
+
+                try:
+                    billing_day = int(payment_setup.get('billing_day', 1))
+                except (TypeError, ValueError):
+                    billing_day = 1
+                if billing_day < 1 or billing_day > 28:
+                    billing_day = 1
+
+                raw_last4 = ''.join(ch for ch in str(payment_setup.get('card_last4', '4444') or '4444') if ch.isdigit())
+                card_last4 = raw_last4[-4:] if len(raw_last4) >= 4 else '4444'
+
+                card_type = str(payment_setup.get('card_type', 'card') or 'card').strip().lower()
+                if card_type not in {'visa', 'mastercard', 'amex', 'discover', 'card'}:
+                    card_type = 'card'
+
+                payment_method = str(payment_setup.get('payment_method', 'credit_card') or 'credit_card').strip().lower()
+                if payment_method not in {'credit_card', 'bank_transfer', 'health_wallet'}:
+                    payment_method = 'credit_card'
                 next_billing_date = payment_setup.get('next_billing_date') or billing_config.get('next_billing_date')
                 
                 # Format display

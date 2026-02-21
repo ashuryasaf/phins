@@ -3772,6 +3772,116 @@ async function sendAllBillingReminders() {
 
 // ========== AUTO-PAY AI CONFIGURATION FUNCTIONS ==========
 
+const AUTOPAY_BILLING_DEFAULTS = Object.freeze({
+  enabled: true,
+  payment_method: 'credit_card',
+  card_type: 'visa',
+  card_last4: '4444',
+  billing_frequency: 'monthly',
+  billing_day: 1,
+  ai_optimization: true
+});
+
+const AUTOPAY_ALLOWED_METHODS = new Set(['credit_card', 'bank_transfer', 'health_wallet']);
+const AUTOPAY_ALLOWED_FREQUENCIES = new Set(['monthly', 'quarterly', 'annual']);
+
+function updateAutoPayMethodFields() {
+  const methodSelect = document.getElementById('autopay-method');
+  const cardSection = document.getElementById('autopay-card-section');
+  const cardLast4Section = document.getElementById('autopay-card-last4-section');
+  if (!methodSelect || !cardSection || !cardLast4Section) return;
+
+  const isCardMethod = methodSelect.value === 'credit_card';
+  cardSection.style.display = isCardMethod ? 'block' : 'none';
+  cardLast4Section.style.display = isCardMethod ? 'block' : 'none';
+}
+
+function applyAutoPayBillingDefaults(force = false) {
+  const methodEl = document.getElementById('autopay-method');
+  const cardTypeEl = document.getElementById('autopay-card-type');
+  const cardLast4El = document.getElementById('autopay-card-last4');
+  const frequencyEl = document.getElementById('autopay-frequency');
+  const dayEl = document.getElementById('autopay-billing-day');
+  const aiEl = document.getElementById('autopay-ai-optimization');
+
+  if (methodEl && (force || !AUTOPAY_ALLOWED_METHODS.has(methodEl.value))) {
+    methodEl.value = AUTOPAY_BILLING_DEFAULTS.payment_method;
+  }
+  if (cardTypeEl && (force || !cardTypeEl.value)) {
+    cardTypeEl.value = AUTOPAY_BILLING_DEFAULTS.card_type;
+  }
+  if (cardLast4El) {
+    const digits = (cardLast4El.value || '').replace(/\D/g, '');
+    cardLast4El.value = (force || digits.length !== 4)
+      ? AUTOPAY_BILLING_DEFAULTS.card_last4
+      : digits;
+  }
+  if (frequencyEl) {
+    const raw = String(frequencyEl.value || '').toLowerCase();
+    const normalized = raw === 'yearly' ? 'annual' : raw;
+    frequencyEl.value = (force || !AUTOPAY_ALLOWED_FREQUENCIES.has(normalized))
+      ? AUTOPAY_BILLING_DEFAULTS.billing_frequency
+      : normalized;
+  }
+  if (dayEl) {
+    const day = parseInt(dayEl.value, 10);
+    dayEl.value = (!Number.isFinite(day) || day < 1 || day > 28)
+      ? String(AUTOPAY_BILLING_DEFAULTS.billing_day)
+      : String(day);
+  }
+  if (aiEl && force) {
+    aiEl.checked = AUTOPAY_BILLING_DEFAULTS.ai_optimization;
+  }
+
+  updateAutoPayMethodFields();
+}
+
+function handleAutoPayEnabledChange() {
+  const enabledEl = document.getElementById('autopay-enabled');
+  if (!enabledEl) return;
+
+  const isEnabled = enabledEl.value === 'true';
+  if (isEnabled) {
+    // Enabling auto-pay always enforces a valid billing baseline.
+    applyAutoPayBillingDefaults(false);
+  }
+}
+
+function normalizeAutoPayConfigPayload(rawConfig) {
+  const config = { ...rawConfig };
+
+  const enabled = !!config.enabled;
+  const method = AUTOPAY_ALLOWED_METHODS.has(config.payment_method)
+    ? config.payment_method
+    : AUTOPAY_BILLING_DEFAULTS.payment_method;
+  const rawFrequency = String(config.billing_frequency || '').toLowerCase();
+  const normalizedFrequency = rawFrequency === 'yearly' ? 'annual' : rawFrequency;
+  const frequency = AUTOPAY_ALLOWED_FREQUENCIES.has(normalizedFrequency)
+    ? normalizedFrequency
+    : AUTOPAY_BILLING_DEFAULTS.billing_frequency;
+  const dayNum = parseInt(config.billing_day, 10);
+  const billingDay = Number.isFinite(dayNum) && dayNum >= 1 && dayNum <= 28
+    ? dayNum
+    : AUTOPAY_BILLING_DEFAULTS.billing_day;
+
+  const digits = String(config.card_last4 || '').replace(/\D/g, '');
+  const cardLast4 = digits.length === 4
+    ? digits
+    : AUTOPAY_BILLING_DEFAULTS.card_last4;
+  const cardType = ['visa', 'mastercard', 'amex', 'discover'].includes(config.card_type)
+    ? config.card_type
+    : AUTOPAY_BILLING_DEFAULTS.card_type;
+
+  config.enabled = enabled;
+  config.payment_method = method;
+  config.billing_frequency = enabled ? frequency : AUTOPAY_BILLING_DEFAULTS.billing_frequency;
+  config.billing_day = enabled ? billingDay : AUTOPAY_BILLING_DEFAULTS.billing_day;
+  config.card_last4 = method === 'credit_card' ? cardLast4 : AUTOPAY_BILLING_DEFAULTS.card_last4;
+  config.card_type = method === 'credit_card' ? cardType : AUTOPAY_BILLING_DEFAULTS.card_type;
+  config.ai_optimization = !!config.ai_optimization;
+  return config;
+}
+
 // Load auto-pay settings for the selected customer/policy
 async function loadAutoPaySettings() {
   const statusIcon = document.getElementById('autopay-status-icon');
@@ -3874,10 +3984,13 @@ async function loadPolicyAutoPayStatus(policyId, customerId) {
         document.getElementById('autopay-frequency').value = autoPay.billing_frequency || 'monthly';
         document.getElementById('autopay-billing-day').value = autoPay.billing_day || '1';
         document.getElementById('autopay-ai-optimization').checked = autoPay.ai_optimization || false;
+        handleAutoPayEnabledChange();
       } else {
         statusIcon.textContent = '⏸️';
         statusText.innerHTML = '<span style="color: #f59e0b;">Not Configured</span> - Click below to enable';
         nextBilling.textContent = '';
+        document.getElementById('autopay-enabled').value = 'false';
+        handleAutoPayEnabledChange();
       }
     }
   } catch (err) {
@@ -3905,18 +4018,31 @@ document.addEventListener('DOMContentLoaded', function() {
   // Show/hide card fields based on payment method
   const methodSelect = document.getElementById('autopay-method');
   if (methodSelect) {
-    methodSelect.addEventListener('change', function() {
-      const cardSection = document.getElementById('autopay-card-section');
-      const cardLast4Section = document.getElementById('autopay-card-last4-section');
-      if (this.value === 'credit_card') {
-        cardSection.style.display = 'block';
-        cardLast4Section.style.display = 'block';
-      } else {
-        cardSection.style.display = 'none';
-        cardLast4Section.style.display = 'none';
-      }
-    });
+    methodSelect.addEventListener('change', updateAutoPayMethodFields);
   }
+
+  const enabledSelect = document.getElementById('autopay-enabled');
+  if (enabledSelect) {
+    enabledSelect.addEventListener('change', handleAutoPayEnabledChange);
+  }
+
+  // Keyboard shortcut: press "v" while auto-pay panel is open to enable auto-pay.
+  document.addEventListener('keydown', function(event) {
+    if (event.key !== 'v' && event.key !== 'V') return;
+    if (event.ctrlKey || event.metaKey || event.altKey) return;
+    const activeTag = (document.activeElement && document.activeElement.tagName || '').toLowerCase();
+    if (activeTag === 'input' || activeTag === 'textarea' || activeTag === 'select') return;
+    const details = document.getElementById('autopay-config-details');
+    if (!details || !details.open || !enabledSelect) return;
+
+    enabledSelect.value = 'true';
+    handleAutoPayEnabledChange();
+    showNotification('Auto-pay enabled (billing defaults applied)', 'info');
+    event.preventDefault();
+  });
+
+  updateAutoPayMethodFields();
+  handleAutoPayEnabledChange();
   
   // Initial load
   setTimeout(loadAutoPaySettings, 500);
@@ -3942,7 +4068,7 @@ async function saveAutoPayConfig(event) {
     return;
   }
   
-  const config = {
+  const rawConfig = {
     customer_id: customerId,
     policy_id: policyId,
     enabled: document.getElementById('autopay-enabled').value === 'true',
@@ -3953,6 +4079,7 @@ async function saveAutoPayConfig(event) {
     billing_day: parseInt(document.getElementById('autopay-billing-day').value),
     ai_optimization: document.getElementById('autopay-ai-optimization').checked
   };
+  const config = normalizeAutoPayConfigPayload(rawConfig);
   
   try {
     const response = await fetch('/api/billing/auto-pay/configure', {
