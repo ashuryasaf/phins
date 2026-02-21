@@ -9173,7 +9173,9 @@ For claims or questions, please contact:
             self._set_json_headers()
             self.wfile.write(json.dumps({
                 'success': True,
+                # Keep both keys for backward compatibility with existing dashboards.
                 'ledger_entries': ledger_entries,
+                'entries': ledger_entries,
                 'total_entries': total_entries,
                 'transaction_types': tx_types,
                 'filters_applied': {

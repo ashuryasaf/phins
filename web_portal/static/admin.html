@@ -1533,6 +1533,18 @@
       }
       return str;
     }
+
+    // Support both legacy and current ledger payload shapes.
+    function extractLedgerEntries(payload) {
+      if (!payload || typeof payload !== 'object') return [];
+      return payload.ledger_entries || payload.entries || [];
+    }
+
+    // Ledger validation API returns HEALTHY/WARNING/CRITICAL.
+    function isLedgerIntegrityHealthy(status) {
+      const normalized = String(status || '').trim().toUpperCase();
+      return normalized === 'HEALTHY' || normalized === 'VALID' || normalized === 'PASS';
+    }
     
     // Mobile menu toggle
     function toggleMobileMenu() {
@@ -4348,19 +4360,25 @@
         
         for (const customer of customers) {
           // Validate each customer's pipeline
-          const validateRes = await fetch(`/api/customer/${customer.id}/validate`, {
+          const validateRes = await fetch(`/api/admin/pipeline-validate/${customer.id}`, {
             headers: { 'Authorization': `Bearer ${token}` }
           });
           
           if (validateRes.ok) {
             const result = await validateRes.json();
-            if (result.status === 'valid' || result.valid) {
+            if (result.valid) {
               validated++;
             } else {
-              issues.push({ id: customer.id, issue: result.issues || result.error || 'Unknown' });
+              const errorMessage = (result.errors && result.errors.length > 0)
+                ? result.errors.join('; ')
+                : (result.warnings && result.warnings.length > 0)
+                  ? result.warnings.join('; ')
+                  : (result.error || 'Unknown validation issue');
+              issues.push({ id: customer.id, issue: errorMessage });
             }
           } else {
-            validated++; // Count as validated if endpoint doesn't exist
+            const err = await validateRes.json().catch(() => ({}));
+            issues.push({ id: customer.id, issue: err.error || `HTTP ${validateRes.status}` });
           }
         }
         
@@ -4368,7 +4386,11 @@
         const ledgerRes = await fetch('/api/ledger/validate', {
           headers: { 'Authorization': `Bearer ${token}` }
         });
-        const ledgerValid = ledgerRes.ok ? (await ledgerRes.json()).integrity_status === 'VALID' : true;
+        let ledgerValid = false;
+        if (ledgerRes.ok) {
+          const ledgerValidation = await ledgerRes.json();
+          ledgerValid = isLedgerIntegrityHealthy(ledgerValidation.integrity_status);
+        }
         
         if (issues.length === 0 && ledgerValid) {
           statusEl.innerHTML = `<span style="color: #10b981;">✓ ${customers.length} customers validated</span>`;
@@ -4440,7 +4462,7 @@
         
         if (!ledgerRes.ok) throw new Error('Failed to load ledger');
         const ledgerData = await ledgerRes.json();
-        const entries = ledgerData.entries || [];
+        const entries = extractLedgerEntries(ledgerData);
         
         // Validate ledger
         const validateRes = await fetch('/api/ledger/validate', {
@@ -4645,8 +4667,8 @@
           headers: { 'Authorization': `Bearer ${token}` }
         });
         
-        const ledgerData = ledgerRes.ok ? await ledgerRes.json() : { entries: [] };
-        const policyEntries = ledgerData.entries || [];
+        const ledgerData = ledgerRes.ok ? await ledgerRes.json() : { ledger_entries: [] };
+        const policyEntries = extractLedgerEntries(ledgerData);
         
         // Validate
         const validateRes = await fetch('/api/ledger/validate', {
@@ -4898,8 +4920,8 @@
           headers: { 'Authorization': `Bearer ${token}` }
         });
         
-        const ledgerData = ledgerRes.ok ? await ledgerRes.json() : { entries: [] };
-        const claimEntries = ledgerData.entries || [];
+        const ledgerData = ledgerRes.ok ? await ledgerRes.json() : { ledger_entries: [] };
+        const claimEntries = extractLedgerEntries(ledgerData);
         
         // Validate ledger
         const validateRes = await fetch('/api/ledger/validate', {
@@ -5053,7 +5075,7 @@
             headers: { 'Authorization': `Bearer ${token}` }
           });
           const ledgerData = await ledgerRes.json();
-          const entries = ledgerData.entries || [];
+          const entries = extractLedgerEntries(ledgerData);
           
           if (entries.length > 0) {
             alert(`📒 Customer ${customerId} has ${entries.length} ledger entries!\n\nAll entries verified and up to date.`);
@@ -5228,7 +5250,7 @@
             headers: { 'Authorization': `Bearer ${token}` }
           });
           const ledgerData = await ledgerRes.json();
-          const entry = (ledgerData.entries || []).find(e => e.policy_id === policyId || e.entity_id === policyId);
+          const entry = extractLedgerEntries(ledgerData).find(e => e.policy_id === policyId || e.entity_id === policyId);
           
           if (entry) {
             alert(`📒 Policy ${policyId} already in ledger!\n\nEntry ID: ${entry.id}\nType: ${entry.type}\nTimestamp: ${entry.timestamp || entry.created_at}`);
@@ -5294,7 +5316,7 @@
             headers: { 'Authorization': `Bearer ${token}` }
           });
           const ledgerData = await ledgerRes.json();
-          const entry = (ledgerData.entries || []).find(e => e.claim_id === claimId || e.entity_id === claimId);
+          const entry = extractLedgerEntries(ledgerData).find(e => e.claim_id === claimId || e.entity_id === claimId);
           
           if (entry) {
             alert(`📒 Claim ${claimId} already in ledger!\n\nEntry ID: ${entry.id}\nType: ${entry.type}\nTimestamp: ${entry.timestamp || entry.created_at}`);
