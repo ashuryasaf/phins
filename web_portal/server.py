@@ -16564,8 +16564,6 @@ For claims or questions, please contact:
                 dob = data.get('dob', '')
                 password = data.get('password', '')
                 invitation_code = data.get('invitation_code', '').strip().upper()
-                verification_id = str(data.get('verification_id', '') or '').strip()
-                email_verified = bool(data.get('email_verified', False))
 
                 # ========== STANDARD VALIDATION ==========
                 if not name or not email or not password:
@@ -16591,40 +16589,8 @@ For claims or questions, please contact:
                     }).encode('utf-8'))
                     return
 
-                # OTP verification is mandatory in production. In tests, legacy calls without
-                # verification_id are allowed for backward compatibility.
-                otp_required = not PHINS_TEST_MODE or bool(verification_id)
-                otp_service = None
-                otp_purpose = None
-                if otp_required:
-                    if not verification_id:
-                        self._set_json_headers(400)
-                        self.wfile.write(json.dumps({
-                            'error': 'Email verification is required',
-                            'code': 'OTP_REQUIRED'
-                        }).encode('utf-8'))
-                        return
-
-                    if not email_verified:
-                        self._set_json_headers(400)
-                        self.wfile.write(json.dumps({
-                            'error': 'Email must be verified before registration',
-                            'code': 'EMAIL_NOT_VERIFIED'
-                        }).encode('utf-8'))
-                        return
-
-                    try:
-                        from services.otp_security_service import get_otp_security_service, OTPPurpose
-                        otp_service = get_otp_security_service()
-                        otp_purpose = OTPPurpose.REGISTRATION
-                    except Exception as otp_error:
-                        print(f"[REGISTER] OTP service unavailable: {otp_error}")
-                        self._set_json_headers(503)
-                        self.wfile.write(json.dumps({
-                            'error': 'Registration verification service is unavailable',
-                            'code': 'OTP_SERVICE_UNAVAILABLE'
-                        }).encode('utf-8'))
-                        return
+                # Registration is invitation-code-only. Legacy OTP fields in the payload
+                # are intentionally ignored to keep API compatibility with older clients.
 
                 registration_date = datetime.now().isoformat()
                 pwd_hash = hash_password(password)
@@ -16637,7 +16603,13 @@ For claims or questions, please contact:
                 # duplicate emails, invitation overuse, and partial writes.
                 with STATE_LOCK:
                     # Check if user already exists
-                    if email in USERS:
+                    def _email_exists_in_records(records: Dict[str, Any]) -> bool:
+                        return any(
+                            isinstance(record, dict) and str(record.get('email', '')).strip().lower() == email
+                            for record in records.values()
+                        )
+
+                    if email in USERS or _email_exists_in_records(CUSTOMERS) or _email_exists_in_records(REGISTERED_CUSTOMERS):
                         self._set_json_headers(409)
                         self.wfile.write(json.dumps({
                             'error': 'Email already registered',
@@ -16693,23 +16665,6 @@ For claims or questions, please contact:
                             'code': 'CODE_INACTIVE'
                         }).encode('utf-8'))
                         return
-
-                    # Consume OTP only after all static validation passes.
-                    if otp_required and otp_service and otp_purpose:
-                        otp_result = otp_service.consume_verification(
-                            verification_id=verification_id,
-                            expected_email=email,
-                            expected_purpose=otp_purpose,
-                            ip_address=client_ip
-                        )
-                        if not otp_result.success:
-                            status_code = 409 if otp_result.error_code == 'OTP_ALREADY_USED' else 400
-                            self._set_json_headers(status_code)
-                            self.wfile.write(json.dumps({
-                                'error': otp_result.message or 'Registration verification failed',
-                                'code': otp_result.error_code or 'OTP_VALIDATION_FAILED'
-                            }).encode('utf-8'))
-                            return
 
                     # Generate unique customer ID defensively
                     for _ in range(20):

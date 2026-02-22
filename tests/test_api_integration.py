@@ -15,7 +15,6 @@ Tests every API endpoint for correctness and proper behavior:
 import threading
 import time
 import json
-import os
 from http.server import HTTPServer
 from urllib.request import urlopen, Request
 from urllib.error import HTTPError
@@ -158,8 +157,6 @@ def test_register_endpoint():
     # This is automatically created when PHINS_TEST_MODE=1
     test_invitation_code = "TESTCODE2026"
     
-    verification_id = _request_and_verify_registration_otp(base, "newcustomer@example.com")
-
     # Test successful registration with invitation code
     body, status = _post(base + "/api/register", {
         "name": "New Customer",
@@ -167,9 +164,7 @@ def test_register_endpoint():
         "password": "secure123456",
         "phone": "555-9999",
         "dob": "1990-01-01",
-        "invitation_code": test_invitation_code,
-        "email_verified": True,
-        "verification_id": verification_id
+        "invitation_code": test_invitation_code
     })
     assert status == 201
     data = json.loads(body)
@@ -205,8 +200,8 @@ def test_register_endpoint():
     srv.stop()
 
 
-def test_register_rejects_invalid_verification_id_when_provided():
-    """If verification_id is provided, it must be valid and verified."""
+def test_register_allows_legacy_invalid_verification_payload_when_invitation_is_valid():
+    """Invitation-only registration should ignore legacy OTP payload fields."""
     port = 8123
     srv = ServerThread(port)
     srv.start()
@@ -215,29 +210,25 @@ def test_register_rejects_invalid_verification_id_when_provided():
     base = f"http://127.0.0.1:{port}"
 
     try:
-        try:
-            _post(base + "/api/register", {
-                "name": "Bad OTP User",
-                "email": "badotp@example.com",
-                "password": "secure123456",
-                "phone": "555-3333",
-                "invitation_code": "TESTCODE2026",
-                "email_verified": True,
-                "verification_id": "OTP_INVALID_TEST_ID"
-            })
-            assert False, "Registration should fail for invalid verification_id"
-        except HTTPError as e:
-            assert e.code == 400
-            payload = json.loads(e.read().decode('utf-8'))
-            assert payload.get('code') in {'INVALID_VERIFICATION', 'OTP_VALIDATION_FAILED'}
+        body, status = _post(base + "/api/register", {
+            "name": "Legacy OTP Payload User",
+            "email": "legacyotp@example.com",
+            "password": "secure123456",
+            "phone": "555-3333",
+            "invitation_code": "TESTCODE2026",
+            "email_verified": False,
+            "verification_id": "OTP_INVALID_TEST_ID"
+        })
+        assert status == 201
+        payload = json.loads(body)
+        assert payload.get('success') is True
+        assert payload.get('customer_id')
     finally:
         srv.stop()
 
 
-def test_registration_demo_fallback_flow_consumes_otp_once_and_preserves_data_integrity():
-    """End-to-end: fallback OTP path works once, replay is rejected."""
-    import web_portal.api_extensions as api_extensions
-
+def test_registration_invitation_only_flow_preserves_data_integrity():
+    """Invitation usage limits are enforced without any OTP dependency."""
     port = 8125
     srv = ServerThread(port)
     srv.start()
@@ -265,86 +256,60 @@ def test_registration_demo_fallback_flow_consumes_otp_once_and_preserves_data_in
         "expires_at": "2099-12-31T23:59:59",
     }
 
-    original_send = api_extensions._send_otp_email
-    original_expose_demo = api_extensions.EXPOSE_DEMO_OTP
-    original_env = os.environ.get("PHINS_ENV")
-    original_fallback = os.environ.get("PHINS_ALLOW_REGISTRATION_DEMO_OTP_FALLBACK")
-
-    os.environ["PHINS_ENV"] = "development"
-    os.environ.pop("PHINS_ALLOW_REGISTRATION_DEMO_OTP_FALLBACK", None)
-    api_extensions.EXPOSE_DEMO_OTP = False
-    api_extensions._send_otp_email = lambda **_kwargs: (False, "forced delivery outage")
-
     try:
-        otp_body, otp_status = _post(base + "/api/security/otp/request", {
-            "email": "flow-fallback@example.com",
-            "purpose": "registration",
-            "user_type": "customer"
-        })
-        assert otp_status == 200
-        otp_data = json.loads(otp_body)
-        assert otp_data.get("success") is True
-        assert otp_data.get("delivery_mode") == "demo_otp_fallback"
-        assert otp_data.get("verification_id")
-        assert otp_data.get("demo_otp_code")
-
-        verification_id = otp_data["verification_id"]
-        otp_code = otp_data["demo_otp_code"]
-
-        verify_body, verify_status = _post(base + "/api/security/otp/verify", {
-            "verification_id": verification_id,
-            "otp_code": otp_code
-        })
-        assert verify_status == 200
-        assert json.loads(verify_body).get("success") is True
-
         register_body, register_status = _post(base + "/api/register", {
-            "name": "Flow Fallback User",
-            "email": "flow-fallback@example.com",
+            "name": "First Invite User",
+            "email": "invitation-flow-primary@example.com",
             "password": "SecureFlow123",
             "phone": "555-2222",
             "dob": "1991-02-03",
             "invitation_code": primary_invite,
-            "email_verified": True,
-            "verification_id": verification_id
+            "email_verified": False,
+            "verification_id": "OTP_UNUSED_PLACEHOLDER"
         })
         assert register_status == 201
         register_data = json.loads(register_body)
         assert register_data.get("success") is True
-        customer_id = register_data.get("customer_id")
-        assert customer_id
-        assert "flow-fallback@example.com" in portal.USERS
-        assert customer_id in portal.CUSTOMERS
+        primary_customer_id = register_data.get("customer_id")
+        assert primary_customer_id
+        assert "invitation-flow-primary@example.com" in portal.USERS
+        assert primary_customer_id in portal.CUSTOMERS
         assert portal.INVITATION_CODES[primary_invite]["used_count"] == 1
+        assert portal.INVITATION_CODES[primary_invite]["status"] == "used"
 
         try:
             _post(base + "/api/register", {
-                "name": "Replay User",
-                "email": "flow-replay@example.com",
+                "name": "Primary Invite Replay User",
+                "email": "invitation-flow-replay@example.com",
                 "password": "SecureReplay123",
                 "phone": "555-9999",
                 "dob": "1992-03-04",
-                "invitation_code": replay_invite,
+                "invitation_code": primary_invite,
                 "email_verified": True,
-                "verification_id": verification_id
+                "verification_id": "OTP_UNUSED_PLACEHOLDER"
             })
-            assert False, "Replay registration should fail after OTP token consumption"
+            assert False, "Registration should fail when invitation code is already used"
         except HTTPError as e:
-            assert e.code == 409
+            assert e.code == 400
             replay_payload = json.loads(e.read().decode("utf-8"))
-            assert replay_payload.get("code") == "OTP_ALREADY_USED"
-            assert "flow-replay@example.com" not in portal.USERS
+            assert replay_payload.get("code") == "CODE_USED"
+            assert "invitation-flow-replay@example.com" not in portal.USERS
+
+        replay_register_body, replay_register_status = _post(base + "/api/register", {
+            "name": "Replay Invite Success User",
+            "email": "invitation-flow-secondary@example.com",
+            "password": "SecureReplaySuccess123",
+            "phone": "555-4444",
+            "dob": "1990-08-15",
+            "invitation_code": replay_invite,
+        })
+        assert replay_register_status == 201
+        replay_register_data = json.loads(replay_register_body)
+        assert replay_register_data.get("success") is True
+        assert replay_register_data.get("customer_id")
+        assert portal.INVITATION_CODES[replay_invite]["used_count"] == 1
+        assert portal.INVITATION_CODES[replay_invite]["status"] == "used"
     finally:
-        api_extensions._send_otp_email = original_send
-        api_extensions.EXPOSE_DEMO_OTP = original_expose_demo
-        if original_env is None:
-            os.environ.pop("PHINS_ENV", None)
-        else:
-            os.environ["PHINS_ENV"] = original_env
-        if original_fallback is None:
-            os.environ.pop("PHINS_ALLOW_REGISTRATION_DEMO_OTP_FALLBACK", None)
-        else:
-            os.environ["PHINS_ALLOW_REGISTRATION_DEMO_OTP_FALLBACK"] = original_fallback
         srv.stop()
 
 
