@@ -197,7 +197,8 @@
         
         // Get application ID from URL
         const urlParams = new URLSearchParams(window.location.search);
-        const applicationId = urlParams.get('id') || urlParams.get('app_id');
+        const requestedApplicationId = urlParams.get('id') || urlParams.get('app_id');
+        let activeApplicationId = requestedApplicationId;
         const customerId = urlParams.get('customer_id');
         const customerEmail = urlParams.get('email');
         
@@ -210,7 +211,7 @@
                 let url = '/api/risk-assessment/report';
                 const params = new URLSearchParams();
                 
-                if (applicationId) params.append('application_id', applicationId);
+                if (requestedApplicationId) params.append('application_id', requestedApplicationId);
                 else if (customerId) params.append('customer_id', customerId);
                 else if (customerEmail) params.append('email', customerEmail);
                 
@@ -247,6 +248,9 @@
                 }
                 
                 const report = await response.json();
+                if (report && report.application_id) {
+                    activeApplicationId = String(report.application_id);
+                }
                 const processingTime = ((Date.now() - startTime) / 1000).toFixed(2);
                 renderReport(report, processingTime);
                 
@@ -706,7 +710,7 @@
         async function approveApplication() {
             if (!confirm('Approve this application with the recommended terms?')) return;
             
-            const appId = applicationId || urlParams.get('id');
+            const appId = activeApplicationId || requestedApplicationId || urlParams.get('id');
             if (!appId) {
                 alert('Application ID not found');
                 return;
@@ -742,7 +746,7 @@
             const reason = prompt('Enter rejection reason:');
             if (!reason) return;
             
-            const appId = applicationId || urlParams.get('id');
+            const appId = activeApplicationId || requestedApplicationId || urlParams.get('id');
             if (!appId) {
                 alert('Application ID not found');
                 return;

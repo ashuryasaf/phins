@@ -7557,16 +7557,116 @@ For claims or questions, please contact:
                 self.wfile.write(json.dumps({'error': 'Access denied - requires underwriter, actuary, claims adjuster or admin role'}).encode('utf-8'))
                 return
             
-            application_id = qs.get('application_id', [None])[0] or qs.get('id', [None])[0]
-            customer_id = qs.get('customer_id', [None])[0]
-            customer_email = qs.get('email', [None])[0]
+            application_id = str(qs.get('application_id', [None])[0] or qs.get('id', [None])[0] or '').strip() or None
+            requested_application_id = application_id
+            customer_id = str(qs.get('customer_id', [None])[0] or '').strip() or None
+            customer_email = str(qs.get('email', [None])[0] or '').strip() or None
+
+            def _coerce_float(value: Any, default: Optional[float] = None) -> Optional[float]:
+                if value is None or value == '':
+                    return default
+                if isinstance(value, bool):
+                    return float(int(value))
+                if isinstance(value, (int, float)):
+                    return float(value)
+                if isinstance(value, str):
+                    cleaned = value.strip().replace('%', '').replace(',', '')
+                    if not cleaned:
+                        return default
+                    try:
+                        return float(cleaned)
+                    except ValueError:
+                        return default
+                try:
+                    return float(value)
+                except (TypeError, ValueError):
+                    return default
+
+            def _coerce_int(value: Any, default: Optional[int] = None) -> Optional[int]:
+                converted = _coerce_float(value, None)
+                if converted is None:
+                    return default
+                try:
+                    return int(round(converted))
+                except (TypeError, ValueError):
+                    return default
+
+            def _resolve_underwriting_application(requested_id: str) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
+                if not requested_id:
+                    return None, None
+
+                app = UNDERWRITING_APPLICATIONS.get(requested_id)
+                if isinstance(app, dict):
+                    return app, requested_id
+
+                requested_upper = requested_id.upper()
+                for app_key, app_value in UNDERWRITING_APPLICATIONS.items():
+                    if str(app_key).upper() == requested_upper and isinstance(app_value, dict):
+                        return app_value, str(app_key)
+
+                if USE_DATABASE and database_enabled:
+                    try:
+                        from database.manager import DatabaseManager
+                        with DatabaseManager() as db:
+                            db_app = db.underwriting.get_by_id(requested_id)
+                            if db_app:
+                                app_dict = db_app.to_dict()
+                                resolved_id = str(app_dict.get('id') or requested_id)
+                                UNDERWRITING_APPLICATIONS[resolved_id] = app_dict
+                                return app_dict, resolved_id
+                    except Exception as db_error:
+                        print(f"[RISK REPORT] DB lookup failed for {requested_id}: {db_error}")
+
+                # Legacy/rotating ID fallback:
+                # If requested ID follows UW-<slug>-YYYYMMDD-<sequence>, resolve latest
+                # matching slug + sequence currently available in pipeline state.
+                parts = [segment for segment in requested_id.split('-') if segment]
+                if len(parts) >= 4 and parts[0].upper() == 'UW':
+                    date_part = parts[-2]
+                    sequence = parts[-1]
+                    if date_part.isdigit() and len(date_part) == 8 and sequence.isdigit():
+                        static_prefix = '-'.join(parts[:-2]).upper()
+                        candidates: List[Tuple[str, Dict[str, Any]]] = []
+                        for app_key, app_value in UNDERWRITING_APPLICATIONS.items():
+                            if not isinstance(app_value, dict):
+                                continue
+                            app_key_parts = [segment for segment in str(app_key).split('-') if segment]
+                            if len(app_key_parts) < 4 or app_key_parts[0].upper() != 'UW':
+                                continue
+                            app_date_part = app_key_parts[-2]
+                            app_sequence = app_key_parts[-1]
+                            app_prefix = '-'.join(app_key_parts[:-2]).upper()
+                            if (
+                                app_prefix == static_prefix and
+                                app_sequence == sequence and
+                                app_date_part.isdigit() and
+                                len(app_date_part) == 8
+                            ):
+                                candidates.append((str(app_key), app_value))
+
+                        if candidates:
+                            def _candidate_sort_key(item: Tuple[str, Dict[str, Any]]) -> str:
+                                app_dict = item[1]
+                                return str(
+                                    app_dict.get('updated_date') or
+                                    app_dict.get('decision_date') or
+                                    app_dict.get('created_date') or
+                                    app_dict.get('submitted_date') or
+                                    item[0]
+                                )
+
+                            resolved_key, resolved_app = max(candidates, key=_candidate_sort_key)
+                            return resolved_app, resolved_key
+
+                return None, None
             
             # Find application - by ID or by customer's latest
             target_app = None
             target_customer = None
+            resolved_application_id = application_id
             
             if application_id:
-                target_app = UNDERWRITING_APPLICATIONS.get(application_id)
+                target_app, resolved_application_id = _resolve_underwriting_application(application_id)
             elif customer_id:
                 target_customer = CUSTOMERS.get(customer_id)
                 # Find latest application for this customer
@@ -7576,7 +7676,7 @@ For claims or questions, please contact:
             elif customer_email:
                 # Find customer by email
                 for cid, cust in CUSTOMERS.items():
-                    if cust.get('email', '').lower() == customer_email.lower():
+                    if str(cust.get('email') or '').lower() == customer_email.lower():
                         target_customer = cust
                         customer_id = cid
                         break
@@ -7589,8 +7689,20 @@ For claims or questions, please contact:
                 self._set_json_headers(404)
                 self.wfile.write(json.dumps({'error': 'No application found for the specified criteria'}).encode('utf-8'))
                 return
+
+            if (
+                requested_application_id and
+                resolved_application_id and
+                requested_application_id != resolved_application_id
+            ):
+                print(
+                    f"[RISK REPORT] Resolved legacy application id "
+                    f"{requested_application_id} -> {resolved_application_id}"
+                )
             
             # ====== READ ONLY - PIPELINE DATA INTEGRITY ======
+            target_app = dict(target_app)
+
             # Get customer data (read-only - data integrity preserved)
             customer_id = target_app.get('customer_id')
             target_customer = CUSTOMERS.get(customer_id, {})
@@ -7601,51 +7713,90 @@ For claims or questions, please contact:
             
             # Get claims history for risk assessment (read-only)
             customer_claims = [c for c in CLAIMS.values() if c.get('customer_id') == customer_id]
+
+            # Database fallback for report generation when in-memory objects are missing.
+            # This preserves integrity by reading canonical persisted records without mutating them.
+            if USE_DATABASE and database_enabled and (
+                (customer_id and not target_customer) or
+                (policy_id and not target_policy) or
+                (customer_id and not customer_claims)
+            ):
+                try:
+                    from database.manager import DatabaseManager
+                    with DatabaseManager() as db:
+                        if customer_id and not target_customer:
+                            db_customer = db.customers.get_by_id(customer_id)
+                            if db_customer:
+                                target_customer = db_customer.to_dict()
+                                CUSTOMERS[customer_id] = target_customer
+
+                        if policy_id and not target_policy:
+                            db_policy = db.policies.get_by_id(policy_id)
+                            if db_policy:
+                                target_policy = db_policy.to_dict()
+                                POLICIES[policy_id] = target_policy
+
+                        if customer_id and not customer_claims:
+                            db_claims = db.claims.filter_by(customer_id=customer_id)
+                            customer_claims = [claim.to_dict() for claim in db_claims]
+                            for claim_row in customer_claims:
+                                claim_row_id = claim_row.get('id')
+                                if claim_row_id and claim_row_id not in CLAIMS:
+                                    CLAIMS[claim_row_id] = claim_row
+                except Exception as db_error:
+                    print(f"[RISK REPORT] DB enrichment fallback failed: {db_error}")
             
             # Get questionnaire responses if available (read-only)
             questionnaire = target_app.get('questionnaire_responses', {}) or target_app.get('questionnaire', {})
+            if isinstance(questionnaire, str):
+                try:
+                    parsed_questionnaire = json.loads(questionnaire)
+                    questionnaire = parsed_questionnaire if isinstance(parsed_questionnaire, dict) else {}
+                except Exception:
+                    questionnaire = {}
+            if not isinstance(questionnaire, dict):
+                questionnaire = {}
             
             # ====== EXTRACT ONLY ACTUAL DATA FROM PIPELINE ======
             # Data sources tracking for audit trail
             data_sources = target_app.get('data_sources', {})
             
             # Age: from application, questionnaire, or calculated from DOB
-            applicant_age = target_app.get('age')
-            if not applicant_age and questionnaire.get('age'):
-                applicant_age = int(questionnaire.get('age'))
-            if not applicant_age and target_customer.get('date_of_birth'):
+            applicant_age = _coerce_int(target_app.get('age'), None)
+            if applicant_age is None:
+                applicant_age = _coerce_int(questionnaire.get('age'), None)
+            if applicant_age is None and target_customer.get('date_of_birth'):
                 try:
-                    dob_str = target_customer['date_of_birth'].replace('Z', '+00:00').split('T')[0]
+                    dob_str = str(target_customer['date_of_birth']).replace('Z', '+00:00').split('T')[0]
                     dob = datetime.fromisoformat(dob_str)
                     applicant_age = (datetime.now() - dob).days // 365
-                except:
+                except Exception:
                     applicant_age = None  # DO NOT DEFAULT - leave as unknown
-            if not applicant_age and target_customer.get('age'):
-                applicant_age = target_customer.get('age')
+            if applicant_age is None:
+                applicant_age = _coerce_int(target_customer.get('age'), None)
+            if applicant_age is not None and applicant_age < 0:
+                applicant_age = None
             
             # Medical data: from application record or questionnaire - NO DEFAULTS
-            disability_pct = target_app.get('disability_percentage')
-            if disability_pct is None and questionnaire.get('disability_percentage'):
-                disability_pct = int(questionnaire.get('disability_percentage'))
+            disability_pct = _coerce_int(target_app.get('disability_percentage'), None)
+            if disability_pct is None:
+                disability_pct = _coerce_int(questionnaire.get('disability_percentage'), None)
+            if disability_pct is not None:
+                disability_pct = max(0, min(100, disability_pct))
             
             # BMI: from application, or calculate from height/weight in questionnaire
-            bmi = target_app.get('bmi')
+            bmi = _coerce_float(target_app.get('bmi'), None)
             if bmi is None:
-                height = target_app.get('height_cm') or questionnaire.get('height')
-                weight = target_app.get('weight_kg') or questionnaire.get('weight')
-                if height and weight:
-                    try:
-                        height = float(height)
-                        weight = float(weight)
-                        if height > 0 and weight > 0:
-                            bmi = round(weight / ((height / 100) ** 2), 1)
-                    except:
-                        pass
+                height = _coerce_float(target_app.get('height_cm') or questionnaire.get('height'), None)
+                weight = _coerce_float(target_app.get('weight_kg') or questionnaire.get('weight'), None)
+                if height and weight and height > 0 and weight > 0:
+                    bmi = round(weight / ((height / 100) ** 2), 1)
             
             # Smoking status: from application or questionnaire
             smoking = target_app.get('smoking_status')
-            if not smoking and questionnaire.get('smoke'):
-                smoke_val = questionnaire.get('smoke', '').lower()
+            smoking = str(smoking).strip() if smoking not in (None, '') else ''
+            if not smoking and questionnaire.get('smoke') is not None:
+                smoke_val = str(questionnaire.get('smoke', '')).strip().lower()
                 if smoke_val in ['yes', 'current', 'smoker']:
                     smoking = 'current'
                 elif smoke_val in ['former', 'ex', 'quit']:
@@ -7654,6 +7805,7 @@ For claims or questions, please contact:
                     smoking = 'never'
                 else:
                     smoking = smoke_val
+            smoking = smoking or None
             
             # Gender and occupation from application, questionnaire, or customer record
             gender = target_app.get('gender') or questionnaire.get('gender') or target_customer.get('gender')
@@ -7662,6 +7814,19 @@ For claims or questions, please contact:
             # Build medical conditions from the application's medical_conditions array first
             # This is the primary source of conditions data
             app_conditions = target_app.get('medical_conditions', [])
+            if isinstance(app_conditions, str):
+                try:
+                    parsed_conditions = json.loads(app_conditions)
+                    if isinstance(parsed_conditions, list):
+                        app_conditions = parsed_conditions
+                    elif app_conditions.strip():
+                        app_conditions = [item.strip() for item in app_conditions.split(',') if item.strip()]
+                    else:
+                        app_conditions = []
+                except Exception:
+                    app_conditions = [item.strip() for item in app_conditions.split(',') if item.strip()] if app_conditions.strip() else []
+            if not isinstance(app_conditions, list):
+                app_conditions = []
             medical_conditions = []
             
             # Track what condition types we have from the array to avoid duplicates
@@ -7672,11 +7837,17 @@ For claims or questions, please contact:
             if isinstance(app_conditions, list):
                 for cond in app_conditions:
                     if isinstance(cond, dict):
-                        cond_name = cond.get('condition', '').lower()
+                        cond_name = str(cond.get('condition', '')).lower()
                         if 'disability' in cond_name or 'mobility' in cond_name or 'impairment' in cond_name:
                             has_disability_from_array = True
                         if 'obesity' in cond_name or 'bmi' in cond_name:
                             has_obesity_from_array = True
+
+                        risk_impact = max(0.0, min(1.0, safe_float(cond.get('risk_impact', 0.1), 0.1)))
+                        loading_percentage = max(0, safe_int(cond.get('loading_percentage', 10), 10))
+                        exclusion_recommended = cond.get('exclusion_recommended', False)
+                        if isinstance(exclusion_recommended, str):
+                            exclusion_recommended = exclusion_recommended.strip().lower() in ('1', 'true', 'yes', 'y')
                         
                         processed_cond = {
                             'condition': cond.get('condition', 'Unknown Condition'),
@@ -7684,9 +7855,9 @@ For claims or questions, please contact:
                             'severity': cond.get('severity', 'moderate'),
                             'status': cond.get('status'),
                             'treatment': cond.get('treatment'),
-                            'risk_impact': cond.get('risk_impact', 0.1),
-                            'loading_percentage': cond.get('loading_percentage', 10),
-                            'exclusion_recommended': cond.get('exclusion_recommended', False),
+                            'risk_impact': risk_impact,
+                            'loading_percentage': loading_percentage,
+                            'exclusion_recommended': bool(exclusion_recommended),
                             'notes': cond.get('notes')
                         }
                         medical_conditions.append(processed_cond)
@@ -7758,7 +7929,7 @@ For claims or questions, please contact:
                     age_risk = 0.03
             
             # Medical risk from conditions
-            medical_risk = sum(c.get('risk_impact', 0) for c in medical_conditions)
+            medical_risk = sum(safe_float(c.get('risk_impact', 0), 0.0) for c in medical_conditions)
             
             # Lifestyle risk - ONLY if smoking status is known
             lifestyle_risk = 0
@@ -7796,7 +7967,7 @@ For claims or questions, please contact:
             conditions_of_approval = []
             confidence = 0.85
             
-            total_loading = sum(c.get('loading_percentage', 0) for c in medical_conditions)
+            total_loading = sum(safe_float(c.get('loading_percentage', 0), 0.0) for c in medical_conditions)
             
             if risk_category == 'very_low':
                 recommendation_type = 'auto_approve'
@@ -7864,7 +8035,11 @@ For claims or questions, please contact:
             if customer_claims:
                 rationale_parts.append(f"{len(customer_claims)} prior claims on record")
             if medical_conditions:
-                other_conds = [c.get('condition') for c in medical_conditions if 'Disability' not in c.get('condition', '') and 'Obesity' not in c.get('condition', '')]
+                other_conds = [
+                    str(c.get('condition') or '')
+                    for c in medical_conditions
+                    if 'Disability' not in str(c.get('condition') or '') and 'Obesity' not in str(c.get('condition') or '')
+                ]
                 if other_conds:
                     rationale_parts.append(f"Medical conditions: {', '.join(other_conds[:2])}")
             
@@ -7899,21 +8074,24 @@ For claims or questions, please contact:
                     'explanation': f'{disability_pct}% disability rating impacts risk assessment'
                 })
             for cond in medical_conditions:
-                if 'Obesity' in cond.get('condition', ''):
+                condition_name = str(cond.get('condition') or '')
+                condition_status = str(cond.get('status') or 'unknown')
+                condition_severity = str(cond.get('severity') or 'unknown')
+                if 'Obesity' in condition_name:
                     risk_factors.append({
                         'name': 'Obesity',
                         'category': 'medical',
-                        'impact': cond.get('risk_impact', 0),
+                        'impact': safe_float(cond.get('risk_impact', 0), 0.0),
                         'direction': 'increase',
-                        'explanation': f"{cond.get('condition')} - {cond.get('status', 'active')}"
+                        'explanation': f"{condition_name} - {condition_status}"
                     })
-                elif 'Disability' not in cond.get('condition', ''):
+                elif 'Disability' not in condition_name:
                     risk_factors.append({
-                        'name': cond.get('condition'),
+                        'name': condition_name,
                         'category': 'medical',
-                        'impact': cond.get('risk_impact', 0),
+                        'impact': safe_float(cond.get('risk_impact', 0), 0.0),
                         'direction': 'increase',
-                        'explanation': f"{cond.get('condition')} ({cond.get('severity', 'unknown')}) - {cond.get('status', 'unknown')}"
+                        'explanation': f"{condition_name} ({condition_severity}) - {condition_status}"
                     })
             if bmi and bmi >= 25:
                 bmi_category = 'Obese Class I' if bmi >= 30 else 'Overweight'
@@ -7946,6 +8124,12 @@ For claims or questions, please contact:
             # Build document list ONLY from what's indicated in application
             documents = []
             app_documents = target_app.get('documents', [])
+            if isinstance(app_documents, str):
+                try:
+                    parsed_documents = json.loads(app_documents)
+                    app_documents = parsed_documents if isinstance(parsed_documents, list) else []
+                except Exception:
+                    app_documents = []
             if isinstance(app_documents, list) and app_documents:
                 for doc in app_documents:
                     if isinstance(doc, dict):
@@ -7988,9 +8172,21 @@ For claims or questions, please contact:
                     bmi_category_str = 'Normal'
             
             # Build complete report using ONLY actual pipeline data
+            resolved_application_id = str(
+                target_app.get('id') or
+                resolved_application_id or
+                requested_application_id or
+                ''
+            )
+            identity_verified_raw = target_app.get('identity_verified', True)
+            if isinstance(identity_verified_raw, str):
+                identity_verified = identity_verified_raw.strip().lower() in ('1', 'true', 'yes', 'y', 'verified')
+            else:
+                identity_verified = bool(identity_verified_raw)
+
             report = {
-                'report_id': f"RR-{target_app.get('id', 'UNKNOWN')}-{datetime.now().strftime('%Y%m%d%H%M%S')}",
-                'application_id': target_app.get('id'),
+                'report_id': f"RR-{resolved_application_id or 'UNKNOWN'}-{datetime.now().strftime('%Y%m%d%H%M%S')}",
+                'application_id': resolved_application_id,
                 'applicant': {
                     'name': target_customer.get('name') or target_customer.get('full_name') or target_app.get('customer_name'),
                     'age': applicant_age,
@@ -8001,11 +8197,11 @@ For claims or questions, please contact:
                 },
                 'policy_type': target_policy.get('type') or target_app.get('policy_type'),
                 'coverage_amount': target_policy.get('coverage_amount') or target_app.get('coverage_amount', 0),
-                'identity_verified': target_app.get('identity_verified', True),
+                'identity_verified': identity_verified,
                 'risk_scores': {
                     'overall': round(overall_risk, 4),
                     'category': risk_category,
-                    'identity': 0.95 if target_app.get('identity_verified', True) else 0.50,
+                    'identity': 0.95 if identity_verified else 0.50,
                     'medical': round(min(medical_risk + 0.10, 1.0), 4) if medical_conditions else 0.10,
                     'lifestyle': round(1.0 - lifestyle_risk, 4),
                     'financial': 0.85,  # Based on coverage/premium ratio
@@ -8035,7 +8231,9 @@ For claims or questions, please contact:
                     'model_version': '1.0.0',
                     'assessor_role': session.get('role') if session else 'system',
                     'data_integrity_verified': True,
-                    'data_source': 'pipeline'
+                    'data_source': 'pipeline',
+                    'requested_application_id': requested_application_id,
+                    'resolved_application_id': resolved_application_id
                 }
             }
             
