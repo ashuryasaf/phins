@@ -1,9 +1,9 @@
 /**
- * PHINS Registration with OTP and CAPTCHA Security
+ * PHINS Registration with Invitation + CAPTCHA Security
  * Enhanced registration flow with:
  * - Invitation code validation
  * - CAPTCHA verification (bot protection)
- * - Email OTP verification
+ * - Optional email OTP (code retained, disabled by default)
  * - Strong password requirements
  */
 
@@ -43,8 +43,9 @@ document.addEventListener('DOMContentLoaded', function () {
   const resendTimer = document.getElementById('resend-timer');
 
   // State
+  const REGISTRATION_OTP_ENABLED = false; // Keep OTP code path hidden/unused for now.
   let isCodeValid = false;
-  let currentStep = 1; // 1: details+captcha, 2: otp, 3: complete
+  let currentStep = 1; // 1: details+captcha, 2: otp (disabled), 3: complete
   let resendCountdown = 0;
   let resendInterval = null;
   let pendingRegistrationData = null;
@@ -258,11 +259,6 @@ document.addEventListener('DOMContentLoaded', function () {
   });
 
   function updateSubmitButton() {
-    if (currentStep === 2) {
-      submitBtn.disabled = false;
-      return;
-    }
-    
     const password = passwordInput.value;
     const requirements = {
       length: password.length >= 8,
@@ -452,9 +448,14 @@ document.addEventListener('DOMContentLoaded', function () {
     currentStep = 3;
     
     // Update step indicators
-    step2Item.classList.remove('active');
-    step2Item.classList.add('complete');
-    connector2.classList.add('complete');
+    step1Item.classList.remove('active');
+    step1Item.classList.add('complete');
+    connector1.classList.add('complete');
+    if (REGISTRATION_OTP_ENABLED) {
+      step2Item.classList.remove('active');
+      step2Item.classList.add('complete');
+      connector2.classList.add('complete');
+    }
     step3Item.classList.add('active');
     
     submitBtn.style.display = 'none';
@@ -509,11 +510,7 @@ document.addEventListener('DOMContentLoaded', function () {
       const response = await fetch('/api/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ...pendingRegistrationData,
-          email_verified: true,
-          verification_id: verificationId.value
-        })
+        body: JSON.stringify(pendingRegistrationData)
       });
       const data = await response.json();
       
@@ -593,8 +590,8 @@ document.addEventListener('DOMContentLoaded', function () {
   form.addEventListener('submit', async function (e) {
     e.preventDefault();
     
-    // If in OTP step, verify OTP
-    if (currentStep === 2) {
+    // If OTP flow is enabled and in OTP step, verify OTP
+    if (REGISTRATION_OTP_ENABLED && currentStep === 2) {
       const code = getOTPCode();
       if (code.length === 6) {
         verifyEmailOTP(code);
@@ -695,19 +692,23 @@ document.addEventListener('DOMContentLoaded', function () {
       persistPendingRegistrationState();
       saveRegistrationDraft();
 
-      // Step 2: Request email verification OTP
-      const otpData = await requestRegistrationOTP(email);
-      
-      if (otpData.success && otpData.verification_id) {
-        // Show OTP step
-        showOTPStep(otpData.masked_email || email, otpData.verification_id);
-        applyOtpDeliveryFeedback(otpData, false);
-        submitBtn.disabled = false;
+      if (REGISTRATION_OTP_ENABLED) {
+        // Optional OTP flow (currently disabled).
+        const otpData = await requestRegistrationOTP(email);
         
+        if (otpData.success && otpData.verification_id) {
+          showOTPStep(otpData.masked_email || email, otpData.verification_id);
+          applyOtpDeliveryFeedback(otpData, false);
+          submitBtn.disabled = false;
+          
+        } else {
+          msg.textContent = otpData.message || 'Failed to send verification code';
+          msg.style.color = '#dc3545';
+          submitBtn.disabled = false;
+        }
       } else {
-        msg.textContent = otpData.message || 'Failed to send verification code';
-        msg.style.color = '#dc3545';
-        submitBtn.disabled = false;
+        // Invitation-only registration mode.
+        await completeRegistration();
       }
       
     } catch (err) {
@@ -721,17 +722,26 @@ document.addEventListener('DOMContentLoaded', function () {
   // Initialize
   restoreRegistrationDraft();
   restorePendingRegistrationState();
-  const otpContext = safeParseStorage(OTP_CONTEXT_KEY);
-  if (
-    pendingRegistrationData &&
-    otpContext &&
-    otpContext.verification_id &&
-    typeof otpContext.verification_id === 'string'
-  ) {
-    showOTPStep(otpContext.email || pendingRegistrationData.email, otpContext.verification_id);
-    msg.textContent = 'Continue by entering the verification code from your email.';
-    msg.style.color = '#2e7d32';
-    submitBtn.disabled = false;
+  if (REGISTRATION_OTP_ENABLED) {
+    const otpContext = safeParseStorage(OTP_CONTEXT_KEY);
+    if (
+      pendingRegistrationData &&
+      otpContext &&
+      otpContext.verification_id &&
+      typeof otpContext.verification_id === 'string'
+    ) {
+      showOTPStep(otpContext.email || pendingRegistrationData.email, otpContext.verification_id);
+      msg.textContent = 'Continue by entering the verification code from your email.';
+      msg.style.color = '#2e7d32';
+      submitBtn.disabled = false;
+    }
+  } else {
+    // Hide OTP-related UI while retaining the implementation for future use.
+    otpSection.classList.remove('active');
+    otpSection.style.display = 'none';
+    if (step2Item) step2Item.style.display = 'none';
+    if (connector2) connector2.style.display = 'none';
+    submitBtn.textContent = 'Create Account';
   }
 
   form.addEventListener('input', function () {

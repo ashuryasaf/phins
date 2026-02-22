@@ -2360,6 +2360,11 @@ except Exception:
 
 # Test mode (makes API/security behavior deterministic for CI)
 PHINS_TEST_MODE = str(os.environ.get('PHINS_TEST_MODE', '')).lower() in ('1', 'true', 'yes', 'y')
+# Registration OTP is retained in code but disabled by default.
+# Set PHINS_REGISTRATION_OTP_ENABLED=true to re-enable mandatory OTP verification.
+REGISTRATION_OTP_ENABLED = str(
+    os.environ.get('PHINS_REGISTRATION_OTP_ENABLED', '')
+).lower() in ('1', 'true', 'yes', 'y')
 
 # Add test invitation code when in test mode
 # This allows registration tests to work without manually creating invitation codes
@@ -16593,9 +16598,9 @@ For claims or questions, please contact:
                     }).encode('utf-8'))
                     return
 
-                # OTP verification is mandatory in production. In tests, legacy calls without
-                # verification_id are allowed for backward compatibility.
-                otp_required = not PHINS_TEST_MODE or bool(verification_id)
+                # Registration currently runs on invitation-only mode by default.
+                # OTP code path is intentionally preserved behind a feature flag.
+                otp_required = REGISTRATION_OTP_ENABLED
                 otp_service = None
                 otp_purpose = None
                 if otp_required:
@@ -16627,6 +16632,10 @@ For claims or questions, please contact:
                             'code': 'OTP_SERVICE_UNAVAILABLE'
                         }).encode('utf-8'))
                         return
+                else:
+                    # Keep payload compatibility while skipping OTP processing.
+                    verification_id = ''
+                    email_verified = False
 
                 registration_date = datetime.now().isoformat()
                 pwd_hash = hash_password(password)
@@ -16640,6 +16649,22 @@ For claims or questions, please contact:
                 with STATE_LOCK:
                     # Check if user already exists
                     if email in USERS:
+                        self._set_json_headers(409)
+                        self.wfile.write(json.dumps({
+                            'error': 'Email already registered',
+                            'code': 'EMAIL_EXISTS'
+                        }).encode('utf-8'))
+                        return
+
+                    # Defensive duplicate check across customer datasets.
+                    existing_customer_email = any(
+                        str(c.get('email', '')).lower() == email
+                        for c in CUSTOMERS.values()
+                    ) or any(
+                        str(c.get('email', '')).lower() == email
+                        for c in REGISTERED_CUSTOMERS.values()
+                    )
+                    if existing_customer_email:
                         self._set_json_headers(409)
                         self.wfile.write(json.dumps({
                             'error': 'Email already registered',
@@ -16768,6 +16793,28 @@ For claims or questions, please contact:
                         'customer_id': customer_id
                     }
 
+                    # Initialize persistent financial containers at registration time.
+                    if customer_id not in HEALTH_WALLETS:
+                        HEALTH_WALLETS[customer_id] = {
+                            'customer_id': customer_id,
+                            'balance': 0.0,
+                            'monthly_deposit': 0.0,
+                            'transactions': [],
+                            'created_at': registration_date,
+                            'status': 'active'
+                        }
+
+                    if customer_id not in INVESTMENT_ACCOUNTS:
+                        INVESTMENT_ACCOUNTS[customer_id] = {
+                            'customer_id': customer_id,
+                            'balance': 0.0,
+                            'index_balance': 0.0,
+                            'bonds_balance': 0.0,
+                            'crypto_balance': 0.0,
+                            'deposits': [],
+                            'created_at': registration_date
+                        }
+
                     # Mark invitation used
                     invitation['used_count'] = invitation.get('used_count', 0) + 1
                     used_by_entries = invitation.setdefault('used_by', [])
@@ -16821,6 +16868,25 @@ For claims or questions, please contact:
                             f"[REFERRAL] Customer {referrer_customer_id} referred "
                             f"new customer {customer_id} via code {invitation_code}"
                         )
+
+                registration_tx_id = None
+                try:
+                    registration_tx = record_transaction(
+                        customer_id=customer_id,
+                        tx_type='customer_registered',
+                        amount=0.0,
+                        description=f"Customer {customer_id} registered via invitation code",
+                        metadata={
+                            'customer_id': customer_id,
+                            'email': email,
+                            'invitation_code': invitation_code,
+                            'invitation_type': invitation_type,
+                            'otp_verification_enabled': otp_required
+                        }
+                    )
+                    registration_tx_id = registration_tx.get('id')
+                except Exception as tx_error:
+                    print(f"[REGISTER] Registration ledger transaction failed: {tx_error}")
 
                 # Persist all state
                 save_ledger_data()
@@ -16883,6 +16949,8 @@ For claims or questions, please contact:
                     'customer_id': customer_id,
                     'email': email,
                     'registered_at': registration_date,
+                    'otp_verification_required': otp_required,
+                    'registration_ledger_tx_id': registration_tx_id,
                     'welcome_notification_sent': welcome_notification_sent,
                     'welcome_whatsapp_sent': welcome_whatsapp_sent,
                     'welcome_report_summary': welcome_report_summary,

@@ -337,13 +337,13 @@
           <span class="step-label">Details</span>
         </div>
         <div class="step-connector" id="connector-1"></div>
-        <div class="step-item" id="step-2-item">
+        <div class="step-item" id="step-2-item" style="display: none;">
           <span class="step-number">2</span>
-          <span class="step-label">Verify Email</span>
+          <span class="step-label">Verify Email (Hidden)</span>
         </div>
-        <div class="step-connector" id="connector-2"></div>
+        <div class="step-connector" id="connector-2" style="display: none;"></div>
         <div class="step-item" id="step-3-item">
-          <span class="step-number">3</span>
+          <span class="step-number">2</span>
           <span class="step-label">Complete</span>
         </div>
       </div>
@@ -371,7 +371,7 @@
           <div class="form-group">
             <label for="email">Email Address *</label>
             <input type="email" id="email" name="email" required placeholder="Enter your email" />
-            <small>This will be your username. A verification code will be sent to this email.</small>
+            <small>This will be your username for future sign-in.</small>
           </div>
 
           <div class="form-group">
@@ -412,7 +412,7 @@
           </div>
         </div>
         
-        <!-- Step 2: Email OTP Verification (hidden by default) -->
+        <!-- Step 2: Email OTP Verification (kept hidden/unused for now) -->
         <div class="otp-box" id="otp-section">
           <div class="otp-header">
             <span>📧</span>
@@ -435,7 +435,7 @@
           </div>
         </div>
 
-        <button type="submit" class="btn-submit" id="submit-btn">Continue</button>
+        <button type="submit" class="btn-submit" id="submit-btn">Create Account</button>
       </form>
       
       <div id="register-msg"></div>

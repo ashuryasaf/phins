@@ -360,8 +360,6 @@ def test_registration_and_notification_metadata_remain_available():
     password = "SecureActions123!"
 
     try:
-        verification_id = _request_and_verify_registration_otp(base, email)
-
         register_data, register_status = _post(
             base + "/api/register",
             {
@@ -371,8 +369,6 @@ def test_registration_and_notification_metadata_remain_available():
                 "phone": "555-0101",
                 "dob": "1990-01-01",
                 "invitation_code": invite_code,
-                "email_verified": True,
-                "verification_id": verification_id,
             },
         )
         assert register_status == 201, register_data
