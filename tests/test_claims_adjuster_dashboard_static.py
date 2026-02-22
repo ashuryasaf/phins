@@ -39,3 +39,10 @@ def test_dashboard_escapes_dynamic_ids_in_inline_actions():
     assert "openReview('${report.claim_id}')" not in html
     assert "openProbabilityReport('${ra.claim.id}')" not in html
     assert "openReview(decodeURIComponent('${reportClaimIdEncoded}'))" in html
+
+
+def test_dashboard_restoration_guards_keep_status_normalization_logic():
+    html = _claims_adjuster_dashboard_html()
+    assert "const normalizedStatusFilter = statusFilter.replace(/_/g, ' ');" in html
+    assert "String(claim.status || '').toLowerCase().replace(/_/g, ' ')" in html
+    assert "const normalizeStatus = (claim) => String(claim.status || '').toLowerCase().replace(/_/g, ' ');" in html
