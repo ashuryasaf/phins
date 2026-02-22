@@ -451,6 +451,9 @@ document.addEventListener('DOMContentLoaded', function () {
     currentStep = 3;
     
     // Update step indicators
+    step1Item.classList.remove('active');
+    step1Item.classList.add('complete');
+    connector1.classList.add('complete');
     step2Item.classList.remove('active');
     step2Item.classList.add('complete');
     connector2.classList.add('complete');
