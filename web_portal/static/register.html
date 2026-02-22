@@ -199,74 +199,6 @@
       outline: none;
     }
     
-    /* OTP Verification Styles */
-    .otp-box {
-      background: linear-gradient(135deg, #e8f5e9 0%, #c8e6c9 100%);
-      border: 2px solid #81c784;
-      border-radius: 12px;
-      padding: 20px;
-      margin-bottom: 20px;
-      display: none;
-    }
-    .otp-box.active {
-      display: block;
-    }
-    .otp-header {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      margin-bottom: 15px;
-    }
-    .otp-header span {
-      font-size: 1.5rem;
-    }
-    .otp-header h3 {
-      margin: 0;
-      color: #2e7d32;
-      font-size: 1.1rem;
-    }
-    .otp-info {
-      font-size: 0.9rem;
-      color: #1b5e20;
-      margin-bottom: 15px;
-    }
-    .otp-input-group {
-      display: flex;
-      gap: 8px;
-      justify-content: center;
-      margin: 15px 0;
-    }
-    .otp-digit {
-      width: 45px;
-      height: 55px;
-      border: 2px solid #81c784;
-      border-radius: 8px;
-      font-size: 1.5rem;
-      font-weight: 700;
-      text-align: center;
-      background: #fff;
-    }
-    .otp-digit:focus {
-      border-color: #2e7d32;
-      outline: none;
-      box-shadow: 0 0 0 3px rgba(46, 125, 50, 0.2);
-    }
-    .otp-actions {
-      display: flex;
-      justify-content: center;
-      margin-top: 15px;
-    }
-    .otp-resend {
-      color: #2e7d32;
-      text-decoration: none;
-      font-size: 0.9rem;
-      cursor: pointer;
-    }
-    .otp-resend:disabled, .otp-resend.disabled {
-      color: #999;
-      cursor: not-allowed;
-    }
-    
     /* Step Progress */
     .step-progress {
       display: flex;
@@ -409,29 +341,6 @@
             <div class="captcha-question" id="captcha-question">Loading...</div>
             <input type="text" class="captcha-input" id="captcha-answer" placeholder="Your answer" autocomplete="off" />
             <input type="hidden" id="captcha-id" />
-          </div>
-        </div>
-        
-        <!-- Step 2: Email OTP Verification (hidden by default) -->
-        <div class="otp-box" id="otp-section">
-          <div class="otp-header">
-            <span>📧</span>
-            <h3>Verify Your Email</h3>
-          </div>
-          <p class="otp-info">
-            We've sent a 6-digit verification code to <strong id="otp-email"></strong>
-          </p>
-          <div class="otp-input-group">
-            <input type="text" class="otp-digit" maxlength="1" data-index="0" inputmode="numeric" />
-            <input type="text" class="otp-digit" maxlength="1" data-index="1" inputmode="numeric" />
-            <input type="text" class="otp-digit" maxlength="1" data-index="2" inputmode="numeric" />
-            <input type="text" class="otp-digit" maxlength="1" data-index="3" inputmode="numeric" />
-            <input type="text" class="otp-digit" maxlength="1" data-index="4" inputmode="numeric" />
-            <input type="text" class="otp-digit" maxlength="1" data-index="5" inputmode="numeric" />
-          </div>
-          <input type="hidden" id="verification-id" />
-          <div class="otp-actions">
-            <a class="otp-resend disabled" id="resend-otp">Resend code in <span id="resend-timer">60</span>s</a>
           </div>
         </div>
 

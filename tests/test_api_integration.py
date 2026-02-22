@@ -57,32 +57,6 @@ def _post(url, payload, token=None):
         return resp.read().decode('utf-8'), resp.status
 
 
-def _request_and_verify_registration_otp(base_url: str, email: str) -> str:
-    """Request + verify OTP and return verification_id."""
-    otp_body, otp_status = _post(base_url + "/api/security/otp/request", {
-        "email": email,
-        "purpose": "registration",
-        "user_type": "customer"
-    })
-    assert otp_status == 200
-    otp_data = json.loads(otp_body)
-
-    verification_id = otp_data.get('verification_id') or otp_data.get('data', {}).get('verification_id')
-    otp_code = otp_data.get('demo_otp_code') or otp_data.get('data', {}).get('otp_code')
-    assert verification_id, f"Missing verification_id in OTP response: {otp_data}"
-    assert otp_code, f"Missing OTP code in OTP response: {otp_data}"
-
-    verify_body, verify_status = _post(base_url + "/api/security/otp/verify", {
-        "verification_id": verification_id,
-        "otp_code": otp_code
-    })
-    assert verify_status == 200
-    verify_data = json.loads(verify_body)
-    assert verify_data.get('success') is True
-
-    return verification_id
-
-
 def test_login_endpoint():
     """Test POST /api/login"""
     port = 8031

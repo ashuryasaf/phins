@@ -19,7 +19,6 @@ document.addEventListener('DOMContentLoaded', function () {
   
   // Sections
   const detailsSection = document.getElementById('details-section');
-  const otpSection = document.getElementById('otp-section');
   const captchaSection = document.getElementById('captcha-section');
   
   // Step indicators
@@ -34,22 +33,12 @@ document.addEventListener('DOMContentLoaded', function () {
   const captchaAnswer = document.getElementById('captcha-answer');
   const captchaId = document.getElementById('captcha-id');
   
-  // OTP elements
-  const otpDigits = document.querySelectorAll('.otp-digit');
-  const otpEmail = document.getElementById('otp-email');
-  const verificationId = document.getElementById('verification-id');
-  const resendOtp = document.getElementById('resend-otp');
-  const resendTimer = document.getElementById('resend-timer');
-
   // State
   let isCodeValid = false;
   let currentStep = 1; // 1: details+captcha, 3: complete
-  let resendCountdown = 0;
-  let resendInterval = null;
   let pendingRegistrationData = null;
   const REGISTRATION_DRAFT_KEY = 'phins.registrationDraft.v1';
   const PENDING_REGISTRATION_KEY = 'phins.pendingRegistration.v1';
-  const OTP_CONTEXT_KEY = 'phins.registrationOtpContext.v1';
 
   // ========== AUTO-FILL FROM URL PARAMETER ==========
   const urlParams = new URLSearchParams(window.location.search);
@@ -107,20 +96,7 @@ document.addEventListener('DOMContentLoaded', function () {
   function persistPendingRegistrationState() {
     if (!pendingRegistrationData) return;
     try {
-      // Session-scoped persistence keeps OTP flow recoverable on refresh.
       sessionStorage.setItem(PENDING_REGISTRATION_KEY, JSON.stringify(pendingRegistrationData));
-    } catch (e) {
-      // Ignore storage errors silently.
-    }
-  }
-
-  function persistOtpContext(email, verId) {
-    try {
-      sessionStorage.setItem(OTP_CONTEXT_KEY, JSON.stringify({
-        email: email || '',
-        verification_id: verId || '',
-        saved_at: Date.now()
-      }));
     } catch (e) {
       // Ignore storage errors silently.
     }
@@ -130,7 +106,6 @@ document.addEventListener('DOMContentLoaded', function () {
     pendingRegistrationData = null;
     try {
       sessionStorage.removeItem(PENDING_REGISTRATION_KEY);
-      sessionStorage.removeItem(OTP_CONTEXT_KEY);
       sessionStorage.removeItem(REGISTRATION_DRAFT_KEY);
     } catch (e) {
       // Ignore storage errors silently.
@@ -257,11 +232,6 @@ document.addEventListener('DOMContentLoaded', function () {
   });
 
   function updateSubmitButton() {
-    if (currentStep === 2) {
-      submitBtn.disabled = false;
-      return;
-    }
-    
     const password = passwordInput.value;
     const requirements = {
       length: password.length >= 8,
@@ -274,181 +244,12 @@ document.addEventListener('DOMContentLoaded', function () {
     submitBtn.disabled = !isCodeValid || !allPasswordMet;
   }
 
-  // ========== OTP INPUT HANDLING ==========
-  otpDigits.forEach((digit, index) => {
-    digit.addEventListener('input', function(e) {
-      const value = e.target.value;
-      
-      if (!/^\d*$/.test(value)) {
-        e.target.value = '';
-        return;
-      }
-      
-      if (value && index < otpDigits.length - 1) {
-        otpDigits[index + 1].focus();
-      }
-      
-      const code = getOTPCode();
-      if (code.length === 6) {
-        verifyEmailOTP(code);
-      }
-    });
-    
-    digit.addEventListener('keydown', function(e) {
-      if (e.key === 'Backspace' && !e.target.value && index > 0) {
-        otpDigits[index - 1].focus();
-      }
-    });
-    
-    digit.addEventListener('paste', function(e) {
-      e.preventDefault();
-      const pastedData = e.clipboardData.getData('text').replace(/\D/g, '').slice(0, 6);
-      
-      pastedData.split('').forEach((char, i) => {
-        if (i < otpDigits.length) {
-          otpDigits[i].value = char;
-        }
-      });
-      
-      if (pastedData.length === 6) {
-        verifyEmailOTP(pastedData);
-      }
-    });
-  });
-
-  function getOTPCode() {
-    return Array.from(otpDigits).map(d => d.value).join('');
-  }
-
-  function clearOTPInputs() {
-    otpDigits.forEach(d => d.value = '');
-    otpDigits[0].focus();
-  }
-
-  function extractFallbackOtpCode(payload) {
-    if (!payload || payload.delivery_mode !== 'demo_otp_fallback') {
-      return '';
-    }
-    const normalized = String(payload.demo_otp_code || '').replace(/\D/g, '').slice(0, otpDigits.length);
-    return normalized.length === otpDigits.length ? normalized : '';
-  }
-
-  function prefillOtpDigits(code) {
-    const normalized = String(code || '').replace(/\D/g, '').slice(0, otpDigits.length);
-    if (normalized.length !== otpDigits.length) return false;
-    otpDigits.forEach((digit, index) => {
-      digit.value = normalized[index];
-    });
-    otpDigits[otpDigits.length - 1].focus();
-    return true;
-  }
-
-  function applyOtpDeliveryFeedback(payload, isResend = false) {
-    const fallbackCode = extractFallbackOtpCode(payload);
-    if (fallbackCode) {
-      prefillOtpDigits(fallbackCode);
-      const baseMessage = payload.message || 'Email delivery is unavailable right now.';
-      msg.textContent = `${baseMessage} Fallback code: ${fallbackCode}`;
-      msg.style.color = '#856404';
-      return;
-    }
-
-    msg.textContent = isResend
-      ? 'New verification code sent!'
-      : 'Please enter the verification code sent to your email';
-    msg.style.color = isResend ? '#28a745' : '#2e7d32';
-  }
-
-  // ========== RESEND OTP ==========
-  function startResendCountdown(seconds = 60) {
-    const parsedSeconds = Number(seconds);
-    resendCountdown = Number.isFinite(parsedSeconds) && parsedSeconds > 0
-      ? Math.floor(parsedSeconds)
-      : 60;
-    resendOtp.classList.add('disabled');
-    resendOtp.innerHTML = `Resend code in <span id="resend-timer">${resendCountdown}</span>s`;
-    
-    resendInterval = setInterval(() => {
-      resendCountdown--;
-      const timerSpan = document.getElementById('resend-timer');
-      if (timerSpan) timerSpan.textContent = resendCountdown;
-      
-      if (resendCountdown <= 0) {
-        clearInterval(resendInterval);
-        resendOtp.classList.remove('disabled');
-        resendOtp.textContent = 'Resend code';
-      }
-    }, 1000);
-  }
-
-  resendOtp.addEventListener('click', async function(e) {
-    e.preventDefault();
-    if (resendOtp.classList.contains('disabled')) return;
-    
-    try {
-      const response = await fetch('/api/security/otp/resend', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          verification_id: verificationId.value
-        })
-      });
-      const data = await response.json();
-      
-      if (data.success) {
-        if (data.verification_id) {
-          verificationId.value = data.verification_id;
-          persistOtpContext(otpEmail.textContent, data.verification_id);
-        }
-        applyOtpDeliveryFeedback(data, true);
-        startResendCountdown(data.retry_after_seconds || 60);
-        if (!extractFallbackOtpCode(data)) {
-          clearOTPInputs();
-        }
-      } else {
-        msg.textContent = data.message || 'Failed to resend code';
-        msg.style.color = '#dc3545';
-        if (data.retry_after_seconds) {
-          startResendCountdown(data.retry_after_seconds);
-        }
-      }
-    } catch (e) {
-      msg.textContent = 'Error sending code';
-      msg.style.color = '#dc3545';
-    }
-  });
-
   // ========== STEP TRANSITIONS ==========
-  function showOTPStep(email, verId) {
-    currentStep = 2;
-    
-    // Update step indicators
-    step1Item.classList.remove('active');
-    step1Item.classList.add('complete');
-    connector1.classList.add('complete');
-    step2Item.classList.add('active');
-    
-    // Hide details, show OTP
-    detailsSection.style.display = 'none';
-    otpSection.classList.add('active');
-    
-    // Set values
-    otpEmail.textContent = email;
-    verificationId.value = verId;
-    persistOtpContext(email, verId);
-    
-    submitBtn.textContent = 'Verify Email';
-    updateSubmitButton();
-    
-    // Start countdown
-    startResendCountdown();
-    
-    // Focus first OTP input
-    setTimeout(() => otpDigits[0].focus(), 100);
-  }
-
   function showCompleteStep() {
     currentStep = 3;
+    
+    // Hide the registration form
+    detailsSection.style.display = 'none';
     
     // Update step indicators
     step1Item.classList.remove('active');
@@ -460,42 +261,6 @@ document.addEventListener('DOMContentLoaded', function () {
     step3Item.classList.add('active');
     
     submitBtn.style.display = 'none';
-  }
-
-  // ========== VERIFY EMAIL OTP ==========
-  async function verifyEmailOTP(code) {
-    submitBtn.disabled = true;
-    msg.textContent = 'Verifying email...';
-    msg.style.color = '#546e7a';
-    
-    try {
-      const response = await fetch('/api/security/otp/verify', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          verification_id: verificationId.value,
-          otp_code: code
-        })
-      });
-      const data = await response.json();
-      
-      if (data.success) {
-        msg.textContent = 'Email verified! Creating your account...';
-        msg.style.color = '#28a745';
-        
-        // Complete registration
-        completeRegistration();
-      } else {
-        msg.textContent = data.message || 'Invalid code';
-        msg.style.color = '#dc3545';
-        clearOTPInputs();
-        submitBtn.disabled = false;
-      }
-    } catch (e) {
-      msg.textContent = 'Verification error';
-      msg.style.color = '#dc3545';
-      submitBtn.disabled = false;
-    }
   }
 
   // ========== COMPLETE REGISTRATION ==========
@@ -543,48 +308,6 @@ document.addEventListener('DOMContentLoaded', function () {
       msg.style.color = '#dc3545';
       submitBtn.disabled = false;
     }
-  }
-
-  async function requestRegistrationOTP(email) {
-    const maxAttempts = 2;
-    let lastFailure = null;
-
-    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-      try {
-        const otpResponse = await fetch('/api/security/otp/request', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            email: email,
-            purpose: 'registration',
-            user_type: 'customer'
-          })
-        });
-        const otpData = await otpResponse.json();
-
-        if (otpData.success && otpData.verification_id) {
-          return otpData;
-        }
-
-        lastFailure = otpData;
-        const shouldRetry =
-          attempt < maxAttempts &&
-          (otpData.error_code === 'OTP_DELIVERY_FAILED' || otpData.error_code === 'RATE_LIMITED');
-        if (!shouldRetry) break;
-
-        msg.textContent = 'Delivery retry in progress...';
-        msg.style.color = '#856404';
-        await new Promise(resolve => setTimeout(resolve, 1200));
-      } catch (error) {
-        lastFailure = { message: 'Network error while requesting code' };
-        if (attempt < maxAttempts) {
-          await new Promise(resolve => setTimeout(resolve, 1000));
-          continue;
-        }
-      }
-    }
-
-    return lastFailure || { message: 'Failed to send verification code' };
   }
 
   // ========== FORM SUBMISSION ==========
@@ -693,11 +416,6 @@ document.addEventListener('DOMContentLoaded', function () {
   // Initialize
   restoreRegistrationDraft();
   restorePendingRegistrationState();
-  try {
-    sessionStorage.removeItem(OTP_CONTEXT_KEY);
-  } catch (e) {
-    // Ignore storage errors silently.
-  }
 
   form.addEventListener('input', function () {
     if (currentStep === 1) {
