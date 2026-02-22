@@ -1231,6 +1231,7 @@
             const fraudProb = report.fraud_probability || 0;
             const riskLevel = report.risk_level || 'medium';
             const recommendation = report.recommendation_display || report.recommendation || 'Pending';
+            const reportClaimIdEncoded = encodeURIComponent(String((report && report.claim_id) || ''));
             
             // Determine colors based on authenticity
             let authClass = 'highlight';
@@ -1380,8 +1381,8 @@
                 <!-- Actions -->
                 <div style="display: flex; justify-content: flex-end; gap: 12px; margin-top: 24px;">
                     <button class="btn btn-secondary" onclick="closeProbabilityModal()">Close Report</button>
-                    ${authProb >= 0.7 ? `<button class="btn btn-approve" onclick="closeProbabilityModal(); openReview('${report.claim_id}');">Proceed to Approve</button>` : ''}
-                    ${authProb < 0.5 ? `<button class="btn btn-reject" onclick="closeProbabilityModal(); openReview('${report.claim_id}');">Review for Rejection</button>` : ''}
+                    ${authProb >= 0.7 ? `<button class="btn btn-approve" onclick="closeProbabilityModal(); openReview(decodeURIComponent('${reportClaimIdEncoded}'));">Proceed to Approve</button>` : ''}
+                    ${authProb < 0.5 ? `<button class="btn btn-reject" onclick="closeProbabilityModal(); openReview(decodeURIComponent('${reportClaimIdEncoded}'));">Review for Rejection</button>` : ''}
                 </div>
             `;
             
@@ -2027,7 +2028,7 @@
                                 ${riskAnalyses.map(ra => `
                                     <tr style="border-bottom: 1px solid rgba(255,255,255,0.05);">
                                         <td style="padding: 12px; color: white;">
-                                            <a href="#" onclick="openProbabilityReport('${ra.claim.id}'); return false;" style="color: #4facfe; text-decoration: none;">${ra.claim.id}</a>
+                                            <a href="#" onclick="openProbabilityReport(decodeURIComponent('${encodeURIComponent(String(ra.claim.id || ''))}')); return false;" style="color: #4facfe; text-decoration: none;">${ra.claim.id}</a>
                                         </td>
                                         <td style="padding: 12px; color: rgba(255,255,255,0.8);">
                                             ${ra.claim.customer_name || ra.claim.customer_id || 'N/A'}

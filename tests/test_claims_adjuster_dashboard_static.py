@@ -32,3 +32,10 @@ def test_dashboard_claims_loader_requests_all_pages():
 def test_dashboard_does_not_embed_runtime_script_tags_in_html_templates():
     html = _claims_adjuster_dashboard_html()
     assert '<script src="/ui-clarity.js"></script>' not in html
+
+
+def test_dashboard_escapes_dynamic_ids_in_inline_actions():
+    html = _claims_adjuster_dashboard_html()
+    assert "openReview('${report.claim_id}')" not in html
+    assert "openProbabilityReport('${ra.claim.id}')" not in html
+    assert "openReview(decodeURIComponent('${reportClaimIdEncoded}'))" in html
