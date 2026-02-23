@@ -8164,25 +8164,36 @@ For claims or questions, please contact:
         
         # ========== POLICY DOCUMENTS LIST ENDPOINT ==========
         # GET /api/documents/list - List documents accessible to authenticated user
+        # Admins/underwriters/adjusters see all; customers see only their own.
+        # Admin can filter by customer_id or entity_id query params.
         if path == '/api/documents/list':
             if not session:
                 self._set_json_headers(401)
                 self.wfile.write(json.dumps({'error': 'Authentication required'}).encode('utf-8'))
                 return
             try:
-                is_admin = session.get('role') in ('admin', 'underwriter', 'actuary', 'adjuster')
-                customer_id = session.get('customer_id')
+                eff_role = get_effective_role(session)
+                is_admin = eff_role in ('admin', 'underwriter', 'actuary', 'adjuster')
+                session_customer_id = session.get('customer_id')
                 entity_type = qs.get('entity_type', [None])[0]
                 entity_id = qs.get('entity_id', [None])[0]
+                # Admin-only: filter by a specific customer's documents
+                filter_customer_id = qs.get('customer_id', [None])[0] if is_admin else None
+                document_type_filter = qs.get('document_type', [None])[0]
 
                 docs = []
                 for doc in POLICY_DOCUMENTS.values():
-                    # Admins see all; customers see only their own documents
-                    if not is_admin and doc.get('uploaded_by_customer') != customer_id:
+                    # Permission: customers can only see their own documents
+                    if not is_admin and doc.get('uploaded_by_customer') != session_customer_id:
+                        continue
+                    # Admin filter by customer_id (optional)
+                    if filter_customer_id and doc.get('uploaded_by_customer') != filter_customer_id:
                         continue
                     if entity_type and doc.get('entity_type') != entity_type:
                         continue
                     if entity_id and doc.get('entity_id') != entity_id:
+                        continue
+                    if document_type_filter and doc.get('document_type') != document_type_filter:
                         continue
                     docs.append({
                         'id': doc.get('id'),
@@ -8191,9 +8202,11 @@ For claims or questions, please contact:
                         'size': doc.get('size'),
                         'entity_type': doc.get('entity_type'),
                         'entity_id': doc.get('entity_id'),
+                        'document_type': doc.get('document_type', 'general'),
                         'description': doc.get('description', ''),
                         'uploaded_at': doc.get('uploaded_at'),
                         'uploaded_by': doc.get('uploaded_by'),
+                        'uploaded_by_customer': doc.get('uploaded_by_customer', ''),
                         'has_data': bool(doc.get('data'))
                     })
 
@@ -8202,7 +8215,97 @@ For claims or questions, please contact:
                 self.wfile.write(json.dumps({
                     'success': True,
                     'documents': docs,
-                    'total': len(docs)
+                    'total': len(docs),
+                    'is_admin': is_admin
+                }).encode('utf-8'))
+                return
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+                return
+
+        # ========== DOCUMENT VIEW/DOWNLOAD ENDPOINT ==========
+        # GET /api/documents/view?id=<doc_id> - Retrieve file content for viewing/downloading
+        # Access: document owner (customer) or admin/underwriter/adjuster
+        if path == '/api/documents/view':
+            if not session:
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Authentication required'}).encode('utf-8'))
+                return
+            try:
+                doc_id = qs.get('id', [None])[0]
+                if not doc_id:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'Document ID required'}).encode('utf-8'))
+                    return
+
+                doc = POLICY_DOCUMENTS.get(doc_id)
+                if not doc:
+                    self._set_json_headers(404)
+                    self.wfile.write(json.dumps({'error': 'Document not found'}).encode('utf-8'))
+                    return
+
+                eff_role = get_effective_role(session)
+                is_admin = eff_role in ('admin', 'underwriter', 'actuary', 'adjuster')
+                session_customer_id = session.get('customer_id')
+
+                # Permission check: customer can only view their own documents
+                if not is_admin and doc.get('uploaded_by_customer') != session_customer_id:
+                    self._set_json_headers(403)
+                    self.wfile.write(json.dumps({'error': 'Access denied'}).encode('utf-8'))
+                    return
+
+                if not doc.get('data'):
+                    self._set_json_headers(404)
+                    self.wfile.write(json.dumps({'error': 'File data not available'}).encode('utf-8'))
+                    return
+
+                self._set_json_headers(200)
+                self.wfile.write(json.dumps({
+                    'success': True,
+                    'id': doc.get('id'),
+                    'name': doc.get('name'),
+                    'type': doc.get('type'),
+                    'size': doc.get('size'),
+                    'data': doc.get('data'),  # Base64 encoded content
+                    'document_type': doc.get('document_type', 'general'),
+                    'entity_type': doc.get('entity_type'),
+                    'entity_id': doc.get('entity_id'),
+                    'uploaded_at': doc.get('uploaded_at'),
+                    'uploaded_by': doc.get('uploaded_by')
+                }).encode('utf-8'))
+                return
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+                return
+
+        # ========== ADMIN: LIST CUSTOMERS FOR DOCUMENT FILTERING ==========
+        # GET /api/admin/customers-for-documents - Returns customer list for admin doc filtering
+        # Access: admin, underwriter, adjuster roles only
+        if path == '/api/admin/customers-for-documents':
+            if not session:
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Authentication required'}).encode('utf-8'))
+                return
+            if not require_role(session, ['admin', 'underwriter', 'adjuster', 'actuary']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Admin access required'}).encode('utf-8'))
+                return
+            try:
+                customers = []
+                for cid, cust in CUSTOMERS.items():
+                    customers.append({
+                        'id': cid,
+                        'name': cust.get('name', cust.get('full_name', cid)),
+                        'email': cust.get('email', '')
+                    })
+                customers.sort(key=lambda c: c.get('name', ''))
+                self._set_json_headers(200)
+                self.wfile.write(json.dumps({
+                    'success': True,
+                    'customers': customers,
+                    'total': len(customers)
                 }).encode('utf-8'))
                 return
             except Exception as e:
@@ -19512,6 +19615,7 @@ For claims or questions, please contact:
                 entity_type = data.get('entity_type', '')  # policy, claim, customer, underwriting, general
                 entity_id = data.get('entity_id', '')
                 description = data.get('description', '')
+                document_type = data.get('document_type', 'general')  # id, receipt, medical, authority, general
                 actor = session.get('username', 'user')
                 customer_id = session.get('customer_id', '')
 
@@ -19545,6 +19649,7 @@ For claims or questions, please contact:
                         'data': file_info.get('data'),  # Base64 encoded content
                         'entity_type': entity_type,
                         'entity_id': entity_id,
+                        'document_type': document_type,
                         'description': description,
                         'uploaded_at': datetime.now().isoformat(),
                         'uploaded_by': actor,
@@ -19557,9 +19662,10 @@ For claims or questions, please contact:
                         'size': doc['size'],
                         'entity_type': entity_type,
                         'entity_id': entity_id,
+                        'document_type': document_type,
                         'uploaded_at': doc['uploaded_at']
                     })
-                    print(f"   📄 Stored document {doc_id}: {fname} ({doc['size']} bytes) -> {entity_type}/{entity_id}")
+                    print(f"   📄 Stored document {doc_id}: {fname} ({doc['size']} bytes) -> {entity_type}/{entity_id} [{document_type}]")
 
                 save_ledger_data()
 
