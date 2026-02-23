@@ -1169,9 +1169,9 @@ def test_risk_report_handles_string_encoded_medical_payloads():
     base = f"http://127.0.0.1:{port}"
     token = _seed_test_session(role='underwriter', username='underwriter')
 
-    customer_id = 'CUST-RISK-STRING-001'
-    policy_id = 'POL-RISK-STRING-001'
-    app_id = 'UW-RISK-STRING-001'
+    customer_id = 'CUST-SHOSH-001'
+    policy_id = 'POL-SHOSH-UNIFIED-001'
+    app_id = 'UW-SHOSH-001'
 
     original_app = portal.UNDERWRITING_APPLICATIONS.get(app_id)
     original_policy = portal.POLICIES.get(policy_id)
@@ -1179,18 +1179,18 @@ def test_risk_report_handles_string_encoded_medical_payloads():
 
     portal.CUSTOMERS[customer_id] = {
         'id': customer_id,
-        'name': 'String Payload User',
-        'email': 'risk-string@example.com',
+        'name': 'Shosh PHINS',
+        'email': 'shosh@phins.ai',
         'created_date': '2026-01-01T00:00:00',
         'status': 'active'
     }
     portal.POLICIES[policy_id] = {
         'id': policy_id,
         'customer_id': customer_id,
-        'type': 'health',
-        'coverage_amount': 250000,
-        'annual_premium': 2400,
-        'monthly_premium': 200,
+        'type': 'phins_unified',
+        'coverage_amount': 450000,
+        'annual_premium': 1433.7,
+        'monthly_premium': 119.48,
         'status': 'pending_underwriting',
         'risk_score': 'moderate'
     }
@@ -1198,20 +1198,21 @@ def test_risk_report_handles_string_encoded_medical_payloads():
         'id': app_id,
         'policy_id': policy_id,
         'customer_id': customer_id,
-        'customer_name': 'String Payload User',
-        'customer_email': 'risk-string@example.com',
-        'policy_type': 'health',
-        'coverage_amount': 250000,
+        'customer_name': 'Shosh PHINS',
+        'customer_email': 'shosh@phins.ai',
+        'policy_type': 'phins_unified',
+        'coverage_amount': 450000,
         'status': 'pending',
         'risk_score': 'moderate',
         'risk_assessment': 'moderate',
+        'age': 41,
         'questionnaire_responses': '{"age":"41","disability_percentage":"15","smoke":"no","height":"170","weight":"78"}',
         'medical_conditions': '[{"condition":"Hypertension","severity":"moderate","risk_impact":"0.18","loading_percentage":"12"}]',
         'documents': '[]'
     }
 
     try:
-        body, status = _get(base + f"/api/risk-assessment/report?customer_id={customer_id}", token)
+        body, status = _get(base + f"/api/risk-assessment/report?id={app_id}", token)
         assert status == 200
         report = json.loads(body)
         assert report.get('application_id') == app_id
