@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>PHINS — Document Upload Center</title>
+  <title>PHINS — Document Center</title>
   <link rel="stylesheet" href="/styles.css">
   <style>
     body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f0f4f8; }
@@ -43,7 +43,7 @@
       color: white !important; font-weight: 600 !important;
     }
 
-    .page-container { max-width: 960px; margin: 0 auto; padding: 2rem 1.5rem; }
+    .page-container { max-width: 1040px; margin: 0 auto; padding: 2rem 1.5rem; }
 
     .page-title { font-size: 1.8rem; font-weight: 700; color: #1a237e; margin-bottom: 0.25rem; }
     .page-subtitle { color: #546e7a; margin-bottom: 2rem; font-size: 0.95rem; }
@@ -74,7 +74,8 @@
 
     /* Form */
     .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1rem; }
-    @media(max-width: 600px) { .form-row { grid-template-columns: 1fr; } }
+    .form-row-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem; margin-bottom: 1rem; }
+    @media(max-width: 700px) { .form-row, .form-row-3 { grid-template-columns: 1fr; } }
     .form-group { display: flex; flex-direction: column; gap: 4px; }
     .form-group label { font-size: 0.85rem; font-weight: 600; color: #37474f; }
     .form-group select, .form-group input, .form-group textarea {
@@ -100,13 +101,22 @@
       font-size: 1rem; padding: 4px; line-height: 1;
     }
 
-    /* Button */
+    /* Buttons */
     .btn-upload {
       background: linear-gradient(135deg, #1565c0 0%, #1976d2 100%);
       color: white; border: none; padding: 12px 28px; border-radius: 10px;
       font-size: 1rem; font-weight: 600; cursor: pointer; transition: opacity 0.2s;
     }
     .btn-upload:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn-sm {
+      border: none; padding: 5px 10px; border-radius: 6px;
+      font-size: 0.78rem; font-weight: 600; cursor: pointer; transition: opacity 0.2s;
+      white-space: nowrap;
+    }
+    .btn-view { background: #e3f2fd; color: #1565c0; }
+    .btn-view:hover { background: #bbdefb; }
+    .btn-download { background: #e8f5e9; color: #2e7d32; }
+    .btn-download:hover { background: #c8e6c9; }
 
     /* Status banner */
     #status-msg {
@@ -116,27 +126,67 @@
     #status-msg.success { background: #e8f5e9; color: #2e7d32; border: 1px solid #a5d6a7; }
     #status-msg.error   { background: #ffebee; color: #b71c1c; border: 1px solid #ef9a9a; }
 
+    /* Admin filter bar */
+    .admin-panel {
+      background: #fffde7; border: 1px solid #fff176; border-radius: 10px;
+      padding: 1rem 1.25rem; margin-bottom: 1rem;
+    }
+    .admin-panel-title {
+      font-size: 0.85rem; font-weight: 700; color: #f57f17;
+      margin-bottom: 0.75rem; display: flex; align-items: center; gap: 6px;
+    }
+
     /* Documents table */
-    .docs-table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+    .docs-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
     .docs-table th {
-      text-align: left; padding: 10px 12px; background: #f5f7fa;
-      color: #546e7a; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.5px;
+      text-align: left; padding: 10px 10px; background: #f5f7fa;
+      color: #546e7a; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.5px;
       border-bottom: 2px solid #e8edf2;
     }
-    .docs-table td { padding: 10px 12px; border-bottom: 1px solid #f0f4f8; color: #37474f; }
+    .docs-table td { padding: 9px 10px; border-bottom: 1px solid #f0f4f8; color: #37474f; vertical-align: middle; }
     .docs-table tr:last-child td { border-bottom: none; }
     .docs-table tr:hover td { background: #f8fbff; }
     .badge {
       display: inline-block; padding: 2px 8px; border-radius: 20px;
-      font-size: 0.75rem; font-weight: 600;
+      font-size: 0.72rem; font-weight: 600;
     }
-    .badge-policy   { background: #e3f2fd; color: #1565c0; }
-    .badge-claim    { background: #fce4ec; color: #c62828; }
-    .badge-customer { background: #e8f5e9; color: #2e7d32; }
+    /* Affiliation badges */
+    .badge-policy       { background: #e3f2fd; color: #1565c0; }
+    .badge-claim        { background: #fce4ec; color: #c62828; }
+    .badge-customer     { background: #e8f5e9; color: #2e7d32; }
     .badge-underwriting { background: #fff3e0; color: #e65100; }
-    .badge-general  { background: #f3e5f5; color: #6a1b9a; }
+    .badge-general      { background: #f3e5f5; color: #6a1b9a; }
+    /* Document type badges */
+    .badge-id          { background: #e3f2fd; color: #0d47a1; }
+    .badge-receipt     { background: #f3e5f5; color: #6a1b9a; }
+    .badge-medical     { background: #fce4ec; color: #ad1457; }
+    .badge-authority   { background: #fff3e0; color: #bf360c; }
+    .badge-doctype-general { background: #eceff1; color: #546e7a; }
+
     .empty-state { text-align: center; padding: 40px; color: #90a4ae; }
     .empty-state-icon { font-size: 3rem; margin-bottom: 12px; }
+
+    /* File viewer modal */
+    .modal-overlay {
+      display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.6);
+      z-index: 1000; align-items: center; justify-content: center;
+    }
+    .modal-overlay.open { display: flex; }
+    .modal-box {
+      background: white; border-radius: 16px; max-width: 90vw; max-height: 90vh;
+      width: 800px; display: flex; flex-direction: column; overflow: hidden;
+    }
+    .modal-header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 1rem 1.25rem; border-bottom: 1px solid #e8edf2;
+    }
+    .modal-title { font-weight: 600; color: #1a237e; font-size: 1rem; }
+    .modal-close { background: none; border: none; font-size: 1.5rem; cursor: pointer; color: #546e7a; }
+    .modal-body { flex: 1; overflow: auto; padding: 1rem; display: flex; align-items: center; justify-content: center; }
+    .modal-body img { max-width: 100%; max-height: 70vh; border-radius: 8px; }
+    .modal-body iframe { width: 100%; height: 70vh; border: none; }
+    .modal-body pre { white-space: pre-wrap; word-break: break-all; font-size: 0.85rem; color: #37474f; }
+    .modal-footer { padding: 0.75rem 1.25rem; border-top: 1px solid #e8edf2; display: flex; gap: 0.5rem; justify-content: flex-end; }
   </style>
 </head>
 <body>
@@ -158,9 +208,24 @@
   </div>
 </header>
 
+<!-- File Viewer Modal -->
+<div class="modal-overlay" id="viewer-modal" onclick="closeModal(event)">
+  <div class="modal-box">
+    <div class="modal-header">
+      <span class="modal-title" id="modal-title">Viewing file</span>
+      <button class="modal-close" onclick="closeViewer()">✕</button>
+    </div>
+    <div class="modal-body" id="modal-body"></div>
+    <div class="modal-footer">
+      <button class="btn-sm btn-download" id="modal-download-btn">⬇ Download</button>
+      <button class="btn-sm" style="background:#eceff1;color:#546e7a;" onclick="closeViewer()">Close</button>
+    </div>
+  </div>
+</div>
+
 <div class="page-container">
-  <div class="page-title">📁 Document Upload Center</div>
-  <div class="page-subtitle">Upload XLS, XSD, PDF, CSV and other files and affiliate them with your insurance records.</div>
+  <div class="page-title">📁 Document Center</div>
+  <div class="page-subtitle">Upload, view, and manage insurance documents — ID cards, receipts, medical records, and authority certificates.</div>
 
   <div id="status-msg"></div>
 
@@ -177,7 +242,7 @@
       <div class="drop-zone-icon">📂</div>
       <div class="drop-zone-text">Drop files here or click to browse</div>
       <div class="drop-zone-hint">
-        Supported: XLS, XLSX, XSD, CSV, PDF, DOC, DOCX, XML, TXT, PNG, JPG, ZIP (max 20 files, 25 MB each)
+        Supported: PDF, DOC, DOCX, XLS, XLSX, CSV, PNG, JPG, ZIP, XML, TXT (max 20 files, 25 MB each)
       </div>
     </div>
     <input type="file" id="file-input" multiple
@@ -187,9 +252,19 @@
     <!-- Selected files preview -->
     <div id="file-list" class="file-list" style="display:none;"></div>
 
-    <!-- Affiliation form -->
+    <!-- Affiliation & type form -->
     <div style="margin-top: 1.5rem;">
-      <div class="form-row">
+      <div class="form-row-3">
+        <div class="form-group">
+          <label for="document-type">Document Type</label>
+          <select id="document-type">
+            <option value="general">📄 General</option>
+            <option value="id">🪪 Identity Document (ID / Passport)</option>
+            <option value="receipt">🧾 Receipt / Payment Proof</option>
+            <option value="medical">🏥 Medical Document / Report</option>
+            <option value="authority">📜 Authority Certificate (Death / Disability)</option>
+          </select>
+        </div>
         <div class="form-group">
           <label for="entity-type">Affiliate With</label>
           <select id="entity-type" onchange="onEntityTypeChange()">
@@ -200,14 +275,14 @@
             <option value="underwriting">Underwriting Application</option>
           </select>
         </div>
-        <div class="form-group" id="entity-id-group">
+        <div class="form-group" id="entity-id-group" style="display:none;">
           <label for="entity-id" id="entity-id-label">Record ID</label>
-          <input type="text" id="entity-id" placeholder="e.g. POL-12345 or CLM-67890" />
+          <input type="text" id="entity-id" placeholder="e.g. POL-12345" />
         </div>
       </div>
       <div class="form-group" style="margin-bottom: 1rem;">
         <label for="description">Description (optional)</label>
-        <textarea id="description" rows="2" placeholder="e.g. Actuarial pricing table Q1 2026, XSD schema for data exchange…"></textarea>
+        <textarea id="description" rows="2" placeholder="e.g. Q1 2026 medical clearance, disability certificate for claim CLM-001…"></textarea>
       </div>
     </div>
 
@@ -218,7 +293,46 @@
 
   <!-- Documents List -->
   <div class="card">
-    <div class="card-title">📋 My Uploaded Documents</div>
+    <div class="card-title">
+      📋 <span id="docs-list-title">My Uploaded Documents</span>
+      <span id="docs-count" style="margin-left:auto;font-size:0.8rem;color:#78909c;font-weight:400;"></span>
+    </div>
+
+    <!-- Admin filter panel (hidden for customers) -->
+    <div class="admin-panel" id="admin-panel" style="display:none;">
+      <div class="admin-panel-title">🔑 Admin View — Filter Documents</div>
+      <div class="form-row">
+        <div class="form-group">
+          <label for="filter-customer">Filter by Customer</label>
+          <select id="filter-customer" onchange="applyFilters()">
+            <option value="">— All Customers —</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="filter-entity-type">Filter by Affiliation</label>
+          <select id="filter-entity-type" onchange="applyFilters()">
+            <option value="">— All Types —</option>
+            <option value="policy">Policy</option>
+            <option value="claim">Claim</option>
+            <option value="customer">Customer</option>
+            <option value="underwriting">Underwriting</option>
+            <option value="general">General</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="filter-doc-type">Filter by Document Type</label>
+          <select id="filter-doc-type" onchange="applyFilters()">
+            <option value="">— All Doc Types —</option>
+            <option value="id">Identity Document</option>
+            <option value="receipt">Receipt</option>
+            <option value="medical">Medical Document</option>
+            <option value="authority">Authority Certificate</option>
+            <option value="general">General</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
     <div id="docs-container">
       <div class="empty-state">
         <div class="empty-state-icon">📂</div>
@@ -233,6 +347,10 @@
     headers: { 'Authorization': 'Bearer ' + (localStorage.getItem('phins_token') || ''), 'Content-Type': 'application/json', ...((opts||{}).headers||{}) },
     ...opts
   });
+
+  let IS_ADMIN = false;
+  let ALL_DOCS = [];
+  let currentViewDoc = null;
 
   /* ---- Auth ---- */
   function logout() {
@@ -269,7 +387,17 @@
     return map[ext] || '📄';
   }
 
+  function docTypeLabel(t) {
+    const map = { id:'🪪 ID', receipt:'🧾 Receipt', medical:'🏥 Medical', authority:'📜 Authority', general:'📄 General' };
+    return map[t] || '📄 General';
+  }
+  function docTypeBadgeClass(t) {
+    const map = { id:'badge-id', receipt:'badge-receipt', medical:'badge-medical', authority:'badge-authority' };
+    return map[t] || 'badge-doctype-general';
+  }
+
   function formatSize(bytes) {
+    if (!bytes) return '—';
     if (bytes < 1024) return bytes + ' B';
     if (bytes < 1048576) return (bytes/1024).toFixed(1) + ' KB';
     return (bytes/1048576).toFixed(1) + ' MB';
@@ -278,7 +406,7 @@
   function addFiles(files) {
     files.forEach(f => {
       if (selectedFiles.length >= 20) return;
-      if (selectedFiles.find(x => x.name === f.name && x.size === f.size)) return; // dedupe
+      if (selectedFiles.find(x => x.name === f.name && x.size === f.size)) return;
       selectedFiles.push(f);
     });
     renderFileList();
@@ -329,7 +457,7 @@
     document.getElementById('entity-id').placeholder = ENTITY_PLACEHOLDERS[t] || '';
     document.getElementById('entity-id-group').style.display = t === 'general' ? 'none' : 'flex';
   }
-  onEntityTypeChange(); // run on load
+  onEntityTypeChange();
 
   /* ---- Upload ---- */
   async function readFileAsBase64(file) {
@@ -349,9 +477,10 @@
     showStatus('', '');
 
     try {
-      const entityType = document.getElementById('entity-type').value;
-      const entityId   = document.getElementById('entity-id').value.trim();
-      const description = document.getElementById('description').value.trim();
+      const entityType   = document.getElementById('entity-type').value;
+      const entityId     = document.getElementById('entity-id').value.trim();
+      const description  = document.getElementById('description').value.trim();
+      const documentType = document.getElementById('document-type').value;
 
       const filesPayload = await Promise.all(selectedFiles.map(async f => ({
         name: f.name,
@@ -362,7 +491,13 @@
 
       const res = await API('/api/documents/upload', {
         method: 'POST',
-        body: JSON.stringify({ files: filesPayload, entity_type: entityType, entity_id: entityId, description })
+        body: JSON.stringify({
+          files: filesPayload,
+          entity_type: entityType,
+          entity_id: entityId,
+          description,
+          document_type: documentType
+        })
       });
       const json = await res.json();
 
@@ -384,47 +519,212 @@
     }
   }
 
-  /* ---- List documents ---- */
+  /* ---- Admin: load customer list ---- */
+  async function loadAdminCustomers() {
+    try {
+      const res = await API('/api/admin/customers-for-documents');
+      if (!res.ok) return;
+      const json = await res.json();
+      const sel = document.getElementById('filter-customer');
+      (json.customers || []).forEach(c => {
+        const opt = document.createElement('option');
+        opt.value = c.id;
+        opt.textContent = `${c.name} (${c.id})`;
+        sel.appendChild(opt);
+      });
+    } catch { /* ignore */ }
+  }
+
+  /* ---- List & filter documents ---- */
   async function loadDocuments() {
     try {
       const res = await API('/api/documents/list');
       const json = await res.json();
-      renderDocs(json.documents || []);
+      IS_ADMIN = json.is_admin || false;
+      ALL_DOCS = json.documents || [];
+
+      if (IS_ADMIN) {
+        document.getElementById('admin-panel').style.display = 'block';
+        document.getElementById('docs-list-title').textContent = 'All Customer Documents';
+        await loadAdminCustomers();
+      }
+
+      renderDocs(ALL_DOCS);
     } catch {
       document.getElementById('docs-container').innerHTML =
         '<div class="empty-state"><div class="empty-state-icon">⚠️</div><div>Could not load documents.</div></div>';
     }
   }
 
+  function applyFilters() {
+    const customerFilter  = document.getElementById('filter-customer').value;
+    const entityTypeFilter = document.getElementById('filter-entity-type').value;
+    const docTypeFilter   = document.getElementById('filter-doc-type').value;
+
+    let filtered = ALL_DOCS;
+    if (customerFilter)   filtered = filtered.filter(d => d.uploaded_by_customer === customerFilter);
+    if (entityTypeFilter) filtered = filtered.filter(d => d.entity_type === entityTypeFilter);
+    if (docTypeFilter)    filtered = filtered.filter(d => (d.document_type || 'general') === docTypeFilter);
+    renderDocs(filtered);
+  }
+
   function renderDocs(docs) {
     const container = document.getElementById('docs-container');
+    document.getElementById('docs-count').textContent = docs.length ? `${docs.length} document(s)` : '';
+
     if (docs.length === 0) {
-      container.innerHTML = '<div class="empty-state"><div class="empty-state-icon">📂</div><div>No documents uploaded yet.</div></div>';
+      container.innerHTML = '<div class="empty-state"><div class="empty-state-icon">📂</div><div>No documents found.</div></div>';
       return;
     }
+
+    const adminCols = IS_ADMIN
+      ? '<th>Customer</th>'
+      : '';
+    const adminCells = d => IS_ADMIN
+      ? `<td style="font-size:0.8rem;color:#546e7a;">${escHtml(d.uploaded_by_customer || d.uploaded_by || '—')}</td>`
+      : '';
+
     container.innerHTML = `
+      <div style="overflow-x:auto;">
       <table class="docs-table">
         <thead>
           <tr>
             <th>File</th>
-            <th>Affiliated With</th>
+            <th>Doc Type</th>
+            <th>Affiliation</th>
             <th>Record ID</th>
             <th>Description</th>
+            ${adminCols}
             <th>Uploaded</th>
+            <th>Actions</th>
           </tr>
         </thead>
         <tbody>
-          ${docs.map(d => `
+          ${docs.map((d, i) => `
             <tr>
-              <td>${fileIcon(d.name)} ${escHtml(d.name)}<br><small style="color:#90a4ae;">${formatSize(d.size)}</small></td>
+              <td>
+                <span>${fileIcon(d.name)}</span>
+                <span style="font-weight:500;color:#1a237e;">${escHtml(d.name)}</span><br>
+                <small style="color:#90a4ae;">${formatSize(d.size)}</small>
+              </td>
+              <td><span class="badge ${docTypeBadgeClass(d.document_type)}">${docTypeLabel(d.document_type)}</span></td>
               <td><span class="badge badge-${escHtml(d.entity_type || 'general')}">${escHtml(d.entity_type || 'general')}</span></td>
               <td>${escHtml(d.entity_id || '—')}</td>
-              <td>${escHtml(d.description || '—')}</td>
-              <td style="white-space:nowrap;font-size:0.8rem;">${formatDate(d.uploaded_at)}</td>
+              <td style="max-width:160px;word-break:break-word;">${escHtml(d.description || '—')}</td>
+              ${adminCells(d)}
+              <td style="white-space:nowrap;font-size:0.78rem;">${formatDate(d.uploaded_at)}</td>
+              <td style="white-space:nowrap;">
+                ${d.has_data
+                  ? `<button class="btn-sm btn-view" data-id="${escHtml(d.id)}" data-name="${escHtml(d.name)}" data-mime="${escHtml(d.type||'')}">👁 View</button>
+                     <button class="btn-sm btn-download" data-id="${escHtml(d.id)}" data-name="${escHtml(d.name)}">⬇</button>`
+                  : '<span style="color:#bbb;font-size:0.78rem;">—</span>'
+                }
+              </td>
             </tr>
           `).join('')}
         </tbody>
-      </table>`;
+      </table>
+      </div>`;
+  }
+
+  /* ---- Event delegation for document action buttons ---- */
+  document.addEventListener('click', function(e) {
+    const viewBtn = e.target.closest('.btn-view');
+    if (viewBtn) {
+      const id   = viewBtn.dataset.id;
+      const name = viewBtn.dataset.name;
+      const mime = viewBtn.dataset.mime || '';
+      if (id && name) viewDocument(id, name, mime);
+      return;
+    }
+    const dlBtn = e.target.closest('.btn-download');
+    if (dlBtn) {
+      const id   = dlBtn.dataset.id;
+      const name = dlBtn.dataset.name;
+      if (id && name) downloadDocument(id, name);
+    }
+  });
+
+  /* ---- View / Download document ---- */
+  async function fetchDocData(docId) {
+    const res = await API(`/api/documents/view?id=${encodeURIComponent(docId)}`);
+    if (!res.ok) throw new Error('Access denied or document not found');
+    return res.json();
+  }
+
+  async function viewDocument(docId, name, mimeType) {
+    try {
+      const json = await fetchDocData(docId);
+      currentViewDoc = json;
+      document.getElementById('modal-title').textContent = name;
+
+      const body = document.getElementById('modal-body');
+      body.innerHTML = '';
+
+      const dataUrl = `data:${json.type || mimeType || 'application/octet-stream'};base64,${json.data}`;
+      const ext = (name.split('.').pop() || '').toLowerCase();
+      const imgExts = ['png','jpg','jpeg','gif','bmp','webp','svg'];
+      const pdfExt  = ext === 'pdf';
+      const textExts = ['txt','csv','xml','json','xsd'];
+
+      if (imgExts.includes(ext)) {
+        const img = document.createElement('img');
+        img.src = dataUrl;
+        img.alt = name;
+        body.appendChild(img);
+      } else if (pdfExt) {
+        const iframe = document.createElement('iframe');
+        iframe.src = dataUrl;
+        body.appendChild(iframe);
+      } else if (textExts.includes(ext)) {
+        try {
+          const text = atob(json.data);
+          const pre = document.createElement('pre');
+          pre.textContent = text;
+          body.appendChild(pre);
+        } catch {
+          body.innerHTML = '<div style="color:#546e7a;text-align:center;padding:2rem;">Preview not available for this file type.<br>Use the Download button below.</div>';
+        }
+      } else {
+        body.innerHTML = '<div style="color:#546e7a;text-align:center;padding:2rem;">Preview not available for this file type.<br>Use the Download button below.</div>';
+      }
+
+      // Wire download button in modal
+      document.getElementById('modal-download-btn').onclick = () => triggerDownload(dataUrl, name);
+
+      document.getElementById('viewer-modal').classList.add('open');
+    } catch (e) {
+      showStatus('error', '❌ Could not load document: ' + e.message);
+    }
+  }
+
+  async function downloadDocument(docId, name) {
+    try {
+      const json = await fetchDocData(docId);
+      const dataUrl = `data:${json.type || 'application/octet-stream'};base64,${json.data}`;
+      triggerDownload(dataUrl, name);
+    } catch (e) {
+      showStatus('error', '❌ Could not download document: ' + e.message);
+    }
+  }
+
+  function triggerDownload(dataUrl, name) {
+    const a = document.createElement('a');
+    a.href = dataUrl;
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  }
+
+  function closeViewer() {
+    document.getElementById('viewer-modal').classList.remove('open');
+    document.getElementById('modal-body').innerHTML = '';
+    currentViewDoc = null;
+  }
+
+  function closeModal(e) {
+    if (e.target === document.getElementById('viewer-modal')) closeViewer();
   }
 
   /* ---- Helpers ---- */
