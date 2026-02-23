@@ -593,6 +593,488 @@ PHINS_BALANCE_SHEET: Dict[str, Any] = {
     'audit_log': []  # List of all changes with timestamps and actors
 }
 
+def seed_demo_documents() -> None:
+    """Seed demo insurance documents into POLICY_DOCUMENTS for the Document Center.
+
+    Only runs once on startup when no documents exist yet (safe to call on restart
+    because POLICY_DOCUMENTS is loaded from persistence before this function runs).
+    Documents cover all key document types: medical, authority (death/disability),
+    id, receipt, and general — giving the '📋 My Uploaded Documents' tab populated
+    data out of the box.
+    """
+    if POLICY_DOCUMENTS:
+        return  # already populated (persisted or previously seeded)
+
+    import base64 as _b64
+
+    def _b(text: str) -> str:
+        return _b64.b64encode(text.encode('utf-8')).decode()
+
+    demo_docs = [
+        {
+            'id': 'DOC-SEED-001',
+            'name': 'medical_report_high_risk.pdf',
+            'type': 'application/pdf',
+            'size': 1124,
+            'data': _b(
+                "MEDICAL REPORT\n"
+                "Patient: John Doe | DOB: 1975-03-15 | ID: 111222333\n"
+                "Date of Examination: 2026-01-10\n"
+                "Diagnosis: Terminal illness - Stage 4 Lung Cancer\n"
+                "Prognosis: 6 to 12 months\n"
+                "Physician: Dr. Sarah Ahmed, MD — Oncology\n"
+                "The patient presents with a HIGH RISK profile due to terminal diagnosis.\n"
+                "Life insurance risk assessment: VERY HIGH RISK\n"
+                "Recommendation: Immediate underwriting review and evaluation required.\n"
+            ),
+            'entity_type': 'underwriting',
+            'entity_id': 'UW-20260110-0001',
+            'document_type': 'medical',
+            'description': 'Medical report for underwriting — terminal diagnosis flagged',
+            'uploaded_at': '2026-01-10T09:30:00.000000',
+            'uploaded_by': 'demo_underwriter',
+            'uploaded_by_customer': 'CUST-DEMO-001',
+        },
+        {
+            'id': 'DOC-SEED-002',
+            'name': 'death_certificate_jane_smith.pdf',
+            'type': 'application/pdf',
+            'size': 612,
+            'data': _b(
+                "CERTIFICATE OF DEATH\n"
+                "This is to certify that Jane Smith, born 1968-07-22, died on 2026-01-05\n"
+                "Cause of Death: Cardiac Arrest\n"
+                "Place: City Hospital, Tel Aviv\n"
+                "Certificate No: DC-2026-00045\n"
+                "Issued by: Ministry of Health, Israel\n"
+                "Authorized Signatory: Dr. R. Cohen, Registrar\n"
+                "Date of Issue: 2026-01-07\n"
+            ),
+            'entity_type': 'claim',
+            'entity_id': 'CLM-20260105-0012',
+            'document_type': 'authority',
+            'description': 'Death certificate for life insurance claim CLM-20260105-0012',
+            'uploaded_at': '2026-01-08T11:00:00.000000',
+            'uploaded_by': 'adjuster_david',
+            'uploaded_by_customer': 'CUST-DEMO-002',
+        },
+        {
+            'id': 'DOC-SEED-003',
+            'name': 'disability_certificate_mike_cohen.pdf',
+            'type': 'application/pdf',
+            'size': 868,
+            'data': _b(
+                "DISABILITY CERTIFICATE\n"
+                "Patient: Mike Cohen | National ID: 123456789\n"
+                "Date: 2026-01-15\n"
+                "Disability Type: Permanent Partial Disability — Loss of right hand\n"
+                "Disability Grade: 40%\n"
+                "Issued by: National Insurance Institute of Israel\n"
+                "Certificate No: DIS-2026-00178\n"
+                "Valid Until: 2028-01-15\n"
+                "Authorized Signatory: Dr. Yael Levi, Medical Examiner\n"
+            ),
+            'entity_type': 'claim',
+            'entity_id': 'CLM-20260115-0008',
+            'document_type': 'authority',
+            'description': 'Disability certificate for disability insurance claim',
+            'uploaded_at': '2026-01-16T14:20:00.000000',
+            'uploaded_by': 'adjuster_david',
+            'uploaded_by_customer': 'CUST-DEMO-003',
+        },
+        {
+            'id': 'DOC-SEED-004',
+            'name': 'id_card_rachel_goldstein.txt',
+            'type': 'text/plain',
+            'size': 80,
+            'data': _b(
+                "Identity Document — Rachel Goldstein | National ID: 987654321 | DOB: 1990-08-30\n"
+            ),
+            'entity_type': 'customer',
+            'entity_id': 'CUST-DEMO-004',
+            'document_type': 'id',
+            'description': 'National ID card for customer identity verification',
+            'uploaded_at': '2026-01-20T10:00:00.000000',
+            'uploaded_by': 'demo_agent',
+            'uploaded_by_customer': 'CUST-DEMO-004',
+        },
+        {
+            'id': 'DOC-SEED-005',
+            'name': 'premium_payment_receipt_jan2026.txt',
+            'type': 'text/plain',
+            'size': 340,
+            'data': _b(
+                "PAYMENT RECEIPT\n"
+                "Policy: POL-2025-0042 | Customer: Rachel Goldstein\n"
+                "Amount Paid: $1,250.00\n"
+                "Payment Date: 2026-01-18 | Method: Bank Transfer\n"
+                "Reference: TXN-20260118-0077\n"
+                "Premium Period: January 2026 | Next Due: 2026-02-18\n"
+            ),
+            'entity_type': 'policy',
+            'entity_id': 'POL-2025-0042',
+            'document_type': 'receipt',
+            'description': 'Monthly premium payment receipt — January 2026',
+            'uploaded_at': '2026-01-18T15:30:00.000000',
+            'uploaded_by': 'demo_agent',
+            'uploaded_by_customer': 'CUST-DEMO-004',
+        },
+        {
+            'id': 'DOC-SEED-006',
+            'name': 'underwriting_medical_history_eli_bar.txt',
+            'type': 'text/plain',
+            'size': 520,
+            'data': _b(
+                "UNDERWRITING APPLICATION — MEDICAL HISTORY\n"
+                "Applicant: Eli Bar | Age: 52 | Gender: Male\n"
+                "Policy Type: Life Insurance | Sum Insured: $500,000\n"
+                "Medical History: Diabetes Type 2 (2018), Hypertension (2020)\n"
+                "Smoker: Yes | BMI: 29.4\n"
+                "Family History: Father — Heart attack (age 60); Mother — Breast cancer\n"
+                "Risk Assessment: HIGH RISK | Premium Loading: +35%\n"
+                "Conditions: Annual medical check; Exclusion for diabetes-related claims\n"
+            ),
+            'entity_type': 'underwriting',
+            'entity_id': 'UW-20260120-0005',
+            'document_type': 'medical',
+            'description': 'Underwriting medical history — elevated risk applicant',
+            'uploaded_at': '2026-01-20T16:45:00.000000',
+            'uploaded_by': 'demo_underwriter',
+            'uploaded_by_customer': 'CUST-DEMO-005',
+        },
+        {
+            'id': 'DOC-SEED-007',
+            'name': 'billing_overdue_statement_q1_2026.txt',
+            'type': 'text/plain',
+            'size': 280,
+            'data': _b(
+                "BILLING STATEMENT — Q1 2026\n"
+                "Outstanding: $3,750.00 | Paid: $12,500.00 | Overdue: $1,250.00\n"
+                "Overdue accounts: 3 policies past due more than 30 days\n"
+                "Late fee applicable on overdue balance.\n"
+            ),
+            'entity_type': 'general',
+            'entity_id': '',
+            'document_type': 'receipt',
+            'description': 'Q1 2026 billing statement — overdue accounts flagged',
+            'uploaded_at': '2026-02-01T09:00:00.000000',
+            'uploaded_by': 'accountant_miriam',
+            'uploaded_by_customer': 'CUST-DEMO-001',
+        },
+    ]
+
+    for doc in demo_docs:
+        POLICY_DOCUMENTS[doc['id']] = doc
+    print(f"[SEED] Seeded {len(demo_docs)} demo documents into POLICY_DOCUMENTS")
+
+
+def _generate_bi_insights(
+    doc_type: str,
+    entity_type: str,
+    risk_level: str,
+    flags: list,
+) -> Dict[str, Any]:
+    """Generate actuarial / claims / billing BI insights for a document analysis."""
+    insights: Dict[str, Any] = {
+        'actuarial_impact': None,
+        'claims_impact': None,
+        'billing_impact': None,
+    }
+
+    if doc_type == 'medical' or entity_type == 'underwriting':
+        loading_map = {
+            'very_high': '+50% to +75%',
+            'high': '+25% to +50%',
+            'medium': '+10% to +25%',
+            'low': 'Standard',
+        }
+        insights['actuarial_impact'] = {
+            'premium_loading': loading_map.get(risk_level, 'Standard'),
+            'underwriting_action': (
+                'Decline' if risk_level == 'very_high'
+                else ('Conditional Approval' if risk_level in ('high', 'medium') else 'Approve')
+            ),
+            'reserve_recommendation': (
+                'Increase reserve' if risk_level in ('very_high', 'high') else 'Standard reserve'
+            ),
+        }
+
+    if doc_type == 'authority' or entity_type == 'claim':
+        if 'DEATH_CERTIFICATE' in flags:
+            insights['claims_impact'] = {
+                'claim_type': 'Life / Death Benefit',
+                'priority': 'HIGH',
+                'action': (
+                    'Initiate payout process'
+                    if 'AUTHENTICITY_VERIFIED' in flags
+                    else 'Hold — additional verification required'
+                ),
+                'estimated_payout': 'Per policy sum insured',
+            }
+        elif 'DISABILITY_CERTIFICATE' in flags:
+            insights['claims_impact'] = {
+                'claim_type': 'Disability Benefit',
+                'priority': 'MEDIUM-HIGH',
+                'action': (
+                    'Evaluate disability grade against policy terms'
+                    if 'AUTHENTICITY_VERIFIED' in flags
+                    else 'Hold — verification required'
+                ),
+                'estimated_payout': 'Per disability grade percentage of sum insured',
+            }
+
+    if doc_type == 'receipt' or entity_type in ('billing', 'policy'):
+        insights['billing_impact'] = {
+            'status': 'Anomaly detected' if 'BILLING_ANOMALY_OVERDUE' in flags else 'Normal',
+            'action': (
+                'Send overdue reminder and apply late fee'
+                if 'BILLING_ANOMALY_OVERDUE' in flags
+                else 'No action required'
+            ),
+            'large_transaction_flag': 'LARGE_TRANSACTION_DETECTED' in flags,
+        }
+
+    return insights
+
+
+def analyze_document_content(doc: Dict[str, Any]) -> Dict[str, Any]:
+    """AI Document Analysis Engine for PHINS.
+
+    Performs rule-based AI analysis on an insurance document and returns structured
+    findings covering actuarial underwriting risk, claims investigation
+    (death / disability certificate authenticity), and billing anomaly detection.
+
+    Returned dict keys:
+        risk_level       : 'low' | 'medium' | 'high' | 'very_high'
+        risk_score       : float 0–1
+        flags            : list[str]  — machine-readable event labels
+        findings         : list[str]  — human-readable sentences
+        recommendation   : str        — suggested next action
+        bi_insights      : dict       — actuarial / claims / billing metrics
+        confidence       : float
+        analyzed_at      : ISO-8601 timestamp
+        analysis_version : str
+        analysis_mode    : str
+    """
+    import base64 as _b64
+    import re
+
+    doc_type = doc.get('document_type', 'general')
+    doc_name = (doc.get('name') or '').lower()
+    description = (doc.get('description') or '').lower()
+    entity_type = doc.get('entity_type', 'general')
+
+    # Decode base64 content for keyword inspection (text-based files only)
+    text_content = ''
+    raw_data = doc.get('data', '')
+    if raw_data:
+        try:
+            text_content = _b64.b64decode(raw_data).decode('utf-8', errors='ignore').lower()
+        except Exception:
+            text_content = ''
+
+    full_text = f"{doc_name} {description} {text_content}"
+
+    flags: list = []
+    findings: list = []
+    risk_score = 0.0
+
+    # ── Medical / Underwriting analysis ─────────────────────────────────────
+    if doc_type == 'medical' or entity_type == 'underwriting':
+        if any(kw in full_text for kw in [
+            'terminal', 'death', 'died', 'fatal', 'deceased',
+            'mortality', 'end-of-life', 'hospice', 'palliative',
+        ]):
+            flags.append('TERMINAL_CONDITION_DETECTED')
+            findings.append(
+                'Terminal or death-related indicators found — life policy risk is VERY HIGH.'
+            )
+            risk_score = max(risk_score, 0.95)
+
+        if any(kw in full_text for kw in [
+            'cancer', 'tumor', 'stage 4', 'stage iv', 'hiv', 'aids',
+            'stroke', 'heart failure', 'cardiac arrest', 'organ failure',
+        ]):
+            flags.append('SERIOUS_ILLNESS_DETECTED')
+            findings.append(
+                'Serious illness marker detected (cancer/cardiac/etc.) — significant premium loading required.'
+            )
+            risk_score = max(risk_score, 0.80)
+
+        if any(kw in full_text for kw in [
+            'disability', 'disabled', 'paralysis', 'amputation',
+            'loss of limb', 'loss of sight', 'permanent partial',
+        ]):
+            flags.append('DISABILITY_CONDITION_DETECTED')
+            findings.append(
+                'Disability condition detected — evaluate disability coverage eligibility.'
+            )
+            risk_score = max(risk_score, 0.75)
+
+        if any(kw in full_text for kw in [
+            'diabetes', 'hypertension', 'chronic', 'smoker', 'obesity', 'bmi',
+        ]):
+            flags.append('CHRONIC_CONDITION_DETECTED')
+            findings.append(
+                'Chronic health conditions present — standard premium loading 20–35% recommended.'
+            )
+            risk_score = max(risk_score, 0.55)
+
+        if 'very high risk' in full_text or 'high risk' in full_text:
+            flags.append('EXPLICIT_HIGH_RISK_FLAG')
+            findings.append('Document explicitly states a HIGH RISK classification.')
+            risk_score = max(risk_score, 0.85)
+
+        if not findings:
+            findings.append('No elevated risk markers detected in medical documentation.')
+            risk_score = max(risk_score, 0.25)
+
+    # ── Authority certificate analysis (death / disability) ─────────────────
+    if doc_type == 'authority':
+        # Death certificate
+        if any(kw in full_text for kw in [
+            'certificate of death', 'death certificate', 'cause of death', 'died on',
+        ]):
+            flags.append('DEATH_CERTIFICATE')
+            findings.append(
+                'Death certificate identified — life insurance claim processing should be triggered.'
+            )
+            risk_score = max(risk_score, 0.90)
+            auth_markers = [
+                'ministry', 'registrar', 'authorized', 'certificate no', 'official', 'issued by',
+            ]
+            auth_count = sum(1 for m in auth_markers if m in full_text)
+            if auth_count >= 3:
+                flags.append('AUTHENTICITY_VERIFIED')
+                findings.append(
+                    f'Certificate authenticity: GENUINE ({auth_count}/6 official markers present).'
+                )
+            elif auth_count >= 1:
+                flags.append('AUTHENTICITY_REQUIRES_INQUIRY')
+                findings.append(
+                    f'Partial authenticity markers ({auth_count}/6) — REQUIRES FURTHER INQUIRY before claim approval.'
+                )
+            else:
+                flags.append('AUTHENTICITY_UNVERIFIABLE')
+                findings.append(
+                    'No official authenticity markers found — REQUIRES MANUAL VERIFICATION.'
+                )
+
+        # Disability certificate
+        elif any(kw in full_text for kw in [
+            'disability certificate', 'certificate of disability',
+            'disability grade', 'permanent partial', 'national insurance',
+        ]):
+            flags.append('DISABILITY_CERTIFICATE')
+            findings.append(
+                'Disability certificate identified — disability benefit processing should be triggered.'
+            )
+            risk_score = max(risk_score, 0.80)
+            auth_markers = [
+                'national insurance', 'authorized', 'certificate no',
+                'medical examiner', 'valid until', 'issued by',
+            ]
+            auth_count = sum(1 for m in auth_markers if m in full_text)
+            if auth_count >= 3:
+                flags.append('AUTHENTICITY_VERIFIED')
+                findings.append(
+                    f'Disability certificate appears GENUINE ({auth_count}/6 official markers present).'
+                )
+            else:
+                flags.append('AUTHENTICITY_REQUIRES_INQUIRY')
+                findings.append(
+                    f'Only {auth_count}/6 authenticity markers present — REQUIRES FURTHER INQUIRY.'
+                )
+        else:
+            flags.append('MANUAL_REVIEW_REQUIRED')
+            findings.append(
+                'Authority certificate type not definitively identified — manual classification required.'
+            )
+            risk_score = max(risk_score, 0.50)
+
+    # ── Billing / receipt analysis ───────────────────────────────────────────
+    if doc_type == 'receipt' or entity_type in ('billing', 'policy'):
+        if any(kw in full_text for kw in [
+            'overdue', 'outstanding', 'late fee', 'delinquent', 'past due',
+        ]):
+            flags.append('BILLING_ANOMALY_OVERDUE')
+            findings.append(
+                'Overdue / outstanding payment indicators detected — billing attention required.'
+            )
+            risk_score = max(risk_score, 0.40)
+
+        amounts = re.findall(r'\$[\d,]+(?:\.\d{2})?', full_text)
+        if amounts:
+            try:
+                max_amount = max(
+                    float(a.replace('$', '').replace(',', '')) for a in amounts
+                )
+                if max_amount > 50000:
+                    flags.append('LARGE_TRANSACTION_DETECTED')
+                    findings.append(
+                        f'Large transaction amount detected (${max_amount:,.2f}) — financial review required.'
+                    )
+                    risk_score = max(risk_score, 0.60)
+            except ValueError:
+                pass
+
+        if not findings:
+            findings.append('Billing document reviewed — no payment anomalies detected.')
+            risk_score = max(risk_score, 0.10)
+
+    # ── ID document ─────────────────────────────────────────────────────────
+    if doc_type == 'id':
+        flags.append('IDENTITY_DOCUMENT')
+        findings.append('Identity document submitted — standard verification process applies.')
+        risk_score = max(risk_score, 0.15)
+
+    # ── Fallback for general docs ────────────────────────────────────────────
+    if not findings:
+        findings.append('General document analyzed — no specific risk indicators identified.')
+        risk_score = max(risk_score, 0.10)
+
+    # Determine risk level
+    if risk_score >= 0.85:
+        risk_level = 'very_high'
+    elif risk_score >= 0.65:
+        risk_level = 'high'
+    elif risk_score >= 0.40:
+        risk_level = 'medium'
+    else:
+        risk_level = 'low'
+
+    # Determine recommendation
+    if 'AUTHENTICITY_REQUIRES_INQUIRY' in flags or 'AUTHENTICITY_UNVERIFIABLE' in flags:
+        recommendation = 'hold_pending_verification'
+    elif 'DEATH_CERTIFICATE' in flags:
+        recommendation = 'process_death_claim'
+    elif 'DISABILITY_CERTIFICATE' in flags:
+        recommendation = 'process_disability_claim'
+    else:
+        recommendation_map = {
+            'very_high': 'decline_or_senior_review',
+            'high': 'refer_manual_review',
+            'medium': 'approve_conditional',
+            'low': 'approve',
+        }
+        recommendation = recommendation_map.get(risk_level, 'approve')
+
+    bi_insights = _generate_bi_insights(doc_type, entity_type, risk_level, flags)
+
+    return {
+        'risk_level': risk_level,
+        'risk_score': round(risk_score, 3),
+        'flags': flags,
+        'findings': findings,
+        'recommendation': recommendation,
+        'bi_insights': bi_insights,
+        'confidence': 0.85,
+        'analyzed_at': datetime.now().isoformat(),
+        'analysis_version': '1.0',
+        'analysis_mode': 'rule_based_ai',
+    }
+
+
 def initialize_balance_sheet():
     """Initialize the PHINS balance sheet with default values if not already set"""
     global PHINS_BALANCE_SHEET
@@ -8207,7 +8689,8 @@ For claims or questions, please contact:
                         'uploaded_at': doc.get('uploaded_at'),
                         'uploaded_by': doc.get('uploaded_by'),
                         'uploaded_by_customer': doc.get('uploaded_by_customer', ''),
-                        'has_data': bool(doc.get('data'))
+                        'has_data': bool(doc.get('data')),
+                        'ai_analysis': doc.get('ai_analysis'),
                     })
 
                 docs.sort(key=lambda d: d.get('uploaded_at', ''), reverse=True)
@@ -19681,6 +20164,63 @@ For claims or questions, please contact:
                 self.wfile.write(json.dumps({'error': 'Upload failed', 'details': str(e)}).encode('utf-8'))
             return
 
+        # ========== AI DOCUMENT ANALYSIS ENDPOINT ==========
+        # POST /api/documents/analyze - Run AI analysis on an uploaded document.
+        # Analyses medical reports, death/disability certificates, billing receipts etc.
+        # and returns actuarial underwriting, claims, and billing BI findings.
+        # Access: document owner (customer) or admin/underwriter/adjuster/actuary
+        if path == '/api/documents/analyze':
+            auth_header = self.headers.get('Authorization', '')
+            token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+            session = validate_session(token) if token else None
+            if not session:
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Authentication required'}).encode('utf-8'))
+                return
+            try:
+                data = json.loads(body or '{}')
+                doc_id = data.get('doc_id', '').strip()
+                if not doc_id:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'doc_id is required'}).encode('utf-8'))
+                    return
+
+                doc = POLICY_DOCUMENTS.get(doc_id)
+                if not doc:
+                    self._set_json_headers(404)
+                    self.wfile.write(json.dumps({'error': 'Document not found'}).encode('utf-8'))
+                    return
+
+                eff_role = get_effective_role(session)
+                is_admin = eff_role in ('admin', 'underwriter', 'actuary', 'adjuster')
+                session_customer_id = session.get('customer_id')
+                if not is_admin and doc.get('uploaded_by_customer') != session_customer_id:
+                    self._set_json_headers(403)
+                    self.wfile.write(json.dumps({'error': 'Access denied'}).encode('utf-8'))
+                    return
+
+                analysis = analyze_document_content(doc)
+                # Persist analysis result back into the document record
+                doc['ai_analysis'] = analysis
+                save_ledger_data()
+
+                actor = session.get('username', 'user')
+                print(
+                    f"   🤖 AI analysis completed for {doc_id} ({doc.get('name')}) "
+                    f"-> risk={analysis['risk_level']} flags={analysis['flags']}"
+                )
+                self._set_json_headers(200)
+                self.wfile.write(json.dumps({
+                    'success': True,
+                    'doc_id': doc_id,
+                    'analysis': analysis,
+                    'analyzed_by': actor,
+                }).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': 'Analysis failed', 'details': str(e)}).encode('utf-8'))
+            return
+
         # ========== RISK DASHBOARD SAVE ASSESSMENT ENDPOINT ==========
         # Saves AI assessment results to the risk dashboard data store
         # Access: admin, underwriter, actuary roles
@@ -31087,6 +31627,10 @@ def run_server(port: int = PORT) -> None:
     if invitation_count > 0:
         print(f"✓ Loaded {invitation_count} invitation codes from persistent storage")
     
+    # Seed demo documents into Document Center if none exist yet
+    print("📄 Seeding demo documents...")
+    seed_demo_documents()
+
     # Initialize PHINS Balance Sheet (General Reserves)
     print("💰 Initializing PHINS Balance Sheet...")
     initialize_balance_sheet()
