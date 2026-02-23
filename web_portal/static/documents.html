@@ -1,0 +1,452 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PHINS — Document Upload Center</title>
+  <link rel="stylesheet" href="/styles.css">
+  <style>
+    body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f0f4f8; }
+
+    .phins-header {
+      background: linear-gradient(135deg, #0d47a1 0%, #1565c0 100%);
+      color: white;
+      box-shadow: 0 2px 12px rgba(13,71,161,0.3);
+      position: sticky; top: 0; z-index: 100;
+    }
+    .phins-header-inner {
+      max-width: 1200px; margin: 0 auto;
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0.75rem 1.5rem; flex-wrap: wrap; gap: 0.5rem;
+    }
+    .phins-logo {
+      display: flex; align-items: center; gap: 10px;
+      text-decoration: none; color: white;
+    }
+    .phins-logo-icon {
+      width: 40px; height: 40px; background: rgba(255,255,255,0.2);
+      border-radius: 10px; display: flex; align-items: center;
+      justify-content: center; font-size: 1.4rem;
+    }
+    .phins-logo-text { font-size: 1.5rem; font-weight: 700; letter-spacing: 1px; }
+    .phins-nav { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .phins-nav a {
+      color: rgba(255,255,255,0.85); text-decoration: none;
+      padding: 6px 14px; border-radius: 8px; font-size: 0.9rem;
+      transition: background 0.2s;
+    }
+    .phins-nav a:hover, .phins-nav a.active {
+      background: rgba(255,255,255,0.2); color: white;
+    }
+    .btn-logout {
+      background: linear-gradient(135deg, #ef5350 0%, #e53935 100%) !important;
+      color: white !important; font-weight: 600 !important;
+    }
+
+    .page-container { max-width: 960px; margin: 0 auto; padding: 2rem 1.5rem; }
+
+    .page-title { font-size: 1.8rem; font-weight: 700; color: #1a237e; margin-bottom: 0.25rem; }
+    .page-subtitle { color: #546e7a; margin-bottom: 2rem; font-size: 0.95rem; }
+
+    .card {
+      background: white; border-radius: 16px;
+      box-shadow: 0 2px 16px rgba(0,0,0,0.08);
+      padding: 1.5rem; margin-bottom: 1.5rem;
+    }
+    .card-title {
+      font-size: 1.1rem; font-weight: 600; color: #1a237e;
+      margin-bottom: 1rem; display: flex; align-items: center; gap: 8px;
+    }
+
+    /* Drop zone */
+    .drop-zone {
+      border: 2px dashed #90caf9; border-radius: 12px;
+      padding: 40px 24px; text-align: center; background: #f8fbff;
+      cursor: pointer; transition: all 0.2s;
+    }
+    .drop-zone:hover, .drop-zone.dragover {
+      border-color: #1565c0; background: #e3f2fd;
+    }
+    .drop-zone-icon { font-size: 3rem; margin-bottom: 12px; }
+    .drop-zone-text { font-weight: 600; color: #1a237e; font-size: 1rem; }
+    .drop-zone-hint { color: #78909c; font-size: 0.82rem; margin-top: 6px; }
+    #file-input { display: none; }
+
+    /* Form */
+    .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1rem; }
+    @media(max-width: 600px) { .form-row { grid-template-columns: 1fr; } }
+    .form-group { display: flex; flex-direction: column; gap: 4px; }
+    .form-group label { font-size: 0.85rem; font-weight: 600; color: #37474f; }
+    .form-group select, .form-group input, .form-group textarea {
+      padding: 10px 12px; border: 1px solid #cfd8dc; border-radius: 8px;
+      font-size: 0.9rem; transition: border-color 0.2s; outline: none; width: 100%; box-sizing: border-box;
+    }
+    .form-group select:focus, .form-group input:focus, .form-group textarea:focus {
+      border-color: #1565c0;
+    }
+
+    /* File list */
+    .file-list { display: flex; flex-direction: column; gap: 8px; margin-top: 1rem; }
+    .file-item {
+      display: flex; align-items: center; gap: 12px;
+      padding: 10px 14px; background: #f8fbff; border-radius: 8px;
+      border: 1px solid #e3f2fd;
+    }
+    .file-icon { font-size: 1.4rem; flex-shrink: 0; }
+    .file-name { font-size: 0.9rem; font-weight: 500; color: #1a237e; flex: 1; word-break: break-all; }
+    .file-size { font-size: 0.8rem; color: #78909c; white-space: nowrap; }
+    .file-remove {
+      background: none; border: none; color: #e53935; cursor: pointer;
+      font-size: 1rem; padding: 4px; line-height: 1;
+    }
+
+    /* Button */
+    .btn-upload {
+      background: linear-gradient(135deg, #1565c0 0%, #1976d2 100%);
+      color: white; border: none; padding: 12px 28px; border-radius: 10px;
+      font-size: 1rem; font-weight: 600; cursor: pointer; transition: opacity 0.2s;
+    }
+    .btn-upload:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    /* Status banner */
+    #status-msg {
+      padding: 12px 16px; border-radius: 10px; margin-bottom: 1.5rem;
+      font-size: 0.9rem; font-weight: 500; display: none;
+    }
+    #status-msg.success { background: #e8f5e9; color: #2e7d32; border: 1px solid #a5d6a7; }
+    #status-msg.error   { background: #ffebee; color: #b71c1c; border: 1px solid #ef9a9a; }
+
+    /* Documents table */
+    .docs-table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+    .docs-table th {
+      text-align: left; padding: 10px 12px; background: #f5f7fa;
+      color: #546e7a; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.5px;
+      border-bottom: 2px solid #e8edf2;
+    }
+    .docs-table td { padding: 10px 12px; border-bottom: 1px solid #f0f4f8; color: #37474f; }
+    .docs-table tr:last-child td { border-bottom: none; }
+    .docs-table tr:hover td { background: #f8fbff; }
+    .badge {
+      display: inline-block; padding: 2px 8px; border-radius: 20px;
+      font-size: 0.75rem; font-weight: 600;
+    }
+    .badge-policy   { background: #e3f2fd; color: #1565c0; }
+    .badge-claim    { background: #fce4ec; color: #c62828; }
+    .badge-customer { background: #e8f5e9; color: #2e7d32; }
+    .badge-underwriting { background: #fff3e0; color: #e65100; }
+    .badge-general  { background: #f3e5f5; color: #6a1b9a; }
+    .empty-state { text-align: center; padding: 40px; color: #90a4ae; }
+    .empty-state-icon { font-size: 3rem; margin-bottom: 12px; }
+  </style>
+</head>
+<body>
+
+<header class="phins-header">
+  <div class="phins-header-inner">
+    <a href="/dashboard.html" class="phins-logo">
+      <div class="phins-logo-icon">🛡️</div>
+      <span class="phins-logo-text">PHINS</span>
+    </a>
+    <nav class="phins-nav">
+      <a href="/dashboard.html">Dashboard</a>
+      <a href="/dashboard.html#policies">Policies</a>
+      <a href="/dashboard.html#claims">Claims</a>
+      <a href="/risk-reports-dashboard.html">📊 Reports</a>
+      <a href="/documents.html" class="active">📁 Documents</a>
+      <a href="#" class="btn-logout" onclick="logout()">Logout</a>
+    </nav>
+  </div>
+</header>
+
+<div class="page-container">
+  <div class="page-title">📁 Document Upload Center</div>
+  <div class="page-subtitle">Upload XLS, XSD, PDF, CSV and other files and affiliate them with your insurance records.</div>
+
+  <div id="status-msg"></div>
+
+  <!-- Upload Form -->
+  <div class="card">
+    <div class="card-title">📤 Upload Documents</div>
+
+    <!-- Drop zone -->
+    <div class="drop-zone" id="drop-zone"
+         onclick="document.getElementById('file-input').click()"
+         ondragover="onDragOver(event)"
+         ondragleave="onDragLeave(event)"
+         ondrop="onDrop(event)">
+      <div class="drop-zone-icon">📂</div>
+      <div class="drop-zone-text">Drop files here or click to browse</div>
+      <div class="drop-zone-hint">
+        Supported: XLS, XLSX, XSD, CSV, PDF, DOC, DOCX, XML, TXT, PNG, JPG, ZIP (max 20 files, 25 MB each)
+      </div>
+    </div>
+    <input type="file" id="file-input" multiple
+           accept=".xls,.xlsx,.xsd,.csv,.pdf,.doc,.docx,.xml,.json,.txt,.png,.jpg,.jpeg,.gif,.zip"
+           onchange="onFileSelect(event)" />
+
+    <!-- Selected files preview -->
+    <div id="file-list" class="file-list" style="display:none;"></div>
+
+    <!-- Affiliation form -->
+    <div style="margin-top: 1.5rem;">
+      <div class="form-row">
+        <div class="form-group">
+          <label for="entity-type">Affiliate With</label>
+          <select id="entity-type" onchange="onEntityTypeChange()">
+            <option value="general">General / No specific record</option>
+            <option value="policy">Policy</option>
+            <option value="claim">Claim</option>
+            <option value="customer">Customer</option>
+            <option value="underwriting">Underwriting Application</option>
+          </select>
+        </div>
+        <div class="form-group" id="entity-id-group">
+          <label for="entity-id" id="entity-id-label">Record ID</label>
+          <input type="text" id="entity-id" placeholder="e.g. POL-12345 or CLM-67890" />
+        </div>
+      </div>
+      <div class="form-group" style="margin-bottom: 1rem;">
+        <label for="description">Description (optional)</label>
+        <textarea id="description" rows="2" placeholder="e.g. Actuarial pricing table Q1 2026, XSD schema for data exchange…"></textarea>
+      </div>
+    </div>
+
+    <button class="btn-upload" id="upload-btn" onclick="uploadFiles()" disabled>
+      📤 Upload Documents
+    </button>
+  </div>
+
+  <!-- Documents List -->
+  <div class="card">
+    <div class="card-title">📋 My Uploaded Documents</div>
+    <div id="docs-container">
+      <div class="empty-state">
+        <div class="empty-state-icon">📂</div>
+        <div>Loading documents…</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  const API = (path, opts) => fetch(path, {
+    headers: { 'Authorization': 'Bearer ' + (localStorage.getItem('phins_token') || ''), 'Content-Type': 'application/json', ...((opts||{}).headers||{}) },
+    ...opts
+  });
+
+  /* ---- Auth ---- */
+  function logout() {
+    localStorage.removeItem('phins_token');
+    localStorage.removeItem('phins_session');
+    window.location.href = '/login.html';
+  }
+
+  async function checkAuth() {
+    const token = localStorage.getItem('phins_token');
+    if (!token) { window.location.href = '/login.html'; return; }
+    try {
+      const r = await fetch('/api/session/validate', { headers: { 'Authorization': 'Bearer ' + token } });
+      if (!r.ok) { window.location.href = '/login.html'; }
+    } catch { /* offline – let page load */ }
+  }
+
+  /* ---- Drop zone ---- */
+  let selectedFiles = [];
+
+  function onDragOver(e) { e.preventDefault(); document.getElementById('drop-zone').classList.add('dragover'); }
+  function onDragLeave()  { document.getElementById('drop-zone').classList.remove('dragover'); }
+  function onDrop(e) {
+    e.preventDefault();
+    document.getElementById('drop-zone').classList.remove('dragover');
+    addFiles(Array.from(e.dataTransfer.files));
+  }
+  function onFileSelect(e) { addFiles(Array.from(e.target.files)); }
+
+  function fileIcon(name) {
+    const ext = (name.split('.').pop() || '').toLowerCase();
+    const map = { xls:'📊', xlsx:'📊', xsd:'📋', csv:'📄', pdf:'📕', doc:'📝', docx:'📝',
+                  xml:'🗂️', json:'🗂️', txt:'📃', png:'🖼️', jpg:'🖼️', jpeg:'🖼️', gif:'🖼️', zip:'🗜️' };
+    return map[ext] || '📄';
+  }
+
+  function formatSize(bytes) {
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1048576) return (bytes/1024).toFixed(1) + ' KB';
+    return (bytes/1048576).toFixed(1) + ' MB';
+  }
+
+  function addFiles(files) {
+    files.forEach(f => {
+      if (selectedFiles.length >= 20) return;
+      if (selectedFiles.find(x => x.name === f.name && x.size === f.size)) return; // dedupe
+      selectedFiles.push(f);
+    });
+    renderFileList();
+  }
+
+  function removeFile(idx) {
+    selectedFiles.splice(idx, 1);
+    renderFileList();
+  }
+
+  function renderFileList() {
+    const container = document.getElementById('file-list');
+    if (selectedFiles.length === 0) {
+      container.style.display = 'none';
+      document.getElementById('upload-btn').disabled = true;
+      return;
+    }
+    container.style.display = 'flex';
+    document.getElementById('upload-btn').disabled = false;
+    container.innerHTML = selectedFiles.map((f, i) => `
+      <div class="file-item">
+        <span class="file-icon">${fileIcon(f.name)}</span>
+        <span class="file-name">${escHtml(f.name)}</span>
+        <span class="file-size">${formatSize(f.size)}</span>
+        <button class="file-remove" onclick="removeFile(${i})" title="Remove">✕</button>
+      </div>
+    `).join('');
+  }
+
+  /* ---- Entity type ---- */
+  const ENTITY_PLACEHOLDERS = {
+    general: '',
+    policy: 'e.g. POL-12345',
+    claim: 'e.g. CLM-67890',
+    customer: 'e.g. CUST-001',
+    underwriting: 'e.g. UW-20260101-0001'
+  };
+  const ENTITY_LABELS = {
+    general: 'Record ID',
+    policy: 'Policy ID',
+    claim: 'Claim ID',
+    customer: 'Customer ID',
+    underwriting: 'Application ID'
+  };
+  function onEntityTypeChange() {
+    const t = document.getElementById('entity-type').value;
+    document.getElementById('entity-id-label').textContent = ENTITY_LABELS[t] || 'Record ID';
+    document.getElementById('entity-id').placeholder = ENTITY_PLACEHOLDERS[t] || '';
+    document.getElementById('entity-id-group').style.display = t === 'general' ? 'none' : 'flex';
+  }
+  onEntityTypeChange(); // run on load
+
+  /* ---- Upload ---- */
+  async function readFileAsBase64(file) {
+    return new Promise((res, rej) => {
+      const r = new FileReader();
+      r.onload = () => res(r.result.split(',')[1]);
+      r.onerror = rej;
+      r.readAsDataURL(file);
+    });
+  }
+
+  async function uploadFiles() {
+    if (selectedFiles.length === 0) return;
+    const btn = document.getElementById('upload-btn');
+    btn.disabled = true;
+    btn.textContent = '⏳ Uploading…';
+    showStatus('', '');
+
+    try {
+      const entityType = document.getElementById('entity-type').value;
+      const entityId   = document.getElementById('entity-id').value.trim();
+      const description = document.getElementById('description').value.trim();
+
+      const filesPayload = await Promise.all(selectedFiles.map(async f => ({
+        name: f.name,
+        type: f.type || 'application/octet-stream',
+        size: f.size,
+        data: await readFileAsBase64(f)
+      })));
+
+      const res = await API('/api/documents/upload', {
+        method: 'POST',
+        body: JSON.stringify({ files: filesPayload, entity_type: entityType, entity_id: entityId, description })
+      });
+      const json = await res.json();
+
+      if (res.ok && json.success) {
+        const errs = (json.errors || []).map(e => e.file + ': ' + e.error).join('; ');
+        showStatus('success', `✅ ${json.message}` + (errs ? `. Skipped: ${errs}` : ''));
+        selectedFiles = [];
+        renderFileList();
+        document.getElementById('description').value = '';
+        loadDocuments();
+      } else {
+        showStatus('error', '❌ ' + (json.error || 'Upload failed'));
+      }
+    } catch (e) {
+      showStatus('error', '❌ Network error: ' + e.message);
+    } finally {
+      btn.disabled = selectedFiles.length === 0;
+      btn.textContent = '📤 Upload Documents';
+    }
+  }
+
+  /* ---- List documents ---- */
+  async function loadDocuments() {
+    try {
+      const res = await API('/api/documents/list');
+      const json = await res.json();
+      renderDocs(json.documents || []);
+    } catch {
+      document.getElementById('docs-container').innerHTML =
+        '<div class="empty-state"><div class="empty-state-icon">⚠️</div><div>Could not load documents.</div></div>';
+    }
+  }
+
+  function renderDocs(docs) {
+    const container = document.getElementById('docs-container');
+    if (docs.length === 0) {
+      container.innerHTML = '<div class="empty-state"><div class="empty-state-icon">📂</div><div>No documents uploaded yet.</div></div>';
+      return;
+    }
+    container.innerHTML = `
+      <table class="docs-table">
+        <thead>
+          <tr>
+            <th>File</th>
+            <th>Affiliated With</th>
+            <th>Record ID</th>
+            <th>Description</th>
+            <th>Uploaded</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${docs.map(d => `
+            <tr>
+              <td>${fileIcon(d.name)} ${escHtml(d.name)}<br><small style="color:#90a4ae;">${formatSize(d.size)}</small></td>
+              <td><span class="badge badge-${escHtml(d.entity_type || 'general')}">${escHtml(d.entity_type || 'general')}</span></td>
+              <td>${escHtml(d.entity_id || '—')}</td>
+              <td>${escHtml(d.description || '—')}</td>
+              <td style="white-space:nowrap;font-size:0.8rem;">${formatDate(d.uploaded_at)}</td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>`;
+  }
+
+  /* ---- Helpers ---- */
+  function showStatus(type, msg) {
+    const el = document.getElementById('status-msg');
+    el.className = type;
+    el.textContent = msg;
+    el.style.display = msg ? 'block' : 'none';
+    if (msg) setTimeout(() => { el.style.display = 'none'; }, 8000);
+  }
+
+  function escHtml(s) {
+    return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  function formatDate(iso) {
+    if (!iso) return '—';
+    try { return new Date(iso).toLocaleString(); } catch { return iso; }
+  }
+
+  /* ---- Init ---- */
+  checkAuth().then(() => loadDocuments());
+</script>
+</body>
+</html>
