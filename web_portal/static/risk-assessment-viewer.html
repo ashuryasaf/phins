@@ -295,11 +295,19 @@
                 defer: '#6c757d'
             };
             
-            const riskScore = (report.risk_scores?.overall || 0) * 100;
+            const riskScoreRaw = Number(report.risk_scores?.overall);
+            const riskScore = Number.isFinite(riskScoreRaw)
+                ? Math.max(0, Math.min(riskScoreRaw > 1 ? riskScoreRaw : riskScoreRaw * 100, 100))
+                : 0;
             const riskCategory = (report.risk_scores?.category || 'unknown').replace(/_/g, ' ').toUpperCase();
             const riskColor = categoryColors[report.risk_scores?.category] || '#6c757d';
             const recColor = recColors[report.recommendation?.type] || '#6c757d';
             const recType = (report.recommendation?.type || 'unknown').replace(/_/g, ' ').toUpperCase();
+            const identityStatus = report.identity_verified === true
+                ? '✅ Verified'
+                : report.identity_verified === false
+                    ? '❌ Not Verified'
+                    : '⚪ Unknown';
             
             // Format date
             const assessmentDate = report.metadata?.assessment_date ? new Date(report.metadata.assessment_date) : new Date();
@@ -413,7 +421,7 @@
                             </div>
                             <div class="card">
                                 <div class="card-label">Identity Verified</div>
-                                <div class="card-value">${report.identity_verified ? '✅ Verified' : '⏳ Pending'}</div>
+                                <div class="card-value">${identityStatus}</div>
                             </div>
                         </div>
                     </div>
@@ -562,12 +570,17 @@
         }
         
         function renderScoreCard(name, value, color) {
-            const percentage = ((value || 0) * 100).toFixed(1);
+            const numeric = Number(value);
+            const normalized = Number.isFinite(numeric)
+                ? Math.max(0, Math.min(numeric > 1 ? numeric : numeric * 100, 100))
+                : null;
+            const percentage = normalized === null ? 'N/A' : `${normalized.toFixed(1)}%`;
+            const width = normalized === null ? 0 : normalized;
             return `
                 <div class="card">
                     <div class="card-label">${name}</div>
-                    <div class="card-value">${percentage}%</div>
-                    <div class="score-bar"><div class="score-bar-fill" style="width: ${percentage}%; background: ${color};"></div></div>
+                    <div class="card-value">${percentage}</div>
+                    <div class="score-bar"><div class="score-bar-fill" style="width: ${width}%; background: ${color};"></div></div>
                 </div>
             `;
         }

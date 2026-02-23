@@ -57,6 +57,18 @@ def _post(url, payload, token=None):
         return resp.read().decode('utf-8'), resp.status
 
 
+def _seed_test_session(role='underwriter', username='underwriter', customer_id=None):
+    """Inject a test session token directly into in-memory session store."""
+    token = f"phins_test_{username}_{int(time.time() * 1000000)}"
+    portal.SESSIONS[token] = {
+        'username': username,
+        'role': role,
+        'customer_id': customer_id,
+        'expires': '2099-01-01T00:00:00'
+    }
+    return token
+
+
 def _request_and_verify_registration_otp(base_url: str, email: str) -> str:
     """Request + verify OTP and return verification_id."""
     otp_body, otp_status = _post(base_url + "/api/security/otp/request", {
@@ -1020,6 +1032,175 @@ def test_billing_overpayment_creates_future_cover_credit():
     assert "future_cover_months" in billing_summary
 
     srv.stop()
+
+
+def test_risk_report_resolves_shosh_reference_id():
+    """Risk report endpoint should resolve UW-SHOSH-001 reliably."""
+    port = 8060
+    srv = ServerThread(port)
+    srv.start()
+    time.sleep(0.2)
+
+    base = f"http://127.0.0.1:{port}"
+    token = _seed_test_session(role='underwriter', username='underwriter')
+
+    app_id = 'UW-SHOSH-001'
+    policy_id = 'POL-SHOSH-UNIFIED-001'
+    customer_id = 'CUST-SHOSH-001'
+
+    original_app = portal.UNDERWRITING_APPLICATIONS.pop(app_id, None)
+    original_policy = portal.POLICIES.pop(policy_id, None)
+    original_customer = portal.CUSTOMERS.pop(customer_id, None)
+
+    try:
+        body, status = _get(base + f"/api/risk-assessment/report?id={app_id}", token)
+        assert status == 200
+        data = json.loads(body)
+        assert data['application_id'] == app_id
+        assert data['applicant']['customer_id'] == customer_id
+        assert data['applicant']['email'] == 'shosh@phins.ai'
+        assert data.get('metadata', {}).get('data_integrity_verified') is True
+    finally:
+        if original_app is None:
+            portal.UNDERWRITING_APPLICATIONS.pop(app_id, None)
+        else:
+            portal.UNDERWRITING_APPLICATIONS[app_id] = original_app
+
+        if original_policy is None:
+            portal.POLICIES.pop(policy_id, None)
+        else:
+            portal.POLICIES[policy_id] = original_policy
+
+        if original_customer is None:
+            portal.CUSTOMERS.pop(customer_id, None)
+        else:
+            portal.CUSTOMERS[customer_id] = original_customer
+
+        srv.stop()
+
+
+def test_risk_report_does_not_fabricate_documents():
+    """Risk report should not synthesize default documents when none are stored."""
+    port = 8061
+    srv = ServerThread(port)
+    srv.start()
+    time.sleep(0.2)
+
+    base = f"http://127.0.0.1:{port}"
+    token = _seed_test_session(role='underwriter', username='underwriter')
+
+    customer_id = 'CUST-RISK-DOC-001'
+    policy_id = 'POL-RISK-DOC-001'
+    app_id = 'UW-RISK-DOC-001'
+
+    portal.CUSTOMERS[customer_id] = {
+        'id': customer_id,
+        'name': 'Risk Doc User',
+        'email': 'risk-doc@example.com',
+        'created_date': '2026-01-01T00:00:00',
+        'status': 'active'
+    }
+    portal.POLICIES[policy_id] = {
+        'id': policy_id,
+        'customer_id': customer_id,
+        'type': 'life',
+        'coverage_amount': 120000,
+        'annual_premium': 1200,
+        'monthly_premium': 100,
+        'status': 'pending_underwriting',
+        'risk_score': 'low'
+    }
+    portal.UNDERWRITING_APPLICATIONS[app_id] = {
+        'id': app_id,
+        'policy_id': policy_id,
+        'customer_id': customer_id,
+        'customer_name': 'Risk Doc User',
+        'customer_email': 'risk-doc@example.com',
+        'policy_type': 'life',
+        'coverage_amount': 120000,
+        'status': 'pending',
+        'risk_score': 'low',
+        'risk_assessment': 'low',
+        'medical_conditions': [],
+        'documents': []
+    }
+
+    try:
+        body, status = _get(base + f"/api/risk-assessment/report?application_id={app_id}", token)
+        assert status == 200
+        report = json.loads(body)
+        assert report.get('documents') == []
+        integrity_notes = report.get('metadata', {}).get('integrity_notes', [])
+        assert 'documents_unavailable' in integrity_notes
+    finally:
+        portal.UNDERWRITING_APPLICATIONS.pop(app_id, None)
+        portal.POLICIES.pop(policy_id, None)
+        portal.CUSTOMERS.pop(customer_id, None)
+        srv.stop()
+
+
+def test_risk_report_handles_string_encoded_medical_payloads():
+    """Risk report should parse string-encoded questionnaire and conditions safely."""
+    port = 8062
+    srv = ServerThread(port)
+    srv.start()
+    time.sleep(0.2)
+
+    base = f"http://127.0.0.1:{port}"
+    token = _seed_test_session(role='underwriter', username='underwriter')
+
+    customer_id = 'CUST-RISK-STRING-001'
+    policy_id = 'POL-RISK-STRING-001'
+    app_id = 'UW-RISK-STRING-001'
+
+    portal.CUSTOMERS[customer_id] = {
+        'id': customer_id,
+        'name': 'String Payload User',
+        'email': 'risk-string@example.com',
+        'created_date': '2026-01-01T00:00:00',
+        'status': 'active'
+    }
+    portal.POLICIES[policy_id] = {
+        'id': policy_id,
+        'customer_id': customer_id,
+        'type': 'health',
+        'coverage_amount': 250000,
+        'annual_premium': 2400,
+        'monthly_premium': 200,
+        'status': 'pending_underwriting',
+        'risk_score': 'moderate'
+    }
+    portal.UNDERWRITING_APPLICATIONS[app_id] = {
+        'id': app_id,
+        'policy_id': policy_id,
+        'customer_id': customer_id,
+        'customer_name': 'String Payload User',
+        'customer_email': 'risk-string@example.com',
+        'policy_type': 'health',
+        'coverage_amount': 250000,
+        'status': 'pending',
+        'risk_score': 'moderate',
+        'risk_assessment': 'moderate',
+        'questionnaire_responses': '{"age":"41","disability_percentage":"15","smoke":"no","height":"170","weight":"78"}',
+        'medical_conditions': '[{"condition":"Hypertension","severity":"moderate","risk_impact":"0.18","loading_percentage":"12"}]',
+        'documents': '[]'
+    }
+
+    try:
+        body, status = _get(base + f"/api/risk-assessment/report?application_id={app_id}", token)
+        assert status == 200
+        report = json.loads(body)
+        assert report.get('application_id') == app_id
+        assert report.get('applicant', {}).get('age') == 41
+        assert report.get('medical_assessment', {}).get('disability_percentage') == 15
+        assert report.get('medical_assessment', {}).get('smoking_status') == 'never'
+        conditions = report.get('medical_assessment', {}).get('conditions', [])
+        assert any(c.get('condition') == 'Hypertension' for c in conditions)
+    finally:
+        portal.UNDERWRITING_APPLICATIONS.pop(app_id, None)
+        portal.POLICIES.pop(policy_id, None)
+        portal.CUSTOMERS.pop(customer_id, None)
+        srv.stop()
 
 
 def test_customers_endpoint():
