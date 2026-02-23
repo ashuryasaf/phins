@@ -15,6 +15,7 @@ Tests every API endpoint for correctness and proper behavior:
 import threading
 import time
 import json
+from datetime import datetime, timedelta
 from http.server import HTTPServer
 from urllib.request import urlopen, Request
 from urllib.error import HTTPError
@@ -59,12 +60,16 @@ def _post(url, payload, token=None):
 
 def _seed_test_session(role='underwriter', username='underwriter', customer_id=None):
     """Inject a test session token directly into in-memory session store."""
-    token = f"phins_test_{username}_{int(time.time() * 1000000)}"
+    expires = datetime.now() + timedelta(hours=2)
+    if hasattr(portal, '_create_signed_token'):
+        token = portal._create_signed_token(username=username, role=role, customer_id=customer_id, expires=expires)
+    else:
+        token = f"phins_test_{username}_{int(time.time() * 1000000)}"
     portal.SESSIONS[token] = {
         'username': username,
         'role': role,
         'customer_id': customer_id,
-        'expires': '2099-01-01T00:00:00'
+        'expires': expires.isoformat()
     }
     return token
 
