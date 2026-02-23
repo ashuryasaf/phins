@@ -78,6 +78,18 @@ document.addEventListener('DOMContentLoaded', () => {
             <div style="font-size: 1rem; font-weight: bold;">${new Date(summary.next_due).toLocaleDateString()}</div>
           </div>
           ` : ''}
+          ${(summary.future_cover_credit_balance || 0) > 0 ? `
+          <div style="background: #ecfdf3; padding: 1rem; border-radius: 8px; margin-bottom: 0.5rem; border: 1px solid #86efac;">
+            <div style="font-size: 0.9rem; color: #166534;">Future Cover Credit</div>
+            <div style="font-size: 1.2rem; font-weight: bold; color: #166534;">
+              $${(summary.future_cover_credit_balance || 0).toFixed(2)}
+            </div>
+            <div style="font-size: 0.85rem; color: #15803d; margin-top: 4px;">
+              Covers ~${summary.future_cover_months || 0} month(s)
+              ${summary.future_cover_until ? ` • Covered until ${new Date(summary.future_cover_until).toLocaleDateString()}` : ''}
+            </div>
+          </div>
+          ` : ''}
         `;
         
         // Bill list

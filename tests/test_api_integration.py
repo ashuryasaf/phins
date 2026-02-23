@@ -921,6 +921,107 @@ def test_billing_pay_endpoint():
     srv.stop()
 
 
+def test_underwriting_approval_enforces_default_autopay_schedule():
+    """Policy approval should enforce auto-pay defaults on 1st billing day."""
+    port = 8058
+    srv = ServerThread(port)
+    srv.start()
+    time.sleep(0.2)
+
+    base = f"http://127.0.0.1:{port}"
+
+    body, _ = _post(base + "/api/policies/create", {
+        "customer_name": "AutoPay Default Test",
+        "customer_email": "autopay-default@example.com",
+        "type": "life",
+        "coverage_amount": 125000,
+        "payment": {
+            "card_number": "4242424242424242",
+            "cvv": "123",
+            "expiry_month": "12",
+            "expiry_year": "2032",
+            "cardholder_name": "AUTOPAY TEST",
+            "billing_frequency": "monthly",
+            "auto_pay": False
+        }
+    })
+    created = json.loads(body)
+    uw_id = created["underwriting"]["id"]
+
+    body, status = _post(base + "/api/underwriting/approve", {"id": uw_id})
+    assert status == 200
+    approved = json.loads(body)
+
+    policy = approved["policy"]
+    payment_setup = policy.get("payment_setup", {})
+    assert payment_setup.get("auto_pay") is True
+    assert payment_setup.get("billing_day") == 1
+    assert payment_setup.get("payment_method") == "credit_card"
+
+    next_billing = payment_setup.get("next_billing_date", "")
+    assert len(next_billing) >= 10
+    assert next_billing[8:10] == "01"
+
+    bill = approved.get("bill", {})
+    due_date = str(bill.get("due_date", ""))
+    assert len(due_date) >= 10
+    assert due_date[8:10] == "01"
+    assert bill.get("auto_pay") is True
+
+    srv.stop()
+
+
+def test_billing_overpayment_creates_future_cover_credit():
+    """Overpayments should become credits and appear as future cover."""
+    port = 8059
+    srv = ServerThread(port)
+    srv.start()
+    time.sleep(0.2)
+
+    base = f"http://127.0.0.1:{port}"
+
+    body, _ = _post(base + "/api/policies/create", {
+        "customer_name": "Future Cover Test",
+        "customer_email": "future-cover@example.com",
+        "type": "life",
+        "coverage_amount": 90000
+    })
+    created = json.loads(body)
+    policy_id = created["policy"]["id"]
+    customer_id = created["customer"]["id"]
+
+    # Activate policy so customer status computes future cover against active premium.
+    uw_id = created["underwriting"]["id"]
+    _post(base + "/api/underwriting/approve", {"id": uw_id})
+
+    body, _ = _post(base + "/api/billing/create", {
+        "policy_id": policy_id,
+        "amount_due": 100.0,
+        "due_days": 30
+    })
+    bill_id = json.loads(body)["bill"]["bill_id"]
+
+    body, status = _post(base + "/api/billing/pay", {
+        "bill_id": bill_id,
+        "amount": 250.0
+    })
+    assert status == 200
+    payment_result = json.loads(body)
+    assert payment_result["amount_applied_to_bill"] == 100.0
+    assert payment_result["overpayment_amount"] == 150.0
+    assert payment_result["bill"]["amount_paid"] == 100.0
+    assert payment_result["overpayment_credit"]["created"] is True
+
+    body, status = _get(base + f"/api/customer/status?customer_id={customer_id}")
+    assert status == 200
+    customer_status = json.loads(body)
+    billing_summary = customer_status.get("billing_summary", {})
+    assert billing_summary.get("future_cover_credit_balance", 0) >= 150.0
+    assert "future_cover_months" in billing_summary
+
+    srv.stop()
+
+
 def test_customers_endpoint():
     """Test GET /api/customers"""
     port = 8047
