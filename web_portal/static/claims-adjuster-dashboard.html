@@ -837,7 +837,7 @@
             const priorityFilter = document.getElementById('priority-filter').value;
             const searchTerm = document.getElementById('search-input').value.toLowerCase();
             
-            let filtered = Array.isArray(allClaims) ? [...allClaims] : [];
+            let filtered = [...getValidClaims(allClaims)];
             
             // Status filter (case-insensitive comparison)
             if (statusFilter !== 'all') {
@@ -865,8 +865,7 @@
         
         function displayClaims(claims) {
             const container = document.getElementById('claims-list');
-            const normalizedClaims = (Array.isArray(claims) ? claims : [])
-                .filter(claim => claim && typeof claim === 'object');
+            const normalizedClaims = getValidClaims(claims);
             
             if (normalizedClaims.length === 0) {
                 container.innerHTML = `
@@ -956,9 +955,14 @@
         
         function normalizeClaimStatus(status) {
             const normalized = safeToLowerString(status).replace(/[_-]+/g, ' ').trim();
-            if (!normalized) return '';
+            if (!normalized) return 'pending';
             if (normalized === 'underreview') return 'under review';
             return normalized;
+        }
+        
+        function getValidClaims(claims) {
+            return (Array.isArray(claims) ? claims : [])
+                .filter(claim => claim && typeof claim === 'object');
         }
         
         function formatClaimStatus(status) {
@@ -982,8 +986,7 @@
         }
         
         function updateStats(claims) {
-            const normalizedClaims = (Array.isArray(claims) ? claims : [])
-                .filter(claim => claim && typeof claim === 'object');
+            const normalizedClaims = getValidClaims(claims);
 
             const pending = normalizedClaims.filter(c => 
                 normalizeClaimStatus(c.status) === 'pending' ||
@@ -1928,8 +1931,7 @@
                 // Load supporting data with validation
                 await Promise.all([loadUnderwritingData(), loadCustomersData()]);
 
-                const claimsForAnalysis = (Array.isArray(allClaims) ? allClaims : [])
-                    .filter(claim => claim && typeof claim === 'object');
+                const claimsForAnalysis = getValidClaims(allClaims);
                 if (claimsForAnalysis.length === 0) {
                     throw new Error('No valid claim records were found for report generation.');
                 }
@@ -2313,8 +2315,7 @@
         }
         
         function exportRiskReportCSV() {
-            const claimsForAnalysis = (Array.isArray(allClaims) ? allClaims : [])
-                .filter(claim => claim && typeof claim === 'object');
+            const claimsForAnalysis = getValidClaims(allClaims);
             if (claimsForAnalysis.length === 0) {
                 showToast('No claims data to export', 'error');
                 return;
@@ -2350,8 +2351,7 @@
         
         // Update risk summary on claims load
         function updateRiskSummary() {
-            const claimsForSummary = (Array.isArray(allClaims) ? allClaims : [])
-                .filter(claim => claim && typeof claim === 'object');
+            const claimsForSummary = getValidClaims(allClaims);
             if (claimsForSummary.length === 0) {
                 document.getElementById('total-claims-count').textContent = '0';
                 document.getElementById('high-risk-count').textContent = '0';
