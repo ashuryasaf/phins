@@ -811,8 +811,18 @@
                 }
                 
                 const data = await response.json();
-                // Handle both array and object response formats
-                allClaims = Array.isArray(data) ? data : (data.claims || []);
+                // Handle array, paginated object, and legacy response shapes.
+                const claimsList = Array.isArray(data)
+                    ? data
+                    : (Array.isArray(data.claims)
+                        ? data.claims
+                        : (Array.isArray(data.items) ? data.items : []));
+                allClaims = claimsList
+                    .filter(claim => claim && typeof claim === 'object')
+                    .map(claim => ({
+                        ...claim,
+                        id: claim.id || claim.claim_id || ''
+                    }));
                 filterClaims();
                 updateStats(allClaims);
             } catch (error) {
@@ -827,11 +837,11 @@
             const priorityFilter = document.getElementById('priority-filter').value;
             const searchTerm = document.getElementById('search-input').value.toLowerCase();
             
-            let filtered = allClaims;
+            let filtered = Array.isArray(allClaims) ? [...allClaims] : [];
             
             // Status filter (case-insensitive comparison)
             if (statusFilter !== 'all') {
-                filtered = filtered.filter(c => (c.status || '').toLowerCase() === statusFilter);
+                filtered = filtered.filter(c => normalizeClaimStatus(c.status) === statusFilter);
             }
             
             // Priority filter
@@ -842,11 +852,11 @@
             // Search filter
             if (searchTerm) {
                 filtered = filtered.filter(c => 
-                    (c.id && c.id.toLowerCase().includes(searchTerm)) ||
-                    (c.customer_name && c.customer_name.toLowerCase().includes(searchTerm)) ||
-                    (c.customer_id && c.customer_id.toLowerCase().includes(searchTerm)) ||
-                    (c.type && c.type.toLowerCase().includes(searchTerm)) ||
-                    (c.description && c.description.toLowerCase().includes(searchTerm))
+                    safeToLowerString(c.id).includes(searchTerm) ||
+                    safeToLowerString(c.customer_name).includes(searchTerm) ||
+                    safeToLowerString(c.customer_id).includes(searchTerm) ||
+                    safeToLowerString(c.type).includes(searchTerm) ||
+                    safeToLowerString(c.description).includes(searchTerm)
                 );
             }
             
@@ -855,8 +865,10 @@
         
         function displayClaims(claims) {
             const container = document.getElementById('claims-list');
+            const normalizedClaims = (Array.isArray(claims) ? claims : [])
+                .filter(claim => claim && typeof claim === 'object');
             
-            if (claims.length === 0) {
+            if (normalizedClaims.length === 0) {
                 container.innerHTML = `
                     <div class="empty-state">
                         <div class="empty-state-icon">📋</div>
@@ -866,21 +878,27 @@
                 return;
             }
             
-            container.innerHTML = claims.map(claim => {
+            container.innerHTML = normalizedClaims.map(claim => {
                 const priority = getPriority(claim);
                 const statusClass = getStatusClass(claim.status);
+                const normalizedStatus = normalizeClaimStatus(claim.status);
+                const displayStatus = formatClaimStatus(claim.status);
                 const filedDate = claim.filed_date || claim.created_date;
+                const claimId = String(claim.id || claim.claim_id || '').trim();
+                const claimIdEscaped = claimId.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+                const customerId = String(claim.customer_id || '').trim();
+                const customerIdEscaped = customerId.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
                 
                 return `
                 <div class="claim-item">
                     <div class="claim-header">
                         <div>
-                            <div class="claim-id">Claim #${claim.id}</div>
+                            <div class="claim-id">Claim #${claimId || 'N/A'}</div>
                             <div class="claim-policy">Policy: ${claim.policy_id || 'N/A'}</div>
                         </div>
                         <div>
                             <span class="priority-badge priority-${priority.toLowerCase()}">${priority} Priority</span>
-                            <span class="status-badge ${statusClass}">${claim.status}</span>
+                            <span class="status-badge ${statusClass}">${displayStatus}</span>
                         </div>
                     </div>
                     <div class="claim-details">
@@ -892,22 +910,22 @@
                     </div>
                     <div class="claim-description">${claim.description || 'No description provided'}</div>
                     <div class="action-group" style="margin-top: 12px;">
-                        ${(claim.status === 'Pending' || claim.status === 'Under Review' || claim.status === 'pending') ? `
-                            <button class="btn btn-view" onclick="openReview('${claim.id}')">
+                        ${claimId && (normalizedStatus === 'pending' || normalizedStatus === 'under review') ? `
+                            <button class="btn btn-view" onclick="openReview('${claimIdEscaped}')">
                                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line></svg>
                                 Review Claim
                             </button>
                         ` : ''}
-                        <button class="btn btn-claimer" onclick="openProbabilityReport('${claim.id}')">
+                        <button class="btn btn-claimer" ${claimId ? `onclick="openProbabilityReport('${claimIdEscaped}')"` : 'disabled'} title="${claimId ? 'Generate probability report' : 'Claim ID missing'}">
                             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm0 18a8 8 0 1 1 8-8 8 8 0 0 1-8 8z"></path><path d="M12 6v6l4 2"></path></svg>
                             🤖 Claimer AI
                         </button>
-                        <button class="btn btn-secondary" onclick="viewCustomerRiskReport('${claim.customer_id}')">
+                        <button class="btn btn-secondary" ${customerId ? `onclick="viewCustomerRiskReport('${customerIdEscaped}')"` : 'disabled'} title="${customerId ? 'Open underwriting risk report' : 'Customer ID missing'}">
                             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
                             UW Risk Report
                         </button>
-                        ${(claim.status === 'Approved' || claim.status === 'approved') && !claim.payment_date ? `
-                            <button class="btn btn-pay" onclick="payClaim('${claim.id}')">
+                        ${claimId && normalizedStatus === 'approved' && !claim.payment_date ? `
+                            <button class="btn btn-pay" onclick="payClaim('${claimIdEscaped}')">
                                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"></rect><line x1="1" y1="10" x2="23" y2="10"></line></svg>
                                 Process Payment
                             </button>
@@ -918,7 +936,7 @@
                                 Paid on ${new Date(claim.payment_date).toLocaleDateString()}
                             </span>
                         ` : ''}
-                        ${(claim.status === 'Rejected' || claim.status === 'rejected') ? `
+                        ${normalizedStatus === 'rejected' ? `
                             <span style="color: #ef4444; display: flex; align-items: center; gap: 8px; font-weight: 500; background: rgba(239, 68, 68, 0.1); padding: 8px 16px; border-radius: 8px;">
                                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"></circle><line x1="15" y1="9" x2="9" y2="15"></line><line x1="9" y1="9" x2="15" y2="15"></line></svg>
                                 Rejected${claim.rejection_reason ? ': ' + claim.rejection_reason : ''}
@@ -936,8 +954,21 @@
             return 'Low';
         }
         
+        function normalizeClaimStatus(status) {
+            const normalized = safeToLowerString(status).replace(/[_-]+/g, ' ').trim();
+            if (!normalized) return '';
+            if (normalized === 'underreview') return 'under review';
+            return normalized;
+        }
+        
+        function formatClaimStatus(status) {
+            const normalized = normalizeClaimStatus(status);
+            if (!normalized) return 'Pending';
+            return normalized.split(' ').map(part => part.charAt(0).toUpperCase() + part.slice(1)).join(' ');
+        }
+        
         function getStatusClass(status) {
-            const s = (status || '').toLowerCase();
+            const s = normalizeClaimStatus(status);
             if (s === 'pending') return 'status-pending';
             if (s === 'under review') return 'status-review';
             if (s === 'approved') return 'status-approved';
@@ -951,18 +982,22 @@
         }
         
         function updateStats(claims) {
-            const pending = claims.filter(c => 
-                c.status === 'Pending' || c.status === 'pending' || 
-                c.status === 'Under Review' || c.status === 'under_review'
+            const normalizedClaims = (Array.isArray(claims) ? claims : [])
+                .filter(claim => claim && typeof claim === 'object');
+
+            const pending = normalizedClaims.filter(c => 
+                normalizeClaimStatus(c.status) === 'pending' ||
+                normalizeClaimStatus(c.status) === 'under review'
             );
-            const processedToday = claims.filter(c => {
-                const updated = c.updated_date || c.approval_date || c.payment_date;
-                return (c.status !== 'Pending' && c.status !== 'pending') && 
+            const processedToday = normalizedClaims.filter(c => {
+                const updated = c.updated_date || c.approval_date || c.approved_date || c.payment_date;
+                const normalizedStatus = normalizeClaimStatus(c.status);
+                return normalizedStatus !== 'pending' && normalizedStatus !== 'under review' &&
                        updated && new Date(updated).toDateString() === new Date().toDateString();
             });
-            const approved = claims.filter(c => 
-                c.status === 'Approved' || c.status === 'approved' ||
-                c.status === 'Paid' || c.status === 'paid'
+            const approved = normalizedClaims.filter(c => 
+                normalizeClaimStatus(c.status) === 'approved' ||
+                normalizeClaimStatus(c.status) === 'paid'
             );
             const totalPending = pending.reduce((sum, c) => sum + Number(c.claimed_amount || 0), 0);
             const totalApproved = approved.reduce((sum, c) => sum + Number(c.approved_amount || c.claimed_amount || 0), 0);
@@ -973,11 +1008,11 @@
             document.getElementById('approved-amount').textContent = '$' + totalApproved.toLocaleString();
             
             // Calculate average processing time
-            const processedWithDates = claims.filter(c => c.approval_date && c.filed_date);
+            const processedWithDates = normalizedClaims.filter(c => (c.approval_date || c.approved_date) && (c.filed_date || c.created_date));
             if (processedWithDates.length > 0) {
                 const avgDays = processedWithDates.reduce((sum, c) => {
-                    const filed = new Date(c.filed_date);
-                    const approved = new Date(c.approval_date);
+                    const filed = new Date(c.filed_date || c.created_date);
+                    const approved = new Date(c.approval_date || c.approved_date);
                     return sum + (approved - filed) / (1000 * 60 * 60 * 24);
                 }, 0) / processedWithDates.length;
                 document.getElementById('avg-time').textContent = avgDays.toFixed(1) + ' days';
@@ -991,7 +1026,7 @@
         
         function openReview(claimId) {
             currentClaimId = claimId;
-            const claim = allClaims.find(c => c.id === claimId);
+            const claim = allClaims.find(c => String(c.id || c.claim_id || '') === String(claimId));
             
             if (!claim) {
                 showToast('Claim not found', 'error');
@@ -1145,7 +1180,7 @@
             currentProbabilityReport = null;
             currentReportClaim = null;
             
-            const claim = allClaims.find(c => c.id === claimId);
+            const claim = allClaims.find(c => String(c.id || c.claim_id || '') === String(claimId));
             if (claim) {
                 document.getElementById('prob-claim-info').textContent = `Claim #${claimId} | ${claim.customer_name || claim.customer_id || 'Customer'} | $${formatNumber(claim.claimed_amount || 0)}`;
             }
@@ -1554,7 +1589,6 @@
             <p>This report is generated by AI and should be reviewed by a qualified claims adjuster.</p>
         </div>
     </div>
-  <script src="/ui-clarity.js"></script>
 </body>
 </html>`;
             
@@ -1893,24 +1927,28 @@
                 
                 // Load supporting data with validation
                 await Promise.all([loadUnderwritingData(), loadCustomersData()]);
+
+                const claimsForAnalysis = (Array.isArray(allClaims) ? allClaims : [])
+                    .filter(claim => claim && typeof claim === 'object');
+                if (claimsForAnalysis.length === 0) {
+                    throw new Error('No valid claim records were found for report generation.');
+                }
                 
                 console.log('📊 Report Generation - Data Loaded:', {
-                    claims: allClaims.length,
+                    claims: claimsForAnalysis.length,
                     underwriting: Object.keys(underwritingData || {}).length,
                     customers: Object.keys(customersData || {}).length
                 });
                 
-                // Analyze all claims
-                const riskAnalyses = allClaims.map(claim => ({
-                    claim,
-                    analysis: calculateClaimRiskLevel(claim),
-                    fraudIndicators: []
-                }));
-            
-            // Add fraud indicators
-            riskAnalyses.forEach(ra => {
-                ra.fraudIndicators = detectFraudIndicators(ra.claim, ra.analysis);
-            });
+                // Analyze all claims (defensive to avoid failing the entire report on malformed rows)
+                const riskAnalyses = claimsForAnalysis.map(claim => {
+                    const analysis = calculateClaimRiskLevel(claim);
+                    return {
+                        claim,
+                        analysis,
+                        fraudIndicators: detectFraudIndicators(claim, analysis)
+                    };
+                });
             
             // Calculate accumulative metrics
             const totalClaims = riskAnalyses.length;
@@ -2275,17 +2313,22 @@
         }
         
         function exportRiskReportCSV() {
-            if (!allClaims || allClaims.length === 0) {
+            const claimsForAnalysis = (Array.isArray(allClaims) ? allClaims : [])
+                .filter(claim => claim && typeof claim === 'object');
+            if (claimsForAnalysis.length === 0) {
                 showToast('No claims data to export', 'error');
                 return;
             }
             
             // Rebuild risk analysis for export
-            const riskAnalyses = allClaims.map(claim => ({
-                claim,
-                analysis: calculateClaimRiskLevel(claim),
-                fraudIndicators: detectFraudIndicators(claim, calculateClaimRiskLevel(claim))
-            }));
+            const riskAnalyses = claimsForAnalysis.map(claim => {
+                const analysis = calculateClaimRiskLevel(claim);
+                return {
+                    claim,
+                    analysis,
+                    fraudIndicators: detectFraudIndicators(claim, analysis)
+                };
+            });
             
             let csv = 'Claim ID,Customer,Email,Amount,Risk Score,Risk Level,Fraud Flags,Key Factors,Status,Filed Date\n';
             
@@ -2307,7 +2350,9 @@
         
         // Update risk summary on claims load
         function updateRiskSummary() {
-            if (allClaims.length === 0) {
+            const claimsForSummary = (Array.isArray(allClaims) ? allClaims : [])
+                .filter(claim => claim && typeof claim === 'object');
+            if (claimsForSummary.length === 0) {
                 document.getElementById('total-claims-count').textContent = '0';
                 document.getElementById('high-risk-count').textContent = '0';
                 document.getElementById('fraud-flag-count').textContent = '0';
@@ -2316,10 +2361,10 @@
             }
             
             // Quick calculation without full analysis
-            const highRisk = allClaims.filter(c => Number(c.claimed_amount || 0) > 50000).length;
-            const totalAmount = allClaims.reduce((sum, c) => sum + Number(c.claimed_amount || 0), 0);
+            const highRisk = claimsForSummary.filter(c => Number(c.claimed_amount || 0) > 50000).length;
+            const totalAmount = claimsForSummary.reduce((sum, c) => sum + Number(c.claimed_amount || 0), 0);
             
-            document.getElementById('total-claims-count').textContent = allClaims.length;
+            document.getElementById('total-claims-count').textContent = claimsForSummary.length;
             document.getElementById('high-risk-count').textContent = highRisk;
             document.getElementById('fraud-flag-count').textContent = '-';
             document.getElementById('sum-at-risk').textContent = '$' + Math.round(totalAmount * 0.3).toLocaleString();
