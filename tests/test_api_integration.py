@@ -1210,6 +1210,8 @@ def test_risk_report_handles_string_encoded_medical_payloads():
         'medical_conditions': '[{"condition":"Hypertension","severity":"moderate","risk_impact":"0.18","loading_percentage":"12"}]',
         'documents': '[]'
     }
+    original_lookup_fn = portal.get_underwriting_with_fallback
+    portal.get_underwriting_with_fallback = lambda _identifier: portal.UNDERWRITING_APPLICATIONS.get(app_id)
 
     try:
         body, status = _get(base + f"/api/risk-assessment/report?id={app_id}", token)
@@ -1222,6 +1224,7 @@ def test_risk_report_handles_string_encoded_medical_payloads():
         conditions = report.get('medical_assessment', {}).get('conditions', [])
         assert any(c.get('condition') == 'Hypertension' for c in conditions)
     finally:
+        portal.get_underwriting_with_fallback = original_lookup_fn
         if original_app is None:
             portal.UNDERWRITING_APPLICATIONS.pop(app_id, None)
         else:
