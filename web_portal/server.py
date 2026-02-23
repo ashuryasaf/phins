@@ -497,6 +497,10 @@ CLAIM_FILES: Dict[str, Dict[str, Any]] = {}  # file_id -> file data with base64 
 # Indexed by file_id -> {application_id, file_name, file_type, file_size, file_data (base64), uploaded_at}
 UNDERWRITING_FILES: Dict[str, Dict[str, Any]] = {}  # file_id -> file data with base64 content
 
+# General policy documents storage - XLS, XSD, PDF, CSV and other file types
+# Indexed by doc_id -> {id, name, type, size, data (base64), entity_type, entity_id, uploaded_at, uploaded_by}
+POLICY_DOCUMENTS: Dict[str, Dict[str, Any]] = {}  # doc_id -> document data
+
 # Design settings - for landing page customization (admin-managed)
 DESIGN_SETTINGS: Dict[str, Any] = {
     'video_url': '',
@@ -900,7 +904,7 @@ def save_ledger_data():
             
             data = {
                 'saved_at': datetime.now().isoformat(),
-                'version': '1.7',
+                'version': '1.9',
                 'health_wallets': HEALTH_WALLETS,
                 'medical_purchases': MEDICAL_PURCHASES,
                 'nft_ledger': NFT_LEDGER,
@@ -929,7 +933,9 @@ def save_ledger_data():
                 'registered_customers': REGISTERED_CUSTOMERS,
                 # v1.8 additions - Customer Referral System
                 'customer_invitations': CUSTOMER_INVITATIONS,
-                'customer_referral_stats': CUSTOMER_REFERRAL_STATS
+                'customer_referral_stats': CUSTOMER_REFERRAL_STATS,
+                # v1.9 additions - General Policy Documents
+                'policy_documents': POLICY_DOCUMENTS
             }
             
             # Write to temp file first, then rename for atomic operation
@@ -1148,6 +1154,7 @@ def load_ledger_data():
     global BILLING, POLICIES, CUSTOMERS, UNDERWRITING_APPLICATIONS, PHINS_BALANCE_SHEET, CLAIMS, CLAIM_FILES, UNDERWRITING_FILES
     global MEDIA_ASSETS, DESIGN_SETTINGS, INVITATION_CODES, REGISTERED_CUSTOMERS
     global CUSTOMER_INVITATIONS, CUSTOMER_REFERRAL_STATS
+    global POLICY_DOCUMENTS
     global _loaded_algo_balances, _loaded_trading_bots
     
     # Temporary storage for algo data until services are initialized
@@ -1246,6 +1253,12 @@ def load_ledger_data():
         if loaded_referral_stats:
             CUSTOMER_REFERRAL_STATS.update(loaded_referral_stats)
             print(f"  - Customer Referral Stats: {len(CUSTOMER_REFERRAL_STATS)} customer stats loaded from persistence")
+        
+        # Load Policy Documents (v1.9+)
+        loaded_policy_docs = data.get('policy_documents', {})
+        if loaded_policy_docs:
+            POLICY_DOCUMENTS.update(loaded_policy_docs)
+            print(f"  - Policy Documents: {len(POLICY_DOCUMENTS)} documents loaded from persistence")
         
         print(f"[PERSISTENCE] Loaded ledger data from {LEDGER_PERSISTENCE_FILE}")
         print(f"  - Health Wallets: {len(HEALTH_WALLETS)}")
@@ -8149,6 +8162,54 @@ For claims or questions, please contact:
                 self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
                 return
         
+        # ========== POLICY DOCUMENTS LIST ENDPOINT ==========
+        # GET /api/documents/list - List documents accessible to authenticated user
+        if path == '/api/documents/list':
+            if not session:
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Authentication required'}).encode('utf-8'))
+                return
+            try:
+                is_admin = session.get('role') in ('admin', 'underwriter', 'actuary', 'adjuster')
+                customer_id = session.get('customer_id')
+                entity_type = qs.get('entity_type', [None])[0]
+                entity_id = qs.get('entity_id', [None])[0]
+
+                docs = []
+                for doc in POLICY_DOCUMENTS.values():
+                    # Admins see all; customers see only their own documents
+                    if not is_admin and doc.get('uploaded_by_customer') != customer_id:
+                        continue
+                    if entity_type and doc.get('entity_type') != entity_type:
+                        continue
+                    if entity_id and doc.get('entity_id') != entity_id:
+                        continue
+                    docs.append({
+                        'id': doc.get('id'),
+                        'name': doc.get('name'),
+                        'type': doc.get('type'),
+                        'size': doc.get('size'),
+                        'entity_type': doc.get('entity_type'),
+                        'entity_id': doc.get('entity_id'),
+                        'description': doc.get('description', ''),
+                        'uploaded_at': doc.get('uploaded_at'),
+                        'uploaded_by': doc.get('uploaded_by'),
+                        'has_data': bool(doc.get('data'))
+                    })
+
+                docs.sort(key=lambda d: d.get('uploaded_at', ''), reverse=True)
+                self._set_json_headers(200)
+                self.wfile.write(json.dumps({
+                    'success': True,
+                    'documents': docs,
+                    'total': len(docs)
+                }).encode('utf-8'))
+                return
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+                return
+
         # GET /api/reports/view - View a specific report with authorization
         if path.startswith('/api/reports/view'):
             if not session:
@@ -19431,6 +19492,87 @@ For claims or questions, please contact:
             except Exception as e:
                 self._set_json_headers(400)
                 self.wfile.write(json.dumps({'error': 'AI assessment failed', 'details': str(e)}).encode('utf-8'))
+            return
+
+        # ========== GENERAL DOCUMENT UPLOAD ENDPOINT ==========
+        # POST /api/documents/upload - Upload XLS, XSD, PDF, CSV, DOCX and other files
+        # affiliated to a specific insurance record (policy, claim, customer, underwriting)
+        # Access: any authenticated user
+        if path == '/api/documents/upload':
+            auth_header = self.headers.get('Authorization', '')
+            token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+            session = validate_session(token) if token else None
+            if not session:
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Authentication required'}).encode('utf-8'))
+                return
+            try:
+                data = json.loads(body or '{}')
+                files_data = data.get('files', [])
+                entity_type = data.get('entity_type', '')  # policy, claim, customer, underwriting, general
+                entity_id = data.get('entity_id', '')
+                description = data.get('description', '')
+                actor = session.get('username', 'user')
+                customer_id = session.get('customer_id', '')
+
+                # Allowed MIME types and extensions
+                ALLOWED_EXTENSIONS = {
+                    '.xls', '.xlsx', '.xsd', '.csv', '.pdf',
+                    '.doc', '.docx', '.xml', '.json', '.txt',
+                    '.png', '.jpg', '.jpeg', '.gif', '.zip'
+                }
+
+                if not files_data:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'No files provided'}).encode('utf-8'))
+                    return
+
+                uploaded = []
+                errors = []
+                for i, file_info in enumerate(files_data[:20]):  # Limit to 20 files
+                    fname = file_info.get('name', f'file_{i+1}')
+                    ext = '.' + fname.rsplit('.', 1)[-1].lower() if '.' in fname else ''
+                    if ext not in ALLOWED_EXTENSIONS:
+                        errors.append({'file': fname, 'error': f'File type {ext} not allowed'})
+                        continue
+
+                    doc_id = f"DOC-{datetime.now().strftime('%Y%m%d%H%M%S')}-{i+1:03d}-{random.randint(1000,9999)}"
+                    doc = {
+                        'id': doc_id,
+                        'name': fname,
+                        'type': file_info.get('type', 'application/octet-stream'),
+                        'size': file_info.get('size', 0),
+                        'data': file_info.get('data'),  # Base64 encoded content
+                        'entity_type': entity_type,
+                        'entity_id': entity_id,
+                        'description': description,
+                        'uploaded_at': datetime.now().isoformat(),
+                        'uploaded_by': actor,
+                        'uploaded_by_customer': customer_id
+                    }
+                    POLICY_DOCUMENTS[doc_id] = doc
+                    uploaded.append({
+                        'id': doc_id,
+                        'name': fname,
+                        'size': doc['size'],
+                        'entity_type': entity_type,
+                        'entity_id': entity_id,
+                        'uploaded_at': doc['uploaded_at']
+                    })
+                    print(f"   📄 Stored document {doc_id}: {fname} ({doc['size']} bytes) -> {entity_type}/{entity_id}")
+
+                save_ledger_data()
+
+                self._set_json_headers(201)
+                self.wfile.write(json.dumps({
+                    'success': True,
+                    'message': f'{len(uploaded)} document(s) uploaded successfully',
+                    'uploaded': uploaded,
+                    'errors': errors
+                }).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': 'Upload failed', 'details': str(e)}).encode('utf-8'))
             return
 
         # ========== RISK DASHBOARD SAVE ASSESSMENT ENDPOINT ==========
