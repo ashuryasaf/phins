@@ -1199,11 +1199,7 @@ class ActuarialIntegrations:
             from services.foundation_service import get_foundation_service
             from services.community_messaging_service import get_community_messaging_service
 
-            foundation_service = get_foundation_service(
-                enable_persistence=False,
-                enable_backup=False,
-                enable_billing_integration=False
-            )
+            foundation_service = get_foundation_service()
             community_service = get_community_messaging_service(foundation_service=foundation_service)
 
             foundations = foundation_service.list_foundations(limit=1_000_000)
