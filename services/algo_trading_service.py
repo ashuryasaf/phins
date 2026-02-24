@@ -378,6 +378,52 @@ class AlgoTradingService:
             # Adjust last price to match current
             history[-1]["price"] = current_price
             self.price_history[symbol] = history
+
+    def sync_market_prices(self, prices: Dict[str, float]) -> Dict[str, Any]:
+        """
+        Sync externally validated prices into portfolio + indicator history.
+        This keeps dashboards and bot signals aligned on the same quote set.
+        """
+        updated = 0
+        ignored = 0
+        now_iso = datetime.now().isoformat()
+
+        for symbol, raw_price in (prices or {}).items():
+            try:
+                price = float(raw_price)
+                if price <= 0:
+                    ignored += 1
+                    continue
+            except (TypeError, ValueError):
+                ignored += 1
+                continue
+
+            # Keep portfolio service in sync for trade execution paths.
+            if self.portfolio_service and symbol in self.portfolio_service.MARKET_DATA:
+                self.portfolio_service.MARKET_DATA[symbol]["price"] = price
+
+            # Keep technical indicator history current.
+            history = self.price_history.get(symbol)
+            if history is None:
+                history = deque(maxlen=200)
+                self.price_history[symbol] = history
+
+            last_volume = history[-1].get("volume") if history else None
+            volume = (
+                float(last_volume)
+                if isinstance(last_volume, (int, float)) and last_volume > 0
+                else random.uniform(1000000, 10000000)
+            )
+            history.append(
+                {
+                    "price": price,
+                    "volume": volume,
+                    "timestamp": now_iso,
+                }
+            )
+            updated += 1
+
+        return {"updated": updated, "ignored": ignored, "timestamp": now_iso}
     
     def calculate_indicators(self, symbol: str) -> TechnicalIndicators:
         """Calculate all technical indicators for a symbol"""

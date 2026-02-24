@@ -11950,31 +11950,44 @@ For claims or questions, please contact:
                 return
             
             symbols = qs.get('symbols', [''])[0]
-            if symbols:
-                symbol_list = [s.strip().upper() for s in symbols.split(',')]
+            symbol_list = [s.strip().upper() for s in symbols.split(',') if s.strip()] if symbols else []
+            live_symbols = symbol_list or [
+                'SPY', 'QQQ', 'VTI', 'BND', 'TLT', 'LQD',
+                'BTC', 'ETH', 'SOL', 'GLD',
+                'EUR', 'GBP', 'JPY', 'CHF',
+                '^SPX', '^NDX', '^DJI'
+            ]
+
+            quote_provider = 'portfolio_cache'
+            integrity: Dict[str, Any] = {}
+
+            # Refresh quotes with strict integrity validation before responding.
+            if _market_data:
+                try:
+                    live_quotes = _market_data.get_multi_asset_quotes(
+                        live_symbols, provider_preference='auto'
+                    )
+                    live_prices = live_quotes.get('prices', {}) or {}
+                    if live_prices:
+                        portfolio_service.update_market_prices(live_prices)
+                        if algo_trading_enabled and algo_trading_service:
+                            algo_trading_service.sync_market_prices(live_prices)
+                    quote_provider = live_quotes.get('provider', quote_provider)
+                    integrity = live_quotes.get('integrity', {})
+                except Exception:
+                    integrity = {'warning': 'live_quote_refresh_failed'}
+
+            if symbol_list:
                 data = portfolio_service.get_market_data(symbol_list)
             else:
                 data = portfolio_service.get_market_data()
             
-            # Add real-time crypto/index data if available
-            if _market_data:
-                try:
-                    # Get live crypto prices
-                    crypto_symbols = [s for s in (symbol_list if symbols else ['BTC', 'ETH', 'SOL']) 
-                                     if s in ['BTC', 'ETH', 'SOL', 'USDC', 'USDT', 'BNB', 'XRP', 'ADA', 'DOGE']]
-                    if crypto_symbols:
-                        live_crypto = _market_data.get_crypto_prices_usd(crypto_symbols)
-                        if 'prices' in live_crypto:
-                            for sym, price in live_crypto['prices'].items():
-                                if sym in portfolio_service.MARKET_DATA:
-                                    portfolio_service.update_market_prices({sym: price})
-                except Exception:
-                    pass
-            
             result = {
                 'market_data': data,
                 'last_updated': datetime.now().isoformat(),
-                'source': 'phins_investment_service'
+                'source': 'phins_investment_service',
+                'quote_provider': quote_provider,
+                'integrity': integrity
             }
             
             self._set_json_headers()
@@ -12085,6 +12098,57 @@ For claims or questions, please contact:
             self._set_json_headers()
             self.wfile.write(json.dumps({'orders': orders}).encode('utf-8'))
             return
+
+        # Get real-time prices for algo dashboard positions
+        if path == '/api/algo/prices':
+            if not algo_trading_enabled:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Algo trading service unavailable'}).encode('utf-8'))
+                return
+
+            if not _market_data:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Market data service unavailable'}).encode('utf-8'))
+                return
+
+            symbols = qs.get('symbols', ['BTC,ETH,SPY,QQQ,BND,EURUSD'])[0]
+            symbols_list = [s.strip().upper() for s in symbols.split(',') if s.strip()]
+            if not symbols_list:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'At least one symbol is required'}).encode('utf-8'))
+                return
+
+            try:
+                quote_payload = _market_data.get_multi_asset_quotes(
+                    symbols_list,
+                    provider_preference='auto'
+                )
+                prices = quote_payload.get('prices', {}) or {}
+
+                # Keep all trading services synchronized to the same validated prices.
+                if prices:
+                    if portfolio_enabled:
+                        portfolio_service.update_market_prices(prices)
+                    algo_trading_service.sync_market_prices(prices)
+
+                self._set_json_headers()
+                self.wfile.write(
+                    json.dumps(
+                        {
+                            'provider': quote_payload.get('provider', 'public'),
+                            'timestamp': quote_payload.get('timestamp', datetime.now().isoformat()),
+                            'prices': prices,
+                            'quotes': quote_payload.get('quotes', {}),
+                            'unknown': quote_payload.get('unknown', []),
+                            'integrity': quote_payload.get('integrity', {}),
+                        },
+                        default=str
+                    ).encode('utf-8')
+                )
+            except Exception as e:
+                self._set_json_headers(502)
+                self.wfile.write(json.dumps({'error': 'Real-time quote fetch failed', 'details': str(e)}).encode('utf-8'))
+            return
         
         # Get technical indicators for a symbol
         if path == '/api/algo/indicators':
@@ -12107,8 +12171,31 @@ For claims or questions, please contact:
                 self._set_json_headers(503)
                 self.wfile.write(json.dumps({'error': 'Algo trading service unavailable'}).encode('utf-8'))
                 return
-            
+
+            quote_provider = 'internal_cache'
+            integrity: Dict[str, Any] = {}
+            if _market_data:
+                try:
+                    overview_symbols = ['SPY', 'QQQ', 'BTC', 'ETH', 'GLD', 'BND', 'EURUSD', 'USDJPY']
+                    live_quotes = _market_data.get_multi_asset_quotes(
+                        overview_symbols,
+                        provider_preference='auto'
+                    )
+                    live_prices = live_quotes.get('prices', {}) or {}
+                    if live_prices:
+                        if portfolio_enabled:
+                            portfolio_service.update_market_prices(live_prices)
+                        algo_trading_service.sync_market_prices(live_prices)
+                    quote_provider = live_quotes.get('provider', quote_provider)
+                    integrity = live_quotes.get('integrity', {})
+                except Exception:
+                    integrity = {'warning': 'overview_quote_refresh_failed'}
+
             overview = algo_trading_service.get_market_overview()
+            if isinstance(overview, dict):
+                overview['quote_provider'] = quote_provider
+                if integrity:
+                    overview['integrity'] = integrity
             self._set_json_headers()
             self.wfile.write(json.dumps(overview).encode('utf-8'))
             return
@@ -12192,8 +12279,57 @@ For claims or questions, please contact:
                 return
             
             symbols_param = qs.get('symbols', ['SPY,QQQ,BTC,GLD'])[0]
-            symbols = [s.strip() for s in symbols_param.split(',')]
-            
+            symbols = [s.strip().upper() for s in symbols_param.split(',') if s.strip()]
+
+            if _market_data and symbols:
+                live_quotes = _market_data.get_multi_asset_quotes(
+                    symbols,
+                    provider_preference='bloomberg'
+                )
+                quotes = live_quotes.get('quotes', {}) or {}
+                if quotes:
+                    feed_data = {}
+                    for symbol in symbols:
+                        quote = quotes.get(symbol)
+                        if not quote:
+                            continue
+                        last_price = safe_float(quote.get('price'))
+                        if last_price <= 0:
+                            continue
+
+                        change_pct = safe_float(quote.get('change_pct'))
+                        bid = safe_float(quote.get('bid'), last_price * 0.9998)
+                        ask = safe_float(quote.get('ask'), last_price * 1.0002)
+                        volume = safe_float(quote.get('volume'))
+                        source = quote.get('source', 'public')
+                        asset_class = quote.get('asset_class')
+
+                        feed_data[symbol] = {
+                            'security': symbol,
+                            'name': quote.get('name', symbol),
+                            'last': last_price,
+                            'bid': bid,
+                            'ask': ask,
+                            'change': change_pct,
+                            'volume': volume,
+                            'asset_class': asset_class,
+                            'source': source,
+                            'status': quote.get('status', 'ok'),
+                            'as_of': quote.get('as_of') or live_quotes.get('timestamp'),
+                        }
+
+                    if feed_data:
+                        provider_raw = str(live_quotes.get('provider', 'public')).lower()
+                        feed = {
+                            'provider': 'BLOOMBERG' if provider_raw.startswith('bloomberg') else 'BLOOMBERG_FALLBACK',
+                            'timestamp': live_quotes.get('timestamp', datetime.now().isoformat()),
+                            'data': feed_data,
+                            'integrity': live_quotes.get('integrity', {}),
+                        }
+                        self._set_json_headers()
+                        self.wfile.write(json.dumps(feed, default=str).encode('utf-8'))
+                        return
+
             feed = algo_trading_service.get_bloomberg_feed(symbols)
             self._set_json_headers()
             self.wfile.write(json.dumps(feed).encode('utf-8'))
@@ -12207,8 +12343,66 @@ For claims or questions, please contact:
                 return
             
             symbols_param = qs.get('symbols', ['EURUSD,GBPUSD,USDJPY'])[0]
-            symbols = [s.strip() for s in symbols_param.split(',')]
-            
+            symbols = [s.strip().upper() for s in symbols_param.split(',') if s.strip()]
+
+            if _market_data and symbols:
+                live_quotes = _market_data.get_multi_asset_quotes(
+                    symbols,
+                    provider_preference='reuters'
+                )
+                quotes = live_quotes.get('quotes', {}) or {}
+                if quotes:
+                    feed_data = {}
+                    current_hour = datetime.now().hour
+                    market_status = 'OPEN' if current_hour >= 9 and current_hour < 16 else 'CLOSED'
+
+                    for symbol in symbols:
+                        quote = quotes.get(symbol)
+                        if not quote:
+                            continue
+                        last_price = safe_float(quote.get('price'))
+                        if last_price <= 0:
+                            continue
+
+                        change_pct = safe_float(quote.get('change_pct'))
+                        bid = safe_float(quote.get('bid'), last_price * 0.9998)
+                        ask = safe_float(quote.get('ask'), last_price * 1.0002)
+                        volume = safe_float(quote.get('volume'))
+                        asset_class = str(quote.get('asset_class') or '')
+                        net_change = (last_price * change_pct / 100.0) if change_pct else 0.0
+                        ric = f'{symbol}.O' if asset_class in ['equity', 'index'] else symbol
+
+                        feed_data[symbol] = {
+                            'ric': ric,
+                            'displayName': quote.get('name', symbol),
+                            'last': last_price,
+                            'netChange': net_change,
+                            'pctChange': change_pct,
+                            'bid': bid,
+                            'ask': ask,
+                            'bidSize': 0,
+                            'askSize': 0,
+                            'volume': volume,
+                            'turnover': (last_price * volume) if volume else 0,
+                            'timestamp': quote.get('as_of') or live_quotes.get('timestamp'),
+                            'marketStatus': market_status,
+                            'assetClass': asset_class,
+                            'source': quote.get('source', 'public'),
+                            'status': quote.get('status', 'ok'),
+                        }
+
+                    if feed_data:
+                        provider_raw = str(live_quotes.get('provider', 'public')).lower()
+                        feed = {
+                            'provider': 'REUTERS' if provider_raw.startswith('reuters') else 'REUTERS_FALLBACK',
+                            'timestamp': live_quotes.get('timestamp', datetime.now().isoformat()),
+                            'data': feed_data,
+                            'integrity': live_quotes.get('integrity', {}),
+                        }
+                        self._set_json_headers()
+                        self.wfile.write(json.dumps(feed, default=str).encode('utf-8'))
+                        return
+
             feed = algo_trading_service.get_reuters_feed(symbols)
             self._set_json_headers()
             self.wfile.write(json.dumps(feed).encode('utf-8'))
