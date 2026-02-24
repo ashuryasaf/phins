@@ -1194,16 +1194,46 @@ class ActuarialIntegrations:
     
     @staticmethod
     def get_community_data_summary() -> Dict:
-        """Placeholder for future community integration"""
-        return {
-            'status': 'future_development',
-            'features_planned': [
-                'community_risk_pools',
-                'group_discounts',
-                'referral_tracking',
-                'social_wellness_programs'
-            ]
-        }
+        """Get summary of foundation community and messaging activity."""
+        try:
+            from services.foundation_service import get_foundation_service
+            from services.community_messaging_service import get_community_messaging_service
+
+            foundation_service = get_foundation_service(
+                enable_persistence=False,
+                enable_backup=False,
+                enable_billing_integration=False
+            )
+            community_service = get_community_messaging_service(foundation_service=foundation_service)
+
+            foundations = foundation_service.list_foundations(limit=1_000_000)
+            members = list(getattr(foundation_service, '_members', {}).values())
+
+            with community_service._lock:
+                threads = list(getattr(community_service, '_threads', {}).values())
+                messages = list(getattr(community_service, '_messages', {}).values())
+
+            open_threads = sum(1 for thread in threads if thread.get('status') == 'open')
+            foundations_with_threads = len({
+                thread.get('foundation_id')
+                for thread in threads
+                if thread.get('foundation_id')
+            })
+
+            return {
+                'total_foundations': len(foundations),
+                'active_foundations': sum(1 for foundation in foundations if foundation.get('status') == 'active'),
+                'total_members': len(members),
+                'active_members': sum(1 for member in members if member.get('status') == 'active'),
+                'total_threads': len(threads),
+                'open_threads': open_threads,
+                'closed_threads': max(0, len(threads) - open_threads),
+                'foundations_with_threads': foundations_with_threads,
+                'total_messages': len(messages),
+                'avg_messages_per_thread': round((len(messages) / len(threads)), 2) if threads else 0.0,
+            }
+        except Exception:
+            return {'status': 'not_available', 'reason': 'community_data_not_loaded'}
 
 
 # =============================================================================

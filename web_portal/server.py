@@ -6302,11 +6302,12 @@ For claims or questions, please contact:
                 except:
                     investment_summary = {'status': 'not_loaded'}
                 
-                # Community (future)
-                community_summary = {
-                    'status': 'future_development',
-                    'planned_features': ['risk_pools', 'group_discounts', 'referrals']
-                }
+                # Community integrations (foundation + messaging)
+                community_data = ActuarialIntegrations.get_community_data_summary()
+                if isinstance(community_data, dict) and community_data.get('status') == 'not_available':
+                    community_summary = community_data
+                else:
+                    community_summary = {'status': 'available', 'data': community_data}
                 
                 self._set_json_headers()
                 self.wfile.write(json.dumps({
