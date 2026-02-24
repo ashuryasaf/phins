@@ -588,5 +588,55 @@
     "customer_id": "CUST-28498",
     "email": "duplicate@example.com",
     "registered_at": "2026-01-20T23:11:02.187049"
+  },
+  {
+    "username": "ledger_test_customer@example.com",
+    "password_hash": "72c67253a116c9996e67012a337a388d47d6dd7009213066f57915ac61bb8ea5",
+    "password_salt": "67ea0aef17d0a9c6838e920b406054ef",
+    "name": "Ledger Test Customer",
+    "role": "customer",
+    "customer_id": "CUST-79254",
+    "email": "ledger_test_customer@example.com",
+    "registered_at": "2026-02-24T09:15:48.541123"
+  },
+  {
+    "username": "newcustomer@example.com",
+    "password_hash": "dc3e32b2e6325576d8b0c5c638bc33902fd0319a59dc1c1cce6d21fa4f3a1f0d",
+    "password_salt": "1527e7a8f531e9dc859918ba85299cfb",
+    "name": "New Customer",
+    "role": "customer",
+    "customer_id": "CUST-28833",
+    "email": "newcustomer@example.com",
+    "registered_at": "2026-02-24T09:15:49.731408"
+  },
+  {
+    "username": "legacyotp@example.com",
+    "password_hash": "c84097afb2acbfe49d88f5411a341699c89519996a689962d516fc26d6e73f0a",
+    "password_salt": "125f7a7ba7e70938325d9199c6463e2c",
+    "name": "Legacy OTP Payload User",
+    "role": "customer",
+    "customer_id": "CUST-69155",
+    "email": "legacyotp@example.com",
+    "registered_at": "2026-02-24T09:15:50.030234"
+  },
+  {
+    "username": "invitation-flow-primary@example.com",
+    "password_hash": "7c1c68bfb4cb72808572393ad0fbffa2eb9c0865de0fb1393a6bdc7d575acf15",
+    "password_salt": "c6b0ebcc67581a95372042f3d3c008a6",
+    "name": "First Invite User",
+    "role": "customer",
+    "customer_id": "CUST-16090",
+    "email": "invitation-flow-primary@example.com",
+    "registered_at": "2026-02-24T09:15:50.796466"
+  },
+  {
+    "username": "invitation-flow-secondary@example.com",
+    "password_hash": "c9875b13327f1364c603e9ef14c93e3d600d8dbca832dc58341fa5ea71c5641e",
+    "password_salt": "177d921ee5f509e5161c6f625d51d3ff",
+    "name": "Replay Invite Success User",
+    "role": "customer",
+    "customer_id": "CUST-86235",
+    "email": "invitation-flow-secondary@example.com",
+    "registered_at": "2026-02-24T09:15:50.891620"
   }
 ]
