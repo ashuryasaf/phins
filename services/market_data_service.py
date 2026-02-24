@@ -128,11 +128,15 @@ class MarketDataService:
         "currency_pair": 0.10,
     }
 
+    # Maximum age (seconds) for a "last good quote" before it expires.
+    # After expiry, a new price is accepted even if it exceeds the outlier threshold.
+    LAST_GOOD_QUOTE_MAX_AGE_SECONDS: int = 300  # 5 minutes
+
     def __init__(self, cache_ttl_seconds: int = 30, timeout_seconds: int = 8):
         self._ttl = cache_ttl_seconds
         self._timeout = timeout_seconds
         self._cache: Dict[str, CachedValue] = {}
-        self._last_good_quotes: Dict[str, float] = {}
+        self._last_good_quotes: Dict[str, tuple] = {}  # symbol -> (price, timestamp)
 
     # ---------------------------------------------------------------------
     # Compatibility methods used elsewhere in the codebase
@@ -530,10 +534,20 @@ class MarketDataService:
         safe_quote["asset_class"] = safe_quote.get("asset_class") or self._classify_symbol(symbol)
 
         price = self._safe_float(safe_quote.get("price"))
-        previous_price = self._last_good_quotes.get(symbol)
+        stored = self._last_good_quotes.get(symbol)
+        previous_price: Optional[float] = None
+        previous_ts: Optional[float] = None
+        if stored is not None:
+            previous_price, previous_ts = stored
+
+        now = time.time()
+        is_stale = (
+            previous_ts is not None
+            and (now - previous_ts) > self.LAST_GOOD_QUOTE_MAX_AGE_SECONDS
+        )
 
         if price is None or price <= 0:
-            if previous_price is not None and previous_price > 0:
+            if previous_price is not None and previous_price > 0 and not is_stale:
                 safe_quote["status"] = "stale_last_good"
                 safe_quote["price"] = previous_price
                 safe_quote["integrity_note"] = "invalid_live_price"
@@ -541,7 +555,7 @@ class MarketDataService:
             safe_quote["status"] = "unavailable"
             return safe_quote
 
-        if previous_price is not None and previous_price > 0:
+        if previous_price is not None and previous_price > 0 and not is_stale:
             change_ratio = abs(price - previous_price) / previous_price
             threshold = self.OUTLIER_THRESHOLD_BY_CLASS.get(
                 safe_quote["asset_class"], 0.35
@@ -561,7 +575,7 @@ class MarketDataService:
                 safe_quote["integrity_note"] = "outlier_rejected"
                 return safe_quote
 
-        self._last_good_quotes[symbol] = price
+        self._last_good_quotes[symbol] = (price, now)
         safe_quote["status"] = "ok"
         safe_quote["price"] = price
         return safe_quote
