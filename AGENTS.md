@@ -231,6 +231,19 @@ Use these guardrails during implementation work:
 9. Never include secrets, tokens, or environment-specific credentials in code or logs.
 10. If a request is ambiguous, choose the least disruptive implementation path.
 
+## 14) Quick Start Workflow (Per Task)
+
+Use this sequence for most requests:
+
+1. Read the task and confirm impacted layer(s): API, service, repository, or domain.
+2. Inspect nearby existing patterns before introducing new abstractions.
+3. Implement the smallest viable change that solves the request.
+4. Add or update tests in `tests/` for success and failure paths.
+5. Run targeted tests first, then one broader smoke/integration test if risk is moderate/high.
+6. Verify API responses remain backward compatible unless migration is requested.
+7. Update docs/comments only where behavior changed or logic is non-obvious.
+8. Commit with a clear message describing scope and intent.
+
 ---
 
-Last updated: February 18, 2026
+Last updated: February 24, 2026
