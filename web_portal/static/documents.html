@@ -366,11 +366,21 @@
       <!-- Admin filter panel (hidden for customers) -->
       <div class="admin-panel" id="admin-panel" style="display:none;">
         <div class="admin-panel-title">🔑 Admin View — Filter Documents</div>
-        <div class="form-row">
+        <div class="form-row" style="grid-template-columns:1fr 1fr 1fr 1fr;">
+          <div class="form-group">
+            <label for="filter-search">🔍 Search</label>
+            <input type="text" id="filter-search" placeholder="Name, description, customer, record ID..." oninput="applyFilters()" />
+          </div>
           <div class="form-group">
             <label for="filter-customer">Filter by Customer</label>
-            <select id="filter-customer" onchange="applyFilters()">
+            <select id="filter-customer" onchange="onCustomerFilterChange()">
               <option value="">— All Customers —</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="filter-policy">Filter by Policy</label>
+            <select id="filter-policy" onchange="applyFilters()">
+              <option value="">— All Policies —</option>
             </select>
           </div>
           <div class="form-group">
@@ -619,6 +629,31 @@
     } catch { /* ignore */ }
   }
 
+  /* ── Admin: load policy list for selected customer ── */
+  async function loadAdminPolicies(customerId) {
+    const sel = document.getElementById('filter-policy');
+    sel.innerHTML = '<option value="">— All Policies —</option>';
+    try {
+      const url = `/api/admin/policies-for-documents${customerId ? `?customer_id=${encodeURIComponent(customerId)}` : ''}`;
+      const res = await API(url);
+      if (!res.ok) return;
+      const json = await res.json();
+      (json.policies || []).forEach(p => {
+        const opt = document.createElement('option');
+        opt.value = p.id;
+        opt.textContent = `${p.id} (${p.type || ''})`;
+        sel.appendChild(opt);
+      });
+    } catch { /* ignore */ }
+  }
+
+  /* ── Admin: customer filter changed → reload policies ── */
+  async function onCustomerFilterChange() {
+    const customerId = document.getElementById('filter-customer').value;
+    await loadAdminPolicies(customerId);
+    applyFilters();
+  }
+
   /* ── List & filter documents ── */
   async function loadDocuments() {
     try {
@@ -631,6 +666,7 @@
         document.getElementById('admin-panel').style.display = 'block';
         document.getElementById('docs-list-title').textContent = 'All Customer Documents';
         await loadAdminCustomers();
+        await loadAdminPolicies('');
       }
 
       renderDocs(ALL_DOCS);
@@ -641,14 +677,23 @@
   }
 
   function applyFilters() {
+    const searchFilter    = (document.getElementById('filter-search')?.value || '').toLowerCase().trim();
     const customerFilter  = document.getElementById('filter-customer').value;
+    const policyFilter    = document.getElementById('filter-policy').value;
     const entityTypeFilter = document.getElementById('filter-entity-type').value;
     const docTypeFilter   = document.getElementById('filter-doc-type').value;
 
     let filtered = ALL_DOCS;
     if (customerFilter)   filtered = filtered.filter(d => d.uploaded_by_customer === customerFilter);
+    if (policyFilter)     filtered = filtered.filter(d => d.entity_id === policyFilter);
     if (entityTypeFilter) filtered = filtered.filter(d => d.entity_type === entityTypeFilter);
     if (docTypeFilter)    filtered = filtered.filter(d => (d.document_type || 'general') === docTypeFilter);
+    if (searchFilter)     filtered = filtered.filter(d =>
+      (d.name || '').toLowerCase().includes(searchFilter) ||
+      (d.description || '').toLowerCase().includes(searchFilter) ||
+      (d.customer_name || d.uploaded_by_customer || '').toLowerCase().includes(searchFilter) ||
+      (d.entity_id || '').toLowerCase().includes(searchFilter)
+    );
     renderDocs(filtered);
   }
 
@@ -663,7 +708,7 @@
 
     const adminCols = IS_ADMIN ? '<th>Customer</th>' : '';
     const adminCells = d => IS_ADMIN
-      ? `<td style="font-size:0.8rem;color:#546e7a;">${escHtml(d.uploaded_by_customer || d.uploaded_by || '—')}</td>`
+      ? `<td style="font-size:0.8rem;color:#546e7a;">${escHtml(d.customer_name || d.uploaded_by_customer || d.uploaded_by || '—')}</td>`
       : '';
 
     container.innerHTML = `

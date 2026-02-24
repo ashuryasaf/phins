@@ -749,3 +749,131 @@ def test_seed_demo_documents_is_idempotent():
         'seed_demo_documents should not add documents when POLICY_DOCUMENTS is non-empty'
     )
 
+
+
+def test_claims_role_can_access_documents():
+    """claims and claims_adjuster roles should have cross-customer document visibility."""
+    port = 8220
+    srv = ServerThread(port)
+    srv.start()
+    time.sleep(0.3)
+    base = f"http://127.0.0.1:{port}"
+    _init_port(base)
+
+    tokenCust = 'phins_test-claims-cust-token'
+    tokenClaims = 'phins_test-claims-role-token'
+    tokenClaimsAdj = 'phins_test-claims-adj-token'
+    _inject_session(tokenCust, 'custX', 'customer', 'CUST-X')
+    _inject_session(tokenClaims, 'claimsUser', 'claims', '')
+    _inject_session(tokenClaimsAdj, 'claimsAdjUser', 'claims_adjuster', '')
+
+    sample_data = base64.b64encode(b'data').decode()
+    _post(base + '/api/documents/upload', {
+        'files': [{'name': 'x_doc.pdf', 'type': 'application/pdf', 'size': 4, 'data': sample_data}],
+        'entity_type': 'claim', 'document_type': 'medical'
+    }, tokenCust)
+
+    # claims role can see all documents
+    status, resp = _get(base + '/api/documents/list', tokenClaims)
+    assert status == 200, f"claims role should see documents: {resp}"
+    assert resp.get('is_admin') is True
+    names = [d['name'] for d in resp['documents']]
+    assert 'x_doc.pdf' in names
+
+    # claims_adjuster role can see all documents
+    status2, resp2 = _get(base + '/api/documents/list', tokenClaimsAdj)
+    assert status2 == 200, f"claims_adjuster role should see documents: {resp2}"
+    assert resp2.get('is_admin') is True
+
+    srv.stop()
+
+
+def test_claims_role_can_access_customers_for_documents():
+    """claims and claims_adjuster roles should access /api/admin/customers-for-documents."""
+    port = 8221
+    srv = ServerThread(port)
+    srv.start()
+    time.sleep(0.3)
+    base = f"http://127.0.0.1:{port}"
+    _init_port(base)
+
+    tokenClaims = 'phins_test-claims-custs-token'
+    tokenCust = 'phins_test-claims-custs-cust-token'
+    _inject_session(tokenClaims, 'claimsUser2', 'claims', '')
+    _inject_session(tokenCust, 'custY', 'customer', 'CUST-Y')
+
+    status, resp = _get(base + '/api/admin/customers-for-documents', tokenClaims)
+    assert status == 200, f"claims role should access customer list: {resp}"
+    assert 'customers' in resp
+
+    # Customer still cannot access
+    status2, resp2 = _get(base + '/api/admin/customers-for-documents', tokenCust)
+    assert status2 == 403, f"Customer should be denied: {resp2}"
+
+    srv.stop()
+
+
+def test_policies_for_documents_endpoint():
+    """Test the /api/admin/policies-for-documents endpoint."""
+    port = 8222
+    srv = ServerThread(port)
+    srv.start()
+    time.sleep(0.3)
+    base = f"http://127.0.0.1:{port}"
+    _init_port(base)
+
+    tokenAdmin = 'phins_test-pol-docs-admin-token'
+    tokenCust = 'phins_test-pol-docs-cust-token'
+    _inject_session(tokenAdmin, 'admin5', 'admin', '')
+    _inject_session(tokenCust, 'custZ', 'customer', 'CUST-Z')
+
+    # Admin can access (no filter)
+    status, resp = _get(base + '/api/admin/policies-for-documents', tokenAdmin)
+    assert status == 200, f"Admin should access policies: {resp}"
+    assert 'policies' in resp
+
+    # Customer cannot access
+    status2, resp2 = _get(base + '/api/admin/policies-for-documents', tokenCust)
+    assert status2 == 403, f"Customer should be denied: {resp2}"
+
+    # claims role can access
+    tokenClaims = 'phins_test-pol-docs-claims-token'
+    _inject_session(tokenClaims, 'claimsUser3', 'claims', '')
+    status3, resp3 = _get(base + '/api/admin/policies-for-documents', tokenClaims)
+    assert status3 == 200, f"claims role should access policies: {resp3}"
+
+    srv.stop()
+
+
+def test_documents_list_includes_customer_name():
+    """Test that /api/documents/list includes customer_name for admin."""
+    port = 8223
+    srv = ServerThread(port)
+    srv.start()
+    time.sleep(0.3)
+    base = f"http://127.0.0.1:{port}"
+    _init_port(base)
+
+    tokenCust = 'phins_test-custname-cust-token'
+    tokenAdmin = 'phins_test-custname-admin-token'
+    cust_id = 'CUST-NAMED-001'
+    _inject_session(tokenCust, 'namedCust', 'customer', cust_id)
+    _inject_session(tokenAdmin, 'admin6', 'admin', '')
+    # Register customer with a name
+    portal.CUSTOMERS[cust_id] = {'name': 'Named Customer', 'email': 'named@example.com'}
+
+    sample_data = base64.b64encode(b'data').decode()
+    _post(base + '/api/documents/upload', {
+        'files': [{'name': 'named_doc.pdf', 'type': 'application/pdf', 'size': 4, 'data': sample_data}],
+        'entity_type': 'general', 'document_type': 'general'
+    }, tokenCust)
+
+    status, resp = _get(base + '/api/documents/list', tokenAdmin)
+    assert status == 200
+    docs = resp.get('documents', [])
+    named_docs = [d for d in docs if d.get('name') == 'named_doc.pdf']
+    assert len(named_docs) == 1, "named_doc.pdf should be in admin list"
+    assert named_docs[0].get('customer_name') == 'Named Customer', \
+        f"Expected 'Named Customer', got {named_docs[0].get('customer_name')!r}"
+
+    srv.stop()

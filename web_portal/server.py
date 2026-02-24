@@ -8655,12 +8655,13 @@ For claims or questions, please contact:
                 return
             try:
                 eff_role = get_effective_role(session)
-                is_admin = eff_role in ('admin', 'underwriter', 'actuary', 'adjuster')
+                is_admin = eff_role in ('admin', 'underwriter', 'actuary', 'adjuster', 'claims', 'claims_adjuster')
                 session_customer_id = session.get('customer_id')
                 entity_type = qs.get('entity_type', [None])[0]
                 entity_id = qs.get('entity_id', [None])[0]
                 # Admin-only: filter by a specific customer's documents
                 filter_customer_id = qs.get('customer_id', [None])[0] if is_admin else None
+                filter_policy_id = qs.get('policy_id', [None])[0] if is_admin else None
                 document_type_filter = qs.get('document_type', [None])[0]
 
                 docs = []
@@ -8671,12 +8672,18 @@ For claims or questions, please contact:
                     # Admin filter by customer_id (optional)
                     if filter_customer_id and doc.get('uploaded_by_customer') != filter_customer_id:
                         continue
+                    # Admin filter by policy_id (optional)
+                    if filter_policy_id and doc.get('entity_id') != filter_policy_id:
+                        continue
                     if entity_type and doc.get('entity_type') != entity_type:
                         continue
                     if entity_id and doc.get('entity_id') != entity_id:
                         continue
                     if document_type_filter and doc.get('document_type') != document_type_filter:
                         continue
+                    cust_id = doc.get('uploaded_by_customer', '')
+                    cust = CUSTOMERS.get(cust_id, {})
+                    cust_name = cust.get('name', cust.get('full_name', cust_id))
                     docs.append({
                         'id': doc.get('id'),
                         'name': doc.get('name'),
@@ -8688,12 +8695,16 @@ For claims or questions, please contact:
                         'description': doc.get('description', ''),
                         'uploaded_at': doc.get('uploaded_at'),
                         'uploaded_by': doc.get('uploaded_by'),
-                        'uploaded_by_customer': doc.get('uploaded_by_customer', ''),
+                        'uploaded_by_customer': cust_id,
+                        'customer_name': cust_name,
                         'has_data': bool(doc.get('data')),
                         'ai_analysis': doc.get('ai_analysis'),
                     })
 
-                docs.sort(key=lambda d: d.get('uploaded_at', ''), reverse=True)
+                if is_admin:
+                    docs.sort(key=lambda d: (d.get('customer_name', ''), d.get('entity_id', '')))
+                else:
+                    docs.sort(key=lambda d: d.get('uploaded_at', ''), reverse=True)
                 self._set_json_headers(200)
                 self.wfile.write(json.dumps({
                     'success': True,
@@ -8729,7 +8740,7 @@ For claims or questions, please contact:
                     return
 
                 eff_role = get_effective_role(session)
-                is_admin = eff_role in ('admin', 'underwriter', 'actuary', 'adjuster')
+                is_admin = eff_role in ('admin', 'underwriter', 'actuary', 'adjuster', 'claims', 'claims_adjuster')
                 session_customer_id = session.get('customer_id')
 
                 # Permission check: customer can only view their own documents
@@ -8771,7 +8782,7 @@ For claims or questions, please contact:
                 self._set_json_headers(401)
                 self.wfile.write(json.dumps({'error': 'Authentication required'}).encode('utf-8'))
                 return
-            if not require_role(session, ['admin', 'underwriter', 'adjuster', 'actuary']):
+            if not require_role(session, ['admin', 'underwriter', 'adjuster', 'actuary', 'claims', 'claims_adjuster']):
                 self._set_json_headers(403)
                 self.wfile.write(json.dumps({'error': 'Admin access required'}).encode('utf-8'))
                 return
@@ -8789,6 +8800,46 @@ For claims or questions, please contact:
                     'success': True,
                     'customers': customers,
                     'total': len(customers)
+                }).encode('utf-8'))
+                return
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+                return
+
+        # ========== ADMIN: LIST POLICIES FOR DOCUMENT FILTERING ==========
+        # GET /api/admin/policies-for-documents?customer_id=<id>
+        # Access: admin, underwriter, adjuster, actuary, claims, claims_adjuster roles
+        if path == '/api/admin/policies-for-documents':
+            if not session:
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Authentication required'}).encode('utf-8'))
+                return
+            if not require_role(session, ['admin', 'underwriter', 'adjuster', 'actuary', 'claims', 'claims_adjuster']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Admin access required'}).encode('utf-8'))
+                return
+            try:
+                filter_cust_id = qs.get('customer_id', [None])[0] or ''
+                policies = []
+                for pol_id, pol in POLICIES.items():
+                    if filter_cust_id and pol.get('customer_id') != filter_cust_id:
+                        continue
+                    cust = CUSTOMERS.get(pol.get('customer_id', ''), {})
+                    cust_name = cust.get('name', cust.get('full_name', pol.get('customer_id', '')))
+                    policies.append({
+                        'id': pol_id,
+                        'type': pol.get('type', pol.get('policy_type', '')),
+                        'customer_id': pol.get('customer_id', ''),
+                        'customer_name': cust_name,
+                        'status': pol.get('status', ''),
+                    })
+                policies.sort(key=lambda p: (p.get('customer_name', ''), p.get('id', '')))
+                self._set_json_headers(200)
+                self.wfile.write(json.dumps({
+                    'success': True,
+                    'policies': policies,
+                    'total': len(policies)
                 }).encode('utf-8'))
                 return
             except Exception as e:
@@ -20192,7 +20243,7 @@ For claims or questions, please contact:
                     return
 
                 eff_role = get_effective_role(session)
-                is_admin = eff_role in ('admin', 'underwriter', 'actuary', 'adjuster')
+                is_admin = eff_role in ('admin', 'underwriter', 'actuary', 'adjuster', 'claims', 'claims_adjuster')
                 session_customer_id = session.get('customer_id')
                 if not is_admin and doc.get('uploaded_by_customer') != session_customer_id:
                     self._set_json_headers(403)
