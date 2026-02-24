@@ -1,28 +1,65 @@
 {
   "version": "1.0",
-  "saved_at": "2026-01-27T09:00:00.000000",
+  "saved_at": "2026-02-24T09:15:50.922956",
   "admin_codes": {
-    "PHINS-2026-68904BEF": {
-      "code": "PHINS-2026-68904BEF",
-      "created_at": "2026-01-27T00:00:00.000000",
-      "created_by": "admin",
-      "expires_at": "2026-02-27T00:00:00.000000",
-      "max_uses": 10,
-      "used_count": 0,
-      "used_by": [],
+    "TESTCODE2026": {
+      "code": "TESTCODE2026",
+      "created_at": "2026-02-24T09:15:43.936269",
+      "created_by": "system",
+      "expires_at": null,
+      "max_uses": 999999,
+      "used_count": 3,
+      "used_by": [
+        {
+          "email": "ledger_test_customer@example.com",
+          "customer_id": "CUST-79254",
+          "used_at": "2026-02-24T09:15:48.541123"
+        },
+        {
+          "email": "newcustomer@example.com",
+          "customer_id": "CUST-28833",
+          "used_at": "2026-02-24T09:15:49.731408"
+        },
+        {
+          "email": "legacyotp@example.com",
+          "customer_id": "CUST-69155",
+          "used_at": "2026-02-24T09:15:50.030234"
+        }
+      ],
       "status": "active",
-      "notes": "Restored from production session 27.1.2026"
+      "notes": "Test mode invitation code - automatically created"
     },
-    "PHINS-2026-F2A001A4": {
-      "code": "PHINS-2026-F2A001A4",
-      "created_at": "2026-01-27T00:00:00.000000",
+    "FLOWOTP2026A": {
+      "code": "FLOWOTP2026A",
+      "status": "used",
+      "used_count": 1,
+      "max_uses": 1,
       "created_by": "admin",
-      "expires_at": "2026-02-27T00:00:00.000000",
-      "max_uses": 10,
-      "used_count": 0,
-      "used_by": [],
-      "status": "active",
-      "notes": "Restored from production session 27.1.2026"
+      "created_at": "2026-01-01T00:00:00",
+      "expires_at": "2099-12-31T23:59:59",
+      "used_by": [
+        {
+          "email": "invitation-flow-primary@example.com",
+          "customer_id": "CUST-16090",
+          "used_at": "2026-02-24T09:15:50.796466"
+        }
+      ]
+    },
+    "FLOWOTP2026B": {
+      "code": "FLOWOTP2026B",
+      "status": "used",
+      "used_count": 1,
+      "max_uses": 1,
+      "created_by": "admin",
+      "created_at": "2026-01-01T00:00:00",
+      "expires_at": "2099-12-31T23:59:59",
+      "used_by": [
+        {
+          "email": "invitation-flow-secondary@example.com",
+          "customer_id": "CUST-86235",
+          "used_at": "2026-02-24T09:15:50.891620"
+        }
+      ]
     }
   },
   "customer_codes": {},
