@@ -426,3 +426,326 @@ def test_documents_list_includes_document_type_field():
     assert 'has_data' in doc
 
     srv.stop()
+
+
+# ── AI Document Analysis endpoint tests ─────────────────────────────────────
+
+
+def test_analyze_medical_high_risk():
+    """Analyze a medical document with terminal/high-risk content."""
+    port = 8211
+    srv = ServerThread(port)
+    srv.start()
+    time.sleep(0.3)
+    base = f"http://127.0.0.1:{port}"
+    _init_port(base)
+
+    token = 'phins_test-analyze-medical-token'
+    _inject_session(token, 'custL', 'customer', 'CUST-L')
+
+    content = (
+        b"MEDICAL REPORT\n"
+        b"Patient: John Doe\n"
+        b"Diagnosis: Terminal illness - Stage 4 Lung Cancer\n"
+        b"Risk Assessment: HIGH RISK\n"
+    )
+    sample_data = base64.b64encode(content).decode()
+
+    # Upload a medical doc
+    _, up_resp = _post(base + '/api/documents/upload', {
+        'files': [{'name': 'medical_terminal.txt', 'type': 'text/plain', 'size': len(content), 'data': sample_data}],
+        'entity_type': 'underwriting',
+        'entity_id': 'UW-TEST-001',
+        'document_type': 'medical',
+        'description': 'Terminal diagnosis'
+    }, token)
+    doc_id = up_resp['uploaded'][0]['id']
+
+    # Run AI analysis
+    status, resp = _post(base + '/api/documents/analyze', {'doc_id': doc_id}, token)
+    assert status == 200, f"Expected 200, got {status}: {resp}"
+    assert resp.get('success') is True
+    a = resp.get('analysis', {})
+    assert a.get('risk_level') in ('high', 'very_high'), f"Expected high/very_high, got: {a.get('risk_level')}"
+    assert 'TERMINAL_CONDITION_DETECTED' in a.get('flags', []) or 'EXPLICIT_HIGH_RISK_FLAG' in a.get('flags', [])
+    assert len(a.get('findings', [])) > 0
+    assert a.get('recommendation') is not None
+    assert a.get('risk_score', 0) >= 0.65
+
+    # Analysis should be persisted in POLICY_DOCUMENTS
+    assert portal.POLICY_DOCUMENTS[doc_id].get('ai_analysis') is not None
+
+    srv.stop()
+
+
+def test_analyze_death_certificate_genuine():
+    """Analyze a death certificate with full authenticity markers."""
+    port = 8212
+    srv = ServerThread(port)
+    srv.start()
+    time.sleep(0.3)
+    base = f"http://127.0.0.1:{port}"
+    _init_port(base)
+
+    token = 'phins_test-analyze-death-token'
+    _inject_session(token, 'custM', 'customer', 'CUST-M')
+
+    content = (
+        b"CERTIFICATE OF DEATH\n"
+        b"Died on 2026-01-05. Cause of death: Cardiac Arrest.\n"
+        b"Certificate No: DC-2026-00045\n"
+        b"Issued by: Ministry of Health\n"
+        b"Authorized Signatory: Dr. R. Cohen, Registrar\n"
+        b"Official document.\n"
+    )
+    sample_data = base64.b64encode(content).decode()
+
+    _, up_resp = _post(base + '/api/documents/upload', {
+        'files': [{'name': 'death_cert.txt', 'type': 'text/plain', 'size': len(content), 'data': sample_data}],
+        'entity_type': 'claim', 'entity_id': 'CLM-TEST-001',
+        'document_type': 'authority', 'description': 'Death certificate'
+    }, token)
+    doc_id = up_resp['uploaded'][0]['id']
+
+    status, resp = _post(base + '/api/documents/analyze', {'doc_id': doc_id}, token)
+    assert status == 200, f"Expected 200, got {status}: {resp}"
+    a = resp['analysis']
+    assert 'DEATH_CERTIFICATE' in a['flags']
+    assert 'AUTHENTICITY_VERIFIED' in a['flags']
+    assert a['recommendation'] == 'process_death_claim'
+    assert a['bi_insights']['claims_impact']['claim_type'] == 'Life / Death Benefit'
+
+    srv.stop()
+
+
+def test_analyze_death_certificate_requires_inquiry():
+    """Analyze a death certificate with insufficient authenticity markers."""
+    port = 8213
+    srv = ServerThread(port)
+    srv.start()
+    time.sleep(0.3)
+    base = f"http://127.0.0.1:{port}"
+    _init_port(base)
+
+    token = 'phins_test-analyze-death-inq-token'
+    _inject_session(token, 'custN', 'customer', 'CUST-N')
+
+    # Only one authenticity marker
+    content = b"Certificate of death for John. Issued by a doctor.\n"
+    sample_data = base64.b64encode(content).decode()
+
+    _, up_resp = _post(base + '/api/documents/upload', {
+        'files': [{'name': 'sketchy_cert.txt', 'type': 'text/plain', 'size': len(content), 'data': sample_data}],
+        'entity_type': 'claim', 'document_type': 'authority', 'description': 'Death cert limited markers'
+    }, token)
+    doc_id = up_resp['uploaded'][0]['id']
+
+    status, resp = _post(base + '/api/documents/analyze', {'doc_id': doc_id}, token)
+    assert status == 200
+    a = resp['analysis']
+    assert 'DEATH_CERTIFICATE' in a['flags']
+    assert 'AUTHENTICITY_REQUIRES_INQUIRY' in a['flags'] or 'AUTHENTICITY_UNVERIFIABLE' in a['flags']
+    assert a['recommendation'] == 'hold_pending_verification'
+
+    srv.stop()
+
+
+def test_analyze_disability_certificate():
+    """Analyze a disability certificate."""
+    port = 8214
+    srv = ServerThread(port)
+    srv.start()
+    time.sleep(0.3)
+    base = f"http://127.0.0.1:{port}"
+    _init_port(base)
+
+    token = 'phins_test-analyze-dis-token'
+    _inject_session(token, 'custO', 'customer', 'CUST-O')
+
+    content = (
+        b"DISABILITY CERTIFICATE\n"
+        b"Disability Grade: 40%\n"
+        b"National Insurance Institute\n"
+        b"Certificate No: DIS-2026-001\n"
+        b"Medical Examiner: Dr. Levi\n"
+        b"Valid Until: 2028-01-01\n"
+        b"Issued by: National Insurance\n"
+    )
+    sample_data = base64.b64encode(content).decode()
+
+    _, up_resp = _post(base + '/api/documents/upload', {
+        'files': [{'name': 'dis_cert.txt', 'type': 'text/plain', 'size': len(content), 'data': sample_data}],
+        'entity_type': 'claim', 'document_type': 'authority', 'description': 'Disability cert'
+    }, token)
+    doc_id = up_resp['uploaded'][0]['id']
+
+    status, resp = _post(base + '/api/documents/analyze', {'doc_id': doc_id}, token)
+    assert status == 200
+    a = resp['analysis']
+    assert 'DISABILITY_CERTIFICATE' in a['flags']
+    assert a['recommendation'] in ('process_disability_claim', 'hold_pending_verification')
+    assert a['bi_insights']['claims_impact']['claim_type'] == 'Disability Benefit'
+
+    srv.stop()
+
+
+def test_analyze_billing_overdue():
+    """Analyze a billing statement with overdue indicators."""
+    port = 8215
+    srv = ServerThread(port)
+    srv.start()
+    time.sleep(0.3)
+    base = f"http://127.0.0.1:{port}"
+    _init_port(base)
+
+    token = 'phins_test-analyze-billing-token'
+    _inject_session(token, 'custP', 'customer', 'CUST-P')
+
+    content = b"BILLING STATEMENT\nOutstanding: $3,750.00\nOverdue: $1,250.00\nLate fee applicable.\n"
+    sample_data = base64.b64encode(content).decode()
+
+    _, up_resp = _post(base + '/api/documents/upload', {
+        'files': [{'name': 'billing.txt', 'type': 'text/plain', 'size': len(content), 'data': sample_data}],
+        'entity_type': 'general', 'document_type': 'receipt', 'description': 'Q1 billing'
+    }, token)
+    doc_id = up_resp['uploaded'][0]['id']
+
+    status, resp = _post(base + '/api/documents/analyze', {'doc_id': doc_id}, token)
+    assert status == 200
+    a = resp['analysis']
+    assert 'BILLING_ANOMALY_OVERDUE' in a['flags']
+    assert a['bi_insights']['billing_impact']['status'] == 'Anomaly detected'
+
+    srv.stop()
+
+
+def test_analyze_requires_auth():
+    """Unauthenticated analyze request should be rejected."""
+    port = 8216
+    srv = ServerThread(port)
+    srv.start()
+    time.sleep(0.3)
+    base = f"http://127.0.0.1:{port}"
+    _init_port(base)
+
+    status, resp = _post(base + '/api/documents/analyze', {'doc_id': 'DOC-FAKE'})
+    assert status == 401, f"Expected 401, got {status}"
+
+    srv.stop()
+
+
+def test_analyze_access_denied_for_other_customer():
+    """Customer cannot analyze another customer's document."""
+    port = 8217
+    srv = ServerThread(port)
+    srv.start()
+    time.sleep(0.3)
+    base = f"http://127.0.0.1:{port}"
+    _init_port(base)
+
+    tokenOwner = 'phins_test-analyze-owner-token'
+    tokenOther = 'phins_test-analyze-other-token'
+    _inject_session(tokenOwner, 'custQ', 'customer', 'CUST-Q')
+    _inject_session(tokenOther, 'custR', 'customer', 'CUST-R')
+
+    sample_data = base64.b64encode(b'private content').decode()
+    _, up_resp = _post(base + '/api/documents/upload', {
+        'files': [{'name': 'private.txt', 'type': 'text/plain', 'size': 15, 'data': sample_data}],
+        'entity_type': 'general', 'document_type': 'id'
+    }, tokenOwner)
+    doc_id = up_resp['uploaded'][0]['id']
+
+    status, resp = _post(base + '/api/documents/analyze', {'doc_id': doc_id}, tokenOther)
+    assert status == 403, f"Expected 403, got {status}: {resp}"
+
+    srv.stop()
+
+
+def test_analyze_admin_can_analyze_any_document():
+    """Admin can analyze any customer's document."""
+    port = 8218
+    srv = ServerThread(port)
+    srv.start()
+    time.sleep(0.3)
+    base = f"http://127.0.0.1:{port}"
+    _init_port(base)
+
+    tokenCust = 'phins_test-analyze-cust-token'
+    tokenAdmin = 'phins_test-analyze-admin-token'
+    _inject_session(tokenCust, 'custS', 'customer', 'CUST-S')
+    _inject_session(tokenAdmin, 'admin_analyze', 'admin', '')
+
+    sample_data = base64.b64encode(b'some medical data').decode()
+    _, up_resp = _post(base + '/api/documents/upload', {
+        'files': [{'name': 'cust_medical.txt', 'type': 'text/plain', 'size': 17, 'data': sample_data}],
+        'entity_type': 'underwriting', 'document_type': 'medical'
+    }, tokenCust)
+    doc_id = up_resp['uploaded'][0]['id']
+
+    status, resp = _post(base + '/api/documents/analyze', {'doc_id': doc_id}, tokenAdmin)
+    assert status == 200, f"Admin should be able to analyze: {resp}"
+    assert resp.get('success') is True
+
+    srv.stop()
+
+
+def test_analyze_persists_result_in_list():
+    """After analysis, ai_analysis should appear in /api/documents/list response."""
+    port = 8219
+    srv = ServerThread(port)
+    srv.start()
+    time.sleep(0.3)
+    base = f"http://127.0.0.1:{port}"
+    _init_port(base)
+
+    token = 'phins_test-analyze-persist-token'
+    _inject_session(token, 'custT', 'customer', 'CUST-T')
+
+    content = b"Medical report. Patient has diabetes and hypertension."
+    sample_data = base64.b64encode(content).decode()
+    _, up_resp = _post(base + '/api/documents/upload', {
+        'files': [{'name': 'med2.txt', 'type': 'text/plain', 'size': len(content), 'data': sample_data}],
+        'entity_type': 'underwriting', 'document_type': 'medical'
+    }, token)
+    doc_id = up_resp['uploaded'][0]['id']
+
+    # Run analysis
+    _post(base + '/api/documents/analyze', {'doc_id': doc_id}, token)
+
+    # List should now return ai_analysis field
+    _, list_resp = _get(base + '/api/documents/list', token)
+    docs = list_resp.get('documents', [])
+    target = next((d for d in docs if d['id'] == doc_id), None)
+    assert target is not None
+    assert target.get('ai_analysis') is not None, 'ai_analysis should be returned in list after analysis'
+    assert target['ai_analysis'].get('risk_level') is not None
+
+    srv.stop()
+
+
+def test_seed_demo_documents_populates_on_empty():
+    """seed_demo_documents should populate POLICY_DOCUMENTS when empty."""
+    # Clear and re-seed
+    portal.POLICY_DOCUMENTS.clear()
+    portal.seed_demo_documents()
+    assert len(portal.POLICY_DOCUMENTS) >= 7, (
+        f"Expected at least 7 seeded documents, got {len(portal.POLICY_DOCUMENTS)}"
+    )
+    # Verify key document types are present
+    doc_types = {d.get('document_type') for d in portal.POLICY_DOCUMENTS.values()}
+    assert 'medical' in doc_types
+    assert 'authority' in doc_types
+    assert 'id' in doc_types
+    assert 'receipt' in doc_types
+
+
+def test_seed_demo_documents_is_idempotent():
+    """seed_demo_documents should not add duplicates when called again."""
+    portal.POLICY_DOCUMENTS.clear()
+    portal.seed_demo_documents()
+    count_after_first = len(portal.POLICY_DOCUMENTS)
+    portal.seed_demo_documents()  # second call — should be no-op
+    assert len(portal.POLICY_DOCUMENTS) == count_after_first, (
+        'seed_demo_documents should not add documents when POLICY_DOCUMENTS is non-empty'
+    )
+
