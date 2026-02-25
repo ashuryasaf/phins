@@ -14624,7 +14624,7 @@ For claims or questions, please contact:
             # Initialize balance sheet if needed
             initialize_balance_sheet()
             premium_income_sync = sync_balance_sheet_premium_income(
-                exclude_suspended=True,
+                exclude_suspended=False,
                 actor=session.get('username', 'system') if session else 'system',
                 reason='balance_sheet_read',
                 persist=False
@@ -14748,7 +14748,7 @@ For claims or questions, please contact:
             
             initialize_balance_sheet()
             sync_balance_sheet_premium_income(
-                exclude_suspended=True,
+                exclude_suspended=False,
                 actor=session.get('username', 'system') if session else 'system',
                 reason='balance_sheet_summary_read',
                 persist=False
@@ -14785,7 +14785,7 @@ For claims or questions, please contact:
             
             initialize_balance_sheet()
             premium_income_sync = sync_balance_sheet_premium_income(
-                exclude_suspended=True,
+                exclude_suspended=False,
                 actor=session.get('username', 'system') if session else 'system',
                 reason='balance_sheet_ai_insights_read',
                 persist=False
@@ -14909,7 +14909,7 @@ For claims or questions, please contact:
                     })
             
             # 4c. Check if cumulative paid premiums are reflected in balance sheet
-            premium_income_totals = calculate_cumulative_premium_income(exclude_suspended=True)
+            premium_income_totals = calculate_cumulative_premium_income(exclude_suspended=False)
             total_paid_from_bills = premium_income_totals['total']
             
             if abs(total_paid_from_bills - premium_income) > 1.0:  # Allow $1 tolerance
@@ -15236,7 +15236,7 @@ For claims or questions, please contact:
             
             # 1. Premium Income - cumulative paid premiums from billed and
             # unbilled/direct premium flows (with de-duplication safeguards).
-            premium_income_totals = calculate_cumulative_premium_income(exclude_suspended=True)
+            premium_income_totals = calculate_cumulative_premium_income(exclude_suspended=False)
             expected_premium_income = premium_income_totals['total']
             
             # 2. Claims Paid - from paid claims
@@ -15763,7 +15763,7 @@ For claims or questions, please contact:
                     'total_outstanding_amount': round(total_outstanding_after, 2),
                     'total_outstanding_bills': len([b for b in BILLING.values() if b.get('status') in ['outstanding', 'partial']]),
                     'total_paid_bills': len([b for b in BILLING.values() if b.get('status') == 'paid']),
-                    'premium_income_collected': calculate_cumulative_premium_income(exclude_suspended=True)['total']
+                    'premium_income_collected': calculate_cumulative_premium_income(exclude_suspended=False)['total']
                 },
                 
                 # Errors if any

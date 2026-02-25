@@ -30,7 +30,7 @@ class TestBalanceSheetIntegrity(unittest.TestCase):
             initialize_balance_sheet, record_premium_revenue,
             process_claim_payment_to_wallet, HEALTH_WALLETS,
             TRANSACTION_LEDGER, calculate_cumulative_premium_income,
-            sync_balance_sheet_premium_income
+            sync_balance_sheet_premium_income, SUSPENDED_TEST_ACCOUNTS
         )
         
         self.PHINS_BALANCE_SHEET = PHINS_BALANCE_SHEET
@@ -43,6 +43,7 @@ class TestBalanceSheetIntegrity(unittest.TestCase):
         self.process_claim_payment_to_wallet = process_claim_payment_to_wallet
         self.calculate_cumulative_premium_income = calculate_cumulative_premium_income
         self.sync_balance_sheet_premium_income = sync_balance_sheet_premium_income
+        self.SUSPENDED_TEST_ACCOUNTS = SUSPENDED_TEST_ACCOUNTS
     
     def test_balance_sheet_initialized(self):
         """Test that balance sheet is properly initialized"""
@@ -301,6 +302,53 @@ class TestBalanceSheetIntegrity(unittest.TestCase):
             self.PHINS_BALANCE_SHEET['last_updated'] = prev_last_updated
             if len(self.PHINS_BALANCE_SHEET.get('audit_log', [])) > prev_audit_len:
                 self.PHINS_BALANCE_SHEET['audit_log'] = self.PHINS_BALANCE_SHEET['audit_log'][:prev_audit_len]
+
+    def test_cumulative_premium_income_all_customers_includes_suspended_when_requested(self):
+        """exclude_suspended=False should include suspended-customer premium payments."""
+        bill_id = "TEST-BILL-SUSP-001"
+        customer_id = "TEST-CUST-SUSP-001"
+
+        prev_bill = self.BILLING.get(bill_id)
+        was_suspended = customer_id in self.SUSPENDED_TEST_ACCOUNTS
+
+        before_excluded = self.calculate_cumulative_premium_income(exclude_suspended=True)
+        before_included = self.calculate_cumulative_premium_income(exclude_suspended=False)
+
+        try:
+            self.SUSPENDED_TEST_ACCOUNTS.add(customer_id)
+            self.BILLING[bill_id] = {
+                'id': bill_id,
+                'customer_id': customer_id,
+                'policy_id': 'TEST-POL-SUSP-001',
+                'amount': 77.0,
+                'amount_paid': 77.0,
+                'status': 'paid',
+                'created_date': datetime.now().isoformat(),
+                'paid_date': datetime.now().isoformat()
+            }
+
+            after_excluded = self.calculate_cumulative_premium_income(exclude_suspended=True)
+            after_included = self.calculate_cumulative_premium_income(exclude_suspended=False)
+
+            # Excluded path should not count suspended customer payment.
+            self.assertAlmostEqual(
+                after_excluded['total'],
+                before_excluded['total'],
+                places=2
+            )
+            # All-customers path should count suspended customer payment.
+            self.assertAlmostEqual(
+                after_included['total'] - before_included['total'],
+                77.0,
+                places=2
+            )
+        finally:
+            if prev_bill is None:
+                self.BILLING.pop(bill_id, None)
+            else:
+                self.BILLING[bill_id] = prev_bill
+            if not was_suspended:
+                self.SUSPENDED_TEST_ACCOUNTS.discard(customer_id)
     
     def test_claims_payment_recording(self):
         """Test claims payment is recorded correctly on balance sheet"""
