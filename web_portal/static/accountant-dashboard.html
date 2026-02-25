@@ -687,15 +687,24 @@
                     headers: { 'Authorization': `Bearer ${token}` }
                 });
                 const data = await response.json();
+                const cumulativePremium = Number(
+                    data.cumulative_premium_data_source?.value ??
+                    data.cumulative_premium_income ??
+                    data.premium_income_cumulative ??
+                    data.total_collected ??
+                    0
+                );
                 
                 document.getElementById('total-revenue').textContent = formatCurrency(data.total_revenue);
-                document.getElementById('total-collected').textContent = formatCurrency(data.total_collected);
+                document.getElementById('total-collected').textContent = formatCurrency(cumulativePremium);
+                document.getElementById('total-collected').title =
+                    `Canonical cumulative premium data source: ${formatCurrency(cumulativePremium)}`;
                 document.getElementById('outstanding-ar').textContent = formatCurrency(data.outstanding_ar);
                 document.getElementById('claims-liability').textContent = formatCurrency(data.claims_pending);
                 
                 // Loss Ratio = Claims Paid / Total Revenue (or Collected if available)
                 // If no collected yet, use revenue as base for loss ratio estimation
-                const baseForLossRatio = data.total_collected > 0 ? data.total_collected : data.total_revenue;
+                const baseForLossRatio = cumulativePremium > 0 ? cumulativePremium : data.total_revenue;
                 const lossRatio = baseForLossRatio > 0 
                     ? ((data.claims_paid || 0) / baseForLossRatio * 100).toFixed(1) 
                     : '0';
@@ -3452,9 +3461,15 @@
                     if (premiumIncomeEl) {
                         premiumIncomeEl.textContent = fmt(cumulativePremium);
                     }
+                    const totalCollectedEl = document.getElementById('total-collected');
+                    if (totalCollectedEl) {
+                        totalCollectedEl.textContent = fmt(cumulativePremium);
+                        totalCollectedEl.title = `Canonical cumulative premium data source: ${fmt(cumulativePremium)}`;
+                    }
                     
                     // Always reload to reflect persisted cumulative premium data source.
                     loadBalanceSheet();
+                    loadQuickStats();
                 } else {
                     alert('Failed to reconcile balance sheet: ' + response.status);
                 }

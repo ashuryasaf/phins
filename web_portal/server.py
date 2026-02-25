@@ -4635,8 +4635,19 @@ def get_bi_data_underwriting() -> Dict[str, Any]:
 
 def get_bi_data_accounting() -> Dict[str, Any]:
     """Generate accounting BI data - DATA INTEGRITY: Using safe_float for all numeric values"""
-    premium_income_totals = calculate_cumulative_premium_income(exclude_suspended=False)
-    total_premium_collected = premium_income_totals['total']
+    premium_income_sync = sync_balance_sheet_premium_income(
+        exclude_suspended=False,
+        actor='system',
+        reason='bi_accounting_read',
+        persist=False
+    )
+    premium_income_totals = premium_income_sync.get('totals', {})
+    total_premium_collected = safe_float(
+        (premium_income_sync.get('data_source') or {}).get(
+            'value',
+            premium_income_totals.get('total', 0)
+        )
+    )
     total_claims_paid = sum(safe_float(c.get('approved_amount', 0)) for c in CLAIMS.values() if status_eq(c, 'paid'))
     outstanding_premiums = sum(
         max(
@@ -4644,12 +4655,14 @@ def get_bi_data_accounting() -> Dict[str, Any]:
             safe_float(b.get('amount_due', b.get('amount', 0))) - safe_float(b.get('amount_paid', 0))
         )
         for b in BILLING.values()
-        if not is_suspended_account(b.get('customer_id', ''))
     )
     pending_liability = sum(safe_float(c.get('claimed_amount', 0)) for c in CLAIMS.values() if status_in(c, ['pending', 'under_review']))
     
     return {
         'total_revenue': round(total_premium_collected, 2),
+        'total_collected': round(total_premium_collected, 2),
+        'cumulative_premium_income': round(total_premium_collected, 2),
+        'cumulative_premium_data_source': premium_income_sync.get('data_source'),
         'total_claims_paid': round(total_claims_paid, 2),
         'net_income': round(total_premium_collected - total_claims_paid, 2),
         'outstanding_premiums': round(outstanding_premiums, 2),
@@ -5908,8 +5921,14 @@ For claims or questions, please contact:
             # Total annual revenue from active policies (expected revenue)
             total_annual_revenue = sum(safe_float(p.get('annual_premium', 0)) for p in POLICIES.values() if status_eq(p, 'active'))
             premium_income_totals = premium_income_sync.get('totals', {})
+            cumulative_premium_value = safe_float(
+                (premium_income_sync.get('data_source') or {}).get(
+                    'value',
+                    premium_income_totals.get('total', 0)
+                )
+            )
             # Total amount actually collected (bills + explicit unbilled premium flows)
-            total_collected = safe_float(premium_income_totals.get('total', 0))
+            total_collected = cumulative_premium_value
             bills_for_stats = list(BILLING.values())
             # Total amount billed
             total_billed = sum(safe_float(b.get('amount', 0)) for b in bills_for_stats)
@@ -5991,12 +6010,13 @@ For claims or questions, please contact:
                 
                 # Financial metrics
                 'total_revenue': total_revenue,
-                'total_premium_collected': total_premium_collected,
+                'total_premium_collected': cumulative_premium_value,
                 'total_collected_from_bills': safe_float(premium_income_totals.get('from_bills', 0)),
                 'total_collected_unbilled': safe_float(premium_income_totals.get('ledger_unbilled_total', 0)),
                 'total_collected_ledger_billed_fallback': premium_income_totals.get('ledger_billed_fallback_total', 0.0),
                 'total_collected_wallet_billed_fallback': premium_income_totals.get('wallet_billed_fallback_total', 0.0),
                 'cumulative_premium_data_source': premium_income_sync.get('data_source'),
+                'cumulative_premium_income': cumulative_premium_value,
                 'outstanding_balance': outstanding_balance,
                 'total_investment_value': total_investment_value,
                 'total_coverage_amount': total_coverage_amount,
@@ -6634,7 +6654,14 @@ For claims or questions, please contact:
                     persist=False
                 )
                 premium_income_totals = premium_income_sync.get('totals', {})
-                report['premium_income_cumulative'] = safe_float(premium_income_totals.get('total', 0))
+                cumulative_premium_value = safe_float(
+                    (premium_income_sync.get('data_source') or {}).get(
+                        'value',
+                        premium_income_totals.get('total', 0)
+                    )
+                )
+                report['premium_income_cumulative'] = cumulative_premium_value
+                report['cumulative_premium_income'] = cumulative_premium_value
                 report['premium_income_from_bills'] = safe_float(premium_income_totals.get('from_bills', 0))
                 report['premium_income_unbilled'] = safe_float(premium_income_totals.get('ledger_unbilled_total', 0))
                 report['premium_income_billed_fallback'] = premium_income_totals.get('ledger_billed_fallback_total', 0.0)
@@ -6642,7 +6669,7 @@ For claims or questions, please contact:
                 report['cumulative_premium_data_source'] = premium_income_sync.get('data_source')
 
                 if dashboard_type in ['accountant', 'billing']:
-                    report['total_collected'] = safe_float(premium_income_totals.get('total', 0))
+                    report['total_collected'] = cumulative_premium_value
                     report['total_collected_from_bills'] = safe_float(premium_income_totals.get('from_bills', 0))
                     report['total_collected_ledger_billed_fallback'] = premium_income_totals.get('ledger_billed_fallback_total', 0.0)
                     report['total_collected_wallet_billed_fallback'] = premium_income_totals.get('wallet_billed_fallback_total', 0.0)
@@ -6657,7 +6684,7 @@ For claims or questions, please contact:
 
                 if dashboard_type == 'billing':
                     # Billing dashboard "Revenue" cards should reflect collected premium income.
-                    report['total_revenue'] = safe_float(premium_income_totals.get('total', 0))
+                    report['total_revenue'] = cumulative_premium_value
 
                 self._set_json_headers()
                 self.wfile.write(json.dumps(report).encode('utf-8'))
@@ -9870,7 +9897,13 @@ For claims or questions, please contact:
                 persist=False
             )
             premium_income_totals = premium_income_sync.get('totals', {})
-            total_collected = safe_float(premium_income_totals.get('total', 0))
+            cumulative_premium_value = safe_float(
+                (premium_income_sync.get('data_source') or {}).get(
+                    'value',
+                    premium_income_totals.get('total', 0)
+                )
+            )
+            total_collected = cumulative_premium_value
             total_collected_from_bills = safe_float(premium_income_totals.get('from_bills', 0))
             outstanding = sum(safe_float(b.get('amount', 0)) - safe_float(b.get('amount_paid', 0)) 
                              for b in bills if not status_eq(b, 'paid'))
@@ -9898,7 +9931,7 @@ For claims or questions, please contact:
                 'total_collected_unbilled': round(safe_float(premium_income_totals.get('ledger_unbilled_total', 0)), 2),
                 'total_collected_ledger_billed_fallback': round(premium_income_totals.get('ledger_billed_fallback_total', 0.0), 2),
                 'total_collected_wallet_billed_fallback': round(premium_income_totals.get('wallet_billed_fallback_total', 0.0), 2),
-                'cumulative_premium_income': round(total_collected, 2),
+                'cumulative_premium_income': round(cumulative_premium_value, 2),
                 'cumulative_premium_data_source': premium_income_sync.get('data_source'),
                 'outstanding_balance': round(outstanding, 2),
                 'outstanding_receivables': round(outstanding, 2),

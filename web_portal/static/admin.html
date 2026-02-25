@@ -3748,6 +3748,7 @@
         if (response.ok) {
           const data = await response.json();
           const premiumCollected =
+            data.cumulative_premium_data_source?.value ??
             data.cumulative_premium_income ??
             data.total_collected ??
             data.total_revenue ??
