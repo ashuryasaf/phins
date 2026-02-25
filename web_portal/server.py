@@ -216,6 +216,58 @@ def calculate_cumulative_premium_income(exclude_suspended: bool = True) -> Dict[
     }
 
 
+def sync_balance_sheet_premium_income(
+    exclude_suspended: bool = True,
+    actor: str = 'SYSTEM',
+    reason: str = 'auto_sync',
+    persist: bool = False
+) -> Dict[str, Any]:
+    """
+    Keep balance-sheet premium income aligned with canonical cumulative totals.
+
+    This prevents stale "$0" premium income displays when dashboard consumers read
+    PHINS_BALANCE_SHEET directly without running manual reconciliation first.
+    """
+    initialize_balance_sheet()
+
+    totals = calculate_cumulative_premium_income(exclude_suspended=exclude_suspended)
+    expected_premium_income = safe_float(totals.get('total', 0))
+    current_premium_income = safe_float(
+        PHINS_BALANCE_SHEET.get('revenue_breakdown', {}).get('premium_income', 0)
+    )
+    difference = expected_premium_income - current_premium_income
+    updated = False
+
+    if abs(difference) > 0.01:
+        PHINS_BALANCE_SHEET['revenue_breakdown']['premium_income'] = round(expected_premium_income, 2)
+        PHINS_BALANCE_SHEET['total_revenue'] = round(
+            sum(safe_float(v, 0.0) for v in PHINS_BALANCE_SHEET['revenue_breakdown'].values()),
+            2
+        )
+        PHINS_BALANCE_SHEET['last_updated'] = datetime.now().isoformat()
+        PHINS_BALANCE_SHEET['audit_log'].append({
+            'action': 'premium_income_sync',
+            'actor': actor or 'SYSTEM',
+            'timestamp': datetime.now().isoformat(),
+            'reason': reason,
+            'previous': round(current_premium_income, 2),
+            'expected': round(expected_premium_income, 2),
+            'difference': round(difference, 2),
+            'source': 'billed_plus_unbilled_premium_payments',
+        })
+        updated = True
+        if persist:
+            save_ledger_data()
+
+    return {
+        'updated': updated,
+        'previous': round(current_premium_income, 2),
+        'expected': round(expected_premium_income, 2),
+        'difference': round(difference, 2),
+        'totals': totals,
+    }
+
+
 # ==============================================================================
 # MARKETPLACE NORMALIZATION HELPERS
 # ==============================================================================
@@ -4388,9 +4440,17 @@ def get_bi_data_underwriting() -> Dict[str, Any]:
 
 def get_bi_data_accounting() -> Dict[str, Any]:
     """Generate accounting BI data - DATA INTEGRITY: Using safe_float for all numeric values"""
-    total_premium_collected = sum(safe_float(p.get('annual_premium', 0)) for p in POLICIES.values() if status_eq(p, 'active'))
+    premium_income_totals = calculate_cumulative_premium_income(exclude_suspended=True)
+    total_premium_collected = premium_income_totals['total']
     total_claims_paid = sum(safe_float(c.get('approved_amount', 0)) for c in CLAIMS.values() if status_eq(c, 'paid'))
-    outstanding_premiums = sum(safe_float(p.get('annual_premium', 0)) * 0.1 for p in POLICIES.values())
+    outstanding_premiums = sum(
+        max(
+            0.0,
+            safe_float(b.get('amount_due', b.get('amount', 0))) - safe_float(b.get('amount_paid', 0))
+        )
+        for b in BILLING.values()
+        if not is_suspended_account(b.get('customer_id', ''))
+    )
     pending_liability = sum(safe_float(c.get('claimed_amount', 0)) for c in CLAIMS.values() if status_in(c, ['pending', 'under_review']))
     
     return {
@@ -5645,15 +5705,21 @@ For claims or questions, please contact:
             
             # Total annual revenue from active policies (expected revenue)
             total_annual_revenue = sum(safe_float(p.get('annual_premium', 0)) for p in POLICIES.values() if status_eq(p, 'active'))
-            # Total amount actually collected (paid bills)
-            total_collected = sum(safe_float(b.get('amount_paid', 0)) for b in BILLING.values())
+            premium_income_totals = calculate_cumulative_premium_income(exclude_suspended=True)
+            # Total amount actually collected (bills + explicit unbilled premium flows)
+            total_collected = premium_income_totals['total']
+            bills_for_stats = [b for b in BILLING.values() if not is_suspended_account(b.get('customer_id', ''))]
             # Total amount billed
-            total_billed = sum(safe_float(b.get('amount', 0)) for b in BILLING.values())
+            total_billed = sum(safe_float(b.get('amount', 0)) for b in bills_for_stats)
             # Outstanding balance (billed but not paid)
-            outstanding_balance = sum(safe_float(b.get('amount', 0)) - safe_float(b.get('amount_paid', 0)) for b in BILLING.values() if status_in(b, ['outstanding', 'pending', 'overdue']))
+            outstanding_balance = sum(
+                safe_float(b.get('amount', 0)) - safe_float(b.get('amount_paid', 0))
+                for b in bills_for_stats
+                if status_in(b, ['outstanding', 'pending', 'overdue'])
+            )
             # Legacy compatibility
             total_revenue = total_annual_revenue
-            total_premium_collected = total_billed
+            total_premium_collected = total_collected
             
             # ========== UNIFIED WALLET BALANCE CALCULATION ==========
             # Health wallet balance
@@ -5724,6 +5790,8 @@ For claims or questions, please contact:
                 # Financial metrics
                 'total_revenue': total_revenue,
                 'total_premium_collected': total_premium_collected,
+                'total_collected_from_bills': premium_income_totals['from_bills'],
+                'total_collected_unbilled': premium_income_totals['ledger_unbilled_total'],
                 'outstanding_balance': outstanding_balance,
                 'total_investment_value': total_investment_value,
                 'total_coverage_amount': total_coverage_amount,
@@ -6352,6 +6420,30 @@ For claims or questions, please contact:
                 from services.financial_reporting_service import FinancialReportingService
                 svc = FinancialReportingService(POLICIES, CLAIMS, BILLING, CUSTOMERS, UNDERWRITING_APPLICATIONS)
                 report = svc.get_dashboard_summary(dashboard_type)
+
+                # Canonical cumulative premium income for accounting/billing dashboards.
+                premium_income_totals = calculate_cumulative_premium_income(exclude_suspended=True)
+                report['premium_income_cumulative'] = premium_income_totals['total']
+                report['premium_income_from_bills'] = premium_income_totals['from_bills']
+                report['premium_income_unbilled'] = premium_income_totals['ledger_unbilled_total']
+
+                if dashboard_type in ['accountant', 'billing']:
+                    report['total_collected'] = premium_income_totals['total']
+                    report['total_collected_from_bills'] = premium_income_totals['from_bills']
+                    total_billed = sum(
+                        safe_float(b.get('amount_due', b.get('amount', 0)))
+                        for b in BILLING.values()
+                        if not is_suspended_account(b.get('customer_id', ''))
+                    )
+                    report['collection_rate'] = round(
+                        (premium_income_totals['from_bills'] / total_billed * 100) if total_billed > 0 else 0,
+                        2
+                    )
+
+                if dashboard_type == 'billing':
+                    # Billing dashboard "Revenue" cards should reflect collected premium income.
+                    report['total_revenue'] = premium_income_totals['total']
+
                 self._set_json_headers()
                 self.wfile.write(json.dumps(report).encode('utf-8'))
             except Exception as e:
@@ -9556,7 +9648,9 @@ For claims or questions, please contact:
             # DATA INTEGRITY: Using global safe_float() for all numeric values
             # Calculate comprehensive stats with safe type conversion
             total_billed = sum(safe_float(b.get('amount', 0)) for b in bills)
-            total_collected = sum(safe_float(b.get('amount_paid', 0)) for b in bills)
+            premium_income_totals = calculate_cumulative_premium_income(exclude_suspended=True)
+            total_collected = premium_income_totals['total']
+            total_collected_from_bills = premium_income_totals['from_bills']
             outstanding = sum(safe_float(b.get('amount', 0)) - safe_float(b.get('amount_paid', 0)) 
                              for b in bills if not status_eq(b, 'paid'))
             
@@ -9575,10 +9669,13 @@ For claims or questions, please contact:
             
             self._set_json_headers()
             self.wfile.write(json.dumps({
-                'total_revenue': round(total_annual_revenue, 2),
+                'total_revenue': round(total_collected, 2),
                 'monthly_premium_income': round(monthly_revenue, 2),
                 'total_billed': round(total_billed, 2),
                 'total_collected': round(total_collected, 2),
+                'total_collected_from_bills': round(total_collected_from_bills, 2),
+                'total_collected_unbilled': round(premium_income_totals['ledger_unbilled_total'], 2),
+                'cumulative_premium_income': round(total_collected, 2),
                 'outstanding_balance': round(outstanding, 2),
                 'outstanding_receivables': round(outstanding, 2),
                 'claims_paid': round(claims_paid, 2),
@@ -9588,7 +9685,7 @@ For claims or questions, please contact:
                 'paid_count': len(paid_bills),
                 'pending_count': len(pending_bills),
                 'overdue_count': len(overdue_bills),
-                'collection_rate': round((total_collected / total_billed * 100) if total_billed > 0 else 0, 1)
+                'collection_rate': round((total_collected_from_bills / total_billed * 100) if total_billed > 0 else 0, 1)
             }).encode('utf-8'))
             return
         
@@ -14526,6 +14623,12 @@ For claims or questions, please contact:
             
             # Initialize balance sheet if needed
             initialize_balance_sheet()
+            premium_income_sync = sync_balance_sheet_premium_income(
+                exclude_suspended=True,
+                actor=session.get('username', 'system') if session else 'system',
+                reason='balance_sheet_read',
+                persist=False
+            )
             
             # Calculate totals
             total_balance = (
@@ -14554,6 +14657,12 @@ For claims or questions, please contact:
                     # Revenue
                     'total_revenue': PHINS_BALANCE_SHEET['total_revenue'],
                     'revenue_breakdown': PHINS_BALANCE_SHEET['revenue_breakdown'],
+                    'premium_income_sources': {
+                        'from_bills': premium_income_sync['totals']['from_bills'],
+                        'from_ledger_unbilled': premium_income_sync['totals']['ledger_unbilled_total'],
+                        'paid_bills_count': premium_income_sync['totals']['paid_bills_count'],
+                        'ledger_unbilled_count': premium_income_sync['totals']['ledger_unbilled_count'],
+                    },
                     
                     # Expenses
                     'total_expenses': PHINS_BALANCE_SHEET['total_expenses'],
@@ -14564,6 +14673,10 @@ For claims or questions, please contact:
                     
                     # Transaction count
                     'transaction_count': len(PHINS_BALANCE_SHEET['transactions'])
+                },
+                'premium_income_sync': {
+                    'updated': premium_income_sync['updated'],
+                    'difference': premium_income_sync['difference']
                 },
                 'timestamp': datetime.now().isoformat()
             }, default=str).encode('utf-8'))
@@ -14634,6 +14747,12 @@ For claims or questions, please contact:
                 return
             
             initialize_balance_sheet()
+            sync_balance_sheet_premium_income(
+                exclude_suspended=True,
+                actor=session.get('username', 'system') if session else 'system',
+                reason='balance_sheet_summary_read',
+                persist=False
+            )
             
             # Recent claims paid
             recent_claims = [
@@ -14665,12 +14784,18 @@ For claims or questions, please contact:
                 return
             
             initialize_balance_sheet()
+            premium_income_sync = sync_balance_sheet_premium_income(
+                exclude_suspended=True,
+                actor=session.get('username', 'system') if session else 'system',
+                reason='balance_sheet_ai_insights_read',
+                persist=False
+            )
             
             # ========== AI/BI FINANCIAL ANALYSIS ==========
             
             # 1. Calculate key financial metrics
             claims_reserve = PHINS_BALANCE_SHEET['claims_reserve']
-            premium_income = PHINS_BALANCE_SHEET['revenue_breakdown']['premium_income']
+            premium_income = premium_income_sync['expected']
             claims_paid = PHINS_BALANCE_SHEET['expense_breakdown']['claims_paid']
             total_revenue = PHINS_BALANCE_SHEET['total_revenue']
             total_expenses = PHINS_BALANCE_SHEET['total_expenses']
@@ -15638,7 +15763,7 @@ For claims or questions, please contact:
                     'total_outstanding_amount': round(total_outstanding_after, 2),
                     'total_outstanding_bills': len([b for b in BILLING.values() if b.get('status') in ['outstanding', 'partial']]),
                     'total_paid_bills': len([b for b in BILLING.values() if b.get('status') == 'paid']),
-                    'premium_income_collected': PHINS_BALANCE_SHEET['revenue_breakdown']['premium_income']
+                    'premium_income_collected': calculate_cumulative_premium_income(exclude_suspended=True)['total']
                 },
                 
                 # Errors if any

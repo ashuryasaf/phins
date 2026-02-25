@@ -29,7 +29,8 @@ class TestBalanceSheetIntegrity(unittest.TestCase):
             PHINS_BALANCE_SHEET, BILLING, CLAIMS, 
             initialize_balance_sheet, record_premium_revenue,
             process_claim_payment_to_wallet, HEALTH_WALLETS,
-            TRANSACTION_LEDGER, calculate_cumulative_premium_income
+            TRANSACTION_LEDGER, calculate_cumulative_premium_income,
+            sync_balance_sheet_premium_income
         )
         
         self.PHINS_BALANCE_SHEET = PHINS_BALANCE_SHEET
@@ -41,6 +42,7 @@ class TestBalanceSheetIntegrity(unittest.TestCase):
         self.record_premium_revenue = record_premium_revenue
         self.process_claim_payment_to_wallet = process_claim_payment_to_wallet
         self.calculate_cumulative_premium_income = calculate_cumulative_premium_income
+        self.sync_balance_sheet_premium_income = sync_balance_sheet_premium_income
     
     def test_balance_sheet_initialized(self):
         """Test that balance sheet is properly initialized"""
@@ -242,6 +244,63 @@ class TestBalanceSheetIntegrity(unittest.TestCase):
                 self.TRANSACTION_LEDGER.pop(tx_id, None)
             else:
                 self.TRANSACTION_LEDGER[tx_id] = prev_tx
+
+    def test_sync_balance_sheet_premium_income_updates_stale_value(self):
+        """Sync helper should update stale balance-sheet premium income values."""
+        self.initialize_balance_sheet()
+
+        bill_id = "TEST-BILL-SYNC-001"
+        prev_bill = self.BILLING.get(bill_id)
+        prev_breakdown = dict(self.PHINS_BALANCE_SHEET['revenue_breakdown'])
+        prev_total_revenue = self.PHINS_BALANCE_SHEET.get('total_revenue', 0.0)
+        prev_last_updated = self.PHINS_BALANCE_SHEET.get('last_updated')
+        prev_audit_len = len(self.PHINS_BALANCE_SHEET.get('audit_log', []))
+
+        baseline = self.calculate_cumulative_premium_income(exclude_suspended=False)
+
+        try:
+            self.BILLING[bill_id] = {
+                'id': bill_id,
+                'customer_id': 'TEST-CUST-SYNC-001',
+                'policy_id': 'TEST-POL-SYNC-001',
+                'amount': 55.0,
+                'amount_paid': 55.0,
+                'status': 'paid',
+                'created_date': datetime.now().isoformat(),
+                'paid_date': datetime.now().isoformat()
+            }
+            expected_after = self.calculate_cumulative_premium_income(exclude_suspended=False)
+
+            # Force a stale balance-sheet premium value before sync.
+            self.PHINS_BALANCE_SHEET['revenue_breakdown']['premium_income'] = baseline['total']
+            self.PHINS_BALANCE_SHEET['total_revenue'] = sum(
+                self.PHINS_BALANCE_SHEET['revenue_breakdown'].values()
+            )
+
+            sync_result = self.sync_balance_sheet_premium_income(
+                exclude_suspended=False,
+                actor='TEST',
+                reason='unit_test',
+                persist=False
+            )
+
+            self.assertTrue(sync_result['updated'])
+            self.assertAlmostEqual(sync_result['expected'], expected_after['total'], places=2)
+            self.assertAlmostEqual(
+                self.PHINS_BALANCE_SHEET['revenue_breakdown']['premium_income'],
+                expected_after['total'],
+                places=2
+            )
+        finally:
+            if prev_bill is None:
+                self.BILLING.pop(bill_id, None)
+            else:
+                self.BILLING[bill_id] = prev_bill
+            self.PHINS_BALANCE_SHEET['revenue_breakdown'] = prev_breakdown
+            self.PHINS_BALANCE_SHEET['total_revenue'] = prev_total_revenue
+            self.PHINS_BALANCE_SHEET['last_updated'] = prev_last_updated
+            if len(self.PHINS_BALANCE_SHEET.get('audit_log', [])) > prev_audit_len:
+                self.PHINS_BALANCE_SHEET['audit_log'] = self.PHINS_BALANCE_SHEET['audit_log'][:prev_audit_len]
     
     def test_claims_payment_recording(self):
         """Test claims payment is recorded correctly on balance sheet"""

@@ -490,6 +490,9 @@
             <div style="display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid rgba(255,255,255,0.1);">
               <span>Premium Income</span><span id="bs-premium-income">$0</span>
             </div>
+            <div id="bs-premium-income-source" style="font-size: 11px; color: rgba(255,255,255,0.7); padding: 4px 0 8px 0;">
+              Cumulative paid premiums (billing + auto-pay + NFT-linked unbilled).
+            </div>
             <div style="display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid rgba(255,255,255,0.1);">
               <span>Management Fees</span><span id="bs-management-fees">$0</span>
             </div>
@@ -2749,6 +2752,12 @@
             document.getElementById('bs-management-fees').textContent = fmt(bs.revenue_breakdown.management_fees);
             document.getElementById('bs-underwriting-fees').textContent = fmt(bs.revenue_breakdown.underwriting_fees);
             document.getElementById('bs-other-income').textContent = fmt(bs.revenue_breakdown.other_income + bs.revenue_breakdown.late_fees + bs.revenue_breakdown.investment_earnings);
+
+            const premiumSources = bs.premium_income_sources || {};
+            const premiumSourceEl = document.getElementById('bs-premium-income-source');
+            if (premiumSourceEl) {
+              premiumSourceEl.textContent = `Billed/Auto-Pay: ${fmt(premiumSources.from_bills || 0)} + Explicit Unbilled (NFT): ${fmt(premiumSources.from_ledger_unbilled || 0)}`;
+            }
           }
           
           // Expense breakdown
@@ -3725,9 +3734,15 @@
         
         if (response.ok) {
           const data = await response.json();
+          const premiumCollected =
+            data.cumulative_premium_income ??
+            data.total_collected ??
+            data.total_revenue ??
+            data.monthly_premium_income ??
+            0;
           
           // Update revenue stats with comma formatting
-          document.getElementById('revenue-premium').textContent = '$' + formatNumber(data.total_revenue || data.monthly_premium_income || 0, 0);
+          document.getElementById('revenue-premium').textContent = '$' + formatNumber(premiumCollected, 0);
           document.getElementById('revenue-outstanding').textContent = '$' + formatNumber(data.outstanding_balance || data.outstanding_receivables || 0, 0);
           document.getElementById('revenue-claims').textContent = '$' + formatNumber(data.claims_paid || data.claims_paid_this_month || 0, 0);
           document.getElementById('revenue-investment').textContent = '+$' + formatNumber(data.investment_returns || 0, 0);
