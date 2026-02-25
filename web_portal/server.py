@@ -109,6 +109,9 @@ def safe_int(val, default: int = 0) -> int:
 PREMIUM_LEDGER_TX_TYPES = {
     'premium_payment',
     'premium_received',
+    'premium_deposit',
+    'bill_payment',
+    'auto_pay_execution',
 }
 
 
@@ -179,6 +182,22 @@ def calculate_cumulative_premium_income(exclude_suspended: bool = True) -> Dict[
                 # Legacy premium_payment entries without explicit unbilled
                 # metadata are treated as billed/unknown and excluded to keep
                 # reconciliation integrity strict.
+                amount = 0.0
+        elif tx_type == 'premium_deposit':
+            # Unified premium destination deposits can be unbilled premiums
+            # (bill_status=not_found). Prefer explicit metadata amount.
+            if metadata.get('unbilled_premium_amount') is not None:
+                amount = safe_float(metadata.get('unbilled_premium_amount', 0))
+            elif str(metadata.get('bill_status') or '').lower() == 'not_found':
+                amount = safe_float(amount, 0)
+            else:
+                amount = 0.0
+        elif tx_type in {'bill_payment', 'auto_pay_execution'}:
+            # Bill/admin/auto-pay flows are already represented in BILLING.
+            # Only allow explicit unbilled residual amounts if present.
+            if metadata.get('unbilled_premium_amount') is not None:
+                amount = safe_float(metadata.get('unbilled_premium_amount', 0))
+            else:
                 amount = 0.0
 
         if amount <= 0:
@@ -15793,12 +15812,9 @@ For claims or questions, please contact:
                 
                 # 5. Run balance sheet reconciliation to correct any discrepancies
                 # Calculate expected values from actual (non-demo) transaction data
-                expected_premium_income = sum(
-                    float(b.get('amount_paid', 0)) for b in BILLING.values()
-                    if float(b.get('amount_paid', 0)) > 0 
-                    and not is_suspended_account(b.get('customer_id', ''))
-                    and 'demo' not in str(b.get('description', '')).lower()
-                )
+                expected_premium_income = calculate_cumulative_premium_income(
+                    exclude_suspended=True
+                )['total']
                 
                 expected_claims_paid = sum(
                     float(c.get('paid_amount', 0) or c.get('approved_amount', 0)) 
@@ -25647,7 +25663,13 @@ For claims or questions, please contact:
                             'payment_method': payment_method,
                             'source_account': source_account,
                             'gateway': payment_result.get('gateway'),
-                            'new_balance': new_balance
+                            'new_balance': new_balance,
+                            'bill_id': payment_result.get('bill_id'),
+                            'bill_status': payment_result.get('bill_status'),
+                            'amount_due_remaining': payment_result.get('amount_due_remaining'),
+                            'unbilled_premium_amount': (
+                                amount if destination == 'premium' and payment_result.get('bill_status') == 'not_found' else 0.0
+                            )
                         }
                     )
                     payment_result['nft_token_id'] = ledger_tx.get('nft_token_id')

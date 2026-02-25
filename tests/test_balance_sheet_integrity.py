@@ -213,6 +213,36 @@ class TestBalanceSheetIntegrity(unittest.TestCase):
             else:
                 self.TRANSACTION_LEDGER[tx_id] = prev_tx
     
+    def test_cumulative_premium_income_counts_unbilled_premium_deposit_nft_flow(self):
+        """Unbilled premium_deposit NFT flow should be included once."""
+        tx_id = "TEST-TX-CUM-003"
+        prev_tx = self.TRANSACTION_LEDGER.get(tx_id)
+        baseline = self.calculate_cumulative_premium_income(exclude_suspended=False)
+        
+        try:
+            self.TRANSACTION_LEDGER[tx_id] = {
+                'id': tx_id,
+                'customer_id': 'TEST-CUST-CUM-003',
+                'type': 'premium_deposit',
+                'amount': 85.0,
+                'metadata': {
+                    'destination': 'premium',
+                    'bill_status': 'not_found',
+                    'unbilled_premium_amount': 85.0
+                },
+                'timestamp': datetime.now().isoformat(),
+                'status': 'completed',
+                'nft_token_id': 'NFT-TEST-CUM-003'
+            }
+            totals = self.calculate_cumulative_premium_income(exclude_suspended=False)
+            self.assertAlmostEqual(totals['ledger_unbilled_total'] - baseline['ledger_unbilled_total'], 85.0, places=2)
+            self.assertAlmostEqual(totals['total'] - baseline['total'], 85.0, places=2)
+        finally:
+            if prev_tx is None:
+                self.TRANSACTION_LEDGER.pop(tx_id, None)
+            else:
+                self.TRANSACTION_LEDGER[tx_id] = prev_tx
+    
     def test_claims_payment_recording(self):
         """Test claims payment is recorded correctly on balance sheet"""
         self.initialize_balance_sheet()
