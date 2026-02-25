@@ -537,6 +537,9 @@
                                     <span>Premium Income</span>
                                     <strong id="bs-premium-income">$0</strong>
                                 </div>
+                                <div id="bs-premium-income-source" style="font-size: 11px; color: #065f46; padding: 4px 0 8px 0;">
+                                    Cumulative premium data source: billing + ledger + wallet (deduplicated).
+                                </div>
                                 <div style="display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid rgba(16, 185, 129, 0.2);">
                                     <span>Management Fees</span>
                                     <strong id="bs-management-fees">$0</strong>
@@ -3305,13 +3308,31 @@
                     document.getElementById('bs-total-revenue').textContent = fmt(bs.total_revenue);
                     document.getElementById('bs-claims-paid').textContent = fmt(bs.expense_breakdown?.claims_paid || 0);
                     document.getElementById('bs-net-income').textContent = fmt(bs.net_income);
+
+                    const cumulativePremiumFallback = Number(
+                        bs.data_sources?.cumulative_premium?.value ??
+                        bs.revenue_breakdown?.premium_income ??
+                        0
+                    );
+                    document.getElementById('bs-premium-income').textContent = fmt(cumulativePremiumFallback);
                     
                     // Revenue breakdown
                     if (bs.revenue_breakdown) {
-                        document.getElementById('bs-premium-income').textContent = fmt(bs.revenue_breakdown.premium_income);
+                        const cumulativePremium = Number(
+                            bs.data_sources?.cumulative_premium?.value ??
+                            bs.revenue_breakdown.premium_income ??
+                            0
+                        );
+                        document.getElementById('bs-premium-income').textContent = fmt(cumulativePremium);
                         const premiumSources = bs.premium_income_sources || {};
                         document.getElementById('bs-premium-income').title =
                             `Billed/Auto-Pay: ${fmt(premiumSources.from_bills || 0)} + Explicit Unbilled (NFT): ${fmt(premiumSources.from_ledger_unbilled || 0)} + Recovered Billed (Ledger Fallback): ${fmt(premiumSources.from_ledger_billed_fallback || 0)} + Wallet Fallback: ${fmt(premiumSources.from_wallet_billed_fallback || 0)}`;
+                        const premiumSourceEl = document.getElementById('bs-premium-income-source');
+                        if (premiumSourceEl) {
+                            premiumSourceEl.textContent =
+                                `Cumulative source: ${fmt(bs.data_sources?.cumulative_premium?.value || cumulativePremium)} ` +
+                                `(Bills: ${fmt(premiumSources.from_bills || 0)}, Ledger: ${fmt((premiumSources.from_ledger_unbilled || 0) + (premiumSources.from_ledger_billed_fallback || 0))}, Wallet: ${fmt(premiumSources.from_wallet_billed_fallback || 0)})`;
+                        }
                         document.getElementById('bs-management-fees').textContent = fmt(bs.revenue_breakdown.management_fees);
                         document.getElementById('bs-underwriting-fees').textContent = fmt(bs.revenue_breakdown.underwriting_fees);
                         document.getElementById('bs-investment-earnings').textContent = fmt(bs.revenue_breakdown.investment_earnings);
@@ -3351,7 +3372,7 @@
         
         // Reconcile Balance Sheet - Verify and fix data integrity
         async function reconcileBalanceSheet() {
-            const confirmed = confirm('🔍 Balance Sheet Reconciliation\n\nThis will verify and auto-correct Premium Income using cumulative paid premiums (billing + auto-pay + explicit unbilled premium payments), then refresh the balance sheet.\n\nClick OK to continue.');
+            const confirmed = confirm('🔍 Balance Sheet Reconciliation\n\nThis will verify and auto-correct Premium Income using cumulative paid premiums (billing + auto-pay + ledger + wallet premium evidence), then refresh the balance sheet.\n\nClick OK to continue.');
             if (!confirmed) return;
             const autoCorrect = true;
             
@@ -3393,12 +3414,18 @@
                     message += `• Net Position: ${fmt(data.summary_totals?.net_position)}\n\n`;
 
                     const premiumSource = data.validation_sources?.premium_income || {};
+                    const cumulativePremium =
+                        data.summary_totals?.total_premiums_collected ??
+                        data.cumulative_premium_data_source?.value ??
+                        data.current_balance_sheet?.revenue_breakdown?.premium_income ??
+                        0;
                     message += `💳 PREMIUM INCOME SOURCES:\n`;
                     message += `• Billed/Auto-Pay Collected: ${fmt(premiumSource.from_bills)}\n`;
                     message += `• Explicit Unbilled Premiums: ${fmt(premiumSource.from_ledger_unbilled)}\n`;
                     message += `• Recovered Billed (Ledger Fallback): ${fmt(premiumSource.from_ledger_billed_fallback)}\n`;
                     message += `• Wallet Premium Fallback: ${fmt(premiumSource.from_wallet_billed_fallback)}\n`;
-                    message += `• Cumulative Premium Income: ${fmt(data.summary_totals?.total_premiums_collected)}\n\n`;
+                    message += `• Cumulative Premium Income: ${fmt(cumulativePremium)}\n`;
+                    message += `• Data Source (cumulative_premium): ${fmt(data.cumulative_premium_data_source?.value)}\n\n`;
                     
                     message += `🏪 MEDICAL SERVICES:\n`;
                     message += `• Total: ${fmt(data.medical_services?.total_amount)} (${data.medical_services?.total_transactions || 0} transactions)\n`;
@@ -3419,11 +3446,15 @@
                     
                     alert(message);
                     console.log('Reconciliation Report:', data);
-                    
-                    // Reload balance sheet to show updated values
-                    if (data.corrections_made.length > 0) {
-                        loadBalanceSheet();
+
+                    // Immediate row update in accountant balance-sheet tab.
+                    const premiumIncomeEl = document.getElementById('bs-premium-income');
+                    if (premiumIncomeEl) {
+                        premiumIncomeEl.textContent = fmt(cumulativePremium);
                     }
+                    
+                    // Always reload to reflect persisted cumulative premium data source.
+                    loadBalanceSheet();
                 } else {
                     alert('Failed to reconcile balance sheet: ' + response.status);
                 }
