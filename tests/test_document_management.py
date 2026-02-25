@@ -48,6 +48,44 @@ def _post(url, payload, token=None):
         return e.code, json.loads(e.read().decode('utf-8'))
 
 
+def _post_multipart(url, fields=None, files=None, token=None):
+    """POST multipart/form-data payload with text fields and binary files."""
+    fields = fields or {}
+    files = files or []
+    boundary = f"----PHINSBoundary{int(time.time() * 1000)}"
+    body = bytearray()
+
+    for key, value in fields.items():
+        body.extend(f"--{boundary}\r\n".encode('utf-8'))
+        body.extend(f'Content-Disposition: form-data; name="{key}"\r\n\r\n'.encode('utf-8'))
+        body.extend(str(value).encode('utf-8'))
+        body.extend(b"\r\n")
+
+    for file_info in files:
+        field = file_info['field']
+        filename = file_info['filename']
+        content_type = file_info.get('content_type', 'application/octet-stream')
+        data = file_info.get('data', b'')
+        body.extend(f"--{boundary}\r\n".encode('utf-8'))
+        body.extend(
+            f'Content-Disposition: form-data; name="{field}"; filename="{filename}"\r\n'.encode('utf-8')
+        )
+        body.extend(f"Content-Type: {content_type}\r\n\r\n".encode('utf-8'))
+        body.extend(data)
+        body.extend(b"\r\n")
+
+    body.extend(f"--{boundary}--\r\n".encode('utf-8'))
+    headers = {'Content-Type': f'multipart/form-data; boundary={boundary}'}
+    if token:
+        headers['Authorization'] = f'Bearer {token}'
+    req = Request(url, data=bytes(body), headers=headers)
+    try:
+        with urlopen(req) as resp:
+            return resp.status, json.loads(resp.read().decode('utf-8'))
+    except HTTPError as e:
+        return e.code, json.loads(e.read().decode('utf-8'))
+
+
 def _get(url, token=None):
     headers = {}
     if token:
@@ -351,6 +389,76 @@ def test_document_view_admin_can_access_any():
     status, view_resp = _get(base + f'/api/documents/view?id={doc_id}', tokenAdmin)
     assert status == 200, f"Admin should be able to view: {view_resp}"
     assert view_resp.get('data') == sample_data
+
+    srv.stop()
+
+
+def test_claims_adjuster_can_access_all_documents():
+    """Claims adjuster role should have full document-center visibility."""
+    port = 8220
+    srv = ServerThread(port)
+    srv.start()
+    time.sleep(0.3)
+    base = f"http://127.0.0.1:{port}"
+    _init_port(base)
+
+    token_cust = 'phins_test-claims-role-cust-token'
+    token_claims = 'phins_test-claims-role-token'
+    _inject_session(token_cust, 'custClaimsA', 'customer', 'CUST-CLAIMS-A')
+    _inject_session(token_claims, 'claimsAdjusterA', 'claims_adjuster', '')
+
+    content = b'claims team can review this'
+    sample_data = base64.b64encode(content).decode()
+    _, up_resp = _post(base + '/api/documents/upload', {
+        'files': [{'name': 'claims_visibility_doc.pdf', 'type': 'application/pdf', 'size': len(content), 'data': sample_data}],
+        'entity_type': 'customer',
+        'entity_id': 'CUST-CLAIMS-A',
+        'document_type': 'medical'
+    }, token_cust)
+    doc_id = up_resp['uploaded'][0]['id']
+
+    status_list, list_resp = _get(base + '/api/documents/list', token_claims)
+    assert status_list == 200, f"Expected 200, got {status_list}: {list_resp}"
+    assert list_resp.get('is_admin') is True
+    names = [d['name'] for d in list_resp.get('documents', [])]
+    assert 'claims_visibility_doc.pdf' in names
+
+    status_view, view_resp = _get(base + f'/api/documents/view?id={doc_id}', token_claims)
+    assert status_view == 200, f"Claims adjuster should view any document: {view_resp}"
+    assert view_resp.get('data') == sample_data
+
+    srv.stop()
+
+
+def test_staff_upload_can_assign_customer_owner_by_entity():
+    """Admin/staff uploads linked to customer entity should be visible to that customer."""
+    port = 8221
+    srv = ServerThread(port)
+    srv.start()
+    time.sleep(0.3)
+    base = f"http://127.0.0.1:{port}"
+    _init_port(base)
+
+    token_admin = 'phins_test-owner-infer-admin-token'
+    token_customer = 'phins_test-owner-infer-customer-token'
+    customer_id = 'CUST-OWNER-001'
+    _inject_session(token_admin, 'ownerAdmin', 'admin', '')
+    _inject_session(token_customer, 'ownerCustomer', 'customer', customer_id)
+
+    sample_data = base64.b64encode(b'staff uploaded record').decode()
+    status_up, up_resp = _post(base + '/api/documents/upload', {
+        'files': [{'name': 'staff_uploaded_for_customer.pdf', 'type': 'application/pdf', 'size': 21, 'data': sample_data}],
+        'entity_type': 'customer',
+        'entity_id': customer_id,
+        'document_type': 'id'
+    }, token_admin)
+    assert status_up == 201, f"Upload failed: {up_resp}"
+    assert up_resp['uploaded'][0].get('uploaded_by_customer') == customer_id
+
+    status_list, list_resp = _get(base + '/api/documents/list', token_customer)
+    assert status_list == 200
+    names = [d['name'] for d in list_resp.get('documents', [])]
+    assert 'staff_uploaded_for_customer.pdf' in names
 
     srv.stop()
 
@@ -748,4 +856,86 @@ def test_seed_demo_documents_is_idempotent():
     assert len(portal.POLICY_DOCUMENTS) == count_after_first, (
         'seed_demo_documents should not add documents when POLICY_DOCUMENTS is non-empty'
     )
+
+
+def test_quote_submission_stores_registration_documents():
+    """Quote submission must persist id/medical uploads into customer document center."""
+    port = 8222
+    srv = ServerThread(port)
+    srv.start()
+    time.sleep(0.3)
+    base = f"http://127.0.0.1:{port}"
+    _init_port(base)
+
+    quote_fields = {
+        'firstName': 'Quote',
+        'lastName': 'Customer',
+        'email': 'quote.customer@example.com',
+        'phone': '+1-555-111-2222',
+        'dob': '1991-04-10',
+        'gender': 'Male',
+        'address': '123 Persist Lane',
+        'city': 'Tel Aviv',
+        'postalCode': '61000',
+        'occupation': 'Engineer',
+        'smoking': 'NonSmoker',
+        'preExisting': 'yes',
+        'conditionsDetails': 'Diabetes',
+        'coverageAmount': '250000',
+        'policyTerm': '20',
+    }
+    quote_files = [
+        {
+            'field': 'idDocument',
+            'filename': 'quote_id_doc_test.pdf',
+            'content_type': 'application/pdf',
+            'data': b'%PDF-1.4 fake id document',
+        },
+        {
+            'field': 'medicalRecords',
+            'filename': 'quote_med_record_1.pdf',
+            'content_type': 'application/pdf',
+            'data': b'%PDF-1.4 fake medical record 1',
+        },
+        {
+            'field': 'medicalRecords',
+            'filename': 'quote_med_record_2.pdf',
+            'content_type': 'application/pdf',
+            'data': b'%PDF-1.4 fake medical record 2',
+        },
+    ]
+
+    status, resp = _post_multipart(base + '/api/submit-quote', fields=quote_fields, files=quote_files)
+    assert status == 200, f"Expected 200, got {status}: {resp}"
+    assert resp.get('success') is True
+    assert resp.get('uploaded_documents'), "Expected registration documents to be stored"
+    assert resp.get('document_upload_errors') == []
+
+    customer_id = resp.get('customer_id')
+    app_id = resp.get('application_id')
+    login_username = resp.get('login_credentials', {}).get('username')
+    assert customer_id and app_id and login_username
+
+    # Create a customer session and verify uploaded registration docs are visible.
+    token_customer = 'phins_test-quote-docs-customer-token'
+    _inject_session(token_customer, login_username, 'customer', customer_id)
+
+    status_list, list_resp = _get(base + '/api/documents/list', token_customer)
+    assert status_list == 200, f"Expected 200, got {status_list}: {list_resp}"
+    doc_names = {d['name'] for d in list_resp.get('documents', [])}
+    assert 'quote_id_doc_test.pdf' in doc_names
+    assert 'quote_med_record_1.pdf' in doc_names
+    assert 'quote_med_record_2.pdf' in doc_names
+
+    # Integrity metadata should be present for persisted records.
+    for d in portal.POLICY_DOCUMENTS.values():
+        if d.get('name') in {'quote_id_doc_test.pdf', 'quote_med_record_1.pdf', 'quote_med_record_2.pdf'}:
+            assert d.get('uploaded_by_customer') == customer_id
+            assert d.get('sha256')
+            assert d.get('data_encoding') == 'base64'
+
+    app_docs = portal.UNDERWRITING_APPLICATIONS.get(app_id, {}).get('documents', [])
+    assert len(app_docs) >= 3
+
+    srv.stop()
 
