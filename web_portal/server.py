@@ -103,14 +103,12 @@ def safe_int(val, default: int = 0) -> int:
         return default
 
 
-# Premium-related transaction categories used for revenue reconciliation.
+# Premium-related transaction categories used for reconciliation of
+# explicit unbilled premium flows only. Billed and auto-pay collections are
+# derived from BILLING.amount_paid to prevent double counting.
 PREMIUM_LEDGER_TX_TYPES = {
     'premium_payment',
-    'bill_payment',
-    'bill_paid',
     'premium_received',
-    'auto_pay_execution',
-    'premium_deposit',
 }
 
 
@@ -124,8 +122,8 @@ def calculate_cumulative_premium_income(exclude_suspended: bool = True) -> Dict[
     Calculate cumulative premium income with data-integrity safeguards.
 
     Sources:
-    1) Paid bill amounts (authoritative for billed premium collections)
-    2) Unbilled premium ledger amounts (direct premium payments/prepayments)
+    1) Paid bill amounts (authoritative for billed + auto-pay collections)
+    2) Explicit unbilled premium ledger amounts (when metadata marks it)
     """
     bill_paid_total = 0.0
     paid_bills_count = 0
@@ -169,10 +167,19 @@ def calculate_cumulative_premium_income(exclude_suspended: bool = True) -> Dict[
         if linked_bill_id and linked_bill_id in paid_bill_ids:
             continue
 
-        # For customer premium payments, include only explicitly unbilled
-        # remainder when available to avoid double counting with BILLING.
-        if tx_type == 'premium_payment' and metadata.get('unbilled_premium_amount') is not None:
-            amount = safe_float(metadata.get('unbilled_premium_amount', 0))
+        if tx_type == 'premium_payment':
+            # For customer premium payments, include only explicitly unbilled
+            # remainder. This prevents double counting when a payment has
+            # already been applied to billing records.
+            if metadata.get('unbilled_premium_amount') is not None:
+                amount = safe_float(metadata.get('unbilled_premium_amount', 0))
+            elif metadata.get('applied_to_bills') is not None:
+                amount = max(0.0, amount - safe_float(metadata.get('applied_to_bills', 0)))
+            else:
+                # Legacy premium_payment entries without explicit unbilled
+                # metadata are treated as billed/unknown and excluded to keep
+                # reconciliation integrity strict.
+                amount = 0.0
 
         if amount <= 0:
             continue

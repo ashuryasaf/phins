@@ -166,6 +166,53 @@ class TestBalanceSheetIntegrity(unittest.TestCase):
             else:
                 self.TRANSACTION_LEDGER[tx_id] = prev_tx
     
+    def test_cumulative_premium_income_excludes_billed_style_ledger_duplicates(self):
+        """Billed payment-style ledger entries must not inflate premium totals."""
+        bill_id = "TEST-BILL-CUM-002"
+        tx_id = "TEST-TX-CUM-002"
+        
+        prev_bill = self.BILLING.get(bill_id)
+        prev_tx = self.TRANSACTION_LEDGER.get(tx_id)
+        
+        baseline = self.calculate_cumulative_premium_income(exclude_suspended=False)
+        
+        try:
+            self.BILLING[bill_id] = {
+                'id': bill_id,
+                'customer_id': 'TEST-CUST-CUM-002',
+                'policy_id': 'TEST-POL-CUM-002',
+                'amount': 120.0,
+                'amount_paid': 120.0,
+                'status': 'paid',
+                'created_date': datetime.now().isoformat(),
+                'paid_date': datetime.now().isoformat()
+            }
+            # Mimics destination='premium' ledger shape without explicit unbilled flag.
+            self.TRANSACTION_LEDGER[tx_id] = {
+                'id': tx_id,
+                'customer_id': 'TEST-CUST-CUM-002',
+                'type': 'premium_deposit',
+                'amount': 120.0,
+                'metadata': {},
+                'timestamp': datetime.now().isoformat(),
+                'status': 'completed'
+            }
+            
+            totals = self.calculate_cumulative_premium_income(exclude_suspended=False)
+            self.assertAlmostEqual(totals['from_bills'] - baseline['from_bills'], 120.0, places=2)
+            # premium_deposit should not be counted as unbilled premium income.
+            self.assertAlmostEqual(totals['ledger_unbilled_total'], baseline['ledger_unbilled_total'], places=2)
+            self.assertAlmostEqual(totals['total'] - baseline['total'], 120.0, places=2)
+        finally:
+            if prev_bill is None:
+                self.BILLING.pop(bill_id, None)
+            else:
+                self.BILLING[bill_id] = prev_bill
+            if prev_tx is None:
+                self.TRANSACTION_LEDGER.pop(tx_id, None)
+            else:
+                self.TRANSACTION_LEDGER[tx_id] = prev_tx
+    
     def test_claims_payment_recording(self):
         """Test claims payment is recorded correctly on balance sheet"""
         self.initialize_balance_sheet()
