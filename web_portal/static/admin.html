@@ -2785,7 +2785,9 @@
     
     // Reconcile Balance Sheet - Verify and fix data integrity
     async function reconcileBalanceSheet() {
-      const autoCorrect = confirm('🔍 Balance Sheet Reconciliation\n\nThis will verify premium income and claims paid against actual transaction data.\n\nClick OK to auto-correct any discrepancies found.\nClick Cancel to view discrepancies without making changes.');
+      const confirmed = confirm('🔍 Balance Sheet Reconciliation\n\nThis will verify and auto-correct Premium Income using cumulative paid premiums (billing + auto-pay + explicit unbilled premium payments), then refresh the balance sheet.\n\nClick OK to continue.');
+      if (!confirmed) return;
+      const autoCorrect = true;
       
       try {
         const response = await fetch(`/api/admin/balance-sheet/reconcile?auto_correct=${autoCorrect}`, {
@@ -2824,6 +2826,11 @@
           message += `• Wallet Deposits: ${fmt(data.summary_totals?.total_wallet_deposits)}\n`;
           message += `• Investments: ${fmt(data.summary_totals?.total_investments)}\n`;
           message += `• Net Position: ${fmt(data.summary_totals?.net_position)}\n\n`;
+          const premiumSource = data.validation_sources?.premium_income || {};
+          message += `💳 PREMIUM INCOME SOURCES:\n`;
+          message += `• Billed/Auto-Pay Collected: ${fmt(premiumSource.from_bills)}\n`;
+          message += `• Explicit Unbilled Premiums: ${fmt(premiumSource.from_ledger_unbilled)}\n`;
+          message += `• Cumulative Premium Income: ${fmt(data.summary_totals?.total_premiums_collected)}\n\n`;
           
           message += `🏪 MEDICAL SERVICES:\n`;
           message += `• Total: ${fmt(data.medical_services?.total_amount)} (${data.medical_services?.total_transactions || 0} transactions)\n`;
@@ -2846,6 +2853,12 @@
           
           // Log detailed data to console for debugging
           console.log('Reconciliation Report:', data);
+
+          // Update premium income immediately for fast visual feedback
+          const premiumIncomeEl = document.getElementById('bs-premium-income');
+          if (premiumIncomeEl) {
+            premiumIncomeEl.textContent = fmt(data.summary_totals?.total_premiums_collected);
+          }
           
           // Reload balance sheet so Premium Income always reflects reconcile result
           loadBalanceSheet();
