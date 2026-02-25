@@ -103,6 +103,93 @@ def safe_int(val, default: int = 0) -> int:
         return default
 
 
+# Premium-related transaction categories used for revenue reconciliation.
+PREMIUM_LEDGER_TX_TYPES = {
+    'premium_payment',
+    'bill_payment',
+    'bill_paid',
+    'premium_received',
+    'auto_pay_execution',
+    'premium_deposit',
+}
+
+
+def get_transaction_type(tx: Dict[str, Any]) -> str:
+    """Return normalized transaction type across legacy/current schemas."""
+    return str(tx.get('type') or tx.get('tx_type') or '').strip().lower()
+
+
+def calculate_cumulative_premium_income(exclude_suspended: bool = True) -> Dict[str, float]:
+    """
+    Calculate cumulative premium income with data-integrity safeguards.
+
+    Sources:
+    1) Paid bill amounts (authoritative for billed premium collections)
+    2) Unbilled premium ledger amounts (direct premium payments/prepayments)
+    """
+    bill_paid_total = 0.0
+    paid_bills_count = 0
+    paid_bill_ids = set()
+
+    for bill_id, bill in BILLING.items():
+        customer_id = bill.get('customer_id', '')
+        if exclude_suspended and is_suspended_account(customer_id):
+            continue
+
+        amount_paid = safe_float(bill.get('amount_paid', 0))
+        if amount_paid <= 0:
+            continue
+
+        bill_paid_total += amount_paid
+        paid_bills_count += 1
+        paid_bill_ids.add(str(bill.get('id') or bill_id))
+
+    ledger_unbilled_total = 0.0
+    ledger_unbilled_count = 0
+
+    for tx in TRANSACTION_LEDGER.values():
+        tx_type = get_transaction_type(tx)
+        if tx_type not in PREMIUM_LEDGER_TX_TYPES:
+            continue
+
+        customer_id = tx.get('customer_id', '')
+        if exclude_suspended and is_suspended_account(customer_id):
+            continue
+
+        amount = safe_float(tx.get('amount', 0))
+        if amount <= 0:
+            continue
+
+        metadata = tx.get('metadata', {})
+        if not isinstance(metadata, dict):
+            metadata = {}
+
+        linked_bill_id = str(metadata.get('bill_id') or '').strip()
+        # If already captured by a paid bill, don't count it again.
+        if linked_bill_id and linked_bill_id in paid_bill_ids:
+            continue
+
+        # For customer premium payments, include only explicitly unbilled
+        # remainder when available to avoid double counting with BILLING.
+        if tx_type == 'premium_payment' and metadata.get('unbilled_premium_amount') is not None:
+            amount = safe_float(metadata.get('unbilled_premium_amount', 0))
+
+        if amount <= 0:
+            continue
+
+        ledger_unbilled_total += amount
+        ledger_unbilled_count += 1
+
+    total = bill_paid_total + ledger_unbilled_total
+    return {
+        'total': round(total, 2),
+        'from_bills': round(bill_paid_total, 2),
+        'ledger_unbilled_total': round(ledger_unbilled_total, 2),
+        'paid_bills_count': paid_bills_count,
+        'ledger_unbilled_count': ledger_unbilled_count,
+    }
+
+
 # ==============================================================================
 # MARKETPLACE NORMALIZATION HELPERS
 # ==============================================================================
@@ -14670,11 +14757,9 @@ For claims or questions, please contact:
                         'issue': f'Customer billed {len(bills)} times for same period'
                     })
             
-            # 4c. Check if paid bills are reflected in balance sheet premium income
-            total_paid_from_bills = sum(
-                float(b.get('amount_paid', 0)) for b in BILLING.values()
-                if float(b.get('amount_paid', 0)) > 0 and not is_suspended_account(b.get('customer_id', ''))
-            )
+            # 4c. Check if cumulative paid premiums are reflected in balance sheet
+            premium_income_totals = calculate_cumulative_premium_income(exclude_suspended=True)
+            total_paid_from_bills = premium_income_totals['total']
             
             if abs(total_paid_from_bills - premium_income) > 1.0:  # Allow $1 tolerance
                 billing_validation['bills_not_on_balance_sheet'].append({
@@ -14840,7 +14925,7 @@ For claims or questions, please contact:
             
             # 6. Data Integrity Score
             integrity_checks = {
-                'premium_vs_billing_match': abs(premium_income - sum(float(b.get('amount_paid', 0)) for b in BILLING.values())) < 1,
+                'premium_vs_billing_match': abs(premium_income - total_paid_from_bills) < 1,
                 'claims_vs_expense_match': abs(claims_paid - sum(float(c.get('approved_amount', 0)) for c in paid_claims)) < 1,
                 'reserve_positive': claims_reserve > 0,
                 'audit_trail_present': len(PHINS_BALANCE_SHEET.get('audit_log', [])) > 0
@@ -14998,11 +15083,10 @@ For claims or questions, please contact:
             # ========== COMPREHENSIVE RECONCILIATION ==========
             # Calculate expected values from actual transaction data
             
-            # 1. Premium Income - from paid bills
-            expected_premium_income = sum(
-                float(b.get('amount_paid', 0)) for b in BILLING.values()
-                if float(b.get('amount_paid', 0)) > 0
-            )
+            # 1. Premium Income - cumulative paid premiums from billed and
+            # unbilled/direct premium flows (with de-duplication safeguards).
+            premium_income_totals = calculate_cumulative_premium_income(exclude_suspended=True)
+            expected_premium_income = premium_income_totals['total']
             
             # 2. Claims Paid - from paid claims
             expected_claims_paid = sum(
@@ -15053,17 +15137,14 @@ For claims or questions, please contact:
             )
             
             # 7. Calculate from transaction ledger as secondary source
-            ledger_premium_income = sum(
-                tx.get('amount', 0) for tx in TRANSACTION_LEDGER.values()
-                if tx.get('tx_type') in ['premium_payment', 'bill_paid', 'premium_received']
-            )
+            ledger_premium_income = premium_income_totals['ledger_unbilled_total']
             ledger_claims_paid = sum(
                 tx.get('amount', 0) for tx in TRANSACTION_LEDGER.values()
-                if tx.get('tx_type') in ['claim_payment', 'claim_paid', 'claims_paid']
+                if get_transaction_type(tx) in ['claim_payment', 'claim_paid', 'claims_paid']
             )
             ledger_medical_payments = sum(
                 tx.get('amount', 0) for tx in TRANSACTION_LEDGER.values()
-                if tx.get('tx_type') in ['medical_purchase', 'supplier_payment', 'health_wallet_purchase']
+                if get_transaction_type(tx) in ['medical_purchase', 'supplier_payment', 'health_wallet_purchase']
             )
             
             # Current values in balance sheet
@@ -15086,7 +15167,7 @@ For claims or questions, please contact:
                     'expected': expected_premium_income,
                     'current': current_premium_income,
                     'difference': expected_premium_income - current_premium_income,
-                    'source': 'paid_bills'
+                    'source': 'billed_plus_unbilled_premium_payments'
                 })
                 
                 if auto_correct:
@@ -15156,10 +15237,12 @@ For claims or questions, please contact:
                 # Detailed validation sources
                 'validation_sources': {
                     'premium_income': {
-                        'from_bills': expected_premium_income,
+                        'from_bills': premium_income_totals['from_bills'],
                         'from_ledger': ledger_premium_income,
+                        'from_ledger_unbilled': premium_income_totals['ledger_unbilled_total'],
                         'current': current_premium_income,
-                        'bills_count': len([b for b in BILLING.values() if float(b.get('amount_paid', 0)) > 0])
+                        'bills_count': premium_income_totals['paid_bills_count'],
+                        'ledger_unbilled_count': premium_income_totals['ledger_unbilled_count']
                     },
                     'claims_paid': {
                         'from_claims': expected_claims_paid,
@@ -22397,7 +22480,7 @@ For claims or questions, please contact:
                 card_last4 = None
                 card_type = None
                 billing_frequency = 'monthly'
-                auto_pay = False
+                auto_pay = True
                 
                 if payment_info:
                     card_number = payment_info.get('card_number', '')
@@ -22418,7 +22501,7 @@ For claims or questions, please contact:
                             print(f"Payment processing error: {e}")
                     
                     billing_frequency = payment_info.get('billing_frequency', 'monthly')
-                    auto_pay = payment_info.get('auto_pay', False)
+                    auto_pay = payment_info.get('auto_pay', True)
                 
                 # Process health wallet setup
                 health_wallet_info = data.get('health_wallet', {})
@@ -23206,7 +23289,7 @@ For claims or questions, please contact:
                 # Get billing configuration from application
                 payment_setup = app.get('payment_setup', {})
                 billing_frequency = payment_setup.get('billing_frequency', 'monthly')
-                auto_pay = payment_setup.get('auto_pay', False)
+                auto_pay = payment_setup.get('auto_pay', True)
                 
                 # Calculate billing amount based on frequency
                 if billing_frequency == 'quarterly':
@@ -30891,46 +30974,6 @@ For claims or questions, please contact:
                     except Exception as config_err:
                         pipeline_config_error = str(config_err)
                 
-                # Record in master transaction ledger
-                tx = record_transaction(
-                    customer_id=customer_id,
-                    tx_type='premium_payment',
-                    amount=amount,
-                    description=f'Premium payment via {payment_method}. Savings: ${savings_amount:.2f} ({allocation_prefs["savings_pct"]}%) → Investments',
-                    metadata={
-                        'payment_method': payment_method,
-                        'savings_allocation': savings_amount,
-                        'risk_allocation': risk_amount,
-                        'savings_pct': allocation_prefs['savings_pct'],
-                        'risk_pct': allocation_prefs['risk_pct'],
-                        'index_amount': index_amount,
-                        'bonds_amount': bonds_amount,
-                        'crypto_amount': crypto_amount,
-                        'investment_account_balance': inv_account['balance'] if inv_account else 0.0,
-                        'allocation_source': allocation_source,
-                        'savings_captured_in_pipeline': use_pipeline
-                    }
-                )
-                
-                # Record the payment
-                payment_record = {
-                    'id': payment_id,
-                    'customer_id': customer_id,
-                    'amount': amount,
-                    'savings_allocated': savings_amount,
-                    'risk_allocated': risk_amount,
-                    'savings_pct': allocation_prefs['savings_pct'],
-                    'risk_pct': allocation_prefs['risk_pct'],
-                    'index_amount': index_amount,
-                    'bonds_amount': bonds_amount,
-                    'crypto_amount': crypto_amount,
-                    'payment_method': payment_method,
-                    'nft_token_id': tx.get('nft_token_id'),
-                    'transaction_id': tx['id'],
-                    'timestamp': datetime.now().isoformat(),
-                    'status': 'completed'
-                }
-                
                 # Update any outstanding bills for this customer
                 bills_paid = []
                 remaining_amount = amount
@@ -30953,6 +30996,65 @@ For claims or questions, please contact:
                             BILLING[bill_id] = bill
                             remaining_amount -= payment_for_bill
                             bills_paid.append(bill_id)
+
+                amount_applied_to_bills = amount - remaining_amount
+                unbilled_premium_amount = max(0.0, remaining_amount)
+
+                # Keep PHINS balance sheet in sync with direct customer payments.
+                try:
+                    record_premium_revenue(
+                        customer_id=customer_id,
+                        policy_id='MULTI',
+                        amount=amount,
+                        description=f"Customer premium payment via {payment_method}"
+                    )
+                except Exception as rev_err:
+                    print(f"[BALANCE_SHEET] Error recording customer premium payment: {rev_err}")
+
+                # Record in master transaction ledger after bill application so
+                # metadata can separate billed vs unbilled premium portions.
+                tx = record_transaction(
+                    customer_id=customer_id,
+                    tx_type='premium_payment',
+                    amount=amount,
+                    description=f'Premium payment via {payment_method}. Savings: ${savings_amount:.2f} ({allocation_prefs["savings_pct"]}%) -> Investments',
+                    metadata={
+                        'payment_method': payment_method,
+                        'savings_allocation': savings_amount,
+                        'risk_allocation': risk_amount,
+                        'savings_pct': allocation_prefs['savings_pct'],
+                        'risk_pct': allocation_prefs['risk_pct'],
+                        'index_amount': index_amount,
+                        'bonds_amount': bonds_amount,
+                        'crypto_amount': crypto_amount,
+                        'investment_account_balance': inv_account['balance'] if inv_account else 0.0,
+                        'allocation_source': allocation_source,
+                        'savings_captured_in_pipeline': use_pipeline,
+                        'bills_updated': bills_paid,
+                        'applied_to_bills': amount_applied_to_bills,
+                        'unbilled_premium_amount': unbilled_premium_amount
+                    }
+                )
+
+                payment_record = {
+                    'id': payment_id,
+                    'customer_id': customer_id,
+                    'amount': amount,
+                    'savings_allocated': savings_amount,
+                    'risk_allocated': risk_amount,
+                    'savings_pct': allocation_prefs['savings_pct'],
+                    'risk_pct': allocation_prefs['risk_pct'],
+                    'index_amount': index_amount,
+                    'bonds_amount': bonds_amount,
+                    'crypto_amount': crypto_amount,
+                    'payment_method': payment_method,
+                    'nft_token_id': tx.get('nft_token_id'),
+                    'transaction_id': tx['id'],
+                    'timestamp': datetime.now().isoformat(),
+                    'status': 'completed',
+                    'applied_to_bills': amount_applied_to_bills,
+                    'unbilled_premium_amount': unbilled_premium_amount
+                }
                 
                 # Route savings through the AI Pipeline for smart allocation (opt-in)
                 if use_pipeline and savings_amount > 0:

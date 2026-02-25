@@ -1482,6 +1482,35 @@
         </div>
       </div>
       
+      <!-- Paid Months + Future Schedule -->
+      <div style="background: white; border-radius: 12px; padding: 20px; margin-bottom: 20px;">
+        <h3 style="margin: 0 0 8px 0; color: #333;">🗓️ Premium Months Paid & Future Schedule</h3>
+        <p id="billing-paid-months-summary" style="color: #666; font-size: 0.9rem; margin-bottom: 16px;">
+          Loading paid/pending monthly schedule...
+        </p>
+        <div class="table-card" style="border-radius: 8px; overflow: hidden;">
+          <table class="data-table" style="margin: 0;">
+            <thead style="background: #f5f5f5;">
+              <tr>
+                <th>Month</th>
+                <th>Policy</th>
+                <th>Status</th>
+                <th>Monthly Premium</th>
+                <th>Payment Date</th>
+                <th>Cycle</th>
+              </tr>
+            </thead>
+            <tbody id="billing-paid-months-table">
+              <tr>
+                <td colspan="6" style="text-align: center; color: #666; padding: 30px;">
+                  Loading premium month schedule...
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      
       <!-- Billing History -->
       <div style="background: white; border-radius: 12px; padding: 20px;">
         <h3 style="margin: 0 0 16px 0; color: #333;">📜 Billing History</h3>
@@ -6778,6 +6807,207 @@
     }
 
     // ========== BILLING & SETTINGS FUNCTIONS ==========
+    const BILLING_SCHEDULE_MONTHS = 24;
+    const BILLING_MONTH_STATUS_PRIORITY = { paid: 4, overdue: 3, due: 2, scheduled: 1 };
+    
+    function getCycleMonthsForFrequency(frequency) {
+      const normalized = String(frequency || 'monthly').toLowerCase();
+      if (normalized === 'quarterly') return 3;
+      if (normalized === 'semi_annual' || normalized === 'semi-annual') return 6;
+      if (normalized === 'annual' || normalized === 'yearly') return 12;
+      return 1;
+    }
+    
+    function parseProjectionMonth(entry) {
+      const period = String(entry?.payment_period || '').trim();
+      if (/^\d{4}-\d{2}$/.test(period)) {
+        const [yy, mm] = period.split('-').map(Number);
+        return new Date(yy, mm - 1, 1);
+      }
+      const raw = entry?.due_date || entry?.payment_date;
+      if (!raw) return null;
+      const date = new Date(raw);
+      if (Number.isNaN(date.getTime())) return null;
+      return new Date(date.getFullYear(), date.getMonth(), 1);
+    }
+    
+    function toMonthKey(dateObj) {
+      const yyyy = dateObj.getFullYear();
+      const mm = String(dateObj.getMonth() + 1).padStart(2, '0');
+      return `${yyyy}-${mm}`;
+    }
+    
+    function toMonthLabel(monthKey) {
+      const [yy, mm] = monthKey.split('-').map(Number);
+      return new Date(yy, mm - 1, 1).toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+    }
+    
+    function normalizeProjectionStatus(status) {
+      const normalized = String(status || '').toLowerCase().replace(/\s+/g, '_');
+      if (['paid', 'prepaid', 'completed'].includes(normalized)) return 'paid';
+      if (normalized === 'overdue') return 'overdue';
+      if (['due', 'outstanding', 'pending', 'partial', 'partially_paid'].includes(normalized)) return 'due';
+      return 'scheduled';
+    }
+    
+    function getScheduleStatusBadge(status) {
+      if (status === 'paid') {
+        return { icon: '✅', label: 'Paid', fg: '#2e7d32', bg: '#e8f5e9' };
+      }
+      if (status === 'overdue') {
+        return { icon: '❗', label: 'Overdue', fg: '#b71c1c', bg: '#ffebee' };
+      }
+      if (status === 'due') {
+        return { icon: '⏳', label: 'Due', fg: '#ef6c00', bg: '#fff3e0' };
+      }
+      return { icon: '🗓️', label: 'Scheduled', fg: '#1565c0', bg: '#e3f2fd' };
+    }
+    
+    function mergeMonthlyScheduleRow(rowMap, row) {
+      const key = `${row.policy_id}::${row.month_key}`;
+      const existing = rowMap.get(key);
+      if (!existing) {
+        rowMap.set(key, row);
+        return;
+      }
+      const incomingPriority = BILLING_MONTH_STATUS_PRIORITY[row.status] || 0;
+      const existingPriority = BILLING_MONTH_STATUS_PRIORITY[existing.status] || 0;
+      if (incomingPriority > existingPriority || (incomingPriority === existingPriority && row.amount > existing.amount)) {
+        rowMap.set(key, row);
+      }
+    }
+    
+    async function loadBillingPaidMonthsSchedule() {
+      const tbody = document.getElementById('billing-paid-months-table');
+      const summaryEl = document.getElementById('billing-paid-months-summary');
+      if (!tbody || !summaryEl) return;
+      
+      const cid = customerId || sessionStorage.getItem('customer_id');
+      if (!cid) {
+        tbody.innerHTML = `
+          <tr>
+            <td colspan="6" style="text-align:center; color:#666; padding:24px;">No customer context found.</td>
+          </tr>
+        `;
+        summaryEl.textContent = 'Monthly schedule unavailable.';
+        return;
+      }
+      
+      try {
+        const response = await fetch(`/api/billing/projections?customer_id=${encodeURIComponent(cid)}&months=${BILLING_SCHEDULE_MONTHS}`, {
+          headers: { 'Authorization': `Bearer ${authToken}` }
+        });
+        
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`);
+        }
+        
+        const data = await response.json();
+        const projections = data.projections || [];
+        
+        if (projections.length === 0) {
+          tbody.innerHTML = `
+            <tr>
+              <td colspan="6" style="text-align:center; color:#666; padding:24px;">No paid/pending premium months found yet.</td>
+            </tr>
+          `;
+          summaryEl.textContent = 'No premium month activity found for this account.';
+          return;
+        }
+        
+        const monthRows = new Map();
+        
+        projections.forEach(projection => {
+          const policyId = projection.policy_id || 'N/A';
+          const frequency = String(projection.payment_frequency || 'monthly').toLowerCase();
+          const cycleMonths = getCycleMonthsForFrequency(frequency);
+          const cycleLabel = frequency.replace(/_/g, '-');
+          
+          const pushEntries = (entries) => {
+            (entries || []).forEach(entry => {
+              const anchorMonth = parseProjectionMonth(entry);
+              if (!anchorMonth) return;
+              
+              const normalizedStatus = normalizeProjectionStatus(entry.status);
+              const cycleAmount = Number(entry.final_amount || entry.base_amount || projection.monthly_premium || 0);
+              const cyclePaid = Number(entry.amount_paid || 0);
+              const monthlyAmount = cycleMonths > 0 ? cycleAmount / cycleMonths : cycleAmount;
+              const monthlyPaid = cycleMonths > 0 ? cyclePaid / cycleMonths : cyclePaid;
+              const paymentDate = entry.payment_date
+                ? new Date(entry.payment_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+                : '-';
+              
+              for (let idx = 0; idx < cycleMonths; idx += 1) {
+                const monthDate = new Date(anchorMonth.getTime());
+                monthDate.setMonth(monthDate.getMonth() + idx);
+                const monthKey = toMonthKey(monthDate);
+                
+                const status = normalizedStatus === 'paid' ? 'paid' : normalizedStatus;
+                const amount = status === 'paid' ? (monthlyPaid || monthlyAmount) : monthlyAmount;
+                
+                mergeMonthlyScheduleRow(monthRows, {
+                  month_key: monthKey,
+                  month_label: toMonthLabel(monthKey),
+                  policy_id: policyId,
+                  status,
+                  amount,
+                  payment_date: status === 'paid' ? paymentDate : '-',
+                  cycle: cycleLabel
+                });
+              }
+            });
+          };
+          
+          pushEntries(projection.historical_payments);
+          pushEntries(projection.future_projections);
+        });
+        
+        const rows = Array.from(monthRows.values())
+          .sort((a, b) => a.month_key.localeCompare(b.month_key) || a.policy_id.localeCompare(b.policy_id));
+        
+        if (rows.length === 0) {
+          tbody.innerHTML = `
+            <tr>
+              <td colspan="6" style="text-align:center; color:#666; padding:24px;">No monthly schedule rows available.</td>
+            </tr>
+          `;
+          summaryEl.textContent = 'No monthly schedule rows available.';
+          return;
+        }
+        
+        const paidCount = rows.filter(r => r.status === 'paid').length;
+        const scheduledCount = rows.filter(r => r.status === 'scheduled').length;
+        const dueCount = rows.filter(r => r.status === 'due' || r.status === 'overdue').length;
+        
+        summaryEl.textContent = `${paidCount} premium month(s) paid, ${dueCount} due/overdue, ${scheduledCount} upcoming scheduled month(s).`;
+        
+        tbody.innerHTML = rows.slice(0, 72).map(row => {
+          const badge = getScheduleStatusBadge(row.status);
+          return `
+            <tr>
+              <td>${row.month_label}</td>
+              <td style="font-weight: 600;">${row.policy_id}</td>
+              <td>
+                <span style="display:inline-block; padding:4px 10px; border-radius:999px; background:${badge.bg}; color:${badge.fg}; font-size:0.8rem; font-weight:600;">
+                  ${badge.icon} ${badge.label}
+                </span>
+              </td>
+              <td style="font-weight: 600;">$${Number(row.amount || 0).toFixed(2)}</td>
+              <td>${row.payment_date}</td>
+              <td style="text-transform: capitalize;">${row.cycle}</td>
+            </tr>
+          `;
+        }).join('');
+      } catch (err) {
+        console.error('Error loading paid months schedule:', err);
+        summaryEl.textContent = 'Could not load paid month schedule.';
+        tbody.innerHTML = `
+          <tr>
+            <td colspan="6" style="text-align:center; color:#b71c1c; padding:24px;">Unable to load billing month schedule right now.</td>
+          </tr>
+        `;
+      }
+    }
     
     // Load billing details and premium allocations
     async function loadBillingDetails() {
@@ -6840,6 +7070,7 @@
         console.error('Error loading billing details:', err);
       }
       
+      await loadBillingPaidMonthsSchedule();
       // Load premium allocations
       await loadPremiumAllocations();
     }
@@ -7203,7 +7434,7 @@
         
         <div style="margin-bottom: 16px;">
           <label style="display: flex; align-items: center; gap: 12px; cursor: pointer;">
-            <input type="checkbox" id="autopay-enabled" style="width: 20px; height: 20px;">
+            <input type="checkbox" id="autopay-enabled" checked style="width: 20px; height: 20px;">
             <span style="font-weight: 500;">Enable Auto-Pay</span>
           </label>
         </div>

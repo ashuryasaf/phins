@@ -351,6 +351,19 @@ class TestMonthlyBillingProjectionService:
         outstanding = [e for e in proj.historical_entries if e.status == ProjectionEntryStatus.DUE]
         assert len(outstanding) == 1
     
+    def test_policy_projection_does_not_mix_other_policy_bills(self, service):
+        """Historical entries must remain policy-scoped for integrity."""
+        projections = service.get_customer_billing_projection(
+            customer_id='CUST001',
+            policy_id='POL002'
+        )
+        
+        assert len(projections) == 1
+        proj = projections[0]
+        
+        # Sample billing data only has POL001 bills.
+        assert len(proj.historical_entries) == 0
+    
     def test_projection_totals_calculation(self, service):
         """Test that projection totals are calculated correctly"""
         projections = service.get_customer_billing_projection(
@@ -532,6 +545,38 @@ class TestMonthlyBillingProjectionService:
         # Quarterly should have discount tier
         assert quarterly_proj.prepaid_tier == PrepaidDiscountTier.QUARTERLY
         assert quarterly_proj.prepaid_discount_rate == Decimal('2.00')
+    
+    def test_payment_frequency_detection_supports_frequency_key(self, sample_customers):
+        """Policies using billing.frequency should map correctly."""
+        policies = {
+            'POLFREQ': {
+                'id': 'POLFREQ',
+                'customer_id': 'CUST001',
+                'type': 'health',
+                'status': 'active',
+                'monthly_premium': 100.00,
+                'annual_premium': 1200.00,
+                'start_date': '2026-01-01T00:00:00',
+                'billing': {
+                    'frequency': 'quarterly',
+                    'risk_percentage': 75,
+                    'savings_percentage': 25
+                }
+            }
+        }
+        service = MonthlyBillingProjectionService(
+            customers=sample_customers,
+            policies=policies,
+            billing={}
+        )
+        
+        projections = service.get_customer_billing_projection(
+            customer_id='CUST001',
+            policy_id='POLFREQ'
+        )
+        
+        assert len(projections) == 1
+        assert projections[0].payment_frequency == PaymentFrequency.QUARTERLY
     
     def test_projection_to_dict(self, service):
         """Test projection conversion to dictionary"""

@@ -2847,10 +2847,8 @@
           // Log detailed data to console for debugging
           console.log('Reconciliation Report:', data);
           
-          // Reload balance sheet to show updated values
-          if (data.corrections_made.length > 0) {
-            loadBalanceSheet();
-          }
+          // Reload balance sheet so Premium Income always reflects reconcile result
+          loadBalanceSheet();
         } else {
           alert('Failed to reconcile balance sheet: ' + response.status);
         }
