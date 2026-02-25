@@ -513,7 +513,7 @@
                         </div>
                         <div class="stat-card" style="background: linear-gradient(135deg, #0891b2 0%, #06b6d4 100%); color: white;">
                             <div class="stat-value" id="bs-total-revenue" style="color: white;">$0</div>
-                            <div class="stat-label" style="color: rgba(255,255,255,0.8);">Total Revenue</div>
+                            <div class="stat-label" style="color: rgba(255,255,255,0.8);">Total Collected (Premiums)</div>
                         </div>
                         <div class="stat-card" style="background: linear-gradient(135deg, #dc2626 0%, #ef4444 100%); color: white;">
                             <div class="stat-value" id="bs-claims-paid" style="color: white;">$0</div>
@@ -2164,6 +2164,10 @@
                         <div class="stat-card">
                             <div class="stat-value">${formatCurrency(data.financial_reconciliation.total_collected)}</div>
                             <div class="stat-label">Total Collected</div>
+                            <div style="font-size:0.78em;color:#555;margin-top:4px;">
+                                ↳ From Bills: ${formatCurrency((data.financial_reconciliation.cumulative_premium_breakdown || {}).from_bills || 0)}<br>
+                                ↳ From Ledger: ${formatCurrency((data.financial_reconciliation.cumulative_premium_breakdown || {}).from_ledger || 0)}
+                            </div>
                         </div>
                         <div class="stat-card">
                             <div class="stat-value">${data.financial_reconciliation.collection_rate}%</div>
@@ -3304,7 +3308,7 @@
                     document.getElementById('bs-total-balance').textContent = fmt(bs.total_balance);
                     document.getElementById('bs-claims-reserve').textContent = fmt(bs.claims_reserve);
                     document.getElementById('bs-operating-reserve').textContent = fmt(bs.operating_reserve);
-                    document.getElementById('bs-total-revenue').textContent = fmt(bs.total_revenue);
+                    document.getElementById('bs-total-revenue').textContent = fmt(bs.cumulative_premium || bs.total_revenue);
                     document.getElementById('bs-claims-paid').textContent = fmt(bs.expense_breakdown?.claims_paid || 0);
                     document.getElementById('bs-net-income').textContent = fmt(bs.net_income);
                     
@@ -3436,7 +3440,7 @@
                 ['Total Balance', document.getElementById('bs-total-balance')?.textContent || '$0'],
                 ['Claims Reserve', document.getElementById('bs-claims-reserve')?.textContent || '$0'],
                 ['Operating Reserve', document.getElementById('bs-operating-reserve')?.textContent || '$0'],
-                ['Total Revenue', document.getElementById('bs-total-revenue')?.textContent || '$0'],
+                ['Total Collected (Premiums)', document.getElementById('bs-total-revenue')?.textContent || '$0'],
                 ['Claims Paid', document.getElementById('bs-claims-paid')?.textContent || '$0'],
                 ['Net Income', document.getElementById('bs-net-income')?.textContent || '$0'],
                 [''],
