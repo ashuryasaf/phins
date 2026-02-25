@@ -246,6 +246,86 @@ class TestBalanceSheetIntegrity(unittest.TestCase):
             else:
                 self.TRANSACTION_LEDGER[tx_id] = prev_tx
 
+    def test_cumulative_premium_income_includes_paid_bill_without_amount_paid_field(self):
+        """Legacy paid bills without amount_paid should still count via amount/amount_due."""
+        bill_id = "TEST-BILL-CUM-004"
+        prev_bill = self.BILLING.get(bill_id)
+        baseline = self.calculate_cumulative_premium_income(exclude_suspended=False)
+
+        try:
+            self.BILLING[bill_id] = {
+                'id': bill_id,
+                'customer_id': 'TEST-CUST-CUM-004',
+                'policy_id': 'TEST-POL-CUM-004',
+                'amount': 66.0,
+                'amount_due': 66.0,
+                'amount_paid': 0.0,   # Legacy missing mirror value
+                'status': 'paid',
+                'created_date': datetime.now().isoformat(),
+                'paid_date': datetime.now().isoformat()
+            }
+
+            totals = self.calculate_cumulative_premium_income(exclude_suspended=False)
+            self.assertAlmostEqual(totals['from_bills'] - baseline['from_bills'], 66.0, places=2)
+            self.assertAlmostEqual(totals['total'] - baseline['total'], 66.0, places=2)
+        finally:
+            if prev_bill is None:
+                self.BILLING.pop(bill_id, None)
+            else:
+                self.BILLING[bill_id] = prev_bill
+
+    def test_cumulative_premium_income_uses_ledger_billed_fallback_for_unmirrored_bill(self):
+        """Ledger billed payment should count when BILLING.amount_paid is not updated."""
+        bill_id = "TEST-BILL-CUM-005"
+        tx_id = "TEST-TX-CUM-005"
+        prev_bill = self.BILLING.get(bill_id)
+        prev_tx = self.TRANSACTION_LEDGER.get(tx_id)
+        baseline = self.calculate_cumulative_premium_income(exclude_suspended=False)
+
+        try:
+            self.BILLING[bill_id] = {
+                'id': bill_id,
+                'customer_id': 'TEST-CUST-CUM-005',
+                'policy_id': 'TEST-POL-CUM-005',
+                'amount': 93.0,
+                'amount_due': 93.0,
+                'amount_paid': 0.0,   # Not mirrored yet
+                'status': 'outstanding',
+                'created_date': datetime.now().isoformat()
+            }
+            self.TRANSACTION_LEDGER[tx_id] = {
+                'id': tx_id,
+                'customer_id': 'TEST-CUST-CUM-005',
+                'type': 'bill_payment',
+                'amount': 93.0,
+                'metadata': {
+                    'bill_id': bill_id,
+                    'policy_id': 'TEST-POL-CUM-005',
+                    'bill_status': 'paid'
+                },
+                'timestamp': datetime.now().isoformat(),
+                'status': 'completed',
+                'nft_token_id': 'NFT-TEST-CUM-005'
+            }
+
+            totals = self.calculate_cumulative_premium_income(exclude_suspended=False)
+            self.assertAlmostEqual(totals['from_bills'], baseline['from_bills'], places=2)
+            self.assertAlmostEqual(
+                totals.get('ledger_billed_fallback_total', 0) - baseline.get('ledger_billed_fallback_total', 0),
+                93.0,
+                places=2
+            )
+            self.assertAlmostEqual(totals['total'] - baseline['total'], 93.0, places=2)
+        finally:
+            if prev_bill is None:
+                self.BILLING.pop(bill_id, None)
+            else:
+                self.BILLING[bill_id] = prev_bill
+            if prev_tx is None:
+                self.TRANSACTION_LEDGER.pop(tx_id, None)
+            else:
+                self.TRANSACTION_LEDGER[tx_id] = prev_tx
+
     def test_sync_balance_sheet_premium_income_updates_stale_value(self):
         """Sync helper should update stale balance-sheet premium income values."""
         self.initialize_balance_sheet()

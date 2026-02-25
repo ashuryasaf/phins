@@ -127,10 +127,11 @@ def calculate_cumulative_premium_income(exclude_suspended: bool = True) -> Dict[
     Sources:
     1) Paid bill amounts (authoritative for billed + auto-pay collections)
     2) Explicit unbilled premium ledger amounts (when metadata marks it)
+    3) Ledger billed-payment fallback when bill mirrors are missing/drifted
     """
     bill_paid_total = 0.0
     paid_bills_count = 0
-    paid_bill_ids = set()
+    bill_paid_amount_by_id: Dict[str, float] = {}
 
     for bill_id, bill in BILLING.items():
         customer_id = bill.get('customer_id', '')
@@ -138,15 +139,25 @@ def calculate_cumulative_premium_income(exclude_suspended: bool = True) -> Dict[
             continue
 
         amount_paid = safe_float(bill.get('amount_paid', 0))
+        # Legacy compatibility: some paid bills may not carry amount_paid.
+        if amount_paid <= 0 and status_eq(bill, 'paid'):
+            amount_paid = safe_float(bill.get('amount_due', bill.get('amount', 0)))
         if amount_paid <= 0:
             continue
 
         bill_paid_total += amount_paid
         paid_bills_count += 1
-        paid_bill_ids.add(str(bill.get('id') or bill_id))
+        canonical_bill_id = str(bill.get('id') or bill_id).strip() or str(bill_id)
+        bill_paid_amount_by_id[canonical_bill_id] = (
+            bill_paid_amount_by_id.get(canonical_bill_id, 0.0) + amount_paid
+        )
 
     ledger_unbilled_total = 0.0
     ledger_unbilled_count = 0
+    ledger_billed_by_bill_id: Dict[str, float] = {}
+    # Safety bucket for legacy premium_payment entries that explicitly report
+    # applied_to_bills but don't provide bill linkage metadata.
+    legacy_applied_without_bill_links = 0.0
 
     for tx in TRANSACTION_LEDGER.values():
         tx_type = get_transaction_type(tx)
@@ -166,51 +177,85 @@ def calculate_cumulative_premium_income(exclude_suspended: bool = True) -> Dict[
             metadata = {}
 
         linked_bill_id = str(metadata.get('bill_id') or '').strip()
-        # If already captured by a paid bill, don't count it again.
-        if linked_bill_id and linked_bill_id in paid_bill_ids:
-            continue
+        unbilled_amount = 0.0
+        billed_fallback_amount = 0.0
 
         if tx_type == 'premium_payment':
             # For customer premium payments, include only explicitly unbilled
             # remainder. This prevents double counting when a payment has
             # already been applied to billing records.
             if metadata.get('unbilled_premium_amount') is not None:
-                amount = safe_float(metadata.get('unbilled_premium_amount', 0))
+                unbilled_amount = safe_float(metadata.get('unbilled_premium_amount', 0))
+                billed_fallback_amount = max(0.0, amount - unbilled_amount)
             elif metadata.get('applied_to_bills') is not None:
-                amount = max(0.0, amount - safe_float(metadata.get('applied_to_bills', 0)))
+                applied_to_bills = max(0.0, safe_float(metadata.get('applied_to_bills', 0)))
+                unbilled_amount = max(0.0, amount - applied_to_bills)
+                billed_fallback_amount = applied_to_bills
             else:
-                # Legacy premium_payment entries without explicit unbilled
-                # metadata are treated as billed/unknown and excluded to keep
-                # reconciliation integrity strict.
-                amount = 0.0
+                # Legacy premium_payment entries without explicit unbilled metadata
+                # are treated as billed/unknown and can be used as fallback evidence.
+                billed_fallback_amount = amount
         elif tx_type == 'premium_deposit':
             # Unified premium destination deposits can be unbilled premiums
             # (bill_status=not_found). Prefer explicit metadata amount.
             if metadata.get('unbilled_premium_amount') is not None:
-                amount = safe_float(metadata.get('unbilled_premium_amount', 0))
+                unbilled_amount = safe_float(metadata.get('unbilled_premium_amount', 0))
+                billed_fallback_amount = max(0.0, amount - unbilled_amount)
             elif str(metadata.get('bill_status') or '').lower() == 'not_found':
-                amount = safe_float(amount, 0)
+                unbilled_amount = safe_float(amount, 0)
             else:
-                amount = 0.0
+                billed_fallback_amount = amount
         elif tx_type in {'bill_payment', 'auto_pay_execution'}:
-            # Bill/admin/auto-pay flows are already represented in BILLING.
-            # Only allow explicit unbilled residual amounts if present.
+            # Bill/admin/auto-pay flows should normally be in BILLING.
+            # Keep explicit unbilled residuals and capture billed component as
+            # fallback evidence when BILLING mirrors are missing/drifted.
             if metadata.get('unbilled_premium_amount') is not None:
-                amount = safe_float(metadata.get('unbilled_premium_amount', 0))
+                unbilled_amount = safe_float(metadata.get('unbilled_premium_amount', 0))
+                billed_fallback_amount = max(0.0, amount - unbilled_amount)
             else:
-                amount = 0.0
+                billed_fallback_amount = amount
 
-        if amount <= 0:
-            continue
+        if unbilled_amount > 0:
+            ledger_unbilled_total += unbilled_amount
+            ledger_unbilled_count += 1
 
-        ledger_unbilled_total += amount
-        ledger_unbilled_count += 1
+        if billed_fallback_amount > 0:
+            if linked_bill_id:
+                ledger_billed_by_bill_id[linked_bill_id] = (
+                    ledger_billed_by_bill_id.get(linked_bill_id, 0.0) + billed_fallback_amount
+                )
+            elif tx_type == 'premium_payment' and metadata.get('applied_to_bills') is not None:
+                bills_updated = metadata.get('bills_updated')
+                if isinstance(bills_updated, list) and bills_updated:
+                    split = billed_fallback_amount / max(len(bills_updated), 1)
+                    for linked_id in bills_updated:
+                        normalized_id = str(linked_id or '').strip()
+                        if not normalized_id:
+                            continue
+                        ledger_billed_by_bill_id[normalized_id] = (
+                            ledger_billed_by_bill_id.get(normalized_id, 0.0) + split
+                        )
+                else:
+                    legacy_applied_without_bill_links += billed_fallback_amount
 
-    total = bill_paid_total + ledger_unbilled_total
+    # Add billed-payment residuals only when BILLING has not already captured them.
+    ledger_billed_fallback_total = 0.0
+    for bill_id, ledger_amount in ledger_billed_by_bill_id.items():
+        captured_in_bills = bill_paid_amount_by_id.get(bill_id, 0.0)
+        residual = max(0.0, ledger_amount - captured_in_bills)
+        ledger_billed_fallback_total += residual
+
+    # Last-resort legacy support: if bill mirror totals are completely missing,
+    # allow explicitly applied billed amounts without bill links.
+    if bill_paid_total <= 0 and legacy_applied_without_bill_links > 0:
+        ledger_billed_fallback_total += legacy_applied_without_bill_links
+
+    total = bill_paid_total + ledger_unbilled_total + ledger_billed_fallback_total
     return {
         'total': round(total, 2),
         'from_bills': round(bill_paid_total, 2),
         'ledger_unbilled_total': round(ledger_unbilled_total, 2),
+        'ledger_billed_fallback_total': round(ledger_billed_fallback_total, 2),
         'paid_bills_count': paid_bills_count,
         'ledger_unbilled_count': ledger_unbilled_count,
     }
@@ -5792,6 +5837,7 @@ For claims or questions, please contact:
                 'total_premium_collected': total_premium_collected,
                 'total_collected_from_bills': premium_income_totals['from_bills'],
                 'total_collected_unbilled': premium_income_totals['ledger_unbilled_total'],
+                'total_collected_ledger_billed_fallback': premium_income_totals.get('ledger_billed_fallback_total', 0.0),
                 'outstanding_balance': outstanding_balance,
                 'total_investment_value': total_investment_value,
                 'total_coverage_amount': total_coverage_amount,
@@ -6426,10 +6472,12 @@ For claims or questions, please contact:
                 report['premium_income_cumulative'] = premium_income_totals['total']
                 report['premium_income_from_bills'] = premium_income_totals['from_bills']
                 report['premium_income_unbilled'] = premium_income_totals['ledger_unbilled_total']
+                report['premium_income_billed_fallback'] = premium_income_totals.get('ledger_billed_fallback_total', 0.0)
 
                 if dashboard_type in ['accountant', 'billing']:
                     report['total_collected'] = premium_income_totals['total']
                     report['total_collected_from_bills'] = premium_income_totals['from_bills']
+                    report['total_collected_ledger_billed_fallback'] = premium_income_totals.get('ledger_billed_fallback_total', 0.0)
                     total_billed = sum(
                         safe_float(b.get('amount_due', b.get('amount', 0)))
                         for b in BILLING.values()
@@ -9675,6 +9723,7 @@ For claims or questions, please contact:
                 'total_collected': round(total_collected, 2),
                 'total_collected_from_bills': round(total_collected_from_bills, 2),
                 'total_collected_unbilled': round(premium_income_totals['ledger_unbilled_total'], 2),
+                'total_collected_ledger_billed_fallback': round(premium_income_totals.get('ledger_billed_fallback_total', 0.0), 2),
                 'cumulative_premium_income': round(total_collected, 2),
                 'outstanding_balance': round(outstanding, 2),
                 'outstanding_receivables': round(outstanding, 2),
@@ -14660,6 +14709,7 @@ For claims or questions, please contact:
                     'premium_income_sources': {
                         'from_bills': premium_income_sync['totals']['from_bills'],
                         'from_ledger_unbilled': premium_income_sync['totals']['ledger_unbilled_total'],
+                        'from_ledger_billed_fallback': premium_income_sync['totals'].get('ledger_billed_fallback_total', 0.0),
                         'paid_bills_count': premium_income_sync['totals']['paid_bills_count'],
                         'ledger_unbilled_count': premium_income_sync['totals']['ledger_unbilled_count'],
                     },
@@ -15288,7 +15338,10 @@ For claims or questions, please contact:
             )
             
             # 7. Calculate from transaction ledger as secondary source
-            ledger_premium_income = premium_income_totals['ledger_unbilled_total']
+            ledger_premium_income = (
+                premium_income_totals['ledger_unbilled_total'] +
+                premium_income_totals.get('ledger_billed_fallback_total', 0.0)
+            )
             ledger_claims_paid = sum(
                 tx.get('amount', 0) for tx in TRANSACTION_LEDGER.values()
                 if get_transaction_type(tx) in ['claim_payment', 'claim_paid', 'claims_paid']
@@ -15391,6 +15444,7 @@ For claims or questions, please contact:
                         'from_bills': premium_income_totals['from_bills'],
                         'from_ledger': ledger_premium_income,
                         'from_ledger_unbilled': premium_income_totals['ledger_unbilled_total'],
+                        'from_ledger_billed_fallback': premium_income_totals.get('ledger_billed_fallback_total', 0.0),
                         'current': current_premium_income,
                         'bills_count': premium_income_totals['paid_bills_count'],
                         'ledger_unbilled_count': premium_income_totals['ledger_unbilled_count']

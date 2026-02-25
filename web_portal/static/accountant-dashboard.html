@@ -3311,7 +3311,7 @@
                         document.getElementById('bs-premium-income').textContent = fmt(bs.revenue_breakdown.premium_income);
                         const premiumSources = bs.premium_income_sources || {};
                         document.getElementById('bs-premium-income').title =
-                            `Billed/Auto-Pay: ${fmt(premiumSources.from_bills || 0)} + Explicit Unbilled (NFT): ${fmt(premiumSources.from_ledger_unbilled || 0)}`;
+                            `Billed/Auto-Pay: ${fmt(premiumSources.from_bills || 0)} + Explicit Unbilled (NFT): ${fmt(premiumSources.from_ledger_unbilled || 0)} + Recovered Billed (Ledger Fallback): ${fmt(premiumSources.from_ledger_billed_fallback || 0)}`;
                         document.getElementById('bs-management-fees').textContent = fmt(bs.revenue_breakdown.management_fees);
                         document.getElementById('bs-underwriting-fees').textContent = fmt(bs.revenue_breakdown.underwriting_fees);
                         document.getElementById('bs-investment-earnings').textContent = fmt(bs.revenue_breakdown.investment_earnings);
@@ -3396,6 +3396,7 @@
                     message += `💳 PREMIUM INCOME SOURCES:\n`;
                     message += `• Billed/Auto-Pay Collected: ${fmt(premiumSource.from_bills)}\n`;
                     message += `• Explicit Unbilled Premiums: ${fmt(premiumSource.from_ledger_unbilled)}\n`;
+                    message += `• Recovered Billed (Ledger Fallback): ${fmt(premiumSource.from_ledger_billed_fallback)}\n`;
                     message += `• Cumulative Premium Income: ${fmt(data.summary_totals?.total_premiums_collected)}\n\n`;
                     
                     message += `🏪 MEDICAL SERVICES:\n`;
