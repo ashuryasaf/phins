@@ -31555,11 +31555,11 @@ For claims or questions, please contact:
             for field_name, aliases in critical_fields:
                 field_value = _field(*aliases)
                 if field_value:
-                    is_threat, threat_reason = validate_input_security(field_value, self.client_address[0], field_name)
-                    if is_threat:
+                    is_valid, validation_error = validate_input_security(field_value, self.client_address[0], field_name)
+                    if not is_valid:
                         self._set_json_headers(400)
                         self.wfile.write(
-                            json.dumps({'error': f'Invalid input in {field_name}: {threat_reason or "security validation failed"}'}).encode('utf-8')
+                            json.dumps({'error': f'Invalid input in {field_name}: {validation_error or "security validation failed"}'}).encode('utf-8')
                         )
                         return
 
