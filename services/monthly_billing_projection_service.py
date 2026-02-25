@@ -333,7 +333,19 @@ class MonthlyBillingProjectionService:
             except:
                 billing_config = {}
         
-        freq = billing_config.get('payment_frequency', '').lower()
+        payment_setup = policy.get('payment_setup', {})
+        if isinstance(payment_setup, str):
+            try:
+                payment_setup = json.loads(payment_setup)
+            except Exception:
+                payment_setup = {}
+
+        freq = str(
+            billing_config.get('payment_frequency') or
+            billing_config.get('frequency') or
+            payment_setup.get('billing_frequency') or
+            ''
+        ).lower()
         freq_map = {
             'monthly': PaymentFrequency.MONTHLY,
             'quarterly': PaymentFrequency.QUARTERLY,
@@ -599,15 +611,26 @@ class MonthlyBillingProjectionService:
         entries = []
         previous_hash = None
         
-        # Get bills for this customer/policy
+        # Prefer policy-scoped bills for projection integrity. If no policy_id
+        # is present on legacy records, include customer-scoped legacy bills.
         customer_bills = [
             b for b in self.billing.values()
-            if (b.get('customer_id') == customer_id or b.get('policy_id') == policy_id)
+            if b.get('policy_id') == policy_id
         ]
+        if not customer_bills:
+            customer_bills = [
+                b for b in self.billing.values()
+                if b.get('customer_id') == customer_id and not b.get('policy_id')
+            ]
         
         # Sort by date
         def get_bill_date(bill):
-            date_str = bill.get('paid_date') or bill.get('due_date') or bill.get('created_at')
+            date_str = (
+                bill.get('paid_date')
+                or bill.get('due_date')
+                or bill.get('created_date')
+                or bill.get('created_at')
+            )
             if date_str:
                 try:
                     return datetime.fromisoformat(date_str.replace('Z', '+00:00'))
@@ -642,7 +665,7 @@ class MonthlyBillingProjectionService:
                 status = ProjectionEntryStatus.PAID
             elif status_str == 'overdue':
                 status = ProjectionEntryStatus.OVERDUE
-            elif status_str in ['outstanding', 'pending']:
+            elif status_str in ['outstanding', 'pending', 'partial', 'partially_paid']:
                 status = ProjectionEntryStatus.DUE
             else:
                 status = ProjectionEntryStatus.SCHEDULED

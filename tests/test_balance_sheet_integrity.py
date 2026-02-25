@@ -28,16 +28,19 @@ class TestBalanceSheetIntegrity(unittest.TestCase):
         from server import (
             PHINS_BALANCE_SHEET, BILLING, CLAIMS, 
             initialize_balance_sheet, record_premium_revenue,
-            process_claim_payment_to_wallet, HEALTH_WALLETS
+            process_claim_payment_to_wallet, HEALTH_WALLETS,
+            TRANSACTION_LEDGER, calculate_cumulative_premium_income
         )
         
         self.PHINS_BALANCE_SHEET = PHINS_BALANCE_SHEET
         self.BILLING = BILLING
         self.CLAIMS = CLAIMS
         self.HEALTH_WALLETS = HEALTH_WALLETS
+        self.TRANSACTION_LEDGER = TRANSACTION_LEDGER
         self.initialize_balance_sheet = initialize_balance_sheet
         self.record_premium_revenue = record_premium_revenue
         self.process_claim_payment_to_wallet = process_claim_payment_to_wallet
+        self.calculate_cumulative_premium_income = calculate_cumulative_premium_income
     
     def test_balance_sheet_initialized(self):
         """Test that balance sheet is properly initialized"""
@@ -115,6 +118,53 @@ class TestBalanceSheetIntegrity(unittest.TestCase):
         print(f"✓ Premium revenue recorded: ${test_amount:.2f}")
         print(f"  Premium income: ${initial_premium:.2f} -> ${new_premium:.2f}")
         print(f"  Total revenue: ${initial_total:.2f} -> ${new_total:.2f}")
+    
+    def test_cumulative_premium_income_includes_unbilled_ledger_amounts(self):
+        """Cumulative premium income should include bill + unbilled premium ledger."""
+        bill_id = "TEST-BILL-CUM-001"
+        tx_id = "TEST-TX-CUM-001"
+        
+        # Preserve existing entries if they exist.
+        prev_bill = self.BILLING.get(bill_id)
+        prev_tx = self.TRANSACTION_LEDGER.get(tx_id)
+        
+        try:
+            self.BILLING[bill_id] = {
+                'id': bill_id,
+                'customer_id': 'TEST-CUST-CUM-001',
+                'policy_id': 'TEST-POL-CUM-001',
+                'amount': 100.0,
+                'amount_paid': 100.0,
+                'status': 'paid',
+                'created_date': datetime.now().isoformat(),
+                'paid_date': datetime.now().isoformat()
+            }
+            self.TRANSACTION_LEDGER[tx_id] = {
+                'id': tx_id,
+                'customer_id': 'TEST-CUST-CUM-001',
+                'type': 'premium_payment',
+                'amount': 40.0,
+                'metadata': {
+                    'unbilled_premium_amount': 40.0
+                },
+                'timestamp': datetime.now().isoformat(),
+                'status': 'completed'
+            }
+            
+            totals = self.calculate_cumulative_premium_income(exclude_suspended=False)
+            self.assertGreaterEqual(totals['from_bills'], 100.0)
+            self.assertGreaterEqual(totals['ledger_unbilled_total'], 40.0)
+            self.assertGreaterEqual(totals['total'], 140.0)
+        finally:
+            # Restore prior state.
+            if prev_bill is None:
+                self.BILLING.pop(bill_id, None)
+            else:
+                self.BILLING[bill_id] = prev_bill
+            if prev_tx is None:
+                self.TRANSACTION_LEDGER.pop(tx_id, None)
+            else:
+                self.TRANSACTION_LEDGER[tx_id] = prev_tx
     
     def test_claims_payment_recording(self):
         """Test claims payment is recorded correctly on balance sheet"""
