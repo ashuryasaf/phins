@@ -14509,6 +14509,8 @@ For claims or questions, please contact:
                 PHINS_BALANCE_SHEET['investment_reserve']
             )
             
+            cumulative_premium_data = calculate_cumulative_premium_income(exclude_suspended=True)
+
             self._set_json_headers()
             self.wfile.write(json.dumps({
                 'success': True,
@@ -14528,6 +14530,13 @@ For claims or questions, please contact:
                     # Revenue
                     'total_revenue': PHINS_BALANCE_SHEET['total_revenue'],
                     'revenue_breakdown': PHINS_BALANCE_SHEET['revenue_breakdown'],
+                    
+                    # Cumulative premium (actuals from billing + ledger)
+                    'cumulative_premium': cumulative_premium_data['total'],
+                    'cumulative_premium_breakdown': {
+                        'from_bills': cumulative_premium_data['from_bills'],
+                        'from_ledger': cumulative_premium_data['ledger_unbilled_total'],
+                    },
                     
                     # Expenses
                     'total_expenses': PHINS_BALANCE_SHEET['total_expenses'],
