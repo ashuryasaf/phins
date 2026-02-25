@@ -19,6 +19,7 @@ from datetime import datetime, timedelta
 import random
 import uuid
 import hashlib
+import base64
 import secrets
 import threading
 import time
@@ -1741,6 +1742,9 @@ def load_ledger_data():
         if loaded_policy_docs:
             POLICY_DOCUMENTS.update(loaded_policy_docs)
             print(f"  - Policy Documents: {len(POLICY_DOCUMENTS)} documents loaded from persistence")
+            hydrated = hydrate_document_customer_links()
+            if hydrated:
+                print(f"  - Policy Documents: hydrated owner links for {hydrated} legacy document(s)")
         
         print(f"[PERSISTENCE] Loaded ledger data from {LEDGER_PERSISTENCE_FILE}")
         print(f"  - Health Wallets: {len(HEALTH_WALLETS)}")
@@ -3483,6 +3487,155 @@ def authorize_customer_data(session: dict[str, str] | None,
     # Unknown role - default deny
     print(f"⚠️ ACCESS DENIED: Unknown role '{user_role}' for user '{username}'")
     return False, None, 'Access denied - invalid role'
+
+
+DOCUMENT_ADMIN_ROLES = {
+    'admin',
+    'underwriter',
+    'actuary',
+    'claims',
+    'claims_adjuster',
+    'adjuster',  # legacy alias
+}
+
+# Keep this aligned with front-end accepted document/media uploads.
+ALLOWED_POLICY_DOCUMENT_EXTENSIONS = {
+    '.xls', '.xlsx', '.xsd', '.csv', '.pdf',
+    '.doc', '.docx', '.xml', '.json', '.txt',
+    '.png', '.jpg', '.jpeg', '.gif', '.zip',
+    '.webp', '.mp4', '.webm', '.mov',
+    '.mp3', '.wav', '.m4a', '.aac', '.ogg',
+}
+
+MAX_POLICY_DOCUMENT_SIZE_BYTES = 25 * 1024 * 1024  # 25MB
+
+
+def get_session_customer_id(session: dict[str, str] | None) -> str:
+    """Resolve customer_id from user record or session payload."""
+    if not session:
+        return ''
+    user = get_session_user(session) or {}
+    return str(user.get('customer_id') or session.get('customer_id') or '').strip()
+
+
+def is_document_admin_role(role: str) -> bool:
+    """True when role has organization-wide document visibility."""
+    return (role or '').strip().lower() in DOCUMENT_ADMIN_ROLES
+
+
+def resolve_document_owner_customer_id(doc: Dict[str, Any]) -> str:
+    """Resolve customer ownership for a document, including legacy records."""
+    if not isinstance(doc, dict):
+        return ''
+
+    explicit_owner = str(doc.get('uploaded_by_customer') or doc.get('customer_id') or '').strip()
+    if explicit_owner:
+        return explicit_owner
+
+    entity_type = str(doc.get('entity_type') or '').strip().lower()
+    entity_id = str(doc.get('entity_id') or '').strip()
+    if not entity_id:
+        return ''
+
+    if entity_type == 'customer':
+        return entity_id
+    if entity_type == 'policy':
+        return str((POLICIES.get(entity_id) or {}).get('customer_id') or '').strip()
+    if entity_type == 'claim':
+        return str((CLAIMS.get(entity_id) or {}).get('customer_id') or '').strip()
+    if entity_type == 'underwriting':
+        return str((UNDERWRITING_APPLICATIONS.get(entity_id) or {}).get('customer_id') or '').strip()
+
+    return ''
+
+
+def infer_document_owner_customer_id(entity_type: str, entity_id: str, fallback_customer_id: str = '') -> str:
+    """Infer customer owner from linked entities when uploader is staff/admin."""
+    if fallback_customer_id:
+        return fallback_customer_id
+
+    entity_type = (entity_type or '').strip().lower()
+    entity_id = (entity_id or '').strip()
+    if not entity_id:
+        return ''
+
+    if entity_type == 'customer':
+        return entity_id
+    if entity_type == 'policy':
+        return str((POLICIES.get(entity_id) or {}).get('customer_id') or '').strip()
+    if entity_type == 'claim':
+        return str((CLAIMS.get(entity_id) or {}).get('customer_id') or '').strip()
+    if entity_type == 'underwriting':
+        return str((UNDERWRITING_APPLICATIONS.get(entity_id) or {}).get('customer_id') or '').strip()
+    return ''
+
+
+def store_policy_document(
+    *,
+    file_name: str,
+    mime_type: str,
+    file_data_b64: str,
+    entity_type: str,
+    entity_id: str,
+    document_type: str,
+    description: str,
+    uploaded_by: str,
+    owner_customer_id: str,
+) -> Dict[str, Any]:
+    """Create and persist a normalized document record with integrity metadata."""
+    if not file_data_b64:
+        raise ValueError('Missing file content')
+
+    # Strict base64 decode to preserve data integrity.
+    try:
+        raw_bytes = base64.b64decode(file_data_b64, validate=True)
+    except Exception as exc:
+        raise ValueError('Invalid base64 file content') from exc
+
+    if not raw_bytes:
+        raise ValueError('Document content cannot be empty')
+    if len(raw_bytes) > MAX_POLICY_DOCUMENT_SIZE_BYTES:
+        raise ValueError('File exceeds maximum allowed size (25MB)')
+
+    ext = '.' + file_name.rsplit('.', 1)[-1].lower() if '.' in file_name else ''
+    if ext and ext not in ALLOWED_POLICY_DOCUMENT_EXTENSIONS:
+        raise ValueError(f'File type {ext} not allowed')
+
+    uploaded_at = datetime.now().isoformat()
+    doc_id = f"DOC-{datetime.now().strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:8].upper()}"
+    checksum = hashlib.sha256(raw_bytes).hexdigest()
+
+    doc = {
+        'id': doc_id,
+        'name': file_name,
+        'type': mime_type or 'application/octet-stream',
+        'size': len(raw_bytes),
+        'data': file_data_b64,
+        'data_encoding': 'base64',
+        'sha256': checksum,
+        'entity_type': (entity_type or 'general'),
+        'entity_id': entity_id or '',
+        'document_type': document_type or 'general',
+        'description': description or '',
+        'uploaded_at': uploaded_at,
+        'uploaded_by': uploaded_by or 'system',
+        'uploaded_by_customer': owner_customer_id or '',
+    }
+    POLICY_DOCUMENTS[doc_id] = doc
+    return doc
+
+
+def hydrate_document_customer_links() -> int:
+    """Backfill owner-customer links for legacy documents without owner metadata."""
+    hydrated = 0
+    for doc in POLICY_DOCUMENTS.values():
+        if not isinstance(doc, dict) or doc.get('uploaded_by_customer'):
+            continue
+        owner = resolve_document_owner_customer_id(doc)
+        if owner:
+            doc['uploaded_by_customer'] = owner
+            hydrated += 1
+    return hydrated
 
 
 def log_malicious_attempt(client_ip: str, reason: str, details: Dict[str, Any] | None = None):
@@ -8647,8 +8800,8 @@ For claims or questions, please contact:
         
         # ========== POLICY DOCUMENTS LIST ENDPOINT ==========
         # GET /api/documents/list - List documents accessible to authenticated user
-        # Admins/underwriters/adjusters see all; customers see only their own.
-        # Admin can filter by customer_id or entity_id query params.
+        # Admin/underwriter/actuary/claims roles see all; customers see only their own.
+        # Staff can filter by customer_id or entity_id query params.
         if path == '/api/documents/list':
             if not session:
                 self._set_json_headers(401)
@@ -8656,21 +8809,26 @@ For claims or questions, please contact:
                 return
             try:
                 eff_role = get_effective_role(session)
-                is_admin = eff_role in ('admin', 'underwriter', 'actuary', 'adjuster')
-                session_customer_id = session.get('customer_id')
+                is_admin = is_document_admin_role(eff_role)
+                session_customer_id = get_session_customer_id(session)
+                if not is_admin and not session_customer_id:
+                    self._set_json_headers(403)
+                    self.wfile.write(json.dumps({'error': 'Customer session invalid - no customer_id'}).encode('utf-8'))
+                    return
                 entity_type = qs.get('entity_type', [None])[0]
                 entity_id = qs.get('entity_id', [None])[0]
-                # Admin-only: filter by a specific customer's documents
+                # Staff-only: filter by a specific customer's documents
                 filter_customer_id = qs.get('customer_id', [None])[0] if is_admin else None
                 document_type_filter = qs.get('document_type', [None])[0]
 
                 docs = []
                 for doc in POLICY_DOCUMENTS.values():
+                    doc_customer_id = resolve_document_owner_customer_id(doc)
                     # Permission: customers can only see their own documents
-                    if not is_admin and doc.get('uploaded_by_customer') != session_customer_id:
+                    if not is_admin and doc_customer_id != session_customer_id:
                         continue
-                    # Admin filter by customer_id (optional)
-                    if filter_customer_id and doc.get('uploaded_by_customer') != filter_customer_id:
+                    # Staff filter by customer_id (optional)
+                    if filter_customer_id and doc_customer_id != filter_customer_id:
                         continue
                     if entity_type and doc.get('entity_type') != entity_type:
                         continue
@@ -8689,7 +8847,7 @@ For claims or questions, please contact:
                         'description': doc.get('description', ''),
                         'uploaded_at': doc.get('uploaded_at'),
                         'uploaded_by': doc.get('uploaded_by'),
-                        'uploaded_by_customer': doc.get('uploaded_by_customer', ''),
+                        'uploaded_by_customer': doc_customer_id,
                         'has_data': bool(doc.get('data')),
                         'ai_analysis': doc.get('ai_analysis'),
                     })
@@ -8710,7 +8868,7 @@ For claims or questions, please contact:
 
         # ========== DOCUMENT VIEW/DOWNLOAD ENDPOINT ==========
         # GET /api/documents/view?id=<doc_id> - Retrieve file content for viewing/downloading
-        # Access: document owner (customer) or admin/underwriter/adjuster
+        # Access: document owner (customer) or staff/admin roles
         if path == '/api/documents/view':
             if not session:
                 self._set_json_headers(401)
@@ -8730,11 +8888,16 @@ For claims or questions, please contact:
                     return
 
                 eff_role = get_effective_role(session)
-                is_admin = eff_role in ('admin', 'underwriter', 'actuary', 'adjuster')
-                session_customer_id = session.get('customer_id')
+                is_admin = is_document_admin_role(eff_role)
+                session_customer_id = get_session_customer_id(session)
+                if not is_admin and not session_customer_id:
+                    self._set_json_headers(403)
+                    self.wfile.write(json.dumps({'error': 'Customer session invalid - no customer_id'}).encode('utf-8'))
+                    return
+                doc_customer_id = resolve_document_owner_customer_id(doc)
 
                 # Permission check: customer can only view their own documents
-                if not is_admin and doc.get('uploaded_by_customer') != session_customer_id:
+                if not is_admin and doc_customer_id != session_customer_id:
                     self._set_json_headers(403)
                     self.wfile.write(json.dumps({'error': 'Access denied'}).encode('utf-8'))
                     return
@@ -8766,13 +8929,13 @@ For claims or questions, please contact:
 
         # ========== ADMIN: LIST CUSTOMERS FOR DOCUMENT FILTERING ==========
         # GET /api/admin/customers-for-documents - Returns customer list for admin doc filtering
-        # Access: admin, underwriter, adjuster roles only
+        # Access: admin, underwriter, actuary, claims roles only
         if path == '/api/admin/customers-for-documents':
             if not session:
                 self._set_json_headers(401)
                 self.wfile.write(json.dumps({'error': 'Authentication required'}).encode('utf-8'))
                 return
-            if not require_role(session, ['admin', 'underwriter', 'adjuster', 'actuary']):
+            if not require_role(session, ['admin', 'underwriter', 'actuary', 'claims', 'claims_adjuster', 'adjuster']):
                 self._set_json_headers(403)
                 self.wfile.write(json.dumps({'error': 'Admin access required'}).encode('utf-8'))
                 return
@@ -20290,19 +20453,19 @@ For claims or questions, please contact:
             try:
                 data = json.loads(body or '{}')
                 files_data = data.get('files', [])
-                entity_type = data.get('entity_type', '')  # policy, claim, customer, underwriting, general
-                entity_id = data.get('entity_id', '')
-                description = data.get('description', '')
-                document_type = data.get('document_type', 'general')  # id, receipt, medical, authority, general
-                actor = session.get('username', 'user')
-                customer_id = session.get('customer_id', '')
+                entity_type = str(data.get('entity_type', 'general') or 'general').strip().lower()
+                entity_id = str(data.get('entity_id', '') or '').strip()
+                description = str(data.get('description', '') or '').strip()
+                document_type = str(data.get('document_type', 'general') or 'general').strip().lower()
+                actor = (session or {}).get('username', 'user')
+                effective_role = get_effective_role(session)
+                session_customer_id = get_session_customer_id(session)
+                requested_customer_id = str(data.get('customer_id', '') or '').strip()
 
-                # Allowed MIME types and extensions
-                ALLOWED_EXTENSIONS = {
-                    '.xls', '.xlsx', '.xsd', '.csv', '.pdf',
-                    '.doc', '.docx', '.xml', '.json', '.txt',
-                    '.png', '.jpg', '.jpeg', '.gif', '.zip'
-                }
+                if effective_role == 'customer' and not session_customer_id:
+                    self._set_json_headers(403)
+                    self.wfile.write(json.dumps({'error': 'Customer session invalid - no customer_id'}).encode('utf-8'))
+                    return
 
                 if not files_data:
                     self._set_json_headers(400)
@@ -20312,38 +20475,50 @@ For claims or questions, please contact:
                 uploaded = []
                 errors = []
                 for i, file_info in enumerate(files_data[:20]):  # Limit to 20 files
-                    fname = file_info.get('name', f'file_{i+1}')
-                    ext = '.' + fname.rsplit('.', 1)[-1].lower() if '.' in fname else ''
-                    if ext not in ALLOWED_EXTENSIONS:
-                        errors.append({'file': fname, 'error': f'File type {ext} not allowed'})
+                    fname = str(file_info.get('name') or f'file_{i+1}').strip()
+                    if not fname:
+                        fname = f'file_{i+1}'
+
+                    owner_customer_id = ''
+                    if effective_role == 'customer':
+                        owner_customer_id = session_customer_id
+                    else:
+                        owner_customer_id = requested_customer_id or infer_document_owner_customer_id(
+                            entity_type,
+                            entity_id,
+                            session_customer_id,
+                        )
+
+                    try:
+                        doc = store_policy_document(
+                            file_name=fname,
+                            mime_type=str(file_info.get('type') or 'application/octet-stream').strip(),
+                            file_data_b64=str(file_info.get('data') or '').strip(),
+                            entity_type=entity_type,
+                            entity_id=entity_id,
+                            document_type=document_type,
+                            description=description,
+                            uploaded_by=actor,
+                            owner_customer_id=owner_customer_id,
+                        )
+                    except ValueError as ve:
+                        errors.append({'file': fname, 'error': str(ve)})
                         continue
 
-                    doc_id = f"DOC-{datetime.now().strftime('%Y%m%d%H%M%S')}-{i+1:03d}-{random.randint(1000,9999)}"
-                    doc = {
-                        'id': doc_id,
-                        'name': fname,
-                        'type': file_info.get('type', 'application/octet-stream'),
-                        'size': file_info.get('size', 0),
-                        'data': file_info.get('data'),  # Base64 encoded content
-                        'entity_type': entity_type,
-                        'entity_id': entity_id,
-                        'document_type': document_type,
-                        'description': description,
-                        'uploaded_at': datetime.now().isoformat(),
-                        'uploaded_by': actor,
-                        'uploaded_by_customer': customer_id
-                    }
-                    POLICY_DOCUMENTS[doc_id] = doc
                     uploaded.append({
-                        'id': doc_id,
+                        'id': doc['id'],
                         'name': fname,
                         'size': doc['size'],
                         'entity_type': entity_type,
                         'entity_id': entity_id,
                         'document_type': document_type,
-                        'uploaded_at': doc['uploaded_at']
+                        'uploaded_by_customer': doc.get('uploaded_by_customer', ''),
+                        'uploaded_at': doc['uploaded_at'],
                     })
-                    print(f"   📄 Stored document {doc_id}: {fname} ({doc['size']} bytes) -> {entity_type}/{entity_id} [{document_type}]")
+                    print(
+                        f"   📄 Stored document {doc['id']}: {fname} ({doc['size']} bytes) "
+                        f"-> {entity_type}/{entity_id} [{document_type}] owner={doc.get('uploaded_by_customer', '') or '-'}"
+                    )
 
                 save_ledger_data()
 
@@ -20363,7 +20538,7 @@ For claims or questions, please contact:
         # POST /api/documents/analyze - Run AI analysis on an uploaded document.
         # Analyses medical reports, death/disability certificates, billing receipts etc.
         # and returns actuarial underwriting, claims, and billing BI findings.
-        # Access: document owner (customer) or admin/underwriter/adjuster/actuary
+        # Access: document owner (customer) or admin/underwriter/actuary/claims roles
         if path == '/api/documents/analyze':
             auth_header = self.headers.get('Authorization', '')
             token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
@@ -20387,9 +20562,14 @@ For claims or questions, please contact:
                     return
 
                 eff_role = get_effective_role(session)
-                is_admin = eff_role in ('admin', 'underwriter', 'actuary', 'adjuster')
-                session_customer_id = session.get('customer_id')
-                if not is_admin and doc.get('uploaded_by_customer') != session_customer_id:
+                is_admin = is_document_admin_role(eff_role)
+                session_customer_id = get_session_customer_id(session)
+                if not is_admin and not session_customer_id:
+                    self._set_json_headers(403)
+                    self.wfile.write(json.dumps({'error': 'Customer session invalid - no customer_id'}).encode('utf-8'))
+                    return
+                doc_customer_id = resolve_document_owner_customer_id(doc)
+                if not is_admin and doc_customer_id != session_customer_id:
                     self._set_json_headers(403)
                     self.wfile.write(json.dumps({'error': 'Access denied'}).encode('utf-8'))
                     return
@@ -31340,26 +31520,56 @@ For claims or questions, please contact:
             form_data = self.rfile.read(length)
             
             # Extract boundary from content type
-            boundary = content_type.split('boundary=')[1] if 'boundary=' in content_type else None
+            boundary = content_type.split('boundary=', 1)[1] if 'boundary=' in content_type else None
+            if boundary:
+                boundary = boundary.split(';', 1)[0].strip().strip('"')
             if not boundary:
                 self._set_json_headers(400)
                 self.wfile.write(json.dumps({'error': 'No boundary in multipart data'}).encode('utf-8'))
                 return
             
-            # Parse multipart form data
-            fields = self._parse_multipart_data(form_data, boundary.encode())  # type: ignore
+            # Parse multipart form data (including all file entries for repeated file fields)
+            fields, files_by_field = self._parse_multipart_form_multi(form_data, boundary.encode())  # type: ignore
+
+            def _field(*aliases: str, default: str = '') -> str:
+                for alias in aliases:
+                    value = fields.get(alias)
+                    if value is None:
+                        continue
+                    text = str(value).strip()
+                    if text:
+                        return text
+                return default
             
             # Validate all critical fields for security threats
-            critical_fields = ['first-name', 'last-name', 'email', 'phone', 'address', 
-                             'city', 'state', 'occupation', 'medical-conditions']
-            for field_name in critical_fields:
-                field_value = fields.get(field_name, '')
+            critical_fields = [
+                ('first_name', ('first-name', 'firstName')),
+                ('last_name', ('last-name', 'lastName')),
+                ('email', ('email',)),
+                ('phone', ('phone',)),
+                ('address', ('address',)),
+                ('city', ('city',)),
+                ('occupation', ('occupation',)),
+                ('medical_conditions', ('medical-conditions', 'health-conditions', 'conditionsDetails')),
+            ]
+            for field_name, aliases in critical_fields:
+                field_value = _field(*aliases)
                 if field_value:
-                    threat = validate_input_security(field_value, field_name, self.client_address[0])
-                    if threat:
+                    is_valid, validation_error = validate_input_security(field_value, self.client_address[0], field_name)
+                    if not is_valid:
                         self._set_json_headers(400)
-                        self.wfile.write(json.dumps({'error': f'Invalid input in {field_name}: {threat}'}).encode('utf-8'))
+                        self.wfile.write(
+                            json.dumps({'error': f'Invalid input in {field_name}: {validation_error or "security validation failed"}'}).encode('utf-8')
+                        )
                         return
+
+            first_name = _field('first-name', 'firstName')
+            last_name = _field('last-name', 'lastName')
+            email_value = _field('email')
+            if not first_name or not last_name or not email_value:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'Missing required fields: first name, last name, and email'}).encode('utf-8'))
+                return
             
             # Generate IDs
             customer_id = generate_customer_id()
@@ -31367,21 +31577,22 @@ For claims or questions, please contact:
             uw_id = f"UW-{datetime.now().strftime('%Y%m%d')}-{random.randint(1000, 9999)}"
             
             # Create customer record
-            customer_name = f"{fields.get('first-name', '')} {fields.get('last-name', '')}".strip()
+            customer_name = f"{first_name} {last_name}".strip()
             CUSTOMERS[customer_id] = {
                 'id': customer_id,
                 'name': customer_name,
-                'first_name': fields.get('first-name', ''),
-                'last_name': fields.get('last-name', ''),
-                'email': fields.get('email', ''),
-                'phone': fields.get('phone', ''),
-                'dob': fields.get('dob', ''),
-                'gender': fields.get('gender', ''),
-                'address': fields.get('address', ''),
-                'city': fields.get('city', ''),
-                'state': fields.get('state', ''),
-                'zip': fields.get('zip', ''),
-                'occupation': fields.get('occupation', ''),
+                'first_name': first_name,
+                'last_name': last_name,
+                'email': email_value,
+                'phone': _field('phone'),
+                'dob': _field('dob'),
+                'gender': _field('gender'),
+                'address': _field('address'),
+                'city': _field('city'),
+                'state': _field('state', 'stateProvince'),
+                'zip': _field('zip', 'postalCode'),
+                'occupation': _field('occupation'),
+                'national_id': _field('nationalId', 'national-id'),
                 'created_date': datetime.now().isoformat()
             }
             
@@ -31398,18 +31609,27 @@ For claims or questions, please contact:
             }
             
             # Parse coverage amount
-            coverage_amount = int(fields.get('coverage-amount', '250000'))
-            policy_type = fields.get('policy-type', 'disability')
+            coverage_raw = _field('coverage-amount', 'coverageAmount', 'coverage_amount', default='250000')
+            if coverage_raw.lower() == 'custom':
+                coverage_raw = _field('customCoverage', 'custom-coverage', default='250000')
+            coverage_amount = safe_int(coverage_raw, 250000)
+            if coverage_amount <= 0:
+                coverage_amount = 250000
+
+            policy_type = _field('policy-type', 'policyType', 'policy_type', default='disability').lower()
             
             # Assess risk based on health information
             risk_score = 'low'
             medical_exam_required = False
             
-            smoking = fields.get('smoking', '').lower()
-            if smoking in ['yes', 'smoker', 'current']:
+            smoking = _field('smoking').lower()
+            if smoking in ['yes', 'smoker', 'current', 'occasional']:
                 risk_score = 'medium'
             
-            health_conditions = fields.get('health-conditions', '').lower()
+            health_conditions = _field('health-conditions', 'conditionsDetails', default='').lower()
+            pre_existing = _field('preExisting').lower()
+            if pre_existing == 'yes' and not health_conditions:
+                health_conditions = 'pre-existing condition(s) declared'
             if any(condition in health_conditions for condition in ['diabetes', 'heart', 'cancer', 'chronic']):
                 risk_score = 'high'
                 medical_exam_required = True
@@ -31421,24 +31641,91 @@ For claims or questions, please contact:
                 'customer_id': customer_id,
                 'status': 'pending',
                 'questionnaire_responses': {
-                    'smoking': fields.get('smoking', 'No'),
-                    'health_conditions': fields.get('health-conditions', 'None'),
-                    'medications': fields.get('medications', 'None'),
-                    'family_history': fields.get('family-history', 'Good'),
-                    'occupation': fields.get('occupation', ''),
-                    'height': fields.get('height', ''),
-                    'weight': fields.get('weight', '')
+                    'smoking': _field('smoking', default='No'),
+                    'health_conditions': health_conditions or 'None',
+                    'medications': _field('medicationsDetails', 'medications', default='None'),
+                    'family_history': _field('family-history', 'familyHistory', default='Not specified'),
+                    'occupation': _field('occupation'),
+                    'height': _field('height'),
+                    'weight': _field('weight'),
+                    'exercise': _field('exercise'),
+                    'risk_activities': _field('riskActivities'),
                 },
                 'risk_assessment': risk_score,
                 'medical_exam_required': medical_exam_required,
                 'submitted_date': datetime.now().isoformat()
             }
+
+            # Persist registration and verification files into document center for long-term access.
+            quote_file_doc_types = {
+                'idDocument': 'id',
+                'medicalRecords': 'medical',
+                'photo': 'id',
+                'video': 'general',
+                'audio': 'general',
+                'mediaUpload': 'general',
+            }
+            quote_file_descriptions = {
+                'idDocument': 'Registration ID document',
+                'medicalRecords': 'Registration medical record',
+                'photo': 'Photo verification',
+                'video': 'Video verification',
+                'audio': 'Audio verification',
+                'mediaUpload': 'Additional media upload',
+            }
+            stored_documents = []
+            document_errors = []
+            for field_name, file_entries in files_by_field.items():
+                doc_type = quote_file_doc_types.get(field_name, 'general')
+                base_description = quote_file_descriptions.get(field_name, 'Registration attachment')
+                for idx, file_info in enumerate(file_entries[:20]):
+                    file_name = str(file_info.get('filename') or f'{field_name}-{idx + 1}.bin').strip()
+                    mime_type = str(file_info.get('content_type') or 'application/octet-stream').strip()
+                    file_bytes = file_info.get('data') or b''
+                    if not file_bytes:
+                        document_errors.append({'field': field_name, 'file': file_name, 'error': 'Empty file'})
+                        continue
+                    try:
+                        encoded_data = base64.b64encode(file_bytes).decode('ascii')
+                        stored = store_policy_document(
+                            file_name=file_name,
+                            mime_type=mime_type,
+                            file_data_b64=encoded_data,
+                            entity_type='underwriting',
+                            entity_id=uw_id,
+                            document_type=doc_type,
+                            description=f"{base_description} (quote submission)",
+                            uploaded_by=cust_email,
+                            owner_customer_id=customer_id,
+                        )
+                        stored_documents.append({
+                            'id': stored.get('id'),
+                            'name': stored.get('name'),
+                            'document_type': stored.get('document_type'),
+                            'size': stored.get('size'),
+                            'uploaded_at': stored.get('uploaded_at'),
+                        })
+                    except ValueError as ve:
+                        document_errors.append({'field': field_name, 'file': file_name, 'error': str(ve)})
+
+            if stored_documents:
+                UNDERWRITING_APPLICATIONS[uw_id]['documents'] = [
+                    {
+                        'id': doc.get('id'),
+                        'name': doc.get('name'),
+                        'type': doc.get('document_type'),
+                        'uploaded_at': doc.get('uploaded_at'),
+                        'verified': False,
+                    }
+                    for doc in stored_documents
+                ]
+                CUSTOMERS[customer_id]['registration_documents'] = [doc.get('id') for doc in stored_documents if doc.get('id')]
             
             # Calculate premium
             premium_data = calculate_premium({
                 'type': policy_type,
                 'coverage_amount': coverage_amount,
-                'age': self._calculate_age(fields.get('dob', '1990-01-01')),
+                'age': self._calculate_age(_field('dob', default='1990-01-01')),
                 'risk_score': risk_score
             })
             
@@ -31457,11 +31744,17 @@ For claims or questions, please contact:
                 'end_date': (datetime.now() + timedelta(days=365)).isoformat(),
                 'created_date': datetime.now().isoformat()
             }
+
+            save_ledger_data()
             
             print(f"✅ Application submitted: {uw_id} for customer {customer_id}")
             print(f"   Customer: {customer_name} ({cust_email})")
             print(f"   Policy: {policy_type.title()} - ${coverage_amount:,}")
             print(f"   Risk: {risk_score}, Status: pending")
+            if stored_documents:
+                print(f"   📄 Registration documents stored: {len(stored_documents)}")
+            if document_errors:
+                print(f"   ⚠️ Registration documents skipped: {len(document_errors)}")
             
             # Return success response with all created records
             self._set_json_headers(200)
@@ -31490,7 +31783,9 @@ For claims or questions, please contact:
                     'coverage_amount': coverage_amount,
                     'risk_assessment': risk_score,
                     'status': 'pending'
-                }
+                },
+                'uploaded_documents': stored_documents,
+                'document_upload_errors': document_errors,
             }
             self.wfile.write(json.dumps(response).encode('utf-8'))
             
@@ -31500,29 +31795,7 @@ For claims or questions, please contact:
     
     def _parse_multipart_data(self, data: bytes, boundary: bytes) -> Dict[str, str]:
         """Parse multipart/form-data into dictionary of fields"""
-        fields: Dict[str, str] = {}
-        parts = data.split(b'--' + boundary)
-        
-        for part in parts:
-            if b'Content-Disposition: form-data' not in part:
-                continue
-            
-            # Extract field name
-            if b'name="' in part:
-                name_start = part.find(b'name="') + 6
-                name_end = part.find(b'"', name_start)
-                field_name = part[name_start:name_end].decode('utf-8')
-                
-                # Extract field value
-                value_start = part.find(b'\r\n\r\n')
-                if value_start != -1:
-                    value_start += 4
-                    value_end = part.rfind(b'\r\n')
-                    if value_end > value_start:
-                        field_value = part[value_start:value_end].decode('utf-8', errors='ignore').strip()
-                        if field_value:  # Only add non-empty values
-                            fields[field_name] = field_value
-        
+        fields, _ = self._parse_multipart_form(data, boundary)
         return fields
 
     def _parse_multipart_form(self, data: bytes, boundary: bytes) -> tuple[Dict[str, str], Dict[str, Dict[str, Any]]]:
@@ -31531,58 +31804,85 @@ For claims or questions, please contact:
         - fields: {name: value}
         - files: {field_name: {filename, content_type, data(bytes)}}
         """
+        fields, file_lists = self._parse_multipart_form_multi(data, boundary)
+        files = {name: entries[-1] for name, entries in file_lists.items() if entries}
+        return fields, files
+
+    def _parse_multipart_form_multi(self, data: bytes, boundary: bytes) -> tuple[Dict[str, str], Dict[str, List[Dict[str, Any]]]]:
+        """
+        Parse multipart/form-data into:
+        - fields: {name: value}
+        - files: {field_name: [ {filename, content_type, data(bytes)}, ... ]}
+        """
         fields: Dict[str, str] = {}
-        files: Dict[str, Dict[str, Any]] = {}
+        files: Dict[str, List[Dict[str, Any]]] = {}
         parts = data.split(b'--' + boundary)
 
         for part in parts:
             if b'Content-Disposition: form-data' not in part:
                 continue
 
-            # Extract field name
-            if b'name="' not in part:
-                continue
-            name_start = part.find(b'name="') + 6
-            name_end = part.find(b'"', name_start)
-            field_name = part[name_start:name_end].decode('utf-8', errors='ignore')
-
-            # Extract filename (if any)
-            filename = None
-            if b'filename="' in part:
-                fn_start = part.find(b'filename="') + 10
-                fn_end = part.find(b'"', fn_start)
-                filename = part[fn_start:fn_end].decode('utf-8', errors='ignore')
-
-            # Content-Type header for file parts
-            ct = None
-            if b'Content-Type:' in part:
-                ct_start = part.find(b'Content-Type:') + len(b'Content-Type:')
-                ct_end = part.find(b'\r\n', ct_start)
-                if ct_end != -1:
-                    ct = part[ct_start:ct_end].decode('utf-8', errors='ignore').strip()
-
-            # Body starts after blank line
             value_start = part.find(b'\r\n\r\n')
             if value_start == -1:
                 continue
+            headers_blob = part[:value_start]
             value_start += 4
             value_end = part.rfind(b'\r\n')
             if value_end <= value_start:
                 continue
+
             raw_value = part[value_start:value_end]
 
-            if filename:
-                files[field_name] = {
+            # Extract field name
+            if b'name="' not in headers_blob:
+                continue
+            name_start = headers_blob.find(b'name="') + 6
+            name_end = headers_blob.find(b'"', name_start)
+            if name_end <= name_start:
+                continue
+            field_name = headers_blob[name_start:name_end].decode('utf-8', errors='ignore').strip()
+            if not field_name:
+                continue
+
+            # Extract filename (if any)
+            filename: Optional[str] = None
+            if b'filename="' in headers_blob:
+                fn_start = headers_blob.find(b'filename="') + 10
+                fn_end = headers_blob.find(b'"', fn_start)
+                if fn_end > fn_start:
+                    filename = headers_blob[fn_start:fn_end].decode('utf-8', errors='ignore').strip()
+
+            # Content-Type header for file parts
+            content_type = 'application/octet-stream'
+            if b'Content-Type:' in headers_blob:
+                ct_start = headers_blob.find(b'Content-Type:') + len(b'Content-Type:')
+                ct_end = headers_blob.find(b'\r\n', ct_start)
+                if ct_end == -1:
+                    ct_end = len(headers_blob)
+                parsed_ct = headers_blob[ct_start:ct_end].decode('utf-8', errors='ignore').strip()
+                if parsed_ct:
+                    content_type = parsed_ct
+
+            if filename is not None:
+                # Browsers may send filename="" for empty file selectors.
+                if not filename or not raw_value:
+                    continue
+                files.setdefault(field_name, []).append({
                     'filename': filename,
-                    'content_type': ct or 'application/octet-stream',
+                    'content_type': content_type,
                     'data': raw_value,
-                }
-            else:
-                try:
-                    txt = raw_value.decode('utf-8', errors='ignore').strip()
-                except Exception:
-                    txt = ''
-                if txt:
+                })
+                continue
+
+            try:
+                txt = raw_value.decode('utf-8', errors='ignore').strip()
+            except Exception:
+                txt = ''
+            if txt:
+                if field_name in fields:
+                    # Preserve repeated text fields (e.g. checkboxes) without losing values.
+                    fields[field_name] = f"{fields[field_name]}, {txt}"
+                else:
                     fields[field_name] = txt
 
         return fields, files
