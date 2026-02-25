@@ -113,6 +113,10 @@ PREMIUM_LEDGER_TX_TYPES = {
     'bill_payment',
     'auto_pay_execution',
 }
+PREMIUM_WALLET_TX_TYPES = {
+    'premium_payment',
+    'bulk_premium_payment',
+}
 
 
 def get_transaction_type(tx: Dict[str, Any]) -> str:
@@ -128,6 +132,7 @@ def calculate_cumulative_premium_income(exclude_suspended: bool = True) -> Dict[
     1) Paid bill amounts (authoritative for billed + auto-pay collections)
     2) Explicit unbilled premium ledger amounts (when metadata marks it)
     3) Ledger billed-payment fallback when bill mirrors are missing/drifted
+    4) Wallet premium fallback when both bill/ledger mirrors are missing
     """
     bill_paid_total = 0.0
     paid_bills_count = 0
@@ -250,14 +255,120 @@ def calculate_cumulative_premium_income(exclude_suspended: bool = True) -> Dict[
     if bill_paid_total <= 0 and legacy_applied_without_bill_links > 0:
         ledger_billed_fallback_total += legacy_applied_without_bill_links
 
-    total = bill_paid_total + ledger_unbilled_total + ledger_billed_fallback_total
+    # Wallet fallback: include premium wallet debits only when bill/ledger
+    # evidence for the same bill id is missing.
+    wallet_billed_by_bill_id: Dict[str, float] = {}
+    wallet_unlinked_total = 0.0
+    wallet_unlinked_count = 0
+
+    for customer_id, wallet in HEALTH_WALLETS.items():
+        if exclude_suspended and is_suspended_account(customer_id):
+            continue
+
+        txs = wallet.get('transactions', [])
+        if not isinstance(txs, list):
+            continue
+
+        for wallet_tx in txs:
+            if not isinstance(wallet_tx, dict):
+                continue
+            wallet_tx_type = str(wallet_tx.get('type') or wallet_tx.get('tx_type') or '').strip().lower()
+            if wallet_tx_type not in PREMIUM_WALLET_TX_TYPES:
+                continue
+
+            wallet_amount = abs(safe_float(wallet_tx.get('amount', 0)))
+            if wallet_amount <= 0:
+                continue
+
+            wallet_meta = wallet_tx.get('metadata', {})
+            if not isinstance(wallet_meta, dict):
+                wallet_meta = {}
+            wallet_bill_id = str(wallet_tx.get('bill_id') or wallet_meta.get('bill_id') or '').strip()
+
+            if wallet_bill_id:
+                wallet_billed_by_bill_id[wallet_bill_id] = (
+                    wallet_billed_by_bill_id.get(wallet_bill_id, 0.0) + wallet_amount
+                )
+            else:
+                wallet_unlinked_total += wallet_amount
+                wallet_unlinked_count += 1
+
+    wallet_billed_fallback_total = 0.0
+    wallet_billed_fallback_count = 0
+
+    for bill_id, wallet_amount in wallet_billed_by_bill_id.items():
+        covered_by_bill_and_ledger = (
+            bill_paid_amount_by_id.get(bill_id, 0.0) +
+            ledger_billed_by_bill_id.get(bill_id, 0.0)
+        )
+        wallet_residual = max(0.0, wallet_amount - covered_by_bill_and_ledger)
+        if wallet_residual > 0:
+            wallet_billed_fallback_total += wallet_residual
+            wallet_billed_fallback_count += 1
+
+    # Unlinked wallet premium entries are accepted only if no bill/ledger billed
+    # evidence exists, to avoid accidental double counting.
+    known_billed_evidence_total = bill_paid_total + sum(ledger_billed_by_bill_id.values())
+    if known_billed_evidence_total <= 0 and wallet_unlinked_total > 0:
+        wallet_billed_fallback_total += wallet_unlinked_total
+        wallet_billed_fallback_count += wallet_unlinked_count
+
+    total = (
+        bill_paid_total +
+        ledger_unbilled_total +
+        ledger_billed_fallback_total +
+        wallet_billed_fallback_total
+    )
     return {
         'total': round(total, 2),
         'from_bills': round(bill_paid_total, 2),
         'ledger_unbilled_total': round(ledger_unbilled_total, 2),
         'ledger_billed_fallback_total': round(ledger_billed_fallback_total, 2),
+        'wallet_billed_fallback_total': round(wallet_billed_fallback_total, 2),
         'paid_bills_count': paid_bills_count,
         'ledger_unbilled_count': ledger_unbilled_count,
+        'wallet_billed_fallback_count': wallet_billed_fallback_count,
+    }
+
+
+def upsert_cumulative_premium_data_source(
+    totals: Dict[str, float],
+    *,
+    exclude_suspended: bool,
+    actor: str = 'SYSTEM',
+    reason: str = 'calculated'
+) -> Dict[str, Any]:
+    """Persist canonical cumulative premium totals on balance-sheet data sources."""
+    initialize_balance_sheet()
+    data_sources = PHINS_BALANCE_SHEET.get('data_sources')
+    if not isinstance(data_sources, dict):
+        data_sources = {}
+        PHINS_BALANCE_SHEET['data_sources'] = data_sources
+
+    previous = data_sources.get('cumulative_premium')
+    previous_value = None
+    if isinstance(previous, dict):
+        previous_value = safe_float(previous.get('value', 0))
+
+    payload = {
+        'value': round(safe_float(totals.get('total', 0)), 2),
+        'from_bills': round(safe_float(totals.get('from_bills', 0)), 2),
+        'from_ledger_unbilled': round(safe_float(totals.get('ledger_unbilled_total', 0)), 2),
+        'from_ledger_billed_fallback': round(safe_float(totals.get('ledger_billed_fallback_total', 0)), 2),
+        'from_wallet_billed_fallback': round(safe_float(totals.get('wallet_billed_fallback_total', 0)), 2),
+        'exclude_suspended': bool(exclude_suspended),
+        'calculation_method': 'billing_plus_ledger_plus_wallet_dedup',
+        'updated_by': actor or 'SYSTEM',
+        'reason': reason,
+        'updated_at': datetime.now().isoformat(),
+    }
+    data_sources['cumulative_premium'] = payload
+
+    return {
+        'created': previous is None,
+        'value_changed': previous_value is None or abs(payload['value'] - previous_value) > 0.01,
+        'current': payload,
+        'previous': previous if isinstance(previous, dict) else None,
     }
 
 
@@ -276,6 +387,12 @@ def sync_balance_sheet_premium_income(
     initialize_balance_sheet()
 
     totals = calculate_cumulative_premium_income(exclude_suspended=exclude_suspended)
+    data_source_state = upsert_cumulative_premium_data_source(
+        totals,
+        exclude_suspended=exclude_suspended,
+        actor=actor,
+        reason=reason
+    )
     expected_premium_income = safe_float(totals.get('total', 0))
     current_premium_income = safe_float(
         PHINS_BALANCE_SHEET.get('revenue_breakdown', {}).get('premium_income', 0)
@@ -298,11 +415,12 @@ def sync_balance_sheet_premium_income(
             'previous': round(current_premium_income, 2),
             'expected': round(expected_premium_income, 2),
             'difference': round(difference, 2),
-            'source': 'billed_plus_unbilled_premium_payments',
+            'source': 'billed_plus_unbilled_ledger_wallet_premium_payments',
         })
         updated = True
-        if persist:
-            save_ledger_data()
+
+    if persist and (updated or data_source_state.get('created')):
+        save_ledger_data()
 
     return {
         'updated': updated,
@@ -310,6 +428,7 @@ def sync_balance_sheet_premium_income(
         'expected': round(expected_premium_income, 2),
         'difference': round(difference, 2),
         'totals': totals,
+        'data_source': data_source_state.get('current'),
     }
 
 
@@ -801,7 +920,23 @@ PHINS_BALANCE_SHEET: Dict[str, Any] = {
     'transactions': [],  # List of all balance sheet transactions
     
     # Audit trail
-    'audit_log': []  # List of all changes with timestamps and actors
+    'audit_log': [],  # List of all changes with timestamps and actors
+
+    # Canonical reporting data sources (persisted for dashboard consistency)
+    'data_sources': {
+        'cumulative_premium': {
+            'value': 0.0,
+            'from_bills': 0.0,
+            'from_ledger_unbilled': 0.0,
+            'from_ledger_billed_fallback': 0.0,
+            'from_wallet_billed_fallback': 0.0,
+            'exclude_suspended': False,
+            'calculation_method': 'billing_plus_ledger_plus_wallet_dedup',
+            'updated_by': 'SYSTEM',
+            'reason': 'initial_state',
+            'updated_at': None,
+        }
+    }
 }
 
 def seed_demo_documents() -> None:
@@ -1289,6 +1424,21 @@ def analyze_document_content(doc: Dict[str, Any]) -> Dict[str, Any]:
 def initialize_balance_sheet():
     """Initialize the PHINS balance sheet with default values if not already set"""
     global PHINS_BALANCE_SHEET
+    if not isinstance(PHINS_BALANCE_SHEET.get('data_sources'), dict):
+        PHINS_BALANCE_SHEET['data_sources'] = {}
+    if not isinstance(PHINS_BALANCE_SHEET['data_sources'].get('cumulative_premium'), dict):
+        PHINS_BALANCE_SHEET['data_sources']['cumulative_premium'] = {
+            'value': 0.0,
+            'from_bills': 0.0,
+            'from_ledger_unbilled': 0.0,
+            'from_ledger_billed_fallback': 0.0,
+            'from_wallet_billed_fallback': 0.0,
+            'exclude_suspended': False,
+            'calculation_method': 'billing_plus_ledger_plus_wallet_dedup',
+            'updated_by': 'SYSTEM',
+            'reason': 'initialize_balance_sheet',
+            'updated_at': datetime.now().isoformat(),
+        }
     if PHINS_BALANCE_SHEET.get('created_at') is None:
         PHINS_BALANCE_SHEET['created_at'] = datetime.now().isoformat()
         PHINS_BALANCE_SHEET['last_updated'] = datetime.now().isoformat()
@@ -5838,6 +5988,7 @@ For claims or questions, please contact:
                 'total_collected_from_bills': premium_income_totals['from_bills'],
                 'total_collected_unbilled': premium_income_totals['ledger_unbilled_total'],
                 'total_collected_ledger_billed_fallback': premium_income_totals.get('ledger_billed_fallback_total', 0.0),
+                'total_collected_wallet_billed_fallback': premium_income_totals.get('wallet_billed_fallback_total', 0.0),
                 'outstanding_balance': outstanding_balance,
                 'total_investment_value': total_investment_value,
                 'total_coverage_amount': total_coverage_amount,
@@ -6473,11 +6624,13 @@ For claims or questions, please contact:
                 report['premium_income_from_bills'] = premium_income_totals['from_bills']
                 report['premium_income_unbilled'] = premium_income_totals['ledger_unbilled_total']
                 report['premium_income_billed_fallback'] = premium_income_totals.get('ledger_billed_fallback_total', 0.0)
+                report['premium_income_wallet_fallback'] = premium_income_totals.get('wallet_billed_fallback_total', 0.0)
 
                 if dashboard_type in ['accountant', 'billing']:
                     report['total_collected'] = premium_income_totals['total']
                     report['total_collected_from_bills'] = premium_income_totals['from_bills']
                     report['total_collected_ledger_billed_fallback'] = premium_income_totals.get('ledger_billed_fallback_total', 0.0)
+                    report['total_collected_wallet_billed_fallback'] = premium_income_totals.get('wallet_billed_fallback_total', 0.0)
                     total_billed = sum(
                         safe_float(b.get('amount_due', b.get('amount', 0)))
                         for b in BILLING.values()
@@ -9724,6 +9877,7 @@ For claims or questions, please contact:
                 'total_collected_from_bills': round(total_collected_from_bills, 2),
                 'total_collected_unbilled': round(premium_income_totals['ledger_unbilled_total'], 2),
                 'total_collected_ledger_billed_fallback': round(premium_income_totals.get('ledger_billed_fallback_total', 0.0), 2),
+                'total_collected_wallet_billed_fallback': round(premium_income_totals.get('wallet_billed_fallback_total', 0.0), 2),
                 'cumulative_premium_income': round(total_collected, 2),
                 'outstanding_balance': round(outstanding, 2),
                 'outstanding_receivables': round(outstanding, 2),
@@ -14710,9 +14864,12 @@ For claims or questions, please contact:
                         'from_bills': premium_income_sync['totals']['from_bills'],
                         'from_ledger_unbilled': premium_income_sync['totals']['ledger_unbilled_total'],
                         'from_ledger_billed_fallback': premium_income_sync['totals'].get('ledger_billed_fallback_total', 0.0),
+                        'from_wallet_billed_fallback': premium_income_sync['totals'].get('wallet_billed_fallback_total', 0.0),
                         'paid_bills_count': premium_income_sync['totals']['paid_bills_count'],
                         'ledger_unbilled_count': premium_income_sync['totals']['ledger_unbilled_count'],
+                        'wallet_billed_fallback_count': premium_income_sync['totals'].get('wallet_billed_fallback_count', 0),
                     },
+                    'data_sources': PHINS_BALANCE_SHEET.get('data_sources', {}),
                     
                     # Expenses
                     'total_expenses': PHINS_BALANCE_SHEET['total_expenses'],
@@ -15288,6 +15445,12 @@ For claims or questions, please contact:
             # unbilled/direct premium flows (with de-duplication safeguards).
             premium_income_totals = calculate_cumulative_premium_income(exclude_suspended=False)
             expected_premium_income = premium_income_totals['total']
+            cumulative_premium_data_source = upsert_cumulative_premium_data_source(
+                premium_income_totals,
+                exclude_suspended=False,
+                actor=session.get('username', 'system') if session else 'system',
+                reason='balance_sheet_reconcile'
+            ).get('current')
             
             # 2. Claims Paid - from paid claims
             expected_claims_paid = sum(
@@ -15342,6 +15505,7 @@ For claims or questions, please contact:
                 premium_income_totals['ledger_unbilled_total'] +
                 premium_income_totals.get('ledger_billed_fallback_total', 0.0)
             )
+            wallet_premium_income_fallback = premium_income_totals.get('wallet_billed_fallback_total', 0.0)
             ledger_claims_paid = sum(
                 tx.get('amount', 0) for tx in TRANSACTION_LEDGER.values()
                 if get_transaction_type(tx) in ['claim_payment', 'claim_paid', 'claims_paid']
@@ -15371,7 +15535,7 @@ For claims or questions, please contact:
                     'expected': expected_premium_income,
                     'current': current_premium_income,
                     'difference': expected_premium_income - current_premium_income,
-                    'source': 'billed_plus_unbilled_premium_payments'
+                    'source': 'billed_plus_unbilled_ledger_wallet_premium_payments'
                 })
                 
                 if auto_correct:
@@ -15426,6 +15590,10 @@ For claims or questions, please contact:
                     'discrepancies_found': len(discrepancies)
                 })
                 save_ledger_data()
+            elif auto_correct and cumulative_premium_data_source:
+                # Persist refreshed cumulative premium data source even if no
+                # balance-sheet corrections were required.
+                save_ledger_data()
             
             is_valid = len(discrepancies) == 0
             
@@ -15445,9 +15613,11 @@ For claims or questions, please contact:
                         'from_ledger': ledger_premium_income,
                         'from_ledger_unbilled': premium_income_totals['ledger_unbilled_total'],
                         'from_ledger_billed_fallback': premium_income_totals.get('ledger_billed_fallback_total', 0.0),
+                        'from_wallet_billed_fallback': wallet_premium_income_fallback,
                         'current': current_premium_income,
                         'bills_count': premium_income_totals['paid_bills_count'],
-                        'ledger_unbilled_count': premium_income_totals['ledger_unbilled_count']
+                        'ledger_unbilled_count': premium_income_totals['ledger_unbilled_count'],
+                        'wallet_billed_fallback_count': premium_income_totals.get('wallet_billed_fallback_count', 0)
                     },
                     'claims_paid': {
                         'from_claims': expected_claims_paid,
@@ -15514,6 +15684,7 @@ For claims or questions, please contact:
                     'total_investments': total_investment_balance,
                     'net_position': expected_premium_income - expected_claims_paid - total_medical_purchases
                 },
+                'cumulative_premium_data_source': cumulative_premium_data_source,
                 
                 'timestamp': datetime.now().isoformat()
             }, default=str).encode('utf-8'))

@@ -491,7 +491,7 @@
               <span>Premium Income</span><span id="bs-premium-income">$0</span>
             </div>
             <div id="bs-premium-income-source" style="font-size: 11px; color: rgba(255,255,255,0.7); padding: 4px 0 8px 0;">
-              Cumulative paid premiums (billing + auto-pay + NFT-linked unbilled).
+              Cumulative paid premiums (billing + auto-pay + ledger + wallet fallback).
             </div>
             <div style="display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid rgba(255,255,255,0.1);">
               <span>Management Fees</span><span id="bs-management-fees">$0</span>
@@ -2757,7 +2757,8 @@
             const premiumSourceEl = document.getElementById('bs-premium-income-source');
             if (premiumSourceEl) {
               const ledgerFallback = premiumSources.from_ledger_billed_fallback || 0;
-              premiumSourceEl.textContent = `Billed/Auto-Pay: ${fmt(premiumSources.from_bills || 0)} + Explicit Unbilled (NFT): ${fmt(premiumSources.from_ledger_unbilled || 0)} + Recovered Billed (Ledger Fallback): ${fmt(ledgerFallback)}`;
+              const walletFallback = premiumSources.from_wallet_billed_fallback || 0;
+              premiumSourceEl.textContent = `Billed/Auto-Pay: ${fmt(premiumSources.from_bills || 0)} + Explicit Unbilled (NFT): ${fmt(premiumSources.from_ledger_unbilled || 0)} + Recovered Billed (Ledger Fallback): ${fmt(ledgerFallback)} + Wallet Fallback: ${fmt(walletFallback)}`;
             }
           }
           
@@ -2795,7 +2796,7 @@
     
     // Reconcile Balance Sheet - Verify and fix data integrity
     async function reconcileBalanceSheet() {
-      const confirmed = confirm('🔍 Balance Sheet Reconciliation\n\nThis will verify and auto-correct Premium Income using cumulative paid premiums (billing + auto-pay + explicit unbilled premium payments), then refresh the balance sheet.\n\nClick OK to continue.');
+      const confirmed = confirm('🔍 Balance Sheet Reconciliation\n\nThis will verify and auto-correct Premium Income using cumulative paid premiums (billing + auto-pay + ledger + wallet premium evidence), then refresh the balance sheet.\n\nClick OK to continue.');
       if (!confirmed) return;
       const autoCorrect = true;
       
@@ -2837,11 +2838,16 @@
           message += `• Investments: ${fmt(data.summary_totals?.total_investments)}\n`;
           message += `• Net Position: ${fmt(data.summary_totals?.net_position)}\n\n`;
           const premiumSource = data.validation_sources?.premium_income || {};
+          const cumulativePremium =
+            data.summary_totals?.total_premiums_collected ??
+            data.cumulative_premium_data_source?.value ??
+            0;
           message += `💳 PREMIUM INCOME SOURCES:\n`;
           message += `• Billed/Auto-Pay Collected: ${fmt(premiumSource.from_bills)}\n`;
           message += `• Explicit Unbilled Premiums: ${fmt(premiumSource.from_ledger_unbilled)}\n`;
           message += `• Recovered Billed (Ledger Fallback): ${fmt(premiumSource.from_ledger_billed_fallback)}\n`;
-          message += `• Cumulative Premium Income: ${fmt(data.summary_totals?.total_premiums_collected)}\n\n`;
+          message += `• Wallet Premium Fallback: ${fmt(premiumSource.from_wallet_billed_fallback)}\n`;
+          message += `• Cumulative Premium Income: ${fmt(cumulativePremium)}\n\n`;
           
           message += `🏪 MEDICAL SERVICES:\n`;
           message += `• Total: ${fmt(data.medical_services?.total_amount)} (${data.medical_services?.total_transactions || 0} transactions)\n`;
@@ -2868,7 +2874,7 @@
           // Update premium income immediately for fast visual feedback
           const premiumIncomeEl = document.getElementById('bs-premium-income');
           if (premiumIncomeEl) {
-            premiumIncomeEl.textContent = fmt(data.summary_totals?.total_premiums_collected);
+            premiumIncomeEl.textContent = fmt(cumulativePremium);
           }
           
           // Reload balance sheet so Premium Income always reflects reconcile result

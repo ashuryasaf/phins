@@ -326,6 +326,42 @@ class TestBalanceSheetIntegrity(unittest.TestCase):
             else:
                 self.TRANSACTION_LEDGER[tx_id] = prev_tx
 
+    def test_cumulative_premium_income_uses_wallet_fallback_when_bill_and_ledger_missing(self):
+        """Wallet premium debit should count when bill/ledger mirrors are missing."""
+        customer_id = "TEST-CUST-CUM-006"
+        prev_wallet = self.HEALTH_WALLETS.get(customer_id)
+        baseline = self.calculate_cumulative_premium_income(exclude_suspended=False)
+
+        try:
+            self.HEALTH_WALLETS[customer_id] = {
+                'customer_id': customer_id,
+                'balance': 500.0,
+                'transactions': [
+                    {
+                        'id': 'WAL-TX-CUM-006',
+                        'type': 'premium_payment',
+                        'amount': -41.0,
+                        'bill_id': 'MISSING-BILL-CUM-006',
+                        'description': 'Premium payment from wallet',
+                        'timestamp': datetime.now().isoformat()
+                    }
+                ],
+                'created_at': datetime.now().isoformat()
+            }
+
+            totals = self.calculate_cumulative_premium_income(exclude_suspended=False)
+            self.assertAlmostEqual(
+                totals.get('wallet_billed_fallback_total', 0) - baseline.get('wallet_billed_fallback_total', 0),
+                41.0,
+                places=2
+            )
+            self.assertAlmostEqual(totals['total'] - baseline['total'], 41.0, places=2)
+        finally:
+            if prev_wallet is None:
+                self.HEALTH_WALLETS.pop(customer_id, None)
+            else:
+                self.HEALTH_WALLETS[customer_id] = prev_wallet
+
     def test_sync_balance_sheet_premium_income_updates_stale_value(self):
         """Sync helper should update stale balance-sheet premium income values."""
         self.initialize_balance_sheet()
@@ -382,6 +418,27 @@ class TestBalanceSheetIntegrity(unittest.TestCase):
             self.PHINS_BALANCE_SHEET['last_updated'] = prev_last_updated
             if len(self.PHINS_BALANCE_SHEET.get('audit_log', [])) > prev_audit_len:
                 self.PHINS_BALANCE_SHEET['audit_log'] = self.PHINS_BALANCE_SHEET['audit_log'][:prev_audit_len]
+
+    def test_sync_balance_sheet_premium_income_updates_cumulative_data_source(self):
+        """Sync helper should persist cumulative premium data source payload."""
+        self.initialize_balance_sheet()
+
+        result = self.sync_balance_sheet_premium_income(
+            exclude_suspended=False,
+            actor='TEST',
+            reason='unit_test_datasource',
+            persist=False
+        )
+        data_sources = self.PHINS_BALANCE_SHEET.get('data_sources', {})
+        cumulative_source = data_sources.get('cumulative_premium', {})
+
+        self.assertIsInstance(cumulative_source, dict)
+        self.assertAlmostEqual(
+            float(cumulative_source.get('value', 0)),
+            float(result.get('expected', 0)),
+            places=2
+        )
+        self.assertIn('from_wallet_billed_fallback', cumulative_source)
 
     def test_cumulative_premium_income_all_customers_includes_suspended_when_requested(self):
         """exclude_suspended=False should include suspended-customer premium payments."""
