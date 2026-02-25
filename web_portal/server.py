@@ -6243,7 +6243,7 @@ For claims or questions, please contact:
                 return
             try:
                 from services.financial_reporting_service import FinancialReportingService
-                svc = FinancialReportingService(POLICIES, CLAIMS, BILLING, CUSTOMERS, UNDERWRITING_APPLICATIONS)
+                svc = FinancialReportingService(POLICIES, CLAIMS, BILLING, CUSTOMERS, UNDERWRITING_APPLICATIONS, transaction_ledger=TRANSACTION_LEDGER, health_wallets=HEALTH_WALLETS)
                 report = svc.generate_portfolio_report()
                 self._set_json_headers()
                 self.wfile.write(json.dumps(report).encode('utf-8'))
@@ -6260,7 +6260,7 @@ For claims or questions, please contact:
             try:
                 years = int(qs.get('years', [25])[0])
                 from services.financial_reporting_service import FinancialReportingService
-                svc = FinancialReportingService(POLICIES, CLAIMS, BILLING, CUSTOMERS, UNDERWRITING_APPLICATIONS)
+                svc = FinancialReportingService(POLICIES, CLAIMS, BILLING, CUSTOMERS, UNDERWRITING_APPLICATIONS, transaction_ledger=TRANSACTION_LEDGER, health_wallets=HEALTH_WALLETS)
                 report = svc.generate_forecast_report(years=years)
                 self._set_json_headers()
                 self.wfile.write(json.dumps(report).encode('utf-8'))
@@ -6284,7 +6284,7 @@ For claims or questions, please contact:
                 customer_id = qs.get('customer_id', [None])[0]
                 
                 from services.financial_reporting_service import FinancialReportingService
-                svc = FinancialReportingService(POLICIES, CLAIMS, BILLING, CUSTOMERS, UNDERWRITING_APPLICATIONS)
+                svc = FinancialReportingService(POLICIES, CLAIMS, BILLING, CUSTOMERS, UNDERWRITING_APPLICATIONS, transaction_ledger=TRANSACTION_LEDGER, health_wallets=HEALTH_WALLETS)
                 report = svc.generate_customer_projection(
                     customer_id=customer_id,
                     coverage=coverage,
@@ -6307,7 +6307,7 @@ For claims or questions, please contact:
                 return
             try:
                 from services.financial_reporting_service import FinancialReportingService
-                svc = FinancialReportingService(POLICIES, CLAIMS, BILLING, CUSTOMERS, UNDERWRITING_APPLICATIONS)
+                svc = FinancialReportingService(POLICIES, CLAIMS, BILLING, CUSTOMERS, UNDERWRITING_APPLICATIONS, transaction_ledger=TRANSACTION_LEDGER, health_wallets=HEALTH_WALLETS)
                 report = svc.validate_data_integrity()
                 self._set_json_headers()
                 self.wfile.write(json.dumps(report).encode('utf-8'))
@@ -6324,7 +6324,7 @@ For claims or questions, please contact:
             try:
                 dashboard_type = qs.get('type', ['accountant'])[0]
                 from services.financial_reporting_service import FinancialReportingService
-                svc = FinancialReportingService(POLICIES, CLAIMS, BILLING, CUSTOMERS, UNDERWRITING_APPLICATIONS)
+                svc = FinancialReportingService(POLICIES, CLAIMS, BILLING, CUSTOMERS, UNDERWRITING_APPLICATIONS, transaction_ledger=TRANSACTION_LEDGER, health_wallets=HEALTH_WALLETS)
                 report = svc.get_dashboard_summary(dashboard_type)
                 self._set_json_headers()
                 self.wfile.write(json.dumps(report).encode('utf-8'))
@@ -6346,7 +6346,7 @@ For claims or questions, please contact:
                 term_years = int(qs.get('term_years', [25])[0])
                 
                 from services.financial_reporting_service import FinancialReportingService
-                svc = FinancialReportingService(POLICIES, CLAIMS, BILLING, CUSTOMERS, UNDERWRITING_APPLICATIONS)
+                svc = FinancialReportingService(POLICIES, CLAIMS, BILLING, CUSTOMERS, UNDERWRITING_APPLICATIONS, transaction_ledger=TRANSACTION_LEDGER, health_wallets=HEALTH_WALLETS)
                 premium = svc.calculate_premium(coverage, age, adl_level, savings_pct, term_years)
                 self._set_json_headers()
                 self.wfile.write(json.dumps(premium).encode('utf-8'))

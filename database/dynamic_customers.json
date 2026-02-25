@@ -1,1 +1,56 @@
-[ { "customer_id": "12345", "name": "John Doe", "email": "john.doe@example.com", "password_hash": "REDACTED", "password_salt": "REDACTED" }, { "customer_id": "67890", "name": "Jane Smith", "email": "jane.smith@example.com", "password_hash": "REDACTED", "password_salt": "REDACTED" } ]
+[
+  {
+    "customer_id": "12345",
+    "name": "John Doe",
+    "email": "john.doe@example.com",
+    "password_hash": "REDACTED",
+    "password_salt": "REDACTED"
+  },
+  {
+    "customer_id": "67890",
+    "name": "Jane Smith",
+    "email": "jane.smith@example.com",
+    "password_hash": "REDACTED",
+    "password_salt": "REDACTED"
+  },
+  {
+    "username": "newcustomer@example.com",
+    "password_hash": "340617f5ca5f440745254d2eeaa1e31616adb068978f8888906e9fe8d18693b3",
+    "password_salt": "1dfd70eee8b15ca164e1d29d38a86562",
+    "name": "New Customer",
+    "role": "customer",
+    "customer_id": "CUST-18636",
+    "email": "newcustomer@example.com",
+    "registered_at": "2026-02-25T19:13:38.347955"
+  },
+  {
+    "username": "legacyotp@example.com",
+    "password_hash": "0a925680ad8279031efb00d295fa809e6da55198f9f5155b60d14aa6f5330975",
+    "password_salt": "1d6f1b20ceacea465b1b3021fe4118ca",
+    "name": "Legacy OTP Payload User",
+    "role": "customer",
+    "customer_id": "CUST-61636",
+    "email": "legacyotp@example.com",
+    "registered_at": "2026-02-25T19:13:38.644060"
+  },
+  {
+    "username": "invitation-flow-primary@example.com",
+    "password_hash": "02f3cae91e9371b00069e5a39047bb0c2ef9c36c477e066ba9aa8ca54650b990",
+    "password_salt": "0402ff11a5ab000a8d0cd8398bf71491",
+    "name": "First Invite User",
+    "role": "customer",
+    "customer_id": "CUST-56824",
+    "email": "invitation-flow-primary@example.com",
+    "registered_at": "2026-02-25T19:13:39.409060"
+  },
+  {
+    "username": "invitation-flow-secondary@example.com",
+    "password_hash": "7b1bd1b38f4428e96ace6ac4f71c0fe97d760a169b8ea708463b0bc504eba220",
+    "password_salt": "d4810ddd84237b26e668b8361661cee1",
+    "name": "Replay Invite Success User",
+    "role": "customer",
+    "customer_id": "CUST-49958",
+    "email": "invitation-flow-secondary@example.com",
+    "registered_at": "2026-02-25T19:13:39.503387"
+  }
+]

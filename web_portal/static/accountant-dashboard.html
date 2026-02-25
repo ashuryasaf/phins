@@ -258,7 +258,7 @@
             </div>
             <div class="stat-card">
                 <div class="stat-value" id="total-collected">$0</div>
-                <div class="stat-label">Collected</div>
+                <div class="stat-label">Total Collected (Cumulative)</div>
             </div>
             <div class="stat-card">
                 <div class="stat-value warning" id="outstanding-ar">$0</div>
@@ -2814,6 +2814,8 @@
                         <tr><td>Expected Premiums</td><td>${formatCurrency(fr.total_expected_premiums)}</td></tr>
                         <tr><td>Total Billed</td><td>${formatCurrency(fr.total_billed)}</td></tr>
                         <tr><td>Total Collected</td><td>${formatCurrency(fr.total_collected)}</td></tr>
+                        <tr><td>&nbsp;&nbsp;↳ From Bills</td><td>${formatCurrency((fr.cumulative_premium_breakdown || {}).from_bills || 0)}</td></tr>
+                        <tr><td>&nbsp;&nbsp;↳ From Ledger (Unbilled)</td><td>${formatCurrency((fr.cumulative_premium_breakdown || {}).from_ledger || 0)}</td></tr>
                         <tr><td>Collection Rate</td><td>${fr.collection_rate}%</td></tr>
                         <tr><td>Claims Approved</td><td>${formatCurrency(fr.total_claims_approved)}</td></tr>
                         <tr><td>Loss Ratio</td><td>${fr.loss_ratio}%</td></tr>
