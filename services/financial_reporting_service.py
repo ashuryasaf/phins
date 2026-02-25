@@ -167,18 +167,103 @@ EXPENSE_LOADING_PCT = 0.15  # 15%
 PROFIT_MARGIN_PCT = 0.10  # 10% target profit margin
 
 
+_PREMIUM_LEDGER_TX_TYPES = {
+    'premium_payment',
+    'bill_payment',
+    'bill_paid',
+    'premium_received',
+    'auto_pay_execution',
+    'premium_deposit',
+}
+
+
+def _get_tx_type(tx: Dict) -> str:
+    return str(tx.get('type') or tx.get('tx_type') or '').strip().lower()
+
+
 class FinancialReportingService:
     """
     Comprehensive financial reporting service with actuarial calculations.
     """
     
     def __init__(self, policies: Dict, claims: Dict, billing: Dict, 
-                 customers: Dict, underwriting: Dict):
+                 customers: Dict, underwriting: Dict,
+                 transaction_ledger: Optional[Dict] = None,
+                 health_wallets: Optional[Dict] = None):
         self._policies = policies
         self._claims = claims
         self._billing = billing
         self._customers = customers
         self._underwriting = underwriting
+        self._transaction_ledger = transaction_ledger if transaction_ledger is not None else {}
+        self._health_wallets = health_wallets if health_wallets is not None else {}
+
+    def calculate_cumulative_premium(self, exclude_suspended: bool = True) -> Dict[str, Any]:
+        """
+        Calculate cumulative premium income from ALL data sources:
+        1. Billing records (amount_paid from self._billing)
+        2. Transaction ledger entries (premium_payment type from self._transaction_ledger)
+
+        Returns dict with:
+          - from_bills: sum of amount_paid from billing records
+          - ledger_unbilled_total: sum of unbilled premium amounts from transaction ledger
+          - from_allocations: 0 (reserved for future premium allocation tracker)
+          - total: cumulative sum of ALL sources (deduplicated)
+          - cumulative_premium: same as total (canonical field name)
+        """
+        def _safe(val):
+            if val is None:
+                return 0.0
+            try:
+                return float(val)
+            except (TypeError, ValueError):
+                return 0.0
+
+        bill_paid_total = 0.0
+        paid_bill_ids: set = set()
+
+        for bill_id, bill in self._billing.items():
+            amount_paid = _safe(bill.get('amount_paid', 0))
+            if amount_paid <= 0:
+                continue
+            bill_paid_total += amount_paid
+            paid_bill_ids.add(str(bill.get('id') or bill_id))
+
+        ledger_unbilled_total = 0.0
+
+        for tx in self._transaction_ledger.values():
+            tx_type = _get_tx_type(tx)
+            if tx_type not in _PREMIUM_LEDGER_TX_TYPES:
+                continue
+
+            amount = _safe(tx.get('amount', 0))
+            if amount <= 0:
+                continue
+
+            metadata = tx.get('metadata', {})
+            if not isinstance(metadata, dict):
+                metadata = {}
+
+            linked_bill_id = str(metadata.get('bill_id') or '').strip()
+            if linked_bill_id and linked_bill_id in paid_bill_ids:
+                continue
+
+            if tx_type == 'premium_payment' and metadata.get('unbilled_premium_amount') is not None:
+                amount = _safe(metadata.get('unbilled_premium_amount', 0))
+
+            if amount <= 0:
+                continue
+
+            ledger_unbilled_total += amount
+
+        total = round(bill_paid_total + ledger_unbilled_total, 2)
+        return {
+            'from_bills': round(bill_paid_total, 2),
+            'ledger_unbilled_total': round(ledger_unbilled_total, 2),
+            'from_allocations': 0,
+            'total': total,
+            'cumulative_premium': total,
+        }
     
     # ==========================================================================
     # ACTUARIAL CALCULATIONS (V2 - CORRECTED ADDITIVE RISK MODEL)
@@ -968,7 +1053,8 @@ class FinancialReportingService:
         total_premiums_expected = sum(p.get('annual_premium', 0) for p in self._policies.values() 
                                       if _status_eq(p, 'active'))
         total_billed = sum(b.get('amount_due', b.get('amount', 0)) for b in self._billing.values())
-        total_paid = sum(b.get('amount_paid', 0) for b in self._billing.values())
+        cumulative_data = self.calculate_cumulative_premium()
+        total_paid = cumulative_data['total']
         
         # Case-insensitive status check for claims
         def is_claim_approved_or_paid(claim):
@@ -992,7 +1078,12 @@ class FinancialReportingService:
             'total_collected': round(total_paid, 2),
             'collection_rate': round(total_paid / max(total_billed, 1) * 100, 2),
             'total_claims_approved': round(total_claims_approved, 2),
-            'loss_ratio': round(loss_ratio, 2)
+            'loss_ratio': round(loss_ratio, 2),
+            'cumulative_premium_breakdown': {
+                'from_bills': cumulative_data['from_bills'],
+                'from_ledger': cumulative_data['ledger_unbilled_total'],
+                'from_allocations': cumulative_data.get('from_allocations', 0),
+            },
         }
         
         return {
@@ -1073,7 +1164,8 @@ class FinancialReportingService:
             
             # Calculate billing totals
             total_billed = sum(safe_num(b.get('amount_due', b.get('amount', 0))) for b in self._billing.values())
-            total_collected = sum(safe_num(b.get('amount_paid', 0)) for b in self._billing.values())
+            cumulative_data = self.calculate_cumulative_premium()
+            total_collected = cumulative_data['total']
             
             # Outstanding A/R - only for unpaid bills
             outstanding_ar = 0
@@ -1088,6 +1180,12 @@ class FinancialReportingService:
                 'total_revenue': total_revenue,
                 'total_billed': total_billed,
                 'total_collected': total_collected,
+                'cumulative_premium': total_collected,
+                'cumulative_premium_breakdown': {
+                    'from_bills': cumulative_data['from_bills'],
+                    'from_ledger': cumulative_data['ledger_unbilled_total'],
+                    'from_allocations': cumulative_data.get('from_allocations', 0),
+                },
                 'outstanding_ar': outstanding_ar,
                 'claims_paid': claims_paid_amt,
                 'claims_pending': claims_pending_amt,
@@ -1139,7 +1237,8 @@ class FinancialReportingService:
 # Singleton instance getter
 _service_instance: Optional[FinancialReportingService] = None
 
-def get_financial_reporting_service(policies, claims, billing, customers, underwriting) -> FinancialReportingService:
+def get_financial_reporting_service(policies, claims, billing, customers, underwriting,
+                                    transaction_ledger=None, health_wallets=None) -> FinancialReportingService:
     """Get or create financial reporting service instance"""
     global _service_instance
     if _service_instance is None:
@@ -1148,7 +1247,9 @@ def get_financial_reporting_service(policies, claims, billing, customers, underw
             claims=claims,
             billing=billing,
             customers=customers,
-            underwriting=underwriting
+            underwriting=underwriting,
+            transaction_ledger=transaction_ledger,
+            health_wallets=health_wallets,
         )
     return _service_instance
 
