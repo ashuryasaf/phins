@@ -15144,7 +15144,10 @@ For claims or questions, please contact:
             )
             
             # 7. Calculate from transaction ledger as secondary source
-            ledger_premium_income = premium_income_totals['ledger_unbilled_total']
+            ledger_premium_income = sum(
+                tx.get('amount', 0) for tx in TRANSACTION_LEDGER.values()
+                if get_transaction_type(tx) in ['premium_payment', 'premium_received']
+            )
             ledger_claims_paid = sum(
                 tx.get('amount', 0) for tx in TRANSACTION_LEDGER.values()
                 if get_transaction_type(tx) in ['claim_payment', 'claim_paid', 'claims_paid']
@@ -30987,7 +30990,7 @@ For claims or questions, please contact:
                 for bill_id, bill in list(BILLING.items()):
                     if remaining_amount <= 0:
                         break
-                    if bill.get('customer_id') == customer_id and status_in(bill, ['outstanding', 'pending']):
+                    if bill.get('customer_id') == customer_id and status_in(bill, ['outstanding', 'pending', 'partial']):
                         bill_due = bill.get('amount', bill.get('amount_due', 0))
                         bill_paid_so_far = bill.get('amount_paid', 0)
                         outstanding = bill_due - bill_paid_so_far
