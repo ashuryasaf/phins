@@ -15008,11 +15008,21 @@ For claims or questions, please contact:
                 return
             
             initialize_balance_sheet()
-            sync_balance_sheet_premium_income(
+            premium_income_sync = sync_balance_sheet_premium_income(
                 exclude_suspended=False,
                 actor=session.get('username', 'system') if session else 'system',
                 reason='balance_sheet_summary_read',
                 persist=False
+            )
+            cumulative_premium_data_source = premium_income_sync.get('data_source')
+            cumulative_premium_value = safe_float(
+                (cumulative_premium_data_source or {}).get(
+                    'value',
+                    premium_income_sync.get(
+                        'expected',
+                        PHINS_BALANCE_SHEET['revenue_breakdown']['premium_income']
+                    )
+                )
             )
             
             # Recent claims paid
@@ -15027,7 +15037,8 @@ For claims or questions, please contact:
                 'summary': {
                     'claims_reserve': PHINS_BALANCE_SHEET['claims_reserve'],
                     'total_claims_paid': PHINS_BALANCE_SHEET['expense_breakdown']['claims_paid'],
-                    'total_premium_income': PHINS_BALANCE_SHEET['revenue_breakdown']['premium_income'],
+                    'total_premium_income': cumulative_premium_value,
+                    'cumulative_premium_data_source': cumulative_premium_data_source,
                     'net_position': PHINS_BALANCE_SHEET['total_revenue'] - PHINS_BALANCE_SHEET['total_expenses'],
                     'recent_claims_count': len(recent_claims),
                     'last_updated': PHINS_BALANCE_SHEET['last_updated']
@@ -15498,13 +15509,18 @@ For claims or questions, please contact:
             # 1. Premium Income - cumulative paid premiums from billed and
             # unbilled/direct premium flows (with de-duplication safeguards).
             premium_income_totals = calculate_cumulative_premium_income(exclude_suspended=False)
-            expected_premium_income = premium_income_totals['total']
             cumulative_premium_data_source = upsert_cumulative_premium_data_source(
                 premium_income_totals,
                 exclude_suspended=False,
                 actor=session.get('username', 'system') if session else 'system',
                 reason='balance_sheet_reconcile'
             ).get('current')
+            expected_premium_income = safe_float(
+                (cumulative_premium_data_source or {}).get(
+                    'value',
+                    premium_income_totals.get('total', 0)
+                )
+            )
             
             # 2. Claims Paid - from paid claims
             expected_claims_paid = sum(
