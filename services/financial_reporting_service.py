@@ -1235,23 +1235,18 @@ class FinancialReportingService:
 
 
 # Singleton instance getter
-_service_instance: Optional[FinancialReportingService] = None
-
 def get_financial_reporting_service(policies, claims, billing, customers, underwriting,
                                     transaction_ledger=None, health_wallets=None) -> FinancialReportingService:
-    """Get or create financial reporting service instance"""
-    global _service_instance
-    if _service_instance is None:
-        _service_instance = FinancialReportingService(
-            policies=policies,
-            claims=claims,
-            billing=billing,
-            customers=customers,
-            underwriting=underwriting,
-            transaction_ledger=transaction_ledger,
-            health_wallets=health_wallets,
-        )
-    return _service_instance
+    """Get financial reporting service instance"""
+    return FinancialReportingService(
+        policies=policies,
+        claims=claims,
+        billing=billing,
+        customers=customers,
+        underwriting=underwriting,
+        transaction_ledger=transaction_ledger,
+        health_wallets=health_wallets,
+    )
 
 
 __all__ = ['FinancialReportingService', 'get_financial_reporting_service']

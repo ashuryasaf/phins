@@ -2817,8 +2817,13 @@
             message += `\n`;
           }
           
+          message += `💰 PREMIUM INCOME (Total Collected - Cumulative):\n`;
+          message += `• From Paid Bills: ${fmt(data.summary_totals?.premium_income_breakdown?.from_bills)}\n`;
+          message += `• From Ledger (Unbilled): ${fmt(data.summary_totals?.premium_income_breakdown?.from_ledger)}\n`;
+          message += `• Total Collected (Cumulative): ${fmt(data.summary_totals?.total_premiums_collected)}\n\n`;
+          
           message += `📊 SUMMARY TOTALS:\n`;
-          message += `• Premiums Collected: ${fmt(data.summary_totals?.total_premiums_collected)}\n`;
+          message += `• Premiums Collected (Cumulative): ${fmt(data.summary_totals?.total_premiums_collected)}\n`;
           message += `• Claims Paid: ${fmt(data.summary_totals?.total_claims_paid)}\n`;
           message += `• Medical Services: ${fmt(data.summary_totals?.total_medical_services)}\n`;
           message += `• Wallet Deposits: ${fmt(data.summary_totals?.total_wallet_deposits)}\n`;
