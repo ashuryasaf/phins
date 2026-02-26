@@ -3314,7 +3314,7 @@
                     
                     // Revenue breakdown
                     if (bs.revenue_breakdown) {
-                        document.getElementById('bs-premium-income').textContent = fmt(bs.revenue_breakdown.premium_income);
+                        document.getElementById('bs-premium-income').textContent = fmt(bs.cumulative_premium || bs.revenue_breakdown?.premium_income || 0);
                         document.getElementById('bs-management-fees').textContent = fmt(bs.revenue_breakdown.management_fees);
                         document.getElementById('bs-underwriting-fees').textContent = fmt(bs.revenue_breakdown.underwriting_fees);
                         document.getElementById('bs-investment-earnings').textContent = fmt(bs.revenue_breakdown.investment_earnings);
