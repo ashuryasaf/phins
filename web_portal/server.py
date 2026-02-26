@@ -3115,12 +3115,13 @@ def verify_password(password: str, stored_hash: str, salt: str) -> bool:
 
 # Backward-compatible demo passwords expected by some test suites/docs.
 # This does NOT change any stored password hashes; it only allows legacy credentials.
+# Passwords are loaded from environment variables; defaults are provided only for test/demo use.
 LEGACY_DEMO_PASSWORDS: Dict[str, str] = {
-    'admin': 'admin123',
-    'underwriter': 'under123',
-    'claims_adjuster': 'claims123',
-    'accountant': 'acct123',
-    'actuary': 'actuary123',
+    'admin': os.environ.get('PHINS_DEMO_ADMIN_PASSWORD', 'admin123'),
+    'underwriter': os.environ.get('PHINS_DEMO_UNDERWRITER_PASSWORD', 'under123'),
+    'claims_adjuster': os.environ.get('PHINS_DEMO_CLAIMS_PASSWORD', 'claims123'),
+    'accountant': os.environ.get('PHINS_DEMO_ACCOUNTANT_PASSWORD', 'acct123'),
+    'actuary': os.environ.get('PHINS_DEMO_ACTUARY_PASSWORD', 'actuary123'),
 }
 
 # IMPORTANT:
@@ -3137,8 +3138,14 @@ ALLOW_LEGACY_DEMO_PASSWORDS = PHINS_TEST_MODE or (
 import hmac
 import base64
 
-# Session signing key - derived from SESSION_SECRET_KEY or a secure default
-_TOKEN_SECRET = os.environ.get('SESSION_SECRET_KEY', os.environ.get('PHINS_ADMIN_PASSWORD', 'phins-default-key-2024'))
+# Session signing key - loaded from environment variable.
+# Falls back to a per-process random key so tokens are never signed with a
+# publicly-known default value.  Set SESSION_SECRET_KEY in production.
+_TOKEN_SECRET = (
+    os.environ.get('SESSION_SECRET_KEY')
+    or os.environ.get('PHINS_ADMIN_PASSWORD')
+    or secrets.token_hex(32)
+)
 
 def _create_signed_token(username: str, role: str, customer_id: str | None, expires: datetime) -> str:
     """Create an HMAC-signed token with embedded user data (stateless auth)"""

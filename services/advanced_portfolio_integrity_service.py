@@ -21,11 +21,18 @@ Security Standards:
 import hashlib
 import hmac
 import json
+import os
 import random
 from datetime import datetime, timedelta
 from typing import Dict, List, Any, Optional, Tuple
 from dataclasses import dataclass, field, asdict
 from enum import Enum
+
+# HMAC key for portfolio integrity signatures.
+# Override in production by setting PHINS_INTEGRITY_SECRET_KEY; the default
+# 'PHINS_INTEGRITY_2026' is retained only for backward compatibility with
+# existing signed hashes and must not be relied on in production deployments.
+_INTEGRITY_SECRET_KEY = os.environ.get('PHINS_INTEGRITY_SECRET_KEY', 'PHINS_INTEGRITY_2026')
 
 
 class IntegrityStatus(str, Enum):
@@ -72,8 +79,9 @@ class BalanceSnapshot:
     previous_hash: str = ""
     sequence_number: int = 0
     
-    def calculate_hash(self, secret_key: str = "PHINS_INTEGRITY_2026") -> str:
+    def calculate_hash(self, secret_key: str = None) -> str:
         """Generate cryptographic hash of balance state"""
+        key = secret_key if secret_key is not None else _INTEGRITY_SECRET_KEY
         data = {
             'customer_id': self.customer_id,
             'timestamp': self.timestamp,
@@ -87,13 +95,13 @@ class BalanceSnapshot:
         }
         message = json.dumps(data, sort_keys=True)
         signature = hmac.new(
-            secret_key.encode(),
+            key.encode(),
             message.encode(),
             hashlib.sha256
         ).hexdigest()
         return signature
     
-    def verify_hash(self, secret_key: str = "PHINS_INTEGRITY_2026") -> bool:
+    def verify_hash(self, secret_key: str = None) -> bool:
         """Verify the integrity of this snapshot"""
         expected = self.calculate_hash(secret_key)
         return hmac.compare_digest(self.hash_signature, expected)
@@ -194,7 +202,7 @@ class AdvancedPortfolioIntegrityService:
                  portfolio_tracker_service = None,
                  unified_balance_service = None,
                  record_transaction_func = None,
-                 secret_key: str = "PHINS_INTEGRITY_2026"):
+                 secret_key: str = None):
         """Initialize with references to all data stores"""
         self.health_wallets = health_wallets if health_wallets is not None else {}
         self.investment_accounts = investment_accounts if investment_accounts is not None else {}
@@ -204,7 +212,7 @@ class AdvancedPortfolioIntegrityService:
         self.portfolio_tracker = portfolio_tracker_service
         self.unified_balance = unified_balance_service
         self.record_transaction = record_transaction_func
-        self.secret_key = secret_key
+        self.secret_key = secret_key if secret_key is not None else _INTEGRITY_SECRET_KEY
         
         # Snapshot history for chain validation
         self.snapshot_history: Dict[str, List[BalanceSnapshot]] = {}
