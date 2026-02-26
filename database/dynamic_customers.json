@@ -52,5 +52,55 @@
     "customer_id": "CUST-49958",
     "email": "invitation-flow-secondary@example.com",
     "registered_at": "2026-02-25T19:13:39.503387"
+  },
+  {
+    "username": "ledger_test_customer@example.com",
+    "password_hash": "5768ca6ef818cef276c6617407b6aefa9cb8bda1285a25ed5cd651093731f64e",
+    "password_salt": "775ac456dbc578555f1cbe04fa3833ca",
+    "name": "Ledger Test Customer",
+    "role": "customer",
+    "customer_id": "CUST-80663",
+    "email": "ledger_test_customer@example.com",
+    "registered_at": "2026-02-26T14:49:10.551407"
+  },
+  {
+    "username": "newcustomer@example.com",
+    "password_hash": "747adf7bcb352fbdeedf0ceae0b7b8a43720637497796a704ea624e82f2a253e",
+    "password_salt": "a7bfaccb0c11aa21252cb8499fc0f4ef",
+    "name": "New Customer",
+    "role": "customer",
+    "customer_id": "CUST-59107",
+    "email": "newcustomer@example.com",
+    "registered_at": "2026-02-26T14:49:11.741764"
+  },
+  {
+    "username": "legacyotp@example.com",
+    "password_hash": "55da84e95c00979fabb4c17aecd06097786307d98ad1fa704f5b1334969a334d",
+    "password_salt": "49eb02fdd465729443b8be01d6e2e91f",
+    "name": "Legacy OTP Payload User",
+    "role": "customer",
+    "customer_id": "CUST-62152",
+    "email": "legacyotp@example.com",
+    "registered_at": "2026-02-26T14:49:12.039613"
+  },
+  {
+    "username": "invitation-flow-primary@example.com",
+    "password_hash": "f9145b43c3231f1a0bb4ef03b87cf4f363b06b3ed8a1544e17817f2c541c05b1",
+    "password_salt": "6a0f83ea340580fbf58d98b0a0307740",
+    "name": "First Invite User",
+    "role": "customer",
+    "customer_id": "CUST-41540",
+    "email": "invitation-flow-primary@example.com",
+    "registered_at": "2026-02-26T14:49:12.806593"
+  },
+  {
+    "username": "invitation-flow-secondary@example.com",
+    "password_hash": "bf66b71ca4e4522f9ea1fe4e48d88e16edfceeb94412aba1a412f39571830eec",
+    "password_salt": "56e88606deecd95d98d829a53a615386",
+    "name": "Replay Invite Success User",
+    "role": "customer",
+    "customer_id": "CUST-93935",
+    "email": "invitation-flow-secondary@example.com",
+    "registered_at": "2026-02-26T14:49:12.902117"
   }
 ]

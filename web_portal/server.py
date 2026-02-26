@@ -15316,12 +15316,20 @@ For claims or questions, please contact:
                 # Summary totals for quick reference
                 'summary_totals': {
                     'total_premiums_collected': expected_premium_income,
+                    'premium_income_breakdown': {
+                        'from_bills': premium_income_totals['from_bills'],
+                        'from_ledger': premium_income_totals['ledger_unbilled_total'],
+                        'total': expected_premium_income
+                    },
                     'total_claims_paid': expected_claims_paid,
                     'total_medical_services': total_medical_purchases,
                     'total_wallet_deposits': total_wallet_deposits,
                     'total_investments': total_investment_balance,
                     'net_position': expected_premium_income - expected_claims_paid - total_medical_purchases
                 },
+                
+                # Top-level cumulative premium echo
+                'cumulative_premium': expected_premium_income,
                 
                 'timestamp': datetime.now().isoformat()
             }, default=str).encode('utf-8'))
