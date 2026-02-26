@@ -14511,6 +14511,10 @@ For claims or questions, please contact:
             
             cumulative_premium_data = calculate_cumulative_premium_income(exclude_suspended=True)
 
+            # Inject cumulative premium into balance sheet so revenue_breakdown reflects actuals
+            PHINS_BALANCE_SHEET['revenue_breakdown']['premium_income'] = cumulative_premium_data['total']
+            PHINS_BALANCE_SHEET['total_revenue'] = round(sum(PHINS_BALANCE_SHEET['revenue_breakdown'].values()), 2)
+
             self._set_json_headers()
             self.wfile.write(json.dumps({
                 'success': True,
