@@ -2763,7 +2763,13 @@
             if (premiumSourceEl) {
               const ledgerFallback = premiumSources.from_ledger_billed_fallback || 0;
               const walletFallback = premiumSources.from_wallet_billed_fallback || 0;
-              premiumSourceEl.textContent = `Cumulative: ${fmt(bs.data_sources?.cumulative_premium?.value || cumulativePremium)} | Billed/Auto-Pay: ${fmt(premiumSources.from_bills || 0)} + Explicit Unbilled (NFT): ${fmt(premiumSources.from_ledger_unbilled || 0)} + Recovered Billed (Ledger Fallback): ${fmt(ledgerFallback)} + Wallet Fallback: ${fmt(walletFallback)}`;
+              const txOverview = bs.premium_transaction_overview || {};
+              const futureProjected = Number(txOverview.future_projected_total || 0);
+              const cumulativeTransactions = Number(
+                txOverview.cumulative_transaction_total ||
+                (cumulativePremium + futureProjected)
+              );
+              premiumSourceEl.textContent = `Cumulative: ${fmt(bs.data_sources?.cumulative_premium?.value || cumulativePremium)} | Billed/Auto-Pay: ${fmt(premiumSources.from_bills || 0)} + Explicit Unbilled (NFT): ${fmt(premiumSources.from_ledger_unbilled || 0)} + Recovered Billed (Ledger Fallback): ${fmt(ledgerFallback)} + Wallet Fallback: ${fmt(walletFallback)} + Future Scheduled (${txOverview.projection_months || 12}m): ${fmt(futureProjected)} | Transactions Cumulative: ${fmt(cumulativeTransactions)}`;
             }
           }
           
@@ -2840,6 +2846,17 @@
             data.cumulative_premium_data_source?.value ??
             data.summary_totals?.total_premiums_collected ??
             0;
+          const premiumTxOverview = data.premium_transaction_overview || {};
+          const futureProjectedPremium = Number(
+            premiumTxOverview.future_projected_total ??
+            data.summary_totals?.total_premiums_future_projected ??
+            0
+          );
+          const cumulativeTransactionTotal = Number(
+            premiumTxOverview.cumulative_transaction_total ??
+            data.summary_totals?.total_premiums_cumulative ??
+            (Number(cumulativePremium) + futureProjectedPremium)
+          );
           message += `• Premiums Collected: ${fmt(cumulativePremium)}\n`;
           message += `• Claims Paid: ${fmt(data.summary_totals?.total_claims_paid)}\n`;
           message += `• Medical Services: ${fmt(data.summary_totals?.total_medical_services)}\n`;
@@ -2853,6 +2870,8 @@
           message += `• Recovered Billed (Ledger Fallback): ${fmt(premiumSource.from_ledger_billed_fallback)}\n`;
           message += `• Wallet Premium Fallback: ${fmt(premiumSource.from_wallet_billed_fallback)}\n`;
           message += `• Cumulative Premium Income: ${fmt(cumulativePremium)}\n\n`;
+          message += `• Future Premium Transactions (${premiumTxOverview.projection_months || 12}m): ${fmt(futureProjectedPremium)}\n`;
+          message += `• Total Collected (Cumulative Transactions): ${fmt(cumulativeTransactionTotal)}\n\n`;
           
           message += `🏪 MEDICAL SERVICES:\n`;
           message += `• Total: ${fmt(data.medical_services?.total_amount)} (${data.medical_services?.total_transactions || 0} transactions)\n`;
@@ -3748,6 +3767,8 @@
         if (response.ok) {
           const data = await response.json();
           const premiumCollected =
+            data.total_collected_cumulative ??
+            data.premium_transaction_overview?.cumulative_transaction_total ??
             data.cumulative_premium_data_source?.value ??
             data.cumulative_premium_income ??
             data.total_collected ??

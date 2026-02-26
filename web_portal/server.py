@@ -519,6 +519,141 @@ def sync_balance_sheet_premium_income(
     }
 
 
+def calculate_premium_transaction_overview(
+    *,
+    paid_totals: Optional[Dict[str, Any]] = None,
+    exclude_suspended: bool = True,
+    projection_months: int = 12
+) -> Dict[str, Any]:
+    """
+    Build premium transaction overview including paid history + future schedule.
+
+    Accounting integrity note:
+    - paid_total remains the canonical recognized premium income.
+    - future_projected_total is a schedule/projection signal and is NOT booked revenue.
+    """
+    totals = paid_totals or calculate_cumulative_premium_income(
+        exclude_suspended=exclude_suspended
+    )
+    paid_total = safe_float((totals or {}).get('total', 0))
+    paid_tx_count = (
+        safe_int((totals or {}).get('paid_bills_count', 0)) +
+        safe_int((totals or {}).get('ledger_unbilled_count', 0)) +
+        safe_int((totals or {}).get('wallet_billed_fallback_count', 0))
+    )
+
+    future_projected_total = 0.0
+    future_projected_count = 0
+    projection_source = 'future_bills_fallback'
+
+    # Primary source: monthly billing projection service (future schedule by policy).
+    if billing_projection_enabled and billing_projection_service:
+        projection_source = 'billing_projection_service'
+        customer_ids = set()
+        for policy in POLICIES.values():
+            if not isinstance(policy, dict):
+                continue
+            customer_id = str(policy.get('customer_id') or '').strip()
+            if not customer_id:
+                continue
+            if exclude_suspended and is_suspended_account(customer_id):
+                continue
+            policy_status = get_status_lower(policy)
+            if policy_status in {'cancelled', 'terminated', 'rejected', 'expired'}:
+                continue
+            monthly = safe_float(policy.get('monthly_premium', 0))
+            annual = safe_float(policy.get('annual_premium', 0))
+            if monthly <= 0 and annual <= 0:
+                continue
+            customer_ids.add(customer_id)
+
+        for customer_id in customer_ids:
+            try:
+                projections = billing_projection_service.get_customer_billing_projection(
+                    customer_id=customer_id,
+                    projection_months=projection_months,
+                    include_all_policies=True,
+                    force_refresh=False
+                )
+            except Exception:
+                continue
+
+            for projection in projections or []:
+                projected_entries = getattr(projection, 'projected_entries', None)
+                if projected_entries is None and isinstance(projection, dict):
+                    projected_entries = projection.get('future_projections', [])
+                if not isinstance(projected_entries, list):
+                    continue
+
+                for entry in projected_entries:
+                    if isinstance(entry, dict):
+                        amount = safe_float(
+                            entry.get('final_amount', entry.get('amount', entry.get('base_amount', 0)))
+                        )
+                    else:
+                        amount = safe_float(
+                            getattr(
+                                entry,
+                                'final_amount',
+                                getattr(entry, 'amount', getattr(entry, 'base_amount', 0))
+                            )
+                        )
+                    if amount <= 0:
+                        continue
+                    future_projected_total += amount
+                    future_projected_count += 1
+
+    # Fallback source: future-due unpaid bills when projection service gives no entries.
+    if future_projected_count <= 0:
+        projection_source = 'future_bills_fallback'
+        now = datetime.now()
+        for bill in BILLING.values():
+            if not isinstance(bill, dict):
+                continue
+            customer_id = str(bill.get('customer_id') or '').strip()
+            if exclude_suspended and is_suspended_account(customer_id):
+                continue
+            if status_eq(bill, 'paid'):
+                continue
+
+            due_raw = (
+                bill.get('due_date') or
+                bill.get('billing_period_start') or
+                bill.get('created_date')
+            )
+            due_date = None
+            if isinstance(due_raw, str) and due_raw:
+                try:
+                    due_date = datetime.fromisoformat(
+                        due_raw.replace('Z', '+00:00')
+                    ).replace(tzinfo=None)
+                except Exception:
+                    due_date = None
+            if due_date is None or due_date <= now:
+                continue
+
+            outstanding = max(
+                0.0,
+                safe_float(bill.get('amount_due', bill.get('amount', 0))) -
+                safe_float(bill.get('amount_paid', 0))
+            )
+            if outstanding <= 0:
+                continue
+            future_projected_total += outstanding
+            future_projected_count += 1
+
+    cumulative_transaction_total = paid_total + future_projected_total
+    return {
+        'paid_total': round(paid_total, 2),
+        'paid_transaction_count': paid_tx_count,
+        'future_projected_total': round(future_projected_total, 2),
+        'future_projected_transaction_count': future_projected_count,
+        'cumulative_transaction_total': round(cumulative_transaction_total, 2),
+        'projection_months': projection_months,
+        'projection_source': projection_source,
+    }
+
+
 # ==============================================================================
 # MARKETPLACE NORMALIZATION HELPERS
 # ==============================================================================
@@ -4735,6 +4870,14 @@ def get_bi_data_accounting() -> Dict[str, Any]:
             premium_income_totals.get('total', 0)
         )
     )
+    premium_tx_overview = calculate_premium_transaction_overview(
+        paid_totals=premium_income_totals,
+        exclude_suspended=False,
+        projection_months=12
+    )
+    total_collected_cumulative = safe_float(
+        premium_tx_overview.get('cumulative_transaction_total', total_premium_collected)
+    )
     total_claims_paid = sum(safe_float(c.get('approved_amount', 0)) for c in CLAIMS.values() if status_eq(c, 'paid'))
     outstanding_premiums = sum(
         max(
@@ -4747,9 +4890,14 @@ def get_bi_data_accounting() -> Dict[str, Any]:
     
     return {
         'total_revenue': round(total_premium_collected, 2),
-        'total_collected': round(total_premium_collected, 2),
+        'total_collected': round(total_collected_cumulative, 2),
+        'total_collected_paid': round(total_premium_collected, 2),
+        'total_collected_cumulative': round(total_collected_cumulative, 2),
         'cumulative_premium_income': round(total_premium_collected, 2),
         'cumulative_premium_data_source': premium_income_sync.get('data_source'),
+        'premium_transaction_overview': premium_tx_overview,
+        'premium_future_projected_total': round(safe_float(premium_tx_overview.get('future_projected_total', 0)), 2),
+        'premium_future_projected_count': safe_int(premium_tx_overview.get('future_projected_transaction_count', 0)),
         'total_claims_paid': round(total_claims_paid, 2),
         'net_income': round(total_premium_collected - total_claims_paid, 2),
         'outstanding_premiums': round(outstanding_premiums, 2),
@@ -6014,6 +6162,11 @@ For claims or questions, please contact:
                     premium_income_totals.get('total', 0)
                 )
             )
+            premium_tx_overview = calculate_premium_transaction_overview(
+                paid_totals=premium_income_totals,
+                exclude_suspended=False,
+                projection_months=12
+            )
             # Total amount actually collected (bills + explicit unbilled premium flows)
             total_collected = cumulative_premium_value
             bills_for_stats = list(BILLING.values())
@@ -6104,6 +6257,11 @@ For claims or questions, please contact:
                 'total_collected_wallet_billed_fallback': premium_income_totals.get('wallet_billed_fallback_total', 0.0),
                 'cumulative_premium_data_source': premium_income_sync.get('data_source'),
                 'cumulative_premium_income': cumulative_premium_value,
+                'total_collected_paid': cumulative_premium_value,
+                'total_collected_cumulative': premium_tx_overview.get('cumulative_transaction_total', cumulative_premium_value),
+                'premium_transaction_overview': premium_tx_overview,
+                'premium_future_projected_total': premium_tx_overview.get('future_projected_total', 0.0),
+                'premium_future_projected_count': premium_tx_overview.get('future_projected_transaction_count', 0),
                 'outstanding_balance': outstanding_balance,
                 'total_investment_value': total_investment_value,
                 'total_coverage_amount': total_coverage_amount,
@@ -6747,6 +6905,11 @@ For claims or questions, please contact:
                         premium_income_totals.get('total', 0)
                     )
                 )
+                premium_tx_overview = calculate_premium_transaction_overview(
+                    paid_totals=premium_income_totals,
+                    exclude_suspended=False,
+                    projection_months=12
+                )
                 report['premium_income_cumulative'] = cumulative_premium_value
                 report['cumulative_premium_income'] = cumulative_premium_value
                 report['premium_income_from_bills'] = safe_float(premium_income_totals.get('from_bills', 0))
@@ -6754,9 +6917,22 @@ For claims or questions, please contact:
                 report['premium_income_billed_fallback'] = premium_income_totals.get('ledger_billed_fallback_total', 0.0)
                 report['premium_income_wallet_fallback'] = premium_income_totals.get('wallet_billed_fallback_total', 0.0)
                 report['cumulative_premium_data_source'] = premium_income_sync.get('data_source')
+                report['premium_transaction_overview'] = premium_tx_overview
+                report['premium_future_projected_total'] = premium_tx_overview.get('future_projected_total', 0.0)
+                report['premium_future_projected_count'] = premium_tx_overview.get('future_projected_transaction_count', 0)
+                report['total_collected_paid'] = cumulative_premium_value
+                report['total_collected_cumulative'] = premium_tx_overview.get(
+                    'cumulative_transaction_total',
+                    cumulative_premium_value
+                )
 
                 if dashboard_type in ['accountant', 'billing']:
-                    report['total_collected'] = cumulative_premium_value
+                    report['total_collected'] = safe_float(
+                        premium_tx_overview.get(
+                            'cumulative_transaction_total',
+                            cumulative_premium_value
+                        )
+                    )
                     report['total_collected_from_bills'] = safe_float(premium_income_totals.get('from_bills', 0))
                     report['total_collected_ledger_billed_fallback'] = premium_income_totals.get('ledger_billed_fallback_total', 0.0)
                     report['total_collected_wallet_billed_fallback'] = premium_income_totals.get('wallet_billed_fallback_total', 0.0)
@@ -9990,7 +10166,14 @@ For claims or questions, please contact:
                     premium_income_totals.get('total', 0)
                 )
             )
-            total_collected = cumulative_premium_value
+            premium_tx_overview = calculate_premium_transaction_overview(
+                paid_totals=premium_income_totals,
+                exclude_suspended=False,
+                projection_months=12
+            )
+            total_collected = safe_float(
+                premium_tx_overview.get('cumulative_transaction_total', cumulative_premium_value)
+            )
             total_collected_from_bills = safe_float(premium_income_totals.get('from_bills', 0))
             outstanding = sum(safe_float(b.get('amount', 0)) - safe_float(b.get('amount_paid', 0)) 
                              for b in bills if not status_eq(b, 'paid'))
@@ -10010,7 +10193,7 @@ For claims or questions, please contact:
             
             self._set_json_headers()
             self.wfile.write(json.dumps({
-                'total_revenue': round(total_collected, 2),
+                'total_revenue': round(cumulative_premium_value, 2),
                 'monthly_premium_income': round(monthly_revenue, 2),
                 'total_billed': round(total_billed, 2),
                 'total_collected': round(total_collected, 2),
@@ -10020,6 +10203,14 @@ For claims or questions, please contact:
                 'total_collected_wallet_billed_fallback': round(premium_income_totals.get('wallet_billed_fallback_total', 0.0), 2),
                 'cumulative_premium_income': round(cumulative_premium_value, 2),
                 'cumulative_premium_data_source': premium_income_sync.get('data_source'),
+                'premium_transaction_overview': premium_tx_overview,
+                'premium_future_projected_total': round(safe_float(premium_tx_overview.get('future_projected_total', 0)), 2),
+                'premium_future_projected_count': safe_int(premium_tx_overview.get('future_projected_transaction_count', 0)),
+                'total_collected_paid': round(cumulative_premium_value, 2),
+                'total_collected_cumulative': round(
+                    safe_float(premium_tx_overview.get('cumulative_transaction_total', cumulative_premium_value)),
+                    2
+                ),
                 'outstanding_balance': round(outstanding, 2),
                 'outstanding_receivables': round(outstanding, 2),
                 'claims_paid': round(claims_paid, 2),
@@ -14973,6 +15164,11 @@ For claims or questions, please contact:
                 reason='balance_sheet_read',
                 persist=False
             )
+            premium_tx_overview = calculate_premium_transaction_overview(
+                paid_totals=premium_income_sync.get('totals', {}),
+                exclude_suspended=False,
+                projection_months=12
+            )
             
             # Calculate totals
             total_balance = (
@@ -15010,6 +15206,7 @@ For claims or questions, please contact:
                         'ledger_unbilled_count': premium_income_sync['totals']['ledger_unbilled_count'],
                         'wallet_billed_fallback_count': premium_income_sync['totals'].get('wallet_billed_fallback_count', 0),
                     },
+                    'premium_transaction_overview': premium_tx_overview,
                     'data_sources': PHINS_BALANCE_SHEET.get('data_sources', {}),
                     
                     # Expenses
@@ -15111,6 +15308,11 @@ For claims or questions, please contact:
                     )
                 )
             )
+            premium_tx_overview = calculate_premium_transaction_overview(
+                paid_totals=premium_income_sync.get('totals', {}),
+                exclude_suspended=False,
+                projection_months=12
+            )
             
             # Recent claims paid
             recent_claims = [
@@ -15125,6 +15327,12 @@ For claims or questions, please contact:
                     'claims_reserve': PHINS_BALANCE_SHEET['claims_reserve'],
                     'total_claims_paid': PHINS_BALANCE_SHEET['expense_breakdown']['claims_paid'],
                     'total_premium_income': cumulative_premium_value,
+                    'total_premium_cumulative': premium_tx_overview.get(
+                        'cumulative_transaction_total',
+                        cumulative_premium_value
+                    ),
+                    'total_premium_future_projected': premium_tx_overview.get('future_projected_total', 0.0),
+                    'premium_transaction_overview': premium_tx_overview,
                     'cumulative_premium_data_source': cumulative_premium_data_source,
                     'net_position': PHINS_BALANCE_SHEET['total_revenue'] - PHINS_BALANCE_SHEET['total_expenses'],
                     'recent_claims_count': len(recent_claims),
@@ -15608,6 +15816,11 @@ For claims or questions, please contact:
                     premium_income_totals.get('total', 0)
                 )
             )
+            premium_tx_overview = calculate_premium_transaction_overview(
+                paid_totals=premium_income_totals,
+                exclude_suspended=False,
+                projection_months=12
+            )
             
             # 2. Claims Paid - from paid claims
             expected_claims_paid = sum(
@@ -15835,12 +16048,18 @@ For claims or questions, please contact:
                 # Summary totals for quick reference
                 'summary_totals': {
                     'total_premiums_collected': expected_premium_income,
+                    'total_premiums_future_projected': premium_tx_overview.get('future_projected_total', 0.0),
+                    'total_premiums_cumulative': premium_tx_overview.get(
+                        'cumulative_transaction_total',
+                        expected_premium_income
+                    ),
                     'total_claims_paid': expected_claims_paid,
                     'total_medical_services': total_medical_purchases,
                     'total_wallet_deposits': total_wallet_deposits,
                     'total_investments': total_investment_balance,
                     'net_position': expected_premium_income - expected_claims_paid - total_medical_purchases
                 },
+                'premium_transaction_overview': premium_tx_overview,
                 'cumulative_premium_data_source': cumulative_premium_data_source,
                 
                 'timestamp': datetime.now().isoformat()

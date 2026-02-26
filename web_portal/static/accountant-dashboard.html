@@ -258,7 +258,10 @@
             </div>
             <div class="stat-card">
                 <div class="stat-value" id="total-collected">$0</div>
-                <div class="stat-label">Collected</div>
+                <div class="stat-label">Total Collected (Cumulative)</div>
+                <div id="total-collected-breakdown" style="font-size: 11px; color: #64748b; margin-top: 6px;">
+                    Past paid: $0.00 | Future scheduled: $0.00
+                </div>
             </div>
             <div class="stat-card">
                 <div class="stat-value warning" id="outstanding-ar">$0</div>
@@ -687,24 +690,37 @@
                     headers: { 'Authorization': `Bearer ${token}` }
                 });
                 const data = await response.json();
-                const cumulativePremium = Number(
+                const pastCollectedPremium = Number(
                     data.cumulative_premium_data_source?.value ??
                     data.cumulative_premium_income ??
                     data.premium_income_cumulative ??
-                    data.total_collected ??
                     0
+                );
+                const futureProjectedPremium = Number(
+                    data.premium_transaction_overview?.future_projected_total ??
+                    data.premium_future_projected_total ??
+                    0
+                );
+                const cumulativePremium = Number(
+                    data.total_collected_cumulative ??
+                    (pastCollectedPremium + futureProjectedPremium)
                 );
                 
                 document.getElementById('total-revenue').textContent = formatCurrency(data.total_revenue);
                 document.getElementById('total-collected').textContent = formatCurrency(cumulativePremium);
                 document.getElementById('total-collected').title =
-                    `Canonical cumulative premium data source: ${formatCurrency(cumulativePremium)}`;
+                    `Past paid: ${formatCurrency(pastCollectedPremium)} + Future scheduled: ${formatCurrency(futureProjectedPremium)} = ${formatCurrency(cumulativePremium)}`;
+                const totalCollectedBreakdown = document.getElementById('total-collected-breakdown');
+                if (totalCollectedBreakdown) {
+                    totalCollectedBreakdown.textContent =
+                        `Past paid: ${formatCurrency(pastCollectedPremium)} | Future scheduled: ${formatCurrency(futureProjectedPremium)}`;
+                }
                 document.getElementById('outstanding-ar').textContent = formatCurrency(data.outstanding_ar);
                 document.getElementById('claims-liability').textContent = formatCurrency(data.claims_pending);
                 
                 // Loss Ratio = Claims Paid / Total Revenue (or Collected if available)
                 // If no collected yet, use revenue as base for loss ratio estimation
-                const baseForLossRatio = cumulativePremium > 0 ? cumulativePremium : data.total_revenue;
+                const baseForLossRatio = pastCollectedPremium > 0 ? pastCollectedPremium : data.total_revenue;
                 const lossRatio = baseForLossRatio > 0 
                     ? ((data.claims_paid || 0) / baseForLossRatio * 100).toFixed(1) 
                     : '0';
@@ -3334,13 +3350,19 @@
                         );
                         document.getElementById('bs-premium-income').textContent = fmt(cumulativePremium);
                         const premiumSources = bs.premium_income_sources || {};
+                        const premiumTxOverview = bs.premium_transaction_overview || {};
+                        const futureProjected = Number(premiumTxOverview.future_projected_total || 0);
+                        const cumulativeTransactions = Number(
+                            premiumTxOverview.cumulative_transaction_total ||
+                            (cumulativePremium + futureProjected)
+                        );
                         document.getElementById('bs-premium-income').title =
-                            `Billed/Auto-Pay: ${fmt(premiumSources.from_bills || 0)} + Explicit Unbilled (NFT): ${fmt(premiumSources.from_ledger_unbilled || 0)} + Recovered Billed (Ledger Fallback): ${fmt(premiumSources.from_ledger_billed_fallback || 0)} + Wallet Fallback: ${fmt(premiumSources.from_wallet_billed_fallback || 0)}`;
+                            `Billed/Auto-Pay: ${fmt(premiumSources.from_bills || 0)} + Explicit Unbilled (NFT): ${fmt(premiumSources.from_ledger_unbilled || 0)} + Recovered Billed (Ledger Fallback): ${fmt(premiumSources.from_ledger_billed_fallback || 0)} + Wallet Fallback: ${fmt(premiumSources.from_wallet_billed_fallback || 0)} + Future Scheduled: ${fmt(futureProjected)}`;
                         const premiumSourceEl = document.getElementById('bs-premium-income-source');
                         if (premiumSourceEl) {
                             premiumSourceEl.textContent =
                                 `Cumulative source: ${fmt(bs.data_sources?.cumulative_premium?.value || cumulativePremium)} ` +
-                                `(Bills: ${fmt(premiumSources.from_bills || 0)}, Ledger: ${fmt((premiumSources.from_ledger_unbilled || 0) + (premiumSources.from_ledger_billed_fallback || 0))}, Wallet: ${fmt(premiumSources.from_wallet_billed_fallback || 0)})`;
+                                `(Bills: ${fmt(premiumSources.from_bills || 0)}, Ledger: ${fmt((premiumSources.from_ledger_unbilled || 0) + (premiumSources.from_ledger_billed_fallback || 0))}, Wallet: ${fmt(premiumSources.from_wallet_billed_fallback || 0)}, Future Scheduled: ${fmt(futureProjected)}, Transactions Cumulative: ${fmt(cumulativeTransactions)})`;
                         }
                         document.getElementById('bs-management-fees').textContent = fmt(bs.revenue_breakdown.management_fees);
                         document.getElementById('bs-underwriting-fees').textContent = fmt(bs.revenue_breakdown.underwriting_fees);
@@ -3420,6 +3442,17 @@
                         data.summary_totals?.total_premiums_collected ??
                         data.current_balance_sheet?.revenue_breakdown?.premium_income ??
                         0;
+                    const premiumTxOverview = data.premium_transaction_overview || {};
+                    const futureProjectedPremium = Number(
+                        premiumTxOverview.future_projected_total ??
+                        data.summary_totals?.total_premiums_future_projected ??
+                        0
+                    );
+                    const cumulativeTransactionTotal = Number(
+                        premiumTxOverview.cumulative_transaction_total ??
+                        data.summary_totals?.total_premiums_cumulative ??
+                        (Number(cumulativePremium) + futureProjectedPremium)
+                    );
                     message += `• Premiums Collected: ${fmt(cumulativePremium)}\n`;
                     message += `• Claims Paid: ${fmt(data.summary_totals?.total_claims_paid)}\n`;
                     message += `• Medical Services: ${fmt(data.summary_totals?.total_medical_services)}\n`;
@@ -3434,6 +3467,8 @@
                     message += `• Recovered Billed (Ledger Fallback): ${fmt(premiumSource.from_ledger_billed_fallback)}\n`;
                     message += `• Wallet Premium Fallback: ${fmt(premiumSource.from_wallet_billed_fallback)}\n`;
                     message += `• Cumulative Premium Income: ${fmt(cumulativePremium)}\n`;
+                    message += `• Future Premium Transactions (${premiumTxOverview.projection_months || 12}m): ${fmt(futureProjectedPremium)}\n`;
+                    message += `• Total Collected (Cumulative Transactions): ${fmt(cumulativeTransactionTotal)}\n`;
                     message += `• Data Source (cumulative_premium): ${fmt(data.cumulative_premium_data_source?.value)}\n\n`;
                     
                     message += `🏪 MEDICAL SERVICES:\n`;
@@ -3463,8 +3498,14 @@
                     }
                     const totalCollectedEl = document.getElementById('total-collected');
                     if (totalCollectedEl) {
-                        totalCollectedEl.textContent = fmt(cumulativePremium);
-                        totalCollectedEl.title = `Canonical cumulative premium data source: ${fmt(cumulativePremium)}`;
+                        totalCollectedEl.textContent = fmt(cumulativeTransactionTotal);
+                        totalCollectedEl.title =
+                            `Past paid: ${fmt(cumulativePremium)} + Future scheduled: ${fmt(futureProjectedPremium)} = ${fmt(cumulativeTransactionTotal)}`;
+                    }
+                    const totalCollectedBreakdown = document.getElementById('total-collected-breakdown');
+                    if (totalCollectedBreakdown) {
+                        totalCollectedBreakdown.textContent =
+                            `Past paid: ${fmt(cumulativePremium)} | Future scheduled: ${fmt(futureProjectedPremium)}`;
                     }
                     
                     // Always reload to reflect persisted cumulative premium data source.

@@ -30,7 +30,8 @@ class TestBalanceSheetIntegrity(unittest.TestCase):
             initialize_balance_sheet, record_premium_revenue,
             process_claim_payment_to_wallet, HEALTH_WALLETS,
             TRANSACTION_LEDGER, calculate_cumulative_premium_income,
-            sync_balance_sheet_premium_income, SUSPENDED_TEST_ACCOUNTS
+            sync_balance_sheet_premium_income, SUSPENDED_TEST_ACCOUNTS,
+            calculate_premium_transaction_overview
         )
         
         self.PHINS_BALANCE_SHEET = PHINS_BALANCE_SHEET
@@ -43,6 +44,7 @@ class TestBalanceSheetIntegrity(unittest.TestCase):
         self.process_claim_payment_to_wallet = process_claim_payment_to_wallet
         self.calculate_cumulative_premium_income = calculate_cumulative_premium_income
         self.sync_balance_sheet_premium_income = sync_balance_sheet_premium_income
+        self.calculate_premium_transaction_overview = calculate_premium_transaction_overview
         self.SUSPENDED_TEST_ACCOUNTS = SUSPENDED_TEST_ACCOUNTS
     
     def test_balance_sheet_initialized(self):
@@ -435,6 +437,60 @@ class TestBalanceSheetIntegrity(unittest.TestCase):
                 self.HEALTH_WALLETS.pop(customer_id, None)
             else:
                 self.HEALTH_WALLETS[customer_id] = prev_wallet
+
+    def test_premium_transaction_overview_includes_future_unpaid_bills(self):
+        """Overview should include future scheduled unpaid premium transactions."""
+        future_bill_id = "TEST-BILL-FUTURE-001"
+        paid_bill_id = "TEST-BILL-PAST-001"
+        prev_future_bill = self.BILLING.get(future_bill_id)
+        prev_paid_bill = self.BILLING.get(paid_bill_id)
+
+        try:
+            self.BILLING[paid_bill_id] = {
+                'id': paid_bill_id,
+                'customer_id': 'TEST-CUST-FUTURE-001',
+                'policy_id': 'TEST-POL-FUTURE-001',
+                'amount': 90.0,
+                'amount_due': 90.0,
+                'amount_paid': 90.0,
+                'status': 'paid',
+                'created_date': datetime.now().isoformat(),
+                'paid_date': datetime.now().isoformat()
+            }
+            self.BILLING[future_bill_id] = {
+                'id': future_bill_id,
+                'customer_id': 'TEST-CUST-FUTURE-001',
+                'policy_id': 'TEST-POL-FUTURE-001',
+                'amount': 60.0,
+                'amount_due': 60.0,
+                'amount_paid': 0.0,
+                'status': 'outstanding',
+                'created_date': datetime.now().isoformat(),
+                'due_date': datetime(2099, 1, 1).isoformat()
+            }
+
+            paid_totals = self.calculate_cumulative_premium_income(exclude_suspended=False)
+            overview = self.calculate_premium_transaction_overview(
+                paid_totals=paid_totals,
+                exclude_suspended=False,
+                projection_months=12
+            )
+
+            self.assertGreaterEqual(overview.get('paid_total', 0), 90.0)
+            self.assertGreaterEqual(overview.get('future_projected_total', 0), 60.0)
+            self.assertGreaterEqual(
+                overview.get('cumulative_transaction_total', 0),
+                overview.get('paid_total', 0) + 60.0
+            )
+        finally:
+            if prev_future_bill is None:
+                self.BILLING.pop(future_bill_id, None)
+            else:
+                self.BILLING[future_bill_id] = prev_future_bill
+            if prev_paid_bill is None:
+                self.BILLING.pop(paid_bill_id, None)
+            else:
+                self.BILLING[paid_bill_id] = prev_paid_bill
 
     def test_sync_balance_sheet_premium_income_updates_stale_value(self):
         """Sync helper should update stale balance-sheet premium income values."""
