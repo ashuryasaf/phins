@@ -112,6 +112,7 @@ PREMIUM_LEDGER_TX_TYPES = {
     'premium_deposit',
     'bill_payment',
     'auto_pay_execution',
+    'bulk_premium_payment',
 }
 PREMIUM_WALLET_TX_TYPES = {
     'premium_payment',
@@ -124,6 +125,17 @@ def get_transaction_type(tx: Dict[str, Any]) -> str:
     return str(tx.get('type') or tx.get('tx_type') or '').strip().lower()
 
 
+def _refresh_store_cache_if_supported(store: Any) -> None:
+    """Best-effort refresh for DatabaseDict-backed stores."""
+    refresher = getattr(store, '_refresh_cache', None)
+    if callable(refresher):
+        try:
+            refresher()
+        except Exception:
+            # Keep calculation resilient even if cache refresh fails.
+            pass
+
+
 def calculate_cumulative_premium_income(exclude_suspended: bool = True) -> Dict[str, float]:
     """
     Calculate cumulative premium income with data-integrity safeguards.
@@ -134,6 +146,10 @@ def calculate_cumulative_premium_income(exclude_suspended: bool = True) -> Dict[
     3) Ledger billed-payment fallback when bill mirrors are missing/drifted
     4) Wallet premium fallback when both bill/ledger mirrors are missing
     """
+    # In database-backed mode, billing may be updated by other requests/instances.
+    # Refresh cache before financial aggregation to avoid stale cumulative totals.
+    _refresh_store_cache_if_supported(BILLING)
+
     bill_paid_total = 0.0
     paid_bills_count = 0
     bill_paid_amount_by_id: Dict[str, float] = {}
@@ -174,6 +190,9 @@ def calculate_cumulative_premium_income(exclude_suspended: bool = True) -> Dict[
             continue
 
         amount = safe_float(tx.get('amount', 0))
+        if tx_type == 'bulk_premium_payment':
+            # Legacy bulk wallet payments are often written as debits (negative).
+            amount = abs(amount)
         if amount <= 0:
             continue
 
@@ -185,6 +204,37 @@ def calculate_cumulative_premium_income(exclude_suspended: bool = True) -> Dict[
         unbilled_amount = 0.0
         billed_fallback_amount = 0.0
 
+        if tx_type == 'bulk_premium_payment':
+            # Bulk premium records can carry per-bill allocations in metadata.
+            parsed_total = 0.0
+            bills_paid = metadata.get('bills_paid')
+            if isinstance(bills_paid, list) and bills_paid:
+                for paid in bills_paid:
+                    if not isinstance(paid, dict):
+                        continue
+                    paid_bill_id = str(paid.get('bill_id') or paid.get('id') or '').strip()
+                    paid_amount = abs(
+                        safe_float(paid.get('amount_paid', paid.get('amount', 0)))
+                    )
+                    if paid_amount <= 0:
+                        continue
+                    parsed_total += paid_amount
+                    if paid_bill_id:
+                        ledger_billed_by_bill_id[paid_bill_id] = (
+                            ledger_billed_by_bill_id.get(paid_bill_id, 0.0) + paid_amount
+                        )
+                    else:
+                        legacy_applied_without_bill_links += paid_amount
+
+            if parsed_total <= 0:
+                # No per-bill metadata available; keep as legacy fallback evidence.
+                legacy_applied_without_bill_links += amount
+            else:
+                # Keep any residual rounding/drift as legacy fallback evidence.
+                residual = max(0.0, amount - parsed_total)
+                if residual > 0:
+                    legacy_applied_without_bill_links += residual
+            continue
         if tx_type == 'premium_payment':
             # For customer premium payments, include only explicitly unbilled
             # remainder. This prevents double counting when a payment has
@@ -284,14 +334,51 @@ def calculate_cumulative_premium_income(exclude_suspended: bool = True) -> Dict[
             if not isinstance(wallet_meta, dict):
                 wallet_meta = {}
             wallet_bill_id = str(wallet_tx.get('bill_id') or wallet_meta.get('bill_id') or '').strip()
+            wallet_bill_ids = wallet_meta.get('bill_ids')
+            wallet_bills_paid = wallet_meta.get('bills_paid')
 
             if wallet_bill_id:
                 wallet_billed_by_bill_id[wallet_bill_id] = (
                     wallet_billed_by_bill_id.get(wallet_bill_id, 0.0) + wallet_amount
                 )
-            else:
-                wallet_unlinked_total += wallet_amount
-                wallet_unlinked_count += 1
+                continue
+
+            if isinstance(wallet_bills_paid, list) and wallet_bills_paid:
+                parsed_total = 0.0
+                for paid in wallet_bills_paid:
+                    if not isinstance(paid, dict):
+                        continue
+                    paid_bill_id = str(paid.get('bill_id') or paid.get('id') or '').strip()
+                    paid_amount = abs(
+                        safe_float(paid.get('amount_paid', paid.get('amount', 0)))
+                    )
+                    if paid_amount <= 0:
+                        continue
+                    parsed_total += paid_amount
+                    if paid_bill_id:
+                        wallet_billed_by_bill_id[paid_bill_id] = (
+                            wallet_billed_by_bill_id.get(paid_bill_id, 0.0) + paid_amount
+                        )
+                if parsed_total > 0:
+                    # Account for rounding drift while keeping de-dup safeguards.
+                    residual = max(0.0, wallet_amount - parsed_total)
+                    if residual > 0:
+                        wallet_unlinked_total += residual
+                        wallet_unlinked_count += 1
+                    continue
+
+            if isinstance(wallet_bill_ids, list) and wallet_bill_ids:
+                normalized_ids = [str(bid or '').strip() for bid in wallet_bill_ids if str(bid or '').strip()]
+                if normalized_ids:
+                    split_amount = wallet_amount / max(len(normalized_ids), 1)
+                    for linked_id in normalized_ids:
+                        wallet_billed_by_bill_id[linked_id] = (
+                            wallet_billed_by_bill_id.get(linked_id, 0.0) + split_amount
+                        )
+                    continue
+
+            wallet_unlinked_total += wallet_amount
+            wallet_unlinked_count += 1
 
     wallet_billed_fallback_total = 0.0
     wallet_billed_fallback_count = 0
@@ -30268,6 +30355,10 @@ For claims or questions, please contact:
                     'type': 'bulk_premium_payment',
                     'amount': -total_paid,
                     'bills_paid': len(payments_made),
+                    'metadata': {
+                        'bills_paid': payments_made,
+                        'bill_ids': [p.get('bill_id') for p in payments_made if p.get('bill_id')]
+                    },
                     'description': f"Bulk premium payment for {len(payments_made)} bills",
                     'previous_balance': prev_wallet_balance,
                     'balance_after': new_wallet_balance,

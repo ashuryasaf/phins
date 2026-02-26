@@ -362,6 +362,80 @@ class TestBalanceSheetIntegrity(unittest.TestCase):
             else:
                 self.HEALTH_WALLETS[customer_id] = prev_wallet
 
+    def test_cumulative_premium_income_uses_bulk_ledger_metadata_fallback(self):
+        """Bulk ledger premium payments should count from bills_paid metadata."""
+        tx_id = "TEST-TX-CUM-BULK-001"
+        prev_tx = self.TRANSACTION_LEDGER.get(tx_id)
+        baseline = self.calculate_cumulative_premium_income(exclude_suspended=False)
+
+        try:
+            self.TRANSACTION_LEDGER[tx_id] = {
+                'id': tx_id,
+                'customer_id': 'TEST-CUST-CUM-BULK-001',
+                'type': 'bulk_premium_payment',
+                'amount': -120.0,
+                'metadata': {
+                    'bills_paid': [
+                        {'bill_id': 'MISSING-BILL-CUM-BULK-A', 'amount_paid': 70.0},
+                        {'bill_id': 'MISSING-BILL-CUM-BULK-B', 'amount_paid': 50.0},
+                    ]
+                },
+                'timestamp': datetime.now().isoformat(),
+                'status': 'completed',
+                'nft_token_id': 'NFT-TEST-CUM-BULK-001'
+            }
+
+            totals = self.calculate_cumulative_premium_income(exclude_suspended=False)
+            self.assertAlmostEqual(
+                totals.get('ledger_billed_fallback_total', 0) - baseline.get('ledger_billed_fallback_total', 0),
+                120.0,
+                places=2
+            )
+            self.assertAlmostEqual(totals['total'] - baseline['total'], 120.0, places=2)
+        finally:
+            if prev_tx is None:
+                self.TRANSACTION_LEDGER.pop(tx_id, None)
+            else:
+                self.TRANSACTION_LEDGER[tx_id] = prev_tx
+
+    def test_cumulative_premium_income_uses_wallet_bill_ids_metadata_fallback(self):
+        """Wallet premium metadata bill_ids should map to billed fallback safely."""
+        customer_id = "TEST-CUST-CUM-007"
+        prev_wallet = self.HEALTH_WALLETS.get(customer_id)
+        baseline = self.calculate_cumulative_premium_income(exclude_suspended=False)
+
+        try:
+            self.HEALTH_WALLETS[customer_id] = {
+                'customer_id': customer_id,
+                'balance': 500.0,
+                'transactions': [
+                    {
+                        'id': 'WAL-TX-CUM-007',
+                        'type': 'bulk_premium_payment',
+                        'amount': -84.0,
+                        'metadata': {
+                            'bill_ids': ['MISSING-BILL-CUM-007-A', 'MISSING-BILL-CUM-007-B']
+                        },
+                        'description': 'Bulk wallet premium payment with bill_ids metadata',
+                        'timestamp': datetime.now().isoformat()
+                    }
+                ],
+                'created_at': datetime.now().isoformat()
+            }
+
+            totals = self.calculate_cumulative_premium_income(exclude_suspended=False)
+            self.assertAlmostEqual(
+                totals.get('wallet_billed_fallback_total', 0) - baseline.get('wallet_billed_fallback_total', 0),
+                84.0,
+                places=2
+            )
+            self.assertAlmostEqual(totals['total'] - baseline['total'], 84.0, places=2)
+        finally:
+            if prev_wallet is None:
+                self.HEALTH_WALLETS.pop(customer_id, None)
+            else:
+                self.HEALTH_WALLETS[customer_id] = prev_wallet
+
     def test_sync_balance_sheet_premium_income_updates_stale_value(self):
         """Sync helper should update stale balance-sheet premium income values."""
         self.initialize_balance_sheet()
