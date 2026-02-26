@@ -31,7 +31,10 @@ class TestBalanceSheetIntegrity(unittest.TestCase):
             process_claim_payment_to_wallet, HEALTH_WALLETS,
             TRANSACTION_LEDGER, calculate_cumulative_premium_income,
             sync_balance_sheet_premium_income, SUSPENDED_TEST_ACCOUNTS,
-            calculate_premium_transaction_overview
+            calculate_premium_transaction_overview,
+            summarize_test_billing_records,
+            remove_demo_test_billing_records,
+            NFT_LEDGER
         )
         
         self.PHINS_BALANCE_SHEET = PHINS_BALANCE_SHEET
@@ -45,6 +48,9 @@ class TestBalanceSheetIntegrity(unittest.TestCase):
         self.calculate_cumulative_premium_income = calculate_cumulative_premium_income
         self.sync_balance_sheet_premium_income = sync_balance_sheet_premium_income
         self.calculate_premium_transaction_overview = calculate_premium_transaction_overview
+        self.summarize_test_billing_records = summarize_test_billing_records
+        self.remove_demo_test_billing_records = remove_demo_test_billing_records
+        self.NFT_LEDGER = NFT_LEDGER
         self.SUSPENDED_TEST_ACCOUNTS = SUSPENDED_TEST_ACCOUNTS
     
     def test_balance_sheet_initialized(self):
@@ -491,6 +497,123 @@ class TestBalanceSheetIntegrity(unittest.TestCase):
                 self.BILLING.pop(paid_bill_id, None)
             else:
                 self.BILLING[paid_bill_id] = prev_paid_bill
+
+    def test_summarize_test_billing_records_detects_test_bill(self):
+        """Test billing summary should include test-tagged bills."""
+        bill_id = "TEST-BILL-SUMMARY-001"
+        prev_bill = self.BILLING.get(bill_id)
+        baseline = self.summarize_test_billing_records()
+
+        try:
+            self.BILLING[bill_id] = {
+                'id': bill_id,
+                'customer_id': 'CUST-TEST-SUMMARY-001',
+                'policy_id': 'POL-TEST-SUMMARY-001',
+                'amount': 40.0,
+                'amount_due': 40.0,
+                'amount_paid': 25.0,
+                'status': 'partial',
+                'description': 'demo test billing record',
+                'created_date': datetime.now().isoformat(),
+            }
+            after = self.summarize_test_billing_records()
+            self.assertGreaterEqual(after.get('total_bills', 0), baseline.get('total_bills', 0) + 1)
+            self.assertGreaterEqual(after.get('total_paid', 0), baseline.get('total_paid', 0) + 25.0)
+        finally:
+            if prev_bill is None:
+                self.BILLING.pop(bill_id, None)
+            else:
+                self.BILLING[bill_id] = prev_bill
+
+    def test_remove_demo_test_billing_records_removes_linked_premium_evidence(self):
+        """Cleanup helper should remove test bill + linked ledger/wallet/NFT traces."""
+        customer_id = "CUST-TEST-CLEAN-001"
+        bill_id = "TEST-BILL-CLEAN-001"
+        tx_id = "TX-TEST-BILL-CLEAN-001"
+        nft_id = "NFT-TEST-BILL-CLEAN-001"
+
+        prev_bill = self.BILLING.get(bill_id)
+        prev_tx = self.TRANSACTION_LEDGER.get(tx_id)
+        prev_wallet = self.HEALTH_WALLETS.get(customer_id)
+        prev_nft = self.NFT_LEDGER.get(nft_id)
+
+        try:
+            self.BILLING[bill_id] = {
+                'id': bill_id,
+                'customer_id': customer_id,
+                'policy_id': 'POL-TEST-CLEAN-001',
+                'amount': 55.0,
+                'amount_due': 55.0,
+                'amount_paid': 55.0,
+                'status': 'paid',
+                'description': 'test cleanup bill',
+                'created_date': datetime.now().isoformat(),
+            }
+            self.TRANSACTION_LEDGER[tx_id] = {
+                'id': tx_id,
+                'tx_type': 'bill_payment',
+                'customer_id': customer_id,
+                'bill_id': bill_id,
+                'amount': 55.0,
+                'timestamp': datetime.now().isoformat(),
+            }
+            self.HEALTH_WALLETS[customer_id] = {
+                'customer_id': customer_id,
+                'balance': 10.0,
+                'transactions': [
+                    {
+                        'tx_id': 'WALLET-TX-TEST-CLEAN-001',
+                        'type': 'premium_payment',
+                        'amount': 55.0,
+                        'bill_id': bill_id,
+                        'description': 'test premium payment',
+                        'timestamp': datetime.now().isoformat(),
+                    }
+                ],
+                'created_at': datetime.now().isoformat()
+            }
+            self.NFT_LEDGER[nft_id] = {
+                'id': nft_id,
+                'tx_id': tx_id,
+                'bill_id': bill_id,
+                'transaction_type': 'premium_payment',
+                'customer_id': customer_id,
+                'created_at': datetime.now().isoformat(),
+            }
+
+            result = self.remove_demo_test_billing_records(
+                protected_customer_ids={'CUST-ASAF-001'}
+            )
+            self.assertGreaterEqual(result.get('removed_bills', 0), 1)
+            self.assertGreaterEqual(result.get('removed_ledger_entries', 0), 1)
+            self.assertGreaterEqual(result.get('removed_wallet_transactions', 0), 1)
+
+            self.assertNotIn(bill_id, self.BILLING)
+            self.assertNotIn(tx_id, self.TRANSACTION_LEDGER)
+            self.assertNotIn(nft_id, self.NFT_LEDGER)
+            wallet_after = self.HEALTH_WALLETS.get(customer_id, {})
+            self.assertEqual(len(wallet_after.get('transactions', [])), 0)
+            self.assertAlmostEqual(float(wallet_after.get('balance', 0)), 65.0, places=2)
+        finally:
+            if prev_bill is None:
+                self.BILLING.pop(bill_id, None)
+            else:
+                self.BILLING[bill_id] = prev_bill
+
+            if prev_tx is None:
+                self.TRANSACTION_LEDGER.pop(tx_id, None)
+            else:
+                self.TRANSACTION_LEDGER[tx_id] = prev_tx
+
+            if prev_wallet is None:
+                self.HEALTH_WALLETS.pop(customer_id, None)
+            else:
+                self.HEALTH_WALLETS[customer_id] = prev_wallet
+
+            if prev_nft is None:
+                self.NFT_LEDGER.pop(nft_id, None)
+            else:
+                self.NFT_LEDGER[nft_id] = prev_nft
 
     def test_sync_balance_sheet_premium_income_updates_stale_value(self):
         """Sync helper should update stale balance-sheet premium income values."""

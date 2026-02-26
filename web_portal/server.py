@@ -125,6 +125,362 @@ def get_transaction_type(tx: Dict[str, Any]) -> str:
     return str(tx.get('type') or tx.get('tx_type') or '').strip().lower()
 
 
+TEST_DATA_MARKER_TOKENS = {
+    'TEST',
+    'DEMO',
+    'SAMPLE',
+    'QA',
+    'SANDBOX',
+    'DUMMY',
+    'MOCK',
+}
+
+
+def _marker_tokens(value: Any) -> List[str]:
+    """Split text into uppercase alphanumeric tokens for marker checks."""
+    text = str(value or '')
+    if not text:
+        return []
+    normalized = ''.join(ch.upper() if ch.isalnum() else ' ' for ch in text)
+    return [token for token in normalized.split() if token]
+
+
+def _has_test_data_marker(value: Any) -> bool:
+    """Heuristic marker check for demo/test identifiers."""
+    text = str(value or '').strip()
+    if not text:
+        return False
+
+    lower_text = text.lower()
+    if (
+        '@example.' in lower_text or
+        lower_text.startswith('test@') or
+        '+test@' in lower_text or
+        lower_text.endswith('.test')
+    ):
+        return True
+
+    tokens = _marker_tokens(text)
+    return any(token in TEST_DATA_MARKER_TOKENS for token in tokens)
+
+
+def _extract_linked_bill_ids(record: Dict[str, Any]) -> List[str]:
+    """Extract linked bill IDs from direct fields and nested metadata."""
+    bill_ids: set = set()
+
+    def _add_bill_id(raw_value: Any) -> None:
+        bill_id = str(raw_value or '').strip()
+        if bill_id:
+            bill_ids.add(bill_id)
+
+    _add_bill_id(record.get('bill_id'))
+
+    metadata = record.get('metadata', {})
+    if isinstance(metadata, dict):
+        _add_bill_id(metadata.get('bill_id'))
+
+        raw_bill_ids = metadata.get('bill_ids')
+        if isinstance(raw_bill_ids, list):
+            for raw_bill_id in raw_bill_ids:
+                _add_bill_id(raw_bill_id)
+
+        bills_paid = metadata.get('bills_paid')
+        if isinstance(bills_paid, list):
+            for paid_item in bills_paid:
+                if not isinstance(paid_item, dict):
+                    continue
+                _add_bill_id(paid_item.get('bill_id') or paid_item.get('id'))
+
+    return list(bill_ids)
+
+
+def is_test_billing_record(bill: Dict[str, Any]) -> bool:
+    """Return True when a billing record is test/demo data."""
+    if not isinstance(bill, dict):
+        return False
+
+    customer_id = str(bill.get('customer_id') or '').strip()
+    if customer_id and is_suspended_account(customer_id):
+        return True
+
+    candidate_values = [
+        bill.get('id'),
+        bill.get('bill_id'),
+        bill.get('customer_id'),
+        bill.get('policy_id'),
+        bill.get('description'),
+        bill.get('notes'),
+        bill.get('reference'),
+        bill.get('source'),
+    ]
+    if any(_has_test_data_marker(value) for value in candidate_values):
+        return True
+
+    metadata = bill.get('metadata', {})
+    if isinstance(metadata, dict):
+        if bool(metadata.get('is_test')) or bool(metadata.get('is_demo')):
+            return True
+        marker_values = [
+            metadata.get('label'),
+            metadata.get('description'),
+            metadata.get('source'),
+            metadata.get('reference'),
+            metadata.get('tag'),
+        ]
+        if any(_has_test_data_marker(value) for value in marker_values):
+            return True
+
+    customer = CUSTOMERS.get(customer_id, {}) if customer_id else {}
+    if isinstance(customer, dict):
+        customer_markers = [
+            customer.get('id'),
+            customer.get('email'),
+            customer.get('name'),
+        ]
+        if any(_has_test_data_marker(value) for value in customer_markers):
+            return True
+
+    return False
+
+
+def summarize_test_billing_records(
+    bills: Optional[List[Dict[str, Any]]] = None
+) -> Dict[str, Any]:
+    """Summarize test/demo billing currently present in BILLING."""
+    source_bills = bills if bills is not None else list(BILLING.values())
+
+    total_bills = 0
+    paid_bills = 0
+    outstanding_bills = 0
+    total_due = 0.0
+    total_paid = 0.0
+    total_outstanding = 0.0
+    sample_bill_ids: List[str] = []
+
+    for bill in source_bills:
+        if not is_test_billing_record(bill):
+            continue
+
+        total_bills += 1
+        amount_due = safe_float(bill.get('amount_due', bill.get('amount', 0)))
+        amount_paid = safe_float(bill.get('amount_paid', 0))
+        outstanding = max(0.0, amount_due - amount_paid)
+
+        total_due += amount_due
+        total_paid += amount_paid
+        total_outstanding += outstanding
+
+        if status_eq(bill, 'paid'):
+            paid_bills += 1
+        else:
+            outstanding_bills += 1
+
+        bill_id = str(bill.get('id') or bill.get('bill_id') or '').strip()
+        if bill_id and len(sample_bill_ids) < 25:
+            sample_bill_ids.append(bill_id)
+
+    return {
+        'total_bills': total_bills,
+        'paid_bills': paid_bills,
+        'outstanding_bills': outstanding_bills,
+        'total_due': round(total_due, 2),
+        'total_paid': round(total_paid, 2),
+        'total_outstanding': round(total_outstanding, 2),
+        'sample_bill_ids': sample_bill_ids,
+    }
+
+
+def remove_demo_test_billing_records(
+    *,
+    protected_customer_ids: Optional[set] = None,
+) -> Dict[str, Any]:
+    """
+    Remove test/demo billing records and linked premium traces.
+
+    This removes:
+    - BILLING entries identified as test/demo billing
+    - linked premium ledger entries
+    - linked premium wallet entries
+    - linked NFT records referencing removed premium ledger entries
+    """
+    protected_ids_upper = {str(cid).upper() for cid in (protected_customer_ids or set())}
+
+    removed_bill_ids: set = set()
+    removed_customer_ids: set = set()
+    removed_bill_total_paid = 0.0
+    removed_bill_total_due = 0.0
+
+    for bill_id, bill in list(BILLING.items()):
+        if not is_test_billing_record(bill):
+            continue
+
+        customer_id = str(bill.get('customer_id') or '').strip()
+        explicit_bill_marker = any(
+            _has_test_data_marker(value)
+            for value in [
+                bill.get('id'),
+                bill.get('bill_id'),
+                bill.get('description'),
+                bill.get('notes'),
+                bill.get('reference'),
+                bill.get('source'),
+            ]
+        )
+        if customer_id and customer_id.upper() in protected_ids_upper and not explicit_bill_marker:
+            continue
+
+        removed_bill_ids.add(str(bill.get('id') or bill_id))
+        removed_customer_ids.add(customer_id)
+        removed_bill_total_paid += safe_float(bill.get('amount_paid', 0))
+        removed_bill_total_due += safe_float(bill.get('amount_due', bill.get('amount', 0)))
+        BILLING.pop(bill_id, None)
+
+    removed_ledger_tx_ids: set = set()
+    for tx_id, tx in list(TRANSACTION_LEDGER.items()):
+        tx_type = get_transaction_type(tx)
+        if tx_type not in PREMIUM_LEDGER_TX_TYPES:
+            continue
+
+        customer_id = str(tx.get('customer_id') or '').strip()
+        linked_bill_ids = set(_extract_linked_bill_ids(tx))
+        metadata = tx.get('metadata', {}) if isinstance(tx.get('metadata', {}), dict) else {}
+        explicit_tx_marker = (
+            bool(metadata.get('is_test')) or
+            bool(metadata.get('is_demo')) or
+            any(
+                _has_test_data_marker(value)
+                for value in [
+                    tx.get('description'),
+                    tx.get('reference'),
+                    tx.get('source'),
+                    tx.get('tx_id'),
+                    metadata.get('description'),
+                    metadata.get('source'),
+                    metadata.get('tag'),
+                ]
+            )
+        )
+        remove_by_customer = (
+            customer_id in removed_customer_ids or
+            (
+                customer_id and
+                customer_id.upper() not in protected_ids_upper and
+                (is_suspended_account(customer_id) or _has_test_data_marker(customer_id))
+            )
+        )
+        if linked_bill_ids.intersection(removed_bill_ids) or explicit_tx_marker or remove_by_customer:
+            TRANSACTION_LEDGER.pop(tx_id, None)
+            removed_ledger_tx_ids.add(str(tx_id))
+
+    removed_wallet_transactions = 0
+    adjusted_wallets = 0
+    for wallet_owner_id, wallet in HEALTH_WALLETS.items():
+        if not isinstance(wallet, dict):
+            continue
+
+        tx_list = wallet.get('transactions', [])
+        if not isinstance(tx_list, list):
+            continue
+
+        kept_transactions = []
+        removed_debit_total = 0.0
+        for wallet_tx in tx_list:
+            tx_type = get_transaction_type(wallet_tx)
+            if tx_type not in PREMIUM_WALLET_TX_TYPES:
+                kept_transactions.append(wallet_tx)
+                continue
+
+            wallet_customer_id = str(
+                wallet_tx.get('customer_id') or
+                wallet.get('customer_id') or
+                wallet_owner_id or
+                ''
+            ).strip()
+            metadata = wallet_tx.get('metadata', {})
+            if not isinstance(metadata, dict):
+                metadata = {}
+            explicit_wallet_marker = (
+                bool(metadata.get('is_test')) or
+                bool(metadata.get('is_demo')) or
+                any(
+                    _has_test_data_marker(value)
+                    for value in [
+                        wallet_tx.get('description'),
+                        wallet_tx.get('reference'),
+                        wallet_tx.get('source'),
+                        metadata.get('description'),
+                        metadata.get('source'),
+                        metadata.get('tag'),
+                    ]
+                )
+            )
+            linked_bill_ids = set(_extract_linked_bill_ids(wallet_tx))
+            remove_by_customer = (
+                wallet_customer_id in removed_customer_ids or
+                (
+                    wallet_customer_id and
+                    wallet_customer_id.upper() not in protected_ids_upper and
+                    (is_suspended_account(wallet_customer_id) or _has_test_data_marker(wallet_customer_id))
+                )
+            )
+            should_remove = (
+                linked_bill_ids.intersection(removed_bill_ids) or
+                explicit_wallet_marker or
+                remove_by_customer
+            )
+
+            if should_remove:
+                removed_wallet_transactions += 1
+                # Premium wallet tx is a debit from wallet; removing it restores balance.
+                removed_debit_total += abs(safe_float(wallet_tx.get('amount', 0)))
+                continue
+
+            kept_transactions.append(wallet_tx)
+
+        if len(kept_transactions) != len(tx_list):
+            wallet['transactions'] = kept_transactions
+            wallet['balance'] = round(
+                max(0.0, safe_float(wallet.get('balance', 0)) + removed_debit_total),
+                2
+            )
+            adjusted_wallets += 1
+
+    removed_nft_records = 0
+    for nft_id, nft in list(NFT_LEDGER.items()):
+        if not isinstance(nft, dict):
+            continue
+
+        metadata = nft.get('metadata', {})
+        if not isinstance(metadata, dict):
+            metadata = {}
+
+        reference_values = [
+            nft.get('tx_id'),
+            nft.get('transaction_id'),
+            nft.get('transaction_ref'),
+            nft.get('ledger_tx_id'),
+            metadata.get('tx_id'),
+            metadata.get('transaction_id'),
+            nft.get('bill_id'),
+            metadata.get('bill_id'),
+        ]
+        refs = {str(val).strip() for val in reference_values if str(val or '').strip()}
+        if refs.intersection(removed_ledger_tx_ids) or refs.intersection(removed_bill_ids):
+            NFT_LEDGER.pop(nft_id, None)
+            removed_nft_records += 1
+
+    return {
+        'removed_bills': len(removed_bill_ids),
+        'removed_bill_total_due': round(removed_bill_total_due, 2),
+        'removed_bill_total_paid': round(removed_bill_total_paid, 2),
+        'removed_ledger_entries': len(removed_ledger_tx_ids),
+        'removed_wallet_transactions': removed_wallet_transactions,
+        'wallets_adjusted': adjusted_wallets,
+        'removed_nft_records': removed_nft_records,
+        'removed_bill_ids': sorted(list(removed_bill_ids))[:25],
+    }
+
+
 def _refresh_store_cache_if_supported(store: Any) -> None:
     """Best-effort refresh for DatabaseDict-backed stores."""
     refresher = getattr(store, '_refresh_cache', None)
@@ -6167,6 +6523,7 @@ For claims or questions, please contact:
                 exclude_suspended=False,
                 projection_months=12
             )
+            test_billing_summary = summarize_test_billing_records()
             # Total amount actually collected (bills + explicit unbilled premium flows)
             total_collected = cumulative_premium_value
             bills_for_stats = list(BILLING.values())
@@ -6260,6 +6617,7 @@ For claims or questions, please contact:
                 'total_collected_paid': cumulative_premium_value,
                 'total_collected_cumulative': premium_tx_overview.get('cumulative_transaction_total', cumulative_premium_value),
                 'premium_transaction_overview': premium_tx_overview,
+                'test_billing': test_billing_summary,
                 'premium_future_projected_total': premium_tx_overview.get('future_projected_total', 0.0),
                 'premium_future_projected_count': premium_tx_overview.get('future_projected_transaction_count', 0),
                 'outstanding_balance': outstanding_balance,
@@ -15169,6 +15527,7 @@ For claims or questions, please contact:
                 exclude_suspended=False,
                 projection_months=12
             )
+            test_billing_summary = summarize_test_billing_records()
             
             # Calculate totals
             total_balance = (
@@ -15207,6 +15566,7 @@ For claims or questions, please contact:
                         'wallet_billed_fallback_count': premium_income_sync['totals'].get('wallet_billed_fallback_count', 0),
                     },
                     'premium_transaction_overview': premium_tx_overview,
+                    'test_billing': test_billing_summary,
                     'data_sources': PHINS_BALANCE_SHEET.get('data_sources', {}),
                     
                     # Expenses
@@ -15313,6 +15673,7 @@ For claims or questions, please contact:
                 exclude_suspended=False,
                 projection_months=12
             )
+            test_billing_summary = summarize_test_billing_records()
             
             # Recent claims paid
             recent_claims = [
@@ -15333,6 +15694,7 @@ For claims or questions, please contact:
                     ),
                     'total_premium_future_projected': premium_tx_overview.get('future_projected_total', 0.0),
                     'premium_transaction_overview': premium_tx_overview,
+                    'test_billing': test_billing_summary,
                     'cumulative_premium_data_source': cumulative_premium_data_source,
                     'net_position': PHINS_BALANCE_SHEET['total_revenue'] - PHINS_BALANCE_SHEET['total_expenses'],
                     'recent_claims_count': len(recent_claims),
@@ -15821,6 +16183,7 @@ For claims or questions, please contact:
                 exclude_suspended=False,
                 projection_months=12
             )
+            test_billing_summary = summarize_test_billing_records()
             
             # 2. Claims Paid - from paid claims
             expected_claims_paid = sum(
@@ -16000,6 +16363,15 @@ For claims or questions, please contact:
                         'from_ledger': ledger_medical_payments,
                         'current': current_supplier_payments,
                         'purchases_count': len(MEDICAL_PURCHASES)
+                    },
+                    'test_billing': {
+                        'total_bills': test_billing_summary.get('total_bills', 0),
+                        'paid_bills': test_billing_summary.get('paid_bills', 0),
+                        'outstanding_bills': test_billing_summary.get('outstanding_bills', 0),
+                        'total_due': test_billing_summary.get('total_due', 0.0),
+                        'total_paid': test_billing_summary.get('total_paid', 0.0),
+                        'total_outstanding': test_billing_summary.get('total_outstanding', 0.0),
+                        'sample_bill_ids': test_billing_summary.get('sample_bill_ids', []),
                     }
                 },
                 
@@ -16053,6 +16425,9 @@ For claims or questions, please contact:
                         'cumulative_transaction_total',
                         expected_premium_income
                     ),
+                    'test_billing_total_paid': test_billing_summary.get('total_paid', 0.0),
+                    'test_billing_total_outstanding': test_billing_summary.get('total_outstanding', 0.0),
+                    'test_billing_count': test_billing_summary.get('total_bills', 0),
                     'total_claims_paid': expected_claims_paid,
                     'total_medical_services': total_medical_purchases,
                     'total_wallet_deposits': total_wallet_deposits,
@@ -16060,6 +16435,7 @@ For claims or questions, please contact:
                     'net_position': expected_premium_income - expected_claims_paid - total_medical_purchases
                 },
                 'premium_transaction_overview': premium_tx_overview,
+                'test_billing': test_billing_summary,
                 'cumulative_premium_data_source': cumulative_premium_data_source,
                 
                 'timestamp': datetime.now().isoformat()
@@ -16442,6 +16818,9 @@ For claims or questions, please contact:
                 'test_investments_cleared': 0,
                 'demo_claims_removed': 0,
                 'demo_bills_removed': 0,
+                'demo_premium_ledger_removed': 0,
+                'demo_premium_wallet_tx_removed': 0,
+                'demo_nft_removed': 0,
                 'test_accounts_suspended': 0,
                 'balance_sheet_corrected': False,
                 'details': []
@@ -16529,24 +16908,52 @@ For claims or questions, please contact:
                         del CLAIMS[claim_id]
                         cleanup_results['demo_claims_removed'] += 1
                         cleanup_results['details'].append(f"Removed test claim: {claim_id}")
-                
-                # 4. Add test customer IDs to suspended accounts
+
+                # 4. Remove test/demo billing and linked premium traces.
+                test_billing_before = summarize_test_billing_records()
+                billing_cleanup = remove_demo_test_billing_records(
+                    protected_customer_ids=PROTECTED_CUSTOMERS,
+                )
+                cleanup_results['demo_bills_removed'] += billing_cleanup.get('removed_bills', 0)
+                cleanup_results['demo_premium_ledger_removed'] += billing_cleanup.get('removed_ledger_entries', 0)
+                cleanup_results['demo_premium_wallet_tx_removed'] += billing_cleanup.get('removed_wallet_transactions', 0)
+                cleanup_results['demo_nft_removed'] += billing_cleanup.get('removed_nft_records', 0)
+                if billing_cleanup.get('removed_bills', 0) > 0:
+                    cleanup_results['details'].append(
+                        f"Removed {billing_cleanup.get('removed_bills', 0)} test/demo bills "
+                        f"(paid ${billing_cleanup.get('removed_bill_total_paid', 0):.2f}, "
+                        f"due ${billing_cleanup.get('removed_bill_total_due', 0):.2f})"
+                    )
+                if billing_cleanup.get('removed_ledger_entries', 0) > 0:
+                    cleanup_results['details'].append(
+                        f"Removed {billing_cleanup.get('removed_ledger_entries', 0)} linked premium ledger entries"
+                    )
+                if billing_cleanup.get('removed_wallet_transactions', 0) > 0:
+                    cleanup_results['details'].append(
+                        f"Removed {billing_cleanup.get('removed_wallet_transactions', 0)} linked premium wallet transactions "
+                        f"(adjusted {billing_cleanup.get('wallets_adjusted', 0)} wallets)"
+                    )
+
+                # 5. Add test customer IDs to suspended accounts
                 for cust_id in list(CUSTOMERS.keys()):
                     if 'TEST' in cust_id.upper() and cust_id not in SUSPENDED_TEST_ACCOUNTS:
                         SUSPENDED_TEST_ACCOUNTS.add(cust_id)
                         cleanup_results['test_accounts_suspended'] += 1
-                
-                # 5. Run balance sheet reconciliation to correct any discrepancies
-                # Calculate expected values from actual (non-demo) transaction data
+
+                test_billing_after = summarize_test_billing_records()
+                cleanup_results['test_billing_before_cleanup'] = test_billing_before
+                cleanup_results['test_billing_after_cleanup'] = test_billing_after
+
+                # 6. Run balance sheet reconciliation to correct any discrepancies
+                # Calculate expected values from cleaned production transaction data
                 expected_premium_income = calculate_cumulative_premium_income(
-                    exclude_suspended=True
+                    exclude_suspended=False
                 )['total']
                 
                 expected_claims_paid = sum(
                     float(c.get('paid_amount', 0) or c.get('approved_amount', 0)) 
                     for c in CLAIMS.values()
                     if status_eq(c, 'paid')
-                    and not is_suspended_account(c.get('customer_id', ''))
                 )
                 
                 # Update balance sheet if there are discrepancies
