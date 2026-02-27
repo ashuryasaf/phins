@@ -2286,17 +2286,15 @@ def handle_admin_foundation_get(session: Dict, foundation_id: str) -> Tuple[int,
     return 200, foundation
 
 
-def handle_admin_foundation_activity(session: Dict) -> Tuple[int, Dict]:
-    """GET /api/admin/foundations/activity - Get recent activity (admin only)"""
-    if not FOUNDATION_SERVICE_AVAILABLE:
-        return 200, {"items": [], "total": 0}
-    
-    if not session or session.get('role') != 'admin':
-        return 403, {"error": "Admin access required"}
-    
-    # Would need to aggregate activities from all foundations
-    # For now, return empty list
-    return 200, {"items": [], "total": 0}
+def handle_admin_foundation_activity(
+    session: Dict,
+    query_params: Optional[Dict[str, List[str]]] = None
+) -> Tuple[int, Dict]:
+    """GET /api/admin/foundations/activity - Get recent activity (admin only)."""
+    # Legacy alias for admin all-activities endpoint; keep default cap for callers
+    # that do not provide explicit query params.
+    effective_query_params = query_params or {'limit': ['50']}
+    return handle_admin_all_activities(session, effective_query_params)
 
 
 def handle_admin_foundation_suspend(session: Dict, foundation_id: str) -> Tuple[int, Dict]:
