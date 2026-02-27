@@ -244,6 +244,23 @@ Use this sequence for most requests:
 7. Update docs/comments only where behavior changed or logic is non-obvious.
 8. Commit with a clear message describing scope and intent.
 
+## 15) Cloud Agent Git Workflow (Required)
+
+When running in cloud agent mode, follow this sequence:
+
+1. Confirm you are on the assigned feature branch before editing.
+2. Keep commits small and task-focused (prefer multiple small commits over one large commit).
+3. Stage only intended files (`git add <paths>`), then commit with a clear message.
+4. Push with upstream tracking when needed:
+
+```bash
+git push -u origin <branch-name>
+```
+
+5. If push fails due to transient network issues, retry with exponential backoff (4s, 8s, 16s, 32s).
+6. Do not rewrite history (`push --force`) unless explicitly requested.
+7. If the change is documentation-only, note that tests were not required in the task summary.
+
 ---
 
-Last updated: February 24, 2026
+Last updated: February 27, 2026
