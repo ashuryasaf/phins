@@ -2764,12 +2764,13 @@
               const ledgerFallback = premiumSources.from_ledger_billed_fallback || 0;
               const walletFallback = premiumSources.from_wallet_billed_fallback || 0;
               const txOverview = bs.premium_transaction_overview || {};
+              const testBilling = bs.test_billing || {};
               const futureProjected = Number(txOverview.future_projected_total || 0);
               const cumulativeTransactions = Number(
                 txOverview.cumulative_transaction_total ||
                 (cumulativePremium + futureProjected)
               );
-              premiumSourceEl.textContent = `Cumulative: ${fmt(bs.data_sources?.cumulative_premium?.value || cumulativePremium)} | Billed/Auto-Pay: ${fmt(premiumSources.from_bills || 0)} + Explicit Unbilled (NFT): ${fmt(premiumSources.from_ledger_unbilled || 0)} + Recovered Billed (Ledger Fallback): ${fmt(ledgerFallback)} + Wallet Fallback: ${fmt(walletFallback)} + Future Scheduled (${txOverview.projection_months || 12}m): ${fmt(futureProjected)} | Transactions Cumulative: ${fmt(cumulativeTransactions)}`;
+              premiumSourceEl.textContent = `Cumulative: ${fmt(bs.data_sources?.cumulative_premium?.value || cumulativePremium)} | Billed/Auto-Pay: ${fmt(premiumSources.from_bills || 0)} + Explicit Unbilled (NFT): ${fmt(premiumSources.from_ledger_unbilled || 0)} + Recovered Billed (Ledger Fallback): ${fmt(ledgerFallback)} + Wallet Fallback: ${fmt(walletFallback)} + Future Scheduled (${txOverview.projection_months || 12}m): ${fmt(futureProjected)} | Transactions Cumulative: ${fmt(cumulativeTransactions)} | Test Billing (${testBilling.known_test_card || '5555********4444'}): ${Number(testBilling.known_test_card_bills || 0)} bills / ${fmt(testBilling.known_test_card_total_paid || 0)} paid`;
             }
           }
           
@@ -2877,6 +2878,8 @@
           message += `• Test Bills: ${testBilling.total_bills || 0}\n`;
           message += `• Test Billing Paid: ${fmt(testBilling.total_paid || 0)}\n`;
           message += `• Test Billing Outstanding: ${fmt(testBilling.total_outstanding || 0)}\n`;
+          message += `• ${testBilling.known_test_card || '5555********4444'} Bills: ${testBilling.known_test_card_bills || 0}\n`;
+          message += `• ${testBilling.known_test_card || '5555********4444'} Paid Total: ${fmt(testBilling.known_test_card_total_paid || 0)}\n`;
           message += `• Remove via: 🧹 Clean Demo Data\n\n`;
           
           message += `🏪 MEDICAL SERVICES:\n`;
@@ -3154,6 +3157,8 @@
           message += '🧪 TEST BILLING CLEANUP:\n';
           message += `• Before: ${beforeTestBilling.total_bills || 0} bills (${formatCurrency(beforeTestBilling.total_paid || 0)} paid)\n`;
           message += `• After: ${afterTestBilling.total_bills || 0} bills (${formatCurrency(afterTestBilling.total_paid || 0)} paid)\n\n`;
+          message += `• ${beforeTestBilling.known_test_card || '5555********4444'} Before: ${beforeTestBilling.known_test_card_bills || 0} bills (${formatCurrency(beforeTestBilling.known_test_card_total_paid || 0)} paid)\n`;
+          message += `• ${afterTestBilling.known_test_card || '5555********4444'} After: ${afterTestBilling.known_test_card_bills || 0} bills (${formatCurrency(afterTestBilling.known_test_card_total_paid || 0)} paid)\n\n`;
           
           if (results.details && results.details.length > 0) {
             message += '📝 DETAILS:\n';

@@ -134,6 +134,14 @@ TEST_DATA_MARKER_TOKENS = {
     'DUMMY',
     'MOCK',
 }
+KNOWN_TEST_CARD_NUMBER = '5555555555554444'
+KNOWN_TEST_CARD_LAST4 = '4444'
+KNOWN_TEST_CARD_BRANDS = {
+    'mastercard',
+    'master card',
+    'mc',
+}
+KNOWN_TEST_CARD_LABEL = '5555********4444'
 
 
 def _marker_tokens(value: Any) -> List[str]:
@@ -162,6 +170,91 @@ def _has_test_data_marker(value: Any) -> bool:
 
     tokens = _marker_tokens(text)
     return any(token in TEST_DATA_MARKER_TOKENS for token in tokens)
+
+
+def _digits_only(value: Any) -> str:
+    """Return only digits from an arbitrary value."""
+    return ''.join(ch for ch in str(value or '') if ch.isdigit())
+
+
+def _is_known_test_card_number(value: Any) -> bool:
+    """Match the known Mastercard test card number across text formats."""
+    return _digits_only(value) == KNOWN_TEST_CARD_NUMBER
+
+
+def _iter_nested_dicts(value: Any, depth: int = 0, max_depth: int = 3):
+    """Yield nested dicts recursively up to max_depth."""
+    if depth > max_depth:
+        return
+    if isinstance(value, dict):
+        yield value
+        for nested in value.values():
+            yield from _iter_nested_dicts(nested, depth + 1, max_depth=max_depth)
+    elif isinstance(value, list):
+        for nested in value:
+            yield from _iter_nested_dicts(nested, depth + 1, max_depth=max_depth)
+
+
+def _iter_nested_scalar_values(value: Any, depth: int = 0, max_depth: int = 3):
+    """Yield nested scalar values recursively up to max_depth."""
+    if depth > max_depth:
+        return
+    if isinstance(value, dict):
+        for nested in value.values():
+            yield from _iter_nested_scalar_values(nested, depth + 1, max_depth=max_depth)
+    elif isinstance(value, list):
+        for nested in value:
+            yield from _iter_nested_scalar_values(nested, depth + 1, max_depth=max_depth)
+    else:
+        yield value
+
+
+def _has_known_test_card_fingerprint(record: Any) -> bool:
+    """
+    Detect known test-card fingerprints in bill/tx payloads.
+
+    Recognized signals:
+    - Full card number match to 5555555555554444
+    - Explicit test-card flags
+    - Mastercard + last4=4444 payment metadata
+    """
+    if not isinstance(record, dict):
+        return _is_known_test_card_number(record)
+
+    for scalar in _iter_nested_scalar_values(record):
+        if _is_known_test_card_number(scalar):
+            return True
+
+    for container in _iter_nested_dicts(record):
+        if bool(container.get('is_test_card')) or bool(container.get('known_test_card')):
+            return True
+
+        card_last4 = str(
+            container.get('card_last4') or
+            container.get('last4') or
+            container.get('card_last_four') or
+            ''
+        ).strip()
+        card_brand = str(
+            container.get('card_type') or
+            container.get('card_brand') or
+            container.get('brand') or
+            ''
+        ).strip().lower().replace('-', ' ')
+        normalized_method = normalize_payment_method(
+            container.get('payment_method') or
+            container.get('method') or
+            container.get('payment_source') or
+            ''
+        )
+        if (
+            card_last4 == KNOWN_TEST_CARD_LAST4 and
+            card_brand in KNOWN_TEST_CARD_BRANDS and
+            normalized_method in {'', 'credit_card', 'debit_card', 'card_on_file'}
+        ):
+            return True
+
+    return False
 
 
 def _extract_linked_bill_ids(record: Dict[str, Any]) -> List[str]:
@@ -230,6 +323,18 @@ def is_test_billing_record(bill: Dict[str, Any]) -> bool:
         if any(_has_test_data_marker(value) for value in marker_values):
             return True
 
+    payment_method_info = bill.get('payment_method_info', {})
+    payment_method = bill.get('payment_method', {})
+    if _has_known_test_card_fingerprint({
+        'bill': bill,
+        'metadata': metadata if isinstance(metadata, dict) else {},
+        'payment_method_info': payment_method_info if isinstance(payment_method_info, dict) else {},
+        'payment_method': payment_method,
+        'card_last4': bill.get('card_last4'),
+        'card_type': bill.get('card_type'),
+    }):
+        return True
+
     customer = CUSTOMERS.get(customer_id, {}) if customer_id else {}
     if isinstance(customer, dict):
         customer_markers = [
@@ -255,6 +360,10 @@ def summarize_test_billing_records(
     total_due = 0.0
     total_paid = 0.0
     total_outstanding = 0.0
+    known_test_card_bills = 0
+    known_test_card_total_due = 0.0
+    known_test_card_total_paid = 0.0
+    known_test_card_total_outstanding = 0.0
     sample_bill_ids: List[str] = []
 
     for bill in source_bills:
@@ -269,6 +378,11 @@ def summarize_test_billing_records(
         total_due += amount_due
         total_paid += amount_paid
         total_outstanding += outstanding
+        if _has_known_test_card_fingerprint(bill):
+            known_test_card_bills += 1
+            known_test_card_total_due += amount_due
+            known_test_card_total_paid += amount_paid
+            known_test_card_total_outstanding += outstanding
 
         if status_eq(bill, 'paid'):
             paid_bills += 1
@@ -286,6 +400,11 @@ def summarize_test_billing_records(
         'total_due': round(total_due, 2),
         'total_paid': round(total_paid, 2),
         'total_outstanding': round(total_outstanding, 2),
+        'known_test_card': KNOWN_TEST_CARD_LABEL,
+        'known_test_card_bills': known_test_card_bills,
+        'known_test_card_total_due': round(known_test_card_total_due, 2),
+        'known_test_card_total_paid': round(known_test_card_total_paid, 2),
+        'known_test_card_total_outstanding': round(known_test_card_total_outstanding, 2),
         'sample_bill_ids': sample_bill_ids,
     }
 
@@ -326,6 +445,7 @@ def remove_demo_test_billing_records(
                 bill.get('source'),
             ]
         )
+        explicit_bill_marker = explicit_bill_marker or _has_known_test_card_fingerprint(bill)
         if customer_id and customer_id.upper() in protected_ids_upper and not explicit_bill_marker:
             continue
 
@@ -347,6 +467,8 @@ def remove_demo_test_billing_records(
         explicit_tx_marker = (
             bool(metadata.get('is_test')) or
             bool(metadata.get('is_demo')) or
+            _has_known_test_card_fingerprint(tx) or
+            _has_known_test_card_fingerprint(metadata) or
             any(
                 _has_test_data_marker(value)
                 for value in [
@@ -402,6 +524,8 @@ def remove_demo_test_billing_records(
             explicit_wallet_marker = (
                 bool(metadata.get('is_test')) or
                 bool(metadata.get('is_demo')) or
+                _has_known_test_card_fingerprint(wallet_tx) or
+                _has_known_test_card_fingerprint(metadata) or
                 any(
                     _has_test_data_marker(value)
                     for value in [
@@ -16371,6 +16495,10 @@ For claims or questions, please contact:
                         'total_due': test_billing_summary.get('total_due', 0.0),
                         'total_paid': test_billing_summary.get('total_paid', 0.0),
                         'total_outstanding': test_billing_summary.get('total_outstanding', 0.0),
+                        'known_test_card': test_billing_summary.get('known_test_card', KNOWN_TEST_CARD_LABEL),
+                        'known_test_card_bills': test_billing_summary.get('known_test_card_bills', 0),
+                        'known_test_card_total_paid': test_billing_summary.get('known_test_card_total_paid', 0.0),
+                        'known_test_card_total_outstanding': test_billing_summary.get('known_test_card_total_outstanding', 0.0),
                         'sample_bill_ids': test_billing_summary.get('sample_bill_ids', []),
                     }
                 },
@@ -16428,6 +16556,8 @@ For claims or questions, please contact:
                     'test_billing_total_paid': test_billing_summary.get('total_paid', 0.0),
                     'test_billing_total_outstanding': test_billing_summary.get('total_outstanding', 0.0),
                     'test_billing_count': test_billing_summary.get('total_bills', 0),
+                    'test_billing_known_card_total_paid': test_billing_summary.get('known_test_card_total_paid', 0.0),
+                    'test_billing_known_card_count': test_billing_summary.get('known_test_card_bills', 0),
                     'total_claims_paid': expected_claims_paid,
                     'total_medical_services': total_medical_purchases,
                     'total_wallet_deposits': total_wallet_deposits,

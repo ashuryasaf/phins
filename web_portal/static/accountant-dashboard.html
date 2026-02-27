@@ -3351,6 +3351,7 @@
                         document.getElementById('bs-premium-income').textContent = fmt(cumulativePremium);
                         const premiumSources = bs.premium_income_sources || {};
                         const premiumTxOverview = bs.premium_transaction_overview || {};
+                        const testBilling = bs.test_billing || {};
                         const futureProjected = Number(premiumTxOverview.future_projected_total || 0);
                         const cumulativeTransactions = Number(
                             premiumTxOverview.cumulative_transaction_total ||
@@ -3362,7 +3363,7 @@
                         if (premiumSourceEl) {
                             premiumSourceEl.textContent =
                                 `Cumulative source: ${fmt(bs.data_sources?.cumulative_premium?.value || cumulativePremium)} ` +
-                                `(Bills: ${fmt(premiumSources.from_bills || 0)}, Ledger: ${fmt((premiumSources.from_ledger_unbilled || 0) + (premiumSources.from_ledger_billed_fallback || 0))}, Wallet: ${fmt(premiumSources.from_wallet_billed_fallback || 0)}, Future Scheduled: ${fmt(futureProjected)}, Transactions Cumulative: ${fmt(cumulativeTransactions)})`;
+                                `(Bills: ${fmt(premiumSources.from_bills || 0)}, Ledger: ${fmt((premiumSources.from_ledger_unbilled || 0) + (premiumSources.from_ledger_billed_fallback || 0))}, Wallet: ${fmt(premiumSources.from_wallet_billed_fallback || 0)}, Future Scheduled: ${fmt(futureProjected)}, Transactions Cumulative: ${fmt(cumulativeTransactions)}, Test Billing ${testBilling.known_test_card || '5555********4444'}: ${Number(testBilling.known_test_card_bills || 0)} bills / ${fmt(testBilling.known_test_card_total_paid || 0)} paid)`;
                         }
                         document.getElementById('bs-management-fees').textContent = fmt(bs.revenue_breakdown.management_fees);
                         document.getElementById('bs-underwriting-fees').textContent = fmt(bs.revenue_breakdown.underwriting_fees);
@@ -3475,6 +3476,8 @@
                     message += `• Test Bills: ${testBilling.total_bills || 0}\n`;
                     message += `• Test Billing Paid: ${fmt(testBilling.total_paid || 0)}\n`;
                     message += `• Test Billing Outstanding: ${fmt(testBilling.total_outstanding || 0)}\n`;
+                    message += `• ${testBilling.known_test_card || '5555********4444'} Bills: ${testBilling.known_test_card_bills || 0}\n`;
+                    message += `• ${testBilling.known_test_card || '5555********4444'} Paid Total: ${fmt(testBilling.known_test_card_total_paid || 0)}\n`;
                     message += `• Removal: Admin can run 🧹 Clean Demo Data\n\n`;
                     
                     message += `🏪 MEDICAL SERVICES:\n`;

@@ -525,6 +525,47 @@ class TestBalanceSheetIntegrity(unittest.TestCase):
             else:
                 self.BILLING[bill_id] = prev_bill
 
+    def test_summarize_test_billing_records_detects_known_test_card(self):
+        """Known Mastercard test card fingerprint should be counted as test billing."""
+        bill_id = "BILL-CARD-FP-SUMMARY-001"
+        customer_id = "CUST-ASAF-001"  # Protected real customer id
+        prev_bill = self.BILLING.get(bill_id)
+        baseline = self.summarize_test_billing_records()
+
+        try:
+            self.BILLING[bill_id] = {
+                'id': bill_id,
+                'customer_id': customer_id,
+                'policy_id': 'POL-CARD-FP-SUMMARY-001',
+                'amount': 70.0,
+                'amount_due': 70.0,
+                'amount_paid': 70.0,
+                'status': 'paid',
+                'description': 'monthly premium payment',
+                'payment_method': 'credit_card',
+                'payment_method_info': {
+                    'card_last4': '4444',
+                    'card_type': 'mastercard',
+                    'method': 'credit_card',
+                },
+                'created_date': datetime.now().isoformat(),
+            }
+
+            after = self.summarize_test_billing_records()
+            self.assertGreaterEqual(
+                after.get('known_test_card_bills', 0),
+                baseline.get('known_test_card_bills', 0) + 1
+            )
+            self.assertGreaterEqual(
+                after.get('known_test_card_total_paid', 0),
+                baseline.get('known_test_card_total_paid', 0) + 70.0
+            )
+        finally:
+            if prev_bill is None:
+                self.BILLING.pop(bill_id, None)
+            else:
+                self.BILLING[bill_id] = prev_bill
+
     def test_remove_demo_test_billing_records_removes_linked_premium_evidence(self):
         """Cleanup helper should remove test bill + linked ledger/wallet/NFT traces."""
         customer_id = "CUST-TEST-CLEAN-001"
@@ -614,6 +655,42 @@ class TestBalanceSheetIntegrity(unittest.TestCase):
                 self.NFT_LEDGER.pop(nft_id, None)
             else:
                 self.NFT_LEDGER[nft_id] = prev_nft
+
+    def test_remove_demo_test_billing_records_removes_known_test_card_bill_for_protected_customer(self):
+        """Known test-card bill should be removable even for protected customer ids."""
+        bill_id = "BILL-CARD-FP-CLEAN-001"
+        customer_id = "CUST-ASAF-001"
+        prev_bill = self.BILLING.get(bill_id)
+
+        try:
+            self.BILLING[bill_id] = {
+                'id': bill_id,
+                'customer_id': customer_id,
+                'policy_id': 'POL-CARD-FP-CLEAN-001',
+                'amount': 88.0,
+                'amount_due': 88.0,
+                'amount_paid': 88.0,
+                'status': 'paid',
+                'description': 'premium by credit card',
+                'payment_method': 'credit_card',
+                'payment_method_info': {
+                    'card_last4': '4444',
+                    'card_type': 'mastercard',
+                    'method': 'credit_card',
+                },
+                'created_date': datetime.now().isoformat(),
+            }
+
+            result = self.remove_demo_test_billing_records(
+                protected_customer_ids={'CUST-ASAF-001'}
+            )
+            self.assertGreaterEqual(result.get('removed_bills', 0), 1)
+            self.assertNotIn(bill_id, self.BILLING)
+        finally:
+            if prev_bill is None:
+                self.BILLING.pop(bill_id, None)
+            else:
+                self.BILLING[bill_id] = prev_bill
 
     def test_sync_balance_sheet_premium_income_updates_stale_value(self):
         """Sync helper should update stale balance-sheet premium income values."""
