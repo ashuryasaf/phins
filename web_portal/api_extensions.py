@@ -2657,7 +2657,7 @@ def dispatch_get(path: str, session: Dict, query_params: Dict, client_ip: str) -
     
     # Admin: Foundation activity (legacy endpoint)
     if path == '/api/admin/foundations/activity':
-        return handle_admin_all_activities(session, query_params)
+        return handle_admin_foundation_activity(session, query_params)
     
     # Admin: All activities
     if path == '/api/admin/foundations/all-activities':
